@@ -30,6 +30,7 @@ width/material/variable + shell counts), routing preferences. Снапшот п�
 | Все | Свойства материалов (appearance/физика) | Material/PropertySetElement | все | gap (слишком глубоко для хэша; изменение материала детектируется по имени в слое/правиле) | уже (#104) |
 | Все | Rename-invariance типа (#179, проблема 1) | — | — | **отложено**: имя типа остаётся в канонической строке — имя является идентичностью типа в каталоге (типы keyed by name во всех слоях: presence/stale/sync). Сортировка по UniqueId ломалась бы при рестейджинге мини-проекта (UniqueId меняются). | — |
 | Все | Идентичность семьи | `SystemFamilyKeys` (ADR-064) | все | **да** (FamilyKey в канонической строке) | уже (#190) |
+| OST_Wire | Материал/Температурный рейтинг/Изоляция/Макс. размер/Кабелепровод + нейтраль | **`WireType.*` — API-свойства поверх графа `ElectricalSetting` (WireMaterialType→TemperatureRatingType→InsulationType/WireSize, WireConduitType), НЕ параметры элемента** — generic-пайплайн их не видит (ручной тест 2026-08-04: смена материала не синхронизировалась). `WireMaterial` и др. — get/set в ≤2025; **Revit 2026 заменил граф на Conductor*-элементы** (сигнатуры изменились → MissingMethodException под 2025-бинарями; per-member try/catch → Warn + NotConverged) | ≤2025 | **да** (FHV5, секция WIRE) | **да** (find-by-name по графу target; материал create-from-base; остальное — только find, иначе Warn + NotConverged) |
 
 ## Decision
 
@@ -76,6 +77,31 @@ RailStructure (очистить и пересоздать направляющи
 материал — по имени), BalusterPlacement (scalars + per-tread + имена
 балясин best effort). Настройки без сеттера — Warn + NotConverged (существующий
 канал отчётности), не молчаливый пропуск.
+
+## Revision 2026-08-04 (ручной тест, раунд 2): FHV5 — WIRE
+
+Ручной тест показал, что настройки провода (Материал и др.) не попадают ни в
+`Element.Parameters`, ни в хэш, ни в sync — это API-свойства `WireType` поверх
+объектного графа `ElectricalSetting`. Формат хэша поднят до **FHV5**
+(`FHV5|SYSTEM|...|WIRE|{material}|{rating}|{insulation}|{maxSize}|{conduit}|{neutralMult}|{neutralReq}`),
+`FamilyContentHashFormat.CurrentVersion = 5`, задача актуализации — `hash-v5`
+(детект `NOT IN (5,-1,-2)`; FHV4 не выходил в публичных релизах, поэтому задача
+переименована, а не добавлена вторая). Sync: `SystemTypeSyncService.SyncWireSettings`
+— материал find-or-create (`ElectricalSetting.AddWireMaterialType(name, base)`),
+rating/insulation/max-size резолвятся по имени ПОД уже назначенным материалом/
+рейтингом (ownership chain по revitapidocs), conduit — из
+`ElectricalSetting.WireConduitTypes`; недоступное — Warn + NotConverged.
+Revit 2026: граф заменён на Conductor*-модель — до отдельного порта под новую
+модель wire-секция там деградирует в Warn + NotConverged (per-member try/catch).
+
+Дополнительно раунд 2:
+- Активация sketch-категорий: PostCommand теперь откладывается в one-shot
+  `Idling`-handler (IDropHandler.Execute — не командный контекст; команда,
+  запощенная из дропа, Revit не запускает), а категория берётся из самого
+  синхронизированного элемента, а не из каталожной строки (каталожный
+  `RevitCategoryId` может быть null → молчаливый откат на no-op PostRequest).
+- Sync подтипов лестниц покрыт read-back логированием (диагностика «не
+  синхронизируется» при чистом прогоне).
 
 ## Consequences
 

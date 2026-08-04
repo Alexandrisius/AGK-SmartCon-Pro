@@ -8,11 +8,12 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v4</c>): recalculates stale
-/// (format v1 / v2 / v3 / NULL) content hashes to the FHV4 format
-/// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065). Owns
-/// the <c>hash_format_version</c> marker
-/// semantics: NULL/1/2/3 pending, 4 current, -1/-2 terminal (unreadable /
+/// CRITICAL actualization task (Id=<c>hash-v5</c>): recalculates stale
+/// (format v1 / v2 / v3 / v4 / NULL) content hashes to the FHV5 format
+/// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
+/// wire settings graph, manual test 2026-08-04). Owns the
+/// <c>hash_format_version</c> marker
+/// semantics: NULL/1/2/3/4 pending, 5 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -42,14 +43,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _contentHasher = contentHasher ?? throw new ArgumentNullException(nameof(contentHasher));
     }
 
-    public override string Id => "hash-v4";
+    public override string Id => "hash-v5";
     public override int Order => 10;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (4, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (5, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
@@ -90,7 +91,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 4
+                    SET content_hash = @hash, hash_format_version = 5
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -103,7 +104,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 4, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 5, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -112,11 +113,11 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 await itemCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            // FHV4 is a breaking data format (ADR-058): a database carrying
-            // v4 hashes must not be WRITTEN by a plugin older than the FHV4
+            // FHV5 is a breaking data format (ADR-058): a database carrying
+            // v5 hashes must not be WRITTEN by a plugin older than the FHV5
             // release — its dedup would silently downgrade/duplicate. Runtime
             // backfill of the forward-compatibility floor (schema-migration
-            // backfill like V24 cannot work here: v4 rows appear only AFTER
+            // backfill like V24 cannot work here: v5 rows appear only AFTER
             // this task runs). Monotonic: a HIGHER pre-existing floor (from
             // a newer plugin) is never lowered.
             using (var readCmd = connection.CreateCommand())

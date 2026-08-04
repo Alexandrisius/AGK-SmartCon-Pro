@@ -47,7 +47,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 
 | Задача | Order | Critical | Что делает |
 |---|---|---|---|
-| `HashFormatActualizationTask` (`hash-v4`) | 10 | да | Хэши FHV4 (ADR-065; ранее FHV3/`hash-v3`, ADR-056): apply на все Revit-варианты + ресинк item; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v4-хэшей (ADR-058) |
+| `HashFormatActualizationTask` (`hash-v5`) | 10 | да | Хэши FHV5 (ADR-065 revision 2026-08-04; ранее FHV4/`hash-v4`, FHV3/`hash-v3`, ADR-056): apply на все Revit-варианты + ресинк item; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v5-хэшей (ADR-058) |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
 | `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label). Терминальный маркер #157 (V23): семейство без извлекаемой 3D-геометрии (2D/символьные) получает `catalog_versions.glb_state = -1` от пайплайна — детект гаснет, иначе вечный pending |
 | `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
@@ -184,7 +184,7 @@ resume после отмены, purge-контекст, сводка.
   (механика маркеров/purge; фреймворк superseded ADR-054)
 - [ADR-049](../adr/049-content-hash-v2-rename-invariant.md) — формат хэша v2 (rename-invariant)
 - [ADR-056](../adr/056-content-hash-v3.md) — формат хэша v3 (FHV3) + задача `hash-v3`
-- [ADR-065](../adr/065-fhv4-extended-sync.md) — формат хэша v4 (FHV4, задача `hash-v4`) + расширенный sync (подтипы лестниц, структура ограждений)
+- [ADR-065](../adr/065-fhv4-extended-sync.md) — формат хэша v5 (FHV5, задача `hash-v5`; ранее FHV4/`hash-v4`) + расширенный sync (подтипы лестниц, структура ограждений, настройки провода)
 - [ADR-048](../adr/048-batch-import-modeless-progress.md) — modeless прогресс-диалоги
 - `docs/invariants.md` — I-14 (SQLite), I-01 (ExternalEvent), I-03 (транзакции)
 - `tools/damage-catalog-db.ps1` — ручной тест: «состаривает» тестовую БД по критериям

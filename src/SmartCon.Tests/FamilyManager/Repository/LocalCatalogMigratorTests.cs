@@ -272,7 +272,7 @@ public sealed class LocalCatalogMigratorTests
         await fixture.MigrateAsync();
 
         // V24 backfills the HISTORICAL FHV3 floor ('2.0.1-beta.5'); the FHV4
-        // actualization task (hash-v4) raises the floor to
+        // actualization task (hash-v5) raises the floor to
         // DbCompatibility.CurrentMinPluginVersion at runtime, after the
         // rehash — v4 rows exist only then, so a schema migration cannot
         // key on them (ADR-065).

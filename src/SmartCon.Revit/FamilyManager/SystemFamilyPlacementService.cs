@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Events;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -98,6 +99,13 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
+        // Manual test 2026-08-04 (round 2): the category ordinal must come
+        // from the synced element itself — the catalog row can carry a null
+        // RevitCategoryId, in which case the switch below never matched and
+        // the code silently fell through to the no-op PostRequest path for
+        // sketch categories (the exact bug the PostCommand branch fixes).
+        var elementCategoryOrdinal = GetCategoryOrdinal(elementType) ?? categoryOrdinal;
+
         // Manual test 2026-08-04 (#200 follow-up): PostRequestForElementTypePlacement
         // SILENTLY no-ops for sketch-based categories (floors, roofs, stairs,
         // railings) — CanPlaceElementType returns true, the request is queued,
@@ -105,7 +113,10 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         // activation for these categories is the tool command with the type
         // preselected as the project default (SetDefaultElementTypeId +
         // PostCommand — the documented workaround, Autodesk forums).
-        if (TryGetPostCommandActivation(categoryOrdinal, out var typeGroup, out var postableCommand))
+        // Round 2: PostCommand is deferred to a one-shot Idling handler —
+        // IDropHandler.Execute is not a regular command context, and a
+        // command posted from inside the drop is never started by Revit.
+        if (TryGetPostCommandActivation(elementCategoryOrdinal, out var typeGroup, out var postableCommand))
         {
             try
             {
@@ -113,7 +124,30 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
                 {
                     d.SetDefaultElementTypeId(typeGroup, elementType.Id);
                 });
-                uiApp.PostCommand(RevitCommandId.LookupPostableCommandId(postableCommand));
+
+                var commandId = RevitCommandId.LookupPostableCommandId(postableCommand);
+                SmartConLogger.Debug(
+                    $"SystemFamilyPlacement: sketch category '{elementType.Category?.Name}' — default type set " +
+                    $"to '{typeName}' (group {typeGroup}), deferring PostCommand({postableCommand}) to Idling.");
+
+                EventHandler<IdlingEventArgs>? handler = null;
+                handler = (s, e) =>
+                {
+                    uiApp.Idling -= handler;
+                    try
+                    {
+                        uiApp.PostCommand(commandId);
+                        SmartConLogger.Debug(
+                            $"SystemFamilyPlacement: PostCommand({postableCommand}) posted from Idling for '{typeName}'.");
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn(
+                            $"SystemFamilyPlacement: PostCommand({postableCommand}) of '{typeName}' failed: {ex.Message} " +
+                            "[Action: place the type manually in the Revit UI]");
+                    }
+                };
+                uiApp.Idling += handler;
                 return SystemPlacementResult.Placed;
             }
             catch (Exception ex)
@@ -124,6 +158,10 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
                 return SystemPlacementResult.LoadedManualPlacementRequired;
             }
         }
+
+        SmartConLogger.Debug(
+            $"SystemFamilyPlacement: linear/host category '{elementType.Category?.Name}' — " +
+            $"using PostRequestForElementTypePlacement for '{typeName}'.");
 
         if (!uidoc.CanPlaceElementType(elementType))
         {
@@ -179,6 +217,19 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
                 return true;
             default:
                 return false;
+        }
+    }
+
+    private static int? GetCategoryOrdinal(ElementType elementType)
+    {
+        try
+        {
+            var builtIn = Core.Compatibility.CategoryCompat.GetBuiltInCategory(elementType.Category);
+            return builtIn == BuiltInCategory.INVALID ? null : (int)builtIn;
+        }
+        catch
+        {
+            return null;
         }
     }
 

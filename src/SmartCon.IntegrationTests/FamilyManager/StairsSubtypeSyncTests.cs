@@ -188,6 +188,85 @@ public sealed class StairsSubtypeSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task Sync_StairsType_SupportChangeInReference_UpdatesExistingTarget()
+    {
+        // Manual test 2026-08-04 reproduction: the project ALREADY has the
+        // stairs type with both side supports = A; the reference moves the
+        // right support to B (a subtype the project does not have) — the
+        // existing project type must follow in place.
+        var sourceDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        var targetDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var sourceTx = new RevitTransactionService(new StubRevitContext(sourceDoc));
+            var targetTx = new RevitTransactionService(new StubRevitContext(targetDoc));
+            var materialSync = new RevitMaterialSyncService();
+            var sync = new SystemTypeSyncService(
+                targetTx, new RevitFamilySnapshotExtractor(), new RevitSystemTypeFinder(), new SystemClock(),
+                materialSync, new RevitSegmentSyncService(materialSync), new NullFittingDependencyResolver(),
+                new RevitCompoundStructureSyncService(materialSync));
+
+            var seeded = false;
+            sourceTx.RunInTransaction(sourceDoc, "Seed stairs reference", d =>
+            {
+                var supportProto = new FilteredElementCollector(d)
+                    .WhereElementIsElementType()
+                    .Cast<ElementType>()
+                    .FirstOrDefault(t => t.Category is not null
+                        && t.Category.Id == SmartCon.Core.Compatibility.ElementIdCompat.Create(
+                            (int)BuiltInCategory.OST_StairsStringerCarriage));
+                var stairsType = new FilteredElementCollector(d)
+                    .OfClass(typeof(StairsType)).Cast<StairsType>().FirstOrDefault();
+                if (supportProto is null || stairsType is null) return;
+
+                var supportA = supportProto.Duplicate("SC_SupportA");
+                var supportB = supportProto.Duplicate("SC_SupportB");
+                var newStairs = (StairsType)stairsType.Duplicate("SC_Stairs3");
+                newStairs.LeftSideSupportType = supportA.Id;
+                newStairs.RightSideSupportType = supportB.Id;
+                seeded = true;
+            });
+            if (!seeded)
+            {
+                Skip.Test("В шаблоне нет StairsType/support-типов — сидирование невозможно");
+                return;
+            }
+
+            var targetSeeded = false;
+            targetTx.RunInTransaction(targetDoc, "Seed target stairs", d =>
+            {
+                var stairsType = new FilteredElementCollector(d)
+                    .OfClass(typeof(StairsType)).Cast<StairsType>().First();
+                var local = (StairsType)stairsType.Duplicate("SC_Stairs3");
+                targetSeeded = local.LeftSideSupportType is not null;
+            });
+            if (!targetSeeded) { Skip.Test("Не удалось сидировать целевую лестницу"); return; }
+
+            var result = sync.SyncTypeFromSource(
+                sourceDoc, targetDoc, "SC_Stairs3", "item-stairs", "v1",
+                int.Parse(Application.VersionNumber));
+            await Assert.That(result.IsSuccess).IsTrue();
+
+            var finder = new RevitSystemTypeFinder();
+            var targetTypeId = finder.FindTypeByName(targetDoc, "SC_Stairs3", null);
+            var targetStairs = (StairsType)targetDoc.GetElement(targetTypeId!)!;
+            using (Assert.Multiple())
+            {
+                await Assert.That(targetDoc.GetElement(targetStairs.LeftSideSupportType)?.Name)
+                    .IsEqualTo("SC_SupportA");
+                await Assert.That(targetDoc.GetElement(targetStairs.RightSideSupportType)?.Name)
+                    .IsEqualTo("SC_SupportB");
+            }
+        }
+        finally
+        {
+            sourceDoc.Close(false);
+            targetDoc.Close(false);
+        }
+    }
+
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(

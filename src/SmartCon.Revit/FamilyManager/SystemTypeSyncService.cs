@@ -1,8 +1,10 @@
+using System.Collections;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using Electrical = Autodesk.Revit.DB.Electrical;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -189,6 +191,16 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             if (sourceType is RailingType sourceRailing && target is RailingType targetRailing)
             {
                 notConverged += SyncRailingStructure(sourceDoc, doc, sourceRailing, targetRailing, elementIdCache);
+            }
+
+            // FHV5: wire settings graph (material/temperature rating/
+            // insulation/max size/conduit + neutral scalars) — WireType
+            // properties backed by ElectricalSetting, invisible to the
+            // generic parameter pipeline (manual test 2026-08-04: a wire
+            // material change did not sync).
+            if (sourceType is Electrical.WireType sourceWire && target is Electrical.WireType targetWire)
+            {
+                notConverged += SyncWireSettings(doc, sourceWire, targetWire);
             }
 
             RevitFamilyVersionStore.WriteEntityToElement(target, new FamilyVersion(
@@ -454,7 +466,13 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             // legacy any-prototype behaviour (should not happen in practice —
             // every system ElementType reports a FamilyName).
             // #190 (ADR-064): the locale-invariant key is the primary filter.
-            return collector.Cast<ElementType>().FirstOrDefault(t =>
+            // Same collision class as the finder (manual test 2026-08-04):
+            // a WireMaterialType settings object shares name/family/category
+            // with the real WireType — it must never become the Duplicate
+            // prototype on the create path either.
+            return collector.Cast<ElementType>()
+                .Where(t => !RevitSystemTypeFinder.IsElectricalSettingsObject(t))
+                .FirstOrDefault(t =>
                 !string.IsNullOrEmpty(familyKey)
                     ? string.Equals(SystemFamilyKeyResolver.Resolve(t), familyKey, StringComparison.OrdinalIgnoreCase)
                     : string.IsNullOrEmpty(familyName)
@@ -663,6 +681,20 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             notConverged += SyncReferencedSubtype(sourceDoc, doc, sourceCutMarkId,
                 typeof(CutMarkType), null, "CutMarkType", id => cutMarkParam.Set(id), elementIdCache);
         }
+
+        // Read-back ground truth (manual test 2026-08-04: supports reported
+        // as not syncing despite a clean run) — what the target type
+        // actually references AFTER all assignments.
+        SmartConLogger.Debug(
+            $"Stairs '{target.Name}' subtype read-back: " +
+            $"Run='{ResolveElementName(doc, target.RunType)}', Landing='{ResolveElementName(doc, target.LandingType)}', " +
+            $"Left='{ResolveElementName(doc, target.LeftSideSupportType)}', " +
+            $"Right='{ResolveElementName(doc, target.RightSideSupportType)}', " +
+            $"Middle='{(target.HasMiddleSupports ? ResolveElementName(doc, target.MiddleSupportType) : "<none>")}' " +
+            $"(source: Run='{ResolveElementName(sourceDoc, source.RunType)}', " +
+            $"Landing='{ResolveElementName(sourceDoc, source.LandingType)}', " +
+            $"Left='{ResolveElementName(sourceDoc, source.LeftSideSupportType)}', " +
+            $"Right='{ResolveElementName(sourceDoc, source.RightSideSupportType)}').");
         return notConverged;
     }
 
@@ -710,6 +742,13 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                 return 1;
             }
             targetSubtype = prototype.Duplicate(sourceSubtype.Name);
+            SmartConLogger.Debug(
+                $"Subtype '{sourceSubtype.Name}' ({slotName}): created in the project by duplicating '{prototype.Name}'.");
+        }
+        else
+        {
+            SmartConLogger.Debug(
+                $"Subtype '{sourceSubtype.Name}' ({slotName}): matched existing project subtype #{targetSubtype.Id}.");
         }
 
         var subtypeTemplate = _snapshotExtractor.ExtractSingleSystemType(sourceDoc, sourceSubtypeId);
@@ -721,6 +760,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         try
         {
             assign(targetSubtype.Id);
+            SmartConLogger.Debug(
+                $"Subtype reference assigned ({slotName} = '{sourceSubtype.Name}', id=#{targetSubtype.Id}).");
             return 0;
         }
         catch (Exception ex)
@@ -885,6 +926,168 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
 
         return notConverged;
+    }
+
+    /// <summary>
+    /// FHV5: sync the wire settings graph — material / temperature rating /
+    /// insulation / max size / conduit / neutral scalars. Resolution order
+    /// follows the ownership chain (revitapidocs): temperature ratings
+    /// belong to the assigned material; insulations and wire sizes belong
+    /// to the assigned rating. A missing material is created from any
+    /// existing one (same as "Duplicate" in the Revit electrical settings
+    /// UI); missing rating/insulation/size/conduit objects are NOT created
+    /// (their numeric content — ampacity, diameter — cannot be invented)
+    /// and count as NotConverged with a Warn. Revit 2026 replaced this
+    /// object graph with the Conductor* element model — the ≤2025 setter
+    /// signatures are gone there (<see cref="MissingMethodException"/>),
+    /// which surfaces as one Warn + NotConverged per member.
+    /// </summary>
+    private int SyncWireSettings(Document doc, Electrical.WireType source, Electrical.WireType target)
+    {
+        var notConverged = 0;
+
+        notConverged += TrySetWireMember("WireMaterial", () =>
+        {
+            var sourceName = source.WireMaterial?.Name;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.WireMaterial?.Name, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var material = FindByName<Electrical.WireMaterialType>(
+                doc.Settings.ElectricalSetting?.WireMaterialTypes, sourceName!)
+                ?? CreateWireMaterial(doc, sourceName!);
+            if (material is null)
+            {
+                throw new InvalidOperationException(
+                    $"wire material '{sourceName}' not found in the project and no base material exists to duplicate");
+            }
+            target.WireMaterial = material;
+        });
+
+        notConverged += TrySetWireMember("TemperatureRating", () =>
+        {
+            var sourceName = source.TemperatureRating?.Name;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.TemperatureRating?.Name, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var rating = target.WireMaterial?.TemperatureRatings
+                ?.Cast<Electrical.TemperatureRatingType>()
+                .FirstOrDefault(r => string.Equals(r.Name, sourceName, StringComparison.OrdinalIgnoreCase));
+            if (rating is null)
+            {
+                throw new InvalidOperationException(
+                    $"temperature rating '{sourceName}' not found under material '{target.WireMaterial?.Name}' in the project");
+            }
+            target.TemperatureRating = rating;
+        });
+
+        notConverged += TrySetWireMember("Insulation", () =>
+        {
+            var sourceName = source.Insulation?.Name;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.Insulation?.Name, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var insulation = target.TemperatureRating?.InsulationTypes
+                ?.Cast<Electrical.InsulationType>()
+                .FirstOrDefault(i => string.Equals(i.Name, sourceName, StringComparison.OrdinalIgnoreCase));
+            if (insulation is null)
+            {
+                throw new InvalidOperationException(
+                    $"insulation '{sourceName}' not found under temperature rating '{target.TemperatureRating?.Name}' in the project");
+            }
+            target.Insulation = insulation;
+        });
+
+        notConverged += TrySetWireMember("MaxSize", () =>
+        {
+            var sourceName = source.MaxSize?.Size;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.MaxSize?.Size, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var size = target.TemperatureRating?.WireSizes
+                ?.Cast<Electrical.WireSize>()
+                .FirstOrDefault(s => string.Equals(s.Size, sourceName, StringComparison.OrdinalIgnoreCase));
+            if (size is null)
+            {
+                throw new InvalidOperationException(
+                    $"wire size '{sourceName}' not found under temperature rating '{target.TemperatureRating?.Name}' in the project");
+            }
+            target.MaxSize = size;
+        });
+
+        notConverged += TrySetWireMember("Conduit", () =>
+        {
+            var sourceName = source.Conduit?.Name;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.Conduit?.Name, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var conduit = FindByName<Electrical.WireConduitType>(
+                doc.Settings.ElectricalSetting?.WireConduitTypes, sourceName!);
+            if (conduit is null)
+            {
+                throw new InvalidOperationException(
+                    $"wire conduit '{sourceName}' not found in the project electrical settings");
+            }
+            target.Conduit = conduit;
+        });
+
+        notConverged += TrySetWireMember("NeutralMultiplier",
+            () => target.NeutralMultiplier = source.NeutralMultiplier);
+        notConverged += TrySetWireMember("NeutralRequired",
+            () => target.NeutralRequired = source.NeutralRequired);
+
+        return notConverged;
+    }
+
+    private static int TrySetWireMember(string memberName, Action write)
+    {
+        try
+        {
+            write();
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Wire settings member '{memberName}' rejected: {ex.Message} " +
+                "[Action: see the log; on Revit 2026+ the wire settings graph was replaced by the Conductor* model " +
+                "and this sync does not apply — the remaining members were applied]");
+            return 1;
+        }
+    }
+
+    private static T? FindByName<T>(IEnumerable? set, string name) where T : class
+    {
+        if (set is null) return null;
+        foreach (var item in set)
+        {
+            if (item is not T typed) continue;
+            var itemName = typed switch
+            {
+                Element element => element.Name,
+                Electrical.WireConduitType conduit => conduit.Name,
+                _ => null,
+            };
+            if (string.Equals(itemName, name, StringComparison.OrdinalIgnoreCase))
+                return typed;
+        }
+        return null;
+    }
+
+    private static Electrical.WireMaterialType? CreateWireMaterial(Document doc, string name)
+    {
+        var setting = doc.Settings.ElectricalSetting;
+        if (setting is null) return null;
+        var baseMaterial = setting.WireMaterialTypes?.Cast<Electrical.WireMaterialType>().FirstOrDefault();
+        if (baseMaterial is null) return null;
+        SmartConLogger.Info(
+            $"Wire material '{name}' missing in the project — created by duplicating '{baseMaterial.Name}' " +
+            "(impedance factors follow the base; adjust in the electrical settings if they differ).");
+        return setting.AddWireMaterialType(name, baseMaterial);
     }
 
     private static List<ElementType> CollectSubtypeCandidates(

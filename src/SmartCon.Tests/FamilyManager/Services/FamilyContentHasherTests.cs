@@ -1346,4 +1346,29 @@ public class FamilyContentHasherTests
         Assert.NotNull(hash2);
         Assert.NotEqual(hash1!.HexString, hash2!.HexString);
     }
+
+    [Fact]
+    public void ComputeForSystem_WireSettings_ShiftHash()
+    {
+        // FHV5: the wire settings graph is identity — changing the material
+        // of a wire type in the reference changes the hash (manual test
+        // 2026-08-04: the change was invisible to FHV4).
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [],
+                Wire: new WireSettingsSnapshot("Медь", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [],
+                Wire: new WireSettingsSnapshot("Алюминий", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
 }

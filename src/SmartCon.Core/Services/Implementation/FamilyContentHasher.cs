@@ -257,20 +257,24 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 
     /// <summary>
     /// Build the canonical string for a system family snapshot.
-    /// Format: FHV4|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|...|STRUCT|...|ROUTING|...|SEGMENTS|...|SUBTYPES|...|RAILING|...
+    /// Format: FHV5|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|...|STRUCT|...|ROUTING|...|SEGMENTS|...|SUBTYPES|...|RAILING|...|WIRE|...
     /// The category display name is NOT part of the hash (v3, Issue #159):
     /// it is UI-locale dependent — the ordinal is the identity.
-    /// STRUCT/ROUTING/SEGMENTS/SUBTYPES/RAILING live inside the per-type
+    /// STRUCT/ROUTING/SEGMENTS/SUBTYPES/RAILING/WIRE live inside the per-type
     /// loop (they are per-type data). FHV4 (ADR-065): +FAMKEY (locale-
     /// invariant family identity, #190), STRUCT gains StructuralMaterialIndex/
     /// EndCap/OpeningWrapping and per-layer LayerCapFlag/ParticipatesInWrapping
     /// (#179), new SEGMENTS (segment size tables), SUBTYPES (stairs subtype
     /// references by name, #184) and RAILING (railing structure summary).
+    /// FHV5: WIRE — the wire settings graph (material/temperature rating/
+    /// insulation/max size/conduit + neutral scalars), which lives on
+    /// WireType API properties and never appears in Element.Parameters
+    /// (manual test 2026-08-04).
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(512);
-        sb.Append("FHV4|SYSTEM|");
+        sb.Append("FHV5|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
 
         sb.Append("TYPES|");
@@ -416,6 +420,26 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
                 sb.Append(b.UseBalusterPerTreadOnStairs ? 'T' : 'N').Append('|');
                 sb.Append(b.BalusterPerTreadNumber).Append('|');
                 sb.Append(Escape(b.BalusterPerTreadFamilyName ?? NullPartMarker)).Append('|');
+            }
+            else
+            {
+                sb.Append('-').Append('|');
+            }
+
+            sb.Append("WIRE|");
+            if (t.Wire is not null)
+            {
+                var w = t.Wire;
+                sb.Append(Escape(w.MaterialName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(w.TemperatureRatingName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(w.InsulationName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(w.MaxSizeName ?? NullPartMarker)).Append('|');
+                sb.Append(Escape(w.ConduitName ?? NullPartMarker)).Append('|');
+                AppendNullableNumber(sb, w.NeutralMultiplier);
+                if (w.NeutralRequired.HasValue)
+                    sb.Append(w.NeutralRequired.Value ? 'T' : 'N').Append('|');
+                else
+                    sb.Append(NullPartMarker).Append('|');
             }
             else
             {

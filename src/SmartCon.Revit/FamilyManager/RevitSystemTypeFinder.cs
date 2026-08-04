@@ -24,6 +24,14 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         foreach (var type in collector.Cast<ElementType>())
         {
             if (type.Name is null) continue;
+            // Manual test 2026-08-04: the electrical settings graph
+            // (WireMaterialType and friends) shares the name, FamilyName
+            // ("Провода") and category with the real WireType — a plain
+            // ElementType match can bind a settings object instead of the
+            // wire type (9-11 same-name "matches" seen in the wild), and the
+            // whole sync then targets the wrong element. Settings objects
+            // are never sync/import targets — excluded from matching.
+            if (IsElectricalSettingsObject(type)) continue;
             if (!string.Equals(type.Name, typeName, StringComparison.OrdinalIgnoreCase)) continue;
             // #190 (ADR-064): the locale-invariant key is the PRIMARY family
             // filter — the localized FamilyName never matches across locales.
@@ -78,6 +86,7 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
             foreach (var type in collector.Cast<ElementType>())
             {
                 if (type.Name is null) continue;
+                if (IsElectricalSettingsObject(type)) continue;
                 // #183: FamilyName collected so stale detection can match
                 // by (family, name) instead of name alone.
                 // #190 (ADR-064): FamilyKey is the locale-invariant identity
@@ -88,6 +97,16 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
         }
         return result;
     }
+
+    /// <summary>
+    /// Settings-graph object types (electrical) that surface in ElementType
+    /// collectors with the same name/family/category as the real wire type
+    /// but are never legitimate sync or import targets (manual test
+    /// 2026-08-04). WireConduitType is not Element-derived and never reaches
+    /// a collector — not listed.
+    /// </summary>
+    internal static bool IsElectricalSettingsObject(ElementType type) => type is
+        Autodesk.Revit.DB.Electrical.WireMaterialType;
 
     private static FilteredElementCollector CreateCollector(Document doc, int? categoryOrdinal)
     {

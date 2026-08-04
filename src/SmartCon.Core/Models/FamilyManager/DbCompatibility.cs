@@ -15,7 +15,7 @@ public static class DbCompatibility
     /// <c>database_meta.min_plugin_version</c> from the data marker that
     /// proves the breaking change was applied (FHV3 precedent: schema
     /// migration V24 keyed on <c>hash_format_version = 3</c>; FHV4:
-    /// runtime backfill inside the <c>hash-v4</c> actualization task —
+    /// runtime backfill inside the <c>hash-v5</c> actualization task —
     /// v4 rows exist only after the task runs, so a schema migration
     /// cannot key on them).
     /// Non-breaking releases (additive columns, optional artifacts) do NOT

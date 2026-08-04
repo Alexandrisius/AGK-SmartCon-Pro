@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Electrical;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
@@ -1234,7 +1235,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             // FHV4 (ADR-065): subtype/structure/segment identity summaries.
             Stairs: ExtractStairsSubtypes(elementType, projectDoc),
             Railing: ExtractRailingStructure(elementType, projectDoc),
-            Segments: ExtractSegments(elementType, projectDoc));
+            Segments: ExtractSegments(elementType, projectDoc),
+            // FHV5: wire settings graph (material/rating/insulation/size/
+            // conduit) — WireType properties, invisible to Element.Parameters.
+            Wire: ExtractWireSettings(elementType));
     }
 
     /// <summary>
@@ -1590,6 +1594,41 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         {
             SmartConLogger.Debug(
                 $"Stairs subtypes read failed for type '{elementType.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// FHV5: wire settings identity summary — the material/temperature
+    /// rating/insulation/max-size/conduit references of a <see cref="WireType"/>
+    /// plus the neutral scalars. These are API properties backed by the
+    /// <c>ElectricalSetting</c> object graph, NOT element parameters, so the
+    /// generic pipeline never sees them (manual test 2026-08-04: a material
+    /// change on a wire type did not sync). Revit 2026 replaced this object
+    /// graph with the Conductor* element model — the ≤2025 property
+    /// signatures no longer exist there (<see cref="MissingMethodException"/>),
+    /// so the read is defensive and yields <c>null</c> on 2026+.
+    /// </summary>
+    private static WireSettingsSnapshot? ExtractWireSettings(ElementType elementType)
+    {
+        if (elementType is not WireType wireType)
+            return null;
+
+        try
+        {
+            return new WireSettingsSnapshot(
+                MaterialName: wireType.WireMaterial?.Name,
+                TemperatureRatingName: wireType.TemperatureRating?.Name,
+                InsulationName: wireType.Insulation?.Name,
+                MaxSizeName: wireType.MaxSize?.Size,
+                ConduitName: wireType.Conduit?.Name,
+                NeutralMultiplier: wireType.NeutralMultiplier,
+                NeutralRequired: wireType.NeutralRequired);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Wire settings read failed for type '{elementType.Name}': {ex.Message}");
             return null;
         }
     }

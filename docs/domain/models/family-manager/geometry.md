@@ -91,7 +91,8 @@ public sealed record SystemTypeSnapshot(
     string? FamilyKey = null,
     StairsSubtypesSnapshot? Stairs = null,
     RailingStructureSnapshot? Railing = null,
-    IReadOnlyList<SegmentSnapshot>? Segments = null);
+    IReadOnlyList<SegmentSnapshot>? Segments = null,
+    WireSettingsSnapshot? Wire = null);
 
 public sealed record SystemParameterValue(
     string ParameterName,
@@ -107,7 +108,7 @@ public sealed record SystemParameterValue(
 
 FHV4 (ADR-065): `FamilyKey` входит в content-хэш; `Stairs`/`Railing`/`Segments` —
 identity-сводки для хэша (имена ссылок, не глубокие данные — sync читает эталон
-живьём из мини-проекта, ADR-061).
+живьём из мини-проекта, ADR-061). FHV5: `Wire` — identity-сводка настроек провода.
 
 ### StairsSubtypesSnapshot / RailingStructureSnapshot (FHV4, ADR-065)
 
@@ -139,6 +140,22 @@ public sealed record RailingBalusterSnapshot(
 
 Ссылки на элементы — по ИМЕНАМ (user content, locale-stable); балясины/профили —
 family-qualified (`"{Family}:{Type}"`, как routing part names).
+
+### WireSettingsSnapshot (FHV5)
+
+```csharp
+public sealed record WireSettingsSnapshot(
+    string? MaterialName, string? TemperatureRatingName, string? InsulationName,
+    string? MaxSizeName, string? ConduitName,
+    double? NeutralMultiplier, bool? NeutralRequired);
+```
+
+Настройки провода — это свойства `WireType` поверх графа `ElectricalSetting`
+(WireMaterialType → TemperatureRatingType → InsulationType/WireSize, WireConduitType),
+а НЕ параметры элемента — generic-пайплайн их не видит (ручной тест 2026-08-04:
+смена материала провода не синхронизировалась). Revit 2026 заменил граф на
+Conductor*-элементы — сигнатуры свойств ≤2025 там отсутствуют, чтение/запись
+защищены try/catch (`MissingMethodException` → Warn + NotConverged).
 
 - `CategoryName` — display name (e.g. "Трубы", "Воздуховоды"). NOT hashed since FHV3 (ADR-056) — locale-dependent.
 - `CategoryId` — numeric `BuiltInCategory` ordinal carried as `int` so Core does not depend on `Autodesk.Revit.DB` (I-09). The hashed category identity (FHV3).

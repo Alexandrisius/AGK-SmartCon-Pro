@@ -51,6 +51,12 @@ public sealed record SystemFamilySnapshot(
 /// <param name="Segments">Segment size tables referenced by the routing
 /// rules of a MEP curve type — FHV4 hash content (Issue #179, ADR-065).
 /// <c>null</c> when the type has no routing/segments.</param>
+/// <param name="Wire">Wire settings identity summary (material,
+/// temperature rating, insulation, max size, conduit, neutral scalars)
+/// for the FHV5 hash. <c>null</c> for non-wire types. These live on the
+/// <c>WireType</c> API properties, NOT in <c>Element.Parameters</c> —
+/// the generic parameter pipeline never sees them (manual test
+/// 2026-08-04: a wire material change did not sync).</param>
 public sealed record SystemTypeSnapshot(
     string Name,
     IReadOnlyList<SystemParameterValue> Values,
@@ -60,7 +66,8 @@ public sealed record SystemTypeSnapshot(
     string? FamilyKey = null,
     StairsSubtypesSnapshot? Stairs = null,
     RailingStructureSnapshot? Railing = null,
-    IReadOnlyList<SegmentSnapshot>? Segments = null);
+    IReadOnlyList<SegmentSnapshot>? Segments = null,
+    WireSettingsSnapshot? Wire = null);
 
 /// <summary>
 /// Identity summary of a stairs type's subtype references (Issue #184,
@@ -96,6 +103,24 @@ public sealed record RailingStructureSnapshot(
     int? SecondaryHandrailPosition,
     IReadOnlyList<RailingRailSnapshot> Rails,
     RailingBalusterSnapshot Balusters);
+
+/// <summary>
+/// Identity summary of a wire type's settings-graph references: the
+/// material / temperature rating / insulation / max size / conduit are
+/// NOT parameters — on Revit ≤2025 they are <c>WireType</c> properties
+/// pointing at <c>ElectricalSetting</c> objects (WireMaterialType →
+/// TemperatureRatingType → InsulationType/WireSize, WireConduitType);
+/// on Revit 2026+ the model was replaced by Conductor* elements. Names
+/// are user content (locale-stable). <c>null</c> = not set.
+/// </summary>
+public sealed record WireSettingsSnapshot(
+    string? MaterialName,
+    string? TemperatureRatingName,
+    string? InsulationName,
+    string? MaxSizeName,
+    string? ConduitName,
+    double? NeutralMultiplier,
+    bool? NeutralRequired);
 
 /// <summary>One non-continuous rail of a <see cref="RailingStructureSnapshot"/>.</summary>
 public sealed record RailingRailSnapshot(

@@ -51,8 +51,15 @@ public sealed record FamilyContentHash(
 ///     SUBTYPES (stairs subtype references by name) and RAILING
 ///     (structure summary) sections. Loadable canonical string is
 ///     unchanged (FHV3 loadable rows are re-stamped to 4 by the same
-///     critical task <c>hash-v4</c> — recompute is file-based for both
+///     critical task (superseded by <c>hash-v5</c> before any public release) — recompute is file-based for both
 ///     sources, so no cheap flag pass is needed).
+/// 5 — wire settings coverage (manual test 2026-08-04). System only:
+///     <c>FHV5|SYSTEM|{catId}|...</c> adds the per-type WIRE section
+///     (wire material / temperature rating / insulation / max size /
+///     conduit / neutral scalars) — that data lives on WireType API
+///     properties and never appears in Element.Parameters, so FHV4
+///     could not detect a wire material change. Critical task
+///     <c>hash-v5</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -68,7 +75,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration
