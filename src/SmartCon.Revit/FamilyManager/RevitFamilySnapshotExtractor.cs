@@ -1598,6 +1598,9 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
+    private static bool IsValidId(ElementId? id) =>
+        id is not null && id != ElementId.InvalidElementId;
+
     /// <summary>
     /// FHV5: wire settings identity summary — the material/temperature
     /// rating/insulation/max-size/conduit references of a <see cref="WireType"/>
@@ -1744,17 +1747,25 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 }
             }
 
+            // Handrail-less railings: the handrail height/offset/position
+            // getters THROW "The rail has no primary/secondary hand rail"
+            // (stress test 2026-08-04 — the whole structure read aborted and
+            // the RAILING hash section was lost). Guard each group by the
+            // handrail reference; null = no handrail (deterministic state).
+            var hasPrimary = IsValidId(railingType.PrimaryHandrailType);
+            var hasSecondary = IsValidId(railingType.SecondaryHandrailType);
+
             return new RailingStructureSnapshot(
                 TopRailTypeName: NameOf(railingType.TopRailType),
                 TopRailHeight: railingType.TopRailHeight,
                 PrimaryHandrailTypeName: NameOf(railingType.PrimaryHandrailType),
-                PrimaryHandrailHeight: railingType.PrimaryHandrailHeight,
-                PrimaryHandrailLateralOffset: railingType.PrimaryHandrailLateralOffset,
-                PrimaryHandrailPosition: (int)railingType.PrimaryHandRailPosition,
+                PrimaryHandrailHeight: hasPrimary ? railingType.PrimaryHandrailHeight : null,
+                PrimaryHandrailLateralOffset: hasPrimary ? railingType.PrimaryHandrailLateralOffset : null,
+                PrimaryHandrailPosition: hasPrimary ? (int)railingType.PrimaryHandRailPosition : null,
                 SecondaryHandrailTypeName: NameOf(railingType.SecondaryHandrailType),
-                SecondaryHandrailHeight: railingType.SecondaryHandrailHeight,
-                SecondaryHandrailLateralOffset: railingType.SecondaryHandrailLateralOffset,
-                SecondaryHandrailPosition: (int)railingType.SecondaryHandRailPosition,
+                SecondaryHandrailHeight: hasSecondary ? railingType.SecondaryHandrailHeight : null,
+                SecondaryHandrailLateralOffset: hasSecondary ? railingType.SecondaryHandrailLateralOffset : null,
+                SecondaryHandrailPosition: hasSecondary ? (int)railingType.SecondaryHandRailPosition : null,
                 Rails: rails,
                 Balusters: balusters);
         }
