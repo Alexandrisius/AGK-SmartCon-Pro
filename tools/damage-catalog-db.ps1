@@ -101,14 +101,35 @@ $all = -not ($Attributes -or $BreakUnits -or $ReadError -or $Glb -or $Hash -or $
 if ($all) { $Attributes = $BreakUnits = $ReadError = $Glb = $Hash = $Counters = $MiniProjectMarker = $true }
 $damageLoadable = $Attributes -or $BreakUnits -or $ReadError -or $Glb -or $Hash -or $Counters
 
-$bin = "D:\Project\dotNET\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug.R25\net8.0-windows"
+$binCandidates = @(
+    "D:\Project\dotNET\AGK-SmartCon-Pro\src\SmartCon.Tests\bin\Debug.R25\net8.0-windows",
+    "D:\Project\dotNET\AGK-SmartCon-Pro\src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64"
+)
+$bin = $binCandidates | Where-Object { Test-Path (Join-Path $_ "SQLitePCLRaw.core.dll") } | Select-Object -First 1
+if (-not $bin) { throw "SQLitePCLRaw assemblies not found in any candidate bin: $($binCandidates -join ', ')" }
 $native = Join-Path $bin "runtimes\win-x64\native"
 $env:PATH = "$native;$env:PATH"
+
+# Microsoft.Data.Sqlite.dll is resolved by the test host from the NuGet cache
+# (not copied to bin) — locate the managed assembly in the split package.
+$sqliteCore = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.data.sqlite.core" -Directory -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending | Select-Object -First 1
+$managedSqlite = $null
+if ($sqliteCore) {
+    foreach ($tfm in @('net8.0', 'net6.0', 'netstandard2.0')) {
+        $candidate = Join-Path $sqliteCore.FullName "lib\$tfm\Microsoft.Data.Sqlite.dll"
+        if (Test-Path $candidate) { $managedSqlite = $candidate; break }
+    }
+}
+if (-not $managedSqlite -and (Test-Path (Join-Path $bin "Microsoft.Data.Sqlite.dll"))) {
+    $managedSqlite = Join-Path $bin "Microsoft.Data.Sqlite.dll"
+}
+if (-not $managedSqlite) { throw "Microsoft.Data.Sqlite.dll not found (nuget cache microsoft.data.sqlite.core or bin)" }
 
 Add-Type -Path (Join-Path $bin "SQLitePCLRaw.core.dll")
 Add-Type -Path (Join-Path $bin "SQLitePCLRaw.provider.e_sqlite3.dll")
 Add-Type -Path (Join-Path $bin "SQLitePCLRaw.batteries_v2.dll")
-Add-Type -Path (Join-Path $bin "Microsoft.Data.Sqlite.dll")
+Add-Type -Path $managedSqlite
 
 [SQLitePCL.Batteries_V2]::Init()
 
