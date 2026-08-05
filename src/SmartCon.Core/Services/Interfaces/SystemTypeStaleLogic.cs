@@ -45,8 +45,16 @@ public static class SystemTypeStaleLogic
     /// <summary>
     /// Aggregate per-type markers of one system catalog item into a single
     /// verdict. The item is stale when ANY of its project-loaded types has
-    /// no marker (<see cref="StaleReason.NoEntityStorage"/>) or a mismatched
-    /// marker (first non-None reason wins, in type order).
+    /// a MISMATCHED marker (first non-None reason wins, in type order).
+    /// <para>
+    /// Stress test 2026-08-05 (semantics change): a project-loaded type with
+    /// NO marker is NOT stale — template-native types (both conduit
+    /// «Короб» types exist in every Revit template) and types copied
+    /// outside the catalog simply have unknown provenance. Marking them
+    /// stale fired a false badge immediately after a successful DnD of a
+    /// single sibling type. Only a marker that PROVES catalog origin can
+    /// also prove outdatedness.
+    /// </para>
     /// <paramref name="markers"/> must contain only types that exist in the
     /// project — the caller filters unloaded types out beforehand.
     /// </summary>
@@ -61,7 +69,9 @@ public static class SystemTypeStaleLogic
         {
             if (marker is null)
             {
-                return (true, StaleReason.NoEntityStorage, loadedLabel);
+                // No marker = unknown provenance (template-native / copied
+                // bypassing the catalog) — see the class remarks; NOT stale.
+                continue;
             }
 
             loadedLabel ??= marker.VersionLabel;

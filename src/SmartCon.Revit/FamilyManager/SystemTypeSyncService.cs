@@ -227,12 +227,16 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
 
         if (!committed || result is null)
         {
+            // Stress test 2026-08-05: when the transaction rolled back, the
+            // `result` built INSIDE it is a lie (status Created/Updated for
+            // a type that does not exist) — it used to leak into the caller
+            // as "1/1 types synchronized" right after the rollback warning.
             SmartConLogger.Warn(
                 $"Type '{typeName}': sync transaction failed. " +
                 "[Action: type skipped, batch continues; check the log for the transaction error]");
-            return result ?? new SystemTypeSyncResult(
+            return new SystemTypeSyncResult(
                 typeName, SystemTypeSyncStatus.Failed, 0, 0,
-                "Transaction failed");
+                committed ? "Transaction produced no result" : "Transaction rolled back");
         }
 
         SmartConLogger.Info(
@@ -683,6 +687,17 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         {
             notConverged += SyncReferencedSubtype(sourceDoc, doc, source.MiddleSupportType,
                 null, BuiltInCategory.OST_StairsStringerCarriage, "MiddleSupportType", id => target.MiddleSupportType = id, elementIdCache);
+        }
+        else if (IsValidId(source.MiddleSupportType))
+        {
+            // ADR-065 §5 — never skip silently: the reference HAS a middle
+            // support but the target's "Middle Support" flag stayed off
+            // (its parameter write was skipped/failed) — report the residue.
+            SmartConLogger.Warn(
+                $"Stairs '{target.Name}': MiddleSupportType not synced — target HasMiddleSupports=false " +
+                $"while the reference uses '{source.MiddleSupportType}'. " +
+                "[Action: enable «Промежуточные опоры» on the target stairs type and re-run «Обновить»]");
+            notConverged++;
         }
 
         var cutMarkParam = target.get_Parameter(BuiltInParameter.STAIRSTYPE_CUTMARK_TYPE);

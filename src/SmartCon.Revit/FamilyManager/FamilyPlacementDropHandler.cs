@@ -28,6 +28,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly Action<string>? _onSuccess;
     private readonly Action<string>? _onStatusMessage;
     private readonly Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? _onSharedDecision;
+    private readonly Action<FamilyPlacementDragData>? _onSystemTypePlaced;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -44,7 +45,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         Action<string>? onSuccess = null,
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
-        ISharedNestedFamilyRepository? nestedSharedRepository = null)
+        ISharedNestedFamilyRepository? nestedSharedRepository = null,
+        Action<FamilyPlacementDragData>? onSystemTypePlaced = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -61,6 +63,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onStatusMessage = onStatusMessage;
         _onSharedDecision = onSharedDecision;
         _nestedSharedRepository = nestedSharedRepository;
+        _onSystemTypePlaced = onSystemTypePlaced;
     }
 
     public void Execute(UIDocument document, object data)
@@ -80,20 +83,32 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                     dragData.CatalogItemId,
                     dragData.TypeName,
                     dragData.TargetRevitVersion,
+                    out var notConvergedCount,
                     dragData.SystemFamilyName,
                     dragData.SystemFamilyKey);
 
                 if (result != Core.Models.FamilyManager.SystemPlacementResult.Failed)
                 {
-                    // Issue #104: the just-synced type carries a fresh ES
-                    // marker — prune the item from the stale snapshot so its
-                    // badge clears immediately (same as the loadable path in
-                    // WriteVersionMarker). The next "Проверить" re-evaluates
-                    // the item's other types when the family has several.
-                    _staleDetector.MarkUpdated([dragData.CatalogItemId]);
+                    // Issue #104 + audit fix: the just-synced type carries a
+                    // fresh ES marker. Only ITS stale verdict may clear —
+                    // MarkUpdated here would wipe the per-type verdicts of
+                    // the item's OTHER (still stale) types. The VM handles
+                    // the per-type clear + item badge re-eval (#202 pattern)
+                    // via the SystemTypePlaced event.
+                    if (_onSystemTypePlaced is not null)
+                    {
+                        _onSystemTypePlaced.Invoke(dragData);
+                    }
+                    else
+                    {
+                        _staleDetector.MarkUpdated([dragData.CatalogItemId]);
+                    }
+                    var notConvergedNote = notConvergedCount > 0
+                        ? $"; {notConvergedCount} настроек не сошлись с эталоном — см. лог"
+                        : string.Empty;
                     _onSuccess?.Invoke(result == Core.Models.FamilyManager.SystemPlacementResult.Placed
-                        ? $"Системный тип '{dragData.TypeName}' синхронизирован и активирован"
-                        : $"Системный тип '{dragData.TypeName}' синхронизирован с проектом — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду). Обновить позже: «Загрузить в проект» на узле типа");
+                        ? $"Системный тип '{dragData.TypeName}' синхронизирован и активирован{notConvergedNote}"
+                        : $"Системный тип '{dragData.TypeName}' синхронизирован с проектом — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду). Обновить позже: «Обновить» на узле типа{notConvergedNote}");
                 }
                 else
                 {

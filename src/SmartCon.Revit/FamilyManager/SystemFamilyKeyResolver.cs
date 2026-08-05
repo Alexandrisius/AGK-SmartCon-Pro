@@ -50,7 +50,7 @@ public static class SystemFamilyKeyResolver
                 StairsConstructionMethod.Assembled => SystemFamilyKeys.StairsAssembled,
                 StairsConstructionMethod.CastInPlace => SystemFamilyKeys.StairsCastInPlace,
                 StairsConstructionMethod.Precast => SystemFamilyKeys.StairsPrecast,
-                _ => SystemFamilyKeys.SingleFamily,
+                _ => SystemFamilyKeys.StairsUnknown,
             },
             _ => SystemFamilyKeys.SingleFamily,
         };

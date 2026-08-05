@@ -289,9 +289,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         var descriptors = await _typeRepository!
             .GetTypesForItemAsync(item.Id, ct)
             .ConfigureAwait(true);
-        // #183: full identity (family, name) per type.
+        // #183/#190: full identity (familyKey, family, name) per type —
+        // dropping FamilyKey breaks the locale-invariant lookup in the
+        // reference mini-project (ADR-064).
         var types = descriptors
-            .Select(d => new SystemTypeRef(d.Name, d.FamilyName))
+            .Select(d => new SystemTypeRef(d.Name, d.FamilyName, d.FamilyKey))
             .ToList();
         if (types.Count == 0)
         {

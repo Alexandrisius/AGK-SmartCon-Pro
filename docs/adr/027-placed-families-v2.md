@@ -198,7 +198,7 @@ the reference is visually inspectable and the snapshot extractor reads types fro
 | `OST_CableTray` | `CableTray.Create` | All |
 | `OST_Walls` | `Wall.Create` | All |
 | `OST_Floors` | `Floor.Create(CurveLoop)` / legacy `NewFloor` | R22+ / R19–R21 |
-| `OST_Roofs` | `NewExtrusionRoof` (open gable profile) — **not** `NewFootPrintRoof`, see trap #3 below | All |
+| `OST_Roofs` | `NewExtrusionRoof` (open gable profile) — **not** `NewFootPrintRoof`, see Decisions (Phase 2) #3 below | All |
 | `OST_Ceilings` | `Ceiling.Create(CurveLoop)` | **R22+ only** → version gate |
 | `OST_Stairs` | `StairsEditScope` + `ChangeTypeId` + `StairsRun.CreateStraightRun` | All |
 | `OST_StairsRailing` | `Railing.Create(CurveLoop)` | **R25+ only** → version gate |

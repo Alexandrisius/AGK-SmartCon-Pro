@@ -112,8 +112,8 @@ public sealed class RevitMiniProjectActualizationService : IMiniProjectActualiza
             {
                 try { doc.Close(false); }
                 catch (Exception ex) { SmartConLogger.Debug($"doc.Close skipped: {ex.Message}"); }
-                try { Marshal.ReleaseComObject(doc); }
-                catch (Exception ex) { SmartConLogger.Debug($"ReleaseComObject skipped: {ex.Message}"); }
+                // No Marshal.ReleaseComObject: Revit Document is not a COM
+                // wrapper — the call always throws (audit B3 finding).
             }
             if (readOnlyCleared)
             {

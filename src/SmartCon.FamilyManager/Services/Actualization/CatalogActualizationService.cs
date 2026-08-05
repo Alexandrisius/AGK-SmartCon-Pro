@@ -193,50 +193,75 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
                 continue;
             }
 
-            FamilyMigrationExtractResult extract;
-            try
-            {
-                // Managed-storage convention: system families are staged as
-                // .rvt projects (category-only extraction — the engine's one
-                // open per group stays), loadable families as .rfa.
-                extract = openable.RelativePath.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
-                    ? await _extractor.ExtractSystemCategoryAsync(absolutePath, ct).ConfigureAwait(false)
-                    : await _extractor.ExtractLoadableWithGeometryAsync(absolutePath, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                wasCancelled = true;
-                SmartConLogger.Info("Actualization cancelled by user (extract aborted)");
-                break;
-            }
-            catch (Exception ex)
-            {
-                extract = FamilyMigrationExtractResult.Fail($"{ex.GetType().Name}: {ex.Message}");
-            }
+            var extractionTasks = pendingTasks.Where(t => t.RequiresExtraction).ToList();
+            var extractionFailed = false;
+            FamilyActualizationContext context;
 
-            if (!extract.Success || extract.LoadableSnapshot is null)
+            if (extractionTasks.Count > 0)
             {
-                var error = extract.ErrorMessage ?? "unknown extraction failure";
-                SmartConLogger.Warn(
-                    $"Extraction failed for '{openable.FileName}' (item '{group.ItemName}', {group.VersionLabel}): {error} " +
-                    $"[Action: семья будет предложена снова при следующем запуске; при повторении — переимпортируйте её]");
-                failed.Add(new HashRecalculationFailedFile(
-                    group.ItemName, group.VersionLabel, openable.FileName, error));
-                foreach (var task in pendingTasks)
+                FamilyMigrationExtractResult extract;
+                try
                 {
-                    await SafeHandleFailureAsync(task, group, ActualizationFailureKind.ExtractionFailed, ct)
-                        .ConfigureAwait(false);
+                    // Managed-storage convention: system families are staged as
+                    // .rvt projects (category-only extraction — the engine's one
+                    // open per group stays), loadable families as .rfa.
+                    extract = openable.RelativePath.EndsWith(".rvt", StringComparison.OrdinalIgnoreCase)
+                        ? await _extractor.ExtractSystemCategoryAsync(absolutePath, ct).ConfigureAwait(false)
+                        : await _extractor.ExtractLoadableWithGeometryAsync(absolutePath, ct).ConfigureAwait(false);
                 }
-                continue;
-            }
+                catch (OperationCanceledException)
+                {
+                    wasCancelled = true;
+                    SmartConLogger.Info("Actualization cancelled by user (extract aborted)");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    extract = FamilyMigrationExtractResult.Fail($"{ex.GetType().Name}: {ex.Message}");
+                }
 
-            var context = new FamilyActualizationContext(
-                group, openable, absolutePath,
-                extract.LoadableSnapshot, extract.Geometry, extract.SystemSnapshot);
+                if (!extract.Success || extract.LoadableSnapshot is null)
+                {
+                    extractionFailed = true;
+                    var error = extract.ErrorMessage ?? "unknown extraction failure";
+                    SmartConLogger.Warn(
+                        $"Extraction failed for '{openable.FileName}' (item '{group.ItemName}', {group.VersionLabel}): {error} " +
+                        $"[Action: семья будет предложена снова при следующем запуске; при повторении — переимпортируйте её]");
+                    failed.Add(new HashRecalculationFailedFile(
+                        group.ItemName, group.VersionLabel, openable.FileName, error));
+                    // Only extraction-based tasks are coupled to the failure;
+                    // file-level tasks (RequiresExtraction=false) never read
+                    // the snapshot and must not receive a terminal marker for
+                    // a subsystem they never used (audit B3 finding).
+                    foreach (var task in extractionTasks)
+                    {
+                        await SafeHandleFailureAsync(task, group, ActualizationFailureKind.ExtractionFailed, ct)
+                            .ConfigureAwait(false);
+                    }
+                    if (extractionTasks.Count == pendingTasks.Count) continue;
+                    context = FamilyActualizationContext.WithoutExtraction(group, openable, absolutePath);
+                }
+                else
+                {
+                    context = new FamilyActualizationContext(
+                        group, openable, absolutePath,
+                        extract.LoadableSnapshot, extract.Geometry, extract.SystemSnapshot);
+                }
+            }
+            else
+            {
+                // File-level-only group (e.g. mini-project-marker-v1): the
+                // task owns open/save itself — the engine must not open the
+                // file at all (no double open, the cheapest possible pass).
+                context = FamilyActualizationContext.WithoutExtraction(group, openable, absolutePath);
+            }
 
             var groupFailed = false;
             foreach (var task in pendingTasks)
             {
+                // Extraction-based tasks cannot apply without their snapshot
+                // (they were already failure-notified above).
+                if (extractionFailed && task.RequiresExtraction) continue;
                 try
                 {
                     await task.ApplyAsync(context, ct).ConfigureAwait(false);

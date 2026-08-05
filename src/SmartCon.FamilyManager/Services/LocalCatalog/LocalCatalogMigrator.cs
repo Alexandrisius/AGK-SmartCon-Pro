@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 27)
+        if (initialVersion < 28)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v27");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v28");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);

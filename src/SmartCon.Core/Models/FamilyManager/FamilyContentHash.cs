@@ -53,13 +53,22 @@ public sealed record FamilyContentHash(
 ///     unchanged (FHV3 loadable rows are re-stamped to 4 by the same
 ///     critical task (superseded by <c>hash-v5</c> before any public release) — recompute is file-based for both
 ///     sources, so no cheap flag pass is needed).
-/// 5 — wire settings coverage (manual test 2026-08-04). System only:
-///     <c>FHV5|SYSTEM|{catId}|...</c> adds the per-type WIRE section
-///     (wire material / temperature rating / insulation / max size /
-///     conduit / neutral scalars) — that data lives on WireType API
-///     properties and never appears in Element.Parameters, so FHV4
-///     could not detect a wire material change. Critical task
-///     <c>hash-v5</c> recomputes every row that is not current.
+    /// 5 — wire settings coverage (manual test 2026-08-04). System only:
+    ///     <c>FHV5|SYSTEM|{catId}|...</c> adds the per-type WIRE section
+    ///     (wire material / temperature rating / insulation / max size /
+    ///     conduit / neutral scalars) — that data lives on WireType API
+    ///     properties and never appears in Element.Parameters, so FHV4
+    ///     could not detect a wire material change. Critical task
+    ///     <c>hash-v5</c> recomputes every row that is not current.
+    /// 6 — deterministic TYPES ordering (stress test 2026-08-05). System
+    ///     only: <c>FHV6|SYSTEM|{catId}|...</c> — the type sort gains
+    ///     (FamilyKey, FamilyName) tie-breaks: OrderBy is a stable sort,
+    ///     so same-named types of different families (both conduit
+    ///     families name their type «Короб») kept the extraction order,
+    ///     which differs between the source project and the staged
+    ///     mini-project — identical content produced different hashes and
+    ///     a phantom "Существующая" instead of "Дубликат". Critical task
+    ///     <c>hash-v6</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -75,7 +84,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

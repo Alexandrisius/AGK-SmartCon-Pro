@@ -270,16 +270,23 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// insulation/max size/conduit + neutral scalars), which lives on
     /// WireType API properties and never appears in Element.Parameters
     /// (manual test 2026-08-04).
+    /// FHV6 (stress test 2026-08-05): TYPES ordering gains deterministic
+    /// tie-breaks — OrderBy is a STABLE sort, so same-named types of
+    /// different families (both conduits are «Короб») previously kept the
+    /// extraction order, which differs between the source project and the
+    /// staged mini-project → false "Существующая" instead of "Дубликат".
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(512);
-        sb.Append("FHV5|SYSTEM|");
+        sb.Append("FHV6|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
 
         sb.Append("TYPES|");
         var sortedTypes = snapshot.Types
-            .OrderBy(t => t.Name, StringComparer.Ordinal);
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .ThenBy(t => t.FamilyKey ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(t => t.FamilyName ?? string.Empty, StringComparer.Ordinal);
         foreach (var t in sortedTypes)
         {
             sb.Append(Escape(t.Name)).Append('|');

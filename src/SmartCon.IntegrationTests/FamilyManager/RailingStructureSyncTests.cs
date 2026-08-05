@@ -92,6 +92,75 @@ public sealed class RailingStructureSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task Sync_RailingType_WithoutHandrails_SucceedsWithoutResidue()
+    {
+        // Stress test 2026-08-04 + audit C2: a handrail-less reference
+        // railing must sync cleanly — the position setters throw "The rail
+        // has no primary/secondary hand rail" and used to produce false
+        // NotConverged noise (guards 501c7da/e0cf9a9).
+        var sourceDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        var targetDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var sourceTx = new RevitTransactionService(new StubRevitContext(sourceDoc));
+            var targetTx = new RevitTransactionService(new StubRevitContext(targetDoc));
+            var materialSync = new RevitMaterialSyncService();
+            var sync = new SystemTypeSyncService(
+                targetTx, new RevitFamilySnapshotExtractor(), new RevitSystemTypeFinder(), new SystemClock(),
+                materialSync, new RevitSegmentSyncService(materialSync), new NullFittingDependencyResolver(),
+                new RevitCompoundStructureSyncService(materialSync));
+
+            var seeded = false;
+            var cannotRemove = false;
+            sourceTx.RunInTransaction(sourceDoc, "Seed handrail-less railing", d =>
+            {
+                var railingType = new FilteredElementCollector(d)
+                    .OfClass(typeof(RailingType)).Cast<RailingType>().FirstOrDefault();
+                if (railingType is null) return;
+
+                var reference = (RailingType)railingType.Duplicate("SC_Railing_NoHandrail");
+                try
+                {
+                    reference.PrimaryHandrailType = ElementId.InvalidElementId;
+                    reference.SecondaryHandrailType = ElementId.InvalidElementId;
+                }
+                catch (Autodesk.Revit.Exceptions.ArgumentException)
+                {
+                    cannotRemove = true;
+                    return;
+                }
+                seeded = true;
+            });
+            if (cannotRemove)
+            {
+                Skip.Test("API не позволяет снять поручни программно на этой версии Revit");
+                return;
+            }
+            if (!seeded)
+            {
+                Skip.Test("В шаблоне нет RailingType — сидирование невозможно");
+                return;
+            }
+
+            var result = sync.SyncTypeFromSource(
+                sourceDoc, targetDoc, "SC_Railing_NoHandrail", "item-railing", "v1",
+                int.Parse(Application.VersionNumber));
+
+            using (Assert.Multiple())
+            {
+                await Assert.That(result.IsSuccess).IsTrue();
+                await Assert.That(result.NotConvergedCount).IsEqualTo(0);
+            }
+        }
+        finally
+        {
+            sourceDoc.Close(false);
+            targetDoc.Close(false);
+        }
+    }
+
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(

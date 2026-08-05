@@ -118,9 +118,10 @@ public sealed class RevitFamilyMigrationExtractor : IFamilyMigrationExtractor
                 }
             }
 
-            // Phase-2 registry categories are copied WITHOUT placement
-            // (PlacementHandler = null → placed=0, e.g. floors/roofs/stairs) —
-            // fall back to the copied types through the same whitelist.
+            // Fallback for legacy mini-projects staged BEFORE ADR-027 Phase 2
+            // (copied WITHOUT placement) and for categories whose placement
+            // degraded: detect the staged category by the copied types
+            // through the same whitelist when no instance was found.
             if (detectedCategory is null)
             {
                 foreach (var entry in SystemCategoryRegistry.Entries)

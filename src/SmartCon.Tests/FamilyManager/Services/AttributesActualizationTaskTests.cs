@@ -47,10 +47,6 @@ public sealed class AttributesActualizationTaskTests : IDisposable
         public Task<FamilyExtractionPrepareResult> PrepareExtractionAsync(
             string catalogItemId, int targetRevitVersion, CancellationToken ct = default)
             => throw new NotImplementedException();
-        public Task MergeMissingValuesAsync(
-            string catalogItemId, FamilyExtractionResult extractionResult,
-            string? versionId, string? fileId, CancellationToken ct = default)
-            => throw new NotImplementedException();
     }
 
     private sealed class FakeSharedNestedRepository : ISharedNestedFamilyRepository

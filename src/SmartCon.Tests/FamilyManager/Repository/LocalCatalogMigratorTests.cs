@@ -163,6 +163,58 @@ public sealed class LocalCatalogMigratorTests
         }
     }
 
+    [Fact]
+    public async Task Migrate_V28_AddsEsMarkerVersionAndPreservesRows()
+    {
+        // V28 (#189, ADR-062): catalog_versions gets es_marker_version
+        // (0 = pending default) — the detection column of the
+        // mini-project-marker-v1 task.
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, 5);
+
+        using (var rewindConn = fixture.GetDatabase().CreateConnection())
+        {
+            await rewindConn.OpenAsync();
+            using var rewindCmd = rewindConn.CreateCommand();
+            rewindCmd.CommandText = """
+                ALTER TABLE catalog_versions DROP COLUMN es_marker_version;
+                UPDATE schema_info SET value = '27' WHERE key='schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('catalog_versions') WHERE name='es_marker_version'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // The existing version row survives with the default 0 (pending).
+            rowCmd.CommandText = "SELECT content_hash, hash_format_version, es_marker_version FROM catalog_versions WHERE catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", itemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("ABCD", reader.GetString(0));
+            Assert.Equal(5, reader.GetInt32(1));
+            Assert.Equal(0, reader.GetInt32(2));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("28", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
     private static async Task SeedFamilyTypeRowAsync(
         TempCatalogFixture fixture, string catalogItemId, string typeName, string familyName)
     {
@@ -272,7 +324,7 @@ public sealed class LocalCatalogMigratorTests
         await fixture.MigrateAsync();
 
         // V24 backfills the HISTORICAL FHV3 floor ('2.0.1-beta.5'); the FHV4
-        // actualization task (hash-v5) raises the floor to
+        // actualization task (hash-v6) raises the floor to
         // DbCompatibility.CurrentMinPluginVersion at runtime, after the
         // rehash — v4 rows exist only then, so a schema migration cannot
         // key on them (ADR-065).

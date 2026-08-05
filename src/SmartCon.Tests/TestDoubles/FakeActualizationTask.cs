@@ -19,6 +19,7 @@ public sealed class FakeActualizationTask : IDatabaseActualizationTask
     public string Id { get; }
     public int Order { get; }
     public bool IsCritical { get; }
+    public bool RequiresExtraction { get; set; } = true;
 
     public int PendingCount { get; set; }
     public NewerOnlyPendingInfo NewerPending { get; set; } = NewerOnlyPendingInfo.None;

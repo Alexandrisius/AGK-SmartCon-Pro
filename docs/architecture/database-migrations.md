@@ -47,15 +47,22 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 
 | Задача | Order | Critical | Что делает |
 |---|---|---|---|
-| `HashFormatActualizationTask` (`hash-v5`) | 10 | да | Хэши FHV5 (ADR-065 revision 2026-08-04; ранее FHV4/`hash-v4`, FHV3/`hash-v3`, ADR-056): apply на все Revit-варианты + ресинк item; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v5-хэшей (ADR-058) |
+| `HashFormatActualizationTask` (`hash-v6`) | 10 | да | Хэши FHV6 (stress-test 2026-08-05: детерминированный порядок TYPES; ранее FHV5/`hash-v5`, FHV4/`hash-v4`, FHV3/`hash-v3`, ADR-056/065): apply на все Revit-варианты + ресинк item; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v6-хэшей (ADR-058) |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
 | `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label). Терминальный маркер #157 (V23): семейство без извлекаемой 3D-геометрии (2D/символьные) получает `catalog_versions.glb_state = -1` от пайплайна — детект гаснет, иначе вечный pending |
 | `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
 | `FamilyFactsActualizationTask` (`family-facts-v1`) | 50 | нет | Backfill `catalog_items.revit_category_id` + `family_facts` (ADR-055; детект SQL генерируется из `FamilyFactRuleSet` — новая категория/факт в реестре автоматически расширяет детект; system получает только category id) |
-| `MiniProjectMarkerActualizationTask` (`mini-project-marker-v1`) | 60 | нет | #189: дозапись ES-маркера мини-проекта (#188) во ВСЕ legacy staged `.rvt`. **Первая задача, пишущая В MANAGED-ФАЙЛ** (а не в catalog.db): делегирует в `IMiniProjectActualizationService` — собственный маршалинг в Revit (open → skip при наличии маркера → снять read-only (I-16 exception) → mark → `Document.Save()` на месте (НЕ SaveAs — тот же путь/версия) → удалить бэкапы Revit `name.NNNN.rvt` → вернуть read-only → close). Детект по колонке V28 `catalog_versions.es_marker_version` (0=pending, 1=marked, -1/-2 terminal); scope — все версии system; snapshot-контекст движка НЕ используется (маркер — файловый артефакт) |
+| `MiniProjectMarkerActualizationTask` (`mini-project-marker-v1`) | 60 | нет | #189: дозапись ES-маркера мини-проекта (#188) во ВСЕ legacy staged `.rvt`. **Первая задача, пишущая В MANAGED-ФАЙЛ** (а не в catalog.db): делегирует в `IMiniProjectActualizationService` — собственный маршалинг в Revit (open → skip при наличии маркера → снять read-only (I-16 exception) → mark → `Document.Save()` на месте (НЕ SaveAs — тот же путь/версия) → удалить бэкапы Revit `name.NNNN.rvt` → вернуть read-only → close). Детект по колонке V28 `catalog_versions.es_marker_version` (0=pending, 1=marked, -1/-2 terminal); scope — все версии system; `RequiresExtraction = false` — движок НЕ открывает файл группы вообще (нет двойного open, нет терминального маркера от чужого extraction failure) |
+
+### DDL-версии схемы ветки (LocalCatalogMigrator)
+
+| Версия | Колонка/таблица | Зачем |
+|---|---|---|
+| V26 | `family_types.family_name` | Identity системного типа (FamilyName, Name) — #183 (ADR-061) |
+| V27 | `family_types.family_key` | Locale-invariant identity — #190 (ADR-064) |
+| V28 | `catalog_versions.es_marker_version` | Детект `mini-project-marker-v1` — #189 (ADR-062) |
 
 ## Два уровня критичности
-
 | | Critical задача | Optional задача |
 |---|---|---|
 | Когда | Без артефакта запись в базу плодит мусор (дедуп по хэшам) | Артефакт косметический (атрибуты, 3D-превью) |
@@ -139,9 +146,11 @@ internal sealed class MyFeatureActualizationTask : SqlDetectionActualizationTask
 }
 ```
 
-Отклонения — через `override` virtual-членов базы (образец: `HashFormatActualizationTask`
-переопределяет `CountPendingAsync` (+system rows), `RunFileFreePassAsync` (system re-flag) и
-`HandleGroupFailureAsync` (терминальные маркеры -1/-2)). Полный шаблон: навык
+Отклонения — через `override` virtual-членов базы (образцы: `HashFormatActualizationTask`
+переопределяет `ApplyAsync` (пересчёт + ресинк item + bump `min_plugin_version`) и
+`HandleGroupFailureAsync` (терминальные маркеры -1/-2); `MiniProjectMarkerActualizationTask`
+переопределяет `RequiresExtraction`→false — file-level задача, движок не открывает файл
+группы вообще). Полный шаблон: навык
 `smartcon-db-actualization` → `references/task-template.md`.
 
 2. Зарегистрируй в `ServiceRegistrar` (секция «Database actualization engine»):
@@ -185,7 +194,7 @@ resume после отмены, purge-контекст, сводка.
   (механика маркеров/purge; фреймворк superseded ADR-054)
 - [ADR-049](../adr/049-content-hash-v2-rename-invariant.md) — формат хэша v2 (rename-invariant)
 - [ADR-056](../adr/056-content-hash-v3.md) — формат хэша v3 (FHV3) + задача `hash-v3`
-- [ADR-065](../adr/065-fhv4-extended-sync.md) — формат хэша v5 (FHV5, задача `hash-v5`; ранее FHV4/`hash-v4`) + расширенный sync (подтипы лестниц, структура ограждений, настройки провода)
+- [ADR-065](../adr/065-fhv4-extended-sync.md) — формат хэша v6 (FHV6, задача `hash-v6`; ранее FHV5/`hash-v5`, FHV4/`hash-v4`) + расширенный sync (подтипы лестниц, структура ограждений, настройки провода)
 - [ADR-062](../adr/062-mini-project-marker-lifecycle.md) — ES-маркер мини-проекта (#188) + задача `mini-project-marker-v1` (#189, V28) — первая задача, пишущая в managed-файл
 - [ADR-048](../adr/048-batch-import-modeless-progress.md) — modeless прогресс-диалоги
 - `docs/invariants.md` — I-14 (SQLite), I-01 (ExternalEvent), I-03 (транзакции)

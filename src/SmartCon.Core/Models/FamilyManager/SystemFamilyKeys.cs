@@ -34,4 +34,8 @@ public static class SystemFamilyKeys
     public const string StairsAssembled = "Stairs.Assembled";
     public const string StairsCastInPlace = "Stairs.CastInPlace";
     public const string StairsPrecast = "Stairs.Precast";
+    /// <summary>Unknown/future <c>StairsConstructionMethod</c> — mirrors
+    /// <see cref="WallUnknown"/>; never silently degrades to
+    /// <see cref="SingleFamily"/> so the fallback is self-describing.</summary>
+    public const string StairsUnknown = "Stairs.Unknown";
 }

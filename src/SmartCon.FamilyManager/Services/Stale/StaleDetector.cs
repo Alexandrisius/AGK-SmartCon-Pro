@@ -381,6 +381,11 @@ internal sealed class StaleDetector : IStaleDetector
         }
 
         var matched = new List<(FamilyCatalogItem Item, List<ElementId> TypeIds)>();
+        // Audit (B1): items that previously matched but whose types vanished
+        // from the project — their snapshot entries must be REMOVED, else
+        // MergeInto keeps the old stale verdict (phantom badge until
+        // InvalidateCache).
+        var vanishedItemIds = new List<string>();
         // #187: per-descriptor matches kept for the per-type stale map
         // (orange presence dot) — the aggregate verdict alone loses which
         // concrete type is outdated.
@@ -431,6 +436,25 @@ internal sealed class StaleDetector : IStaleDetector
             {
                 matched.Add((item, ids));
             }
+            else
+            {
+                vanishedItemIds.Add(item.Id);
+            }
+        }
+
+        if (vanishedItemIds.Count > 0)
+        {
+            lock (_cacheLock)
+            {
+                foreach (var id in vanishedItemIds)
+                {
+                    _systemTypeStaleByType.Remove(id);
+                }
+                if (_cachedSnapshot is not null)
+                {
+                    _cachedSnapshot = StaleSnapshotLogic.RemoveFrom(_cachedSnapshot, vanishedItemIds, _clock.UtcNow);
+                }
+            }
         }
 
         if (matched.Count == 0) return Array.Empty<StaleCheckResult>();
@@ -468,10 +492,12 @@ internal sealed class StaleDetector : IStaleDetector
                 foreach (var (_, descriptor, typeId) in group)
                 {
                     markers.TryGetValue(typeId, out var marker);
-                    // #187: a missing marker IS the NoEntityStorage stale reason
-                    // (ADR-061 §4 parity — ComputeReason requires a non-null marker).
+                    // Stress test 2026-08-05 (semantics change): a missing
+                    // marker is NOT stale — template-native types have
+                    // unknown provenance, not proven outdatedness. Only a
+                    // marker mismatch paints the orange dot.
                     var reason = marker is null
-                        ? StaleReason.NoEntityStorage
+                        ? StaleReason.None
                         : SystemTypeStaleLogic.ComputeReason(
                             marker, item.Id, item.CurrentVersionLabel, targetRevit);
                     typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
@@ -544,9 +570,22 @@ internal sealed class StaleDetector : IStaleDetector
 
         if (foundPairs.Count == 0)
         {
+            // Audit (B1): none of the item's types are in the project — the
+            // family vanished; drop its snapshot entry and per-type map so
+            // no phantom stale badge survives until InvalidateCache.
+            lock (_cacheLock)
+            {
+                _systemTypeStaleByType.Remove(catalogItemId);
+                if (_cachedSnapshot is not null)
+                {
+                    _cachedSnapshot = StaleSnapshotLogic.RemoveFrom(
+                        _cachedSnapshot, new[] { catalogItemId }, _clock.UtcNow);
+                }
+            }
             SmartConLogger.Info(
                 $"CheckSystemFamily: none of {descriptors.Count} types of '{displayName}' " +
-                "are present in the project. [Action: skipped — load the types first]");
+                "are present in the project — snapshot entry dropped (not loaded). " +
+                "[Action: load the types first]");
             return null;
         }
 
@@ -567,7 +606,7 @@ internal sealed class StaleDetector : IStaleDetector
         {
             markers.TryGetValue(typeId, out var marker);
             var typeReason = marker is null
-                ? StaleReason.NoEntityStorage
+                ? StaleReason.None
                 : SystemTypeStaleLogic.ComputeReason(
                     marker, catalogItemId, catalogItem.CurrentVersionLabel, targetRevit);
             typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;

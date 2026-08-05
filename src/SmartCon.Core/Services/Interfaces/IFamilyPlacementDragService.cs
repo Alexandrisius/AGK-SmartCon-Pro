@@ -17,6 +17,14 @@ public interface IFamilyPlacementDragService
     event Action? PlacementCompleted;
 
     /// <summary>
+    /// Fired after a SYSTEM type was successfully synchronized during a drop.
+    /// Carries the drag payload so the VM can re-evaluate the item badge
+    /// per-type (#202 pattern) instead of clearing the whole family badge
+    /// (which wiped the stale dots of the item's other types).
+    /// </summary>
+    event Action<FamilyPlacementDragData>? SystemTypePlaced;
+
+    /// <summary>
     /// Fired when the drop handler fails to load the family.
     /// The argument is the error message. Subscribe to show status in UI.
     /// </summary>

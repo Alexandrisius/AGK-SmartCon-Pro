@@ -168,6 +168,7 @@ public sealed partial class FamilyManagerMainViewModel
 
                 case ActiveDocumentKind.Project:
                     string? capturedActivePath = null;
+                    var isMiniProjectDoc = false;
                     var (systemAnalysesRaw, loadableFamilies) = await _awaitableEvent.RaiseAsync<(IReadOnlyList<CategoryAnalysis>, IReadOnlyList<LoadableFamilyInfo>)>(obj =>
                     {
                         try
@@ -177,6 +178,13 @@ public sealed partial class FamilyManagerMainViewModel
                             if (activeDoc is null) return (Array.Empty<CategoryAnalysis>(), Array.Empty<LoadableFamilyInfo>());
 
                             capturedActivePath = activeDoc.PathName;
+                            // Stress test 2026-08-05: in a mini-project the
+                            // pre-import confirmation is pure noise — one
+                            // category, a couple of types, nothing "long" to
+                            // warn about. Detected here (Revit thread) because
+                            // the ES marker read needs the API context.
+                            isMiniProjectDoc = _miniProjectMarker.IsMiniProject(activeDoc)
+                                || MiniProjectPathPattern.IsMiniProjectPath(activeDoc.PathName);
                             var sys = _systemFamilyRevitOps.AnalyzeActiveProject(activeDoc);
                             var load = _loadableFamilyScanner.GetUniqueFamilies(activeDoc);
                             return (sys, load);
@@ -211,19 +219,29 @@ public sealed partial class FamilyManagerMainViewModel
                         return;
                     }
 
-                    var confirmMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmMessage)
-                            ?? "Импортировать в каталог: {0} системных категорий ({1} типов) и {2} загружаемых семейств?",
-                        systemCategoryCount, systemTypeCount, loadableCount);
-                    var confirmed = _dialogService.ShowConfirmation(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmTitle)
-                            ?? "Импорт активного файла",
-                        confirmMessage);
-                    SmartConLogger.Info($"Phase 2: user confirmed={confirmed}");
-                    if (!confirmed)
+                    if (isMiniProjectDoc)
                     {
-                        StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel) ?? "Отменено";
-                        return;
+                        // Mini-project reimport (curator workflow): skip the
+                        // confirmation — its purpose is to warn about a long
+                        // import of a big REAL project.
+                        SmartConLogger.Info("Phase 2: mini-project — confirmation skipped");
+                    }
+                    else
+                    {
+                        var confirmMessage = string.Format(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmMessage)
+                                ?? "Импортировать в каталог: {0} системных категорий ({1} типов) и {2} загружаемых семейств?",
+                            systemCategoryCount, systemTypeCount, loadableCount);
+                        var confirmed = _dialogService.ShowConfirmation(
+                            LanguageManager.GetString(StringLocalization.Keys.FM_ImportActiveConfirmTitle)
+                                ?? "Импорт активного файла",
+                            confirmMessage);
+                        SmartConLogger.Info($"Phase 2: user confirmed={confirmed}");
+                        if (!confirmed)
+                        {
+                            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_Cancel) ?? "Отменено";
+                            return;
+                        }
                     }
 
                     var batchItems = await BuildActiveProjectBatchItemsAsync(systemAnalyses, loadableFamilies);

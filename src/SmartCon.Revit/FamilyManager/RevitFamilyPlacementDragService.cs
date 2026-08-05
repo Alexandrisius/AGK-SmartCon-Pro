@@ -26,6 +26,7 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
 
     public event Action? PlacementCompleted;
+    public event Action<FamilyPlacementDragData>? SystemTypePlaced;
     public event Action<string>? PlacementFailed;
     public event Action<string>? PlacementSucceeded;
     public event Action<string>? PlacementStatusMessage;
@@ -77,7 +78,8 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 OnPlacementSucceeded,
                 OnPlacementStatusMessage,
                 OnSharedFamilyDecisionRequested,
-                _nestedSharedRepository);
+                _nestedSharedRepository,
+                OnSystemTypePlaced);
 
             UIApplication.DoDragDrop(data, handler);
         }
@@ -85,6 +87,11 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         {
             SmartConLogger.Error($"RevitFamilyPlacementDragService.DoDragDrop: failed: {ex}");
         }
+    }
+
+    private void OnSystemTypePlaced(FamilyPlacementDragData data)
+    {
+        SystemTypePlaced?.Invoke(data);
     }
 
     private void OnPlacementCompleted()

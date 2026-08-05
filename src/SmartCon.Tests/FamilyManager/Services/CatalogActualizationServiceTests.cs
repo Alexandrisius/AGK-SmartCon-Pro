@@ -231,6 +231,62 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         Assert.Equal(7 + 1, result.UpdatedCount);
     }
 
+    // ---- RequiresExtraction (audit B3: file-level tasks like
+    // mini-project-marker-v1 own open/save — the engine must not open the
+    // file for them, and extraction failures must not couple into their
+    // terminal markers) ----
+
+    [Fact]
+    public async Task Run_FileLevelOnlyTask_ExtractionSkipped_TaskApplied()
+    {
+        var (itemS, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "Pipes", familySource: "system");
+        var fileLevel = new FakeActualizationTask("file-level", order: 60, isCritical: false)
+        {
+            RequiresExtraction = false,
+        };
+        fileLevel.PendingKeys.Add(itemS + "|v1");
+        var sut = new CatalogActualizationService(
+            _fixture.GetDatabase(), _fixture.GetPathResolver(), _extractor,
+            _fixture.GetProvider(), _fixture.GetProvider(),
+            new IDatabaseActualizationTask[] { fileLevel });
+
+        var result = await sut.RunAllPendingAsync(2025, null, CancellationToken.None);
+
+        Assert.Equal(1, result.UpdatedCount);
+        Assert.Equal(1, fileLevel.ApplyCalls);
+        Assert.Empty(_extractor.OpenedPaths);
+        Assert.Empty(_extractor.SystemCategoryPaths);
+    }
+
+    [Fact]
+    public async Task Run_ExtractionFailed_FileLevelTaskStillApplied_WithoutFailureNotice()
+    {
+        var (itemA, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
+        _extractor.Results.Enqueue(FamilyMigrationExtractResult.Fail("corrupt file"));
+        _taskA.PendingKeys.Add(itemA + "|v1");   // extraction-based task
+        var fileLevel = new FakeActualizationTask("file-level", order: 60, isCritical: false)
+        {
+            RequiresExtraction = false,
+        };
+        fileLevel.PendingKeys.Add(itemA + "|v1");
+        var sut = new CatalogActualizationService(
+            _fixture.GetDatabase(), _fixture.GetPathResolver(), _extractor,
+            _fixture.GetProvider(), _fixture.GetProvider(),
+            new IDatabaseActualizationTask[] { _taskA, fileLevel });
+
+        var result = await sut.RunAllPendingAsync(2025, null, CancellationToken.None);
+
+        Assert.Single(result.FailedFiles);
+        Assert.Equal((itemA + "|v1", ActualizationFailureKind.ExtractionFailed), Assert.Single(_taskA.Failures));
+        Assert.Equal(0, _taskA.ApplyCalls);
+        // The file-level task is decoupled: applied with the sentinel
+        // context, never notified about the extraction failure.
+        Assert.Equal(1, fileLevel.ApplyCalls);
+        Assert.Empty(fileLevel.Failures);
+        Assert.Equal(1, result.UpdatedCount);
+    }
+
     // ---- Purge (moved from the hash-recalculation service, ADR-054) ----
 
     [Fact]

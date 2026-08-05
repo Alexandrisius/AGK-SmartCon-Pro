@@ -255,6 +255,48 @@ public static class SystemCategoryRegistry
         return created;
     }
 
+    /// <summary>
+    /// Reflection lookup of the 2022+ <c>Create(Document, IList&lt;CurveLoop&gt;, ElementId, ElementId)</c>
+    /// for sketch hosts (Floor/Ceiling) in an R21-compiled binary. Exact
+    /// binder match first; on failure — manual scan (name + 4 params) with a
+    /// Warn dump of the candidates, so the next staging failure log carries
+    /// the ground truth instead of a silent legacy fallback (2026-08-05:
+    /// Floor lookup returned null on Revit 2023 while the identical Ceiling
+    /// lookup succeeded — cause still unknown, this instrumentation is the
+    /// way to see it).
+    /// </summary>
+    private static MethodInfo? FindModernCreateMethod(Type hostType, string label)
+    {
+        var exactTypes = new[] { typeof(Document), typeof(IList<CurveLoop>), typeof(ElementId), typeof(ElementId) };
+        var exact = hostType.GetMethod(
+            "Create",
+            BindingFlags.Public | BindingFlags.Static,
+            null,
+            exactTypes,
+            null);
+        if (exact is not null) return exact;
+
+        var candidates = hostType.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name == "Create")
+            .ToList();
+        SmartConLogger.Warn(
+            $"{label}.Create exact reflection lookup returned null (Revit runtime {exactTypes[0].Assembly.GetName().Version}). " +
+            $"Static 'Create' candidates: [{string.Join("; ", candidates.Select(m => m.ToString()))}]. " +
+            "[Action: пришлите этот лог разработчикам — он показывает, что видит reflection в вашем Revit]");
+        return candidates.FirstOrDefault(m =>
+            m.GetParameters().Length == 4
+            && m.GetParameters()[0].ParameterType == typeof(Document)
+            && m.GetParameters()[1].ParameterType.IsGenericType
+            && m.GetParameters()[1].ParameterType.GetGenericTypeDefinition() == typeof(IList<>));
+    }
+
+#if !REVIT2022_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static Element? PlaceFloorLegacy(Document doc, CurveLoop loop, FloorType floorType, Level level)
+        => doc.Create.NewFloor(ToCurveArray(loop), floorType, level, structural: false);
+#endif
+
     private static Element? PlaceConduit(Document doc, ITransactionService txService, Element type, Level level, XYZ start, XYZ end)
     {
         var assembly = doc.GetType().Assembly;
@@ -360,7 +402,36 @@ public static class SystemCategoryRegistry
 #if REVIT2022_OR_GREATER
             created = Floor.Create(d, new List<CurveLoop> { loop }, floorType.Id, level.Id);
 #else
-            created = d.Create.NewFloor(ToCurveArray(loop), floorType, level, structural: false);
+            // Stress test 2026-08-05 (2023 runtime): the R21 binary ships to
+            // Revit 2022/2023 where NewFloor was REMOVED — a direct call is a
+            // MissingMethodException at runtime. Reflection picks the modern
+            // API when it exists (2022+), legacy NewFloor only on true 2021.
+            var createMethod = FindModernCreateMethod(typeof(Floor), "Floor");
+            if (createMethod is not null)
+            {
+                try
+                {
+                    created = createMethod.Invoke(
+                        null, new object[] { d, new List<CurveLoop> { loop }, floorType.Id, level.Id }) as Element;
+                }
+                catch (TargetInvocationException tex)
+                {
+                    SmartConLogger.Warn(
+                        $"Floor.Create failed: {tex.InnerException?.Message ?? tex.Message} " +
+                        "[Action: проверьте уровень и тип перекрытия; повторите импорт категории]");
+                }
+            }
+            else
+            {
+                SmartConLogger.Warn(
+                    "Floor.Create not found by reflection — falling back to legacy NewFloor (valid only on Revit 2021). " +
+                    "[Action: если это Revit 2022+, пришлите лог — в нём дамп кандидатов Create]");
+                // NoInlining-вынос ОБЯЗАТЕЛЕН (2026-08-05): прямая ссылка на
+                // удалённый NewFloor в теле лямбды убивает JIT ВСЕГО метода
+                // на Revit 2022+ (MissingMethodException до выполнения
+                // любой строки, включая reflection lookup выше).
+                created = PlaceFloorLegacy(d, loop, floorType, level);
+            }
 #endif
         }))
         {
@@ -438,7 +509,42 @@ public static class SystemCategoryRegistry
         }
         return created;
 #else
-        return null;
+        // Stress test 2026-08-05 (2023 runtime): the R21 binary has no
+        // REVIT2022_OR_GREATER symbol and used to return null SILENTLY —
+        // ceilings never landed in the staged mini-project. Reflection
+        // finds Ceiling.Create when the runtime Revit has it (2022+); on a
+        // true 2021 the version gate already blocks the call, but a Warn
+        // replaces the silent failure if we ever get here.
+        if (type is not CeilingType ceilingType) return null;
+        var createMethod = FindModernCreateMethod(typeof(Ceiling), "Ceiling");
+        if (createMethod is null)
+        {
+            SmartConLogger.Warn(
+                "Ceiling.Create is unavailable in this Revit (API added in 2022) — ceiling type NOT placed in the mini-project. " +
+                "[Action: используйте Revit 2022+ для импорта потолков в каталог]");
+            return null;
+        }
+
+        Element? created = null;
+        if (!txService.RunInTransaction(doc, "Place ceiling", d =>
+        {
+            var loop = BuildRectangularLoop(start, end);
+            try
+            {
+                created = createMethod.Invoke(
+                    null, new object[] { d, new List<CurveLoop> { loop }, ceilingType.Id, level.Id }) as Element;
+            }
+            catch (TargetInvocationException tex)
+            {
+                SmartConLogger.Warn(
+                    $"Ceiling.Create failed: {tex.InnerException?.Message ?? tex.Message} " +
+                    "[Action: проверьте уровень и тип потолка; повторите импорт категории]");
+            }
+        }))
+        {
+            return null;
+        }
+        return created;
 #endif
     }
 

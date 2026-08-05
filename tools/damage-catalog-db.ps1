@@ -1,18 +1,20 @@
-<#
+﻿<#
 .SYNOPSIS
     «Состаривает» тестовую БД FamilyManager (catalog.db): удаляет/ломает данные,
-    которые чинит optional backfill-миграция (ADR-054, команда «Обновить базу»).
+    которые чинят задачи движка актуализации (ADR-054, команда «Обновить базу»).
 
 .DESCRIPTION
     === ИНСТРУКЦИЯ ДЛЯ АГЕНТА (читать целиком перед использованием) ===
 
     ЗАЧЕМ ЭТОТ СКРИПТ
     -----------------
-    Backfill-миграция `catalog-backfill-v1` дозаполняет записи старых баз:
-    типы+атрибуты, 3D GLB превью, content-хэши, shared nested, счётчики.
-    Чтобы проверить её вручную, нужна «старая» база. Этот скрипт берёт
-    НОРМАЛЬНУЮ тестовую базу (импортированную текущей версией плагина) и
-    выборочно ломает данные ровно по критериям детекции миграции:
+    Движок актуализации (ADR-054) дозаполняет записи старых баз задачами:
+    `hash-v6` (content-хэши), `attributes-v1` (типы+атрибуты), `glb-v1`
+    (3D превью), `revit-category-v1`, `mini-project-marker-v1` (#189, ES
+    маркер staged .rvt). Чтобы проверить их вручную, нужна «старая» база.
+    Этот скрипт берёт НОРМАЛЬНУЮ тестовую базу (импортированную текущей
+    версией плагина) и выборочно ломает данные ровно по критериям детекции
+    задач:
 
       A  -Attributes  удаляет import-runs + family_types + extracted_attribute_values
                       активной версии (форма «импорт старой версии без извлечения»,
@@ -69,8 +71,11 @@
     - НЕ запускай на БД, к которой сейчас подключён Revit.
     - Loadable-режимы (A-E) system-семейства не трогают; -MiniProjectMarker
       наоборот сбрасывает es_marker_version только у system-версий (#189).
-    - Терминальные маркеры хэша (-1/-2) скрипт не выставляет — миграция их
-      уважает и не ретраит (это семантика hash-v3, не backfill).
+    - Терминальные маркеры хэша (-1/-2) скрипт не выставляет — задачи их
+      уважают и не ретраят (семантика hash-v6, ADR-050).
+    - -WhatIf выполняет повреждения ВНУТРИ транзакции, печатает реальные
+      счётчики и expected-pending ПОСЛЕ повреждения, затем откатывает —
+      база не меняется.
 
     СВЯЗАННОЕ
     ---------
@@ -173,8 +178,8 @@ try {
 
     Write-Host "=== Damaging $(if ($damageLoadable) { $byItem.Count } else { 0 }) loadable item(s) + system marker reset$(if ($WhatIf) { ' [WhatIf — no writes]' }) ==="
 
-    $tx = $null
-    if (-not $WhatIf) { $tx = $conn.BeginTransaction() }
+    $tx = $conn.BeginTransaction()
+    $txDone = $false
     try {
         foreach ($itemGroup in $byItem) {
             $item = $itemGroup.Group[0]
@@ -191,7 +196,7 @@ try {
 "@
                     [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                     [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@vid', $v.VersionId))
-                    if (-not $WhatIf) { [void]$cmd.ExecuteNonQuery() }
+                    [void]$cmd.ExecuteNonQuery()
                 }
                 $done += 'A:runs+types+values deleted'
             }
@@ -207,7 +212,7 @@ try {
 "@
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@label', $item.Label))
-                $n = if ($WhatIf) { 0 } else { $cmd.ExecuteNonQuery() }
+                $n = $cmd.ExecuteNonQuery()
                 $done += "B1:units broken ($n rows)"
             }
 
@@ -222,7 +227,7 @@ try {
 "@
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@label', $item.Label))
-                $n = if ($WhatIf) { 0 } else { $cmd.ExecuteNonQuery() }
+                $n = $cmd.ExecuteNonQuery()
                 $done += "B2:READERROR ($n rows)"
             }
 
@@ -236,7 +241,7 @@ try {
 "@
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@label', $item.Label))
-                $n = if ($WhatIf) { 0 } else { $cmd.ExecuteNonQuery() }
+                $n = $cmd.ExecuteNonQuery()
                 $done += "C:GLB deleted ($n)"
             }
 
@@ -250,7 +255,7 @@ try {
 "@
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@label', $item.Label))
-                if (-not $WhatIf) { [void]$cmd.ExecuteNonQuery() }
+                [void]$cmd.ExecuteNonQuery()
                 $done += 'D:hash cleared'
             }
 
@@ -263,7 +268,7 @@ try {
 "@
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@id', $item.ItemId))
                 [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@label', $item.Label))
-                if (-not $WhatIf) { [void]$cmd.ExecuteNonQuery() }
+                [void]$cmd.ExecuteNonQuery()
                 $done += 'E:counters cleared'
             }
 
@@ -281,20 +286,16 @@ try {
                 WHERE catalog_item_id IN (SELECT id FROM catalog_items WHERE family_source = 'system' AND name LIKE @p)
 "@
             [void]$cmd.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@p', $ItemNamePattern))
-            $n = if ($WhatIf) { 0 } else { $cmd.ExecuteNonQuery() }
+            $n = $cmd.ExecuteNonQuery()
             Write-Host "  [system] F:es_marker_version reset ($n rows)"
         }
 
-        if ($tx) { $tx.Commit() }
-    }
-    catch {
-        if ($tx) { $tx.Rollback() }
-        throw
-    }
-
-    # --- Ожидаемый pending: зеркало SQL-детекции CatalogBackfillService ---
-    $check = $conn.CreateCommand()
-    $check.CommandText = @"
+        # --- Ожидаемый pending: зеркало SQL-детекции задач актуализации ---
+        # Считаем ВНУТРИ транзакции: под -WhatIf отчёт показывает числа ПОСЛЕ
+        # повреждения, а откат ниже возвращает базу в исходное состояние.
+        $check = $conn.CreateCommand()
+        $check.Transaction = $tx
+        $check.CommandText = @"
         SELECT COUNT(*) FROM (
             SELECT cv.catalog_item_id, cv.version_label,
                    MAX(CASE WHEN cv.revit_major_version <= @maxRevit THEN 1 ELSE 0 END) AS openable,
@@ -310,7 +311,7 @@ try {
                              OR NOT EXISTS(SELECT 1 FROM family_assets a
                                             WHERE a.catalog_item_id = ci.id AND a.version_label = cv.version_label
                                               AND a.asset_type = 'Model3D' AND a.description LIKE 'auto-extracted-preview:%')
-                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (3, -1, -2))
+                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (6, -1, -2))
                             THEN 1 ELSE 0 END) AS anyPending
             FROM catalog_versions cv
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id
@@ -321,22 +322,34 @@ try {
             HAVING openable = 1 AND anyPending = 1
         )
 "@
-    [void]$check.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@maxRevit', $RevitMajorVersion))
-    $pending = $check.ExecuteScalar()
+        [void]$check.Parameters.Add([Microsoft.Data.Sqlite.SqliteParameter]::new('@maxRevit', $RevitMajorVersion))
+        $pending = $check.ExecuteScalar()
 
-    Write-Host ""
-    Write-Host "=== Expected backfill pending groups (Revit $RevitMajorVersion): $pending ==="
-    Write-Host "В плагине: меню «Инструменты базы» → «Обновить базу» должно показать то же число."
-
-    if ($MiniProjectMarker) {
-        $mk = $conn.CreateCommand()
-        $mk.CommandText = @"
+        $mkPending = $null
+        if ($MiniProjectMarker) {
+            $mk = $conn.CreateCommand()
+            $mk.Transaction = $tx
+            $mk.CommandText = @"
             SELECT COUNT(DISTINCT cv.catalog_item_id || '|' || cv.version_label)
             FROM catalog_versions cv
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id
             WHERE ci.family_source = 'system' AND cv.es_marker_version = 0
 "@
-        $mkPending = $mk.ExecuteScalar()
+            $mkPending = $mk.ExecuteScalar()
+        }
+
+        if ($WhatIf) { $tx.Rollback() } else { $tx.Commit() }
+        $txDone = $true
+    }
+    catch {
+        if (-not $txDone) { try { $tx.Rollback() } catch { } }
+        throw
+    }
+
+    Write-Host ""
+    Write-Host "=== Expected backfill pending groups (Revit $RevitMajorVersion): $pending ==="
+    Write-Host "В плагине: меню «Инструменты базы» → «Обновить базу» должно показать то же число."
+    if ($null -ne $mkPending) {
         Write-Host "=== Expected mini-project-marker-v1 pending groups: $mkPending ==="
     }
 }

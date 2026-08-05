@@ -473,6 +473,11 @@ public sealed partial class FamilyManagerMainViewModel
                         leaf.CatalogItemId,
                         StaleDetector.BuildSystemTypeKey(typeNode.FamilyKey, typeNode.FamilyName, typeNode.TypeName));
                     typeNode.IsStaleInProject = false;
+                    // The type was just synced INTO the project — the blue
+                    // presence dot must appear without waiting for a tree
+                    // rebuild (audit B4: it stayed grey until the next
+                    // LoadTreeAsync).
+                    typeNode.IsInProject = true;
                 }
             }
             catch (Exception ex)
@@ -572,7 +577,8 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 result = _systemFamilyPlacementService.LoadAndPlaceSystemType(
-                    catalogItemId, typeName, targetRevit, familyName, familyKey);
+                    catalogItemId, typeName, targetRevit, out var notConvergedCount,
+                    familyName, familyKey);
                 StatusMessage = result switch
                 {
                     SystemPlacementResult.Placed => string.Format(
@@ -586,6 +592,13 @@ public sealed partial class FamilyManagerMainViewModel
                         LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
                         typeName),
                 };
+                if (result != SystemPlacementResult.Failed && notConvergedCount > 0)
+                {
+                    StatusMessage += string.Format(
+                        LocalizationService.GetString("FM_SystemTypesNotConverged")
+                            ?? "; not converged to reference: {0} (see the log)",
+                        notConvergedCount);
+                }
             }
             catch (Exception ex)
             {
@@ -597,10 +610,39 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (result != SystemPlacementResult.Failed)
         {
-            // Same rationale as the DnD path: fresh marker on the synced type
-            // — the item's stale badge must clear immediately.
-            _staleDetector.MarkUpdated([catalogItemId]);
-            await LoadTreeAsync().ConfigureAwait(true);
+            // Audit fix (was MarkUpdated): clear ONLY the synced type's
+            // verdict and re-evaluate the item badge — sibling types of a
+            // multi-type family keep their stale dots (#202 pattern).
+            await ReevaluateSystemItemBadgeAsync(catalogItemId, typeName, familyName, familyKey)
+                .ConfigureAwait(true);
+            await RefreshSystemTypeProjectPresenceSafeAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Per-type badge maintenance after a single system type was synced
+    /// (placement button, DnD): clears ONLY that type's stale verdict, then
+    /// re-evaluates the item-level badge against the just-written ES marker.
+    /// For a multi-type family with other stale types the badge correctly
+    /// stays; for a fully current item it clears — without touching the
+    /// per-type verdicts of the sibling types.
+    /// </summary>
+    internal async Task ReevaluateSystemItemBadgeAsync(
+        string catalogItemId, string typeName, string? familyName, string? familyKey)
+    {
+        _staleDetector.MarkSystemTypeUpdated(
+            catalogItemId, StaleDetector.BuildSystemTypeKey(familyKey, familyName, typeName));
+
+        var doc = _revitContext.GetDocument();
+        if (doc is null) return;
+
+        var displayName = EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>())
+            .FirstOrDefault(l => l.CatalogItemId == catalogItemId)?.DisplayName ?? typeName;
+        var systemResult = await _staleDetector.CheckSystemFamilyAsync(
+            catalogItemId, displayName, doc, CancellationToken.None).ConfigureAwait(true);
+        if (systemResult is not null)
+        {
+            await ApplyStaleResultsToTreeAsync([], CancellationToken.None).ConfigureAwait(true);
         }
     }
 }

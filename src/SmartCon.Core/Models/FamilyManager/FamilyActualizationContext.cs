@@ -15,4 +15,25 @@ public sealed record FamilyActualizationContext(
     string AbsolutePath,
     FamilySnapshot Snapshot,
     IReadOnlyList<FamilyGeometryPerType>? Geometry,
-    SystemFamilySnapshot? SystemSnapshot = null);
+    SystemFamilySnapshot? SystemSnapshot = null)
+{
+    private static readonly FamilySnapshot NoExtractionSnapshot = new(
+        FamilyName: "(file-level task — engine extraction skipped)",
+        Category: string.Empty,
+        Parameters: [],
+        Types: [],
+        Geometry: new GeometryMetrics(0, []),
+        SharedNestedFamilyNames: []);
+
+    /// <summary>
+    /// Context for groups whose pending tasks are ALL file-level
+    /// (<see cref="Services.Interfaces.IDatabaseActualizationTask.RequiresExtraction"/>
+    /// = false, e.g. <c>mini-project-marker-v1</c>): the engine did not open
+    /// or extract the file, so <see cref="Snapshot"/> is a sentinel that must
+    /// not be read. Also used when extraction failed but file-level tasks
+    /// still apply (they are decoupled from the extraction subsystem).
+    /// </summary>
+    public static FamilyActualizationContext WithoutExtraction(
+        ActualizationGroup group, ActualizationVariant openedVariant, string absolutePath)
+        => new(group, openedVariant, absolutePath, NoExtractionSnapshot, null);
+}

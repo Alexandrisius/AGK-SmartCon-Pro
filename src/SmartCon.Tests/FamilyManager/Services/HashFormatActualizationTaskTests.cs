@@ -7,11 +7,12 @@ using Xunit;
 namespace SmartCon.Tests.FamilyManager.Services;
 
 /// <summary>
-/// Tests for <see cref="HashFormatActualizationTask"/> (ADR-056, Issue #159):
-/// stale-hash detection (v1/v2/NULL → v3) across BOTH loadable and system
-/// sources, hash apply with item sync, catalog-name trimming for staged
-/// system snapshots, and the terminal markers -1/-2. FHV3 has no file-free
-/// pass — the system canonical string changed structurally.
+/// Tests for <see cref="HashFormatActualizationTask"/> (ADR-056/065, Issue
+/// #159): stale-hash detection (fmt NULL/not in {6,-1,-2} → recompute to
+/// FHV6) across BOTH loadable and system sources, hash apply with item
+/// sync, catalog-name trimming for staged system snapshots, and the
+/// terminal markers -1/-2. FHV6 has no file-free pass — the system
+/// canonical string changed structurally (WIRE section).
 /// </summary>
 public sealed class HashFormatActualizationTaskTests : IDisposable
 {
@@ -67,8 +68,8 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
     {
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "SysCat", familySource: "system", createFileOnDisk: false);
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "StaleV2", hashFormatVersion: 2);   // v2 is stale for v5
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 5);
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "StaleV2", hashFormatVersion: 2);   // v2 is stale for v6
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 6);
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Skipped", hashFormatVersion: -1);
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "TooNew", revitVersion: 2026);
 
@@ -83,7 +84,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         var (itemA, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
         var (itemNew, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "TooNew", revitVersion: 2026);
         var (itemSys, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "SysCat", familySource: "system", createFileOnDisk: false);
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 5);
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 6);
 
         var keys = await _sut.LoadPendingGroupKeysAsync(2025);
 
@@ -142,12 +143,12 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         foreach (var vid in new[] { v2025, v2021 })
         {
             var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, vid);
-            Assert.Equal(5, fmt);
+            Assert.Equal(6, fmt);
             Assert.Equal(expectedHash, hash);
         }
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Equal(expectedHash, item?.ContentHash);
-        Assert.Equal(5, item?.HashFormatVersion);
+        Assert.Equal(6, item?.HashFormatVersion);
     }
 
     [Fact]
@@ -161,7 +162,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         await _sut.ApplyAsync(ctx, CancellationToken.None);
 
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(5, fmt);
+        Assert.Equal(6, fmt);
         Assert.NotNull(hash);
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Null(item?.ContentHash);
@@ -184,7 +185,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
 
         var expectedHash = _hasher.ComputeForSystem(CreateSystemSnapshot("DN50"))!.HexString;
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(5, fmt);
+        Assert.Equal(6, fmt);
         Assert.Equal(expectedHash, hash);
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Equal(expectedHash, item?.ContentHash);
@@ -203,7 +204,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
 
         var expectedHash = _hasher.ComputeForSystem(staged)!.HexString;
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(5, fmt);
+        Assert.Equal(6, fmt);
         Assert.Equal(expectedHash, hash);
     }
 

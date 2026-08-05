@@ -163,5 +163,7 @@ public sealed partial class FamilyManagerMainViewModel
         LoadToProjectKeepParamsCommand.NotifyCanExecuteChanged();
         PlaceTypeCommand.NotifyCanExecuteChanged();
         StartPlacementDragCommand.NotifyCanExecuteChanged();
+        // CanUpdateType depends on _activeBaseCompatibleWithCurrentDoc too.
+        UpdateTypeCommand.NotifyCanExecuteChanged();
     }
 }

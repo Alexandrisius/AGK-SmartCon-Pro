@@ -18,6 +18,11 @@ public interface ISystemFamilyPlacementService
     /// the legacy first-name-match behaviour.</param>
     /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
     /// key — preferred over <paramref name="familyName"/> when present.</param>
+    /// <param name="notConvergedCount">Settings that did not converge to the
+    /// reference during the sync (ADR-065 residue) — 0 when the type was
+    /// already current. The caller must surface this to the user (the
+    /// <see cref="SystemTypeSyncResult.NotConvergedCount"/> contract).</param>
     SystemPlacementResult LoadAndPlaceSystemType(
-        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null, string? familyKey = null);
+        string catalogItemId, string typeName, int targetRevitVersion, out int notConvergedCount,
+        string? familyName = null, string? familyKey = null);
 }

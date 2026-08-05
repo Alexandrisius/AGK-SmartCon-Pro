@@ -105,6 +105,15 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             return;
         }
 
+        // Intra-project view switch (the most common case) first: it must
+        // NOT pay for the ES mini-project read below (audit B3 perf finding).
+        var previous = e.PreviousActiveView?.Document;
+        if (previous is not null && previous.Equals(currentDoc))
+        {
+            SmartConLogger.Debug("Previous and current document are the same (intra-project view switch) — ignoring");
+            return;
+        }
+
         // #188: a SmartCon reference mini-project (staged system family types)
         // is not a user work project and must never drive active-DB
         // auto-switching — otherwise opening it via "Редактировать" silently
@@ -115,13 +124,6 @@ public sealed class ActiveDocumentChangeNotifier : IActiveDocumentChangeNotifier
             || MiniProjectPathPattern.IsMiniProjectPath(currentDoc.PathName))
         {
             SmartConLogger.Debug("Active document is a SmartCon mini-project (system family reference) — ignoring, current base kept");
-            return;
-        }
-
-        var previous = e.PreviousActiveView?.Document;
-        if (previous is not null && previous.Equals(currentDoc))
-        {
-            SmartConLogger.Debug("Previous and current document are the same (intra-project view switch) — ignoring");
             return;
         }
 

@@ -751,11 +751,9 @@ public static partial class LocalizationService
         ru["FM_PlaceSystemType"] = "Системный тип \"{0}\" — щёлкните для размещения";
         en["FM_PlaceSystemType"] = "System type \"{0}\" — click to place";
         // #187: discoverability — tell the user the type is already synced and
-        // where the per-type load command lives.
-        ru["FM_PlaceSystemTypeManual"] = "Тип \"{0}\" синхронизирован с проектом. Разместите его вручную — например, изоляция применяется к существующей трубе или воздуховоду. Обновить тип позже: «Загрузить в проект» на узле типа";
-        en["FM_PlaceSystemTypeManual"] = "Type \"{0}\" is synchronized with the project. Place it manually — e.g. insulation applies to an existing pipe or duct. To refresh it later: 'Load to project' on the type node";
-        ru["FM_TypeInProject_Tooltip"] = "Тип присутствует в активном проекте";
-        en["FM_TypeInProject_Tooltip"] = "The type is present in the active project";
+        // where the per-type update command lives («Обновить» on the type node).
+        ru["FM_PlaceSystemTypeManual"] = "Тип \"{0}\" синхронизирован с проектом. Разместите его вручную — например, изоляция применяется к существующей трубе или воздуховоду. Обновить тип позже: «Обновить» на узле типа";
+        en["FM_PlaceSystemTypeManual"] = "Type \"{0}\" is synchronized with the project. Place it manually — e.g. insulation applies to an existing pipe or duct. To refresh it later: 'Update' on the type node";
         ru["FM_ImportVersionGateTitle"] = "Импорт ограничен версией Revit";
         en["FM_ImportVersionGateTitle"] = "Import limited by Revit version";
         ru["FM_ImportVersionGateBody"] = "Следующие системные категории нельзя загрузить в библиотеку на Revit {0}:\n{1}\n\nОни не будут импортированы. Обновите Revit до требуемой версии, чтобы добавить их в каталог.";

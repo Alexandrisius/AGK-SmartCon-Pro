@@ -1371,4 +1371,51 @@ public class FamilyContentHasherTests
         Assert.NotNull(hash2);
         Assert.NotEqual(hash1!.HexString, hash2!.HexString);
     }
+
+    [Fact]
+    public void ComputeForSystem_SameNamedTypes_ExtractionOrderDoesNotShiftHash()
+    {
+        // Stress test 2026-08-05 (conduit «Короб» bug): both conduit
+        // families name their type identically — the FHV6 canon must tie-
+        // break by family identity, so the source project and the staged
+        // mini-project (different ElementId/extraction order) produce the
+        // SAME hash for identical content → «Дубликат», not «Существующая».
+        var withFittings = new SystemTypeSnapshot("Короб",
+            [new SystemParameterValue("P", "Double", true, "1", 1.0, null)],
+            FamilyKey: SystemFamilyKeys.ConduitWithFittings,
+            FamilyName: "Conduit with Fittings");
+        var withoutFittings = new SystemTypeSnapshot("Короб",
+            [new SystemParameterValue("P", "Double", true, "2", 2.0, null)],
+            FamilyKey: SystemFamilyKeys.ConduitWithoutFittings,
+            FamilyName: "Conduit without Fittings");
+
+        var hash1 = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [withoutFittings, withFittings]));
+        var hash2 = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [withFittings, withoutFittings]));
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_Fhv6GoldenCanon_IsStable()
+    {
+        // Golden: a FIXED snapshot must always produce this exact hash — any
+        // drift in the FHV6 canon (escaping, culture, ordering, section
+        // layout, WIRE fields) fails loudly here instead of silently
+        // re-flagging every field catalog. When the canon changes ON
+        // PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
+        // the golden in the same commit.
+        var snapshot = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [new SystemParameterValue("Diameter", "Double", true, "2.5", 2.5, null)],
+                Wire: new WireSettingsSnapshot("Медь", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+
+        var hash = _hasher.ComputeForSystem(snapshot);
+
+        Assert.NotNull(hash);
+        Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
+        Assert.Equal("B901F3B8D85CF5C60617B6AB7DEF6D78979CCBD639A6E093EBA4B79BD6F8716A", hash.HexString);
+    }
 }

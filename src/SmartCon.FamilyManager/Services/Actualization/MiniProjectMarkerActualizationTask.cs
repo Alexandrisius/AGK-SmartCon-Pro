@@ -49,6 +49,12 @@ internal sealed class MiniProjectMarkerActualizationTask : SqlDetectionActualiza
     public override int Order => 60;
     public override bool IsCritical => false;
 
+    /// <summary>File-level task: owns open/save via
+    /// <see cref="IMiniProjectActualizationService"/> — the engine skips its
+    /// extraction for marker-only groups (no double open, no terminal marker
+    /// from an unrelated extraction failure).</summary>
+    public override bool RequiresExtraction => false;
+
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id

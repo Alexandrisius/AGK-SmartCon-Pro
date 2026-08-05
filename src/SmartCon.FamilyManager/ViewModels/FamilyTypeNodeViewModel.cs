@@ -41,9 +41,9 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
 
     /// <summary>
     /// #187: the type is present in the ACTIVE project AND its ES marker
-    /// does not match the catalog (outdated) — the orange dot. Meaningful
-    /// only for system types; always false for loadable (their stale badge
-    /// lives on the leaf).
+    /// does not match the catalog (outdated) — the orange dot. Set for
+    /// system types from the per-type stale map and mirrored onto loadable
+    /// type nodes from the leaf verdict (ADR-063 §3).
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PresenceState))]

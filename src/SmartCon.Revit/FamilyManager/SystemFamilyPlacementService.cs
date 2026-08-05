@@ -46,8 +46,10 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
     }
 
     public SystemPlacementResult LoadAndPlaceSystemType(
-        string catalogItemId, string typeName, int targetRevitVersion, string? familyName = null, string? familyKey = null)
+        string catalogItemId, string typeName, int targetRevitVersion, out int notConvergedCount,
+        string? familyName = null, string? familyKey = null)
     {
+        notConvergedCount = 0;
         var uiApp = _revitUIContext.GetUIApplication();
         var activeDoc = _revitUIContext.GetUIDocument().Document;
 
@@ -76,6 +78,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
+        notConvergedCount = typeResult.NotConvergedCount;
         return ActivatePlacementByName(uiApp, activeDoc, typeName, catalogItemId, familyName, familyKey);
     }
 
@@ -120,10 +123,21 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
         {
             try
             {
-                _transactionService.RunInTransaction(activeDoc, $"Set default type '{typeName}'", d =>
+                var committed = _transactionService.RunInTransaction(activeDoc, $"Set default type '{typeName}'", d =>
                 {
                     d.SetDefaultElementTypeId(typeGroup, elementType.Id);
                 });
+                if (!committed)
+                {
+                    // Silent rollback (#178 pattern): posting the command now
+                    // would start the tool with the PROJECT'S old default
+                    // type — the user would place the wrong type unaware.
+                    SmartConLogger.Warn(
+                        $"SystemFamilyPlacement: 'Set default type {typeName}' rolled back — " +
+                        "PostCommand NOT posted (the tool would activate the wrong type). " +
+                        "[Action: place the type manually in the Revit UI]");
+                    return SystemPlacementResult.LoadedManualPlacementRequired;
+                }
 
                 var commandId = RevitCommandId.LookupPostableCommandId(postableCommand);
                 SmartConLogger.Debug(

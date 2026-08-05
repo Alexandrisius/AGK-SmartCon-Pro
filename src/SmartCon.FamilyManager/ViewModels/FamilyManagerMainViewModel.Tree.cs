@@ -50,9 +50,9 @@ public sealed partial class FamilyManagerMainViewModel
             stageSw.Restart();
             var results = await _catalogProvider.SearchAsync(query, ct);
             SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {stageSw.ElapsedMilliseconds}ms, results={results.Count}");
-            // #187 (M1): kept for the presence refresh on document switches
+            // #187 (M1): gates the presence refresh on document switches
             // that do NOT reload the tree (OnActiveDocumentChanged).
-            _lastTreeCatalogItems = results;
+            _treeLoadedOnce = true;
 
             stageSw.Restart();
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
@@ -548,7 +548,7 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     internal async Task RefreshSystemTypeProjectPresenceSafeAsync()
     {
-        if (_lastTreeCatalogItems is null) return;
+        if (!_treeLoadedOnce) return;
         await RecomputePresenceAsync(CancellationToken.None);
     }
 

@@ -76,6 +76,15 @@ dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csp
    документа параллельно с операциями над другими» давала нативный AVE
    (воспроизведено 2026-07-29). Параллелизм тут и бессмысленен: Revit API
    однопоточен (I-01), ускорения всё равно нет.
+10. **НИКАКИХ generic-хелперов с Revit-typed параметрами типа** в тестовых
+   классах (`AssertPlacement<TType>() where TType : ElementType`) — ломает
+   инжектор с той же сигнатурой, что правило 1:
+   `InvalidOperationException: Attempted to write protected memory` в
+   `Injector.InjectApplication()` — ВСЕ тесты сьюта падают в BeforeTestSession
+   (воспроизведено и доказано бисектом 2026-08-04, аудит ветки
+   system-categories-phase2-placement). Паттерн сьюта — каждый тест
+   самодостаточен, общие куски выноси в не-generic методы с конкретными
+   типами или в Support/.
 
 ## Структура проекта
 

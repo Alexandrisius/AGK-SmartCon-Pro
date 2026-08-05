@@ -155,6 +155,71 @@ public sealed class WireSettingsSyncTests : RevitApiTest
         }
     }
 
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task Sync_WireType_RatingMissingInProject_WarnsAndCountsNotConverged()
+    {
+        // ADR-065 degradation path (audit C2): only the MATERIAL can be
+        // created via the API — a temperature rating that does not exist
+        // under the project's material cannot be created, so the member is
+        // rejected: Warn in the log + NotConverged residue, but the sync
+        // itself still succeeds (the remaining members apply).
+        var sourceDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        var targetDoc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var sourceTx = new RevitTransactionService(new StubRevitContext(sourceDoc));
+            var targetTx = new RevitTransactionService(new StubRevitContext(targetDoc));
+            var materialSync = new RevitMaterialSyncService();
+            var sync = new SystemTypeSyncService(
+                targetTx, new RevitFamilySnapshotExtractor(), new RevitSystemTypeFinder(), new SystemClock(),
+                materialSync, new RevitSegmentSyncService(materialSync), new NullFittingDependencyResolver(),
+                new RevitCompoundStructureSyncService(materialSync));
+
+            var seeded = false;
+            sourceTx.RunInTransaction(sourceDoc, "Seed wire with custom rating", d =>
+            {
+                var wireType = new FilteredElementCollector(d)
+                    .OfClass(typeof(WireType)).Cast<WireType>().FirstOrDefault();
+                var baseMaterial = d.Settings.ElectricalSetting?.WireMaterialTypes
+                    ?.Cast<WireMaterialType>().FirstOrDefault();
+                var baseRating = baseMaterial?.TemperatureRatings
+                    ?.Cast<TemperatureRatingType>().FirstOrDefault();
+                if (wireType is null || baseMaterial is null || baseRating is null) return;
+
+                var material = d.Settings.ElectricalSetting!.AddWireMaterialType("SC_NC_Material", baseMaterial);
+                var rating = material.AddTemperatureRatingType("SC_Rating_X", baseRating);
+                var newWire = (WireType)wireType.Duplicate("SC_Wire_NC");
+                newWire.WireMaterial = material;
+                newWire.TemperatureRating = rating;
+                seeded = true;
+            });
+            if (!seeded)
+            {
+                Skip.Test("В шаблоне нет WireType/WireMaterialType — сидирование невозможно");
+                return;
+            }
+
+            var result = sync.SyncTypeFromSource(
+                sourceDoc, targetDoc, "SC_Wire_NC", "item-wire", "v1",
+                int.Parse(Application.VersionNumber));
+
+            using (Assert.Multiple())
+            {
+                await Assert.That(result.IsSuccess).IsTrue();
+                // The material is created+assigned, the rating is rejected
+                // (and everything under it) — the residue must be counted,
+                // never silently skipped.
+                await Assert.That(result.NotConvergedCount).IsGreaterThan(0);
+            }
+        }
+        finally
+        {
+            sourceDoc.Close(false);
+            targetDoc.Close(false);
+        }
+    }
+
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(

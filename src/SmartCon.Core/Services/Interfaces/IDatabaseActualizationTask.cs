@@ -46,6 +46,17 @@ public interface IDatabaseActualizationTask
     bool IsCritical { get; }
 
     /// <summary>
+    /// True when the task needs the engine's extraction products
+    /// (<see cref="FamilyActualizationContext.Snapshot"/> and friends).
+    /// False for FILE-LEVEL tasks that own open/save themselves (e.g.
+    /// <c>mini-project-marker-v1</c>): when every task pending on a group
+    /// is file-level, the engine does NOT open/extract the file at all —
+    /// the task is decoupled from extraction failures (no terminal marker
+    /// for a subsystem it never used) and the file is not opened twice.
+    /// </summary>
+    bool RequiresExtraction { get; }
+
+    /// <summary>
     /// Number of records still requiring this task for the given Revit
     /// major version (drives the badge/menu count). Returns 0 when there
     /// is nothing to do. Only PROCESSABLE groups are counted (at least

@@ -292,7 +292,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 _transactionService, newDoc, category, sourceTypeNames);
 
             ICollection<ElementId> copiedTypeIds = [];
-            _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
+            var copyCommitted = _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
             {
                 var options = new CopyPasteOptions();
                 options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
@@ -300,6 +300,17 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 copiedTypeIds = ElementTransformUtils.CopyElements(
                     sourceDoc, sourceTypeIds, doc, null, options);
             });
+
+            if (!copyCommitted || copiedTypeIds.Count == 0)
+            {
+                // Silent rollback (#178 pattern): without this guard the
+                // mini-project would be SAVED EMPTY and reported as success.
+                SmartConLogger.Warn(
+                    $"'{displayName}': 'Copy system types' rolled back or copied 0 types — mini-project NOT saved. " +
+                    "[Action: check the source category has placeable types and re-run the import]");
+                return new CreateCleanProjectResult(
+                    false, null, "Copy system types rolled back or copied 0 types", 0);
+            }
 
             // The renamed template types are intentionally LEFT in the
             // mini-project: deleting them is unreliable (Revit forbids

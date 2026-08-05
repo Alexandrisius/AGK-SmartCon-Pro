@@ -110,7 +110,7 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
     public void LoadAndPlaceSystemType(string catalogItemId, string typeName)
     {
         var revitVersion = int.Parse(_revitContext.GetRevitVersion());
-        _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, revitVersion);
+        _systemFamilyPlacementService.LoadAndPlaceSystemType(catalogItemId, typeName, revitVersion, notConvergedCount: out _);
     }
 
     private static Autodesk.Revit.DB.Family? FindFamily(Document doc, string familyName)

@@ -90,9 +90,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
     private HashSet<string>? _loadedFamilyNamesCache;
     private string? _loadedFamilyNamesCacheProjectPath;
-    /// <summary>#187 (M1): catalog items of the last LoadTreeAsync — reused by
-    /// the presence refresh on document switches without a DB switch.</summary>
-    private IReadOnlyList<FamilyCatalogItem>? _lastTreeCatalogItems;
+    /// <summary>#187 (M1): the tree was loaded at least once this session —
+    /// gates the presence refresh on document switches without a DB switch
+    /// (audit B4: replaces the write-only _lastTreeCatalogItems list).</summary>
+    private bool _treeLoadedOnce;
     /// <summary>#187 (#2): cached presence snapshot of the active document —
     /// re-applied to freshly rebuilt tree nodes so badges do not flicker.</summary>
     private FamilyManagerMainViewModel.ProjectPresenceSnapshot? _presenceSnapshot;
@@ -262,6 +263,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeDocumentNotifier.ActiveDocumentPathChanged += OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
+        _placementDragService.SystemTypePlaced += OnSystemTypePlaced;
         _placementDragService.PlacementFailed += OnPlacementFailed;
         _placementDragService.PlacementSucceeded += OnPlacementSucceeded;
         _placementDragService.PlacementStatusMessage += OnPlacementStatusMessage;
@@ -849,6 +851,25 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         SearchText = string.Empty;
     }
 
+    private void OnSystemTypePlaced(FamilyPlacementDragData data)
+    {
+        try
+        {
+            // Fired on the Revit main thread from the drop handler — hop to
+            // the UI thread for the async badge re-eval (same pattern as
+            // OnPlacementCompleted). Not awaited: UI refresh is opportunistic.
+            _ = _dispatcher.InvokeAsync(() =>
+            {
+                _ = ReevaluateSystemItemBadgeAsync(
+                    data.CatalogItemId, data.TypeName, data.SystemFamilyName, data.SystemFamilyKey);
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"OnSystemTypePlaced dispatcher invoke failed: {ex.Message} [Action: run «Проверить» to refresh the stale badges]");
+        }
+    }
+
     private void OnPlacementCompleted()
     {
         try
@@ -928,6 +949,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeDocumentNotifier.ActiveDocumentPathChanged -= OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
+        _placementDragService.SystemTypePlaced -= OnSystemTypePlaced;
         _placementDragService.PlacementFailed -= OnPlacementFailed;
         _placementDragService.PlacementSucceeded -= OnPlacementSucceeded;
         _placementDragService.PlacementStatusMessage -= OnPlacementStatusMessage;

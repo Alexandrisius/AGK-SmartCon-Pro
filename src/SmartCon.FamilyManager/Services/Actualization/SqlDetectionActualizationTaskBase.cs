@@ -17,11 +17,13 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// <para>
 /// Deviating tasks override individual members instead of copying the
 /// template: <see cref="HashFormatActualizationTask"/> overrides
-/// <see cref="CountPendingAsync"/> (adds an instant system-family count),
-/// <see cref="RunFileFreePassAsync"/> and <see cref="HandleGroupFailureAsync"/>
-/// (terminal markers). The default <see cref="RunFileFreePassAsync"/> is 0
-/// and the default <see cref="HandleGroupFailureAsync"/> keeps the group
-/// pending for a retry on the next run.
+/// <see cref="ApplyAsync"/> (recompute + item re-sync + floor bump) and
+/// <see cref="HandleGroupFailureAsync"/> (terminal markers);
+/// <see cref="MiniProjectMarkerActualizationTask"/> overrides
+/// <see cref="RequiresExtraction"/> (file-level: owns open/save). The
+/// default <see cref="RunFileFreePassAsync"/> is 0 and the default
+/// <see cref="HandleGroupFailureAsync"/> keeps the group pending for a
+/// retry on the next run.
 /// </para>
 /// </summary>
 internal abstract class SqlDetectionActualizationTaskBase : IDatabaseActualizationTask
@@ -39,6 +41,10 @@ internal abstract class SqlDetectionActualizationTaskBase : IDatabaseActualizati
     public abstract string Id { get; }
     public abstract int Order { get; }
     public abstract bool IsCritical { get; }
+
+    /// <summary>Default: extraction-based task. File-level tasks (own
+    /// open/save, e.g. <c>mini-project-marker-v1</c>) override to false.</summary>
+    public virtual bool RequiresExtraction => true;
 
     /// <summary>
     /// FROM/JOIN/WHERE fragment selecting pending (<c>catalog_item_id</c>,
