@@ -29,4 +29,15 @@ public interface IMaterialSyncService
     /// material with this name.
     /// </summary>
     ElementId? SyncMaterial(Document sourceDoc, Document activeDoc, string materialName);
+
+    /// <summary>
+    /// Ensure the project contains a material named
+    /// <paramref name="materialName"/> — find by name or create (prototype
+    /// duplicate, falling back to a bare <c>Material.Create</c>). No source
+    /// document involved and no data sync — used when a reference entity
+    /// legitimately has no material of its own (E4, #211: material-less
+    /// pipe segments). Returns <c>null</c> when creation is impossible
+    /// (no prototype material and bare creation refused).
+    /// </summary>
+    ElementId? EnsureMaterial(Document activeDoc, string materialName);
 }

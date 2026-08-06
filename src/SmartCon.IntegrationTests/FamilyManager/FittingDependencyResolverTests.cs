@@ -34,6 +34,7 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
     private RevitFamilyVersionStore? _versionStore;
     private FakeDependencyRepository? _dependencyRepository;
     private FakeCatalogProvider? _catalog;
+    private FakeFileResolver? _fileResolver;
     private string? _tempDir;
     private string? _fittingFamilyName;
     private string? _fittingTypeName;
@@ -332,13 +333,42 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
         }
     }
 
+    [Test]
+    public async Task Sync_FittingVersionNewerThanTarget_RuleSkippedHonestly()
+    {
+        // E4 (#211): у фитинга нет версии ≤ targetRevit (каталог отвечает
+        // пустым путём, как настоящий LocalFamilyFileResolver) — правило
+        // честно пропускается с NotConverged, фитинг в проект НЕ грузится,
+        // синк типа завершается успешно. SQL-выбор версии ≤ target покрыт
+        // юнит-тестами LocalFamilyFileResolverTests; здесь — проводка
+        // resolver → sync.
+        _catalog!.ChildItem = MakeChildItem();
+        _dependencyRepository!.LinksByParent[ParentItemId] = new List<FamilyDependencyInfo>
+        {
+            new(ChildItemId, FamilyDependencyKind.Routing, $"{_fittingFamilyName}:{_fittingTypeName}", 0),
+        };
+        var revitMajor = int.Parse(Application.VersionNumber);
+        var syncService = BuildSyncService();
+        _fileResolver!.FileRevitVersion = revitMajor;
+
+        var result = syncService.SyncTypeFromSource(
+            SourceDoc, TargetDoc, TypeName, ParentItemId, VersionLabel, revitMajor - 1);
+
+        using (Assert.Multiple())
+        {
+            await Assert.That(result.IsSuccess).IsTrue();
+            await Assert.That(result.NotConvergedCount).IsGreaterThan(0);
+            await Assert.That(FindFittingSymbol(TargetDoc)).IsNull();
+        }
+    }
+
     private SystemTypeSyncService BuildSyncService(string[]? catalogTypeNames = null)
     {
         var materialSync = new RevitMaterialSyncService();
-        var fileResolver = new FakeFileResolver(_tempDir!);
+        _fileResolver ??= new FakeFileResolver(_tempDir!);
         var loadService = new RevitFamilyLoadService(new StubRevitContext(TargetDoc), _targetTx!);
         var fittingResolver = new CatalogFittingDependencyResolver(
-            _catalog!, fileResolver, loadService, _dependencyRepository!,
+            _catalog!, _fileResolver, loadService, _dependencyRepository!,
             new FakeTypeRepository(catalogTypeNames ?? [_fittingTypeName!, ExtraTypeName]),
             _versionStore!, new SystemClock());
         return new SystemTypeSyncService(
@@ -459,6 +489,14 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
     {
         private readonly string _tempDir;
 
+        /// <summary>
+        /// E4 (#211): версия файла в каталоге. Когда задана и
+        /// <c>targetRevitVersion</c> ниже неё — эмулирует ответ настоящего
+        /// <c>LocalFamilyFileResolver</c> «нет версии ≤ targetRevit»
+        /// (пустой путь), чтобы проверить честный skip правила.
+        /// </summary>
+        public int? FileRevitVersion { get; set; }
+
         public FakeFileResolver(string tempDir)
         {
             _tempDir = tempDir;
@@ -467,6 +505,10 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
         public Task<FamilyResolvedFile> ResolveForLoadAsync(
             string catalogItemId, int targetRevitVersion, CancellationToken ct = default)
         {
+            if (FileRevitVersion.HasValue && targetRevitVersion < FileRevitVersion.Value)
+            {
+                return Task.FromResult(new FamilyResolvedFile("", catalogItemId, null, null));
+            }
             var path = Directory.GetFiles(_tempDir, "*.rfa").Single();
             return Task.FromResult(new FamilyResolvedFile(path, catalogItemId, "version-row-1", "v1"));
         }

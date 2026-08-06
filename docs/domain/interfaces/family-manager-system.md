@@ -294,6 +294,10 @@ public interface ISystemTypeSyncOrchestrator
 public interface IMaterialSyncService
 {
     ElementId? SyncMaterial(Document sourceDoc, Document activeDoc, string materialName);
+    // E4 (#211): find-or-create БЕЗ источника и без синка данных —
+    // для сущностей эталона, у которых материала легально нет
+    // (material-less pipe-сегменты → fallback "SmartCon Default").
+    ElementId? EnsureMaterial(Document activeDoc, string materialName);
 }
 ```
 
@@ -301,7 +305,7 @@ public interface IMaterialSyncService
 
 ## ISegmentSyncService
 
-Синхронизация сегмента трубы/воздуховода по имени (Issue #104, ADR-061): таблица размеров к эталону — добавление/коррекция всегда; удаление только неиспользуемых размеров и только pipe-сегментов (usage через `RBS_PIPE_SEGMENT_PARAM`+диаметр; duct usage API не проверить — не трогаем); последний размер не удаляем. Создание через `PipeSegment.Create` + `PipeScheduleType.Create` (duct-сегменты API не создаёт — Warn + skip). Остаток — `SizesNotConverged` → пользовательский счётчик.
+Синхронизация сегмента трубы/воздуховода по имени (Issue #104, ADR-061): таблица размеров к эталону — добавление/коррекция всегда; удаление только неиспользуемых размеров и только pipe-сегментов (usage через `RBS_PIPE_SEGMENT_PARAM`+диаметр; duct usage API не проверить — не трогаем); последний размер не удаляем. Создание через `PipeSegment.Create` + `PipeScheduleType.Create` (duct-сегменты API не создаёт — Warn + skip). Сегмент эталона без материала создаётся с fallback-материалом «SmartCon Default» (E4, #211 — find-or-create через `IMaterialSyncService.EnsureMaterial`). Остаток — `SizesNotConverged` → пользовательский счётчик.
 
 **Файл:** `ISegmentSyncService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/RevitSegmentSyncService.cs`

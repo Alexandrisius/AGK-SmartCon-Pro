@@ -14,11 +14,21 @@ namespace SmartCon.Revit.FamilyManager;
 /// the residue is reported as not-converged. Creation is supported for pipe
 /// segments (<c>PipeSegment.Create</c>); the Revit API does not expose duct
 /// segment creation, so a missing duct segment is reported and its routing
-/// rule is skipped by the caller.
+/// rule is skipped by the caller. A reference segment without a material is
+/// created with the <see cref="FallbackMaterialName"/> placeholder (E4, #211)
+/// instead of failing the creation.
 /// </summary>
 public sealed class RevitSegmentSyncService : ISegmentSyncService
 {
     private const double DiameterTolerance = 1e-9;
+
+    /// <summary>
+    /// E4 (#211): placeholder material for reference segments that
+    /// legitimately have no material of their own (MaterialId is invalid in
+    /// the source). Find-or-created once per project; predictable and
+    /// editable in a single place instead of an arbitrary project material.
+    /// </summary>
+    public const string FallbackMaterialName = "SmartCon Default";
 
     private readonly IMaterialSyncService _materialSync;
 
@@ -106,17 +116,34 @@ public sealed class RevitSegmentSyncService : ISegmentSyncService
             return new SegmentSyncResult(null, 0, 0, 0);
         }
 
-        ElementId? materialId = null;
+        ElementId? materialId;
         if (snapshot.MaterialName is not null)
         {
             materialId = _materialSync.SyncMaterial(sourceDoc, activeDoc, snapshot.MaterialName);
         }
+        else
+        {
+            // E4 (#211): the reference segment legitimately has no material
+            // (probe 2026-08-06: CopyElements DOES carry segment materials
+            // into the mini-project, so a null here means the real source
+            // segment is material-less) — create the segment with the
+            // fallback material instead of failing the creation.
+            materialId = _materialSync.EnsureMaterial(activeDoc, FallbackMaterialName);
+            if (materialId is not null)
+            {
+                SmartConLogger.Info(
+                    $"Segment '{snapshot.Name}': reference has no material — " +
+                    $"created with the fallback material '{FallbackMaterialName}'.");
+            }
+        }
         if (materialId is null)
         {
+            var action = snapshot.MaterialName is null
+                ? "[Action: create any material in the project manually (the fallback could not be created — the project has no usable material), then re-run the sync]"
+                : "[Action: check the material in the mini-project, then re-run the sync]";
             SmartConLogger.Warn(
                 $"Segment '{snapshot.Name}': material '{snapshot.MaterialName ?? "<none>"}' " +
-                "could not be resolved in the project; creation impossible. " +
-                "[Action: check the material in the mini-project, then re-run the sync]");
+                $"could not be resolved in the project; creation impossible. {action}");
             return new SegmentSyncResult(null, 0, 0, 0);
         }
 

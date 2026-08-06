@@ -62,6 +62,30 @@ public sealed class RevitMaterialSyncService : IMaterialSyncService
         return target.Id;
     }
 
+    public ElementId? EnsureMaterial(Document activeDoc, string materialName)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(activeDoc);
+        ArgumentNullException.ThrowIfNull(materialName);
+#else
+        if (activeDoc is null) throw new ArgumentNullException(nameof(activeDoc));
+        if (materialName is null) throw new ArgumentNullException(nameof(materialName));
+#endif
+
+        var existing = FindMaterialByName(activeDoc, materialName);
+        if (existing is not null) return existing.Id;
+
+        var created = CreateMaterial(activeDoc, materialName);
+        if (created is null)
+        {
+            SmartConLogger.Warn(
+                $"Material '{materialName}': creation failed (no prototype material in the project). " +
+                "[Action: create the material in the project manually, then re-run the sync]");
+            return null;
+        }
+        return created.Id;
+    }
+
     private static Material? FindMaterialByName(Document doc, string name)
     {
         using var collector = new FilteredElementCollector(doc).OfClass(typeof(Material));
