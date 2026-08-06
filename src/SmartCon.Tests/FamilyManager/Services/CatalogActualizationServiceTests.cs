@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.Actualization;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.Tests.FamilyManager.Repository;
 using SmartCon.Tests.TestDoubles;
 using Xunit;
@@ -32,6 +33,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
             _extractor,
             _fixture.GetProvider(),
             _fixture.GetProvider(),
+            new LocalFamilyDependencyRepository(_fixture.GetDatabase()),
             new IDatabaseActualizationTask[] { _taskA, _taskB });
     }
 
@@ -80,6 +82,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         var sut = new CatalogActualizationService(
             _fixture.GetDatabase(), _fixture.GetPathResolver(), _extractor,
             _fixture.GetProvider(), _fixture.GetProvider(),
+            new LocalFamilyDependencyRepository(_fixture.GetDatabase()),
             new IDatabaseActualizationTask[] { _taskA, _taskB, broken });
 
         var breakdown = await sut.CountPendingBreakdownAsync(2025);
@@ -249,6 +252,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         var sut = new CatalogActualizationService(
             _fixture.GetDatabase(), _fixture.GetPathResolver(), _extractor,
             _fixture.GetProvider(), _fixture.GetProvider(),
+            new LocalFamilyDependencyRepository(_fixture.GetDatabase()),
             new IDatabaseActualizationTask[] { fileLevel });
 
         var result = await sut.RunAllPendingAsync(2025, null, CancellationToken.None);
@@ -273,6 +277,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         var sut = new CatalogActualizationService(
             _fixture.GetDatabase(), _fixture.GetPathResolver(), _extractor,
             _fixture.GetProvider(), _fixture.GetProvider(),
+            new LocalFamilyDependencyRepository(_fixture.GetDatabase()),
             new IDatabaseActualizationTask[] { _taskA, fileLevel });
 
         var result = await sut.RunAllPendingAsync(2025, null, CancellationToken.None);
@@ -295,7 +300,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA", createFileOnDisk: false);
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
 
-        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
         Assert.Equal(1, deletedItems);
         Assert.Equal(1, deletedVersions);
@@ -312,7 +317,7 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         await SeedV2VersionAsync(itemId);
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
 
-        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
         Assert.Equal(0, deletedItems);
         Assert.Equal(1, deletedVersions);
@@ -337,13 +342,39 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         await using var lockHandle = new FileStream(lockFile, FileMode.Open, FileAccess.Read, FileShare.None);
 
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
-        var (deletedItems, deletedVersions, failedDirs) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
         Assert.Equal(1, deletedItems);
         Assert.Equal(1, deletedVersions);
         Assert.Equal(1, failedDirs);
         Assert.Null(await _fixture.GetProvider().GetItemAsync(itemId));
         Assert.True(Directory.Exists(itemDir));
+    }
+
+    [Fact]
+    public async Task PurgeMissing_ReferencedByDependency_SkipsItemAndReports()
+    {
+        // E5 (#213, ADR-067): фитинг, на который ссылается любая версия
+        // родителя, purge НЕ удаляет — иначе сохранённые версии родителя
+        // теряют свои зависимости.
+        var (parentId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "ParentPipe");
+        var (childId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", createFileOnDisk: false);
+        var dependencyRepository = new LocalFamilyDependencyRepository(_fixture.GetDatabase());
+        await dependencyRepository.ReplaceForCurrentVersionAsync(parentId, new[]
+        {
+            new FamilyDependencyInfo(childId, FamilyDependencyKind.Routing, "FamA:Стандарт", 0),
+        });
+        var missing = new[] { new HashRecalculationMissingFile(childId, "FamA", "v1", "FamA.rfa") };
+
+        var (deletedItems, deletedVersions, failedDirs, guardedSkipped) =
+            await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+
+        Assert.Equal(0, deletedItems);
+        Assert.Equal(0, deletedVersions);
+        Assert.Equal(0, failedDirs);
+        Assert.Equal(1, guardedSkipped);
+        Assert.NotNull(await _fixture.GetProvider().GetItemAsync(childId));
     }
 
     private async Task SeedV2VersionAsync(string itemId)

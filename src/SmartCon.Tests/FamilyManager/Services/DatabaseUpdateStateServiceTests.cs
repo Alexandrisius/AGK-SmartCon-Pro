@@ -47,7 +47,7 @@ public sealed class DatabaseUpdateStateServiceTests
             return Task.FromResult(RunResult);
         }
 
-        public Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
+        public Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
             IReadOnlyList<HashRecalculationMissingFile> missing, CancellationToken ct = default)
             => throw new NotImplementedException();
     }

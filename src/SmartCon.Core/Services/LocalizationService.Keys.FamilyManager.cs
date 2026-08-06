@@ -89,6 +89,9 @@ public static partial class LocalizationService
         ru["FM_FamilyDeleteError"] = "Ошибка удаления семейства"; en["FM_FamilyDeleteError"] = "Error deleting family";
         ru["FM_FamilyDeleteTitle"] = "Удаление семейства"; en["FM_FamilyDeleteTitle"] = "Delete Family";
         ru["FM_FamilyDeletePrompt"] = "Удалить семейство \"{0}\" из каталога?"; en["FM_FamilyDeletePrompt"] = "Delete family \"{0}\" from catalog?";
+        ru["FM_DependencyGuard_Title"] = "Удаление заблокировано"; en["FM_DependencyGuard_Title"] = "Deletion blocked";
+        ru["FM_DependencyGuard_Body"] = "Нельзя удалить \"{0}\": элемент используется как зависимость:\n{1}\n\nСначала удалите перечисленные версии родителей (окно свойств родителя) или самих родителей."; en["FM_DependencyGuard_Body"] = "Cannot delete \"{0}\": the item is referenced as a dependency:\n{1}\n\nDelete the listed parent versions (parent properties dialog) or the parents themselves first.";
+        ru["FM_DependencyGuard_CurrentMark"] = "активная"; en["FM_DependencyGuard_CurrentMark"] = "active";
         ru["FM_DeleteFromCatalog"] = "Удалить из каталога"; en["FM_DeleteFromCatalog"] = "Delete from catalog";
         ru["FM_NoVersionSelected"] = "Версия не выбрана"; en["FM_NoVersionSelected"] = "No version selected";
         ru["FM_NoCategory"] = "Без категории"; en["FM_NoCategory"] = "No category";
@@ -484,6 +487,7 @@ public static partial class LocalizationService
         ru["FM_HashRecalc_PurgeConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Действие нельзя отменить."; en["FM_HashRecalc_PurgeConfirmBody"] = "Delete {0} records of unavailable files from the catalog? This action cannot be undone.";
         ru["FM_HashRecalc_PurgeResult"] = "Удалено семейств: {0}, версий: {1}."; en["FM_HashRecalc_PurgeResult"] = "Families deleted: {0}, versions: {1}.";
         ru["FM_HashRecalc_PurgeDirsFailed"] = "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную."; en["FM_HashRecalc_PurgeDirsFailed"] = "Could not delete directories on disk (access denied): {0} — please remove them manually.";
+        ru["FM_HashRecalc_PurgeGuarded"] = "Пропущены как используемые зависимости: {0} — сначала удалите ссылающиеся версии родителей."; en["FM_HashRecalc_PurgeGuarded"] = "Skipped as referenced dependencies: {0} — delete the referencing parent versions first.";
 
         // Unified Database Update Dialog (ADR-054)
         ru["FM_DbUpdate_Title"] = "Обновление базы"; en["FM_DbUpdate_Title"] = "Database Update";

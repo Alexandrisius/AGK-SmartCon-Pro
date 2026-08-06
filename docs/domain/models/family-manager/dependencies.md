@@ -85,3 +85,23 @@ public sealed record FamilyDependencyLink(
     string Kind,
     string? PartName);
 ```
+
+---
+
+## FamilyDependencyReference
+
+Одна ВХОДЯЩАЯ ссылка на элемент каталога (E5, #213, ADR-067): какая версия
+какого родителя объявляет элемент зависимостью. Результат reverse-запроса
+`IFamilyDependencyRepository.GetReferencingParents[Batch]Async` — читается
+по ВСЕМ версиям (архивная блокирует удаление наравне с активной).
+Используется dependency guard'ом (блок-диалог удаления) и скрепкой в дереве.
+
+**Файл:** `Models/FamilyManager/FamilyDependencyReference.cs`
+
+```csharp
+public sealed record FamilyDependencyReference(
+    string ParentCatalogItemId,
+    string ParentName,
+    string VersionLabel,
+    bool IsCurrentVersion);
+```

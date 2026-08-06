@@ -220,7 +220,7 @@ public sealed partial class DatabaseUpdateProgressViewModel
 
         try
         {
-            var (deletedItems, deletedVersions, failedDirectories) = await _actualization
+            var (deletedItems, deletedVersions, failedDirectories, guardedSkippedItems) = await _actualization
                 .PurgeMissingAsync(missing, CancellationToken.None)
                 .ConfigureAwait(true);
 
@@ -229,6 +229,13 @@ public sealed partial class DatabaseUpdateProgressViewModel
                 LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResult)
                     ?? "Удалено семейств: {0}, версий: {1}.",
                 deletedItems, deletedVersions);
+            if (guardedSkippedItems > 0)
+            {
+                SummaryText += Environment.NewLine + string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeGuarded)
+                        ?? "Пропущены как используемые зависимости: {0}.",
+                    guardedSkippedItems);
+            }
             if (failedDirectories > 0)
             {
                 SummaryText += Environment.NewLine + string.Format(

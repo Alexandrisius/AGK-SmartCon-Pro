@@ -46,8 +46,11 @@ public interface ICatalogActualizationService
     /// version; when a deleted version was the active one, the active
     /// pointer is moved and the item hash/name re-synced. Filesystem
     /// errors do NOT block the cleanup — rows are deleted DB-only.
+    /// E5 (#213, ADR-067): an item referenced in <c>family_dependencies</c>
+    /// by ANY parent version is NOT purged (dependency guard) — it is
+    /// skipped, logged and counted in <c>GuardedSkippedItems</c>.
     /// </summary>
-    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
+    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default);
 }

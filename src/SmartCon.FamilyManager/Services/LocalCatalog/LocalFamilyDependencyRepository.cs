@@ -179,4 +179,84 @@ internal sealed class LocalFamilyDependencyRepository : IFamilyDependencyReposit
         SmartConLogger.Info($"Loaded {result.Count} dependency links from catalog DB");
         return result;
     }
+
+    public async Task<IReadOnlyList<FamilyDependencyReference>> GetReferencingParentsAsync(
+        string childCatalogItemId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(childCatalogItemId))
+            throw new ArgumentException("childCatalogItemId is required", nameof(childCatalogItemId));
+
+        var batch = await GetReferencingParentsBatchAsync(new[] { childCatalogItemId }, ct);
+        return batch.TryGetValue(childCatalogItemId, out var references)
+            ? references
+            : Array.Empty<FamilyDependencyReference>();
+    }
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
+        IReadOnlyCollection<string> childCatalogItemIds,
+        CancellationToken ct = default)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(childCatalogItemIds);
+#else
+        if (childCatalogItemIds is null) throw new ArgumentNullException(nameof(childCatalogItemIds));
+#endif
+
+        var result = new Dictionary<string, IReadOnlyList<FamilyDependencyReference>>(StringComparer.Ordinal);
+        var ids = childCatalogItemIds.Where(id => !string.IsNullOrEmpty(id)).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count == 0) return result;
+
+        using var _scope = SmartConLogger.BeginScope("FamilyDepRepo",
+            ("Method", "GetReferencingParentsBatch"),
+            ("Count", ids.Count));
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+
+        using var cmd = connection.CreateCommand();
+        var parameterNames = new List<string>(ids.Count);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var parameterName = "@child" + i;
+            parameterNames.Add(parameterName);
+            cmd.Parameters.Add(new SqliteParameter(parameterName, ids[i]));
+        }
+        // DISTINCT collapses multiple links of the same parent version
+        // (different kinds / part names) into one guard reference.
+        cmd.CommandText = $"""
+            SELECT DISTINCT fd.child_catalog_item_id, ci.id, ci.name, cv.version_label,
+                   CASE WHEN ci.current_version_label = cv.version_label THEN 1 ELSE 0 END
+            FROM family_dependencies fd
+            JOIN catalog_items ci ON ci.id = fd.parent_catalog_item_id
+            JOIN catalog_versions cv ON cv.id = fd.parent_version_id
+            WHERE fd.child_catalog_item_id IN ({string.Join(", ", parameterNames)})
+            ORDER BY ci.name, cv.version_label
+            """;
+
+        var grouped = new Dictionary<string, List<FamilyDependencyReference>>(StringComparer.Ordinal);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var childId = reader.GetString(0);
+            if (!grouped.TryGetValue(childId, out var list))
+            {
+                list = new List<FamilyDependencyReference>();
+                grouped[childId] = list;
+            }
+            list.Add(new FamilyDependencyReference(
+                ParentCatalogItemId: reader.GetString(1),
+                ParentName: reader.GetString(2),
+                VersionLabel: reader.GetString(3),
+                IsCurrentVersion: reader.GetInt32(4) == 1));
+        }
+
+        foreach (var pair in grouped)
+        {
+            result[pair.Key] = pair.Value;
+        }
+
+        SmartConLogger.Debug($"Reverse dependency lookup: {grouped.Count} of {ids.Count} items are referenced");
+        return result;
+    }
 }

@@ -31,6 +31,13 @@ public sealed partial class FamilyPropertiesViewModel
     public bool ActiveVersionChanged { get; private set; }
 
     /// <summary>
+    /// E5 (#213): set when <see cref="DeleteVersion"/> committed — deleting a
+    /// parent version CASCADE-frees its dependency links, so the main panel
+    /// must rebuild the tree (the freed child's paperclip clears) even when
+    /// the dialog closes with Cancel.
+    /// </summary>
+    public bool VersionsChanged { get; private set; }
+    /// <summary>
     /// Load all versions of the catalog item for display in the Versions tab.
     /// The active version (matching <c>catalog_items.current_version_label</c>)
     /// is marked with <see cref="FamilyVersionRow.IsActive"/> = true.
@@ -280,6 +287,7 @@ public sealed partial class FamilyPropertiesViewModel
 
             if (result.Success)
             {
+                VersionsChanged = true;
                 // Remove the row(s) for the deleted label from the observable list.
                 var toRemove = Versions.Where(r => r.VersionLabel == victimLabel).ToList();
                 foreach (var row in toRemove)

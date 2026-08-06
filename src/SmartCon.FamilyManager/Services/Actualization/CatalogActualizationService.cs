@@ -23,6 +23,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
     private readonly IFamilyMigrationExtractor _extractor;
     private readonly IFamilyCatalogProvider _catalogProvider;
     private readonly IWritableFamilyCatalogProvider _writableProvider;
+    private readonly IFamilyDependencyRepository _dependencyRepository;
     private readonly IReadOnlyList<IDatabaseActualizationTask> _tasks;
 
     public CatalogActualizationService(
@@ -31,6 +32,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
         IFamilyMigrationExtractor extractor,
         IFamilyCatalogProvider catalogProvider,
         IWritableFamilyCatalogProvider writableProvider,
+        IFamilyDependencyRepository dependencyRepository,
         IEnumerable<IDatabaseActualizationTask> tasks)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
@@ -38,6 +40,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
         _extractor = extractor ?? throw new ArgumentNullException(nameof(extractor));
         _catalogProvider = catalogProvider ?? throw new ArgumentNullException(nameof(catalogProvider));
         _writableProvider = writableProvider ?? throw new ArgumentNullException(nameof(writableProvider));
+        _dependencyRepository = dependencyRepository ?? throw new ArgumentNullException(nameof(dependencyRepository));
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(tasks);
 #else
@@ -299,7 +302,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             WasCancelled: wasCancelled);
     }
 
-    public async Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
+    public async Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default)
     {
@@ -310,6 +313,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
         var deletedItems = 0;
         var deletedVersions = 0;
         var failedDirectories = 0;
+        var guardedSkippedItems = 0;
 
         foreach (var itemGroup in missing.GroupBy(m => m.CatalogItemId))
         {
@@ -326,6 +330,22 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
 
             if (remainingLabels.Count == 0)
             {
+                // E5 (#213, ADR-067): dependency guard — an item referenced
+                // by ANY parent version must survive the purge, otherwise the
+                // parent's stored versions lose their fittings.
+                var references = await _dependencyRepository
+                    .GetReferencingParentsAsync(itemId, ct)
+                    .ConfigureAwait(false);
+                if (references.Count > 0)
+                {
+                    guardedSkippedItems++;
+                    SmartConLogger.Warn(
+                        $"Purge: item {itemId} ('{itemGroup.First().ItemName}') skipped — referenced as " +
+                        $"a dependency by {string.Join("; ", DependencyGuardText.FormatReferenceLines(references))}. " +
+                        "[Action: сначала удалите ссылающиеся версии родителей (окно свойств) или самих родителей, затем повторите очистку]");
+                    continue;
+                }
+
                 // Every version of this item is missing → delete the whole
                 // catalog item (FK CASCADE cleans versions/types/attributes).
                 SmartConLogger.Info(
@@ -418,7 +438,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
 
         SmartConLogger.Info(
             $"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}, failedDirectories={failedDirectories}");
-        return (deletedItems, deletedVersions, failedDirectories);
+        return (deletedItems, deletedVersions, failedDirectories, guardedSkippedItems);
     }
 
     private List<IDatabaseActualizationTask> TasksPendingOn(

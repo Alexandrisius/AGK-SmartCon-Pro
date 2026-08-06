@@ -424,6 +424,15 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
                 LinksByParent.TryGetValue(parentCatalogItemId, out var links)
                     ? links
                     : Array.Empty<FamilyDependencyInfo>());
+
+        public Task<IReadOnlyList<FamilyDependencyReference>> GetReferencingParentsAsync(
+            string childCatalogItemId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<FamilyDependencyReference>>(Array.Empty<FamilyDependencyReference>());
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
+            IReadOnlyCollection<string> childCatalogItemIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>>(
+                new Dictionary<string, IReadOnlyList<FamilyDependencyReference>>());
     }
 
     private sealed class FakeTypeRepository : IFamilyTypeRepository

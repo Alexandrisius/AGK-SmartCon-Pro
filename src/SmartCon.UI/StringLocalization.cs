@@ -292,6 +292,7 @@ public static class StringLocalization
         public const string FM_HashRecalc_PurgeConfirmBody = "FM_HashRecalc_PurgeConfirmBody";
         public const string FM_HashRecalc_PurgeResult = "FM_HashRecalc_PurgeResult";
         public const string FM_HashRecalc_PurgeDirsFailed = "FM_HashRecalc_PurgeDirsFailed";
+        public const string FM_HashRecalc_PurgeGuarded = "FM_HashRecalc_PurgeGuarded";
         public const string FM_DbUpdate_Title = "FM_DbUpdate_Title";
         public const string FM_DbUpdate_Starting = "FM_DbUpdate_Starting";
         public const string FM_DbUpdate_ProgressFormat = "FM_DbUpdate_ProgressFormat";
@@ -544,6 +545,9 @@ public static class StringLocalization
         public const string FM_FamilyDeleteError = "FM_FamilyDeleteError";
         public const string FM_FamilyDeleteTitle = "FM_FamilyDeleteTitle";
         public const string FM_FamilyDeletePrompt = "FM_FamilyDeletePrompt";
+        public const string FM_DependencyGuard_Title = "FM_DependencyGuard_Title";
+        public const string FM_DependencyGuard_Body = "FM_DependencyGuard_Body";
+        public const string FM_DependencyGuard_CurrentMark = "FM_DependencyGuard_CurrentMark";
         public const string FM_DeleteFromCatalog = "FM_DeleteFromCatalog";
         public const string FM_NoVersionSelected = "FM_NoVersionSelected";
         public const string FM_NoCategory = "FM_NoCategory";

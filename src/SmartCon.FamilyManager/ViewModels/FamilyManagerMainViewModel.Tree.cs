@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
@@ -188,6 +189,18 @@ public sealed partial class FamilyManagerMainViewModel
                 SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
             }
             SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {stageSw.ElapsedMilliseconds}ms");
+
+            // E5 (#213, ADR-067): paperclip indicator on leaves referenced by
+            // any parent's version — one batch reverse query for the tree.
+            try
+            {
+                await AttachDependencyIndicatorsAsync(rootNodes, ct);
+            }
+            catch (Exception ex)
+            {
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachDependencyIndicatorsAsync"));
+                SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
+            }
 
             // Удаляем пустые категории при активном поиске, чтобы пользователь видел
             // только ветки с совпадениями (best practice: скрывать нерелевантные разделы).
@@ -687,6 +700,45 @@ public sealed partial class FamilyManagerMainViewModel
         var batch = await _typeRepository.GetAllTypesBatchAsync(familyIds, ct);
 
         AttachTypesToNodes(rootNodes, batch, expandedFamilyIds);
+    }
+
+    /// <summary>
+    /// E5 (#213, ADR-067): выставляет <see cref="FamilyLeafNodeViewModel.IsDependencyReferenced"/>
+    /// и тултип со списком «родитель (версии)» одним batch reverse-запросом
+    /// (<see cref="IFamilyDependencyRepository.GetReferencingParentsBatchAsync"/>)
+    /// на всё дерево. Индикатор пересчитывается с каждой перезагрузкой дерева
+    /// (импорт / удаление / MakeActive идут через LoadTreeAsync).
+    /// </summary>
+    private async Task AttachDependencyIndicatorsAsync(
+        ObservableCollection<CatalogTreeNodeViewModel> rootNodes, CancellationToken ct)
+    {
+        var leaves = new List<FamilyLeafNodeViewModel>();
+        CollectFamilyLeaves(rootNodes, leaves);
+        if (leaves.Count == 0) return;
+
+        var batch = await _familyDependencyRepository.GetReferencingParentsBatchAsync(
+            leaves.Select(l => l.CatalogItemId).ToList(), ct);
+        if (batch.Count == 0) return;
+
+        foreach (var leaf in leaves)
+        {
+            if (!batch.TryGetValue(leaf.CatalogItemId, out var references)) continue;
+            leaf.IsDependencyReferenced = true;
+            // Минимальный тултип по запросу владельца: «Семейство» (v2) — и всё.
+            leaf.DependencyReferencedTooltip = string.Join(
+                "; ", DependencyGuardText.FormatReferenceLines(references, includeCurrentMark: false));
+        }
+    }
+
+    private static void CollectFamilyLeaves(
+        ObservableCollection<CatalogTreeNodeViewModel> nodes, List<FamilyLeafNodeViewModel> leaves)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is FamilyLeafNodeViewModel leaf)
+                leaves.Add(leaf);
+            CollectFamilyLeaves(node.Children, leaves);
+        }
     }
 
     /// <summary>

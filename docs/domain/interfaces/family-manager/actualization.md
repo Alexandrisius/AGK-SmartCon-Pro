@@ -22,7 +22,7 @@ public interface ICatalogActualizationService
         int revitMajorVersion,
         IProgress<DatabaseMigrationProgress>? progress,
         CancellationToken ct = default);
-    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories)> PurgeMissingAsync(
+    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default);
 }
@@ -32,7 +32,7 @@ public interface ICatalogActualizationService
 1. File-free passes задач (работа без файлов, напр. system re-flag хэша).
 2. Детекты задач → union ключей `catalogItemId|versionLabel`; группы загружаются одним запросом, openable-вариант — наивысший `revit_major_version` ≤ запущенного Revit; newer-only группы — счётчик в сводке.
 3. По группе: файл не найден → missing + `HandleGroupFailureAsync(MissingFile)` задач; не прочитался → failed + `HandleGroupFailureAsync(ExtractionFailed)`; иначе один open → `ApplyAsync` pending-задач по `Order` (сбой одной задачи не мешает остальным — её артефакт остаётся pending).
-4. `PurgeMissingAsync` — по подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени.
+4. `PurgeMissingAsync` — по подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени. E5 (#213, ADR-067): item, на который ссылается любая версия любого родителя (`family_dependencies`), purge НЕ удаляет — пропуск с Warn и счётчиком `GuardedSkippedItems`.
 
 ---
 

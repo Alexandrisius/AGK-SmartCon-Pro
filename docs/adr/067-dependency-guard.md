@@ -60,3 +60,23 @@ NotConverged, а архивная версия родителя перестаё
   `dependency_kind`).
 - Реализация: E5 (#213) — reverse-запросы репозитория, индикатор в дереве,
   guard во всех командах удаления, юнит/интеграционные тесты.
+
+## As-built (2026-08-06, ручной тест владельца пройден)
+
+- Reverse-запросы: `GetReferencingParentsAsync` + `GetReferencingParentsBatchAsync`
+  (DISTINCT по (parent, version) — kind-дубликаты схлопываются; IN-параметры,
+  индекс `ix_family_dependencies_child`).
+- Guard-точки: `DeleteFamilyAsync` (единая команда ПКМ/кнопки) — блок-диалог
+  через стилизованный `ShowInfo` (НЕ MessageBox); purge —
+  `CatalogActualizationService.PurgeMissingAsync` пропускает guarded items
+  со счётчиком `GuardedSkippedItems` в сводке. Обхода через
+  `DeleteItemDbOnlyAsync` нет (fallback внутри guarded-ветки).
+- Guard fail-safe: ошибка чтения связей = блок удаления (Error + диалог),
+  не молчаливое удаление.
+- Скрепка: `IsDependencyReferenced` + минимальный тултип «Семейство» (v2)
+  (без префикса и метки активной — решение владельца; метка «активная»
+  только в блок-диалоге). Batch-пересчёт в `LoadTreeAsync`; инвалидация
+  после удаления версии — флаг `VersionsChanged` (диалог свойств может
+  закрыться Cancel'ом — дерево всё равно перестраивается).
+- Освобождение (FK CASCADE) доказано юнит-тестами на настоящем провайдере
+  (`DeleteVersionAsync`/`DeleteItemAsync` с PRAGMA foreign_keys=ON).

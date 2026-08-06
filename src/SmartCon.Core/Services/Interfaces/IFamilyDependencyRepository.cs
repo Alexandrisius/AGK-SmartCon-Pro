@@ -59,4 +59,25 @@ public interface IFamilyDependencyRepository
     Task<IReadOnlyList<FamilyDependencyInfo>> GetForCurrentVersionAsync(
         string parentCatalogItemId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Reverse lookup (E5, #213, ADR-067): every (parent item, parent
+    /// version) pair that references <paramref name="childCatalogItemId"/>
+    /// — across ALL versions, not just current ones (an archived parent
+    /// version blocks the child's deletion exactly like the active one).
+    /// Multiple links of the same parent version (different kinds/parts)
+    /// collapse into one reference. Empty list = the item is free.
+    /// </summary>
+    Task<IReadOnlyList<FamilyDependencyReference>> GetReferencingParentsAsync(
+        string childCatalogItemId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Batch variant of <see cref="GetReferencingParentsAsync"/> — one query
+    /// for the whole tree (paperclip indicator). The dictionary contains an
+    /// entry ONLY for children that have at least one incoming reference.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
+        IReadOnlyCollection<string> childCatalogItemIds,
+        CancellationToken ct = default);
 }

@@ -173,6 +173,163 @@ public sealed class LocalFamilyDependencyRepositoryTests
         Assert.Empty(links);
     }
 
+    // ---- E5 (#213, ADR-067): reverse lookup for the dependency guard ----
+
+    [Fact]
+    public async Task GetReferencingParents_NoReferences_ReturnsEmpty()
+    {
+        using var fixture = await CreateAndMigrate();
+        var childA = await SeedItemAsync(fixture, "free-child", "Свободный отвод");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+
+        var references = await sut.GetReferencingParentsAsync(childA);
+
+        Assert.Empty(references);
+    }
+
+    [Fact]
+    public async Task GetReferencingParents_CurrentAndArchivedVersions_AllReturned()
+    {
+        using var fixture = await CreateAndMigrate();
+        // ADR-067 core semantics: an ARCHIVED parent version blocks exactly
+        // like the current one. Parent current label = v2; links live on
+        // v1 (archived) and v2 (current).
+        var parentId = "guard-parent-1";
+        await SeedItemAsync(fixture, parentId, "Трубы ГОСТ", currentVersionLabel: "v2");
+        var v1 = await SeedVersionRowAsync(fixture, parentId, "v1");
+        var v2 = await SeedVersionRowAsync(fixture, parentId, "v2");
+        var child = await SeedItemAsync(fixture, "guard-child-1", "Отвод");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, v1, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+        });
+        await sut.ReplaceForVersionAsync(parentId, v2, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+        });
+
+        var references = await sut.GetReferencingParentsAsync(child);
+
+        Assert.Equal(2, references.Count);
+        var archived = Assert.Single(references, r => r.VersionLabel == "v1");
+        Assert.False(archived.IsCurrentVersion);
+        var current = Assert.Single(references, r => r.VersionLabel == "v2");
+        Assert.True(current.IsCurrentVersion);
+        Assert.All(references, r => Assert.Equal("Трубы ГОСТ", r.ParentName));
+    }
+
+    [Fact]
+    public async Task GetReferencingParents_MultipleParents_AllReturned()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentA, parentAv) = await SeedParentWithCurrentVersionAsync(fixture, "guard-parent-a");
+        var (parentB, parentBv) = await SeedParentWithCurrentVersionAsync(fixture, "guard-parent-b");
+        var child = await SeedItemAsync(fixture, "guard-child-2", "Тройник");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentA, parentAv, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Тройник:Стандарт", 0),
+        });
+        await sut.ReplaceForVersionAsync(parentB, parentBv, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Тройник:Большой", 0),
+        });
+
+        var references = await sut.GetReferencingParentsAsync(child);
+
+        Assert.Equal(2, references.Count);
+        Assert.Contains(references, r => r.ParentCatalogItemId == parentA);
+        Assert.Contains(references, r => r.ParentCatalogItemId == parentB);
+    }
+
+    [Fact]
+    public async Task GetReferencingParents_SameVersionMultipleKinds_CollapsesToOne()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "guard-parent-3");
+        var child = await SeedItemAsync(fixture, "guard-child-3", "Отвод");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        // Same parent version, two kinds (routing + shared_nested) — the
+        // guard list must show the parent version once.
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 1),
+        });
+
+        var references = await sut.GetReferencingParentsAsync(child);
+
+        Assert.Single(references);
+    }
+
+    [Fact]
+    public async Task GetReferencingParentsBatch_OnlyReferencedChildrenHaveEntries()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "guard-parent-4");
+        var referenced = await SeedItemAsync(fixture, "guard-child-4a", "Отвод A");
+        var free = await SeedItemAsync(fixture, "guard-child-4b", "Отвод B");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(referenced, FamilyDependencyKind.Routing, "Отвод A:Стандарт", 0),
+        });
+
+        var batch = await sut.GetReferencingParentsBatchAsync(new[] { referenced, free });
+
+        Assert.Single(batch);
+        Assert.True(batch.ContainsKey(referenced));
+        Assert.False(batch.ContainsKey(free));
+    }
+
+    [Fact]
+    public async Task GetReferencingParents_ParentVersionDeleted_ChildFreed()
+    {
+        using var fixture = await CreateAndMigrate();
+        // Освобождение по ADR-067: удаление версии родителя (CASCADE по
+        // parent_version_id) снимает её ссылки. Parent: v1 (archived,
+        // ссылка), v2 (current, без ссылок).
+        var parentId = "guard-parent-5";
+        await SeedItemAsync(fixture, parentId, "Родитель", currentVersionLabel: "v2");
+        var v1 = await SeedVersionRowAsync(fixture, parentId, "v1");
+        await SeedVersionRowAsync(fixture, parentId, "v2");
+        var child = await SeedItemAsync(fixture, "guard-child-5", "Отвод");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, v1, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+        });
+        Assert.Single(await sut.GetReferencingParentsAsync(child));
+
+        var result = await fixture.GetProvider().DeleteVersionAsync(parentId, "v1");
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.Empty(await sut.GetReferencingParentsAsync(child));
+    }
+
+    [Fact]
+    public async Task GetReferencingParents_ParentItemDeleted_ChildFreed()
+    {
+        using var fixture = await CreateAndMigrate();
+        // Освобождение по ADR-067: удаление родителя целиком (CASCADE по
+        // parent_catalog_item_id) снимает все его ссылки.
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "guard-parent-6");
+        var child = await SeedItemAsync(fixture, "guard-child-6", "Отвод");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+        });
+        Assert.Single(await sut.GetReferencingParentsAsync(child));
+
+        var deleted = await fixture.GetProvider().DeleteItemAsync(parentId);
+
+        Assert.True(deleted);
+        Assert.Empty(await sut.GetReferencingParentsAsync(child));
+    }
+
+
     private static async Task<(string ItemId, string VersionId)> SeedParentWithCurrentVersionAsync(
         TempCatalogFixture fixture, string itemId)
     {

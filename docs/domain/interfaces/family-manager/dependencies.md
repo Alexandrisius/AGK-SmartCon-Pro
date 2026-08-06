@@ -34,6 +34,20 @@ public interface IFamilyDependencyRepository
     Task<IReadOnlyList<FamilyDependencyInfo>> GetForCurrentVersionAsync(
         string parentCatalogItemId,
         CancellationToken ct = default);
+
+    // E5 (#213, ADR-067): reverse-запросы для dependency guard'а и
+    // скрепки в дереве — по ВСЕМ версиям родителей (архивная блокирует
+    // удаление наравне с активной). Несколько связей одной версии
+    // (разные kind/parts) схлопываются в одну reference.
+    Task<IReadOnlyList<FamilyDependencyReference>> GetReferencingParentsAsync(
+        string childCatalogItemId,
+        CancellationToken ct = default);
+
+    // Batch-вариант: один запрос на всё дерево; в словаре — только
+    // дети, имеющие хотя бы одну входящую ссылку.
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
+        IReadOnlyCollection<string> childCatalogItemIds,
+        CancellationToken ct = default);
 }
 ```
 

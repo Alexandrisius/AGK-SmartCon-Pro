@@ -1175,6 +1175,15 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
 
+                            <Viewbox Width="11" Height="11" Margin="4,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding IsDependencyReferenced, Converter={StaticResource BoolToVis}}"
+                                     ToolTip="{Binding DependencyReferencedTooltip}">
+                                <iconPacks:PackIconMaterial Kind="Paperclip"
+                                                            Width="24" Height="24"
+                                                            Foreground="{DynamicResource TextMutedBrush}"/>
+                            </Viewbox>
+
                             <ItemsControl ItemsSource="{Binding MatchedTags}"
                                           VerticalAlignment="Center"
                                           Visibility="{Binding HasMatchedTags, Converter={StaticResource BoolToVis}}">

@@ -69,6 +69,19 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private bool _isInProject;
 
+    /// <summary>
+    /// E5 (#213, ADR-067): at least one version of at least one parent
+    /// references this item in <c>family_dependencies</c> — the paperclip
+    /// indicator. Such an item cannot be deleted (dependency guard).
+    /// Computed batch-wise on tree load (one reverse query for all leaves).
+    /// </summary>
+    [ObservableProperty]
+    private bool _isDependencyReferenced;
+
+    /// <summary>Localized «Используется как зависимость: …» list for the paperclip tooltip.</summary>
+    [ObservableProperty]
+    private string? _dependencyReferencedTooltip;
+
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,
         IFamilyAssetService assetService,

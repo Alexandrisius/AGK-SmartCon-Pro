@@ -96,7 +96,9 @@ public sealed partial class FamilyManagerMainViewModel
             // MakeActive on the Versions tab commits to the DB immediately —
             // even a Cancelled dialog may have changed the active version's
             // Revit major version, which drives the tree's availability badge.
-            if (result != true && !vm.ActiveVersionChanged) return;
+            // E5 (#213): a deleted parent version frees dependency links —
+            // the tree must rebuild to clear the freed child's paperclip.
+            if (result != true && !vm.ActiveVersionChanged && !vm.VersionsChanged) return;
 
             await LoadTreeAsync();
             ExpandAndSelectItem(itemId);
@@ -1125,6 +1127,44 @@ public sealed partial class FamilyManagerMainViewModel
             ("Method", "DeleteFamilyAsync"));
         if (SelectedItem is null) return;
         if (!await EnsureDatabaseUpToDateAsync().ConfigureAwait(true)) return;
+
+        // E5 (#213, ADR-067): an item referenced by ANY version of ANY
+        // parent cannot be deleted — every stored parent version must stay
+        // self-sufficient. Release path: delete the referencing parent
+        // versions (properties dialog) or the parents themselves.
+        IReadOnlyList<FamilyDependencyReference> dependencyReferences;
+        try
+        {
+            dependencyReferences = await _familyDependencyRepository
+                .GetReferencingParentsAsync(SelectedItem.Id)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            // Fail-safe: a guard we cannot evaluate blocks the deletion.
+            SmartConLogger.Error(
+                $"Dependency guard read failed for '{SelectedItem.Name}': {ex.GetType().Name}: {ex.Message} " +
+                "[Action: deletion blocked; check the catalog database, then retry]");
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DependencyGuard_Title) ?? "Deletion blocked",
+                ex.Message);
+            return;
+        }
+        if (dependencyReferences.Count > 0)
+        {
+            var lines = DependencyGuardText.FormatReferenceLines(dependencyReferences);
+            SmartConLogger.Info(
+                $"Delete blocked by dependency guard: {dependencyReferences.Count} reference(s) — " +
+                string.Join("; ", lines));
+            _dialogService.ShowInfo(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DependencyGuard_Title) ?? "Deletion blocked",
+                string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_DependencyGuard_Body) ??
+                        "Cannot delete \"{0}\": the item is referenced as a dependency:\n{1}",
+                    SelectedItem.Name,
+                    string.Join(Environment.NewLine, lines.Select(l => "• " + l))));
+            return;
+        }
 
         var confirmed = _dialogService.ShowConfirmation(
             LanguageManager.GetString(StringLocalization.Keys.FM_FamilyDeleteTitle) ?? "Delete Family",
