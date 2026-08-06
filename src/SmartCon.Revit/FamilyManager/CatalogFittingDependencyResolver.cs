@@ -152,7 +152,7 @@ public sealed class CatalogFittingDependencyResolver : IFittingDependencyResolve
             // "<default>" type — Revit auto-creates a family-named symbol on
             // load, see #172) and for types renamed in the source project
             // (absent from the catalog version's type list).
-            if (ShouldLoadSingleSymbol(resolved, item.Id, typeName))
+            if (ShouldLoadSingleSymbol(resolved, item, typeName))
             {
                 SmartConLogger.Debug(
                     $"Fitting '{familyName}': per-type load of symbol '{typeName}' (#212)");
@@ -255,24 +255,35 @@ public sealed class CatalogFittingDependencyResolver : IFittingDependencyResolve
     /// the catalog version being loaded actually contains a type with the
     /// rule's name. Query failures degrade to the full-family load — the
     /// conservative path that always brings the referenced content.
+    /// #216: per-type loading is additionally restricted to PIPE fittings.
+    /// The duct-style routing preferences dialog (ducts — and presumably
+    /// cable trays / conduits, which share the no-size-criteria dialog)
+    /// builds its parts list from a document-level index that Revit
+    /// refreshes ONLY on a real full family load (<c>Document.LoadFamily</c>);
+    /// <c>LoadFamilySymbol</c> never triggers the refresh, and neither does
+    /// a project/dialog reopen or Activate()+Regenerate() (manual tests
+    /// 2026-08-06). The pipe dialog computes parts per rule with size
+    /// criteria and tolerates per-type loads — it is the only dialog where
+    /// the #212 optimization is safe.
     /// </summary>
     private bool ShouldLoadSingleSymbol(
         FamilyResolvedFile resolved,
-        string catalogItemId,
+        FamilyCatalogItem item,
         string typeName)
     {
         if (string.IsNullOrEmpty(resolved.VersionId)) return false;
+        if (item.RevitCategoryId != (int)BuiltInCategory.OST_PipeFitting) return false;
         try
         {
             var types = AsyncBridge.RunSync(
                 () => _typeRepository.GetTypesForItemVersionAsync(
-                    catalogItemId, resolved.VersionId, CancellationToken.None));
+                    item.Id, resolved.VersionId, CancellationToken.None));
             return types.Any(t => string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex)
         {
             SmartConLogger.Debug(
-                $"Type list query failed (CatalogItemId={catalogItemId}): {ex.Message} — full family load");
+                $"Type list query failed (CatalogItemId={item.Id}): {ex.Message} — full family load");
             return false;
         }
     }

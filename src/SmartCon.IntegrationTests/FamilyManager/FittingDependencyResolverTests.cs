@@ -282,6 +282,39 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
     }
 
     [Test]
+    public async Task Sync_NonPipeFitting_FullFamilyLoad()
+    {
+        // #216: duct-стиль диалога трассировки индексирует части только на
+        // реальной полной загрузке семейства — НЕ-pipe фитинг обязан идти
+        // полным LoadFamily, даже когда тип правила есть в типах версии
+        // (иначе диалог показывает пустые строки + «НЕТ»). В проект попадают
+        // ОБА типа (в .rfa есть и SmartCon Extra Type).
+        _catalog!.ChildItem = MakeChildItem((int)BuiltInCategory.OST_DuctFitting);
+        _dependencyRepository!.LinksByParent[ParentItemId] = new List<FamilyDependencyInfo>
+        {
+            new(ChildItemId, FamilyDependencyKind.Routing, $"{_fittingFamilyName}:{_fittingTypeName}", 0),
+        };
+        var syncService = BuildSyncService();
+
+        var result = syncService.SyncTypeFromSource(
+            SourceDoc, TargetDoc, TypeName, ParentItemId, VersionLabel,
+            int.Parse(Application.VersionNumber));
+
+        await Assert.That(result.IsSuccess).IsTrue();
+        var loadedSymbolsOfFamily = new FilteredElementCollector(TargetDoc)
+            .OfClass(typeof(FamilySymbol))
+            .Cast<FamilySymbol>()
+            .Where(s => string.Equals(s.Family?.Name, _fittingFamilyName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        using (Assert.Multiple())
+        {
+            await Assert.That(loadedSymbolsOfFamily.Count).IsGreaterThanOrEqualTo(2);
+            await Assert.That(loadedSymbolsOfFamily.Any(
+                s => string.Equals(s.Name, _fittingTypeName, StringComparison.OrdinalIgnoreCase))).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task Sync_FittingUnknownEverywhere_RuleSkippedHonestly()
     {
         // Ни связи, ни имени в каталоге — правило пропускается с NotConverged,
@@ -314,7 +347,7 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
             new RevitCompoundStructureSyncService(materialSync));
     }
 
-    private FamilyCatalogItem MakeChildItem() =>
+    private FamilyCatalogItem MakeChildItem(int? revitCategoryId = (int)BuiltInCategory.OST_PipeFitting) =>
         new(
             Id: ChildItemId,
             Name: _fittingFamilyName!,
@@ -328,7 +361,8 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
             Tags: Array.Empty<string>(),
             PublishedBy: null,
             CreatedAtUtc: DateTimeOffset.UtcNow,
-            UpdatedAtUtc: DateTimeOffset.UtcNow);
+            UpdatedAtUtc: DateTimeOffset.UtcNow,
+            RevitCategoryId: revitCategoryId);
 
     private FamilySymbol? FindFittingSymbol(Document doc)
     {
