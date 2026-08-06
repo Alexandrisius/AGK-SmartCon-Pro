@@ -458,23 +458,47 @@ public sealed partial class FamilyManagerMainViewModel
         var prepared = await _preparationService.PrepareProjectImportAsync(
             systemAnalyses, loadableFamilies, ct);
 
-        if (projectNameOverride is not null && prepared.Count == 1 && prepared[0].FamilySource == "system")
+        var singleSystemItem = prepared.Count(p => p.FamilySource == "system") == 1
+            ? prepared.First(p => p.FamilySource == "system")
+            : null;
+        if (projectNameOverride is not null && singleSystemItem is not null)
         {
-            prepared = new List<PreparedFamilyItem>
-            {
-                prepared[0] with
+            var oldSourcePath = singleSystemItem.SourcePath;
+            var newSourcePath = $"system://{SafeFileName.GetBaseName(projectNameOverride)}";
+            prepared = prepared
+                .Select(p =>
                 {
-                    DisplayName = projectNameOverride,
-                    SourcePath = $"system://{SafeFileName.GetBaseName(projectNameOverride)}",
-                    // The staged pipeline reads SystemSource.DisplayName — the
-                    // override must reach it too, otherwise the staged
-                    // mini-project is logged/marked under the category name
-                    // instead of the user-facing family name.
-                    Source = prepared[0].Source is SmartCon.Core.Models.FamilyManager.FamilyImportSource.SystemSource sys
-                        ? sys with { DisplayName = projectNameOverride }
-                        : prepared[0].Source
-                }
-            };
+                    if (p.SourcePath == oldSourcePath && p.FamilySource == "system")
+                    {
+                        return p with
+                        {
+                            DisplayName = projectNameOverride,
+                            SourcePath = newSourcePath,
+                            // The staged pipeline reads SystemSource.DisplayName — the
+                            // override must reach it too, otherwise the staged
+                            // mini-project is logged/marked under the category name
+                            // instead of the user-facing family name.
+                            Source = p.Source is SmartCon.Core.Models.FamilyManager.FamilyImportSource.SystemSource sys
+                                ? sys with { DisplayName = projectNameOverride }
+                                : p.Source
+                        };
+                    }
+
+                    // ADR-066: dependency rows point at the parent by its
+                    // SourcePath — the rename must rewrite their links too,
+                    // otherwise Phase 3 cannot match parent→child.
+                    return p.DependencyLinks is null
+                        ? p
+                        : p with
+                        {
+                            DependencyLinks = p.DependencyLinks
+                                .Select(l => l.ParentSourcePath == oldSourcePath
+                                    ? l with { ParentSourcePath = newSourcePath }
+                                    : l)
+                                .ToList()
+                        };
+                })
+                .ToList();
         }
 
         return await MapPreparedItemsToBatchItemsAsync(prepared, ct);
@@ -553,9 +577,16 @@ public sealed partial class FamilyManagerMainViewModel
                 MatchedItemName: p.MatchedItemName,
                 ExistingCategoryId: existingCategoryId,
                 ExistingCategoryPath: existingCategoryName,
-                HealthReport: p.HealthReport)
+                HealthReport: p.HealthReport,
+                DependencyLinks: p.DependencyLinks)
             {
+                // ADR-066: dependency rows (routing fittings) exist to
+                // guarantee PRESENCE in the catalog, not to auto-update it —
+                // an already-catalogued dependency defaults to Skip and the
+                // parent link is written to the existing item. The user can
+                // still switch to IncrementVersion/OverwriteCurrent manually.
                 Action = status == FamilyBatchImportStatus.Duplicate
+                    || (p.DependencyLinks is not null && status == FamilyBatchImportStatus.Existing)
                     ? FamilyBatchImportAction.Skip
                     : FamilyBatchImportAction.IncrementVersion
             });

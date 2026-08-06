@@ -311,6 +311,8 @@ public static class StringLocalization
         public const string FM_Gate_Tooltip_FailedRules = "FM_Gate_Tooltip_FailedRules";
         public const string FM_Gate_Tooltip_FailedBoth = "FM_Gate_Tooltip_FailedBoth";
         public const string FM_Gate_Tooltip_Imported = "FM_Gate_Tooltip_Imported";
+        public const string FM_Gate_Tooltip_DependencyFailed = "FM_Gate_Tooltip_DependencyFailed";
+        public const string FM_BatchImport_DependencyOf_Tooltip = "FM_BatchImport_DependencyOf_Tooltip";
         public const string FM_ValidationReport_Title = "FM_ValidationReport_Title";
         public const string FM_ValidationReport_Close = "FM_ValidationReport_Close";
         public const string FM_ValidationReport_ColSection = "FM_ValidationReport_ColSection";

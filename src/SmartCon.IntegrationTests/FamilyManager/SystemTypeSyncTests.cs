@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using Nice3point.TUnit.Revit;
 using Nice3point.TUnit.Revit.Executors;
@@ -315,7 +315,7 @@ public sealed class SystemTypeSyncTests : RevitApiTest
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(
-            Document activeDoc, string familyName, string typeName, int targetRevitVersion) => null;
+            Document activeDoc, string familyName, string typeName, int targetRevitVersion, string? parentCatalogItemId = null) => null;
     }
 
     private sealed class FakeFamilyFileResolver : IFamilyFileResolver

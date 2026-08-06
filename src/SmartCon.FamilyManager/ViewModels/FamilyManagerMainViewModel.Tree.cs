@@ -431,10 +431,22 @@ public sealed partial class FamilyManagerMainViewModel
 
                 foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
                 {
-                    if (typeNode.IsVirtual) continue;
-
-                    var typePresent = snapshot.LoadableTypes.Contains(
-                        (familyKey, typeNode.TypeName.ToUpperInvariant()));
+                    bool typePresent;
+                    if (typeNode.IsVirtual)
+                    {
+                        // #212 (ADR-066 follow-up): the virtual node represents
+                        // the typeless family itself — the synthetic
+                        // "<default>" type never exists in a project (Revit
+                        // auto-creates a family-named symbol on load, #172).
+                        // Its presence is the family's presence; skipping it
+                        // left typeless fittings grey forever.
+                        typePresent = leafPresent;
+                    }
+                    else
+                    {
+                        typePresent = snapshot.LoadableTypes.Contains(
+                            (familyKey, typeNode.TypeName.ToUpperInvariant()));
+                    }
                     if (typePresent) marked++;
                     typeNode.IsInProject = typePresent;
                     // #187: loadable stale is leaf-scoped (the whole family
@@ -459,10 +471,12 @@ public sealed partial class FamilyManagerMainViewModel
             if (leaf.FamilySource != "system")
             {
                 // Loadable: leaf-scoped stale — refresh the per-type dots
-                // with the leaf's own IsStale flag.
+                // with the leaf's own IsStale flag. #212: virtual nodes are
+                // NOT skipped — the typeless family's node carries the same
+                // leaf-scoped verdict as real types (its presence/stale is
+                // the family's).
                 foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
                 {
-                    if (typeNode.IsVirtual) continue;
                     typeNode.IsStaleInProject = typeNode.IsInProject && leaf.IsStale;
                 }
                 continue;
@@ -544,12 +558,36 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// #187 (M1): re-evaluates presence badges against the CURRENT active
     /// document without rebuilding the tree — used on document switches that
-    /// do not trigger a LoadTreeAsync (same active database).
+    /// do not trigger a LoadTreeAsync (same active database). Concurrent
+    /// requests coalesce (multi-type DnD fires one placement event per
+    /// type): a recompute already in flight sets the trailing flag and the
+    /// loop runs once more with the freshest document state. Callers are
+    /// marshalled to the UI thread (dispatcher / ConfigureAwait(true)), so
+    /// the flags need no interlocking.
     /// </summary>
     internal async Task RefreshSystemTypeProjectPresenceSafeAsync()
     {
         if (!_treeLoadedOnce) return;
-        await RecomputePresenceAsync(CancellationToken.None);
+        if (_presenceRecomputeInFlight)
+        {
+            _presenceRecomputePending = true;
+            return;
+        }
+
+        _presenceRecomputeInFlight = true;
+        try
+        {
+            do
+            {
+                _presenceRecomputePending = false;
+                await RecomputePresenceAsync(CancellationToken.None);
+            }
+            while (_presenceRecomputePending);
+        }
+        finally
+        {
+            _presenceRecomputeInFlight = false;
+        }
     }
 
     private CatalogTreeNodeViewModel? BuildCategoryNode(

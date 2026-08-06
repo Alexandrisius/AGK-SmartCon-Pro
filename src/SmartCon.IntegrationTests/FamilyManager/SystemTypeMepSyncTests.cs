@@ -400,6 +400,6 @@ public sealed class SystemTypeMepSyncTests : RevitApiTest
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(
-            Document activeDoc, string familyName, string typeName, int targetRevitVersion) => null;
+            Document activeDoc, string familyName, string typeName, int targetRevitVersion, string? parentCatalogItemId = null) => null;
     }
 }

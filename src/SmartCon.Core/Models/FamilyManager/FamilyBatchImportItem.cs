@@ -83,6 +83,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// write types + parameter values WITHOUT re-opening the staged .rvt.
 /// <c>null</c> for loadable families or when Prepare failed.
 /// </param>
+/// <param name="DependencyLinks">
+/// ADR-066: set on CHILD rows (dependencies of another row) — the parents
+/// this row must be linked to in <c>family_dependencies</c> after import.
+/// The Phase-3 executor writes the links; the row itself is imported as a
+/// regular loadable family.
+/// </param>
 public sealed record FamilyBatchImportItem(
     string FilePath,
     string FileName,
@@ -112,7 +118,8 @@ public sealed record FamilyBatchImportItem(
     string? MatchedItemName = null,
     string? ExistingCategoryId = null,
     string? ExistingCategoryPath = null,
-    FamilyHealthReport? HealthReport = null)
+    FamilyHealthReport? HealthReport = null,
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

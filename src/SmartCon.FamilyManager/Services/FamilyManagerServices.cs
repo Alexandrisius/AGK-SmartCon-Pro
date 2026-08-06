@@ -158,4 +158,10 @@ public sealed record FamilyManagerServices(
     /// Issue #187: system type finder for the project-presence badges on
     /// type nodes (one CollectTypes pass per tree load).
     /// </summary>
-    ISystemTypeFinder SystemTypeFinder);
+    ISystemTypeFinder SystemTypeFinder,
+    /// <summary>
+    /// ADR-066 (EPIC #207): parent→child dependency links between catalog
+    /// items (<c>family_dependencies</c>, V29). Consumed by the batch-import
+    /// executor to persist routing-fitting links after import (E1).
+    /// </summary>
+    IFamilyDependencyRepository FamilyDependencyRepository);

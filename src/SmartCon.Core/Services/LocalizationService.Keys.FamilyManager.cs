@@ -406,6 +406,8 @@ public static partial class LocalizationService
         ru["FM_Gate_Tooltip_FailedRules"] = "Нарушены правила категории: {0}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedRules"] = "Rule violations: {0}. Import blocked.";
         ru["FM_Gate_Tooltip_FailedBoth"] = "Системные ошибки: {0}, нарушения правил: {1}. Импорт заблокирован."; en["FM_Gate_Tooltip_FailedBoth"] = "System errors: {0}, rule violations: {1}. Import blocked.";
         ru["FM_Gate_Tooltip_Imported"] = "Импорт выполнен — открыть отчёт о проверке"; en["FM_Gate_Tooltip_Imported"] = "Import completed — open the validation report";
+        ru["FM_Gate_Tooltip_DependencyFailed"] = "Зависимости не прошли проверку и будут пропущены: {0}. Элемент будет импортирован без них."; en["FM_Gate_Tooltip_DependencyFailed"] = "Dependencies failed validation and will be skipped: {0}. The item will be imported without them.";
+        ru["FM_BatchImport_DependencyOf_Tooltip"] = "Зависимость элемента: {0}"; en["FM_BatchImport_DependencyOf_Tooltip"] = "Dependency of: {0}";
 
         // Validation Report dialog
         ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";

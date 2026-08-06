@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using Nice3point.TUnit.Revit.Executors;
 using SmartCon.Core.Models.FamilyManager;
@@ -434,7 +434,7 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {
         public ElementId? EnsureFitting(
-            Document activeDoc, string familyName, string typeName, int targetRevitVersion) => null;
+            Document activeDoc, string familyName, string typeName, int targetRevitVersion, string? parentCatalogItemId = null) => null;
     }
 }
 

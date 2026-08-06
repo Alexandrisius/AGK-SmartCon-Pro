@@ -68,7 +68,7 @@ ExtensibleStorage остаётся паттерном существующих �
 | 34 | Import Validation Gate | [ADR-059](../adr/059-import-validation-gate.md) | 2026-07-29 | Health-check .rfa без диалогов Revit (silent rollback, UC-1/UC-2) + правила на binding'ах категорий (12 операторов, display-units-first), единый жёсткий гейт (импорт/новая версия/DnD/свойства), редактор правил в окне категорий, карантин «Без категории» для read-only ролей, metadata-пакет v3 |
 | 35 | Full-immediate Category Editor | [ADR-060](../adr/060-full-immediate-category-editor.md) | 2026-07-29 | Отказ от draft-модели редактора категорий: create/rename/move/delete и привязки пишутся сразу, импорт пакета — атомарный коммит + reload, «Закрыть» вместо OK/Отмена |
 
-## Миграции SQLite V1..V25
+## Миграции SQLite V1..V29
 
 | V | Изменение | Связанный ADR |
 |---|---|---|
@@ -97,6 +97,10 @@ ExtensibleStorage остаётся паттерном существующих �
 | 23 | `glb_state` в `catalog_versions` — терминальный маркер «нет 3D-геометрии» для glb-v1 | #157 |
 | 24 | `min_plugin_version` в `database_meta` — гейт forward-совместимости + ретро-гейт FHV3-баз на 2.0.1-beta.5 | ADR-058 |
 | 25 | `category_validation_rules` — правила валидации на binding'ах категорий (FK CASCADE), Import Validation Gate | ADR-059 |
+| 26 | `family_types.family_name` + recreate: идентичность типа (family, name) | #183 |
+| 27 | `family_types.family_key` — locale-invariant идентичность системной семьи | ADR-064 |
+| 28 | `catalog_versions.es_marker_version` — детект задачи `mini-project-marker-v1` | ADR-062 |
+| 29 | `family_dependencies` — связи parent→child (routing-фитинги, shared nested) | ADR-066 |
 
 ## Ключевые интерфейсы и модели
 

@@ -200,6 +200,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         {
             _pendingValidation = RevalidateRowsSafeAsync(rowsWithCategory);
         }
+
+        // ADR-066: initial dependency indicators (health-based gate states
+        // are already known from row construction; rule-based states refresh
+        // the indicators again when the async revalidation lands).
+        RefreshDependencyIndicators();
     }
 
     private void OnRowSelectionChanged(FamilyBatchImportRow row, bool isSelected)
@@ -440,9 +445,66 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
             finally
             {
+                RefreshDependencyIndicators();
                 UpdateCanImport();
             }
         });
+    }
+
+    /// <summary>
+    /// ADR-066 (E1): recomputes the dependency indicators in both directions:
+    /// child rows get their parent display names (<see cref="FamilyBatchImportRow.DependencyParentNames"/>),
+    /// parent rows get the names of gate-failed children
+    /// (<see cref="FamilyBatchImportRow.FailedDependencyNames"/>). Called
+    /// after row construction and after every gate revalidation — a
+    /// gate-failed child is already forced to Skip by the standard gate, so
+    /// the parent stays importable and the indicator is informational
+    /// ("will be imported without these dependencies").
+    /// </summary>
+    internal void RefreshDependencyIndicators()
+    {
+        var fileNameByPath = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var row in Items)
+        {
+            fileNameByPath[row.FilePath] = row.FileName;
+        }
+
+        var failedByParent = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var row in Items)
+        {
+            if (row.DependencyLinks is null)
+            {
+                row.DependencyParentNames = null;
+                continue;
+            }
+
+            row.DependencyParentNames = row.DependencyLinks
+                .Select(l => fileNameByPath.TryGetValue(l.ParentSourcePath, out var name) ? name : l.ParentSourcePath)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (!row.IsGateBlocked) continue;
+            foreach (var link in row.DependencyLinks)
+            {
+                if (!failedByParent.TryGetValue(link.ParentSourcePath, out var list))
+                {
+                    list = new List<string>();
+                    failedByParent.Add(link.ParentSourcePath, list);
+                }
+
+                if (!list.Contains(row.FileName))
+                {
+                    list.Add(row.FileName);
+                }
+            }
+        }
+
+        foreach (var row in Items)
+        {
+            row.FailedDependencyNames = failedByParent.TryGetValue(row.FilePath, out var failed)
+                ? failed
+                : null;
+        }
     }
 
     private void OnRowOpenValidationReport(FamilyBatchImportRow row)
@@ -919,7 +981,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             IsCrossNameDuplicate: r.IsCrossNameDuplicate,
             MatchedItemName: r.MatchedItemName,
             ExistingCategoryId: r.ExistingCategoryId,
-            ExistingCategoryPath: r.ExistingCategoryPath)
+            ExistingCategoryPath: r.ExistingCategoryPath,
+            DependencyLinks: r.DependencyLinks)
         {
             Action = r.Action
         }).ToList();

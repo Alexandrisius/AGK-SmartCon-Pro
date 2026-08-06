@@ -1021,6 +1021,7 @@ public sealed partial class FamilyManagerMainViewModel
             _versionWriter,
             _staleDetector,
             _catalogProvider,
+            _familyDependencyRepository,
             CurrentRevitVersion);
 
         using var vm = new FamilyBatchImportViewModel(

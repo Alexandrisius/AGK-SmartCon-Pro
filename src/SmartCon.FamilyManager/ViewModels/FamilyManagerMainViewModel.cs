@@ -63,6 +63,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
+    private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly IDispatcher _dispatcher;
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
@@ -97,6 +98,8 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// <summary>#187 (#2): cached presence snapshot of the active document —
     /// re-applied to freshly rebuilt tree nodes so badges do not flicker.</summary>
     private FamilyManagerMainViewModel.ProjectPresenceSnapshot? _presenceSnapshot;
+    private bool _presenceRecomputeInFlight;
+    private bool _presenceRecomputePending;
 
     // ── Stale detection session cache (Phase 24 / ADR-030) ─────────────
     [ObservableProperty] private bool _isStaleCheckInProgress;
@@ -233,6 +236,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _versionWriter = services.VersionWriter;
         _clock = services.Clock;
         _sharedNestedRepository = services.SharedNestedRepository;
+        _familyDependencyRepository = services.FamilyDependencyRepository;
 
         // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
         // Application.Current?.Dispatcher. The latter is null in net48 Revit
@@ -860,14 +864,29 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             // OnPlacementCompleted). Not awaited: UI refresh is opportunistic.
             _ = _dispatcher.InvokeAsync(() =>
             {
-                _ = ReevaluateSystemItemBadgeAsync(
-                    data.CatalogItemId, data.TypeName, data.SystemFamilyName, data.SystemFamilyKey);
+                _ = RefreshAfterSystemTypePlacedAsync(data);
             });
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn($"OnSystemTypePlaced dispatcher invoke failed: {ex.Message} [Action: run «Проверить» to refresh the stale badges]");
         }
+    }
+
+    /// <summary>
+    /// ADR-066 follow-up: the DnD tail mirrors the load-to-project tail
+    /// (LoadToProject → badge re-eval + full presence recompute). The sync
+    /// behind a system type placement loads the type's routing fitting
+    /// DEPENDENCIES into the project implicitly — only a full presence pass
+    /// turns those loadable badges blue; the per-type badge re-eval alone
+    /// covers just the placed parent type.
+    /// </summary>
+    private async Task RefreshAfterSystemTypePlacedAsync(FamilyPlacementDragData data)
+    {
+        await ReevaluateSystemItemBadgeAsync(
+            data.CatalogItemId, data.TypeName, data.SystemFamilyName, data.SystemFamilyKey)
+            .ConfigureAwait(true);
+        await RefreshSystemTypeProjectPresenceSafeAsync().ConfigureAwait(true);
     }
 
     private void OnPlacementCompleted()

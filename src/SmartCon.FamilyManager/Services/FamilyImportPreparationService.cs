@@ -28,6 +28,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     private readonly IRevitContext _revitContext;
     private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
     private readonly IFamilyHealthChecker _healthChecker;
+    private readonly IFamilyDependencyCollector _dependencyCollector;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
@@ -38,7 +39,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         IContentHashDedupService dedupService,
         IRevitContext revitContext,
         IFamilyTypeCatalogBaker typeCatalogBaker,
-        IFamilyHealthChecker healthChecker)
+        IFamilyHealthChecker healthChecker,
+        IFamilyDependencyCollector dependencyCollector)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -47,6 +49,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
         _typeCatalogBaker = typeCatalogBaker ?? throw new ArgumentNullException(nameof(typeCatalogBaker));
         _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
+        _dependencyCollector = dependencyCollector ?? throw new ArgumentNullException(nameof(dependencyCollector));
     }
 
     /// <summary>
@@ -280,11 +283,98 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             }
         }
 
+        await PrepareDependencyItemsAsync(results, ct).ConfigureAwait(false);
+
         SmartConLogger.Info(
             $"Project prepare complete: {results.Count} items, " +
             $"{_openedDocuments.Count} EditFamily docs held open");
 
         return results;
+    }
+
+    /// <summary>
+    /// ADR-066 (E1): prepares dependency families discovered on system items
+    /// (routing fittings) as regular loadable batch rows. A family already
+    /// queued as a top-level row is NOT duplicated — it only gains the
+    /// dependency links. Each new dependency row goes through the full
+    /// standard pipeline (EditFamily → snapshot → FHV hash → dedup), so it
+    /// arrives in the dialog with a real New/Duplicate/Existing status.
+    /// </summary>
+    private async Task PrepareDependencyItemsAsync(
+        List<PreparedFamilyItem> results,
+        CancellationToken ct)
+    {
+        var byUniqueId = new Dictionary<string, (FamilyDependencyDescriptor Descriptor, List<FamilyDependencyLink> Links)>(StringComparer.Ordinal);
+        foreach (var systemItem in results)
+        {
+            if (systemItem.RoutingDependencies is null) continue;
+            foreach (var descriptor in systemItem.RoutingDependencies)
+            {
+                if (!byUniqueId.TryGetValue(descriptor.FamilyUniqueId, out var entry))
+                {
+                    entry = (descriptor, new List<FamilyDependencyLink>());
+                    byUniqueId.Add(descriptor.FamilyUniqueId, entry);
+                }
+
+                entry.Links.Add(new FamilyDependencyLink(
+                    systemItem.SourcePath, descriptor.Kind, descriptor.PartName));
+            }
+        }
+
+        if (byUniqueId.Count == 0)
+        {
+            return;
+        }
+
+        SmartConLogger.Info($"Preparing {byUniqueId.Count} dependency families (routing fittings)");
+
+        foreach (var pair in byUniqueId)
+        {
+            ct.ThrowIfCancellationRequested();
+            var uniqueId = pair.Key;
+            var entry = pair.Value;
+            var links = (IReadOnlyList<FamilyDependencyLink>)entry.Links;
+
+            var topLevelIndex = results.FindIndex(r =>
+                r.Source is FamilyImportSource.LoadableSource loadableSource &&
+                string.Equals(loadableSource.FamilyUniqueId, uniqueId, StringComparison.Ordinal));
+            if (topLevelIndex >= 0)
+            {
+                results[topLevelIndex] = results[topLevelIndex] with { DependencyLinks = links };
+                SmartConLogger.Debug(
+                    $"Dependency '{entry.Descriptor.FamilyName}' already queued as top-level row — links attached");
+                continue;
+            }
+
+            try
+            {
+                var info = new LoadableFamilyInfo(
+                    entry.Descriptor.FamilyName,
+                    uniqueId,
+                    entry.Descriptor.CategoryName ?? string.Empty,
+                    TypeCount: 0);
+                var item = await PrepareLoadableFromProjectAsync(info, ct).ConfigureAwait(false);
+                results.Add(item with { DependencyLinks = links });
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Prepare dependency '{entry.Descriptor.FamilyName}' failed: {ex.Message} " +
+                    "[Action: семейство будет показано как Error в batch-диалоге; родительская категория будет импортирована без связи на него]");
+                results.Add(new PreparedFamilyItem(
+                    SourcePath: $"loadable://{entry.Descriptor.FamilyName}",
+                    DisplayName: entry.Descriptor.FamilyName,
+                    RevitMajorVersion: GetRevitMajorVersion(),
+                    ContentHash: null,
+                    LoadableSnapshot: null,
+                    SystemSnapshot: null,
+                    ErrorMessage: ex.Message,
+                    Source: null,
+                    SourceTypes: null,
+                    FamilySource: "loadable",
+                    DependencyLinks: links));
+            }
+        }
     }
 
     /// <summary>
@@ -729,12 +819,18 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var typeUniqueIds = analysis.Types.Select(t => t.UniqueId).ToList();
         var builtInCategory = analysis.Category;
 
+        IReadOnlyList<FamilyDependencyDescriptor>? routingDependencies = null;
         var snapshot = await _awaitableEvent
             .RaiseAsync(app =>
             {
                 var activeDoc = _revitContext.GetDocument();
-                return _snapshotExtractor.ExtractFromProject(
+                var extracted = _snapshotExtractor.ExtractFromProject(
                     activeDoc, typeUniqueIds, builtInCategory);
+                // ADR-066 (E1): same Revit-thread roundtrip — routing rules
+                // resolve to live families whose identities (UniqueId) drive
+                // the dependency auto-import below.
+                routingDependencies = _dependencyCollector.CollectRoutingDependencies(activeDoc, extracted);
+                return extracted;
             }, ct)
             .ConfigureAwait(false);
 
@@ -781,7 +877,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             ExistingVersionLabel: dedupResult.ExistingVersionLabel,
             MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
             IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
+            MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
+            RoutingDependencies: routingDependencies);
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(

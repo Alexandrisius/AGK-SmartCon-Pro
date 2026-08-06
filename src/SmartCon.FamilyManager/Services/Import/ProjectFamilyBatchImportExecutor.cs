@@ -14,6 +14,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
     private readonly IFamilyVersionWriter _versionWriter;
     private readonly IStaleDetector _staleDetector;
     private readonly IFamilyCatalogProvider _catalog;
+    private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
     private readonly int _revitVersion;
 
@@ -27,6 +28,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         IFamilyVersionWriter versionWriter,
         IStaleDetector staleDetector,
         IFamilyCatalogProvider catalog,
+        IFamilyDependencyRepository familyDependencyRepository,
         int revitVersion)
     {
         _staging = staging;
@@ -36,6 +38,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         _versionWriter = versionWriter;
         _staleDetector = staleDetector;
         _catalog = catalog;
+        _familyDependencyRepository = familyDependencyRepository;
         _revitVersion = revitVersion;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
@@ -58,6 +61,13 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         var stopped = false;
         var importedLoadableItems = new List<FamilyBatchImportItem>();
         var loadableAttributeTasks = new List<LoadableFamilyAttributeTask>();
+        var importedSystemItemIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        // ADR-066: ORIGINAL dialog paths of successfully imported loadables.
+        // Staging rewrites FilePath to the managed .rfa path, so the staged
+        // item can never be matched back to the dialog row by path — the
+        // dependency link planning below needs the original "loadable://..."
+        // keys.
+        var importedLoadableOriginalPaths = new List<string>();
 
         try
         {
@@ -89,7 +99,8 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                     if (item.FamilySource == "system")
                     {
                         (success, skipped, errors) = await ProcessSystemItemAsync(
-                            item, i, items.Count, progress, success, skipped, errors, ct)
+                            item, i, items.Count, progress, success, skipped, errors,
+                            importedSystemItemIds, ct)
                             .ConfigureAwait(false);
                     }
                     else
@@ -98,6 +109,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                             item, i, items.Count, categoryId, progress,
                             success, skipped, errors,
                             importedLoadableItems, loadableAttributeTasks,
+                            importedLoadableOriginalPaths,
                             ct).ConfigureAwait(false);
                     }
                 }
@@ -144,6 +156,12 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                         $"Version marker write failed: {ex.Message} [Action: семейства в проекте останутся без маркера, Проверить покажет stale до явной Загрузки]");
                 }
             }
+
+            if (!stopped)
+            {
+                await WriteDependencyLinksAsync(items, importedSystemItemIds, importedLoadableOriginalPaths, ct)
+                    .ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -173,6 +191,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         int success,
         int skipped,
         int errors,
+        IDictionary<string, string> importedSystemItemIds,
         CancellationToken ct)
     {
         Report(progress, index, total, item.FileName,
@@ -208,6 +227,16 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
             // the just-stored catalog version — stamp them with the version
             // marker so the next Check does not flag them as stale.
             await WriteSystemTypeMarkersAsync(staged, sysResult, ct).ConfigureAwait(false);
+            // ADR-066 (E1): remember the imported parent's catalog item id so
+            // the post-loop pass can attach dependency links to it.
+            var importedCatalogItemId = sysResult.ExtractionTasks.Count > 0
+                ? sysResult.ExtractionTasks[0].CatalogItemId
+                : null;
+            if (!string.IsNullOrEmpty(importedCatalogItemId))
+            {
+                importedSystemItemIds[item.FilePath] = importedCatalogItemId!;
+            }
+
             Report(progress, index, total, item.FileName,
                 FamilyBatchImportPhase.Importing, FamilyBatchImportRowState.Success, null, success, skipped, errors);
         }
@@ -306,6 +335,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         int errors,
         List<FamilyBatchImportItem> importedLoadableItems,
         List<LoadableFamilyAttributeTask> loadableAttributeTasks,
+        List<string> importedLoadableOriginalPaths,
         CancellationToken ct)
     {
         Report(progress, index, total, item.FileName,
@@ -330,6 +360,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         {
             success++;
             importedLoadableItems.Add(staged);
+            importedLoadableOriginalPaths.Add(item.FilePath);
             loadableAttributeTasks.AddRange(loadResult.AttributeTasks);
 
             if (loadResult.AttributeTasks.Count > 0)
@@ -359,6 +390,72 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         }
 
         return (success, skipped, errors);
+    }
+
+    /// <summary>
+    /// ADR-066 (E1): persists parent→child dependency links to
+    /// <c>family_dependencies</c> after the main import loop. The resolution
+    /// rules live in <see cref="DependencyLinkPlanner"/> (pure, unit-tested);
+    /// this method only logs unresolved children and writes the planned links
+    /// to the parent's CURRENT version
+    /// (<see cref="IFamilyDependencyRepository.ReplaceForCurrentVersionAsync"/>).
+    /// Failures never roll back the import — the routing sync falls back to
+    /// name-based resolution (ADR-066 §5.3).
+    /// </summary>
+    private async Task WriteDependencyLinksAsync(
+        IReadOnlyList<FamilyBatchImportItem> items,
+        IReadOnlyDictionary<string, string> importedSystemItemIds,
+        IReadOnlyCollection<string> importedLoadableOriginalPaths,
+        CancellationToken ct)
+    {
+        var children = items.Where(i => i.DependencyLinks is { Count: > 0 }).ToList();
+        if (children.Count == 0)
+        {
+            return;
+        }
+
+        using var _scope = SmartConLogger.BeginScope("BatchImport",
+            ("Method", nameof(WriteDependencyLinksAsync)),
+            ("Count", children.Count));
+
+        var plan = DependencyLinkPlanner.Build(items, importedSystemItemIds, importedLoadableOriginalPaths);
+
+        foreach (var child in plan.UnresolvedChildren)
+        {
+            var reason = child.Action == FamilyBatchImportAction.Skip
+                ? "skipped and is not in the catalog"
+                : "not imported (error)";
+            SmartConLogger.Warn(
+                $"Dependency links for '{child.FileName}' not written: the dependency row was {reason}. " +
+                "[Action: проверьте строку зависимости в batch-диалоге и повторите импорт родителя]");
+        }
+
+        foreach (var (childName, parentSourcePath) in plan.LinksWithParentNotImported)
+        {
+            SmartConLogger.Debug(
+                $"Link '{childName}' → '{parentSourcePath}' not written: parent was skipped or failed");
+        }
+
+        foreach (var pair in plan.LinksByParent)
+        {
+            ct.ThrowIfCancellationRequested();
+            var parentId = pair.Key;
+            var links = pair.Value;
+            try
+            {
+                var written = await _familyDependencyRepository
+                    .ReplaceForCurrentVersionAsync(parentId, links, ct)
+                    .ConfigureAwait(false);
+                SmartConLogger.Info(
+                    $"Dependency links written: {written} (parent CatalogItemId={parentId})");
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Dependency link write failed for parent {parentId}: {ex.GetType().Name}: {ex.Message}. " +
+                    "[Action: routing-sync этого эталона будет работать по имени (fallback); связи можно создать повторным импортом родителя]");
+            }
+        }
     }
 
     private static void Report(

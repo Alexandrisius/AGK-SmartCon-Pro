@@ -318,7 +318,7 @@ public interface ISegmentSyncService
 
 ## IFittingDependencyResolver
 
-Разрешение фитингов трассировки (Issue #104, ADR-061): фитинг — обычное loadable-семейство каталога; есть в проекте по `"{Family}:{Type}"` — используется, нет — догружается из каталога, нет в каталоге — правило пропускается (Warn). Вызывается СТРОГО вне транзакции (`LoadFamily` запрещён в modifiable document) — оркестратор вызывает его до открытия sync-транзакции.
+Разрешение фитингов трассировки (Issue #104, ADR-061; ADR-066/E1): фитинг — обычное loadable-семейство каталога; есть в проекте по `"{Family}:{Type}"` — используется, нет — догружается из каталога, нет в каталоге — правило пропускается (Warn). При переданном `parentCatalogItemId` резолв идёт СНАЧАЛА по связям `family_dependencies` текущей версии родителя (точный `"Family:Type"`, затем same-family), поиск по имени — fallback для эталонов до E1. Загруженный из каталога фитинг получает ES-маркер версии (полноправный участник loadable stale-цикла). Вызывается СТРОГО вне транзакции (`LoadFamily` запрещён в modifiable document) — оркестратор вызывает его до открытия sync-транзакции.
 
 **Файл:** `IFittingDependencyResolver.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/CatalogFittingDependencyResolver.cs`
@@ -327,7 +327,8 @@ public interface ISegmentSyncService
 public interface IFittingDependencyResolver
 {
     ElementId? EnsureFitting(
-        Document activeDoc, string familyName, string typeName, int targetRevitVersion);
+        Document activeDoc, string familyName, string typeName, int targetRevitVersion,
+        string? parentCatalogItemId = null);
 }
 ```
 

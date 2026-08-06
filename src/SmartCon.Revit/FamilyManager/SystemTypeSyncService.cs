@@ -141,7 +141,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         // family with its own stale lifecycle, and the next sync reuses it.
         if (template.Routing is not null)
         {
-            EnsureFittingDependencies(activeDoc, template.Routing, sourceRevitVersion);
+            EnsureFittingDependencies(activeDoc, template.Routing, sourceRevitVersion, catalogItemId);
         }
 
         SystemTypeSyncResult? result = null;
@@ -253,7 +253,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     private void EnsureFittingDependencies(
         Document activeDoc,
         RoutingPreferencesSnapshot routing,
-        int targetRevitVersion)
+        int targetRevitVersion,
+        string parentCatalogItemId)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var rule in routing.Rules)
@@ -269,7 +270,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
 
             var familyName = partName.Substring(0, separator);
             var typeName = partName.Substring(separator + 1);
-            _fittingResolver.EnsureFitting(activeDoc, familyName, typeName, targetRevitVersion);
+            _fittingResolver.EnsureFitting(activeDoc, familyName, typeName, targetRevitVersion, parentCatalogItemId);
         }
     }
 

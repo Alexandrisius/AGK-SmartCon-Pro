@@ -30,6 +30,14 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public FamilyImportSource? Source { get; }
 
     /// <summary>
+    /// ADR-066: parent links when this row is a dependency of another row
+    /// (routing fitting of a system category in E1). <c>null</c> for
+    /// top-level rows. Read-only — links are decided at Phase-1 prepare and
+    /// ride through the dialog unchanged into Phase 3.
+    /// </summary>
+    public IReadOnlyList<FamilyDependencyLink>? DependencyLinks { get; }
+
+    /// <summary>
     /// v2.0.0: precomputed canonical managed path the VM allocated up
     /// front in <c>MapPreparedItemsToBatchItemsAsync</c>. The staging
     /// helper writes the staged file at this exact path (so the
@@ -370,6 +378,63 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// violations) — the row is forced to Skip and cannot be imported.</summary>
     public bool IsGateBlocked => GateStatus == FamilyRowGateStatus.Failed;
 
+    /// <summary>
+    /// ADR-066 (E1): names of THIS row's dependency children whose gate
+    /// failed (they are forced to Skip — the parent will be imported without
+    /// them). Computed by the parent view-model after every revalidation;
+    /// <c>null</c>/empty when all dependencies passed or the row has none.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFailedDependencies))]
+    [NotifyPropertyChangedFor(nameof(FailedDependenciesTooltip))]
+    private IReadOnlyList<string>? _failedDependencyNames;
+
+    /// <summary><c>true</c> when at least one dependency child failed the gate.</summary>
+    public bool HasFailedDependencies => FailedDependencyNames is { Count: > 0 };
+
+    /// <summary>Localized tooltip listing the failed dependency children.</summary>
+    public string FailedDependenciesTooltip
+    {
+        get
+        {
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_Gate_Tooltip_DependencyFailed)
+                ?? "Зависимости не прошли проверку и будут пропущены: {0}. Элемент будет импортирован без них.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                string.Join(", ", FailedDependencyNames ?? Array.Empty<string>()));
+        }
+    }
+
+    /// <summary>
+    /// ADR-066 (E1): display names of the parent rows this row is a
+    /// dependency of (routing fitting of a system category). <c>null</c>
+    /// for top-level rows. Computed by the parent view-model.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDependency))]
+    [NotifyPropertyChangedFor(nameof(DependencyOfTooltip))]
+    private IReadOnlyList<string>? _dependencyParentNames;
+
+    /// <summary><c>true</c> when this row is a dependency of another row.</summary>
+    public bool IsDependency => DependencyParentNames is { Count: > 0 };
+
+    /// <summary>Localized tooltip naming the parent rows of this dependency.</summary>
+    public string DependencyOfTooltip
+    {
+        get
+        {
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_DependencyOf_Tooltip)
+                ?? "Зависимость элемента: {0}";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                string.Join(", ", DependencyParentNames ?? Array.Empty<string>()));
+        }
+    }
+
     /// <summary>Localized short summary of the gate result for the status
     /// icon tooltip.</summary>
     public string GateTooltip
@@ -425,6 +490,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         RevitMajorVersion = item.RevitMajorVersion;
         FamilySource = item.FamilySource;
         Source = item.Source;
+        DependencyLinks = item.DependencyLinks;
         SourceTypes = item.SourceTypes;
         LoadableSnapshot = item.LoadableSnapshot;
         SystemSnapshot = item.SystemSnapshot;

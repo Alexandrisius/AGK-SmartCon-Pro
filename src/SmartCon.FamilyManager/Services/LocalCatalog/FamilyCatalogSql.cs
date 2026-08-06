@@ -406,6 +406,7 @@ internal static class FamilyCatalogSql
         {CreateExtractedAttributeValues};
         {CreateDbUsers};
         {CreateFamilyNestedSharedFamilies};
+        {CreateFamilyDependencies};
         {CreateFamilyFacts}
         """;
 
@@ -491,6 +492,41 @@ internal static class FamilyCatalogSql
         )
         """;
 
+    /// <summary>
+    /// V29 (#207, ADR-066): parent→child dependency links between catalog
+    /// items. <c>dependency_kind</c> discriminates the dependency class
+    /// (<c>routing</c> — fitting families referenced by a system MEPCurve
+    /// type's RoutingPreferenceManager rules; <c>shared_nested</c> — shared
+    /// nested families of a loadable parent). <c>part_name</c> keeps the
+    /// original "Family:Type" token of the routing rule so a rule can be
+    /// matched to a link without re-parsing the parent snapshot. The link is
+    /// version-scoped for history/audit (the parent's staging version that
+    /// declared the dependency); sync reads links of the parent's CURRENT
+    /// version (join by <c>current_version_label</c>) and always resolves
+    /// the child's ACTIVE version — the stored version ids never drive
+    /// version selection.
+    /// </summary>
+    public const string CreateFamilyDependencies = """
+        CREATE TABLE IF NOT EXISTS family_dependencies (
+            parent_catalog_item_id TEXT NOT NULL,
+            parent_version_id TEXT NOT NULL,
+            child_catalog_item_id TEXT NOT NULL,
+            dependency_kind TEXT NOT NULL,
+            part_name TEXT,
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind),
+            FOREIGN KEY (parent_catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (child_catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyDependenciesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_parent ON family_dependencies (parent_catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_child ON family_dependencies (child_catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_version ON family_dependencies (parent_version_id)
+        """;
+
     public const string CreateNestedSharedFamiliesIndexes = """
         -- ix_nested_shared_name: intentionally removed. No current query filters
         -- by nested_family_name; the only SELECT uses catalog_item_id (covered
@@ -518,8 +554,8 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
-        """;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id);
+        """ + CreateFamilyDependenciesIndexes;
 
     /// <summary>
     /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+

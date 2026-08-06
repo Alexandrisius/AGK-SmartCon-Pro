@@ -61,6 +61,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 | V26 | `family_types.family_name` | Identity системного типа (FamilyName, Name) — #183 (ADR-061) |
 | V27 | `family_types.family_key` | Locale-invariant identity — #190 (ADR-064) |
 | V28 | `catalog_versions.es_marker_version` | Детект `mini-project-marker-v1` — #189 (ADR-062) |
+| V29 | `family_dependencies` | Связи parent→child (routing-фитинги, shared nested) — #207/#208 (ADR-066) |
 
 ## Два уровня критичности
 | | Critical задача | Optional задача |

@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 28)
+        if (initialVersion < 29)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v28");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v29");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -85,6 +85,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         // V27 is a plain ADD COLUMN — no rebuild needed.
         await RunMigrationAsync(connection, 27, MigrateV27Async, ct);
         await RunMigrationAsync(connection, 28, MigrateV28Async, ct);
+        await RunMigrationAsync(connection, 29, MigrateV29Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1260,6 +1261,54 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    private static async Task MigrateV29Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 29) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var tableCreated = false;
+            if (!await TableExistsAsync(connection, "family_dependencies", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyDependencies;
+                await cmd.ExecuteNonQueryAsync(ct);
+                tableCreated = true;
+            }
+
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateFamilyDependenciesIndexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '29' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            if (tableCreated)
+            {
+                SmartConLogger.Info(
+                    "Migration v29: added family_dependencies table — parent→child dependency links (#207, ADR-066)");
+            }
+            else
+            {
+                SmartConLogger.Debug("Migration v29: family_dependencies already present (fresh schema) — version bumped to 29");
+            }
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1413,6 +1462,21 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
             await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_dependencies", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyDependencies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Indexes are idempotent (CREATE INDEX IF NOT EXISTS) — same healing
+        // rationale as the nested-shared indexes above.
+        using (var depIdxCmd = connection.CreateCommand())
+        {
+            depIdxCmd.CommandText = FamilyCatalogSql.CreateFamilyDependenciesIndexes;
+            await depIdxCmd.ExecuteNonQueryAsync(ct);
         }
 
         // v16 content_hash columns — ensure they exist even if migration

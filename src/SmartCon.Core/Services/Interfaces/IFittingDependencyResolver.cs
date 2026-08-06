@@ -23,9 +23,18 @@ public interface IFittingDependencyResolver
     /// id, or <c>null</c> when the family is neither in the project nor in
     /// the catalog.
     /// </summary>
+    /// <param name="parentCatalogItemId">
+    /// ADR-066 (E1): catalog item id of the system type's parent (the item
+    /// whose routing rules are being synced). When provided, the resolver
+    /// first consults <c>family_dependencies</c> links of the parent's
+    /// current version and loads the LINKED child item; when no link
+    /// matches (legacy references staged before E1), it falls back to the
+    /// name-based catalog lookup.
+    /// </param>
     ElementId? EnsureFitting(
         Document activeDoc,
         string familyName,
         string typeName,
-        int targetRevitVersion);
+        int targetRevitVersion,
+        string? parentCatalogItemId = null);
 }

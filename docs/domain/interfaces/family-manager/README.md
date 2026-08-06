@@ -21,6 +21,7 @@ module: family-manager-interfaces-index
 | [`extraction.md`](extraction.md) | Снапшоты, хеширование, геометрия: `IFamilySnapshotExtractor`, `IFamilyContentHasher`, `IContentHashDedupService`, `IFamilyGeometryExtractor`, `IGlbWriter`, `IFamilyGeometryPipeline` |
 | [`actualization.md`](actualization.md) | Актуализация БД (ADR-054): `ICatalogActualizationService`, `IDatabaseActualizationTask`, `IFamilyMigrationExtractor`, `IDatabaseUpdateStateService` |
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `IValidationRuleRepository`, `IFamilyValidationEngine`, `IFamilyHealthChecker`, `IFamilyImportValidationService`, `ICategoryChangeGateService` |
+| [`dependencies.md`](dependencies.md) | Зависимости parent→child (ADR-066, V29): `IFamilyDependencyRepository`, `IFamilyDependencyCollector` |
 
 ## См. также
 

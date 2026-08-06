@@ -29,6 +29,16 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// (parallel to <see cref="FamilyBatchImportItem.SourceTypes"/>);
 /// <c>null</c> for loadable families.</param>
 /// <param name="FamilySource"><c>"loadable"</c> or <c>"system"</c>.</param>
+/// <param name="RoutingDependencies">
+/// ADR-066 (E1): dependency descriptors discovered from this item's routing
+/// rules — set on SYSTEM items only, transient (Phase-1 → dependency
+/// preparation inside the same call), never carried into the dialog.
+/// </param>
+/// <param name="DependencyLinks">
+/// ADR-066: set on CHILD items (dependencies of another row) — the parent
+/// rows this item must be linked to in <c>family_dependencies</c> after
+/// import. <c>null</c> for top-level rows.
+/// </param>
 public sealed record PreparedFamilyItem(
     string SourcePath,
     string DisplayName,
@@ -47,4 +57,6 @@ public sealed record PreparedFamilyItem(
     IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
     bool IsCrossNameDuplicate = false,
     string? MatchedItemName = null,
-    FamilyHealthReport? HealthReport = null);
+    FamilyHealthReport? HealthReport = null,
+    IReadOnlyList<FamilyDependencyDescriptor>? RoutingDependencies = null,
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null);
