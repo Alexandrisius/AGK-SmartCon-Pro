@@ -1398,12 +1398,12 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_Fhv6GoldenCanon_IsStable()
+    public void ComputeForSystem_Fhv7GoldenCanon_IsStable()
     {
         // Golden: a FIXED snapshot must always produce this exact hash — any
-        // drift in the FHV6 canon (escaping, culture, ordering, section
-        // layout, WIRE fields) fails loudly here instead of silently
-        // re-flagging every field catalog. When the canon changes ON
+        // drift in the FHV7 canon (escaping, culture, ordering, section
+        // layout, WIRE fields, duct FAMKEY) fails loudly here instead of
+        // silently re-flagging every field catalog. When the canon changes ON
         // PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
         // the golden in the same commit.
         var snapshot = CreateSystemSnapshot(types:
@@ -1416,6 +1416,6 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("B901F3B8D85CF5C60617B6AB7DEF6D78979CCBD639A6E093EBA4B79BD6F8716A", hash.HexString);
+        Assert.Equal("E2B1CB20263E0E4A8C96A9B650E27C67A855CEA70285D589B07C7BC04B541575", hash.HexString);
     }
 }

@@ -275,13 +275,24 @@ the reference is visually inspectable and the snapshot extractor reads types fro
    materialize only at `scope.Commit` — they are deleted in a follow-up transaction so
    the reference contains exactly the catalog type.
 5. **Insulation hosts are created programmatically.** `PipeInsulation.Create` /
-   `DuctInsulation.Create` require a host (pipe/duct/fitting/accessory); the mini-project
-   has none, so the handler places a 1m host from the first template type in the same
-   transaction (base system types always exist and cannot be deleted — product invariant).
-   The host is harmless for extraction/hash (they filter by the insulation category).
-   Note: an empty default template has NO insulation types at all (they materialize only
-   on the UI "Add Insulation" click, CF-4720) — integration tests seed from MEP templates
-   (`Systems/Mechanical/Plumbing-Default*.rte` ship PipeIns=2, DuctIns=2).
+    `DuctInsulation.Create` require a host (pipe/duct/fitting/accessory); the mini-project
+    has none, so the handler places a 1m host from the first template type in the same
+    transaction (base system types always exist and cannot be deleted — product invariant).
+    The host is harmless for extraction/hash (they filter by the insulation category).
+    Note: an empty default template has NO insulation types at all (they materialize only
+    on the UI "Add Insulation" click, CF-4720) — integration tests seed from MEP templates
+    (`Systems/Mechanical/Plumbing-Default*.rte` ship PipeIns=2, DuctIns=2).
+
+    **Revision 2026-08-06 (#181 scope correction):** фильтр хостов изоляции при
+    импорте применяется ТОЛЬКО в `AnalyzeActiveProject` («Импорт активного файла»)
+    и ТОЛЬКО для документов с ES-маркером мини-проекта (ADR-062) — хосты в них
+    существуют исключительно для стейджинга типов изоляции и не являются
+    кандидатами на импорт. В обычном рабочем проекте труба/воздуховод с
+    изоляцией — легальный контент: предлагается в batch-диалоге вместе с
+    изоляцией. `PickSelectedElements` («Импорт выделенных») фильтр не применяет
+    никогда: явный выбор пользователя = явное намерение импорта, включая выбор
+    внутри мини-проекта. Первоначальная редакция #181 («исключать в обоих путях
+    везде») признана избыточной.
 6. **`CanPlaceElementType` guard in the active project.** `PostRequestForElementTypePlacement`
    throws `ArgumentException` for interactively unplaceable types (insulations need a host).
    `SystemFamilyPlacementService` now checks `UIDocument.CanPlaceElementType` and reports

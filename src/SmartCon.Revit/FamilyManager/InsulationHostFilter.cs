@@ -8,8 +8,9 @@ namespace SmartCon.Revit.FamilyManager;
 /// materialize without one (CF-4720) — so they are Revit API artifacts, not
 /// standalone content. #197: the same applies to duct LINING hosts
 /// (DuctLining : InsulationLiningBase — covered automatically).
-/// Used by <c>SystemFamilyRevitOperations</c> (import
-/// analysis + picker) and <c>RevitFamilyMigrationExtractor</c> (staged
+/// Used by <c>SystemFamilyRevitOperations.AnalyzeActiveProject</c> (only for
+/// SmartCon mini-projects — #181 scope correction 2026-08-06; the picker
+/// never applies it) and <c>RevitFamilyMigrationExtractor</c> (staged
 /// mini-project category detection — a host pipe must not make an insulation
 /// mini-project detect as "Трубы").
 /// </summary>
@@ -42,18 +43,5 @@ internal static class InsulationHostFilter
             }
         }
         return hostIds;
-    }
-
-    /// <summary>Per-element insulation check used by the picker (few elements).</summary>
-    public static bool HasInsulation(Document doc, ElementId elementId)
-    {
-        try
-        {
-            return InsulationLiningBase.GetInsulationIds(doc, elementId).Count > 0;
-        }
-        catch (Autodesk.Revit.Exceptions.ArgumentException)
-        {
-            return false;
-        }
     }
 }

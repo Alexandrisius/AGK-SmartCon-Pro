@@ -81,6 +81,13 @@ public sealed class DuctLiningPlacementTests : RevitApiTest
                 DuctLining.Create(d, duct.Id, liningType.Id, 0.082);
             });
 
+            // #181 scope correction (2026-08-06): the host exclusion applies
+            // ONLY to SmartCon mini-projects — mark the document so this
+            // test exercises the exclusion path (unmarked projects keep
+            // host ducts as regular content, see InsulationHostExclusionTests).
+            new RevitMiniProjectMarker(txService, new SystemClock())
+                .MarkAsMiniProject(doc, catalogItemId: null);
+
             var ops = new SystemFamilyRevitOperations(
                 null!,
                 txService,

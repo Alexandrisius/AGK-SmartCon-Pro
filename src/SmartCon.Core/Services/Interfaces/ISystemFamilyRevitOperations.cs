@@ -5,7 +5,15 @@ namespace SmartCon.Core.Services.Interfaces;
 
 public interface ISystemFamilyRevitOperations
 {
-    SelectedElementsAnalysis PickSelectedElements();
+    /// <summary>
+    /// Interactive picker for "Импорт выделенных элементов". Returns
+    /// <c>null</c> when the user cancels the pick (Esc) — a normal gesture
+    /// the caller must not treat as an import error. An explicit pick is
+    /// always the import intent: NO insulation-host filtering is applied
+    /// (#181 scope correction — that filter exists only for
+    /// <see cref="AnalyzeActiveProject"/> in SmartCon mini-projects).
+    /// </summary>
+    SelectedElementsAnalysis? PickSelectedElements();
 
     IReadOnlyList<CategoryAnalysis> AnalyzeActiveProject(Document activeDoc);
 

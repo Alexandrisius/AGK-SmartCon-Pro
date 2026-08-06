@@ -8,13 +8,14 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v6</c>): recalculates stale
-/// (format v1..v5 / NULL) content hashes to the FHV6 format
+/// CRITICAL actualization task (Id=<c>hash-v7</c>): recalculates stale
+/// (format v1..v6 / NULL) content hashes to the FHV7 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
-/// TYPES ordering tie-breaks, stress test 2026-08-05). Owns the
+/// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
+/// discriminator in FAMKEY, #215 manual test 2023 2026-08-06). Owns the
 /// <c>hash_format_version</c> marker
-/// semantics: NULL/1/2/3/4/5 pending, 6 current, -1/-2 terminal (unreadable /
+/// semantics: NULL/1/2/3/4/5/6 pending, 7 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -31,6 +32,12 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// (written at import from the real project) so the migration hash
 /// matches the import-time hash byte-for-byte.
 /// </para>
+/// <para>
+/// FHV7 addition: the same Apply pass heals <c>family_types.family_key</c>
+/// of system rows from the staged snapshot (duct "Single" → shape keys) —
+/// without it the stored keys would break presence/stale matching until a
+/// full re-import.
+/// </para>
 /// </summary>
 internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTaskBase
 {
@@ -44,24 +51,25 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _contentHasher = contentHasher ?? throw new ArgumentNullException(nameof(contentHasher));
     }
 
-    public override string Id => "hash-v6";
+    public override string Id => "hash-v7";
     public override int Order => 10;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (6, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (7, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
         string? hash;
+        SystemFamilySnapshot? trimmedSystem = null;
         if (context.SystemSnapshot is not null)
         {
-            var trimmed = await TrimToCatalogTypeNamesAsync(context.SystemSnapshot, context.Group, ct)
+            trimmedSystem = await TrimToCatalogTypeNamesAsync(context.SystemSnapshot, context.Group, ct)
                 .ConfigureAwait(false);
-            hash = _contentHasher.ComputeForSystem(trimmed)?.HexString;
+            hash = _contentHasher.ComputeForSystem(trimmedSystem)?.HexString;
         }
         else
         {
@@ -92,7 +100,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 6
+                    SET content_hash = @hash, hash_format_version = 7
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -105,7 +113,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 6, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 7, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -114,11 +122,20 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 await itemCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
-            // FHV6 is a breaking data format (ADR-058): a database carrying
-            // v6 hashes must not be WRITTEN by a plugin older than the FHV5
+            // FHV7 (#215): heal stored family_key of system rows from the
+            // staged snapshot (duct "Single" → shape keys) — otherwise the
+            // stored keys break presence/stale matching until a re-import.
+            if (trimmedSystem is not null)
+            {
+                await HealFamilyKeysFromSnapshotAsync(connection, tx, trimmedSystem, context.Group, ct)
+                    .ConfigureAwait(false);
+            }
+
+            // FHV7 is a breaking data format (ADR-058): a database carrying
+            // v7 hashes must not be WRITTEN by a plugin older than the FHV7
             // release — its dedup would silently downgrade/duplicate. Runtime
             // backfill of the forward-compatibility floor (schema-migration
-            // backfill like V24 cannot work here: v6 rows appear only AFTER
+            // backfill like V24 cannot work here: v7 rows appear only AFTER
             // this task runs). Monotonic: a HIGHER pre-existing floor (from
             // a newer plugin) is never lowered.
             using (var readCmd = connection.CreateCommand())
@@ -191,11 +208,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         // same-named types of different system families. A catalog row
         // matches a staged type when the name is equal AND the family
         // tokens agree; legacy rows (no key, no name — pre-V26) match by
-        // name only.
+        // name only. FHV7 (#215): a stored "Single" key is a LEGACY token —
+        // for newly discriminated categories (ducts) it must not veto the
+        // match against the staged shape key, otherwise every duct group
+        // falls to the misleading "matches none" Warn and loses the trim.
         var kept = snapshot.Types
             .Where(t => catalogTypes.Any(c =>
                 string.Equals(c.Name, t.Name, StringComparison.Ordinal)
-                && (c.FamilyKey is not null
+                && (c.FamilyKey is not null && c.FamilyKey != SystemFamilyKeys.SingleFamily
                     ? string.Equals(c.FamilyKey, t.FamilyKey, StringComparison.OrdinalIgnoreCase)
                     : c.FamilyName is not null
                         ? string.Equals(c.FamilyName, t.FamilyName, StringComparison.OrdinalIgnoreCase)
@@ -242,6 +262,49 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             rows.Add((reader.GetString(0), familyKey, familyName));
         }
         return rows;
+    }
+
+    /// <summary>
+    /// FHV7 (#215): rewrites <c>family_types.family_key</c> of the item's
+    /// system rows from the staged snapshot (duct "Single" → shape keys).
+    /// A row is matched by (type_name, family_name) — rows whose family_name
+    /// is empty (loadable items, legacy pre-V26 rows) are never touched, and
+    /// a type absent from the staged snapshot keeps its stored key (nothing
+    /// better available). Runs inside the caller's transaction.
+    /// </summary>
+    private static async Task HealFamilyKeysFromSnapshotAsync(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        SystemFamilySnapshot snapshot,
+        ActualizationGroup group,
+        CancellationToken ct)
+    {
+        var updated = 0;
+        foreach (var type in snapshot.Types)
+        {
+            if (string.IsNullOrEmpty(type.FamilyKey) || string.IsNullOrEmpty(type.FamilyName)) continue;
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                UPDATE family_types
+                SET family_key = @key
+                WHERE catalog_item_id = @itemId
+                  AND type_name = @name
+                  AND family_name = @family
+                  AND family_key <> @key
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@key", type.FamilyKey));
+            cmd.Parameters.Add(new SqliteParameter("@itemId", group.CatalogItemId));
+            cmd.Parameters.Add(new SqliteParameter("@name", type.Name));
+            cmd.Parameters.Add(new SqliteParameter("@family", type.FamilyName));
+            updated += await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        if (updated > 0)
+        {
+            SmartConLogger.Info(
+                $"Healed family_key for {updated} family_types row(s) of '{group.ItemName}' ({group.VersionLabel}) from the staged snapshot (FHV7)");
+        }
     }
 
     private async Task WriteMarkerAsync(

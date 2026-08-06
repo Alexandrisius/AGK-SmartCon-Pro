@@ -69,6 +69,17 @@ public sealed record FamilyContentHash(
     ///     mini-project — identical content produced different hashes and
     ///     a phantom "Существующая" instead of "Дубликат". Critical task
     ///     <c>hash-v6</c> recomputes every row that is not current.
+    /// 7 — duct shape identity (#215, manual test 2023 2026-08-06). System
+    ///     only: <c>FHV7|SYSTEM|{catId}|...</c> — DuctType leaves
+    ///     SingleFamily and gains the Shape discriminator
+    ///     (Duct.Round/Rectangular/Oval): the "Воздуховоды" category has
+    ///     THREE system families, and the shared "Single" key let a
+    ///     rectangular template prototype match a round reference — the
+    ///     sync created a type of the wrong shape with UI-incompatible
+    ///     fittings. Critical task <c>hash-v7</c> recomputes every row
+    ///     that is not current AND heals family_types.family_key from the
+    ///     staged snapshot (stored "Single" keys of ducts are rewritten to
+    ///     the shape keys).
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -84,7 +95,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

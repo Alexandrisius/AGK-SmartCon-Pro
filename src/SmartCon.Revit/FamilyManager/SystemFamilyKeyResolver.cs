@@ -18,9 +18,12 @@ namespace SmartCon.Revit.FamilyManager;
 /// <item><c>WallType</c> → <c>Kind</c> (<see cref="WallKind"/>).</item>
 /// <item><c>StairsType</c> → <c>ConstructionMethod</c>
 /// (<see cref="StairsConstructionMethod"/>, since Revit 2013).</item>
+/// <item><c>DuctType</c> → <c>Shape</c> (#215, FHV7 —
+/// <c>MEPCurveType.Shape : ConnectorProfileType</c>; the category has THREE
+/// system families — round/rectangular/oval — not one).</item>
 /// <item>Everything else → <see cref="SystemFamilyKeys.SingleFamily"/> (one
-/// system family per category: pipes, ducts, floors, roofs, ceilings,
-/// railings, insulations, wires, flex curves — foundation slabs live in
+/// system family per category: pipes, flex curves, floors, roofs, ceilings,
+/// railings, insulations, wires — foundation slabs live in
 /// OST_StructuralFoundation, not in OST_Floors).</item>
 /// </list>
 /// All discriminators are verified on revitapidocs 2021–2027 — no version
@@ -51,6 +54,13 @@ public static class SystemFamilyKeyResolver
                 StairsConstructionMethod.CastInPlace => SystemFamilyKeys.StairsCastInPlace,
                 StairsConstructionMethod.Precast => SystemFamilyKeys.StairsPrecast,
                 _ => SystemFamilyKeys.StairsUnknown,
+            },
+            Autodesk.Revit.DB.Mechanical.DuctType duct => duct.Shape switch
+            {
+                ConnectorProfileType.Round => SystemFamilyKeys.DuctRound,
+                ConnectorProfileType.Rectangular => SystemFamilyKeys.DuctRectangular,
+                ConnectorProfileType.Oval => SystemFamilyKeys.DuctOval,
+                _ => SystemFamilyKeys.DuctUnknown,
             },
             _ => SystemFamilyKeys.SingleFamily,
         };

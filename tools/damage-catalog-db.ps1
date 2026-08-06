@@ -9,7 +9,7 @@
     ЗАЧЕМ ЭТОТ СКРИПТ
     -----------------
     Движок актуализации (ADR-054) дозаполняет записи старых баз задачами:
-    `hash-v6` (content-хэши), `attributes-v1` (типы+атрибуты), `glb-v1`
+    `hash-v7` (content-хэши), `attributes-v1` (типы+атрибуты), `glb-v1`
     (3D превью), `revit-category-v1`, `mini-project-marker-v1` (#189, ES
     маркер staged .rvt). Чтобы проверить их вручную, нужна «старая» база.
     Этот скрипт берёт НОРМАЛЬНУЮ тестовую базу (импортированную текущей
@@ -72,7 +72,7 @@
     - Loadable-режимы (A-E) system-семейства не трогают; -MiniProjectMarker
       наоборот сбрасывает es_marker_version только у system-версий (#189).
     - Терминальные маркеры хэша (-1/-2) скрипт не выставляет — задачи их
-      уважают и не ретраят (семантика hash-v6, ADR-050).
+      уважают и не ретраят (семантика hash-v7, ADR-050).
     - -WhatIf выполняет повреждения ВНУТРИ транзакции, печатает реальные
       счётчики и expected-pending ПОСЛЕ повреждения, затем откатывает —
       база не меняется.
@@ -311,7 +311,7 @@ try {
                              OR NOT EXISTS(SELECT 1 FROM family_assets a
                                             WHERE a.catalog_item_id = ci.id AND a.version_label = cv.version_label
                                               AND a.asset_type = 'Model3D' AND a.description LIKE 'auto-extracted-preview:%')
-                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (6, -1, -2))
+                             OR (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (7, -1, -2))
                             THEN 1 ELSE 0 END) AS anyPending
             FROM catalog_versions cv
             JOIN catalog_items ci ON ci.id = cv.catalog_item_id

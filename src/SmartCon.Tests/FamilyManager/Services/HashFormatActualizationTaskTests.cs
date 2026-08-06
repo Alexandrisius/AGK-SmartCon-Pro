@@ -8,11 +8,12 @@ namespace SmartCon.Tests.FamilyManager.Services;
 
 /// <summary>
 /// Tests for <see cref="HashFormatActualizationTask"/> (ADR-056/065, Issue
-/// #159): stale-hash detection (fmt NULL/not in {6,-1,-2} → recompute to
-/// FHV6) across BOTH loadable and system sources, hash apply with item
-/// sync, catalog-name trimming for staged system snapshots, and the
-/// terminal markers -1/-2. FHV6 has no file-free pass — the system
-/// canonical string changed structurally (WIRE section).
+/// #159; FHV7 — #215): stale-hash detection (fmt NULL/not in {7,-1,-2} →
+/// recompute to FHV7) across BOTH loadable and system sources, hash apply
+/// with item sync, catalog-name trimming for staged system snapshots,
+/// family_key healing from the staged snapshot, and the terminal markers
+/// -1/-2. FHV3+ has no file-free pass — the system canonical string changed
+/// structurally.
 /// </summary>
 public sealed class HashFormatActualizationTaskTests : IDisposable
 {
@@ -68,8 +69,8 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
     {
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "SysCat", familySource: "system", createFileOnDisk: false);
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "StaleV2", hashFormatVersion: 2);   // v2 is stale for v6
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 6);
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "StaleV2", hashFormatVersion: 2);   // v2 is stale for v7
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 7);
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Skipped", hashFormatVersion: -1);
         await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "TooNew", revitVersion: 2026);
 
@@ -84,7 +85,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         var (itemA, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
         var (itemNew, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "TooNew", revitVersion: 2026);
         var (itemSys, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "SysCat", familySource: "system", createFileOnDisk: false);
-        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 6);
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Current", hashFormatVersion: 7);
 
         var keys = await _sut.LoadPendingGroupKeysAsync(2025);
 
@@ -143,12 +144,12 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         foreach (var vid in new[] { v2025, v2021 })
         {
             var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, vid);
-            Assert.Equal(6, fmt);
+            Assert.Equal(7, fmt);
             Assert.Equal(expectedHash, hash);
         }
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Equal(expectedHash, item?.ContentHash);
-        Assert.Equal(6, item?.HashFormatVersion);
+        Assert.Equal(7, item?.HashFormatVersion);
     }
 
     [Fact]
@@ -162,7 +163,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         await _sut.ApplyAsync(ctx, CancellationToken.None);
 
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(6, fmt);
+        Assert.Equal(7, fmt);
         Assert.NotNull(hash);
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Null(item?.ContentHash);
@@ -185,7 +186,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
 
         var expectedHash = _hasher.ComputeForSystem(CreateSystemSnapshot("DN50"))!.HexString;
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(6, fmt);
+        Assert.Equal(7, fmt);
         Assert.Equal(expectedHash, hash);
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Equal(expectedHash, item?.ContentHash);
@@ -204,7 +205,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
 
         var expectedHash = _hasher.ComputeForSystem(staged)!.HexString;
         var (fmt, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
-        Assert.Equal(6, fmt);
+        Assert.Equal(7, fmt);
         Assert.Equal(expectedHash, hash);
     }
 
@@ -220,6 +221,85 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         await _sut.ApplyAsync(ctx, CancellationToken.None);
 
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task Apply_SystemGroup_HealsLegacySingleFamilyKey_AndTrimsDespiteKeyMismatch()
+    {
+        // FHV7 (#215): a duct row stored with the legacy "Single" key (a)
+        // still matches the staged shape-keyed type for trimming (no
+        // misleading "matches none" path) and (b) gets its family_key
+        // healed from the staged snapshot; a row with empty family_name
+        // (loadable/legacy) is never touched.
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "Воздуховоды", familySource: "system", createFileOnDisk: false);
+        await SeedTypeRowAsync(itemId, versionId, fileId, "Круглый", "Воздуховод круглого сечения", SystemFamilyKeys.SingleFamily);
+        await SeedTypeRowAsync(itemId, versionId, fileId, "LegacyNoFamily", "", "");
+
+        var stagedTypes = new[]
+        {
+            new SystemTypeSnapshot("Круглый",
+                [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)],
+                FamilyKey: SystemFamilyKeys.DuctRound,
+                FamilyName: "Воздуховод круглого сечения"),
+            new SystemTypeSnapshot("LegacyNoFamily",
+                [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)],
+                FamilyKey: SystemFamilyKeys.DuctRound,
+                FamilyName: "Воздуховод круглого сечения"),
+            new SystemTypeSnapshot("TemplateDefault",
+                [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)],
+                FamilyKey: SystemFamilyKeys.DuctRectangular,
+                FamilyName: "Воздуховод прямоугольного сечения"),
+        };
+        var staged = new SystemFamilySnapshot(
+            CategoryName: "Воздуховоды", CategoryId: -2008000, Types: stagedTypes);
+        var ctx = SystemContextFor(itemId, "Воздуховоды", "v1", isActive: true, staged,
+            new ActualizationVariant(versionId, fileId, 2025, "p", "Воздуховоды.rvt"));
+        await _sut.ApplyAsync(ctx, CancellationToken.None);
+
+        // (a) Trim: "TemplateDefault" отсутствует в каталоге → хэш без него.
+        var expectedHash = _hasher.ComputeForSystem(staged with
+        {
+            Types = stagedTypes.Where(t => t.Name != "TemplateDefault").ToList(),
+        })!.HexString;
+        var (_, hash, _, _) = await CatalogSeedHelper.ReadVersionAsync(_fixture, versionId);
+        Assert.Equal(expectedHash, hash);
+
+        // (b) Heal: "Single" → shape-ключ; пустая family_name — не тронута.
+        Assert.Equal(SystemFamilyKeys.DuctRound, await ReadFamilyKeyAsync(itemId, "Круглый"));
+        Assert.Equal(string.Empty, await ReadFamilyKeyAsync(itemId, "LegacyNoFamily"));
+    }
+
+    private async Task SeedTypeRowAsync(
+        string itemId, string versionId, string fileId,
+        string typeName, string familyName, string familyKey)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id, family_name, family_key)
+            VALUES (@id, @itemId, @name, 0, @versionId, @fileId, @family, @key)
+            """;
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", itemId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", typeName));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@versionId", versionId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fileId", fileId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@family", familyName));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@key", familyKey));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<string> ReadFamilyKeyAsync(string itemId, string typeName)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT family_key FROM family_types WHERE catalog_item_id = @itemId AND type_name = @name LIMIT 1";
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", itemId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", typeName));
+        return (string)(await cmd.ExecuteScalarAsync())!;
     }
 
     [Fact]

@@ -38,11 +38,26 @@ revitapidocs 2021–2027, версионный гейт не нужен; enum-и
 | OST_CableTray | `CableTrayType` | `IsWithFitting` | `CableTray.WithFittings` / `CableTray.WithoutFittings` |
 | OST_Walls | `WallType` | `Kind` (`WallKind`) | `Wall.Basic` / `Wall.Curtain` / `Wall.Stacked` / `Wall.Unknown` |
 | OST_Stairs | `StairsType` | `ConstructionMethod` (`StairsConstructionMethod`, Since 2013) | `Stairs.Assembled` / `Stairs.CastInPlace` / `Stairs.Precast` |
-| Остальные 10 категорий | — | одна системная семья на категорию | `Single` |
+| OST_DuctCurves | `DuctType` | `Shape` (`MEPCurveType.Shape : ConnectorProfileType`) — **#215, FHV7** | `Duct.Round` / `Duct.Rectangular` / `Duct.Oval` / `Duct.Unknown` |
+| Остальные 9 категорий | — | одна системная семья на категорию | `Single` |
 
 Обоснование `Single`: OST_Floors — foundation slabs живут в OST_StructuralFoundation
-(не в реестре); трубы/воздуховоды/флексы/изоляции/провода/потолки/крыши/ограждения
+(не в реестре); трубы/флексы/изоляции/провода/потолки/крыши/ограждения
 имеют ровно одну системную семью на категорию — дискриминатор не нужен.
+
+**Revision 2026-08-06 (#215, FHV7):** воздуховоды ВЫНЕСЕНЫ из `Single` — у
+категории ТРИ системных семейства (круглого/прямоугольного/овального сечения).
+Ручной тест 2023: эталон круглого воздуховода при DnD в пустой проект создал
+ПРЯМОУГОЛЬНЫЙ тип (общий ключ `Single` сматчил прямоугольный шаблонный
+прототип; familyName-фильтр подавляется ключом), а routing-sync назначил ему
+круглые фитинги через API в обход UI-ограничения. Дискриминатор —
+`MEPCurveType.Shape` (наследуется; revitapidocs 2023–2027). FHV7: префикс
+канона `FHV7|SYSTEM|`, задача `hash-v7` пересчитывает хэши и лечит
+`family_types.family_key` из staged-снапшота. Известное ограничение heal'а:
+матч идёт по (type_name, family_name), а family_name локализован — при
+cross-locale смене (EN-импорт → RU-актуализация) строки не сматчатся и
+старый ключ останется до переимпорта (осознанный trade-off: type_name-only
+матч опасен коллизиями имён между семействами).
 Токены константами в `SmartCon.Core` (`SystemFamilyKeys`) — Core/FamilyManager
 сравнивают ключи без ссылок на Revit API (I-09). Резолвер —
 `SystemFamilyKeyResolver` (SmartCon.Revit), pattern-matching по классу типа.

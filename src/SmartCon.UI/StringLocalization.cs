@@ -230,6 +230,8 @@ public static class StringLocalization
         public const string FM_SystemFamilySelectPrompt = "FM_SystemFamilySelectPrompt";
         public const string FM_SystemFamilyImported = "FM_SystemFamilyImported";
         public const string FM_SystemFamilyImportFailed = "FM_SystemFamilyImportFailed";
+        public const string FM_ImportSelectedNothingImportable = "FM_ImportSelectedNothingImportable";
+        public const string FM_ImportSelectedNothingImportableBody = "FM_ImportSelectedNothingImportableBody";
         public const string FM_SystemFamilyPreparing = "FM_SystemFamilyPreparing";
         public const string FM_EditSystemFamily = "FM_EditSystemFamily";
         public const string FM_NoSystemFamiliesFound = "FM_NoSystemFamiliesFound";

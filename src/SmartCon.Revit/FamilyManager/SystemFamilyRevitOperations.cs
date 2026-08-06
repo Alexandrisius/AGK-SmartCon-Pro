@@ -31,7 +31,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         _miniProjectMarker = miniProjectMarker;
     }
 
-    public SelectedElementsAnalysis PickSelectedElements()
+    public SelectedElementsAnalysis? PickSelectedElements()
     {
         using var _scope = SmartConLogger.BeginScope("SystemRevitOps",
             ("Method", "PickSelectedElements"));
@@ -48,13 +48,14 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         }
         catch (Autodesk.Revit.Exceptions.OperationCanceledException)
         {
-            return new SelectedElementsAnalysis([], []);
+            // Esc/cancel is a normal user gesture, not an empty import —
+            // null lets the caller stay silent instead of showing an error.
+            return null;
         }
 
         var systemTypes = new Dictionary<string, SelectedSystemType>();
         var loadableFamilies = new Dictionary<string, LoadableFamilyInfo>();
         int skippedCount = 0;
-        int skippedInsulationHosts = 0;
 
         foreach (var r in refs)
         {
@@ -98,17 +99,10 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 continue;
             }
 
-            // #181: a picked pipe/duct carrying insulation is an insulation
-            // host (CF-4720 artifact), not standalone content — exclude it
-            // exactly like AnalyzeActiveProject does.
-            var elemBic = CategoryCompat.GetBuiltInCategory(elem.Category);
-            if (IsInsulationHostCategory(elemBic) && HasInsulation(doc, elem.Id))
-            {
-                skippedInsulationHosts++;
-                SmartConLogger.Info(
-                    $"Skipped '{elem.Name}': pipe/duct with insulation is an insulation host, not standalone content");
-                continue;
-            }
+            // #181 (scope corrected 2026-08-06): the insulation-host filter is
+            // NOT applied in the picker — an explicit user pick IS the import
+            // intent. The filter exists only for "Импорт активного файла" in
+            // SmartCon mini-projects (see AnalyzeActiveProject).
 
             var typeElem = doc.GetElement(typeId);
             if (typeElem is null)
@@ -153,9 +147,6 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         if (skippedCount > 0)
             SmartConLogger.Info(
                 $"Skipped {skippedCount} element(s) without resolvable type/category");
-        if (skippedInsulationHosts > 0)
-            SmartConLogger.Info(
-                $"Skipped {skippedInsulationHosts} insulation host(s) (pipe/duct with insulation — #181)");
 
         return new SelectedElementsAnalysis(
             SystemTypes: systemTypes.Values.ToList(),
@@ -168,13 +159,20 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             ("Method", "AnalyzeActiveProject"));
         if (activeDoc is null) return [];
 
-        // #181: pipes/ducts existing ONLY as insulation hosts (the insulation
-        // type cannot exist without a host, CF-4720) are artifacts of the
-        // Revit API, not standalone user content. Excluding them here — before
-        // the type grouping — keeps "Трубы"/"Воздуховоды" categories with the
-        // template "По умолчанию" type out of the batch dialog. A pipe/duct
-        // WITHOUT insulation stays regular content. Computed lazily, only when
-        // a host category is actually reached.
+        // #181 (scope corrected 2026-08-06): pipes/ducts existing ONLY as
+        // insulation hosts (the insulation type cannot exist without a host,
+        // CF-4720) are artifacts of the Revit API. The exclusion applies ONLY
+        // to SmartCon mini-projects (ES marker, ADR-062): a mini-project
+        // carries host pipes/ducts solely to stage insulation types, and those
+        // hosts are staging workarounds, not import candidates. In a REGULAR
+        // working project an insulated pipe/duct is real user content and is
+        // offered for import like anything else (owner decision: «в рабочем
+        // проекте я ожидаю и изоляцию, и трубу в batch-диалоге»).
+        var excludeInsulationHosts = _miniProjectMarker.IsMiniProject(activeDoc);
+        if (excludeInsulationHosts)
+        {
+            SmartConLogger.Debug("Insulation-host exclusion active (SmartCon mini-project)");
+        }
         HashSet<ElementId>? insulatedHostIds = null;
 
         var result = new List<CategoryAnalysis>();
@@ -188,7 +186,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                     .WhereElementIsNotElementType()
                     .AsEnumerable();
 
-                if (IsInsulationHostCategory(entry.Category))
+                if (excludeInsulationHosts && IsInsulationHostCategory(entry.Category))
                 {
                     insulatedHostIds ??= CollectInsulatedHostIds(activeDoc);
                     instances = instances.Where(e => !insulatedHostIds.Contains(e.Id));
@@ -230,7 +228,8 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"{entry.DisplayName}: {ex.Message}");
+                SmartConLogger.Warn(
+                    $"{entry.DisplayName}: {ex.Message} [Action: категория пропущена в анализе; пришлите smartcon.log разработчику, если категория должна импортироваться]");
             }
         }
 
@@ -549,9 +548,6 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
 
     private static HashSet<ElementId> CollectInsulatedHostIds(Document doc)
         => InsulationHostFilter.CollectInsulatedHostIds(doc);
-
-    private static bool HasInsulation(Document doc, ElementId elementId)
-        => InsulationHostFilter.HasInsulation(doc, elementId);
 
     private sealed class SkipDuplicateTypesHandler : IDuplicateTypeNamesHandler
     {

@@ -276,11 +276,12 @@ public static class SystemTypeIdentityKey
 
 ## SystemFamilyKeys
 
-Locale-invariant токены системных семей (Issue #190, ADR-064) — значения
-`family_types.family_key`. Вычисляются `SystemFamilyKeyResolver` (SmartCon.Revit)
+Locale-invariant токены системных семей (Issue #190, ADR-064; #215 — duct
+Shape) — значения `family_types.family_key`. Вычисляются `SystemFamilyKeyResolver` (SmartCon.Revit)
 из per-category discriminator'ов: `IsWithFitting` (Conduit/CableTray),
-`WallType.Kind`, `StairsType.ConstructionMethod`; для односемейных категорий —
-`SingleFamily` (`"Single"`). Константы в Core, чтобы FamilyManager сравнивал
+`WallType.Kind`, `StairsType.ConstructionMethod`, `MEPCurveType.Shape`
+(DuctType — ТРИ семейства: round/rectangular/oval, FHV7); для односемейных
+категорий — `SingleFamily` (`"Single"`). Константы в Core, чтобы FamilyManager сравнивал
 ключи без ссылок на Revit API (I-09).
 
 **Файл:** `SystemFamilyKeys.cs`
@@ -294,7 +295,8 @@ public static class SystemFamilyKeys
     public const string CableTrayWithFittings = "CableTray.WithFittings";
     public const string CableTrayWithoutFittings = "CableTray.WithoutFittings";
     public const string WallBasic = "Wall.Basic";   // + WallCurtain, WallStacked, WallUnknown
-    public const string StairsAssembled = "Stairs.Assembled";  // + StairsCastInPlace, StairsPrecast
+    public const string StairsAssembled = "Stairs.Assembled";  // + StairsCastInPlace, StairsPrecast, StairsUnknown
+    public const string DuctRound = "Duct.Round";   // + DuctRectangular, DuctOval, DuctUnknown (#215, FHV7)
 }
 ```
 

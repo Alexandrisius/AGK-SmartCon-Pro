@@ -275,11 +275,14 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// different families (both conduits are «Короб») previously kept the
     /// extraction order, which differs between the source project and the
     /// staged mini-project → false "Существующая" instead of "Дубликат".
+    /// FHV7 (#215): FAMKEY gains the duct Shape discriminator
+    /// (Duct.Round/Rectangular/Oval instead of "Single") — the
+    /// "Воздуховоды" category has three system families, not one.
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(512);
-        sb.Append("FHV6|SYSTEM|");
+        sb.Append("FHV7|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
 
         sb.Append("TYPES|");

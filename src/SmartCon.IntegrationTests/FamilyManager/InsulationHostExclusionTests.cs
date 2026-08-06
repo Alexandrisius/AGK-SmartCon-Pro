@@ -11,16 +11,18 @@ using TUnit.Core.Executors;
 namespace SmartCon.IntegrationTests.FamilyManager;
 
 /// <summary>
-/// Issue #181: pipe/duct instances existing ONLY as insulation hosts
-/// (CF-4720 — the insulation type cannot exist without a host) must be
-/// excluded from <c>AnalyzeActiveProject</c>: they are Revit API artifacts,
-/// not standalone content. A pipe/duct WITHOUT insulation stays content.
+/// Issue #181 (scope corrected 2026-08-06): the insulation-host exclusion in
+/// <c>AnalyzeActiveProject</c> applies ONLY to SmartCon mini-projects (ES
+/// marker, ADR-062) — their host pipes/ducts exist solely to stage insulation
+/// types (CF-4720). In a regular working project an insulated pipe/duct is
+/// real user content and is offered for import. The picker
+/// (<c>PickSelectedElements</c>) never applies the filter.
 /// </summary>
 public sealed class InsulationHostExclusionTests : RevitApiTest
 {
     [Test]
     [HookExecutor<RevitThreadExecutor>]
-    public async Task AnalyzeActiveProject_InsulatedPipeTypeExcluded_UninsulatedKept()
+    public async Task AnalyzeActiveProject_RegularProject_InsulatedAndBarePipesBothKept()
     {
         var doc = SampleFiles.NewMepTemplateDocument(Application);
         if (doc is null) { Skip.Test("Нет MEP-шаблона с типами изоляции (CF-4720)"); }
@@ -28,6 +30,36 @@ public sealed class InsulationHostExclusionTests : RevitApiTest
         {
             var txService = new RevitTransactionService(new StubRevitContext(doc));
             var (bareTypeName, insulatedTypeName) = SeedTwoPipesOneInsulated(doc, txService);
+
+            // Документ НЕ помечен маркером мини-проекта — обычный рабочий проект.
+            var ops = CreateOperations(doc, txService);
+            var analyses = ops.AnalyzeActiveProject(doc);
+
+            var pipeCategory = analyses.FirstOrDefault(a => a.Category == BuiltInCategory.OST_PipeCurves);
+            using (Assert.Multiple())
+            {
+                await Assert.That(pipeCategory).IsNotNull();
+                var typeNames = pipeCategory!.Types.Select(t => t.Name).ToList();
+                await Assert.That(typeNames).Contains(bareTypeName);
+                await Assert.That(typeNames).Contains(insulatedTypeName);
+            }
+        }
+        finally { doc.Close(false); }
+    }
+
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task AnalyzeActiveProject_MarkedMiniProject_InsulatedExcluded_BareKept()
+    {
+        var doc = SampleFiles.NewMepTemplateDocument(Application);
+        if (doc is null) { Skip.Test("Нет MEP-шаблона с типами изоляции (CF-4720)"); }
+        try
+        {
+            var txService = new RevitTransactionService(new StubRevitContext(doc));
+            var (bareTypeName, insulatedTypeName) = SeedTwoPipesOneInsulated(doc, txService);
+
+            var marker = new RevitMiniProjectMarker(txService, new SystemClock());
+            marker.MarkAsMiniProject(doc, catalogItemId: null);
 
             var ops = CreateOperations(doc, txService);
             var analyses = ops.AnalyzeActiveProject(doc);
@@ -46,7 +78,7 @@ public sealed class InsulationHostExclusionTests : RevitApiTest
 
     [Test]
     [HookExecutor<RevitThreadExecutor>]
-    public async Task AnalyzeActiveProject_AllPipesInsulated_PipeCategoryAbsent()
+    public async Task AnalyzeActiveProject_MarkedMiniProject_AllPipesInsulated_PipeTypeAbsent()
     {
         var doc = SampleFiles.NewMepTemplateDocument(Application);
         if (doc is null) { Skip.Test("Нет MEP-шаблона с типами изоляции (CF-4720)"); }
@@ -55,13 +87,15 @@ public sealed class InsulationHostExclusionTests : RevitApiTest
             var txService = new RevitTransactionService(new StubRevitContext(doc));
             SeedSingleInsulatedPipe(doc, txService);
 
+            var marker = new RevitMiniProjectMarker(txService, new SystemClock());
+            marker.MarkAsMiniProject(doc, catalogItemId: null);
+
             var ops = CreateOperations(doc, txService);
             var analyses = ops.AnalyzeActiveProject(doc);
 
-            // В шаблоне могут быть другие размещённые трубы (зависит от .rte) —
-            // контракт: если категория присутствует, в ней НЕТ типа нашей
-            // изолированной трубы. Категория в целом может отсутствовать
-            // (пустой шаблон) — оба исхода легальны, проверка строго по типу.
+            // В мини-проекте тип изолированной трубы не должен попасть в
+            // анализ (категория в целом может отсутствовать — оба исхода
+            // легальны, проверка строго по типу).
             var pipeCategory = analyses.FirstOrDefault(a => a.Category == BuiltInCategory.OST_PipeCurves);
             if (pipeCategory is not null)
             {

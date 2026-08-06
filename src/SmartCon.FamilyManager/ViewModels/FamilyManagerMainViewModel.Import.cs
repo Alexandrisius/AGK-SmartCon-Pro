@@ -302,14 +302,22 @@ public sealed partial class FamilyManagerMainViewModel
             }
         });
 
-        if (analysis is null || analysis.IsEmpty)
+        if (analysis is null)
         {
-            if (analysis is not null)
-            {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_SystemFamilyImportFailed)
-                    ?? "Не удалось подготовить элементы";
-                IsLoading = false;
-            }
+            // Pick cancelled (Esc) — a normal gesture, stay silent.
+            IsLoading = false;
+            return;
+        }
+
+        if (analysis.IsEmpty)
+        {
+            IsLoading = false;
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportSelectedNothingImportable)
+                ?? "Ни один из выбранных элементов не подлежит импорту";
+            _dialogService.ShowInfo(
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSelectedElements) ?? "Импорт выделенных элементов",
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportSelectedNothingImportableBody)
+                    ?? "Ни один из выбранных элементов не подлежит импорту.\n\nВыбирайте элементы системных категорий (трубы, воздуховоды, стены и т.д.) или экземпляры загружаемых семейств. Подробности — в логе.");
             return;
         }
 

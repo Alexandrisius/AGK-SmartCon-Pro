@@ -38,4 +38,20 @@ public static class SystemFamilyKeys
     /// <see cref="WallUnknown"/>; never silently degrades to
     /// <see cref="SingleFamily"/> so the fallback is self-describing.</summary>
     public const string StairsUnknown = "Stairs.Unknown";
+
+    /// <summary>
+    /// Duct shape discriminator (#215, FHV7): the "Воздуховоды" category has
+    /// THREE system families (круглого / прямоугольного / овального сечения),
+    /// resolved from <c>MEPCurveType.Shape</c> (<c>ConnectorProfileType</c>).
+    /// Treating ducts as <see cref="SingleFamily"/> let a rectangular
+    /// template prototype key-match a round reference — the sync created a
+    /// type of the WRONG shape and the API assigned it incompatible
+    /// (invisible-in-UI) fittings.
+    /// </summary>
+    public const string DuctRound = "Duct.Round";
+    public const string DuctRectangular = "Duct.Rectangular";
+    public const string DuctOval = "Duct.Oval";
+    /// <summary>Unknown/future <c>ConnectorProfileType</c> (incl. Invalid) —
+    /// mirrors <see cref="StairsUnknown"/>.</summary>
+    public const string DuctUnknown = "Duct.Unknown";
 }

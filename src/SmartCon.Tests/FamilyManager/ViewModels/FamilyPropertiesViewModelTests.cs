@@ -10,6 +10,7 @@ using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.ViewModels;
 
+[Collection("Localization")]
 public sealed class FamilyPropertiesViewModelTests
 {
     private static (FamilyPropertiesViewModel vm, Mock<IFamilyAssetService> assetService, Mock<IFamilyGeometryPipeline> geometryPipeline) MakeVm(

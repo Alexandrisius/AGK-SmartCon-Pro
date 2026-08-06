@@ -26,6 +26,8 @@ public static partial class LocalizationService
         ru["FM_SystemFamilySelectPrompt"] = "Выберите элементы системного семейства в Revit..."; en["FM_SystemFamilySelectPrompt"] = "Select system family elements in Revit...";
         ru["FM_SystemFamilyImported"] = "Импортировано системных типов: {0}"; en["FM_SystemFamilyImported"] = "System types imported: {0}";
         ru["FM_SystemFamilyImportFailed"] = "Ошибка импорта системного семейства"; en["FM_SystemFamilyImportFailed"] = "System family import failed";
+        ru["FM_ImportSelectedNothingImportable"] = "Ни один из выбранных элементов не подлежит импорту"; en["FM_ImportSelectedNothingImportable"] = "None of the selected elements can be imported";
+        ru["FM_ImportSelectedNothingImportableBody"] = "Ни один из выбранных элементов не подлежит импорту.\n\nВыбирайте элементы системных категорий (трубы, воздуховоды, стены и т.д.) или экземпляры загружаемых семейств. Трубы и воздуховоды с изоляцией импортируются как обычно. Подробности — в логе."; en["FM_ImportSelectedNothingImportableBody"] = "None of the selected elements can be imported.\n\nSelect elements of system categories (pipes, ducts, walls, etc.) or instances of loadable families. Pipes and ducts carrying insulation import normally. See the log for details.";
         ru["FM_SystemFamilyPreparing"] = "Подготовлено {0} категорий, импорт..."; en["FM_SystemFamilyPreparing"] = "Prepared {0} categories, importing...";
         ru["FM_EditSystemFamily"] = "Редактировать системное семейство"; en["FM_EditSystemFamily"] = "Edit System Family";
         ru["FM_NoSystemFamiliesFound"] = "В проекте не найдено размещённых системных семейств"; en["FM_NoSystemFamiliesFound"] = "No placed system families found in the project";
