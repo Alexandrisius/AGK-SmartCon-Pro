@@ -19,12 +19,14 @@ public sealed class FileFamilyBatchImportExecutorTests
 
     private readonly FakeFileFamilyStagingService _staging = new();
     private readonly Mock<IFamilyImportService> _importService = new();
+    private readonly Mock<IFamilyDependencyRepository> _familyDependencyRepository = new();
     private readonly Mock<IFamilyDataImportService> _dataImportService = new();
     private readonly Mock<ISharedNestedFamilyRepository> _sharedNestedRepository = new();
 
     private FileFamilyBatchImportExecutor CreateExecutor() => new(
         _staging,
         _importService.Object,
+        _familyDependencyRepository.Object,
         _dataImportService.Object,
         _sharedNestedRepository.Object,
         revitVersion: 2025);

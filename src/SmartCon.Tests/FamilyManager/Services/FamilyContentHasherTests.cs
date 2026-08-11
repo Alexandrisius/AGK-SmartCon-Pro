@@ -1418,4 +1418,227 @@ public class FamilyContentHasherTests
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
         Assert.Equal("E2B1CB20263E0E4A8C96A9B650E27C67A855CEA70285D589B07C7BC04B541575", hash.HexString);
     }
+
+    [Fact]
+    public void ComputeForLoadable_Fhv8GoldenCanon_IsStable()
+    {
+        // Golden: a FIXED loadable snapshot must always produce this exact
+        // hash — any drift in the FHV8 loadable canon (escaping, culture,
+        // ordering, section layout, NESTEDHASH pairs) fails loudly here.
+        // When the canon changes ON PURPOSE, bump
+        // FamilyContentHashFormat.CurrentVersion and update the golden in
+        // the same commit.
+        var snapshot = new FamilySnapshot(
+            FamilyName: "GoldenFamily",
+            Category: "Pipe Fittings",
+            Parameters:
+            [
+                new FamilyParameterInfo(
+                    "Diameter", "Double", "PG_GEOMETRY", false, false, null, false, false, null, "ALL_MODEL_TYPE_NAME"),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot("DN50",
+                    [new FamilyParameterValue("Diameter", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(1,
+                [new FormMetrics("Extrusion", true, 0.5, 6, 9, "Pipes", 1.25,
+                    new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1))]),
+            SharedNestedFamilyNames: ["Flange"],
+            CategoryId: -2008049,
+            NonSharedNestedFamilyNames: ["PrivatePart"],
+            SharedNestedContentHashes: [new NestedContentHash("Flange", new string('A', 64))]);
+
+        var hash = _hasher.ComputeForLoadable(snapshot);
+
+        Assert.NotNull(hash);
+        Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
+        Assert.Equal("B2354B9606039C65FCC691EFC52AE862ECA4EA508F5DAEB11A3F6CB107E8195C", hash.HexString);
+    }
+
+    private static FamilySnapshot CreateVerificationBaseline()
+    {
+        return new FamilySnapshot(
+            FamilyName: "Nut",
+            Category: "Pipe Accessories",
+            Parameters:
+            [
+                new FamilyParameterInfo("DN", "Double", "autodesk.parameter.group:constraints-1.0.0",
+                    false, false, null, false, false, null, null),
+                new FamilyParameterInfo("ADSK_Материал обозначение", "String", "autodesk.parameter.group:materials-1.0.0",
+                    true, true, null, false, false, "dbe7f282-3606-44cf-ac51-0f274c34c07b", null),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot(" ",
+                    [new FamilyParameterValue("DN", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(1,
+                [new FormMetrics("Revolution", true, 0.5, 6, 9, null, 1.25,
+                    new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1))],
+                SymbolicCurveCount: 4, ModelCurveCount: 6, ReferencePlaneCount: 8, DimensionCount: 3,
+                TotalSymbolicCurveLength: 10.5, TotalModelCurveLength: 20.25),
+            SharedNestedFamilyNames: [],
+            CategoryId: -2008055);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_DrivenGeometryNoise_Ignored()
+    {
+        // #209 round-4: a host driving the nested family's instance
+        // parameters regenerates embedded geometry at host-pushed sizes —
+        // volumes, bounds, surface areas and curve lengths differ even for
+        // identical definitions. Verification-grade hash must ignore them
+        // (the identity hash must not).
+        var baseline = CreateVerificationBaseline();
+        var drivenCopy = baseline with
+        {
+            Geometry = baseline.Geometry with
+            {
+                Forms =
+                [
+                    new FormMetrics("Revolution", true, 1.75, 6, 9, null, 4.9,
+                        new BoundingBoxSnapshot(-1, -1, 0, 2, 2, 1)),
+                ],
+                TotalSymbolicCurveLength = 33.3,
+                TotalModelCurveLength = 77.7,
+            },
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(drivenCopy);
+        Assert.NotNull(verifyA);
+        Assert.NotNull(verifyB);
+        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+
+        var identityA = _hasher.ComputeForLoadable(baseline);
+        var identityB = _hasher.ComputeForLoadable(drivenCopy);
+        Assert.NotEqual(identityA!.HexString, identityB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_ParameterGroupChange_Detected()
+    {
+        // STRICT (owner directive 2026-08-11, round-5): parameter group IS
+        // part of the definition — a regrouped family is different content.
+        // Revit's overwrite reload does NOT propagate groups (the embedded
+        // definition keeps the host's grouping), so for families whose
+        // v1↔v2 difference includes a regroup the API update will honestly
+        // fail verification — no cosmetic tolerance. The identity hash
+        // behaves identically here.
+        var baseline = CreateVerificationBaseline();
+        var regrouped = baseline with
+        {
+            Parameters =
+            [
+                baseline.Parameters[0],
+                baseline.Parameters[1] with { ParameterGroup = "autodesk.parameter.group:identityData-1.0.0" },
+            ],
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(regrouped);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+
+        var identityA = _hasher.ComputeForLoadable(baseline);
+        var identityB = _hasher.ComputeForLoadable(regrouped);
+        Assert.NotEqual(identityA!.HexString, identityB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_FormulaChange_Detected()
+    {
+        var baseline = CreateVerificationBaseline();
+        var formulaChanged = baseline with
+        {
+            Parameters =
+            [
+                baseline.Parameters[0] with { Formula = "size_lookup(T, \"N\", \"?\", DN)", IsDeterminedByFormula = true },
+                baseline.Parameters[1],
+            ],
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(formulaChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_TopologyChange_Detected()
+    {
+        // Face/edge counts and form kinds stay in the verification grade —
+        // they are topology, not size.
+        var baseline = CreateVerificationBaseline();
+        var topologyChanged = baseline with
+        {
+            Geometry = baseline.Geometry with
+            {
+                Forms =
+                [
+                    new FormMetrics("Revolution", true, 0.5, 12, 18, null, 1.25,
+                        new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1)),
+                ],
+            },
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(topologyChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_TypeValueChange_Detected()
+    {
+        // Type values are NOT host-drivable for shared nested families
+        // (only instance parameters can be associated in the host).
+        var baseline = CreateVerificationBaseline();
+        var valueChanged = baseline with
+        {
+            Types =
+            [
+                new FamilyTypeSnapshot(" ",
+                    [new FamilyParameterValue("DN", "Double", true, "65", 65.0, null)]),
+            ],
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(valueChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_NullSnapshot_ReturnsNull()
+    {
+        Assert.Null(_hasher.ComputeForEmbeddedVerification(null!));
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_MultiFormVolumeReordering_Ignored()
+    {
+        // Validator H1: forms of the same kind sorted by Volume in the
+        // identity hash — host-driven sizes can swap their relative order
+        // between the embedded copy and the raw file. The verification
+        // grade sorts only by topology fields, so the swap is invisible.
+        var formA = new FormMetrics("Extrusion", true, 0.5, 6, 9, null, 1.25,
+            new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1));
+        var formB = new FormMetrics("Extrusion", true, 0.8, 6, 9, null, 1.6,
+            new BoundingBoxSnapshot(0, 0, 0, 2, 2, 1));
+        var baseline = CreateVerificationBaseline() with
+        {
+            Geometry = new GeometryMetrics(2, [formA, formB]),
+        };
+        var drivenResized = baseline with
+        {
+            // Host-driven regen shrank B below A — same topology, sizes differ.
+            Geometry = new GeometryMetrics(2,
+            [
+                formB with { Volume = 0.4, SurfaceArea = 1.1, Bounds = new BoundingBoxSnapshot(0, 0, 0, 0.5, 0.5, 1) },
+                formA with { Volume = 0.9, SurfaceArea = 1.8, Bounds = new BoundingBoxSnapshot(0, 0, 0, 1.5, 1.5, 1) },
+            ]),
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(drivenResized);
+        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+    }
 }

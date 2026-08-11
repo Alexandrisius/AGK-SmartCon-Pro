@@ -136,8 +136,14 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
 
     public Task<FamilyBatchImportItem?> StageLoadableAsync(FamilyBatchImportItem item, CancellationToken ct)
     {
-        if (item.Source is not FamilyImportSource.LoadableSource
-            || !item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase))
+        // ADR-066 (E2): "nested://" rows are shared-nested dependencies whose
+        // document is held open under that synthetic key (re-opened from the
+        // parent's family document) — they stage through the same
+        // held-document SaveAs path as "loadable://" rows.
+        var isLoadableScheme =
+            item.FilePath.StartsWith("loadable://", StringComparison.OrdinalIgnoreCase)
+            || item.FilePath.StartsWith("nested://", StringComparison.OrdinalIgnoreCase);
+        if (item.Source is not FamilyImportSource.LoadableSource || !isLoadableScheme)
         {
             return Task.FromResult<FamilyBatchImportItem?>(item);
         }
@@ -280,9 +286,14 @@ public sealed class ProjectFamilyStagingService : IProjectFamilyStagingService
         var family = activeDoc.GetElement(info.FamilyUniqueId) as Family;
         if (family is null)
         {
+            // For "nested://" rows the UniqueId is scoped to the parent's
+            // family document — there is no project-side fallback at all.
+            var hint = sourcePath is not null && sourcePath.StartsWith("nested://", StringComparison.OrdinalIgnoreCase)
+                ? "вложенное семейство переоткрывается только из held-open документа родителя — проектного fallback нет"
+                : "убедитесь, что семейство размещено в активном проекте";
             SmartConLogger.Warn(
                 $"Family '{info.FamilyName}' (uid='{info.FamilyUniqueId}') not found in active project " +
-                "[Action: убедитесь, что семейство размещено в активном проекте]");
+                $"[Action: {hint}]");
             return null;
         }
         if (family.IsInPlace)

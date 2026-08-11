@@ -1184,6 +1184,16 @@
                                                             Foreground="{DynamicResource TextMutedBrush}"/>
                             </Viewbox>
 
+                            <!-- E2 (#209): amber-бейдж «вложенные устарели — требует переимпорта» (НЕ stale) -->
+                            <Viewbox Width="11" Height="11" Margin="4,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding HasOutdatedDependencies, Converter={StaticResource BoolToVis}}"
+                                     ToolTip="{Binding OutdatedDependenciesTooltip}">
+                                <iconPacks:PackIconMaterial Kind="SyncAlert"
+                                                            Width="24" Height="24"
+                                                            Foreground="#FFA000"/>
+                            </Viewbox>
+
                             <ItemsControl ItemsSource="{Binding MatchedTags}"
                                           VerticalAlignment="Center"
                                           Visibility="{Binding HasMatchedTags, Converter={StaticResource BoolToVis}}">

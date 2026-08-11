@@ -1,5 +1,8 @@
+using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.Stale;
@@ -24,6 +27,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IFamilyCatalogProvider? _catalog;
     private readonly IFamilyTypeRepository? _typeRepository;
     private readonly ISystemTypeSyncOrchestrator? _systemSyncOrchestrator;
+    private readonly IFamilyDependencyRepository? _dependencyRepository;
+    private readonly IFamilySnapshotExtractor? _snapshotExtractor;
+    private readonly IFamilyContentHasher? _contentHasher;
 
     public StaleFamilyUpdater(
         IFamilyLoadService loadService,
@@ -37,7 +43,10 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         ISharedNestedFamilyRepository? nestedSharedRepository = null,
         IFamilyCatalogProvider? catalog = null,
         IFamilyTypeRepository? typeRepository = null,
-        ISystemTypeSyncOrchestrator? systemSyncOrchestrator = null)
+        ISystemTypeSyncOrchestrator? systemSyncOrchestrator = null,
+        IFamilyDependencyRepository? dependencyRepository = null,
+        IFamilySnapshotExtractor? snapshotExtractor = null,
+        IFamilyContentHasher? contentHasher = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(loadService);
@@ -70,6 +79,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _catalog = catalog;
         _typeRepository = typeRepository;
         _systemSyncOrchestrator = systemSyncOrchestrator;
+        _dependencyRepository = dependencyRepository;
+        _snapshotExtractor = snapshotExtractor;
+        _contentHasher = contentHasher;
     }
 
     public async Task<bool> UpdateFamilyAsync(
@@ -203,6 +215,31 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 }
             }
 
+            // #209 round-3: pre-verify BEFORE any reload — FAMILY-DOCUMENT
+            // context ONLY (the verify returns "not applicable" in a
+            // project, where the preserve-types reload is the proven path
+            // and must always run). Case covered: the previous batch
+            // already reloaded the nested family (a retry's LoadFamily
+            // then returns false for "unchanged" and used to be reported
+            // as a hard failure). If the embedded content already equals
+            // the catalog target, the update is a no-op success — write
+            // the marker without touching Revit.
+            var canVerify = _snapshotExtractor is not null && _contentHasher is not null;
+            if (canVerify
+                && StaleUpdateVerificationPolicy.ShouldSkipReload(
+                    await VerifyEmbeddedMatchesResolvedFileAsync(
+                        catalogItemId, resolved, null, ct)
+                    .ConfigureAwait(true)))
+            {
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: embedded content already matches catalog " +
+                    $"{resolved.VersionLabel} — reload skipped, writing marker only");
+                var embeddedName = System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath);
+                await WriteMarkerBestEffortAsync(catalogItemId, resolved, embeddedName, targetRevit, ct)
+                    .ConfigureAwait(true);
+                return (true, embeddedName);
+            }
+
             // Issue #101: Stale Update must reload the family while preserving
             // the set of types currently loaded in the project. A plain
             // LoadFamily pulls in EVERY type defined in the .rfa (could be 50),
@@ -221,47 +258,51 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     ct: ct).GetAwaiter().GetResult(),
                 ct).ConfigureAwait(true);
 
-            if (!result.Success) return (false, result.FamilyName);
+            if (!result.Success)
+            {
+                // In a FAMILY document LoadFamily also reports failure when
+                // the file content is UNCHANGED versus what is loaded
+                // (callbacks never fire) — indistinguishable from a real
+                // rejection at this point, so let the content verification
+                // arbitrate. In a PROJECT the verify is not applicable and
+                // the failure stands as-is (a rejected reload must never be
+                // masked as success).
+                if (canVerify
+                    && StaleUpdateVerificationPolicy.ShouldAcceptFailedReload(
+                        await VerifyEmbeddedMatchesResolvedFileAsync(
+                            catalogItemId, resolved, result.FamilyName, ct)
+                        .ConfigureAwait(true)))
+                {
+                    SmartConLogger.Info(
+                        $"UpdateFamily[{catalogItemId}]: reload reported failure but embedded content " +
+                        $"matches catalog {resolved.VersionLabel} — treating as already up-to-date");
+                    await WriteMarkerBestEffortAsync(catalogItemId, resolved, result.FamilyName, targetRevit, ct)
+                        .ConfigureAwait(true);
+                    return (true, result.FamilyName);
+                }
+                return (false, result.FamilyName);
+            }
 
-            // Persist fresh marker via shared helper. The family has already been
-            // loaded into Revit at this point; if the marker write fails (ES
-            // storage error, Revit main thread timeout) we still treat the
-            // update as SUCCESS. Otherwise the snapshot would keep the entry
-            // and the user would be prompted to update again on the next Check,
-            // re-running LoadFamily with overwriteParameterValues=true and
-            // corrupting any parameters the user edited in the meantime.
-            // A failed marker write is logged at Warn so the operator can
-            // investigate, but the in-Revit state is the source of truth.
-            try
+            // #209 (manual-test bug): in a FAMILY document the reload used
+            // to be a silent no-op while markers claimed the new version.
+            // The load service now reloads the nested definition via
+            // LoadFamily(overwrite) — verify the embedded content hash
+            // equals the catalog target version BEFORE writing any marker.
+            // A failed verification = failed update (no marker, the family
+            // stays stale and the next Check offers it again).
+            if (canVerify)
             {
-                await _versionWriter.WriteVersionMarkerAsync(
-                    catalogItemId,
-                    result.FamilyName ?? resolved.VersionLabel ?? string.Empty,
-                    resolved.VersionLabel,
-                    targetRevit,
-                    ct).ConfigureAwait(true);
+                var verified = await VerifyEmbeddedMatchesResolvedFileAsync(
+                        catalogItemId, resolved, result.FamilyName, ct)
+                    .ConfigureAwait(true);
+                if (StaleUpdateVerificationPolicy.ShouldFailSuccessfulReload(verified))
+                {
+                    return (false, result.FamilyName);
+                }
             }
-            catch (OperationCanceledException)
-            {
-                // OCE is a normal control flow (caller requested cancellation).
-                // Re-raise so the outer catch in this method re-throws it
-                // cleanly, and the caller's CancellationToken is honoured.
-                // The family has already been loaded into Revit, but the
-                // marker was not written, so on the next Check it will
-                // appear stale again — which is the correct outcome for a
-                // cancelled operation.
-                throw;
-            }
-            catch (Exception markerEx)
-            {
-                SmartConLogger.Warn(
-                    $"UpdateFamily[{catalogItemId}]: family was loaded into Revit but " +
-                    $"ES marker write failed: {markerEx.GetType().Name}: {markerEx.Message}. " +
-                    "The family is treated as updated (its in-Revit state is the " +
-                    "source of truth); the snapshot will reflect this on the next " +
-                    "tree rebuild. [Action: if the family re-appears as stale, check " +
-                    "ES schema registration and Revit version reads]");
-            }
+
+            await WriteMarkerBestEffortAsync(catalogItemId, resolved, result.FamilyName, targetRevit, ct)
+                .ConfigureAwait(true);
 
             return (true, result.FamilyName);
         }
@@ -322,6 +363,263 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         }
 
         return (true, item.Name);
+    }
+
+    /// <summary>
+    /// #209 round-4: content verification for the FAMILY-document context.
+    /// Compares the VERIFICATION-GRADE hash
+    /// (<see cref="IFamilyContentHasher.ComputeForEmbeddedVerification"/>)
+    /// of the nested family embedded in the active family document against
+    /// the same-grade hash of the resolved source .rfa — both extracted in
+    /// the same live session, so the comparison is context-consistent, and
+    /// the verification grade ignores regen-driven geometry metrics
+    /// (volumes/bounds/areas/curve lengths) that legitimately differ when
+    /// the host drives the nested family's instance parameters. The full
+    /// identity FHV8 stored in the catalog is NOT used here: it is
+    /// computed from the raw file, and a host-driven embedded definition
+    /// can never equal it (the round-3 bug — false failures on families
+    /// whose reload actually landed).
+    /// Tri-state: <c>true</c> — embedded matches the file; <c>false</c> —
+    /// differs (the reload did not land and the update MUST fail before
+    /// any marker is written); <c>null</c> — NOT APPLICABLE / indeterminate
+    /// (active document is a PROJECT — the preserve-types reload there is
+    /// the long-proven path; file unreadable; family not nested in the
+    /// document; open in the editor). Callers must distinguish via
+    /// <see cref="StaleUpdateVerificationPolicy"/>: only an explicit
+    /// <c>true</c> may skip/arbitrate a reload, only an explicit
+    /// <c>false</c> fails an otherwise successful one.
+    /// </summary>
+    private async Task<bool?> VerifyEmbeddedMatchesResolvedFileAsync(
+        string catalogItemId,
+        FamilyResolvedFile resolved,
+        string? familyName,
+        CancellationToken ct)
+    {
+        var name = !string.IsNullOrEmpty(familyName)
+            ? familyName!
+            : System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath);
+
+        var (embeddedHash, fileHash) = await _awaitable.RaiseAsync<(string?, string?)>(app =>
+        {
+            var doc = _revitContext.GetDocument();
+            if (doc is null || !doc.IsFamilyDocument)
+            {
+                return (null, null); // project context — the proven path, no verify
+            }
+
+            var embedded = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+            if (embedded is null)
+            {
+                return (null, null);
+            }
+
+            // C1 (validator): OpenDocumentFile of an ALREADY-OPEN file
+            // returns the user's live document — hashing it would read
+            // unsaved edits, and the finally-block Close(false) would
+            // destroy them. Detect by PathName up front and bail out.
+            var resolvedFullPath = System.IO.Path.GetFullPath(resolved.AbsolutePath);
+            var alreadyOpen = doc.Application.Documents
+                .Cast<Document>()
+                .Any(d => !string.IsNullOrEmpty(d.PathName)
+                    && string.Equals(
+                        System.IO.Path.GetFullPath(d.PathName), resolvedFullPath, StringComparison.OrdinalIgnoreCase));
+            if (alreadyOpen)
+            {
+                SmartConLogger.Warn(
+                    $"UpdateFamily[{catalogItemId}]: the resolved file is open in the editor — " +
+                    "its on-disk content cannot be trusted for verification " +
+                    "[Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
+                return (null, null);
+            }
+
+            string? file = null;
+            Document? fileDoc = null;
+            try
+            {
+                fileDoc = doc.Application.OpenDocumentFile(resolved.AbsolutePath);
+                var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
+                file = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"UpdateFamily[{catalogItemId}]: could not extract the resolved file for verification: " +
+                    $"{ex.GetType().Name}: {ex.Message} " +
+                    "[Action: верификация пропущена — проверьте, что файл версии доступен на диске]");
+                return (null, null);
+            }
+            finally
+            {
+                try { fileDoc?.Close(false); } catch { }
+            }
+
+            return (embedded, file);
+        }, ct).ConfigureAwait(true);
+
+        if (embeddedHash is null || fileHash is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(embeddedHash, fileHash, StringComparison.OrdinalIgnoreCase))
+        {
+            SmartConLogger.Info(
+                $"UpdateFamily[{catalogItemId}]: verified — embedded '{name}' matches the resolved file ({resolved.VersionLabel})");
+            return true;
+        }
+
+        var actualShort = embeddedHash.Length > 8 ? embeddedHash[..8] : embeddedHash;
+        var expectedShort = fileHash.Length > 8 ? fileHash[..8] : fileHash;
+        SmartConLogger.Warn(
+            $"UpdateFamily[{catalogItemId}]: POST-RELOAD VERIFICATION FAILED for '{name}' — embedded content " +
+            $"does not match the resolved file {resolved.VersionLabel} (embedded hash {actualShort}… ≠ file {expectedShort}…). " +
+            "No marker is written; the family stays stale. " +
+            "[Action: Revit API не смог обновить это семейство (подтверждённое расхождение API и UI перезагрузки). " +
+            "Обновите его вручную: в редакторе семейства — вкладка «Вставка» → «Загрузить семейство» с перезаписью, " +
+            "затем повторите «Проверить» — маркер запишется автоматически]");
+        return false;
+    }
+
+    /// <summary>
+    /// Verification-grade hash of a family nested inside an open family
+    /// document: EditFamily → snapshot →
+    /// <see cref="IFamilyContentHasher.ComputeForEmbeddedVerification"/>.
+    /// Returns <c>null</c> (verification not applicable) when the family
+    /// is not found or is open as a top-level document (EditFamily would
+    /// return the user's live document with unsaved edits, and closing it
+    /// would destroy them — skip instead; each case is logged with an
+    /// action).
+    /// </summary>
+    private string? ComputeEmbeddedVerificationHashOnRevitThread(
+        Document doc, string familyName, string catalogItemId)
+    {
+        var nested = new FilteredElementCollector(doc)
+            .OfClass(typeof(Autodesk.Revit.DB.Family))
+            .Cast<Autodesk.Revit.DB.Family>()
+            .FirstOrDefault(f => string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase));
+        if (nested is null)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: family '{familyName}' not found in the family document " +
+                "[Action: верификация пропущена — семейство не вложено в активный документ]");
+            return null;
+        }
+
+        // Guard: the family is open as a top-level document — EditFamily
+        // would return the user's live document (unsaved edits), and the
+        // finally-block Close(false) would destroy them. Match by Title
+        // (file name) AND by OwnerFamily name (renamed files), M2.
+        var isOpenTopLevel = doc.Application.Documents
+            .Cast<Document>()
+            .Any(d => d.IsFamilyDocument
+                && (string.Equals(d.Title, familyName, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(d.OwnerFamily?.Name, familyName, StringComparison.OrdinalIgnoreCase)));
+        if (isOpenTopLevel)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: '{familyName}' is open in the Family Editor — embedded content cannot be trusted " +
+                "[Action: закройте семейство в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
+            return null;
+        }
+
+        Document? copy = null;
+        try
+        {
+            copy = doc.EditFamily(nested);
+            var snapshot = _snapshotExtractor!.ExtractFromFamilyDocument(copy);
+            return _contentHasher!.ComputeForEmbeddedVerification(snapshot)?.HexString;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: embedded hash computation failed for '{familyName}': {ex.GetType().Name}: {ex.Message} " +
+                "[Action: верификация пропущена — семейство останется stale, повторите «Обновить»]");
+            return null;
+        }
+        finally
+        {
+            try { copy?.Close(false); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Persists the fresh ES marker (and nested-dependency markers) after a
+    /// successful update. Best-effort: if the marker write fails (ES
+    /// storage error, Revit main thread timeout) we still treat the update
+    /// as SUCCESS — when a reload did happen, re-prompting would re-run
+    /// LoadFamily with overwriteParameterValues=true and corrupt any
+    /// parameters the user edited in the meantime; when the content was
+    /// verified without a reload, the in-Revit state is equally the source
+    /// of truth. A failed write is logged at Warn so the operator can
+    /// investigate.
+    /// </summary>
+    private async Task WriteMarkerBestEffortAsync(
+        string catalogItemId,
+        FamilyResolvedFile resolved,
+        string? familyName,
+        int targetRevit,
+        CancellationToken ct)
+    {
+        var markerName = familyName
+            ?? System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath)
+            ?? resolved.VersionLabel
+            ?? string.Empty;
+        try
+        {
+            await _versionWriter.WriteVersionMarkerAsync(
+                catalogItemId,
+                markerName,
+                resolved.VersionLabel,
+                targetRevit,
+                ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            // OCE is a normal control flow (caller requested cancellation).
+            // The family has already been loaded into Revit, but the marker
+            // was not written, so on the next Check it will appear stale
+            // again — the correct outcome for a cancelled operation.
+            throw;
+        }
+        catch (Exception markerEx)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: family was loaded into Revit but " +
+                $"ES marker write failed: {markerEx.GetType().Name}: {markerEx.Message}. " +
+                "The family is treated as updated (its in-Revit state is the " +
+                "source of truth); the snapshot will reflect this on the next " +
+                "tree rebuild. [Action: if the family re-appears as stale, check " +
+                "ES schema registration and Revit version reads]");
+        }
+
+        // E2 (#209): the reload refreshed the embedded nested copies in
+        // the project — mark them with their embedded versions so they
+        // stay in the stale cycle. Non-fatal by design (same rationale
+        // as the parent marker above).
+        if (_dependencyRepository is not null && _catalog is not null)
+        {
+            try
+            {
+                await NestedDependencyMarkerWriter.WriteMarkersAsync(
+                    _dependencyRepository,
+                    _catalog,
+                    _versionWriter,
+                    catalogItemId,
+                    targetRevit,
+                    ct).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception nestedEx)
+            {
+                SmartConLogger.Warn(
+                    $"UpdateFamily[{catalogItemId}]: nested dependency markers failed: " +
+                    $"{nestedEx.GetType().Name}: {nestedEx.Message}. " +
+                    "[Action: вложенные семейства в проекте останутся без маркеров — Проверить покажет их stale только после явной загрузки]");
+            }
+        }
     }
 
     private int ResolveTargetRevit(string catalogItemId)

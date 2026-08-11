@@ -10,13 +10,17 @@ namespace SmartCon.FamilyManager.Services.Import;
 /// ORIGINAL dialog path — staging rewrites <c>FilePath</c> to the managed
 /// .rfa path, so the staged item can never be matched back by path) OR when
 /// it was skipped but already exists in the catalog (dedup-link). Parents
-/// that were skipped/failed receive no links.
+/// that were skipped/failed receive no links. E2 (#209): parents may be
+/// loadable items too (shared-nested containers) — the caller merges system
+/// and loadable parent ids into one map keyed by the ORIGINAL dialog path;
+/// each link also records the embedded child version label (schema V30) for
+/// dependency-drift detection.
 /// </summary>
 internal static class DependencyLinkPlanner
 {
     public static DependencyLinkPlan Build(
         IReadOnlyList<FamilyBatchImportItem> items,
-        IReadOnlyDictionary<string, string> importedSystemItemIds,
+        IReadOnlyDictionary<string, string> importedParentItemIds,
         IReadOnlyCollection<string> importedLoadableOriginalPaths)
     {
         var linksByParent = new Dictionary<string, List<FamilyDependencyInfo>>(StringComparer.Ordinal);
@@ -31,15 +35,30 @@ internal static class DependencyLinkPlanner
             var childImported = importedLoadableOriginalPaths.Contains(child.FilePath);
 
             string? childCatalogItemId;
+            string? childVersionLabel;
             if (childImported)
             {
                 childCatalogItemId = child.PrecomputedCatalogItemId ?? child.ExistingCatalogItemId;
+                // MakeActive imports no file — the embedded content is the
+                // hash-matched version the user activated, not a fresh label.
+                childVersionLabel = child.Action == FamilyBatchImportAction.MakeActive
+                    ? child.MatchedVersionLabel
+                    : child.PrecomputedVersionLabel;
             }
-            else if (childSkipped && child.ExistingCatalogItemId is not null)
+            else if ((childSkipped || child.Action == FamilyBatchImportAction.MakeActive)
+                     && child.ExistingCatalogItemId is not null)
             {
                 // Dedup-link (ADR-066): the dependency already exists in the
                 // catalog — no re-import, but the parent still gets its link.
+                // MakeActive lands here too: it imports no file (WasSkipped
+                // in the executor results), so it never appears in the
+                // imported-paths set, yet the link must record the activated
+                // (hash-matched) version as the embedded one.
+                // The embedded content is the hash-matched version; null when
+                // the content matches no stored version (Existing+Skip) —
+                // such links are drift-unknown (V30 NULL semantics).
                 childCatalogItemId = child.ExistingCatalogItemId;
+                childVersionLabel = child.MatchedVersionLabel;
             }
             else
             {
@@ -55,7 +74,7 @@ internal static class DependencyLinkPlanner
 
             foreach (var link in child.DependencyLinks)
             {
-                if (!importedSystemItemIds.TryGetValue(link.ParentSourcePath, out var parentId))
+                if (!importedParentItemIds.TryGetValue(link.ParentSourcePath, out var parentId))
                 {
                     parentNotImported.Add((child.FileName, link.ParentSourcePath));
                     continue;
@@ -67,7 +86,7 @@ internal static class DependencyLinkPlanner
                     linksByParent.Add(parentId, list);
                 }
 
-                list.Add(new FamilyDependencyInfo(childCatalogItemId!, link.Kind, link.PartName, list.Count));
+                list.Add(new FamilyDependencyInfo(childCatalogItemId!, link.Kind, link.PartName, list.Count, childVersionLabel));
             }
         }
 

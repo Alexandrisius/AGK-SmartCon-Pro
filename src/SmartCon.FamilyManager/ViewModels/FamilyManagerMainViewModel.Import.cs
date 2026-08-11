@@ -149,11 +149,24 @@ public sealed partial class FamilyManagerMainViewModel
                     MatchedItemName: p.MatchedItemName,
                     ExistingCategoryId: existingCategoryId,
                     ExistingCategoryPath: existingCategoryName,
-                    HealthReport: p.HealthReport)
+                    HealthReport: p.HealthReport,
+                    DependencyLinks: p.DependencyLinks)
                 {
+                    // ADR-066: dependency rows exist to guarantee PRESENCE in
+                    // the catalog. Duplicates default to Skip (dedup-link).
+                    // E2 (#209, owner decision): a shared-nested row with NEW
+                    // content of an existing item imports like a regular
+                    // family — new ACTIVE version (other parents embedding
+                    // the older copy get the drift badge); routing rows stay
+                    // conservative (Skip) — system parents resolve children
+                    // dynamically at their active version anyway.
                     Action = status == FamilyBatchImportStatus.Duplicate
                         ? FamilyBatchImportAction.Skip
-                         : FamilyBatchImportAction.IncrementVersion
+                        : p.DependencyLinks is not null && status == FamilyBatchImportStatus.Existing
+                            ? (p.DependencyLinks.Any(l => l.Kind == FamilyDependencyKind.SharedNested)
+                                ? FamilyBatchImportAction.IncrementVersion
+                                : FamilyBatchImportAction.Skip)
+                            : FamilyBatchImportAction.IncrementVersion
                 });
             }
 
@@ -163,6 +176,7 @@ public sealed partial class FamilyManagerMainViewModel
             var executor = new FileFamilyBatchImportExecutor(
                 staging,
                 _importService,
+                _familyDependencyRepository,
                 _dataImportService,
                 _sharedNestedRepository,
                 CurrentRevitVersion);
@@ -588,15 +602,20 @@ public sealed partial class FamilyManagerMainViewModel
                 HealthReport: p.HealthReport,
                 DependencyLinks: p.DependencyLinks)
             {
-                // ADR-066: dependency rows (routing fittings) exist to
-                // guarantee PRESENCE in the catalog, not to auto-update it —
-                // an already-catalogued dependency defaults to Skip and the
-                // parent link is written to the existing item. The user can
-                // still switch to IncrementVersion/OverwriteCurrent manually.
+                // ADR-066: dependency rows (routing fittings, shared nested)
+                // exist to guarantee PRESENCE in the catalog. Duplicates
+                // default to Skip (dedup-link). E2 (#209, owner decision):
+                // a shared-nested row with NEW content of an existing item
+                // imports like a regular family — new ACTIVE version (other
+                // parents embedding the older copy get the drift badge);
+                // routing rows stay conservative (Skip).
                 Action = status == FamilyBatchImportStatus.Duplicate
-                    || (p.DependencyLinks is not null && status == FamilyBatchImportStatus.Existing)
                     ? FamilyBatchImportAction.Skip
-                    : FamilyBatchImportAction.IncrementVersion
+                    : p.DependencyLinks is not null && status == FamilyBatchImportStatus.Existing
+                        ? (p.DependencyLinks.Any(l => l.Kind == FamilyDependencyKind.SharedNested)
+                            ? FamilyBatchImportAction.IncrementVersion
+                            : FamilyBatchImportAction.Skip)
+                        : FamilyBatchImportAction.IncrementVersion
             });
         }
 

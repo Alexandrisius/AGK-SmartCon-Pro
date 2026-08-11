@@ -65,6 +65,11 @@
                       Condition="'$(TargetFramework)' == 'net48'" />
     <PackageReference Include="System.Text.Encodings.Web" VersionOverride="9.0.0"
                       Condition="'$(TargetFramework)' == 'net48'" />
+    <!-- Глобальная обрезка транзитива (Directory.Build.targets, ADR-051) ставит
+         ExcludeAssets="all" — для диагностики embedded-хэшей нужен реальный
+         Sqlite: снимаем обрезку ТОЛЬКО в этом проекте (Update, не duplicate). -->
+    <PackageReference Update="Microsoft.Data.Sqlite" ExcludeAssets="none" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
   <ItemGroup>

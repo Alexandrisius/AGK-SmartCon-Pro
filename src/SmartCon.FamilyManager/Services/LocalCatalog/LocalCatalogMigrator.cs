@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 29)
+        if (initialVersion < 30)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v29");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v30");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -86,6 +86,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 27, MigrateV27Async, ct);
         await RunMigrationAsync(connection, 28, MigrateV28Async, ct);
         await RunMigrationAsync(connection, 29, MigrateV29Async, ct);
+        await RunMigrationAsync(connection, 30, MigrateV30Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1301,6 +1302,41 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             {
                 SmartConLogger.Debug("Migration v29: family_dependencies already present (fresh schema) — version bumped to 29");
             }
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    private static async Task MigrateV30Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 30) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnAdded = false;
+            if (!await ColumnExistsAsync(connection, "family_dependencies", "child_version_label", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = "ALTER TABLE family_dependencies ADD COLUMN child_version_label TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '30' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info(columnAdded
+                ? "Migration v30: family_dependencies.child_version_label — embedded child version for dependency drift detection (E2, #209)"
+                : "Migration v30: child_version_label already present — version bumped to 30");
         }
         catch
         {

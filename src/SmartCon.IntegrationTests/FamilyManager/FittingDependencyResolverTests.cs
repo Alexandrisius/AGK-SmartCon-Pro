@@ -433,6 +433,11 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
             IReadOnlyCollection<string> childCatalogItemIds, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>>(
                 new Dictionary<string, IReadOnlyList<FamilyDependencyReference>>());
+
+        public Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyDrift>>> GetDependencyDriftBatchAsync(
+            IReadOnlyCollection<string> parentCatalogItemIds, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyDrift>>>(
+                new Dictionary<string, IReadOnlyList<FamilyDependencyDrift>>());
     }
 
     private sealed class FakeTypeRepository : IFamilyTypeRepository

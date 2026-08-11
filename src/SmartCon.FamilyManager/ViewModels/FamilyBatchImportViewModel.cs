@@ -276,6 +276,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         // same reason.
         if (_batchApplying) return;
         ApplyActionToSelection(row, newValue);
+
+        // E2 (#209): MakeActive on an outdated-nested row lifts its
+        // parents' import block (and switching back re-arms it).
+        RefreshDependencyIndicators();
     }
 
     private void OnRowCategoryChanged(FamilyBatchImportRow row, (string? Id, string Path) payload)
@@ -503,6 +507,44 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         {
             row.FailedDependencyNames = failedByParent.TryGetValue(row.FilePath, out var failed)
                 ? failed
+                : null;
+        }
+
+        // E2 (#209): a dependency row embedding an OUTDATED nested version
+        // (Duplicate matched to a non-active version) blocks its parents'
+        // import — forced Skip with an explanatory badge. Escape hatch:
+        // MakeActive on the child row switches the catalog back to the
+        // embedded version, making it consistent — the block lifts.
+        var blockedByParent = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var row in Items)
+        {
+            if (!row.IsOutdatedNested
+                || row.Action == FamilyBatchImportAction.MakeActive
+                || row.DependencyLinks is null)
+            {
+                continue;
+            }
+
+            var line = $"{row.FileName} ({row.MatchedVersionLabel} → {row.ExistingVersionLabel})";
+            foreach (var link in row.DependencyLinks)
+            {
+                if (!blockedByParent.TryGetValue(link.ParentSourcePath, out var list))
+                {
+                    list = new List<string>();
+                    blockedByParent.Add(link.ParentSourcePath, list);
+                }
+
+                if (!list.Contains(line))
+                {
+                    list.Add(line);
+                }
+            }
+        }
+
+        foreach (var row in Items)
+        {
+            row.OutdatedDependencyBlockNames = blockedByParent.TryGetValue(row.FilePath, out var lines)
+                ? lines
                 : null;
         }
     }
@@ -810,6 +852,13 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.PrecomputedCatalogItemId = null;
             row.PrecomputedVersionLabel = null;
             row.PrecomputedManagedPath = null;
+        }
+
+        // E2 (#209): a rename may flip a dependency row into/out of the
+        // outdated-nested state — recompute the parents' import blocks.
+        if (row.DependencyLinks is not null)
+        {
+            RefreshDependencyIndicators();
         }
     }
 

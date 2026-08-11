@@ -97,10 +97,13 @@ public sealed record FamilyActualizationContext(
     string AbsolutePath,
     FamilySnapshot Snapshot,
     IReadOnlyList<FamilyGeometryPerType>? Geometry,
-    SystemFamilySnapshot? SystemSnapshot = null);
+    SystemFamilySnapshot? SystemSnapshot = null,
+    IReadOnlyList<FamilySnapshot>? SharedNestedSnapshots = null,
+    IReadOnlyList<SharedNestedSubtree>? SharedNestedSubtrees = null);
 ```
 
 - `SystemSnapshot` (ADR-056) — заполнен только на system-пути (staged `.rvt`); у loadable-групп `null`.
+- `SharedNestedSnapshots` / `SharedNestedSubtrees` (FHV8, #209) — кложура shared-nested (снапшоты каждого вложенного + плоские subtree-сканы по документам), извлечённая в той же сессии открытия managed `.rfa`; `null`, когда shared-nested нет. Источник для композитного хэша задачи `hash-v8`.
 
 ---
 
@@ -190,8 +193,28 @@ public sealed record FamilyMigrationExtractResult(
     FamilySnapshot? LoadableSnapshot,
     string? ErrorMessage,
     IReadOnlyList<FamilyGeometryPerType>? Geometry = null,
-    SystemFamilySnapshot? SystemSnapshot = null);
+    SystemFamilySnapshot? SystemSnapshot = null,
+    IReadOnlyList<FamilySnapshot>? SharedNestedSnapshots = null,
+    IReadOnlyList<SharedNestedSubtree>? SharedNestedSubtrees = null);
 ```
 
 - `Geometry` (ADR-054) — per-type геометрия из той же open-сессии (catalog backfill); `null`, если геометрия не запрашивалась или упала (caller делает fallback на отдельный проход).
 - `SystemSnapshot` (ADR-056) — системный snapshot из staged `.rvt` на system-пути (типы + параметры + STRUCT + ROUTING); на loadable-пути `null`.
+- `SharedNestedSnapshots` / `SharedNestedSubtrees` (FHV8, #209) — shared-nested кложура, переоткрытая через EditFamily в той же сессии (probe P2/P3); `null`, когда shared-nested нет.
+
+---
+
+## SharedNestedSubtree
+
+FHV8 (#209): плоский subtree-скан одного family-документа (probe P1 — все уровни вложенности видны плоско). Корневая семья и каждое открытое вложенное дают по одной записи; композитор выводит прямые рёбра вычитанием.
+
+**Файл:** `Models/FamilyManager/FamilyMigrationExtractResult.cs`
+
+```csharp
+public sealed record SharedNestedSubtree(
+    string OwnerFamilyName,
+    IReadOnlyList<string> NestedFamilyNames);
+```
+
+- `OwnerFamilyName` — нормализованное имя семейства, чей документ сканировался.
+- `NestedFamilyNames` — нормализованные имена ВСЕХ shared-nested, видимых в этом документе (плоско, все уровни).

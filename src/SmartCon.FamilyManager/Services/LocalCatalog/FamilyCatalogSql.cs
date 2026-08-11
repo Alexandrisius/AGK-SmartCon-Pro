@@ -504,7 +504,11 @@ internal static class FamilyCatalogSql
     /// declared the dependency); sync reads links of the parent's CURRENT
     /// version (join by <c>current_version_label</c>) and always resolves
     /// the child's ACTIVE version — the stored version ids never drive
-    /// version selection.
+    /// version selection. V30 (E2, #209): <c>child_version_label</c> records
+    /// which child version was EMBEDDED in the parent's version at import
+    /// time — compared against the child's <c>current_version_label</c> for
+    /// dependency-drift detection (pure SQL); NULL = unknown (legacy V29
+    /// links) = never drifted.
     /// </summary>
     public const string CreateFamilyDependencies = """
         CREATE TABLE IF NOT EXISTS family_dependencies (
@@ -514,6 +518,7 @@ internal static class FamilyCatalogSql
             dependency_kind TEXT NOT NULL,
             part_name TEXT,
             ordinal INTEGER NOT NULL DEFAULT 0,
+            child_version_label TEXT,
             PRIMARY KEY (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind),
             FOREIGN KEY (parent_catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (parent_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,

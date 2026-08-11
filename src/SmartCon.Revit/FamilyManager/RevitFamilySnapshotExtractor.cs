@@ -457,28 +457,26 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         var result = new List<FamilyTypeSnapshot>();
         var allTypes = fm.Types.Cast<FamilyType>().ToList();
-        var hasNamedTypes = allTypes.Any(t => !string.IsNullOrWhiteSpace(t.Name));
 
         foreach (FamilyType familyType in allTypes)
         {
             string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
             {
-                if (hasNamedTypes)
-                {
-                    // The unnamed default type is a phantom duplicate of the
-                    // current type when user-created types exist — skip it.
-                    SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type (named types present)");
-                    continue;
-                }
-
-                // Families without user-created types carry all parameter
-                // values on the single unnamed default type. Extract it under
-                // the hash-stable synthetic name '<default>' — renaming the
-                // file must not shift FHV2, and the type name participates in
-                // the canonical string (FamilyContentHasher). See #152.
-                typeName = FamilyTypeSnapshot.DefaultTypeName;
-                SmartConLogger.Debug("  ExtractTypes: using synthetic name '<default>' for the sole unnamed default type");
+                // FHV8 (#209): the unnamed default type is ALWAYS skipped.
+                // It is a phantom Revit synthesizes when a typeless family
+                // is LOADED into a document: the raw .rfa reports
+                // Types.Size=0 while an EditFamily copy of the same family
+                // reports Size=1 with this unnamed type — extracting it
+                // (formerly as '<default>') made the hash depend on the
+                // extraction context (raw open vs post-load copy) and broke
+                // import↔migration and file↔nested dedup equality. Phantom
+                // values stay covered transitively by the GEOM section
+                // (volume/bbox reflect the current values). The synthetic
+                // FamilyTypeSnapshot.DefaultTypeName constant remains for
+                // legacy DB rows and the display rule only.
+                SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type (phantom, FHV8)");
+                continue;
             }
             else
             {

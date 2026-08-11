@@ -45,7 +45,41 @@ public sealed record FamilyDependencyInfo(
     string ChildCatalogItemId,
     string Kind,
     string? PartName,
-    int Ordinal);
+    int Ordinal,
+    string? ChildVersionLabel = null);
+```
+
+`ChildVersionLabel` (E2, #209, схема V30, колонка `child_version_label`) —
+версия ребёнка, ЗАШИТАЯ в версию родителя на момент импорта
+(`PrecomputedVersionLabel` импортированного ребёнка; hash-matched label для
+dedup-link). Сравнивается с `current_version_label` ребёнка для детекта
+dependency drift — чистый SQL. `null` = неизвестно (legacy V29-связи,
+Existing+Skip без hash-матча) — такие связи никогда не дают drift.
+
+---
+
+## FamilyDependencyDrift
+
+Одна «разъехавшаяся» связь (E2, #209): текущая версия родителя зашила
+версию ребёнка `EmbeddedVersionLabel`, которая СТРОГО СТАРЕЕ активной
+версии ребёнка `CurrentVersionLabel` (направленная проверка, числовое
+сравнение «vN»; решение владельца: «зашита новее активной» — НЕ дефект,
+иначе каждый свежий импорт с новым вложенным мгновенно блокировал бы
+родителя). Читается только по CURRENT-версии родителя и только для
+loadable-родителей (системные родители резолвят детей динамически на
+активной версии — embedded-копии нет, drift неприменим). Используется
+amber-бейджем «требует переимпорта» в дереве и жёстким блоком загрузки
+в проект.
+
+**Файл:** `Models/FamilyManager/FamilyDependencyDrift.cs`
+
+```csharp
+public sealed record FamilyDependencyDrift(
+    string ParentCatalogItemId,
+    string ChildCatalogItemId,
+    string ChildName,
+    string EmbeddedVersionLabel,
+    string CurrentVersionLabel);
 ```
 
 ---

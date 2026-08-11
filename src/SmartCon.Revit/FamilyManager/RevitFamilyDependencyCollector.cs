@@ -106,6 +106,72 @@ public sealed class RevitFamilyDependencyCollector : IFamilyDependencyCollector
     }
 
     /// <summary>
+    /// E2 (#209): scans the parent family document for SHARED nested
+    /// families. The scan is flat by Revit design (probe P1,
+    /// <c>SharedNestedCollectorTests</c>): every shared nested family of
+    /// every nesting level appears as a <see cref="Family"/> element in the
+    /// top parent's family document, so no recursion or cycle guard exists
+    /// here. The empty-name / non-editable families (template built-ins like
+    /// Section/Level Heads, and the unnamed host entry) are excluded.
+    /// </summary>
+    public IReadOnlyList<FamilyDependencyDescriptor> CollectSharedNestedDependencies(
+        Document familyDocument)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(familyDocument);
+#else
+        if (familyDocument is null) throw new ArgumentNullException(nameof(familyDocument));
+#endif
+
+        using var _scope = SmartConLogger.BeginScope("FamilyPrep",
+            ("Method", nameof(CollectSharedNestedDependencies)));
+
+        var descriptors = new List<FamilyDependencyDescriptor>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var family in new FilteredElementCollector(familyDocument)
+                     .OfClass(typeof(Autodesk.Revit.DB.Family))
+                     .Cast<Autodesk.Revit.DB.Family>())
+        {
+            if (string.IsNullOrWhiteSpace(family.Name)) continue;
+            if (!IsShared(family)) continue;
+
+            if (!family.IsEditable)
+            {
+                SmartConLogger.Warn(
+                    $"Shared nested '{family.Name}' skipped: IsEditable=false. " +
+                    "[Action: такое семейство нельзя переоткрыть через EditFamily — зависимость не попадёт в каталог]");
+                continue;
+            }
+
+            if (!seen.Add(family.UniqueId)) continue;
+
+            descriptors.Add(new FamilyDependencyDescriptor(
+                Kind: FamilyDependencyKind.SharedNested,
+                PartName: null,
+                FamilyUniqueId: family.UniqueId,
+                FamilyName: family.Name,
+                CategoryName: family.FamilyCategory?.Name));
+        }
+
+        SmartConLogger.Info($"Shared nested dependencies collected: {descriptors.Count}");
+        return descriptors;
+    }
+
+    private static bool IsShared(Autodesk.Revit.DB.Family family)
+    {
+        try
+        {
+            var p = family.get_Parameter(BuiltInParameter.FAMILY_SHARED);
+            return p is not null && p.AsInteger() == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Indexes every FamilySymbol in the document by its routing-rule token
     /// "$"{Family.Name}:{Symbol.Name}"" — the exact format
     /// <c>RevitFamilySnapshotExtractor.ConvertRoutingRule</c> writes into

@@ -39,6 +39,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// rows this item must be linked to in <c>family_dependencies</c> after
 /// import. <c>null</c> for top-level rows.
 /// </param>
+/// <param name="SharedNestedDependencies">
+/// ADR-066 (E2, #209): shared-nested descriptors discovered in this item's
+/// family document — set on LOADABLE items only, transient (Phase-1 →
+/// nested preparation inside the same call), never carried into the dialog.
+/// <see cref="FamilyDependencyDescriptor.FamilyUniqueId"/> values are valid
+/// in THIS item's held-open family document only.
+/// </param>
 public sealed record PreparedFamilyItem(
     string SourcePath,
     string DisplayName,
@@ -59,4 +66,5 @@ public sealed record PreparedFamilyItem(
     string? MatchedItemName = null,
     FamilyHealthReport? HealthReport = null,
     IReadOnlyList<FamilyDependencyDescriptor>? RoutingDependencies = null,
-    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null);
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
+    IReadOnlyList<FamilyDependencyDescriptor>? SharedNestedDependencies = null);

@@ -67,7 +67,7 @@ internal sealed class LocalFamilyFileResolver : IFamilyFileResolver
             return new FamilyResolvedFile("", catalogItemId, versionId, versionLabel);
         }
 
-        SmartConLogger.Info($"Resolved: {fileName}");
+        SmartConLogger.Info($"Resolved: {fileName} ({relativePath})");
         return new FamilyResolvedFile(absolutePath, catalogItemId, versionId, versionLabel);
     }
 

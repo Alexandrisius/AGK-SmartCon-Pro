@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -102,6 +103,8 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
+    [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
     private string? _matchedVersionLabel;
 
     /// <summary>
@@ -325,12 +328,16 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCategoryMoveWarning))]
     [NotifyPropertyChangedFor(nameof(CategoryMoveWarningTooltip))]
+    [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
+    [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
     private FamilyBatchImportStatus _status;
 
     [ObservableProperty]
     private string? _existingCatalogItemId;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
+    [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
     private string? _existingVersionLabel;
 
     public bool CanImport => Action != FamilyBatchImportAction.Skip;
@@ -419,6 +426,67 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     /// <summary><c>true</c> when this row is a dependency of another row.</summary>
     public bool IsDependency => DependencyParentNames is { Count: > 0 };
+
+    /// <summary>
+    /// E2 (#209): this dependency row embeds an OUTDATED copy of a catalog
+    /// item — the content hash matched a non-active version
+    /// (<see cref="MatchedVersionLabel"/> ≠ <see cref="ExistingVersionLabel"/>).
+    /// The parents' import is blocked until the user either fixes the nested
+    /// family inside the parent or picks MakeActive on this row (switching
+    /// the catalog back to the embedded version).
+    /// </summary>
+    public bool IsOutdatedNested =>
+        DependencyLinks is not null
+        && Status == FamilyBatchImportStatus.Duplicate
+        && !string.IsNullOrEmpty(MatchedVersionLabel)
+        && !string.IsNullOrEmpty(ExistingVersionLabel)
+        && MatchedVersionLabel != ExistingVersionLabel;
+
+    /// <summary>Localized explanation shown on the amber badge of an outdated-nested row.</summary>
+    public string OutdatedNestedTooltip
+    {
+        get
+        {
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_OutdatedNested_Tooltip)
+                ?? "Nested \"{0}\" embeds an outdated version (embedded {1}, active {2}). The parent's import is blocked: update the nested family inside the parent and re-import — or pick \"Make Active\" on the nested row.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                FileName,
+                MatchedVersionLabel ?? string.Empty,
+                ExistingVersionLabel ?? string.Empty);
+        }
+    }
+
+    /// <summary>
+    /// E2 (#209): display lines «Фланец (зашита v1, активна v2)» of THIS
+    /// row's dependency children that embed an outdated nested version —
+    /// the row's import is blocked (forced Skip) until the conflict is
+    /// resolved. Computed by the parent view-model; <c>null</c> = not blocked.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOutdatedDependencyBlock))]
+    [NotifyPropertyChangedFor(nameof(OutdatedDependencyBlockTooltip))]
+    private IReadOnlyList<string>? _outdatedDependencyBlockNames;
+
+    /// <summary><c>true</c> when the row's import is blocked by outdated nested dependencies.</summary>
+    public bool HasOutdatedDependencyBlock => OutdatedDependencyBlockNames is { Count: > 0 };
+
+    /// <summary>Localized tooltip of the red import-block badge.</summary>
+    public string OutdatedDependencyBlockTooltip
+    {
+        get
+        {
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_OutdatedNestedBlock_Tooltip)
+                ?? "Импорт заблокирован — устаревшие вложенные:\n{0}\nОбновите вложенные семейства внутри родителя и повторите импорт, или выберите «Сделать активной» на строке вложенного.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                DependencyGuardText.FormatMultilineList(OutdatedDependencyBlockNames ?? Array.Empty<string>()));
+        }
+    }
 
     /// <summary>Localized tooltip naming the parent rows of this dependency.</summary>
     public string DependencyOfTooltip
@@ -574,7 +642,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     {
         // Gate block wins over the status-driven action set: a blocked row
         // stays forced to Skip no matter how the dedup status flips.
-        if (IsGateBlocked)
+        // E2 (#209): the outdated-nested import block wins too — a rename
+        // of a blocked parent must not restore the full action set.
+        if (IsGateBlocked || HasOutdatedDependencyBlock)
         {
             AvailableActions = [FamilyBatchImportAction.Skip];
             SetActionSilently(FamilyBatchImportAction.Skip);
@@ -641,6 +711,15 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
             return;
         }
 
+        // E2 (#209): a dependency-blocked row stays forced to Skip even when
+        // the gate unblocks — the two block sources are independent.
+        if (HasOutdatedDependencyBlock)
+        {
+            AvailableActions = [FamilyBatchImportAction.Skip];
+            SetActionSilently(FamilyBatchImportAction.Skip);
+            return;
+        }
+
         // Unblock: restore the status-driven action set and reset the
         // forced Skip so a row that passes after a category change
         // becomes importable again (the user can re-pick Skip manually).
@@ -649,6 +728,35 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         AvailableActions = BuildAvailableActions(Status);
         if (value != FamilyRowGateStatus.Checking
             && (wasBlocked || !AvailableActions.Contains(Action)))
+        {
+            SetActionSilently(
+                AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+                    ? FamilyBatchImportAction.IncrementVersion
+                    : FamilyBatchImportAction.Skip);
+        }
+    }
+
+    /// <summary>
+    /// E2 (#209): the outdated-nested import block forces Skip exactly like
+    /// the validation gate does; clearing the block restores the
+    /// status-driven action set (mirrors <see cref="OnGateStatusChanged"/>).
+    /// Block-driven changes never broadcast to the multi-selection.
+    /// </summary>
+    partial void OnOutdatedDependencyBlockNamesChanged(IReadOnlyList<string>? value)
+    {
+        if (HasOutdatedDependencyBlock)
+        {
+            AvailableActions = [FamilyBatchImportAction.Skip];
+            SetActionSilently(FamilyBatchImportAction.Skip);
+            return;
+        }
+
+        if (IsGateBlocked) return;
+
+        var wasBlocked = !AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+            && Action == FamilyBatchImportAction.Skip;
+        AvailableActions = BuildAvailableActions(Status);
+        if (wasBlocked || !AvailableActions.Contains(Action))
         {
             SetActionSilently(
                 AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)

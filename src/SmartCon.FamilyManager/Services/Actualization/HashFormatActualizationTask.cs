@@ -2,20 +2,23 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v7</c>): recalculates stale
-/// (format v1..v6 / NULL) content hashes to the FHV7 format
+/// CRITICAL actualization task (Id=<c>hash-v8</c>): recalculates stale
+/// (format v1..v7 / NULL) content hashes to the FHV8 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
-/// discriminator in FAMKEY, #215 manual test 2023 2026-08-06). Owns the
-/// <c>hash_format_version</c> marker
-/// semantics: NULL/1/2/3/4/5/6 pending, 7 current, -1/-2 terminal (unreadable /
+/// discriminator in FAMKEY, #215 manual test 2026-08-06; FHV8 —
+/// composite shared-nested content in the loadable hash, #209 ADR-066).
+/// Owns the <c>hash_format_version</c> marker
+/// semantics: NULL/1..7 pending, 8 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -38,10 +41,20 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// without it the stored keys would break presence/stale matching until a
 /// full re-import.
 /// </para>
+/// <para>
+/// FHV8 addition (#209): loadable rows are composed with their shared-
+/// nested closure — the extractor re-opens every nested family from the
+/// managed .rfa itself (EditFamily, probe P2), so each group stays
+/// self-contained (no cross-group ordering). A nested child whose own
+/// catalog row is processed separately gets its own composite hash when
+/// ITS group runs; both paths use the same
+/// <see cref="CompositeFamilyHashComposer"/>.
+/// </para>
 /// </summary>
 internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTaskBase
 {
     private readonly IFamilyContentHasher _contentHasher;
+    private readonly CompositeFamilyHashComposer _compositeComposer;
 
     public HashFormatActualizationTask(
         LocalCatalogDatabase database,
@@ -49,16 +62,17 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         : base(database)
     {
         _contentHasher = contentHasher ?? throw new ArgumentNullException(nameof(contentHasher));
+        _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v7";
+    public override string Id => "hash-v8";
     public override int Order => 10;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (7, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (8, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
@@ -73,7 +87,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         }
         else
         {
-            hash = _contentHasher.ComputeForLoadable(context.Snapshot)?.HexString;
+            hash = ComputeLoadableHash(context)?.HexString;
         }
 
         if (hash is null)
@@ -100,7 +114,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 7
+                    SET content_hash = @hash, hash_format_version = 8
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -113,7 +127,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 7, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 8, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -131,11 +145,11 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                     .ConfigureAwait(false);
             }
 
-            // FHV7 is a breaking data format (ADR-058): a database carrying
-            // v7 hashes must not be WRITTEN by a plugin older than the FHV7
+            // FHV8 is a breaking data format (ADR-058): a database carrying
+            // v8 hashes must not be WRITTEN by a plugin older than the FHV8
             // release — its dedup would silently downgrade/duplicate. Runtime
             // backfill of the forward-compatibility floor (schema-migration
-            // backfill like V24 cannot work here: v7 rows appear only AFTER
+            // backfill like V24 cannot work here: v8 rows appear only AFTER
             // this task runs). Monotonic: a HIGHER pre-existing floor (from
             // a newer plugin) is never lowered.
             using (var readCmd = connection.CreateCommand())
@@ -305,6 +319,42 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             SmartConLogger.Info(
                 $"Healed family_key for {updated} family_types row(s) of '{group.ItemName}' ({group.VersionLabel}) from the staged snapshot (FHV7)");
         }
+    }
+
+    /// <summary>
+    /// FHV8 (#209): composite hash for a loadable row. When the extraction
+    /// carried the shared-nested closure (snapshots + flat subtree scans),
+    /// the hash is composed bottom-up over the direct edges derived by
+    /// subtraction; otherwise the plain own-content hash is computed
+    /// (identical to a family without shared nested children).
+    /// </summary>
+    private FamilyContentHash? ComputeLoadableHash(FamilyActualizationContext context)
+    {
+        if (context.SharedNestedSubtrees is not { Count: > 0 } subtrees)
+        {
+            return _contentHasher.ComputeForLoadable(context.Snapshot);
+        }
+
+        var snapshots = new Dictionary<string, FamilySnapshot>(StringComparer.OrdinalIgnoreCase);
+        var rootName = FamilyNameNormalizer.Normalize(context.Snapshot.FamilyName);
+        snapshots[rootName] = context.Snapshot;
+        foreach (var nested in context.SharedNestedSnapshots ?? (IReadOnlyList<FamilySnapshot>)Array.Empty<FamilySnapshot>())
+        {
+            // Last-wins on a normalized-name collision (same heuristic as
+            // the import-time preparation queue).
+            snapshots[FamilyNameNormalizer.Normalize(nested.FamilyName)] = nested;
+        }
+
+        var flatSubtrees = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var subtree in subtrees)
+        {
+            flatSubtrees[subtree.OwnerFamilyName] = subtree.NestedFamilyNames;
+        }
+
+        var composed = _compositeComposer.Compose(snapshots, flatSubtrees);
+        return composed.TryGetValue(rootName, out var hash)
+            ? hash
+            : _contentHasher.ComputeForLoadable(context.Snapshot);
     }
 
     private async Task WriteMarkerAsync(

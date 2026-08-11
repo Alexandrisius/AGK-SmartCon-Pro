@@ -98,9 +98,15 @@ public sealed class FileFamilyStagingService : IFileFamilyStagingService
             var heldDoc = _preparationService.GetOpenedDocument(item.FilePath);
             if (heldDoc is null)
             {
+                // For "nested://" rows there is no source file on disk — the
+                // row will fail at import with file-not-found; the message
+                // must not promise a copy/bake fallback that cannot exist.
+                var fallbackNote = item.FilePath.StartsWith("nested://", StringComparison.OrdinalIgnoreCase)
+                    ? "у вложенного семейства нет исходного файла — строка получит ошибку импорта"
+                    : "import will fall back to copy/bake from source";
                 SmartConLogger.Warn(
                     $"Held-open document not found for '{item.FileName}' (path='{item.FilePath}') — " +
-                    "import will fall back to copy/bake from source [Action: check Prepare logs " +
+                    $"{fallbackNote} [Action: check Prepare logs " +
                     "— document may have been closed early]");
                 return item;
             }

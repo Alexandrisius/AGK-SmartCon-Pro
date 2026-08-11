@@ -15,7 +15,9 @@ public sealed record FamilyActualizationContext(
     string AbsolutePath,
     FamilySnapshot Snapshot,
     IReadOnlyList<FamilyGeometryPerType>? Geometry,
-    SystemFamilySnapshot? SystemSnapshot = null)
+    SystemFamilySnapshot? SystemSnapshot = null,
+    IReadOnlyList<FamilySnapshot>? SharedNestedSnapshots = null,
+    IReadOnlyList<SharedNestedSubtree>? SharedNestedSubtrees = null)
 {
     private static readonly FamilySnapshot NoExtractionSnapshot = new(
         FamilyName: "(file-level task — engine extraction skipped)",

@@ -13,11 +13,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="Parameters">All family parameters (schema level),
 /// sorted by name for deterministic output.</param>
 /// <param name="Types">All family types with their parameter values,
-/// sorted by type name. An unnamed default type is extracted only when
-/// the family has no user-created types — under the hash-stable
-/// synthetic name <see cref="FamilyTypeSnapshot.DefaultTypeName"/>;
-/// otherwise it is skipped as a phantom duplicate of the current
-/// type.</param>
+/// sorted by type name. FHV8 (#209): the unnamed default type is ALWAYS
+/// skipped — Revit synthesizes it when a typeless family is LOADED into a
+/// document (raw .rfa: <c>Types.Size=0</c>; EditFamily copy: Size=1), so
+/// extracting it made the hash depend on the extraction context. The
+/// synthetic <see cref="FamilyTypeSnapshot.DefaultTypeName"/> remains only
+/// for legacy DB rows and the display rule.</param>
 /// <param name="Geometry">Aggregated geometry metrics from all
 /// <c>GenericForm</c> elements.</param>
 /// <param name="SharedNestedFamilyNames">Names of shared nested
@@ -45,6 +46,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="NonSharedNestedFamilyNames">Names of NON-shared nested
 /// families referenced by this family (ADR-056). Sorted by name.
 /// Shared nested names stay in <see cref="SharedNestedFamilyNames"/>.</param>
+/// <param name="SharedNestedContentHashes">FHV8 (#209): direct shared-nested
+/// children with their COMPOSITE content hashes (name + hash hex), sorted by
+/// name. Set by the composite-hash composition pass
+/// (<c>CompositeFamilyHashComposer</c>) right before hashing — extraction
+/// leaves it <c>null</c>. Part of the content hash (NESTEDHASH section):
+/// a change inside any shared nested family transitively shifts the parent's
+/// hash, so re-importing the parent produces a new version.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
@@ -56,7 +64,14 @@ public sealed record FamilySnapshot(
     IReadOnlyList<FamilyFact>? Facts = null,
     IReadOnlyList<ConnectorSnapshot>? Connectors = null,
     FamilyBehaviorFlags? BehaviorFlags = null,
-    IReadOnlyList<string>? NonSharedNestedFamilyNames = null);
+    IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
+    IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null);
+
+/// <summary>
+/// FHV8 (#209): one direct shared-nested child entry of the composite
+/// content hash — the child's family name and its own composite hash hex.
+/// </summary>
+public sealed record NestedContentHash(string FamilyName, string HashHex);
 
 /// <summary>
 /// Schema-level parameter of a loadable family (from

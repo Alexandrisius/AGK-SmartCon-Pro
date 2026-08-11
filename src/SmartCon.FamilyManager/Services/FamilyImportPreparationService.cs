@@ -32,6 +32,12 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
+    // UC-2 (#209): the active family document is never held in
+    // _openedDocuments (the prepare cleanup must NOT close the user's
+    // document) — the nested queue resolves it through this override.
+    private Document? _activeFamilyDoc;
+    private string? _activeFamilyDocKey;
+
     public FamilyImportPreparationService(
         IFamilyManagerAwaitableEvent awaitableEvent,
         IFamilySnapshotExtractor snapshotExtractor,
@@ -65,6 +71,12 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             return Array.Empty<PreparedFamilyItem>();
 
         LogDiagSnapshot("Prepare.entry", _openedDocuments.Count);
+
+        // A previous UC-2 run may have left the override behind when its
+        // dialog was cancelled without cleanup — never let a stale active
+        // document leak into the file-based nested resolution.
+        _activeFamilyDoc = null;
+        _activeFamilyDocKey = null;
 
         using var _scope = SmartConLogger.BeginScope("FamilyPrep",
             ("Method", nameof(PrepareForFileImportAsync)),
@@ -117,6 +129,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             $"{results.Count(r => r.ErrorMessage is not null)} errors, " +
             $"{_openedDocuments.Count} documents held open");
 
+        await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+        await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
+
         LogDiagSnapshot("Prepare.exit", _openedDocuments.Count);
 
         return results;
@@ -124,9 +139,13 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
     /// <summary>
     /// Prepare the active family document (.rfa in Family Editor) for import.
-    /// The document is already open — no OpenDocumentFile needed.
+    /// The document is already open — no OpenDocumentFile needed. Returns the
+    /// parent item FIRST, followed by its shared-nested children (E2, #209):
+    /// the nested queue re-opens each shared nested from the live document
+    /// (EditFamily independent copy, probe P2) exactly like the file-based
+    /// flow, so the batch dialog shows the full dependency set.
     /// </summary>
-    public async Task<PreparedFamilyItem> PrepareActiveFamilyAsync(
+    public async Task<IReadOnlyList<PreparedFamilyItem>> PrepareActiveFamilyAsync(
         CancellationToken ct = default)
     {
         using var _scope = SmartConLogger.BeginScope("FamilyPrep",
@@ -156,6 +175,10 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
         SmartConLogger.Info($"Preparing active family: '{displayName}'");
 
+        var sourcePath = activeDoc.PathName ?? $"active://{displayName}";
+        _activeFamilyDoc = activeDoc;
+        _activeFamilyDocKey = sourcePath;
+
         try
         {
             // Active document stays untouched (no type switching — the user
@@ -164,39 +187,44 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 .RaiseAsync(app => _healthChecker.CheckActiveFamilyDocument(activeDoc), ct)
                 .ConfigureAwait(false);
 
+            IReadOnlyList<FamilyDependencyDescriptor>? sharedNested = null;
             var snapshot = await _awaitableEvent
-                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(activeDoc), ct)
+                .RaiseAsync(app =>
+                {
+                    var extracted = _snapshotExtractor.ExtractFromFamilyDocument(activeDoc);
+                    // ADR-066 (E2): same Revit-thread roundtrip — shared
+                    // nested families are scanned flat in the family
+                    // document (probe P1).
+                    sharedNested = _dependencyCollector.CollectSharedNestedDependencies(activeDoc);
+                    return extracted;
+                }, ct)
                 .ConfigureAwait(false);
 
-            var hash = _contentHasher.ComputeForLoadable(snapshot);
-            var normalizedName = FamilyNameNormalizer.Normalize(displayName);
+            var results = new List<PreparedFamilyItem>
+            {
+                new(
+                    SourcePath: sourcePath,
+                    DisplayName: displayName,
+                    RevitMajorVersion: GetRevitMajorVersion(),
+                    ContentHash: null,
+                    LoadableSnapshot: snapshot,
+                    SystemSnapshot: null,
+                    ErrorMessage: null,
+                    Source: null,
+                    SourceTypes: null,
+                    FamilySource: "loadable",
+                    HealthReport: healthReport,
+                    SharedNestedDependencies: sharedNested),
+            };
 
-            var dedupResult = await Task.Run(
-                () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
-                ct).ConfigureAwait(false);
+            await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+            await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
 
             SmartConLogger.Info(
-                $"Active family prepared: hash={hash?.HexString ?? "null"}, " +
-                $"status={dedupResult.Status}");
+                $"Active family prepared: '{displayName}' + {results.Count - 1} shared nested, " +
+                $"status={results[0].Status}");
 
-            return new PreparedFamilyItem(
-                SourcePath: activeDoc.PathName ?? $"active://{displayName}",
-                DisplayName: displayName,
-                RevitMajorVersion: GetRevitMajorVersion(),
-                ContentHash: hash,
-                LoadableSnapshot: snapshot,
-                SystemSnapshot: null,
-                ErrorMessage: null,
-                Source: null,
-                SourceTypes: null,
-                FamilySource: "loadable",
-                Status: dedupResult.Status,
-                ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-                ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-                MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
-                IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-                MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
-                HealthReport: healthReport);
+            return results;
         }
         catch (Exception ex)
         {
@@ -220,6 +248,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             ("Method", nameof(PrepareProjectImportAsync)),
             ("SystemCount", systemAnalyses.Count),
             ("LoadableCount", loadableFamilies.Count));
+
+        _activeFamilyDoc = null;
+        _activeFamilyDocKey = null;
 
         SmartConLogger.Info(
             $"Preparing project import: {systemAnalyses.Count} system categories, " +
@@ -284,6 +315,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         }
 
         await PrepareDependencyItemsAsync(results, ct).ConfigureAwait(false);
+        await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+        await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
 
         SmartConLogger.Info(
             $"Project prepare complete: {results.Count} items, " +
@@ -378,6 +411,289 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     }
 
     /// <summary>
+    /// ADR-066 (E2, #209): prepares shared-nested dependencies of loadable
+    /// items as regular loadable batch rows. The nested family is re-opened
+    /// from the PARENT'S held-open family document via EditFamily (an
+    /// independent copy — survives the parent's later Close, probe P3) and
+    /// held open under a synthetic <c>"nested://{FamilyName}"</c> key, so
+    /// Phase 3 stages it from the held document exactly like any other row —
+    /// no temp files. The scan is flat (probe P1): every nesting level is
+    /// visible in the top parent's family document, so the queue terminates
+    /// without a cycle guard; the claimed-set (normalized family name)
+    /// collapses duplicates when several parents embed the same nested
+    /// family — later parents just gain a link to the first row.
+    /// </summary>
+    private async Task PrepareSharedNestedItemsAsync(
+        List<PreparedFamilyItem> results,
+        CancellationToken ct)
+    {
+        var claimedByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < results.Count; i++)
+        {
+            var r = results[i];
+            if (r.FamilySource == "loadable" && r.ErrorMessage is null)
+            {
+                // Two DIFFERENT top-level families with the same normalized
+                // name in one batch: last wins (indexer assignment) — a
+                // nested link then attaches to the last row. The collision
+                // is a pathological batch (Revit forbids same-name families
+                // within one document); accepted heuristic, not worth a
+                // dialog-level conflict resolver.
+                claimedByName[FamilyNameNormalizer.Normalize(r.DisplayName)] = i;
+            }
+        }
+
+        var queue = new Queue<(int ParentIndex, FamilyDependencyDescriptor Descriptor)>();
+        for (var i = 0; i < results.Count; i++)
+        {
+            EnqueueNestedOf(results, queue, i);
+        }
+
+        if (queue.Count == 0)
+        {
+            return;
+        }
+
+        SmartConLogger.Info($"Preparing shared nested dependencies: {queue.Count} candidate(s)");
+
+        while (queue.Count > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var (parentIndex, descriptor) = queue.Dequeue();
+            var parent = results[parentIndex];
+            var link = new FamilyDependencyLink(parent.SourcePath, descriptor.Kind, descriptor.PartName);
+
+            var normalized = FamilyNameNormalizer.Normalize(descriptor.FamilyName);
+            if (claimedByName.TryGetValue(normalized, out var existingIndex))
+            {
+                results[existingIndex] = AppendDependencyLink(results[existingIndex], link);
+                SmartConLogger.Debug(
+                    $"Shared nested '{descriptor.FamilyName}' already queued — link attached to the existing row");
+                continue;
+            }
+
+            try
+            {
+                var child = await PrepareNestedFromFamilyDocAsync(parent, descriptor, ct)
+                    .ConfigureAwait(false);
+                child = AppendDependencyLink(child, link);
+                results.Add(child);
+                claimedByName[normalized] = results.Count - 1;
+                EnqueueNestedOf(results, queue, results.Count - 1);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Prepare shared nested '{descriptor.FamilyName}' failed: {ex.Message} " +
+                    "[Action: семейство будет показано как Error в batch-диалоге; родитель будет импортирован без связи на него]");
+                results.Add(AppendDependencyLink(new PreparedFamilyItem(
+                    SourcePath: $"nested://{descriptor.FamilyName}",
+                    DisplayName: descriptor.FamilyName,
+                    RevitMajorVersion: GetRevitMajorVersion(),
+                    ContentHash: null,
+                    LoadableSnapshot: null,
+                    SystemSnapshot: null,
+                    ErrorMessage: ex.Message,
+                    Source: null,
+                    SourceTypes: null,
+                    FamilySource: "loadable"), link));
+                // Claim even on failure: a second parent embedding the same
+                // broken nested links to this single Error row instead of
+                // duplicating it.
+                claimedByName[normalized] = results.Count - 1;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-opens one shared nested family from the parent's held-open family
+    /// document, extracts its snapshot (and its own nested descriptors) in
+    /// the same Revit-thread roundtrip, and holds the document open under
+    /// the <c>"nested://{FamilyName}"</c> key for Phase 3.
+    /// </summary>
+    private async Task<PreparedFamilyItem> PrepareNestedFromFamilyDocAsync(
+        PreparedFamilyItem parent,
+        FamilyDependencyDescriptor descriptor,
+        CancellationToken ct)
+    {
+        var childKey = $"nested://{descriptor.FamilyName}";
+        FamilySnapshot? snapshot = null;
+        IReadOnlyList<FamilyDependencyDescriptor>? childNested = null;
+
+        await _awaitableEvent.RaiseAsync(app =>
+        {
+            // UC-2 (#209 bug-fix): the active family document is NOT in
+            // _openedDocuments (it must never be closed by the prepare
+            // cleanup) — resolve it through the registered override.
+            var parentDoc = (parent.SourcePath == _activeFamilyDocKey ? _activeFamilyDoc : null)
+                ?? GetOpenedDocument(parent.SourcePath)
+                ?? throw new InvalidOperationException(
+                    $"Parent family document for '{parent.DisplayName}' is not held open");
+
+            // #209 manual-test bug: when the nested family is ALREADY open
+            // as a top-level document in the Revit session, EditFamily
+            // returns THAT document (with possible unsaved edits) instead of
+            // an independent copy. Hashing it would fingerprint someone
+            // else's live editor content — and worse, the prepare cleanup
+            // could close the user's document. Detect by title among the
+            // open documents and fail the row with an actionable message.
+            var revitApp = parentDoc.Application;
+            foreach (Document openDoc in revitApp.Documents)
+            {
+                if (openDoc.IsFamilyDocument
+                    && string.Equals(openDoc.Title, descriptor.FamilyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"Nested family '{descriptor.FamilyName}' is open in the Family Editor — " +
+                        "close it (save or discard changes) before importing the parent");
+                }
+            }
+
+            var family = parentDoc.GetElement(descriptor.FamilyUniqueId) as Autodesk.Revit.DB.Family
+                ?? throw new InvalidOperationException(
+                    $"Nested family '{descriptor.FamilyName}' not found in the parent document by UniqueId");
+
+            Document? nestedDoc = null;
+            try
+            {
+                nestedDoc = parentDoc.EditFamily(family);
+                snapshot = _snapshotExtractor.ExtractFromFamilyDocument(nestedDoc);
+                childNested = _dependencyCollector.CollectSharedNestedDependencies(nestedDoc);
+                _openedDocuments[childKey] = nestedDoc;
+            }
+            catch
+            {
+                try { nestedDoc?.Close(false); } catch { }
+                throw;
+            }
+        }, ct).ConfigureAwait(false);
+
+        // FHV8 (#209): hash + dedup are DEFERRED to FinalizeLoadableHashesAsync
+        // — the composite hash needs the whole shared-nested closure.
+        return new PreparedFamilyItem(
+            SourcePath: childKey,
+            DisplayName: descriptor.FamilyName,
+            RevitMajorVersion: GetRevitMajorVersion(),
+            ContentHash: null,
+            LoadableSnapshot: snapshot,
+            SystemSnapshot: null,
+            ErrorMessage: null,
+            Source: new FamilyImportSource.LoadableSource(
+                FamilyName: descriptor.FamilyName,
+                // UniqueId is valid in the parent's family document only —
+                // it is a last-resort fallback identity for staging; the
+                // primary path always resolves the held-open document by
+                // the synthetic key above.
+                FamilyUniqueId: descriptor.FamilyUniqueId,
+                CategoryName: descriptor.CategoryName ?? string.Empty),
+            SourceTypes: null,
+            FamilySource: "loadable",
+            SharedNestedDependencies: childNested);
+    }
+
+    private static void EnqueueNestedOf(
+        List<PreparedFamilyItem> results,
+        Queue<(int ParentIndex, FamilyDependencyDescriptor Descriptor)> queue,
+        int parentIndex)
+    {
+        var nested = results[parentIndex].SharedNestedDependencies;
+        if (nested is null) return;
+        foreach (var descriptor in nested)
+        {
+            queue.Enqueue((parentIndex, descriptor));
+        }
+    }
+
+    private static PreparedFamilyItem AppendDependencyLink(PreparedFamilyItem item, FamilyDependencyLink link)
+    {
+        var links = item.DependencyLinks is null
+            ? new List<FamilyDependencyLink>()
+            : new List<FamilyDependencyLink>(item.DependencyLinks);
+        links.Add(link);
+        return item with { DependencyLinks = links };
+    }
+
+    /// <summary>
+    /// FHV8 (#209, ADR-066): final Phase-1 pass — composite content hashes
+    /// and dedup for every loadable item. Deferred from the per-item
+    /// preparation because a family's composite hash covers the composite
+    /// hashes of its DIRECT shared-nested children
+    /// (<see cref="CompositeFamilyHashComposer"/>), which are known only
+    /// after the whole closure has been opened and snapshotted by
+    /// <see cref="PrepareSharedNestedItemsAsync"/>. System items keep their
+    /// inline hash (their canonical string has no nested section).
+    /// </summary>
+    private async Task FinalizeLoadableHashesAsync(
+        List<PreparedFamilyItem> results, CancellationToken ct)
+    {
+        var snapshots = new Dictionary<string, FamilySnapshot>(StringComparer.OrdinalIgnoreCase);
+        var flatSubtrees = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var itemIndexes = new List<int>();
+
+        for (var i = 0; i < results.Count; i++)
+        {
+            var r = results[i];
+            if (r.FamilySource != "loadable" || r.ErrorMessage is not null || r.LoadableSnapshot is null)
+            {
+                continue;
+            }
+
+            itemIndexes.Add(i);
+            var normalized = FamilyNameNormalizer.Normalize(r.DisplayName);
+            // Last-wins on a normalized-name collision (same heuristic as
+            // the claimed-set in PrepareSharedNestedItemsAsync).
+            snapshots[normalized] = r.LoadableSnapshot;
+            if (r.SharedNestedDependencies is { Count: > 0 } nested)
+            {
+                flatSubtrees[normalized] = nested
+                    .Select(d => FamilyNameNormalizer.Normalize(d.FamilyName))
+                    .ToList();
+            }
+        }
+
+        if (itemIndexes.Count == 0)
+        {
+            return;
+        }
+
+        var composer = new CompositeFamilyHashComposer(_contentHasher);
+        var hashes = composer.Compose(snapshots, flatSubtrees);
+
+        foreach (var i in itemIndexes)
+        {
+            ct.ThrowIfCancellationRequested();
+            var r = results[i];
+            var normalized = FamilyNameNormalizer.Normalize(r.DisplayName);
+            if (!hashes.TryGetValue(normalized, out var hash) || hash is null)
+            {
+                continue;
+            }
+
+            var dedupResult = await Task.Run(
+                () => _dedupService.CheckAsync(normalized, hash, "loadable", ct: ct),
+                ct).ConfigureAwait(false);
+
+            results[i] = r with
+            {
+                ContentHash = hash,
+                Status = dedupResult.Status,
+                ExistingCatalogItemId = dedupResult.ExistingCatalogItemId,
+                ExistingVersionLabel = dedupResult.ExistingVersionLabel,
+                MatchedVersionLabel = dedupResult.HashMatch?.MatchedVersionLabel,
+                IsCrossNameDuplicate = dedupResult.IsCrossNameDuplicate,
+                MatchedItemName = dedupResult.HashMatch?.MatchedItemName,
+            };
+
+            SmartConLogger.Info(
+                $"Loadable prepared: '{r.DisplayName}', hash={hash.HexString}, status={dedupResult.Status}");
+        }
+    }
+
+    /// <summary>
     /// Close all documents opened during Phase 1 (Prepare).
     /// Call this when the user cancels the batch dialog.
     /// </summary>
@@ -425,6 +741,10 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         }, ct).ConfigureAwait(false);
 
         _openedDocuments.Clear();
+        // UC-2: release the active-document override WITHOUT closing — the
+        // user's family document stays open and untouched.
+        _activeFamilyDoc = null;
+        _activeFamilyDocKey = null;
         SmartConLogger.Info("All prepared documents closed");
     }
 
@@ -627,6 +947,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         FamilySnapshot? snapshot = null;
         IReadOnlyList<FamilyGeometryPerType>? geometryPerType = null;
         FamilyHealthReport? healthReport = null;
+        IReadOnlyList<FamilyDependencyDescriptor>? sharedNested = null;
 
         try
         {
@@ -759,7 +1080,15 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             // for paint (white window). Deferring extraction (passing null)
             // keeps Prepare fast and the dialog responsive.
             var familySnapshot = await _awaitableEvent
-                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)
+                .RaiseAsync(app =>
+                {
+                    var extracted = _snapshotExtractor.ExtractFromFamilyDocument(doc);
+                    // ADR-066 (E2): same Revit-thread roundtrip — shared
+                    // nested families are scanned flat in the parent family
+                    // document (probe P1), no recursion needed downstream.
+                    sharedNested = _dependencyCollector.CollectSharedNestedDependencies(doc);
+                    return extracted;
+                }, ct)
                 .ConfigureAwait(false);
             snapshot = familySnapshot;
             // geometryPerType stays null → pipeline extracts post-confirm.
@@ -779,36 +1108,23 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             throw;
         }
 
-        var hash = _contentHasher.ComputeForLoadable(snapshot!);
-        var normalizedName = FamilyNameNormalizer.Normalize(fileName);
-
-        var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
-            ct).ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"File prepared: '{fileName}', hash={hash?.HexString ?? "null"}, " +
-            $"status={dedupResult.Status}");
-
+        // FHV8 (#209): hash + dedup are DEFERRED to FinalizeLoadableHashesAsync
+        // — the composite hash needs the whole shared-nested closure, which
+        // is only complete after PrepareSharedNestedItemsAsync ran.
         return new PreparedFamilyItem(
             SourcePath: filePath,
             DisplayName: fileName,
             RevitMajorVersion: GetRevitMajorVersion(),
-            ContentHash: hash,
+            ContentHash: null,
             LoadableSnapshot: snapshot,
             SystemSnapshot: null,
             ErrorMessage: null,
             Source: null,
             SourceTypes: null,
             FamilySource: "loadable",
-            Status: dedupResult.Status,
-            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
             GeometryPerType: geometryPerType,
-            IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-            MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
-            HealthReport: healthReport);
+            HealthReport: healthReport,
+            SharedNestedDependencies: sharedNested);
     }
 
     private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(
@@ -888,6 +1204,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
         FamilySnapshot? snapshot = null;
         Document? familyDoc = null;
+        IReadOnlyList<FamilyDependencyDescriptor>? sharedNested = null;
         var sourcePath = $"loadable://{loadable.FamilyName}";
 
         try
@@ -913,7 +1230,13 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                         $"Title='{familyDoc.Title}', IsValidObject={familyDoc.IsValidObject}, " +
                         $"IsFamilyDocument={familyDoc.IsFamilyDocument}");
 
-                    return _snapshotExtractor.ExtractFromFamilyDocument(familyDoc);
+                    var extracted = _snapshotExtractor.ExtractFromFamilyDocument(familyDoc);
+                    // ADR-066 (E2): shared nested families are scanned flat
+                    // in the parent family document (probe P1) — the nested
+                    // preparation below re-opens them from THIS held-open
+                    // document, not from the project (purge-proof).
+                    sharedNested = _dependencyCollector.CollectSharedNestedDependencies(familyDoc);
+                    return extracted;
                 }, ct)
                 .ConfigureAwait(false);
 
@@ -933,17 +1256,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             throw;
         }
 
-        var hash = _contentHasher.ComputeForLoadable(snapshot!);
-        var normalizedName = FamilyNameNormalizer.Normalize(loadable.FamilyName);
-
-        var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct: ct),
-            ct).ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"Loadable from project prepared: '{loadable.FamilyName}', " +
-            $"hash={hash?.HexString ?? "null"}, status={dedupResult.Status}");
-
+        // FHV8 (#209): hash + dedup are DEFERRED to FinalizeLoadableHashesAsync
+        // — the composite hash needs the whole shared-nested closure, which
+        // is only complete after PrepareSharedNestedItemsAsync ran.
         var source = new FamilyImportSource.LoadableSource(
             FamilyName: loadable.FamilyName,
             FamilyUniqueId: loadable.FamilyUniqueId,
@@ -953,19 +1268,14 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             SourcePath: sourcePath,
             DisplayName: loadable.FamilyName,
             RevitMajorVersion: GetRevitMajorVersion(),
-            ContentHash: hash,
+            ContentHash: null,
             LoadableSnapshot: snapshot,
             SystemSnapshot: null,
             ErrorMessage: null,
             Source: source,
             SourceTypes: null,
             FamilySource: "loadable",
-            Status: dedupResult.Status,
-            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
-            IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
-            MatchedItemName: dedupResult.HashMatch?.MatchedItemName);
+            SharedNestedDependencies: sharedNested);
     }
 
     private int GetRevitMajorVersion()

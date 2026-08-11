@@ -97,17 +97,50 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     }
 
     /// <summary>
+    /// #209: verification-grade hash for comparing an EMBEDDED
+    /// nested family against its source .rfa after a reload. Same sections
+    /// as the identity hash — STRICT on definitions (parameter groups,
+    /// formulas, types/values, nested, facts, flags, connectors'
+    /// classification) — except metrics that are PHYSICALLY
+    /// host-dependent, not content: regen-driven geometry (volumes,
+    /// bounds, surface areas, curve lengths) and connector sizes/origins,
+    /// which legitimately move when the host drives the nested family's
+    /// instance parameters. Form kinds/counts, face/edge counts stay in.
+    /// An overwrite reload does NOT propagate parameter groups (the
+    /// embedded definition keeps the host's grouping) — by design this
+    /// grade detects that as a mismatch: groups are content, and a strict
+    /// product does not pass cosmetic drift as success (owner directive,
+    /// round-5). Never stored in the catalog — identity
+    /// (dedup/versioning) keeps using <see cref="ComputeForLoadable"/>.
+    /// </summary>
+    public FamilyContentHash? ComputeForEmbeddedVerification(FamilySnapshot snapshot)
+    {
+        if (snapshot is null)
+            return null;
+
+        var canonical = BuildLoadableCanonicalString(snapshot, verificationGrade: true);
+        var hex = ComputeSha256Hex(canonical);
+        return new FamilyContentHash(
+            HexString: hex,
+            FormatVersion: FamilyContentHashFormat.CurrentVersion,
+            SourceKind: "loadable-verify");
+    }
+
+    /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV3|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|GEOM|...|GEOM2D|...|NESTED|...|FACTS|...|FLAGS|...|CONN|...
+    /// Format: FHV8|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
     /// name is only a fallback when the ordinal is unknown.
+    /// FHV8 (#209, ADR-066): NESTEDHASH — direct shared-nested children
+    /// as sorted (escaped name, composite hash hex) pairs, so a nested
+    /// content change transitively shifts every ancestor's hash.
     /// </summary>
-    internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot)
+    internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot, bool verificationGrade = false)
     {
         var sb = new StringBuilder(768);
-        sb.Append("FHV3|LOADABLE|");
+        sb.Append(verificationGrade ? "FHV8V|LOADABLE|" : "FHV8|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -158,33 +191,46 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 
         sb.Append("GEOM|");
         sb.Append(snapshot.Geometry.TotalFormCount).Append('|');
-        var sortedForms = snapshot.Geometry.Forms
-            .OrderBy(f => f.FormKind, StringComparer.Ordinal)
-            .ThenBy(f => f.IsSolid)
-            .ThenBy(f => f.Volume);
+        var sortedForms = verificationGrade
+            ? snapshot.Geometry.Forms
+                .OrderBy(f => f.FormKind, StringComparer.Ordinal)
+                .ThenBy(f => f.IsSolid)
+                .ThenBy(f => f.FaceCount)
+                .ThenBy(f => f.EdgeCount)
+                .ThenBy(f => f.SubcategoryName, StringComparer.Ordinal)
+            : snapshot.Geometry.Forms
+                .OrderBy(f => f.FormKind, StringComparer.Ordinal)
+                .ThenBy(f => f.IsSolid)
+                .ThenBy(f => f.Volume);
         foreach (var f in sortedForms)
         {
             sb.Append(f.FormKind).Append('|');
-            sb.Append(f.IsSolid ? "S" : "V").Append('|');
-            sb.Append(f.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+            sb.Append(f.IsSolid ? 'S' : 'V').Append('|');
+            if (!verificationGrade)
+            {
+                sb.Append(f.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+            }
             sb.Append(f.FaceCount).Append('|');
             sb.Append(f.EdgeCount).Append('|');
             sb.Append(Escape(f.SubcategoryName ?? NullSubcatMarker)).Append('|');
-            sb.Append(f.SurfaceArea.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-            if (f.Bounds is not null)
+            if (!verificationGrade)
             {
-                sb.Append(FormatCoord(f.Bounds.MinX)).Append(',');
-                sb.Append(FormatCoord(f.Bounds.MinY)).Append(',');
-                sb.Append(FormatCoord(f.Bounds.MinZ)).Append(',');
-                sb.Append(FormatCoord(f.Bounds.MaxX)).Append(',');
-                sb.Append(FormatCoord(f.Bounds.MaxY)).Append(',');
-                sb.Append(FormatCoord(f.Bounds.MaxZ));
+                sb.Append(f.SurfaceArea.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                if (f.Bounds is not null)
+                {
+                    sb.Append(FormatCoord(f.Bounds.MinX)).Append(',');
+                    sb.Append(FormatCoord(f.Bounds.MinY)).Append(',');
+                    sb.Append(FormatCoord(f.Bounds.MinZ)).Append(',');
+                    sb.Append(FormatCoord(f.Bounds.MaxX)).Append(',');
+                    sb.Append(FormatCoord(f.Bounds.MaxY)).Append(',');
+                    sb.Append(FormatCoord(f.Bounds.MaxZ));
+                }
+                else
+                {
+                    sb.Append('-');
+                }
+                sb.Append('|');
             }
-            else
-            {
-                sb.Append('-');
-            }
-            sb.Append('|');
         }
 
         sb.Append("GEOM2D|");
@@ -194,9 +240,12 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         sb.Append(snapshot.Geometry.TextNoteCount).Append('|');
         sb.Append(snapshot.Geometry.ReferencePlaneCount).Append('|');
         sb.Append(snapshot.Geometry.DimensionCount).Append('|');
-        sb.Append(snapshot.Geometry.TotalSymbolicCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-        sb.Append(snapshot.Geometry.TotalDetailCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-        sb.Append(snapshot.Geometry.TotalModelCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+        if (!verificationGrade)
+        {
+            sb.Append(snapshot.Geometry.TotalSymbolicCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+            sb.Append(snapshot.Geometry.TotalDetailCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+            sb.Append(snapshot.Geometry.TotalModelCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+        }
 
         sb.Append("NESTED|");
         var sortedNested = snapshot.SharedNestedFamilyNames
@@ -211,6 +260,15 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         foreach (var n in sortedNonShared)
         {
             sb.Append(Escape(n)).Append('|');
+        }
+
+        sb.Append("NESTEDHASH|");
+        var sortedNestedHashes = (snapshot.SharedNestedContentHashes ?? (IReadOnlyList<NestedContentHash>)[])
+            .OrderBy(e => e.FamilyName, StringComparer.Ordinal);
+        foreach (var e in sortedNestedHashes)
+        {
+            sb.Append(Escape(e.FamilyName)).Append('|');
+            sb.Append(e.HashHex).Append('|');
         }
 
         sb.Append("FACTS|");
@@ -230,25 +288,36 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         sb.Append(FormatFlag(flags?.AllowsCutWithVoids)).Append('|');
 
         sb.Append("CONN|");
-        var sortedConnectors = (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
-            .OrderBy(c => c.Domain)
-            .ThenBy(c => c.Shape)
-            .ThenBy(c => c.SystemClassification)
-            .ThenBy(c => c.OriginX)
-            .ThenBy(c => c.OriginY)
-            .ThenBy(c => c.OriginZ);
+        var sortedConnectors = verificationGrade
+            ? (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
+                .OrderBy(c => c.Domain)
+                .ThenBy(c => c.Shape)
+                .ThenBy(c => c.SystemClassification)
+                .ThenBy(c => c.LinkedIndex)
+            : (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
+                .OrderBy(c => c.Domain)
+                .ThenBy(c => c.Shape)
+                .ThenBy(c => c.SystemClassification)
+                .ThenBy(c => c.OriginX)
+                .ThenBy(c => c.OriginY)
+                .ThenBy(c => c.OriginZ);
         foreach (var c in sortedConnectors)
         {
             sb.Append(c.Domain).Append('|');
             sb.Append(c.Shape).Append('|');
             sb.Append(c.SystemClassification).Append('|');
             sb.Append(c.IsPrimary ? 'P' : '-').Append('|');
-            sb.Append(FormatSize(c.Width)).Append('|');
-            sb.Append(FormatSize(c.Height)).Append('|');
-            sb.Append(FormatSize(c.Radius)).Append('|');
-            sb.Append(FormatCoord(c.OriginX)).Append('|');
-            sb.Append(FormatCoord(c.OriginY)).Append('|');
-            sb.Append(FormatCoord(c.OriginZ)).Append('|');
+            if (!verificationGrade)
+            {
+                // Connector size/origin move with host-driven geometry —
+                // same class as volumes/bounds (excluded above).
+                sb.Append(FormatSize(c.Width)).Append('|');
+                sb.Append(FormatSize(c.Height)).Append('|');
+                sb.Append(FormatSize(c.Radius)).Append('|');
+                sb.Append(FormatCoord(c.OriginX)).Append('|');
+                sb.Append(FormatCoord(c.OriginY)).Append('|');
+                sb.Append(FormatCoord(c.OriginZ)).Append('|');
+            }
             sb.Append(c.LinkedIndex).Append('|');
         }
 

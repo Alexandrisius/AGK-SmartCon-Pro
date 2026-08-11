@@ -718,15 +718,34 @@ public sealed partial class FamilyManagerMainViewModel
 
         var batch = await _familyDependencyRepository.GetReferencingParentsBatchAsync(
             leaves.Select(l => l.CatalogItemId).ToList(), ct);
-        if (batch.Count == 0) return;
+
+        // E2 (#209): amber "требует переимпорта" badge — the current
+        // version embeds a child version that is no longer the child's
+        // active one. Same batch pass, same invalidation points.
+        var driftBatch = await _familyDependencyRepository.GetDependencyDriftBatchAsync(
+            leaves.Select(l => l.CatalogItemId).ToList(), ct);
 
         foreach (var leaf in leaves)
         {
-            if (!batch.TryGetValue(leaf.CatalogItemId, out var references)) continue;
-            leaf.IsDependencyReferenced = true;
-            // Минимальный тултип по запросу владельца: «Семейство» (v2) — и всё.
-            leaf.DependencyReferencedTooltip = string.Join(
-                "; ", DependencyGuardText.FormatReferenceLines(references, includeCurrentMark: false));
+            if (batch.TryGetValue(leaf.CatalogItemId, out var references))
+            {
+                leaf.IsDependencyReferenced = true;
+                // Минимальный тултип по запросу владельца: «Семейство» (v2) — и всё.
+                leaf.DependencyReferencedTooltip = string.Join(
+                    "; ", DependencyGuardText.FormatReferenceLines(references, includeCurrentMark: false));
+            }
+
+            if (driftBatch.TryGetValue(leaf.CatalogItemId, out var drifts))
+            {
+                leaf.HasOutdatedDependencies = true;
+                var format = LanguageManager.GetString(StringLocalization.Keys.FM_Tree_OutdatedDependencies_Tooltip)
+                    ?? "Вложенные семейства устарели: {0}. Откройте семейство, перетащите актуальные версии из каталога и переимпортируйте его.";
+                leaf.OutdatedDependenciesTooltip = string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    format,
+                    DependencyGuardText.FormatMultilineList(drifts.Select(d =>
+                        $"{d.ChildName} ({d.EmbeddedVersionLabel} → {d.CurrentVersionLabel})")));
+            }
         }
     }
 

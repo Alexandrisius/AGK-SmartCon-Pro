@@ -17,8 +17,20 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <c>null</c> for other kinds.
 /// </param>
 /// <param name="Ordinal">Stable ordering within the parent's dependency list.</param>
+/// <param name="ChildVersionLabel">
+/// E2 (#209, schema V30): version label of the child that was EMBEDDED in
+/// the parent's version at import time (the batch row's
+/// <c>PrecomputedVersionLabel</c> for imported children, the
+/// hash-<c>MatchedVersionLabel</c> for dedup-linked duplicates). Compared
+/// against the child's <c>current_version_label</c> to detect dependency
+/// drift (a newer child version was activated after the parent embedded an
+/// older copy) — a pure SQL check. <c>null</c> = unknown (legacy V29 links,
+/// or a skipped child whose content matches no stored version) — such
+/// links never raise drift.
+/// </param>
 public sealed record FamilyDependencyInfo(
     string ChildCatalogItemId,
     string Kind,
     string? PartName,
-    int Ordinal);
+    int Ordinal,
+    string? ChildVersionLabel = null);

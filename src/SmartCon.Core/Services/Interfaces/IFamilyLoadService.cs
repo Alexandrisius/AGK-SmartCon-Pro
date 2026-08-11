@@ -88,6 +88,22 @@ public interface IFamilyLoadService
     /// loaded in the project (fresh load — no types to preserve) or when no
     /// loaded symbols can be enumerated.
     /// </para>
+    /// <para>
+    /// Family-document context (#209): when the active document IS a family
+    /// (.rfa in the Family Editor), the semantics are replaced entirely —
+    /// a plain overwrite <c>Document.LoadFamily(path, IFamilyLoadOptions)</c>
+    /// reloads the HOISTED definition of the nested family at ANY nesting
+    /// depth (the preserve-types <c>LoadFamilySymbol</c> path is a silent
+    /// no-op there; <paramref name="onSharedDecision"/> and
+    /// <paramref name="nestedSharedNames"/> are ignored). The hoisted
+    /// definition is what reaches projects when the edited family is loaded;
+    /// an intermediate family's internal EditFamily view keeps a stale
+    /// embedded copy — cosmetic, unreachable from projects (integration
+    /// contracts: NestedFamilyReloadTests, 2026-08-10). Fails fast when the
+    /// target is not nested in the document or is open in the Family Editor;
+    /// the caller post-verifies the reloaded content hash before trusting
+    /// the result.
+    /// </para>
     /// </remarks>
     /// <param name="file">Resolved family file (path + catalog ids).</param>
     /// <param name="overwriteParameterValues">

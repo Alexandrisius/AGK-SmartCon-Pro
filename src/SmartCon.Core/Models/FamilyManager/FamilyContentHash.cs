@@ -80,6 +80,27 @@ public sealed record FamilyContentHash(
     ///     that is not current AND heals family_types.family_key from the
     ///     staged snapshot (stored "Single" keys of ducts are rewritten to
     ///     the shape keys).
+    /// 8 — composite nested content (#209, ADR-066, owner decision
+    ///     2026-08-07). Loadable only: <c>FHV8|LOADABLE|{catOrdinal}|...</c>
+    ///     gains the NESTEDHASH section — direct shared-nested children as
+    ///     sorted (name, composite-hash) pairs. A content change inside a
+    ///     shared nested family transitively shifts the hashes of every
+    ///     ancestor (bolt → flange → valve), so a parent re-imported with
+    ///     updated nested content yields a NEW VERSION instead of a false
+    ///     Duplicate. Composition is bottom-up over direct edges derived
+    ///     from the flat per-document subtree scans
+    ///     (<c>CompositeFamilyHashComposer</c>); non-shared nested stay
+    ///     name-only (#217 tracks promoting them to catalog components).
+    ///     Same bump: the unnamed default TYPE is no longer extracted as
+    ///     the synthetic <c>&lt;default&gt;</c> — Revit synthesizes it when
+    ///     a typeless family is LOADED into a document (raw .rfa reports
+    ///     Types.Size=0, an EditFamily copy Size=1), so extracting it made
+    ///     the hash depend on the extraction context and broke
+    ///     import↔migration and file↔nested dedup equality (caught by the
+    ///     FHV8 integration probe). Critical task <c>hash-v8</c> recomputes
+    ///     every row that is not current (system rows re-stamp, loadable
+    ///     rows get the composite hash — nested closures are extracted from
+    ///     the managed .rfa itself, no cross-group ordering needed).
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -95,7 +116,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

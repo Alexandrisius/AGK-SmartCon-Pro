@@ -328,7 +328,146 @@ public sealed class LocalFamilyDependencyRepositoryTests
         Assert.True(deleted);
         Assert.Empty(await sut.GetReferencingParentsAsync(child));
     }
+    // ---- E2 (#209, V30): embedded child version + drift detection ----
 
+    [Fact]
+    public async Task ChildVersionLabel_RoundtripsThroughWriteAndRead()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "drift-parent-0");
+        var child = await SeedItemAsync(fixture, "drift-child-0", "Фланец", currentVersionLabel: "v2");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 0, ChildVersionLabel: "v1"),
+        });
+
+        var link = Assert.Single(await sut.GetForCurrentVersionAsync(parentId));
+        Assert.Equal("v1", link.ChildVersionLabel);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_EmbeddedDiffersFromCurrent_ReportsDrift()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "drift-parent-1");
+        var child = await SeedItemAsync(fixture, "drift-child-1", "Фланец ответный", currentVersionLabel: "v2");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 0, ChildVersionLabel: "v1"),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        var entry = Assert.Single(drift);
+        Assert.Equal(parentId, entry.Key);
+        var row = Assert.Single(entry.Value);
+        Assert.Equal(child, row.ChildCatalogItemId);
+        Assert.Equal("Фланец ответный", row.ChildName);
+        Assert.Equal("v1", row.EmbeddedVersionLabel);
+        Assert.Equal("v2", row.CurrentVersionLabel);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_EmbeddedEqualsCurrent_NoDrift()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "drift-parent-2");
+        var child = await SeedItemAsync(fixture, "drift-child-2", "Фланец", currentVersionLabel: "v2");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 0, ChildVersionLabel: "v2"),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        Assert.Empty(drift);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_NullEmbeddedLabel_NeverDrifts()
+    {
+        using var fixture = await CreateAndMigrate();
+        // Legacy V29 link (no child_version_label) — unknown, never drifted.
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "drift-parent-3");
+        var child = await SeedItemAsync(fixture, "drift-child-3", "Отвод", currentVersionLabel: "v2");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        Assert.Empty(drift);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_LinkOnArchivedParentVersion_NotReported()
+    {
+        using var fixture = await CreateAndMigrate();
+        // Only the parent's CURRENT version links participate in drift —
+        // archived versions keep their historical embedded labels.
+        var parentId = "drift-parent-4";
+        await SeedItemAsync(fixture, parentId, "Родитель", currentVersionLabel: "v2");
+        var v1 = await SeedVersionRowAsync(fixture, parentId, "v1");
+        await SeedVersionRowAsync(fixture, parentId, "v2");
+        var child = await SeedItemAsync(fixture, "drift-child-4", "Фланец", currentVersionLabel: "v3");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, v1, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 0, ChildVersionLabel: "v1"),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        Assert.Empty(drift);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_EmbeddedNewerThanCurrent_NoDrift()
+    {
+        using var fixture = await CreateAndMigrate();
+        // Owner decision (#209): drift is directional. A parent embedding a
+        // NEWER-than-active child version (fresh import carrying the newest
+        // nested content) must NOT be flagged — otherwise every such import
+        // would instantly block the just-imported parent (validator M1).
+        var (parentId, parentVersionId) = await SeedParentWithCurrentVersionAsync(fixture, "drift-parent-6");
+        var child = await SeedItemAsync(fixture, "drift-child-6", "Фланец", currentVersionLabel: "v1");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, parentVersionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.SharedNested, null, 0, ChildVersionLabel: "v2"),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        Assert.Empty(drift);
+    }
+
+    [Fact]
+    public async Task GetDependencyDrift_SystemParent_NeverReported()
+    {
+        using var fixture = await CreateAndMigrate();
+        // A SYSTEM parent's sync resolves routing children dynamically at
+        // their ACTIVE version — no embedded copy, no drift semantics.
+        var parentId = "drift-parent-5";
+        await SeedItemAsync(fixture, parentId, "Трубы ГОСТ", currentVersionLabel: "v1", familySource: "system");
+        var versionId = await SeedVersionRowAsync(fixture, parentId, "v1");
+        var child = await SeedItemAsync(fixture, "drift-child-5", "Отвод", currentVersionLabel: "v2");
+        var sut = new LocalFamilyDependencyRepository(fixture.GetDatabase());
+        await sut.ReplaceForVersionAsync(parentId, versionId, new[]
+        {
+            new FamilyDependencyInfo(child, FamilyDependencyKind.Routing, "Отвод:Стандарт", 0, ChildVersionLabel: "v1"),
+        });
+
+        var drift = await sut.GetDependencyDriftBatchAsync(new[] { parentId });
+
+        Assert.Empty(drift);
+    }
 
     private static async Task<(string ItemId, string VersionId)> SeedParentWithCurrentVersionAsync(
         TempCatalogFixture fixture, string itemId)
@@ -339,19 +478,21 @@ public sealed class LocalFamilyDependencyRepositoryTests
     }
 
     private static async Task<string> SeedItemAsync(
-        TempCatalogFixture fixture, string itemId, string name, string? currentVersionLabel = null)
+        TempCatalogFixture fixture, string itemId, string name, string? currentVersionLabel = null,
+        string familySource = "loadable")
     {
         using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, manufacturer, content_status, current_version_label, published_by, created_at_utc, updated_at_utc)
-            VALUES (@id, @name, @norm, NULL, NULL, NULL, 'Active', @currentLabel, NULL, '2026-08-06T00:00:00Z', '2026-08-06T00:00:00Z')
+            INSERT INTO catalog_items (id, name, normalized_name, description, category_name, manufacturer, content_status, current_version_label, published_by, family_source, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @norm, NULL, NULL, NULL, 'Active', @currentLabel, NULL, @source, '2026-08-06T00:00:00Z', '2026-08-06T00:00:00Z')
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", itemId));
         cmd.Parameters.Add(new SqliteParameter("@name", name));
         cmd.Parameters.Add(new SqliteParameter("@norm", name.ToUpperInvariant()));
+        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
         cmd.Parameters.Add(new SqliteParameter("@currentLabel",
             currentVersionLabel is null ? DBNull.Value : currentVersionLabel));
         await cmd.ExecuteNonQueryAsync();

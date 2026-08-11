@@ -248,7 +248,8 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
                 {
                     context = new FamilyActualizationContext(
                         group, openable, absolutePath,
-                        extract.LoadableSnapshot, extract.Geometry, extract.SystemSnapshot);
+                        extract.LoadableSnapshot, extract.Geometry, extract.SystemSnapshot,
+                        extract.SharedNestedSnapshots, extract.SharedNestedSubtrees);
                 }
             }
             else

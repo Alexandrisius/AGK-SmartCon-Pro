@@ -194,9 +194,12 @@ public interface IFamilyBatchImportExecutor
         string? categoryId,
         IProgress<FamilyBatchImportProgress>? progress,
         PauseGate? pauseGate,
-        CancellationToken ct);
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? externalParentItemIds = null);
 }
 ```
+
+- `externalParentItemIds` (E2, #209, UC-2) — родители, импортированные ВНЕ этого executor'а (bespoke-путь активного семейства): исходный dialog-путь → catalog item id. Сиды в parent-map записи связей, чтобы dependency-линки легли и на таких родителей. `null` для self-contained батчей.
 
 ---
 

@@ -47,7 +47,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 
 | Задача | Order | Critical | Что делает |
 |---|---|---|---|
-| `HashFormatActualizationTask` (`hash-v7`) | 10 | да | Хэши FHV7 (#215: duct Shape discriminator в FAMKEY; ранее FHV6/`hash-v6`, FHV5/`hash-v5`, FHV4/`hash-v4`, FHV3/`hash-v3`, ADR-056/065): apply на все Revit-варианты + ресинк item + **лечение `family_types.family_key` из staged-снапшота** (duct «Single» → shape-ключи); system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free pass невозможен — канон изменился структурно); терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v7-хэшей (ADR-058) |
+| `HashFormatActualizationTask` (`hash-v8`) | 10 | да | Хэши FHV8 (#209, ADR-066: loadable canonical gains секция NESTEDHASH — композитные хэши прямых shared-nested детей; транзитивность «болт → фланец → кран»; ранее FHV7/`hash-v7` #215, FHV6/FHV5/FHV4/FHV3, ADR-056/065): apply на все Revit-варианты + ресинк item + лечение `family_types.family_key` из staged-снапшота; loadable-группы — self-contained композиция: миграционный экстрактор переоткрывает всю shared-nested кложуру из самого managed `.rfa` (EditFamily, probe P2/P3), кросс-групповой порядок не нужен; system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types`; терминальные маркеры -1/-2; runtime-backfill `min_plugin_version` (монотонный) после записи v8-хэшей (ADR-058) |
 | `AttributesActualizationTask` (`attributes-v1`) | 20 | нет | Типы + значения + shared nested + счётчики `types_count`/`parameters_count` (active label; чинит #151/#152/#153) |
 | `GlbPreviewActualizationTask` (`glb-v1`) | 30 | нет | Auto-extracted 3D GLB превью (active label). Терминальный маркер #157 (V23): семейство без извлекаемой 3D-геометрии (2D/символьные) получает `catalog_versions.glb_state = -1` от пайплайна — детект гаснет, иначе вечный pending |
 | `RevitCategoryActualizationTask` (`revit-category-v1`) | 40 | нет | Backfill `catalog_items.revit_category` для loadable+system (active label; system `.rvt` — category-only extraction `ExtractSystemCategoryAsync`) |
@@ -62,6 +62,7 @@ FamilyManagerPaneControl.xaml               — красная точка + ба
 | V27 | `family_types.family_key` | Locale-invariant identity — #190 (ADR-064) |
 | V28 | `catalog_versions.es_marker_version` | Детект `mini-project-marker-v1` — #189 (ADR-062) |
 | V29 | `family_dependencies` | Связи parent→child (routing-фитинги, shared nested) — #207/#208 (ADR-066) |
+| V30 | `family_dependencies.child_version_label` | Зашитая версия ребёнка для drift-детекта (E2) — #209 (ADR-066). Additive, NULL=unknown (legacy V29-связи не дрейфуют). Backfill nested-элементов в существующие базы НЕ делается (решение владельца: lazy — nested появляются при следующем (пере)импорте родителя) |
 
 ## Два уровня критичности
 | | Critical задача | Optional задача |

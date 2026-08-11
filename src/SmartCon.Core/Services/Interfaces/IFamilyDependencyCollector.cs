@@ -30,4 +30,20 @@ public interface IFamilyDependencyCollector
     IReadOnlyList<FamilyDependencyDescriptor> CollectRoutingDependencies(
         Document document,
         SystemFamilySnapshot snapshot);
+
+    /// <summary>
+    /// Collects shared-nested dependency descriptors from a LOADABLE family
+    /// document (E2, #209). Must be called on the Revit API thread. The scan
+    /// covers every nesting level at once: all shared nested families are
+    /// visible flat in the top parent's family document (probe-verified,
+    /// <c>SharedNestedCollectorTests.P1</c>), so no recursion or cycle guard
+    /// is needed. Families that cannot be re-opened
+    /// (<c>Family.IsEditable == false</c>) or have an empty name are skipped
+    /// with a Warn log. The returned <see cref="FamilyDependencyDescriptor.FamilyUniqueId"/>
+    /// is valid in <paramref name="familyDocument"/> only.
+    /// </summary>
+    /// <param name="familyDocument">Open family document of the parent (opaque).</param>
+    /// <returns>Unique shared-nested descriptors, empty when none.</returns>
+    IReadOnlyList<FamilyDependencyDescriptor> CollectSharedNestedDependencies(
+        Document familyDocument);
 }

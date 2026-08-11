@@ -307,7 +307,10 @@ public sealed partial class FamilyManagerMainViewModel
         using var _ = SmartConLogger.BeginScope("FMImport",
             ("Method", "ProcessFamilyImportAsync"));
 
-        var prepared = await _preparationService.PrepareActiveFamilyAsync(CancellationToken.None);
+        var preparedItems = await _preparationService.PrepareActiveFamilyAsync(CancellationToken.None);
+        // E2 (#209): [0] is the active family itself, the rest are its
+        // shared-nested children (regular batch rows).
+        var prepared = preparedItems[0];
 
         if (prepared.ErrorMessage is not null)
         {
@@ -384,8 +387,20 @@ public sealed partial class FamilyManagerMainViewModel
                 : FamilyBatchImportAction.IncrementVersion
         };
 
+        // E2 (#209): shared-nested children of the active family as regular
+        // batch rows via the shared mapping helper (same kind-aware action
+        // defaults as UC-1: SharedNested + Existing → IncrementVersion).
+        var dialogItems = new List<FamilyBatchImportItem> { item };
+        if (preparedItems.Count > 1)
+        {
+            var childItems = await MapPreparedItemsToBatchItemsAsync(
+                    preparedItems.Skip(1).ToList(), CancellationToken.None)
+                .ConfigureAwait(false);
+            dialogItems.AddRange(childItems);
+        }
+
         using var vm = new FamilyBatchImportViewModel(
-            new[] { item },
+            dialogItems,
             _dialogService,
             _viewModelFactory,
             catalogProvider: _catalogProvider,
@@ -401,13 +416,32 @@ public sealed partial class FamilyManagerMainViewModel
 
         var selectedItems = vm.GetResultItems();
         var toImport = selectedItems.Where(i => i.Action != FamilyBatchImportAction.Skip).ToList();
-        if (toImport.Count == 0)
+
+        // The parent row is identified by its file path (the active
+        // document's path); every other row is a shared-nested child.
+        var parentImport = toImport.FirstOrDefault(i =>
+            string.Equals(i.FilePath, placeholderFilePath, StringComparison.Ordinal));
+        var childImports = toImport.Where(i =>
+            !string.Equals(i.FilePath, placeholderFilePath, StringComparison.Ordinal)).ToList();
+
+        if (parentImport is null && childImports.Count == 0)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             return;
         }
 
-        var importItem = toImport[0];
+        if (parentImport is null)
+        {
+            // Parent row skipped (e.g. Duplicate) — import only the children.
+            // No new parent version → no dependency links are written against
+            // it (same semantics as the UC-1 planner).
+            await ImportActiveFamilyChildrenAsync(childImports, externalParentItemIds: null)
+                .ConfigureAwait(false);
+            await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+            return;
+        }
+
+        var importItem = parentImport;
 
         var displayName = importItem.FileName;
 
@@ -713,7 +747,62 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
+        // E2 (#209): import the shared-nested children AFTER the parent so
+        // the dependency links land on the parent's NEW current version.
+        // The nested documents are independent EditFamily copies (probe P3)
+        // and survive the parent editor's close above.
+        if (childImports.Count > 0)
+        {
+            var externalParents = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (importResult.Success && !string.IsNullOrEmpty(importResult.CatalogItemId))
+            {
+                externalParents[placeholderFilePath] = importResult.CatalogItemId!;
+            }
+
+            var childResult = await ImportActiveFamilyChildrenAsync(childImports, externalParents)
+                .ConfigureAwait(false);
+            if (childResult.SuccessCount > 0 || childResult.ErrorCount > 0)
+            {
+                StatusMessage = BuildImportStatusMessage(
+                    success + childResult.SuccessCount,
+                    skipped + childResult.SkippedCount,
+                    errors + childResult.ErrorCount,
+                    total + childImports.Count);
+            }
+        }
+
         await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// E2 (#209): imports the shared-nested children of the active family
+    /// through the regular file-batch executor — staging resolves the
+    /// held-open <c>nested://</c> documents exactly like UC-1. The parent
+    /// itself was imported through the bespoke active-document path, so its
+    /// catalog id arrives via <paramref name="externalParentItemIds"/> and
+    /// the executor's link write lands on the parent's current version.
+    /// </summary>
+    private async Task<FamilyBatchImportExecutionResult> ImportActiveFamilyChildrenAsync(
+        IReadOnlyList<FamilyBatchImportItem> childImports,
+        IReadOnlyDictionary<string, string>? externalParentItemIds)
+    {
+        var staging = new FileFamilyStagingService(
+            _awaitableEvent, _preparationService, _importService);
+        var executor = new FileFamilyBatchImportExecutor(
+            staging,
+            _importService,
+            _familyDependencyRepository,
+            _dataImportService,
+            _sharedNestedRepository,
+            CurrentRevitVersion);
+        var result = await executor.ExecuteAsync(
+                childImports, categoryId: null, progress: null, pauseGate: null,
+                CancellationToken.None, externalParentItemIds)
+            .ConfigureAwait(false);
+        SmartConLogger.Info(
+            $"Active-family nested import: success={result.SuccessCount}, " +
+            $"skipped={result.SkippedCount}, errors={result.ErrorCount}");
+        return result;
     }
 
     /// <summary>

@@ -46,4 +46,31 @@ internal static class DependencyGuardText
             })
             .ToList();
     }
+
+    /// <summary>
+    /// Multi-line tooltip list: one bullet line per entry, capped at
+    /// <paramref name="maxLines"/> with a localized "… and N more" tail.
+    /// Single-line joins over long lists render as an unreadable
+    /// screen-wide string (#209 manual-test feedback).
+    /// </summary>
+    public static string FormatMultilineList(IEnumerable<string> lines, int maxLines = 8)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(lines);
+#else
+        if (lines is null) throw new ArgumentNullException(nameof(lines));
+#endif
+
+        var list = lines.Select(l => "• " + l).ToList();
+        if (list.Count > maxLines)
+        {
+            var extra = list.Count - maxLines;
+            list = list.Take(maxLines).ToList();
+            var moreFormat = LanguageManager.GetString(StringLocalization.Keys.FM_DependencyGuard_AndMore)
+                ?? "… and {0} more";
+            list.Add(string.Format(System.Globalization.CultureInfo.CurrentCulture, moreFormat, extra));
+        }
+
+        return string.Join("\n", list);
+    }
 }

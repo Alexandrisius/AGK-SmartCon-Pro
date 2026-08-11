@@ -82,6 +82,20 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private string? _dependencyReferencedTooltip;
 
+    /// <summary>
+    /// E2 (#209, V30): at least one dependency embedded in this item's
+    /// CURRENT version is no longer the child's active version — the amber
+    /// "требует переимпорта" badge (distinct from stale: the fix is to
+    /// re-import THIS family with the up-to-date nested content). Computed
+    /// batch-wise on tree load together with the paperclip.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hasOutdatedDependencies;
+
+    /// <summary>Localized per-child «Фланец: зашита v1, активна v2» lines for the amber badge tooltip.</summary>
+    [ObservableProperty]
+    private string? _outdatedDependenciesTooltip;
+
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,
         IFamilyAssetService assetService,

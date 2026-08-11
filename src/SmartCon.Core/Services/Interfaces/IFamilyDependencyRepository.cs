@@ -80,4 +80,18 @@ public interface IFamilyDependencyRepository
     Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
         IReadOnlyCollection<string> childCatalogItemIds,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Dependency drift lookup (E2, #209, schema V30): for the given parent
+    /// items returns the links of their CURRENT versions whose embedded
+    /// child version (<c>child_version_label</c>) differs from the child's
+    /// current active version — i.e. a newer child version was activated
+    /// after the parent embedded an older copy. Links with unknown embedded
+    /// version (NULL, legacy V29) never report drift. The dictionary
+    /// contains an entry ONLY for parents with at least one drifted link;
+    /// the tree badge and the load-time block both read from this.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyDrift>>> GetDependencyDriftBatchAsync(
+        IReadOnlyCollection<string> parentCatalogItemIds,
+        CancellationToken ct = default);
 }

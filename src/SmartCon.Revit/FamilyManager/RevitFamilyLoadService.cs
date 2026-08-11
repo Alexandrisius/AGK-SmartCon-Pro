@@ -457,6 +457,22 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             return new FamilyLoadResult(false, null, null, $"File not found: {normalizedPath}", FamilyLoadStatus.Failed);
         }
 
+        // #209 (manual-test bug): in a FAMILY document the preserve-types
+        // path below is a SILENT NO-OP for an already-nested shared family —
+        // LoadFamilySymbol fires OnFamilyFound and returns true, yet the
+        // embedded definition is never replaced (the catalog markers then
+        // lied about the embedded version). The documented way to reload a
+        // nested definition is plain LoadFamily with the IFamilyLoadOptions
+        // overload (overwrite). The caller (StaleFamilyUpdater) post-verifies
+        // the embedded content hash against the catalog target version
+        // before writing any marker.
+        if (doc.IsFamilyDocument)
+        {
+            return ReloadNestedInFamilyDocument(
+                doc, normalizedPath, SafeFileName.GetBaseName(normalizedPath),
+                overwriteParameterValues);
+        }
+
         // Resolve shared-nested names once (REVIT-198137 fallback for the
         // per-type OnSharedFamilyFound callbacks). Same path as a regular
         // family load so the dialog shows the real nested name in Revit
@@ -644,6 +660,113 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             SmartConLogger.Info($"ReloadFamilyPreservingLoadedTypesAsync exception: {ex.GetType().Name}: {ex.Message}");
             return new FamilyLoadResult(false, displayFamilyName, null, ex.Message, FamilyLoadStatus.Failed);
         }
+    }
+
+    /// <summary>
+    /// #209: reloads a family definition that is nested inside the active
+    /// family document (.rfa in the Family Editor) AT ANY DEPTH. Plain
+    /// <c>Document.LoadFamily(path, IFamilyLoadOptions)</c> with overwrite —
+    /// the preserve-types <c>LoadFamilySymbol</c> path is a silent no-op for
+    /// embedded shared families (callbacks fire, <c>true</c> is returned,
+    /// the definition stays). Non-interactive: <c>onSharedDecision</c> is
+    /// null, so <see cref="RevitFamilyLoadOptions"/> takes the default
+    /// branch (source=Family, overwrite per the caller's choice).
+    /// <para>
+    /// Depth-N semantics (integration contracts 2026-08-10,
+    /// <c>NestedFamilyReloadTests</c>): a shared family nested at any depth
+    /// exists as ONE hoisted definition in the host family document; a
+    /// direct overwrite reload into the host updates exactly that
+    /// definition, and it is the hoisted definition that reaches projects
+    /// when the host is loaded (proven: the project receives the updated
+    /// grandchild). The intermediate's internal EditFamily view keeps a
+    /// stale embedded copy — documented, cosmetic, and unreachable from
+    /// projects; the catalog hashes/verifies the hoisted definition, so
+    /// verification and drift detection stay consistent.
+    /// <para>
+    /// KNOWN LIMITATION (integration contracts 2026-08-11,
+    /// <c>RealLibraryNestedReloadReproTests</c>): SOME real-world families
+    /// resist every API reload variant (path-load, doc-to-doc, wrapper via
+    /// OnSharedFamilyFound, in family and project documents) — Revit
+    /// reports success while keeping the old definition. Autodesk confirms
+    /// the LoadFamily API does not replicate the manual UI reload (Revit
+    /// API forum, 2026-04-30, Revit 2026.4). This is exactly why the
+    /// caller's post-verification (content hash vs catalog target) is the
+    /// arbiter of success — never the return value of this method.
+    /// </para>
+    /// </para>
+    /// <para>
+    /// The caller (StaleFamilyUpdater) post-verifies the reloaded content
+    /// hash against the catalog target version before writing any marker —
+    /// a no-op reload can never produce a lying marker.
+    /// </para>
+    /// </summary>
+    private FamilyLoadResult ReloadNestedInFamilyDocument(
+        Document doc,
+        string normalizedPath,
+        string familyNameFromPath,
+        bool overwriteParameterValues)
+    {
+        var nested = FindExistingFamily(doc, familyNameFromPath);
+        if (nested is null)
+        {
+            var notNested = $"Family '{familyNameFromPath}' is not nested in the active family document";
+            SmartConLogger.Warn(
+                $"{notNested} [Action: обновление внутри семейства поддерживается только для вложенных в него семейств]");
+            return new FamilyLoadResult(false, familyNameFromPath, null, notNested, FamilyLoadStatus.Failed);
+        }
+
+        var openTopLevel = doc.Application.Documents
+            .Cast<Document>()
+            .Where(d => d.IsFamilyDocument)
+            .Select(d => d.Title)
+            .ToList();
+        if (openTopLevel.Contains(familyNameFromPath, StringComparer.OrdinalIgnoreCase))
+        {
+            var openMsg = $"Family '{familyNameFromPath}' is open in the Family Editor";
+            SmartConLogger.Warn(
+                $"{openMsg} [Action: закройте семейство в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
+            return new FamilyLoadResult(false, familyNameFromPath, null, openMsg, FamilyLoadStatus.Failed);
+        }
+
+        var options = new RevitFamilyLoadOptions(
+            overwriteParameterValues,
+            onStatusMessage: null,
+            onSharedDecision: null,
+            nestedSharedNames: null);
+
+        try
+        {
+            var loaded = false;
+            var ok = _transactionService.RunInTransaction(
+                doc,
+                "SmartCon: Reload Nested Family",
+                d => { loaded = d.LoadFamily(normalizedPath, options, out _); });
+            if (!ok || !loaded)
+            {
+                return LoadFamilyRejectedResult(familyNameFromPath);
+            }
+
+            SmartConLogger.Info(
+                $"Nested family '{familyNameFromPath}' reloaded into the family document " +
+                $"(overwriteParameterValues={overwriteParameterValues}) — pending caller's content verification");
+            return new FamilyLoadResult(
+                true, familyNameFromPath, $"Nested family '{familyNameFromPath}' reloaded", null, FamilyLoadStatus.Updated);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"ReloadNestedInFamilyDocument('{familyNameFromPath}') failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: семейство пропущено, batch продолжится; проверьте, что семейство не открыто в редакторе]");
+            return new FamilyLoadResult(false, familyNameFromPath, null, ex.Message, FamilyLoadStatus.Failed);
+        }
+    }
+
+    private static FamilyLoadResult LoadFamilyRejectedResult(string familyName)
+    {
+        var msg = $"LoadFamily returned false for nested '{familyName}' (conflict auto-abort or rejection)";
+        SmartConLogger.Warn(
+            $"{msg} [Action: семейство осталось прежним — проверьте лог выше; повторите обновление]");
+        return new FamilyLoadResult(false, familyName, null, msg, FamilyLoadStatus.Failed);
     }
 
     private async Task<IReadOnlyList<string>?> ResolveNestedNamesAsync(

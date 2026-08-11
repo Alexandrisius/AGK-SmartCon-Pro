@@ -133,7 +133,7 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 8;
     public const int RecalculationSkipped = -1;
     public const int RecalculationMissing = -2;
 }
@@ -142,7 +142,7 @@ public static class FamilyContentHashFormat
 - `HexString` — SHA-256 hex string (uppercase, no dashes).
 - `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against newly computed hashes.
 - `SourceKind` — `"loadable"` or `"system"`. Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
-- `FamilyContentHashFormat.CurrentVersion` — **= 3 (Issue #159, ADR-056)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`), system-строки мигрированы дешёвым UPDATE флага; v3 — категория стала локале-инвариантным ordinal, добавлены секции FACTS/FLAGS/CONN (loadable) и STRUCT/ROUTING (system), геометрия расширена (bbox/surface/длины кривых), значения экранируются; обе source мигрируются полным пересчётом из файла (задача `hash-v3`).
+- `FamilyContentHashFormat.CurrentVersion` — **= 8 (FHV8, #209, ADR-066)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`), system-строки мигрированы дешёвым UPDATE флага; v3 — категория стала локале-инвариантным ordinal, добавлены секции FACTS/FLAGS/CONN (loadable) и STRUCT/ROUTING (system), геометрия расширена (bbox/surface/длины кривых), значения экранируются; обе source мигрируются полным пересчётом из файла (задача `hash-v3`); v4–v7 — system-only покрытие (FAMKEY/STRUCT+/SEGMENTS/SUBTYPES/RAILING, WIRE, детерминированный порядок TYPES, Shape-дискриминатор duct; задачи `hash-v5`/`hash-v6`/`hash-v7`); **v8 — loadable-only: секция NESTEDHASH (композитные хэши прямых shared-nested детей), задача `hash-v8`**.
 - `FamilyContentHashFormat.RecalculationSkipped` — sentinel `-1`: миграция помечает версии, чей файл безвозвратно нечитаем; исключены из pending-числа и никогда не ретраятся.
 - `FamilyContentHashFormat.RecalculationMissing` — sentinel `-2`: managed-файл отсутствует на диске; исключён из pending-числа (purge/restore — решение пользователя).
 
@@ -203,9 +203,17 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 }
 `
 
-**Canonical string layout (FHV3, ADR-056):**
-- `FHV3|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED(+NONSHARED)|FACTS|FLAGS|CONN|...` (loadable)
-- `FHV3|SYSTEM|{catId}|TYPES|{typeName}|{params}|STRUCT|...|ROUTING|...` (system)
+**Canonical string layout (FHV8, #209):**
+- `FHV8|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED|NONSHARED|NESTEDHASH|FACTS|FLAGS|CONN|...` (loadable)
+- `FHV7|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|STRUCT|...|ROUTING|...|SEGMENTS|SUBTYPES|RAILING|WIRE|...` (system)
+
+**FHV8 (композитный хэш вложенных, #209, ADR-066):**
+- Секция `NESTEDHASH` — отсортированные пары `(имя, композитный хэш)` ПРЯМЫХ shared-nested детей. Изменение контента глубоко в цепочке (болт → фланец → кран) транзитивно сдвигает хэши всех предков → переимпорт родителя даёт новую версию, а не ложный «Дубликат».
+- Прямые рёбра выводятся вычитанием из плоских subtree-сканов (`Direct(f) = Subtree(f) \ ⋃ Subtree(g)`), композиция снизу вверх — `CompositeFamilyHashComposer` (Core, pure C#).
+- Нечитаемый ребёнок → константный маркер `UNREADABLE` (детерминизм; падения нет). Циклы в Revit невозможны (LoadFamily отклоняет) — защитный guard с тем же маркером.
+- Тем же бампом: безымянный дефолтный ТИП больше не извлекается как `<default>` — Revit синтезирует его при ЗАГРУЗКЕ безтипового семейства в документ (raw .rfa: `Types.Size=0`, EditFamily-копия: `Size=1`), из-за чего хэш зависел от контекста извлечения (поймано интеграционным FHV8-пробом). UI безтиповых семейств не меняется: виртуальный узел «как семейство» создаётся и при 0 type-строк (`AttachTypesToNodes`). Значения фантомного типа транзитивно покрыты секцией GEOM.
+- Non-shared вложенные остаются name-only (секция NONSHARED) — #217 трекает их будущее как «Компоненты» каталога.
+- Тесты: `CompositeFamilyHashComposerTests` (цепочки/ромб/детерминизм/эквивалентность), интеграционные `CompositeFamilyHashTests` (транзитивность на реальном контенте + standalone≡nested эквивалентность).
 
 **v3 rules:**
 - Категория — локале-инвариантный ordinal (display name — только fallback при unknown ordinal).
@@ -213,4 +221,34 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Коннекторные координаты и bounding box округляются до 1e-4 ft.
 - Blank values excluded (`IsBlankValue(hasValue, text, storageType)`): HasValue=false, empty string, `INVALID` (только ElementId storage), `UNSUPPORTED` (только неизвестные storage), `READERROR`. Numeric zero is NOT blank. Пользовательская строка "INVALID"/"UNSUPPORTED" в текстовом параметре — контент, участвует в хэше.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
-- Тесты: `src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs` — blank-value, ноль, IfcGUID, порядок, cross-source, плюс FHV3-набор: ordinal-категория (locale-invariance), PartType, коннекторы (размер/система/Origin/rounding/linked), behavior-флаги, bbox/surface, длины кривых, non-shared nested, экранирование, слои (материал/порядок), routing (part/порядок/критерий/junction/null-part).
+- Тесты: `src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs` — blank-value, ноль, IfcGUID, порядок, cross-source, плюс FHV3-набор: ordinal-категория (locale-invariance), PartType, коннекторы (размер/система/Origin/rounding/linked), behavior-флаги, bbox/surface, длины кривых, non-shared nested, экранирование, слои (материал/порядок), routing (part/порядок/критерий/junction/null-part); golden-тесты FHV7 (system) и FHV8 (loadable, с NESTEDHASH).
+
+---
+
+## NestedContentHash
+
+FHV8 (#209): одна запись прямого shared-nested ребёнка в композитном хэше — имя семейства + его композитный хэш. Заполняется композитором непосредственно перед хэшированием (`FamilySnapshot.SharedNestedContentHashes`).
+
+**Файл:** `Models/FamilyManager/FamilySnapshot.cs`
+
+```csharp
+public sealed record NestedContentHash(string FamilyName, string HashHex);
+```
+
+---
+
+## CompositeFamilyHashComposer
+
+FHV8 (#209, ADR-066): композитные хэши замкнутого набора loadable-семейств (родитель + вся shared-nested кложура). Pure C# в SmartCon.Core. Прямые рёбра выводятся вычитанием из плоских per-document subtree-сканов; композиция снизу вверх (мемоизированный DFS, Ordinal-порядок — полная детерминированность). Нечитаемый/отсутствующий ребёнок → маркер `UnreadableChildHash` (`"UNREADABLE"`). Используется и в import-time пайплайне (`FamilyImportPreparationService.FinalizeLoadableHashesAsync`), и в задаче `hash-v8` (self-contained кложура из managed .rfa).
+
+**Файл:** Services/Implementation/CompositeFamilyHashComposer.cs
+
+```csharp
+public sealed class CompositeFamilyHashComposer
+{
+    public const string UnreadableChildHash = "UNREADABLE";
+    public IReadOnlyDictionary<string, FamilyContentHash?> Compose(
+        IReadOnlyDictionary<string, FamilySnapshot> snapshots,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> flatSubtrees);
+}
+```

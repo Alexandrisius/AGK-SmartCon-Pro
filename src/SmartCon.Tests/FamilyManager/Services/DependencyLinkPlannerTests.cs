@@ -165,4 +165,148 @@ public sealed class DependencyLinkPlannerTests
         Assert.Empty(plan.UnresolvedChildren);
         Assert.Empty(plan.LinksWithParentNotImported);
     }
+
+    [Fact]
+    public void LoadableParent_SharedNestedLink_PlannedViaMergedParentMap()
+    {
+        // E2 (#209): a loadable parent (shared-nested container) resolves
+        // through the same merged parent map, keyed by its ORIGINAL dialog
+        // path (file path or loadable:// key).
+        const string loadableParentPath = @"C:\families\Кран.rfa";
+        var parents = new Dictionary<string, string> { [loadableParentPath] = "parent-loadable-1" };
+        var child = MakeChild("Фланец", FamilyBatchImportAction.IncrementVersion, precomputedId: "child-nested-1",
+            parentPath: loadableParentPath);
+
+        var plan = DependencyLinkPlanner.Build(
+            [child], parents, ["loadable://Фланец"]);
+
+        var links = Assert.Single(plan.LinksByParent);
+        Assert.Equal("parent-loadable-1", links.Key);
+        Assert.Equal("child-nested-1", Assert.Single(links.Value).ChildCatalogItemId);
+    }
+
+    [Fact]
+    public void ImportedChild_ChildVersionLabel_IsPrecomputedLabel()
+    {
+        // V30: the embedded child version of an imported child is the label
+        // the import created (v3 etc.).
+        var child = new FamilyBatchImportItem(
+            FilePath: "loadable://Фланец",
+            FileName: "Фланец",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Existing,
+            ExistingCatalogItemId: "child-1",
+            FamilySource: "loadable",
+            PrecomputedCatalogItemId: "child-1",
+            PrecomputedVersionLabel: "v3",
+            DependencyLinks: [new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null)])
+        {
+            Action = FamilyBatchImportAction.IncrementVersion,
+        };
+
+        var plan = DependencyLinkPlanner.Build([child], ImportedParents, ["loadable://Фланец"]);
+
+        var link = Assert.Single(Assert.Single(plan.LinksByParent).Value);
+        Assert.Equal("v3", link.ChildVersionLabel);
+    }
+
+    [Fact]
+    public void MakeActiveChild_ChildVersionLabel_IsMatchedLabel()
+    {
+        // V30: MakeActive imports no file — the embedded content is the
+        // hash-matched version the user activated.
+        var child = new FamilyBatchImportItem(
+            FilePath: "loadable://Фланец",
+            FileName: "Фланец",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: "child-1",
+            FamilySource: "loadable",
+            PrecomputedCatalogItemId: "child-1",
+            PrecomputedVersionLabel: "v3",
+            MatchedVersionLabel: "v1",
+            DependencyLinks: [new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null)])
+        {
+            Action = FamilyBatchImportAction.MakeActive,
+        };
+
+        var plan = DependencyLinkPlanner.Build([child], ImportedParents, ["loadable://Фланец"]);
+
+        var link = Assert.Single(Assert.Single(plan.LinksByParent).Value);
+        Assert.Equal("v1", link.ChildVersionLabel);
+    }
+
+    [Fact]
+    public void SkippedDuplicateChild_ChildVersionLabel_IsMatchedLabel()
+    {
+        // V30: dedup-link — the embedded content is the hash-matched version.
+        var child = new FamilyBatchImportItem(
+            FilePath: "loadable://Фланец",
+            FileName: "Фланец",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: "child-1",
+            FamilySource: "loadable",
+            MatchedVersionLabel: "v2",
+            DependencyLinks: [new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null)])
+        {
+            Action = FamilyBatchImportAction.Skip,
+        };
+
+        var plan = DependencyLinkPlanner.Build([child], ImportedParents, []);
+
+        var link = Assert.Single(Assert.Single(plan.LinksByParent).Value);
+        Assert.Equal("v2", link.ChildVersionLabel);
+    }
+
+    [Fact]
+    public void SkippedExistingChild_NoHashMatch_ChildVersionLabelNull()
+    {
+        // V30: Existing+Skip — the embedded content matches no stored
+        // version, the embedded label is unknown (NULL = never drifted).
+        var child = new FamilyBatchImportItem(
+            FilePath: "loadable://Фланец",
+            FileName: "Фланец",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Existing,
+            ExistingCatalogItemId: "child-1",
+            FamilySource: "loadable",
+            DependencyLinks: [new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null)])
+        {
+            Action = FamilyBatchImportAction.Skip,
+        };
+
+        var plan = DependencyLinkPlanner.Build([child], ImportedParents, []);
+
+        var link = Assert.Single(Assert.Single(plan.LinksByParent).Value);
+        Assert.Equal("child-1", link.ChildCatalogItemId);
+        Assert.Null(link.ChildVersionLabel);
+    }
+
+    [Fact]
+    public void MakeActiveChild_NotInImportedPaths_StillLinksWithMatchedLabel()
+    {
+        // MakeActive imports no file — the executors report it WasSkipped,
+        // so it never lands in the imported-paths set. The link must still
+        // be written (the content is in the catalog) with the matched label.
+        var child = new FamilyBatchImportItem(
+            FilePath: "loadable://Фланец",
+            FileName: "Фланец",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: "child-1",
+            FamilySource: "loadable",
+            MatchedVersionLabel: "v1",
+            DependencyLinks: [new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null)])
+        {
+            Action = FamilyBatchImportAction.MakeActive,
+        };
+
+        var plan = DependencyLinkPlanner.Build([child], ImportedParents, []);
+
+        var link = Assert.Single(Assert.Single(plan.LinksByParent).Value);
+        Assert.Equal("child-1", link.ChildCatalogItemId);
+        Assert.Equal("v1", link.ChildVersionLabel);
+        Assert.Empty(plan.UnresolvedChildren);
+    }
 }

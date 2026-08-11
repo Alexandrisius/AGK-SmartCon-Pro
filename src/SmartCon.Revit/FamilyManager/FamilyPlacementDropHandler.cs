@@ -22,6 +22,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IStaleDetector _staleDetector;
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
+    private readonly IFamilyDependencyRepository? _dependencyRepository;
+    private readonly IFamilyCatalogProvider? _catalogProvider;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
@@ -46,7 +48,9 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         ISharedNestedFamilyRepository? nestedSharedRepository = null,
-        Action<FamilyPlacementDragData>? onSystemTypePlaced = null)
+        Action<FamilyPlacementDragData>? onSystemTypePlaced = null,
+        IFamilyDependencyRepository? dependencyRepository = null,
+        IFamilyCatalogProvider? catalogProvider = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -64,6 +68,8 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onSharedDecision = onSharedDecision;
         _nestedSharedRepository = nestedSharedRepository;
         _onSystemTypePlaced = onSystemTypePlaced;
+        _dependencyRepository = dependencyRepository;
+        _catalogProvider = catalogProvider;
     }
 
     public void Execute(UIDocument document, object data)
@@ -227,6 +233,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (resolved is not null)
             {
                 WriteVersionMarker(document.Document, dragData, resolved);
+                WriteNestedDependencyMarkers(document.Document, dragData);
                 _onSuccess?.Invoke($"Семейство '{familyName}' загружено и активировано для размещения");
             }
             else
@@ -268,6 +275,54 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         catch (Exception ex)
         {
             SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// E2 (#209): after a parent family loads via DnD, every dependency
+    /// child of its current version gets the ES marker of the EMBEDDED
+    /// version (the copies the load planted into the project ARE that
+    /// content) — the nested families join the stale cycle. Mirrors
+    /// <c>NestedDependencyMarkerWriter</c> (SmartCon.FamilyManager is not
+    /// referenceable from this layer — the logic stays tiny by design).
+    /// SQLite reads go through AsyncBridge (sanctioned for pure-SQLite
+    /// awaits on the Revit thread — see the nestedNames pre-resolve above).
+    /// Non-fatal: an unmarked nested family is invisible to the stale check
+    /// until its next explicit load.
+    /// </summary>
+    private void WriteNestedDependencyMarkers(Document document, FamilyPlacementDragData dragData)
+    {
+        if (_dependencyRepository is null || _catalogProvider is null) return;
+
+        try
+        {
+            var links = AsyncBridge.RunSync(() => _dependencyRepository
+                .GetForCurrentVersionAsync(dragData.CatalogItemId, CancellationToken.None));
+
+            foreach (var link in links)
+            {
+                if (string.IsNullOrEmpty(link.ChildVersionLabel)) continue;
+
+                var childName = AsyncBridge.RunSync(() => _catalogProvider
+                    .GetItemAsync(link.ChildCatalogItemId, CancellationToken.None))?.Name;
+                if (string.IsNullOrEmpty(childName)) continue;
+
+                var childFamily = FindFamilyByName(document, childName!);
+                if (childFamily is null) continue;
+
+                _versionStore.WriteToLoadedFamily(document, childFamily.Id, new FamilyVersion(
+                    SchemaVersion: FamilyVersion.CurrentSchemaVersion,
+                    CatalogItemId: link.ChildCatalogItemId,
+                    VersionLabel: link.ChildVersionLabel!,
+                    LoadedAtUtc: _clock.UtcNow,
+                    SourceRevitVersion: _targetRevitVersion));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"FamilyPlacementDropHandler: nested dependency markers failed — {ex.Message} " +
+                "[Action: вложенные семейства в проекте останутся без маркеров — Проверить покажет их stale только после явной загрузки]");
         }
     }
 

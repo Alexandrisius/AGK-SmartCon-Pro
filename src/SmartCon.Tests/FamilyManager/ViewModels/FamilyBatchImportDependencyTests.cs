@@ -103,6 +103,95 @@ public sealed class FamilyBatchImportDependencyTests
         Assert.Null(vm.Items[0].FailedDependencyNames);
     }
 
+    // ---- E2 (#209): outdated-nested detection + parent import block ----
+
+    private static FamilyBatchImportItem MakeOutdatedChildItem(
+        string fileName,
+        FamilyBatchImportAction action = FamilyBatchImportAction.Skip) =>
+        new(
+            FilePath: $"loadable://{fileName}",
+            FileName: fileName,
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: "existing-1",
+            // Active version of the existing item is v2, the embedded copy
+            // hash-matched v1 → the parent embeds an OUTDATED nested.
+            ExistingVersionLabel: "v2",
+            MatchedVersionLabel: "v1",
+            FamilySource: "loadable",
+            DependencyLinks:
+            [
+                new FamilyDependencyLink(ParentPath, FamilyDependencyKind.SharedNested, null),
+            ])
+        {
+            Action = action,
+        };
+
+    [Fact]
+    public void Row_DuplicateMatchedNonActive_IsOutdatedNested()
+    {
+        var row = new FamilyBatchImportRow(MakeOutdatedChildItem("Фланец"));
+
+        Assert.True(row.IsOutdatedNested);
+        Assert.Contains("v1", row.OutdatedNestedTooltip);
+        Assert.Contains("v2", row.OutdatedNestedTooltip);
+    }
+
+    [Fact]
+    public void Row_DuplicateMatchedActive_IsNotOutdatedNested()
+    {
+        var item = MakeOutdatedChildItem("Фланец") with { MatchedVersionLabel = "v2" };
+        var row = new FamilyBatchImportRow(item);
+
+        Assert.False(row.IsOutdatedNested);
+    }
+
+    [Fact]
+    public void Vm_OutdatedNestedChild_ParentBlockedForcedSkip()
+    {
+        using var vm = new FamilyBatchImportViewModel(
+            [MakeParentItem(), MakeOutdatedChildItem("Фланец")],
+            _dialogMock.Object,
+            _factoryMock.Object);
+
+        var parent = vm.Items[0];
+        Assert.True(parent.HasOutdatedDependencyBlock);
+        Assert.Equal(FamilyBatchImportAction.Skip, parent.Action);
+        Assert.DoesNotContain(FamilyBatchImportAction.IncrementVersion, parent.AvailableActions);
+        Assert.Contains("Фланец", parent.OutdatedDependencyBlockTooltip);
+    }
+
+    [Fact]
+    public void Vm_MakeActiveOnOutdatedChild_LiftsParentBlock()
+    {
+        using var vm = new FamilyBatchImportViewModel(
+            [MakeParentItem(), MakeOutdatedChildItem("Фланец")],
+            _dialogMock.Object,
+            _factoryMock.Object);
+
+        var parent = vm.Items[0];
+        Assert.True(parent.HasOutdatedDependencyBlock);
+
+        // Escape hatch: MakeActive switches the catalog back to the
+        // embedded version — the parent's content becomes consistent.
+        vm.Items[1].Action = FamilyBatchImportAction.MakeActive;
+
+        Assert.False(parent.HasOutdatedDependencyBlock);
+        Assert.Contains(FamilyBatchImportAction.IncrementVersion, parent.AvailableActions);
+    }
+
+    [Fact]
+    public void Vm_HealthyNestedChild_NoParentBlock()
+    {
+        using var vm = new FamilyBatchImportViewModel(
+            [MakeParentItem(), MakeChildItem("ADSK_Отвод")],
+            _dialogMock.Object,
+            _factoryMock.Object);
+
+        Assert.False(vm.Items[0].HasOutdatedDependencyBlock);
+        Assert.Null(vm.Items[0].OutdatedDependencyBlockNames);
+    }
+
     [Fact]
     public void Vm_ChildGateFlipsToFailed_ParentIndicatorRefreshes()
     {

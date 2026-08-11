@@ -24,7 +24,8 @@ public sealed class FamilyBatchImportExecutionTests
             string? categoryId,
             IProgress<FamilyBatchImportProgress>? progress,
             PauseGate? pauseGate,
-            CancellationToken ct)
+            CancellationToken ct,
+            IReadOnlyDictionary<string, string>? externalParentItemIds = null)
         {
             CallCount++;
             if (Handler is not null)

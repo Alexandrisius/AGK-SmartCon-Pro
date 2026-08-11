@@ -254,46 +254,6 @@
                                             </iconPacks:PackIconMaterial>
                                         </Grid>
                                     </Button>
-                                    <!-- ADR-066: бейдж «строка — зависимость» (родители в tooltip) -->
-                                    <iconPacks:PackIconMaterial Kind="LinkVariant"
-                                                                Foreground="#607D8B"
-                                                                Width="9" Height="9"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Bottom"
-                                                                Margin="0,0,1,1"
-                                                                IsHitTestVisible="True"
-                                                                ToolTip="{Binding DependencyOfTooltip}">
-                                        <iconPacks:PackIconMaterial.Style>
-                                            <Style TargetType="iconPacks:PackIconMaterial">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsDependency}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </iconPacks:PackIconMaterial.Style>
-                                    </iconPacks:PackIconMaterial>
-                                    <!-- ADR-066: бейдж «есть зависимости, не прошедшие проверку» -->
-                                    <iconPacks:PackIconMaterial Kind="AlertCircle"
-                                                                Foreground="#F44336"
-                                                                Width="9" Height="9"
-                                                                HorizontalAlignment="Right"
-                                                                VerticalAlignment="Top"
-                                                                Margin="0,1,1,0"
-                                                                IsHitTestVisible="True"
-                                                                ToolTip="{Binding FailedDependenciesTooltip}">
-                                        <iconPacks:PackIconMaterial.Style>
-                                            <Style TargetType="iconPacks:PackIconMaterial">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding HasFailedDependencies}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </iconPacks:PackIconMaterial.Style>
-                                    </iconPacks:PackIconMaterial>
                                     <!-- Import progress/result icons (не кликабельны) -->
                                     <Grid ToolTip="{Binding ImportErrorMessage}">
                                         <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
@@ -431,6 +391,37 @@
                                                Foreground="{DynamicResource WarningBrush}"
                                                ToolTip="{Binding CrossNameDuplicateTooltip}"
                                                Visibility="{Binding IsCrossNameDuplicate, Converter={StaticResource BoolToVis}}"/>
+                                    <!-- ADR-066 / E2 (#209): dependency badges live HERE, inline with the
+                                         status text — overlaying them on the validation-status button made
+                                         the icons overlap and unreadable (manual-test feedback). -->
+                                    <iconPacks:PackIconMaterial Kind="LinkVariant"
+                                                                Foreground="#607D8B"
+                                                                Width="12" Height="12"
+                                                                Margin="4,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip="{Binding DependencyOfTooltip}"
+                                                                Visibility="{Binding IsDependency, Converter={StaticResource BoolToVis}}"/>
+                                    <iconPacks:PackIconMaterial Kind="SyncAlert"
+                                                                Foreground="#FFA000"
+                                                                Width="12" Height="12"
+                                                                Margin="4,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip="{Binding OutdatedNestedTooltip}"
+                                                                Visibility="{Binding IsOutdatedNested, Converter={StaticResource BoolToVis}}"/>
+                                    <iconPacks:PackIconMaterial Kind="Cancel"
+                                                                Foreground="#F44336"
+                                                                Width="12" Height="12"
+                                                                Margin="4,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip="{Binding OutdatedDependencyBlockTooltip}"
+                                                                Visibility="{Binding HasOutdatedDependencyBlock, Converter={StaticResource BoolToVis}}"/>
+                                    <iconPacks:PackIconMaterial Kind="AlertCircle"
+                                                                Foreground="#F44336"
+                                                                Width="12" Height="12"
+                                                                Margin="4,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip="{Binding FailedDependenciesTooltip}"
+                                                                Visibility="{Binding HasFailedDependencies, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>

@@ -48,6 +48,17 @@ public interface IFamilyDependencyRepository
     Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyReference>>> GetReferencingParentsBatchAsync(
         IReadOnlyCollection<string> childCatalogItemIds,
         CancellationToken ct = default);
+
+    // E2 (#209, V30): drift-детект — связи CURRENT-версии родителей, чья
+    // зашитая версия ребёнка (child_version_label) СТРОГО СТАРЕЕ активной
+    // (направленно, числовое сравнение «vN»; «зашита новее» — не дефект).
+    // NULL-метки (legacy V29) не дрейфуют; только loadable-родители
+    // (системные резолвят детей динамически на активной версии).
+    // В словаре — только родители с хотя бы одной drifted-связью.
+    // Читается amber-бейджем дерева и жёстким блоком загрузки.
+    Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyDependencyDrift>>> GetDependencyDriftBatchAsync(
+        IReadOnlyCollection<string> parentCatalogItemIds,
+        CancellationToken ct = default);
 }
 ```
 
@@ -72,5 +83,12 @@ public interface IFamilyDependencyCollector
     IReadOnlyList<FamilyDependencyDescriptor> CollectRoutingDependencies(
         Document document,
         SystemFamilySnapshot snapshot);
+
+    // E2 (#209): shared nested семейства loadable-родителя. Скан ПЛОСКИЙ
+    // (probe P1, SharedNestedCollectorTests): все уровни вложенности видны
+    // в family-документе верхнего родителя — без рекурсии и cycle-guard.
+    // FamilyUniqueId валиден только в переданном family-документе.
+    IReadOnlyList<FamilyDependencyDescriptor> CollectSharedNestedDependencies(
+        Document familyDocument);
 }
 ```

@@ -9,17 +9,20 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
 {
     private readonly IFileFamilyStagingService _staging;
     private readonly IFamilyImportService _importService;
+    private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
 
     public FileFamilyBatchImportExecutor(
         IFileFamilyStagingService staging,
         IFamilyImportService importService,
+        IFamilyDependencyRepository familyDependencyRepository,
         IFamilyDataImportService dataImportService,
         ISharedNestedFamilyRepository sharedNestedRepository,
         int revitVersion)
     {
         _staging = staging;
         _importService = importService;
+        _familyDependencyRepository = familyDependencyRepository;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
     }
@@ -29,7 +32,8 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
         string? categoryId,
         IProgress<FamilyBatchImportProgress>? progress,
         PauseGate? pauseGate,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? externalParentItemIds = null)
     {
         using var _scope = SmartConLogger.BeginScope("BatchImport",
             ("Method", nameof(ExecuteAsync)),
@@ -39,6 +43,19 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
         var skipped = 0;
         var errors = 0;
         var stopped = false;
+        // ADR-066 (E2, #209): dependency link tracking — original dialog
+        // paths of imported rows and the parent map (original path →
+        // catalog item id) for the post-loop link write. UC-2 seeds the map
+        // with parents imported outside this executor (active-family path).
+        var importedLoadableOriginalPaths = new List<string>();
+        var importedParentItemIds = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (externalParentItemIds is not null)
+        {
+            foreach (var pair in externalParentItemIds)
+            {
+                importedParentItemIds[pair.Key] = pair.Value;
+            }
+        }
 
         try
         {
@@ -81,6 +98,11 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
                     if (r is not null && r.Success && !r.WasSkipped)
                     {
                         success++;
+                        importedLoadableOriginalPaths.Add(item.FilePath);
+                        if (!string.IsNullOrEmpty(r.CatalogItemId))
+                        {
+                            importedParentItemIds[item.FilePath] = r.CatalogItemId!;
+                        }
                         if (r.CatalogItemId is not null && staged.LoadableSnapshot is not null)
                         {
                             Report(progress, i, items.Count, item.FileName,
@@ -125,6 +147,13 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
                         FamilyBatchImportPhase.Importing, FamilyBatchImportRowState.Error,
                         ex.Message, success, skipped, errors);
                 }
+            }
+            if (!stopped)
+            {
+                await DependencyLinkWriter.WriteAsync(
+                        items, importedParentItemIds, importedLoadableOriginalPaths,
+                        _familyDependencyRepository, ct)
+                    .ConfigureAwait(false);
             }
         }
         finally

@@ -374,6 +374,14 @@ public static class StringLocalization
         public const string FM_BatchImport_ActionIncrement = "FM_BatchImport_ActionIncrement";
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";
         public const string FM_BatchImport_ActionSkip = "FM_BatchImport_ActionSkip";
+        public const string FM_BatchImport_OutdatedNested_Tooltip = "FM_BatchImport_OutdatedNested_Tooltip";
+        public const string FM_BatchImport_OutdatedNestedBlock_Tooltip = "FM_BatchImport_OutdatedNestedBlock_Tooltip";
+        public const string FM_Tree_OutdatedDependencies_Tooltip = "FM_Tree_OutdatedDependencies_Tooltip";
+        public const string FM_DependencyGuard_AndMore = "FM_DependencyGuard_AndMore";
+        public const string FM_DependencyDriftBlock_Title = "FM_DependencyDriftBlock_Title";
+        public const string FM_DependencyDriftBlock_Body = "FM_DependencyDriftBlock_Body";
+        public const string FM_DependencyDriftBlock_Item = "FM_DependencyDriftBlock_Item";
+        public const string FM_DependencyDriftBlock_Status = "FM_DependencyDriftBlock_Status";
         public const string FM_BatchImport_Stale = "FM_BatchImport_Stale";
         public const string FM_BatchImport_Cancel = "FM_BatchImport_Cancel";
         public const string FM_BatchImport_TypeCount = "FM_BatchImport_TypeCount";

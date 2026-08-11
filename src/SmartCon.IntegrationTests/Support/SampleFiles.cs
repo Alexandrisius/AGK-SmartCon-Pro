@@ -55,4 +55,41 @@ internal static class SampleFiles
         }
         return null;
     }
+
+    /// <summary>
+    /// Путь к family-шаблону (.rft) для NewFamilyDocument. Предпочитает
+    /// Generic Model (самый беспроблемный для сидирования), иначе первый
+    /// доступный .rft. Отсутствующая папка шаблонов → null → Skip.Test.
+    /// </summary>
+    public static string? FindFamilyTemplate(Application app)
+    {
+        var root = $@"C:\ProgramData\Autodesk\RVT {app.VersionNumber}\Family Templates";
+        if (!Directory.Exists(root))
+        {
+            return null;
+        }
+
+        string[] templates;
+        try
+        {
+            templates = Directory.GetFiles(root, "*.rft", SearchOption.AllDirectories);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (templates.Length == 0)
+        {
+            return null;
+        }
+
+        var generic = Array.Find(templates, t =>
+#if NET8_0_OR_GREATER
+            t.Contains("Generic Model", StringComparison.OrdinalIgnoreCase));
+#else
+            t.IndexOf("Generic Model", StringComparison.OrdinalIgnoreCase) >= 0);
+#endif
+        return generic ?? templates[0];
+    }
 }

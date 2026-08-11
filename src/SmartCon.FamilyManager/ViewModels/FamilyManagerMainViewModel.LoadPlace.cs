@@ -4,6 +4,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
@@ -38,6 +39,14 @@ public sealed partial class FamilyManagerMainViewModel
             typeNode.UniqueId,
             typeNode.FamilyName,
             typeNode.FamilyKey);
+
+        // E2 (#209): a drifted parent must not reach the project via DnD —
+        // block before the drag starts (the drop handler never runs).
+        if (leaf.FamilySource != "system"
+            && await CheckDependencyDriftBlockAsync(leaf.CatalogItemId, leaf.DisplayName).ConfigureAwait(true))
+        {
+            return;
+        }
 
         _placementDragService.StartPlacementDrag(data);
     }
@@ -96,6 +105,10 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedId = SelectedItem.Id;
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
+
+        // E2 (#209): hard block — the catalog content embeds outdated
+        // nested families; loading it would plant them into the project.
+        if (await CheckDependencyDriftBlockAsync(selectedId, selectedName).ConfigureAwait(true)) return;
 
         await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
@@ -158,6 +171,9 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
 
+        // E2 (#209): hard block on drifted dependencies (see PlaceTypeAsync).
+        if (await CheckDependencyDriftBlockAsync(selectedId, selectedName).ConfigureAwait(true)) return;
+
         await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
             try
@@ -206,6 +222,17 @@ public sealed partial class FamilyManagerMainViewModel
                         targetRevit,
                         CancellationToken.None).ConfigureAwait(true);
 
+                    // E2 (#209): the load planted the embedded nested copies
+                    // into the project — mark them with their embedded
+                    // version so they join the stale cycle.
+                    await NestedDependencyMarkerWriter.WriteMarkersAsync(
+                        _familyDependencyRepository,
+                        _catalogProvider,
+                        _versionWriter,
+                        selectedId,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
+
                     // Drop only this family from the snapshot so the next Check
                     // re-evaluates it from scratch. Other categories' stale markers
                     // (and the families that were not updated) stay intact.
@@ -250,6 +277,10 @@ public sealed partial class FamilyManagerMainViewModel
 
         var catalogItemId = leaf.CatalogItemId;
         var familyName = leaf.DisplayName;
+
+        // E2 (#209): hard block on drifted dependencies.
+        if (await CheckDependencyDriftBlockAsync(catalogItemId, familyName).ConfigureAwait(true)) return;
+
         var typeName = typeNode.TypeName;
         var isVirtual = typeNode.IsVirtual;
         var targetRevit = CurrentRevitVersion;
@@ -329,6 +360,15 @@ public sealed partial class FamilyManagerMainViewModel
                         catalogItemId,
                         familyName,
                         resolvedForMarker.VersionLabel,
+                        targetRevit,
+                        CancellationToken.None).ConfigureAwait(true);
+
+                    // E2 (#209): nested dependency markers (see above).
+                    await NestedDependencyMarkerWriter.WriteMarkersAsync(
+                        _familyDependencyRepository,
+                        _catalogProvider,
+                        _versionWriter,
+                        catalogItemId,
                         targetRevit,
                         CancellationToken.None).ConfigureAwait(true);
 
@@ -566,6 +606,66 @@ public sealed partial class FamilyManagerMainViewModel
             && !leaf.IsRevitIncompatible
             && _accessControl.CanLoadToProject
             && _activeBaseCompatibleWithCurrentDoc;
+    }
+
+    /// <summary>
+    /// E2 (#209, ADR-066): the load-time hard block for dependency drift.
+    /// When the item's current version embeds a child version that is no
+    /// longer the child's active version, loading the family would plant an
+    /// outdated nested copy into the project — so the load is blocked with
+    /// a styled dialog listing the drifted children. The heal path: open
+    /// the family, drag the up-to-date nested versions from the catalog,
+    /// re-import as a new version. Returns <c>true</c> when blocked.
+    /// Pure SQL check (<see cref="IFamilyDependencyRepository.GetDependencyDriftBatchAsync"/>),
+    /// no Revit-boundary work — safe to call from any load entry point.
+    /// </summary>
+    private async Task<bool> CheckDependencyDriftBlockAsync(string catalogItemId, string displayName)
+    {
+        IReadOnlyList<FamilyDependencyDrift> drifts;
+        try
+        {
+            var batch = await _familyDependencyRepository
+                .GetDependencyDriftBatchAsync(new[] { catalogItemId }, CancellationToken.None)
+                .ConfigureAwait(true);
+            if (!batch.TryGetValue(catalogItemId, out var list) || list.Count == 0)
+            {
+                return false;
+            }
+            drifts = list;
+        }
+        catch (Exception ex)
+        {
+            // Fail-OPEN: the drift check is a safety net, not a gate of
+            // last resort — a DB hiccup must not break family loading.
+            SmartConLogger.Warn(
+                $"Dependency drift check failed for '{displayName}': {ex.Message} — load allowed " +
+                "[Action: проверьте, что БД каталога доступна; amber-бейдж устаревших вложенных может быть неактуален]");
+            return false;
+        }
+
+        var lines = string.Join("\n", drifts.Select(d => string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DependencyDriftBlock_Item)
+                ?? "• {0} — зашита {1}, активна {2}",
+            d.ChildName, d.EmbeddedVersionLabel, d.CurrentVersionLabel)));
+
+        SmartConLogger.Warn(
+            $"Load blocked by dependency drift: '{displayName}' embeds outdated nested families: " +
+            $"{string.Join(", ", drifts.Select(d => $"{d.ChildName} ({d.EmbeddedVersionLabel}→{d.CurrentVersionLabel})"))}. " +
+            "[Action: переимпортируйте родительское семейство с актуальными вложенными версиями]");
+
+        _dialogService.ShowInfo(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DependencyDriftBlock_Title)
+                ?? "Загрузка заблокирована",
+            string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_DependencyDriftBlock_Body)
+                    ?? "Семейство \"{0}\" содержит устаревшие вложенные семейства:\n{1}\n\nЗагрузка заблокирована, чтобы в проект не попали устаревшие копии. Откройте семейство, перетащите в него актуальные вложенные версии из каталога и переимпортируйте его с новой версией.",
+                displayName, lines));
+
+        StatusMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DependencyDriftBlock_Status)
+                ?? "Загрузка \"{0}\" заблокирована: устаревшие вложенные семейства",
+            displayName);
+        return true;
     }
 
     private async Task PlaceSystemTypeAsync(
