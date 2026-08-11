@@ -23,7 +23,7 @@ namespace SmartCon.Revit.FamilyManager;
 ///     catalog-DB name and the dialog shows the real name instead of the
 ///     Revit native conflict UI.
 /// </summary>
-public sealed class RevitFamilyLoadService : IFamilyLoadService
+public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServiceSourceAware
 {
     private readonly IRevitContext _revitContext;
     private readonly ITransactionService _transactionService;
@@ -468,9 +468,9 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         // before writing any marker.
         if (doc.IsFamilyDocument)
         {
-            return ReloadNestedInFamilyDocument(
+            return ReloadNestedInFamilyDocumentCore(
                 doc, normalizedPath, SafeFileName.GetBaseName(normalizedPath),
-                overwriteParameterValues);
+                overwriteParameterValues, preOpenedSourceDocProvider: null);
         }
 
         // Resolve shared-nested names once (REVIT-198137 fallback for the
@@ -713,13 +713,55 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
     /// hash against the catalog target version before writing any marker —
     /// a failed merge can never produce a lying marker.
     /// </para>
+    /// <para>
+    /// <see cref="IFamilyLoadServiceSourceAware"/> entry point: nested reload
+    /// with an optional caller-provided (borrowed, never closed here) source
+    /// document, so one Stale-Update cycle shares a single OpenDocumentFile.
+    /// </para>
     /// </summary>
-    private FamilyLoadResult ReloadNestedInFamilyDocument(
+    public FamilyLoadResult ReloadNestedInFamilyDocument(
+        string normalizedPath,
+        string familyName,
+        bool overwriteParameterValues,
+        Func<Document?>? preOpenedSourceDocProvider = null)
+    {
+        var doc = _revitContext.GetDocument();
+        if (doc is null)
+            return new FamilyLoadResult(false, null, null, "No active document", FamilyLoadStatus.Failed);
+        if (!doc.IsFamilyDocument)
+        {
+            var notFamily = "ReloadNestedInFamilyDocument requires the active document to be a family document";
+            SmartConLogger.Warn(
+                $"{notFamily} [Action: используйте ReloadFamilyPreservingLoadedTypesAsync — в проекте работает preserve-types reload]");
+            return new FamilyLoadResult(false, familyName, null, notFamily, FamilyLoadStatus.Failed);
+        }
+        return ReloadNestedInFamilyDocumentCore(
+            doc, normalizedPath, familyName, overwriteParameterValues, preOpenedSourceDocProvider);
+    }
+
+    private FamilyLoadResult ReloadNestedInFamilyDocumentCore(
         Document doc,
         string normalizedPath,
         string familyNameFromPath,
-        bool overwriteParameterValues)
+        bool overwriteParameterValues,
+        Func<Document?>? preOpenedSourceDocProvider)
     {
+        Document? providedSource = null;
+        if (preOpenedSourceDocProvider is not null)
+        {
+            try
+            {
+                providedSource = preOpenedSourceDocProvider();
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    $"Pre-opened source provider for '{familyNameFromPath}' threw: {ex.GetType().Name}: {ex.Message} " +
+                    "[Action: источник будет открыт заново самим сервисом]");
+                providedSource = null;
+            }
+        }
+
         var nested = FindExistingFamily(doc, familyNameFromPath);
         if (nested is null)
         {
@@ -729,9 +771,13 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             return new FamilyLoadResult(false, familyNameFromPath, null, notNested, FamilyLoadStatus.Failed);
         }
 
+        // The caller-provided source document is excluded from both guards:
+        // it is a legitimate background open done by the caller, not a user
+        // editing session. The caller performs the equivalent "source file
+        // open in the editor" check BEFORE opening it.
         var openTopLevel = doc.Application.Documents
             .Cast<Document>()
-            .Where(d => d.IsFamilyDocument)
+            .Where(d => d.IsFamilyDocument && !ReferenceEquals(d, providedSource))
             .Select(d => d.Title)
             .ToList();
         if (openTopLevel.Contains(familyNameFromPath, StringComparer.OrdinalIgnoreCase))
@@ -746,16 +792,21 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         // guard above misses it): OpenDocumentFile would return the user's
         // live document, the poke would inject phantom edits into it and
         // the finally-Close would destroy unsaved work. Refuse by PathName.
-        var openByPath = doc.Application.Documents
-            .Cast<Document>()
-            .Any(d => !string.IsNullOrEmpty(d.PathName)
-                && string.Equals(Path.GetFullPath(d.PathName), normalizedPath, StringComparison.OrdinalIgnoreCase));
-        if (openByPath)
+        // Skipped when the caller provided the source document — the caller
+        // already performed this exact check before opening it.
+        if (providedSource is null)
         {
-            var pathMsg = $"Source file for '{familyNameFromPath}' is open in the editor";
-            SmartConLogger.Warn(
-                $"{pathMsg} [Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
-            return new FamilyLoadResult(false, familyNameFromPath, null, pathMsg, FamilyLoadStatus.Failed);
+            var openByPath = doc.Application.Documents
+                .Cast<Document>()
+                .Any(d => !string.IsNullOrEmpty(d.PathName)
+                    && string.Equals(Path.GetFullPath(d.PathName), normalizedPath, StringComparison.OrdinalIgnoreCase));
+            if (openByPath)
+            {
+                var pathMsg = $"Source file for '{familyNameFromPath}' is open in the editor";
+                SmartConLogger.Warn(
+                    $"{pathMsg} [Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
+                return new FamilyLoadResult(false, familyNameFromPath, null, pathMsg, FamilyLoadStatus.Failed);
+            }
         }
 
         var options = new RevitFamilyLoadOptions(
@@ -764,10 +815,14 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
             onSharedDecision: null,
             nestedSharedNames: null);
 
-        Document? sourceDoc = null;
+        Document? sourceDoc = providedSource;
+        var ownsSource = sourceDoc is null;
         try
         {
-            sourceDoc = doc.Application.OpenDocumentFile(normalizedPath);
+            if (sourceDoc is null)
+            {
+                sourceDoc = doc.Application.OpenDocumentFile(normalizedPath);
+            }
 
             if (TryPokeFamilyDocumentForReload(sourceDoc, familyNameFromPath))
             {
@@ -815,7 +870,9 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService
         }
         finally
         {
-            if (sourceDoc is not null)
+            // BORROW rule: a caller-provided source document is never closed
+            // here — ownership (and closing) stays with the caller.
+            if (ownsSource && sourceDoc is not null)
             {
                 try { sourceDoc.Close(false); } catch { }
             }

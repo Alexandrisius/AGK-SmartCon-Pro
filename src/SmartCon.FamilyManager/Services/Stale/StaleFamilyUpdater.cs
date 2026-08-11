@@ -215,6 +215,34 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 }
             }
 
+            var canVerify = _snapshotExtractor is not null && _contentHasher is not null;
+
+            // #209 optimization: when the load service is source-aware, the
+            // whole FAMILY-document cycle (pre-verify → poke+merge → failed-
+            // reload arbitration → post-verify) runs in ONE Revit-thread
+            // pass sharing a single OpenDocumentFile of the resolved file
+            // (the legacy path below opens it up to 3 times). Returns
+            // NotApplicable for a project document or a guard case the
+            // legacy path handles better (its own guards produce the same
+            // user-facing failure with instructions).
+            if (canVerify && _loadService is IFamilyLoadServiceSourceAware sourceAware)
+            {
+                var orchestrated = await _awaitable.RaiseAsync(
+                    _ => UpdateInFamilyDocumentOnRevitThread(
+                        catalogItemId, resolved, sourceAware, overwriteParameterValues),
+                    ct).ConfigureAwait(true);
+                if (orchestrated.Kind != FamilyDocumentUpdateKind.NotApplicable)
+                {
+                    if (orchestrated.Kind == FamilyDocumentUpdateKind.Failed)
+                    {
+                        return (false, orchestrated.FamilyName);
+                    }
+                    await WriteMarkerBestEffortAsync(catalogItemId, resolved, orchestrated.FamilyName, targetRevit, ct)
+                        .ConfigureAwait(true);
+                    return (true, orchestrated.FamilyName);
+                }
+            }
+
             // #209 round-3: pre-verify BEFORE any reload — FAMILY-DOCUMENT
             // context ONLY (the verify returns "not applicable" in a
             // project, where the preserve-types reload is the proven path
@@ -224,7 +252,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             // as a hard failure). If the embedded content already equals
             // the catalog target, the update is a no-op success — write
             // the marker without touching Revit.
-            var canVerify = _snapshotExtractor is not null && _contentHasher is not null;
+            // (Legacy path — used when the load service is not source-aware.)
             if (canVerify
                 && StaleUpdateVerificationPolicy.ShouldSkipReload(
                     await VerifyEmbeddedMatchesResolvedFileAsync(
@@ -634,6 +662,185 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     $"{nestedEx.GetType().Name}: {nestedEx.Message}. " +
                     "[Action: вложенные семейства в проекте останутся без маркеров — Проверить покажет их stale только после явной загрузки]");
             }
+        }
+    }
+
+    private enum FamilyDocumentUpdateKind
+    {
+        NotApplicable,
+        PreVerified,
+        Reloaded,
+        Arbitrated,
+        Failed,
+    }
+
+    /// <summary>
+    /// Single-open orchestration of the FAMILY-document update cycle, running
+    /// entirely on the Revit thread (inside one RaiseAsync): compute the
+    /// embedded hash, open the resolved file ONCE, pre-verify, hand the open
+    /// document to the source-aware load service for the poke+merge reload
+    /// (borrowed — this method closes it in the finally), then arbitrate a
+    /// failed reload / post-verify a successful one against the CACHED file
+    /// hash (the file on disk never changes during the cycle — the poke is
+    /// net-zero in-memory and the doc-to-doc merge does not touch the
+    /// source). Semantics mirror the legacy
+    /// <see cref="VerifyEmbeddedMatchesResolvedFileAsync"/> flow exactly;
+    /// <see cref="FamilyDocumentUpdateKind.NotApplicable"/> means "fall back
+    /// to the legacy path" (project document, or the resolved file is open
+    /// in the editor — the load service's own guard then produces the same
+    /// user-facing failure).
+    /// </summary>
+    private (FamilyDocumentUpdateKind Kind, string? FamilyName) UpdateInFamilyDocumentOnRevitThread(
+        string catalogItemId,
+        FamilyResolvedFile resolved,
+        IFamilyLoadServiceSourceAware sourceAware,
+        bool overwriteParameterValues)
+    {
+        var doc = _revitContext.GetDocument();
+        if (doc is null || !doc.IsFamilyDocument)
+        {
+            return (FamilyDocumentUpdateKind.NotApplicable, null);
+        }
+
+        var name = System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath);
+        var resolvedFullPath = System.IO.Path.GetFullPath(resolved.AbsolutePath);
+
+        var embeddedHash = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+
+        // Same C1 guard as the legacy verify: opening an ALREADY-OPEN file
+        // would return the user's live document.
+        var alreadyOpen = doc.Application.Documents
+            .Cast<Document>()
+            .Any(d => !string.IsNullOrEmpty(d.PathName)
+                && string.Equals(
+                    System.IO.Path.GetFullPath(d.PathName), resolvedFullPath, StringComparison.OrdinalIgnoreCase));
+        if (alreadyOpen)
+        {
+            // Same failure the legacy path produces (the load service's own
+            // guard) — reported here directly to avoid duplicate Warns and a
+            // doomed reload attempt.
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: the resolved file is open in the editor — " +
+                "its on-disk content cannot be trusted for verification " +
+                "[Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
+            return (FamilyDocumentUpdateKind.Failed, name);
+        }
+
+        string? fileHash = null;
+        Document? fileDoc = null;
+        try
+        {
+            fileDoc = doc.Application.OpenDocumentFile(resolved.AbsolutePath);
+            var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
+            fileHash = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: could not extract the resolved file for verification: " +
+                $"{ex.GetType().Name}: {ex.Message} " +
+                "[Action: верификация пропущена — проверьте, что файл версии доступен на диске]");
+        }
+
+        try
+        {
+            var canCompare = embeddedHash is not null && fileHash is not null;
+            if (canCompare && string.Equals(embeddedHash, fileHash, StringComparison.OrdinalIgnoreCase))
+            {
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: verified — embedded '{name}' matches the resolved file ({resolved.VersionLabel})");
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: embedded content already matches catalog " +
+                    $"{resolved.VersionLabel} — reload skipped, writing marker only");
+                return (FamilyDocumentUpdateKind.PreVerified, name);
+            }
+            if (canCompare)
+            {
+                var a = embeddedHash!.Length > 8 ? embeddedHash[..8] : embeddedHash;
+                var e = fileHash!.Length > 8 ? fileHash[..8] : fileHash;
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: pre-verify — embedded '{name}' differs from the resolved file " +
+                    $"{resolved.VersionLabel} (embedded {a}… ≠ file {e}…) — reload will run");
+            }
+
+            var capturedSource = fileDoc;
+            var result = sourceAware.ReloadNestedInFamilyDocument(
+                resolvedFullPath,
+                name,
+                overwriteParameterValues,
+                preOpenedSourceDocProvider: () => capturedSource);
+
+            // The source document is no longer needed — arbitration and
+            // post-verify compare against the CACHED file hash. Retry the
+            // file-hash extraction once when it failed earlier (transient),
+            // then close the document BEFORE any further EditFamily: the M2
+            // guard in ComputeEmbeddedVerificationHashOnRevitThread would
+            // otherwise trip on our own background-open document (its Title
+            // equals the family name) and every post-verify/arbitration would
+            // return "not applicable" (validator finding, gate 2026-08-11).
+            if (fileHash is null && fileDoc is not null)
+            {
+                try
+                {
+                    var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
+                    fileHash = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"UpdateFamily[{catalogItemId}]: file-hash retry after reload failed: " +
+                        $"{ex.GetType().Name}: {ex.Message} " +
+                        "[Action: верификация пропущена — повторите «Проверить»]");
+                }
+            }
+            if (fileDoc is not null)
+            {
+                try { fileDoc.Close(false); } catch { }
+                fileDoc = null;
+            }
+
+            if (!result.Success)
+            {
+                // Failed-reload arbitration: content may already match (the
+                // "unchanged" false-failure) — treat as success.
+                var postArb = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+                if (postArb is not null && fileHash is not null
+                    && string.Equals(postArb, fileHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    SmartConLogger.Info(
+                        $"UpdateFamily[{catalogItemId}]: reload reported failure but embedded content " +
+                        $"matches catalog {resolved.VersionLabel} — treating as already up-to-date");
+                    return (FamilyDocumentUpdateKind.Arbitrated, result.FamilyName ?? name);
+                }
+                return (FamilyDocumentUpdateKind.Failed, result.FamilyName ?? name);
+            }
+
+            if (fileHash is not null)
+            {
+                var post = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+                if (post is null
+                    || !string.Equals(post, fileHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    var a = post is null ? "<n/a>" : (post.Length > 8 ? post[..8] : post);
+                    var e = fileHash.Length > 8 ? fileHash[..8] : fileHash;
+                    SmartConLogger.Warn(
+                        $"UpdateFamily[{catalogItemId}]: POST-RELOAD VERIFICATION FAILED for '{name}' — embedded content " +
+                        $"does not match the resolved file {resolved.VersionLabel} (embedded hash {a}… ≠ file {e}…). " +
+                        "No marker is written; the family stays stale. " +
+                        "[Action: обновление не заменило дефиницию — откройте родительское " +
+                        "семейство в редакторе, удалите проблемное вложенное и загрузите его заново из каталога (привязки " +
+                        "придётся восстановить), либо пересоберите родителя; затем повторите «Проверить»]");
+                    return (FamilyDocumentUpdateKind.Failed, result.FamilyName ?? name);
+                }
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: verified — embedded '{name}' matches the resolved file ({resolved.VersionLabel})");
+            }
+
+            return (FamilyDocumentUpdateKind.Reloaded, result.FamilyName ?? name);
+        }
+        finally
+        {
+            try { fileDoc?.Close(false); } catch { }
         }
     }
 
