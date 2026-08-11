@@ -163,6 +163,49 @@ public sealed class AttributesActualizationTaskTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task CountPending_PhantomOnlyFamily_ZeroTypesRun_NotPending()
+    {
+        // #209 (manual-test regression 2026-08-11): since FHV8 the extractor
+        // always skips the phantom default type, so a phantom-only family
+        // legitimately extracts ZERO named types — a Succeeded run with
+        // types_count=0 and no family_types rows is HEALTHY, not pending.
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamPhantom");
+        await SeedRunOnlyAsync(itemId, versionId, fileId, typesCount: 0);
+
+        Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task CountPending_RunClaimsTypesButRowsMissing_Pending()
+    {
+        // #152 semantics preserved: a successful run CLAIMED 2 types, but
+        // the rows are gone — still pending.
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamLostTypes");
+        await SeedRunOnlyAsync(itemId, versionId, fileId, typesCount: 2);
+
+        Assert.Equal(1, await _sut.CountPendingAsync(2025));
+    }
+
+    private async Task SeedRunOnlyAsync(string itemId, string versionId, string fileId, int typesCount)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_data_import_runs (id, catalog_item_id, version_id, file_id,
+                                                 revit_major_version, status, types_count, started_at_utc)
+            VALUES (@id, @itemId, @versionId, @fileId, 2025, 'Succeeded', @typesCount, @t)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString()));
+        cmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+        cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        cmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
+        cmd.Parameters.Add(new SqliteParameter("@typesCount", typesCount));
+        cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     private async Task SeedV2ExtractedAsync(string itemId, string versionId, string fileId)
     {
         using var conn = _fixture.GetDatabase().CreateConnection();

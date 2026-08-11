@@ -1517,15 +1517,16 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_ParameterGroupChange_Detected()
+    public void ComputeForEmbeddedVerification_ParameterGroupChange_Ignored()
     {
-        // STRICT (owner directive 2026-08-11, round-5): parameter group IS
-        // part of the definition — a regrouped family is different content.
-        // Revit's overwrite reload does NOT propagate groups (the embedded
-        // definition keeps the host's grouping), so for families whose
-        // v1↔v2 difference includes a regroup the API update will honestly
-        // fail verification — no cosmetic tolerance. The identity hash
-        // behaves identically here.
+        // #209 (owner decision 2026-08-11, probe-proven): NO reload path —
+        // API or UI, even a full overwrite that lands new types — ever
+        // propagates a parameter's group; the embedded definition keeps the
+        // host's grouping forever. A group-included verification hash is
+        // unreachable in principle, so the verification grade EXCLUDES
+        // groups (like regen-driven geometry). The identity hash keeps
+        // them: a fresh load ships the file's grouping, so a regroup still
+        // version-bumps the catalog.
         var baseline = CreateVerificationBaseline();
         var regrouped = baseline with
         {
@@ -1538,7 +1539,9 @@ public class FamilyContentHasherTests
 
         var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
         var verifyB = _hasher.ComputeForEmbeddedVerification(regrouped);
-        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+        Assert.NotNull(verifyA);
+        Assert.NotNull(verifyB);
+        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
 
         var identityA = _hasher.ComputeForLoadable(baseline);
         var identityB = _hasher.ComputeForLoadable(regrouped);

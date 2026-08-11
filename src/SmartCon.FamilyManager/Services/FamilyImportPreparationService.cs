@@ -8,6 +8,7 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Import;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.FamilyManager.Services;
@@ -29,6 +30,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
     private readonly IFamilyHealthChecker _healthChecker;
     private readonly IFamilyDependencyCollector _dependencyCollector;
+    private readonly IFamilyVersionStore _versionStore;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
@@ -46,7 +48,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         IRevitContext revitContext,
         IFamilyTypeCatalogBaker typeCatalogBaker,
         IFamilyHealthChecker healthChecker,
-        IFamilyDependencyCollector dependencyCollector)
+        IFamilyDependencyCollector dependencyCollector,
+        IFamilyVersionStore versionStore)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -56,6 +59,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         _typeCatalogBaker = typeCatalogBaker ?? throw new ArgumentNullException(nameof(typeCatalogBaker));
         _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
         _dependencyCollector = dependencyCollector ?? throw new ArgumentNullException(nameof(dependencyCollector));
+        _versionStore = versionStore ?? throw new ArgumentNullException(nameof(versionStore));
     }
 
     /// <summary>
@@ -523,6 +527,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var childKey = $"nested://{descriptor.FamilyName}";
         FamilySnapshot? snapshot = null;
         IReadOnlyList<FamilyDependencyDescriptor>? childNested = null;
+        FamilyVersion? embeddedMarker = null;
 
         await _awaitableEvent.RaiseAsync(app =>
         {
@@ -556,6 +561,20 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             var family = parentDoc.GetElement(descriptor.FamilyUniqueId) as Autodesk.Revit.DB.Family
                 ?? throw new InvalidOperationException(
                     $"Nested family '{descriptor.FamilyName}' not found in the parent document by UniqueId");
+
+            // #209 (2026-08-11): read the ES version marker left by the
+            // stale-update command (written only after FHV8V-verified
+            // content). Identity-hash matching cannot see past parameter
+            // groups (a merge never propagates them), so without the marker
+            // an updated embedded family keeps matching its OLD stored
+            // version and the parent stays drift-blocked forever.
+            embeddedMarker = _versionStore.ReadFromLoadedFamily(parentDoc, family.Id);
+            if (embeddedMarker is not null)
+            {
+                SmartConLogger.Info(
+                    $"Nested '{descriptor.FamilyName}' carries ES marker: item={embeddedMarker.CatalogItemId}, " +
+                    $"version={embeddedMarker.VersionLabel} — will prefer it over hash matching");
+            }
 
             Document? nestedDoc = null;
             try
@@ -592,7 +611,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 CategoryName: descriptor.CategoryName ?? string.Empty),
             SourceTypes: null,
             FamilySource: "loadable",
-            SharedNestedDependencies: childNested);
+            SharedNestedDependencies: childNested,
+            EmbeddedMarkerCatalogItemId: embeddedMarker?.CatalogItemId,
+            EmbeddedMarkerVersionLabel: embeddedMarker?.VersionLabel);
     }
 
     private static void EnqueueNestedOf(
@@ -677,19 +698,41 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 () => _dedupService.CheckAsync(normalized, hash, "loadable", ct: ct),
                 ct).ConfigureAwait(false);
 
+            var status = dedupResult.Status;
+            var matchedVersionLabel = dedupResult.HashMatch?.MatchedVersionLabel;
+
+            // #209 (2026-08-11): the verified ES marker on the embedded
+            // family outranks identity-hash matching — a reload merge never
+            // propagates parameter groups, so the hash of a correctly
+            // updated nested family keeps matching its OLD stored version
+            // (or nothing) and the parent would stay drift-blocked forever.
+            var markerOverride = EmbeddedMarkerMatchResolver.ResolveOverride(
+                r.EmbeddedMarkerCatalogItemId,
+                r.EmbeddedMarkerVersionLabel,
+                dedupResult.ExistingCatalogItemId,
+                matchedVersionLabel);
+            if (markerOverride is not null)
+            {
+                SmartConLogger.Info(
+                    $"Embedded marker override for '{r.DisplayName}': hash match said " +
+                    $"{matchedVersionLabel ?? "<none>"}, verified marker says {markerOverride.Value.MatchedVersionLabel} — using the marker");
+                status = markerOverride.Value.Status;
+                matchedVersionLabel = markerOverride.Value.MatchedVersionLabel;
+            }
+
             results[i] = r with
             {
                 ContentHash = hash,
-                Status = dedupResult.Status,
+                Status = status,
                 ExistingCatalogItemId = dedupResult.ExistingCatalogItemId,
                 ExistingVersionLabel = dedupResult.ExistingVersionLabel,
-                MatchedVersionLabel = dedupResult.HashMatch?.MatchedVersionLabel,
+                MatchedVersionLabel = matchedVersionLabel,
                 IsCrossNameDuplicate = dedupResult.IsCrossNameDuplicate,
                 MatchedItemName = dedupResult.HashMatch?.MatchedItemName,
             };
 
             SmartConLogger.Info(
-                $"Loadable prepared: '{r.DisplayName}', hash={hash.HexString}, status={dedupResult.Status}");
+                $"Loadable prepared: '{r.DisplayName}', hash={hash.HexString}, status={status}");
         }
     }
 

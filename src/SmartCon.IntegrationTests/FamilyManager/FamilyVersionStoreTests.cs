@@ -109,6 +109,66 @@ public sealed class FamilyVersionStoreTests : RevitApiTest
         }
     }
 
+    [Test]
+    public async Task NestedFamily_InFamilyDocument_MarkerRoundTrips()
+    {
+        // #209 (2026-08-11): the stale-update command writes version
+        // markers onto nested families inside the FAMILY EDITOR document,
+        // and the import preparation reads them back for marker-first
+        // version resolution. Pin the ES roundtrip on a nested Family in
+        // a family document (the existing tests cover project documents).
+        var template = SampleFiles.FindFamilyTemplate(Application);
+        var basicPath = SampleFiles.FindSample(Application, "rac_basic_sample_family.rfa");
+        if (template is null || basicPath is null)
+        {
+            Skip.Test("Family template or sample family not found");
+            return;
+        }
+
+        var familyDoc = Application.NewFamilyDocument(template);
+        try
+        {
+            var transactions = new RevitTransactionService(new StubRevitContext(familyDoc));
+            var store = new RevitFamilyVersionStore(transactions);
+
+            ElementId? nestedId = null;
+            transactions.RunInTransaction(familyDoc, "Load nested", d =>
+            {
+                if (!d.LoadFamily(basicPath, out var fam))
+                {
+                    fam = FindFamily(d, "rac_basic_sample_family");
+                }
+                nestedId = fam?.Id;
+            });
+            if (nestedId is null)
+            {
+                Skip.Test("Could not load the sample family into the family document");
+                return;
+            }
+
+            var marker = new FamilyVersion(
+                FamilyVersion.CurrentSchemaVersion,
+                "catalog-item-nested",
+                "v2",
+                new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero),
+                int.Parse(Application.VersionNumber));
+
+            store.WriteToLoadedFamily(familyDoc, nestedId, marker);
+            var readBack = store.ReadFromLoadedFamily(familyDoc, nestedId);
+
+            using (Assert.Multiple())
+            {
+                await Assert.That(readBack).IsNotNull();
+                await Assert.That(readBack!.CatalogItemId).IsEqualTo("catalog-item-nested");
+                await Assert.That(readBack.VersionLabel).IsEqualTo("v2");
+            }
+        }
+        finally
+        {
+            familyDoc.Close(false);
+        }
+    }
+
     private static Autodesk.Revit.DB.Family? FindFamily(Document doc, string name)
     {
         return new FilteredElementCollector(doc)

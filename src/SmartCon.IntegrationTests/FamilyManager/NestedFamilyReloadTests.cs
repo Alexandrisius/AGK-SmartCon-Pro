@@ -98,6 +98,76 @@ public sealed class NestedFamilyReloadTests : RevitApiTest
     }
 
     [Test]
+    public async Task PokeNetZero_DocToDoc_FlipsStampAndMerges()
+    {
+        // #209 (2026-08-11) — the production recipe, machine-independent:
+        // child v2 on disk has a REAL content diff (TypeB); the source doc
+        // is poked NET-ZERO in memory (add + remove a scratch parameter,
+        // two commits, never saved — the owner's manual proof that Revit's
+        // changedness stamp is a dirty flag with no content history), then
+        // pushed doc-to-doc. The merge must land TypeB in the host.
+        // The unpoked doc-to-doc result is logged for documentation (on the
+        // diverged-lineage nut it returns the existing Family without
+        // merging — an early-out on the unflipped stamp).
+        var childV2 = Application.OpenDocumentFile(_childPath!);
+        using (var tx = new Transaction(childV2, "v2"))
+        {
+            tx.Start();
+            childV2.FamilyManager.NewType("TypeB");
+            tx.Commit();
+        }
+        childV2.Save();
+        childV2.Close(false);
+
+        var sourceDoc = Application.OpenDocumentFile(_childPath!);
+        try
+        {
+            var unpoked = sourceDoc.LoadFamily(_parentDoc!, new OverwriteLoadOptions());
+            SmartConLogger.Info(
+                $"PokeNetZero control: UNPOKED doc-to-doc returned {(unpoked is null ? "null" : "Family")}, " +
+                $"types=[{string.Join(",", SymbolNames(_parentDoc!, FindFamily(_parentDoc!, ChildName)!))}]");
+
+            const string pokeName = "__SmartConPoke__";
+            using (var tx = new Transaction(sourceDoc, "Poke add"))
+            {
+                tx.Start();
+#if REVIT2022_OR_GREATER
+                sourceDoc.FamilyManager.AddParameter(pokeName, GroupTypeId.General, SpecTypeId.String.Text, false);
+#else
+                sourceDoc.FamilyManager.AddParameter(pokeName, BuiltInParameterGroup.PG_GENERAL, ParameterType.Text, false);
+#endif
+                tx.Commit();
+            }
+            using (var tx = new Transaction(sourceDoc, "Poke remove"))
+            {
+                tx.Start();
+                var scratch = sourceDoc.FamilyManager.GetParameters()
+                    .FirstOrDefault(p => string.Equals(p.Definition.Name, pokeName, StringComparison.Ordinal));
+                if (scratch is not null)
+                {
+                    sourceDoc.FamilyManager.RemoveParameter(scratch);
+                }
+                sourceDoc.Regenerate();
+                tx.Commit();
+            }
+
+            // Doc-to-doc LoadFamily manages its own transaction — the
+            // target document must not be modifiable at call time.
+            var pushed = sourceDoc.LoadFamily(_parentDoc!, new OverwriteLoadOptions());
+            SmartConLogger.Info($"PokeNetZero: poked doc-to-doc returned {(pushed is null ? "null" : "Family")}");
+
+            var types = SymbolNames(_parentDoc!, FindFamily(_parentDoc!, ChildName)!);
+            SmartConLogger.Info($"PokeNetZero: host child types after = [{string.Join(",", types)}]");
+            await Assert.That(pushed).IsNotNull();
+            await Assert.That(types).Contains("TypeB");
+        }
+        finally
+        {
+            sourceDoc.Close(false);
+        }
+    }
+
+    [Test]
     public async Task LoadFamily_WithOverwrite_ReplacesNestedDefinition()
     {
         // Child v2: same file path, extra type — the definition differs.

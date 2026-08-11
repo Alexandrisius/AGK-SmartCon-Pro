@@ -2,9 +2,42 @@
 
 **Дата:** 2026-08-07 — 2026-08-11
 **Связанные:** EPIC #207, E2 #209, ADR-066, ADR-067, future-issue #217
-**Статус:** E2 реализован; обновление depth-1 работает; depth-2+ — доказанная стена Revit API (см. §6); verification — строгая, контекстно-согласованная (§7).
+**Статус:** РЕШЕНО (2026-08-11, раунд 6): обновление вложенных работает на любой глубине через poke + doc-to-doc; верификация FHV8V без ParameterGroup; marker-first резолюция версии при импорте. Ручной тест владельца пройден (дрифт-блок снят, drift lookup 0/9). Разделы §4-§6 описывают историю — «стена» из раундов 1-5 ОТМЕНЕНА, см. §0.
 
 Документ написан для агента с нулевым контекстом: здесь ВСЁ, что пробовали, что получилось, что нет, и почему.
+
+---
+
+## 0. ИТОГ (раунд 6, 2026-08-11): настоящий root cause и решение
+
+### Root cause (доказан зондами + ручными тестами владельца на реальной библиотеке)
+
+1. **Revit решает «семейство не изменилось» по dirty-флагу, а не по diff контента.** Истории хэшей у Revit нет: любая транзакция (даже net-zero «добавил параметр → удалил параметр», два commit, БЕЗ сохранения файла) переворачивает внутренний штамп. Если штамп не перевёрнут — `LoadFamily` молча no-op'ит, даже когда колбэки `IFamilyLoadOptions` вызываются и возвращается `true` (API систематически врёт об успехе — подтверждено Autodesk, источник №1).
+2. **Merge (замена дефиниции) через API doc-to-doc работает, когда источник «грязный»** — новый тип приземлился в embedded-дефиниции гайки внутри пары (depth-2 hoisted, in use). Ранние попытки doc-to-doc были с НЕтронутым источником — ранний выход по неперевёрнутому штампу, поэтому казалось, что «всё возвращает success, но ничего не меняется».
+3. **ParameterGroup не переносится НИКАКИМ merge** — ни API, ни UI, даже полной перезаписью с приземлением новых типов (доказано дважды: фланец через API, гайка через ручной UI-overwrite). Embedded-дефиниция навсегда хранит группу хоста; поменять её можно только delete+fresh load (запрещено владельцем — убивает привязки) или пересборкой родителя. Значит, строгая верификация «embedded == файл» с группой недостижима математически.
+4. **Вторая половина бага (найдена ручным тестом 2026-08-11 вечер):** даже после успешного «Обновить» импорт-диалог резолвил версию embedded-вложенного по identity-хэшу FHV8 (с группой) → гайка матчилась на stored v1, фланец0104 (контент v2, группа v1) — вообще ни на что → связи `family_dependencies.child_version_label=v1` → SQL drift-гейт (`child_version_label <> current_version_label`) блокировал родителя вечно.
+
+### Решение (три части)
+
+1. **Poke + doc-to-doc — принудительный путь обновления** (`RevitFamilyLoadService.ReloadNestedInFamilyDocument`): фоновое `OpenDocumentFile(resolved)` → net-zero poke в памяти (`AddParameter("__SmartConPoke__")` commit → `RemoveParameter` + `Regenerate` commit, мультиверсионно `#if REVIT2022_OR_GREATER`; файл НИКОГДА не сохраняется, managed storage не трогаем) → `sourceDoc.LoadFamily(pairDoc, options)` ВНЕ транзакции (API-требование) → `Close(false)`. Fallback на legacy path-load, если poke невозможен. Гарды: наличие nested, Title-гард редактора, НОВЫЙ PathName-гард (переименованный открытый файл — иначе poke вольёт фантомные правки в живой документ пользователя). Post-verify остаётся арбитром — лживый маркер невозможен.
+2. **FHV8V исключает ParameterGroup** (`FamilyContentHasher.BuildLoadableCanonicalString`, `verificationGrade=true`). Identity FHV8 — без изменений (группа остаётся → group-only diff по-прежнему создаёт версию в каталоге; свежая загрузка в проект несёт правильную группу). FHV8V нигде не персистится → миграций БД не нужно. Это НЕ послабление: группа в той же колонке исключений, что volumes/bounds, — физически непереносимые при reload поля.
+3. **Marker-first резолюция версии при импорте** (`EmbeddedMarkerMatchResolver` + `FamilyImportPreparationService`): «Обновить» пишет ES-маркер на embedded-семейство ТОЛЬКО после успешной FHV8V-верификации → маркер строго сильнее хэш-матча. При подготовке nested-строки читаем маркер (`ReadFromLoadedFamily` на hoisted Family в документе родителя) и, если он указывает на тот же item что и name-match, берём его label: строка = Duplicate v2 → default Skip → связь пишется с `child_version_label=v2` → drift-гейт чист. Без маркера — прежний hash-путь.
+
+### Побочный баг, найденный валидацией лога ручного теста
+
+**Янтарная точка актуализации БД:** `AttributesActualizationTask` (`attributes-v1`) детектил pending по «нет строк `family_types`» — но с FHV8 phantom-тип всегда пропускается при извлечении, и phantom-only семейство легально извлекает НОЛЬ именованных типов. Детект поправлен: no-types = pending только когда успешный run ЗАЯВИЛ типы (`family_data_import_runs.types_count > 0`), а строк нет (семантика #152 сохранена). Также убран ложный Warn «POST-RELOAD VERIFICATION FAILED» из pre-verify (расхождение на pre-verify — нормальная ветка «нужен reload», Warn теперь только для настоящих post-reload падений).
+
+### Верификация раунда 6
+
+- 4 сборки (R25/R24/R21/R19) 0/0; юнит 2693/2693; интеграционные R25 149/149; net48 (Revit 2021) 134+14 skip, 0 fail.
+- Контракты на реальной библиотеке (`NestedReloadPokeContractTests`): poke+doc-to-doc приземляет тип; production-обновление гайки (group-only) и фланца (реальный diff) — Success + verify сошёлся.
+- Ручной тест владельца: «Проверить»→«Обновить» (6/6 verified/маркеры) → «Импорт активного файла» (marker override на всех 4 проблемных) → **drift lookup 0/9** (было 1/9) → блок снят. Лог без Error; единственный Warn эпохи — устранённый pre-verify false alarm.
+- Юнит: `EmbeddedMarkerMatchResolverTests` (9), `AttributesActualizationTaskTests` (+2: phantom-run healthy / claimed-types pending). Интеграционный: ES-маркер roundtrip на nested Family в family-документе.
+
+### Known limitation (зафиксировано валидатором)
+
+- Rename nested-строки в batch-диалоге пересчитывает dedup без маркера (строка не несёт `EmbeddedMarker*`) — override молча сбрасывается до refresh. Не регрессия против pre-fix.
+- Маркер может «устареть» при ручной правке embedded после «Обновить» — тот же trust-boundary, что у stale-detection в проектах.
 
 ---
 
@@ -89,14 +122,18 @@ Lookup-таблицы проверены через `FamilySizeTableManager` —
 7. **Autodesk blog «Pet Change»** — swap nested families только через SaveAs в реальные файлы (Dynamo): https://blog.autodesk.io/pet-change-python-and-dynamo-swap-nested-families/
 8. **revitapidocs LoadFamily(Document)** — reload обратно в исходный документ через эту перегрузку всегда падает (подавляет промпты); нужен overload с IFamilyLoadOptions: https://www.revitapidocs.com/2025.3/6a91dc8e-6c2b-52b9-dfc4-d56fa472852b.htm
 
-## 6. Итоговая стена (что невозможно через API)
+## 6. Итоговая стена — ОТМЕНЕНА раундом 6 (см. §0; оставлено как история)
+
+> Раунд 6 доказал: «стена» была не в merge-механизме, а в changedness dirty-флаге + группе в verification-хэше. Рабочие механизмы — в §0. Ниже — состояние знаний на конец раунда 5.
 
 1. **Depth-2+ для «проблемных» семейств:** ни один из 8 API-путей не заменяет дефиницию гайки/болта/шайбы (все возвращают success). UI — по наблюдению владельца — обновляет (расхождение подтверждено Autodesk, источник №1).
 2. **Открыть промежуточную сборку нельзя:** EditFamily падает («Loaded Family Editing failed»), файла сборки на диске не существует → рецепт «обновить внутри сборки и протолкнуть сборку» невозможен через API для этого семейства.
 3. **ParameterGroup не пропагируется** при любом overwrite reload → strict-верификация (группа = контент) честно фейлит обновление семейств, чей version-diff включает перегруппировку, даже когда остальной контент приземлился.
 4. **Удаление + fresh load ЗАПРЕЩЕНО владельцем** (уничтожает геометрические привязки) — и не проверялось.
 
-## 7. Текущая production-семантика (строгая, директива владельца 2026-08-11)
+## 7. Production-семантика раунда 5 — ЗАМЕЩЕНА раундом 6 (см. §0; оставлено как история)
+
+> Раунд 6: группа исключена из FHV8V, reload = poke + doc-to-doc, импорт резолвит версию по маркеру. Ниже — состояние на конец раунда 5.
 
 **Verification-grade хэш** (`IFamilyContentHasher.ComputeForEmbeddedVerification`, canonical `FHV8V`):
 - **Включено (строго):** определения параметров (имя, storage, **группа**, instance/type, shared, формула, reporting, guid, builtin), типы+значения, топология геометрии (FormKind/IsSolid/счётчики/faces/edges/subcategory), GEOM2D счётчики, NESTED/NONSHARED имена, FACTS, FLAGS, коннекторы (Domain/Shape/Classification/IsPrimary/LinkedIndex).

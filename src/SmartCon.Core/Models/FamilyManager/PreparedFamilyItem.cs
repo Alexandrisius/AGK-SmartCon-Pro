@@ -39,14 +39,25 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// rows this item must be linked to in <c>family_dependencies</c> after
 /// import. <c>null</c> for top-level rows.
 /// </param>
-/// <param name="SharedNestedDependencies">
-/// ADR-066 (E2, #209): shared-nested descriptors discovered in this item's
-/// family document — set on LOADABLE items only, transient (Phase-1 →
-/// nested preparation inside the same call), never carried into the dialog.
-/// <see cref="FamilyDependencyDescriptor.FamilyUniqueId"/> values are valid
-/// in THIS item's held-open family document only.
-/// </param>
-public sealed record PreparedFamilyItem(
+    /// <param name="SharedNestedDependencies">
+    /// ADR-066 (E2, #209): shared-nested descriptors discovered in this item's
+    /// family document — set on LOADABLE items only, transient (Phase-1 →
+    /// nested preparation inside the same call), never carried into the dialog.
+    /// <see cref="FamilyDependencyDescriptor.FamilyUniqueId"/> values are valid
+    /// in THIS item's held-open family document only.
+    /// </param>
+    /// <param name="EmbeddedMarkerCatalogItemId">
+    /// #209 (2026-08-11): the ES version marker
+    /// (<c>SmartCon_FamilyVersion_v1</c>) read from the embedded nested
+    /// family element in the parent's family document — set on nested-child
+    /// rows only. The marker is written by the stale-update command ONLY
+    /// after the embedded content passed FHV8V verification, so it is a
+    /// stronger version signal than identity-hash matching (which cannot
+    /// see past parameter groups — a merge never propagates them).
+    /// </param>
+    /// <param name="EmbeddedMarkerVersionLabel">Version label from the same
+    /// marker (e.g. <c>v2</c>).</param>
+    public sealed record PreparedFamilyItem(
     string SourcePath,
     string DisplayName,
     int RevitMajorVersion,
@@ -67,4 +78,6 @@ public sealed record PreparedFamilyItem(
     FamilyHealthReport? HealthReport = null,
     IReadOnlyList<FamilyDependencyDescriptor>? RoutingDependencies = null,
     IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
-    IReadOnlyList<FamilyDependencyDescriptor>? SharedNestedDependencies = null);
+    IReadOnlyList<FamilyDependencyDescriptor>? SharedNestedDependencies = null,
+    string? EmbeddedMarkerCatalogItemId = null,
+    string? EmbeddedMarkerVersionLabel = null);

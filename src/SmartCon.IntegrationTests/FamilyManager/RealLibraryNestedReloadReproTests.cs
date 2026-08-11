@@ -27,27 +27,40 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 /// the pair. Lookup tables are present and healthy in all copies (not
 /// the cause). Matches the Autodesk-confirmed API/UI reload divergence
 /// (Revit API forum 2026-04-30, Revit 2026.4). The flange (depth-1)
-/// reloads — but Revit does not propagate parameter groups on overwrite,
-/// so strict verification (groups are content) fails there too when the
-/// version diff includes a regroup. Verification of the embedded content
-/// is the only reliable arbiter of what actually landed.
+/// reloads — but Revit does not propagate parameter groups on overwrite.
+/// Verification of the embedded content is the only reliable arbiter of
+/// what actually landed.
+///
+/// ADDENDUM 2026-08-11 (poke breakthrough): the wall is BROKEN. Revit's
+/// changedness check is a dirty flag, not a content diff — a net-zero
+/// in-memory poke of the SOURCE document (add + remove a scratch family
+/// parameter, two commits, never saved) flips it, and doc-to-doc
+/// LoadFamily then takes the full merge path even through the API.
+/// Groups never propagate on ANY merge (API or UI), so FHV8V excludes
+/// them. Production mechanism + contracts:
+/// <c>NestedReloadPokeContractTests</c>. The tests below remain as
+/// documentation of the RAW unpoked API behavior.
 /// </summary>
 public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
 {
-    private const string CatalogRoot = @"d:\Project\dotNET\00_Архив\Библиотеки семейств\Тест";
+    private static string CatalogRoot =>
+        Environment.GetEnvironmentVariable("SMARTCON_TEST_CATALOG")
+        is { Length: > 0 } overridePath
+            ? overridePath
+            : @"d:\Project\dotNET\00_Архив\Библиотеки семейств\Тест";
 
     // From the 2026-08-11 diagnostic dump (catalog.db rows + plain hashes).
     private const string NutName = "PPR-C0807-F-Гайка-ГОСТ_5915_70-PIEC-PL-0108-G3";
     private const string NutV1Hash = "C83F0288";
     private const string NutV2Hash = "8F85157E";
-    private const string NutV2Relative = @"files\6432bb2e21ab454a98ac82b8c346f523\v2\" + NutName + ".rfa";
-    private const string NutV1Relative = @"files\6432bb2e21ab454a98ac82b8c346f523\v1\" + NutName + ".rfa";
 
     private const string FlangeName = "PPR-E1401-N-Фланец-ПлоскийПриварной-ГОСТ_33259_2015-PIFT-PL-0104-G3";
-    private const string FlangeV2Relative = @"files\9236045173fd4692a26bebe0929e752e\v2\" + FlangeName + ".rfa";
 
     private string? _tempDir;
     private Document? _pairDoc;
+    private string? _nutV1Path;
+    private string? _nutV2Path;
+    private string? _flangeV2Path;
 
     [Before(Test)]
     [HookExecutor<RevitThreadExecutor>]
@@ -66,12 +79,18 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             return;
         }
 
+        // Prefer the v1 pair explicitly — manually reloaded copies may sit
+        // under a "v2" folder from the owner's manual tests.
         var pairFile = Directory
             .EnumerateFiles(CatalogRoot, "Фланцевая пара.rfa", SearchOption.AllDirectories)
+            .OrderByDescending(p => HasPathSegment(p, "v1"))
             .FirstOrDefault();
-        if (pairFile is null || !File.Exists(Path.Combine(CatalogRoot, NutV2Relative)))
+        _nutV1Path = FindVersionedFile(NutName, "v1");
+        _nutV2Path = FindVersionedFile(NutName, "v2");
+        _flangeV2Path = FindVersionedFile(FlangeName, "v2");
+        if (pairFile is null || _nutV1Path is null || _nutV2Path is null || _flangeV2Path is null)
         {
-            Skip.Test("Owner test library not found (flange pair or nut v2 file missing)");
+            Skip.Test("Owner test library not found (flange pair, nut or flange versioned files missing)");
             return;
         }
 
@@ -80,6 +99,22 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var pairCopy = Path.Combine(_tempDir, "Фланцевая пара.rfa");
         File.Copy(pairFile, pairCopy);
         _pairDoc = Application.OpenDocumentFile(pairCopy);
+    }
+
+    private static string? FindVersionedFile(string familyName, string versionFolder)
+    {
+        // Strict: only a file under the requested version path segment
+        // qualifies — a silent fallback to an arbitrary version would fail
+        // the contracts with a confusing hash mismatch instead of a clear
+        // Skip.
+        return Directory
+            .EnumerateFiles(CatalogRoot, familyName + ".rfa", SearchOption.AllDirectories)
+            .FirstOrDefault(p => HasPathSegment(p, versionFolder));
+    }
+
+    private static bool HasPathSegment(string path, string segment)
+    {
+        return path.Split(Path.DirectorySeparatorChar).Contains(segment, StringComparer.OrdinalIgnoreCase);
     }
 
     [After(Test)]
@@ -135,7 +170,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var beforeHash = HashEmbedded();
         SmartConLogger.Info($"RealRepro: embedded nut BEFORE reload = {beforeHash[..8]} (expect v1={NutV1Hash})");
 
-        var v2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var v2Path = _nutV2Path!;
         var options = new RevitFamilyLoadOptions(
             overwriteParameterValues: true,
             onStatusMessage: null,
@@ -227,8 +262,8 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var template = SmartCon.IntegrationTests.Support.SampleFiles.FindFamilyTemplate(Application)!;
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
-        var nutV1Path = Path.Combine(CatalogRoot, NutV1Relative);
-        var nutV2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var nutV1Path = _nutV1Path!;
+        var nutV2Path = _nutV2Path!;
 
         string HashNut(Document doc)
         {
@@ -303,8 +338,8 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var template = SmartCon.IntegrationTests.Support.SampleFiles.FindFamilyTemplate(Application)!;
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
-        var nutV1Path = Path.Combine(CatalogRoot, NutV1Relative);
-        var nutV2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var nutV1Path = _nutV1Path!;
+        var nutV2Path = _nutV2Path!;
 
         // v3 = v2 + extra type (in a temp file).
         var nutV3Path = Path.Combine(_tempDir!, NutName + "_v3probe.rfa");
@@ -387,8 +422,8 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var template = SmartCon.IntegrationTests.Support.SampleFiles.FindFamilyTemplate(Application)!;
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
-        var nutV1Path = Path.Combine(CatalogRoot, NutV1Relative);
-        var nutV2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var nutV1Path = _nutV1Path!;
+        var nutV2Path = _nutV2Path!;
 
         // A) doc-to-doc.
         var host = Application.NewFamilyDocument(template);
@@ -445,11 +480,19 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             using (var tx = new Transaction(childV2, "v2 param"))
             {
                 tx.Start();
+#if REVIT2022_OR_GREATER
                 childV2.FamilyManager.AddParameter(
                     "ProbeParam",
                     new ForgeTypeId("autodesk.parameter.group:general-1.0.0"),
                     new ForgeTypeId("autodesk.spec.aec:length-2.0.0"),
                     false);
+#else
+                childV2.FamilyManager.AddParameter(
+                    "ProbeParam",
+                    BuiltInParameterGroup.PG_GENERAL,
+                    ParameterType.Length,
+                    false);
+#endif
                 tx.Commit();
             }
             childV2.Save();
@@ -498,8 +541,8 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         // reload path — does the nut reload there?
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
-        var nutV1Path = Path.Combine(CatalogRoot, NutV1Relative);
-        var nutV2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var nutV1Path = _nutV1Path!;
+        var nutV2Path = _nutV2Path!;
 
         foreach (var (label, path) in new[] { ("v1", nutV1Path), ("v2", nutV2Path) })
         {
@@ -578,8 +621,8 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var template = SmartCon.IntegrationTests.Support.SampleFiles.FindFamilyTemplate(Application)!;
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
-        var nutV1Path = Path.Combine(CatalogRoot, NutV1Relative);
-        var nutV2Path = Path.Combine(CatalogRoot, NutV2Relative);
+        var nutV1Path = _nutV1Path!;
+        var nutV2Path = _nutV2Path!;
 
         string HashNut(Document doc)
         {
@@ -636,21 +679,19 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
     }
 
     [Test]
-    public async Task VerificationHash_Strict_BothMismatch_Documented()
+    public async Task VerificationHash_GroupExcluded_BothMatch_Documented()
     {
-        // #209 round-5 contract (owner directive: STRICT, no cosmetic
-        // tolerance). The verification-grade hash excludes only physically
-        // host-dependent metrics (driven geometry, connector size/origin)
-        // and is strict on definitions — INCLUDING parameter groups.
-        // On the real library:
-        //   · flange (depth-1): the reload DOES land v2's params/formulas,
-        //     but Revit does NOT propagate parameter groups on overwrite —
-        //     embedded keeps v1's groups → strict MISMATCH. An API update
-        //     of a family whose version diff includes a regroup cannot be
-        //     verified as complete — honest failure, manual UI reload is
-        //     the remediation.
-        //   · nut (depth-2): the reload silently no-ops (proven wall —
-        //     see class doc) → embedded stays v1 → strict MISMATCH.
+        // #209 (2026-08-11, owner decision after the poke breakthrough).
+        // Supersedes the round-5 STRICT contract: it is now PROVEN (probes
+        // + the owner's manual UI test on this library) that NO reload path
+        // — API or UI, even a full overwrite landing new types — ever
+        // propagates a parameter's group, so the verification-grade hash
+        // FHV8V EXCLUDES groups (like regen-driven geometry). On the real
+        // library after a plain path-load:
+        //   · flange (depth-1): the reload lands v2's params/formulas,
+        //     the group stays v1 → group-excluded verify MATCHES the file.
+        //   · nut (depth-2): the reload no-ops, but v1↔v2 differ ONLY by
+        //     group → group-excluded verify MATCHES (nothing transferable).
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
 
@@ -664,9 +705,9 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             finally { copy.Close(false); }
         }
 
-        string FileVerifyHash(string relativePath)
+        string FileVerifyHash(string fullPath)
         {
-            var doc = Application.OpenDocumentFile(Path.Combine(CatalogRoot, relativePath));
+            var doc = Application.OpenDocumentFile(fullPath);
             try { return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(doc))!.HexString; }
             finally { doc.Close(false); }
         }
@@ -676,25 +717,25 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         using (var tx = new Transaction(_pairDoc!, "Reload flange v2"))
         {
             tx.Start();
-            _pairDoc!.LoadFamily(Path.Combine(CatalogRoot, FlangeV2Relative), options, out _);
+            _pairDoc!.LoadFamily(_flangeV2Path!, options, out _);
             tx.Commit();
         }
         var flangeEmbedded = EmbeddedVerifyHash(FlangeName);
-        var flangeFile = FileVerifyHash(FlangeV2Relative);
+        var flangeFile = FileVerifyHash(_flangeV2Path!);
         SmartConLogger.Info(
-            $"RealRepro V-hash STRICT: flange embedded={flangeEmbedded[..8]} file={flangeFile[..8]} equal={flangeEmbedded == flangeFile}");
-        await Assert.That(flangeEmbedded).IsNotEqualTo(flangeFile);
+            $"RealRepro V-hash group-excluded: flange embedded={flangeEmbedded[..8]} file={flangeFile[..8]} equal={flangeEmbedded == flangeFile}");
+        await Assert.That(flangeEmbedded).IsEqualTo(flangeFile);
 
         using (var tx = new Transaction(_pairDoc!, "Reload nut v2"))
         {
             tx.Start();
-            _pairDoc!.LoadFamily(Path.Combine(CatalogRoot, NutV2Relative), options, out _);
+            _pairDoc!.LoadFamily(_nutV2Path!, options, out _);
             tx.Commit();
         }
         var nutEmbedded = EmbeddedVerifyHash(NutName);
-        var nutFile = FileVerifyHash(NutV2Relative);
+        var nutFile = FileVerifyHash(_nutV2Path!);
         SmartConLogger.Info(
-            $"RealRepro V-hash STRICT: nut embedded={nutEmbedded[..8]} file={nutFile[..8]} equal={nutEmbedded == nutFile}");
-        await Assert.That(nutEmbedded).IsNotEqualTo(nutFile);
+            $"RealRepro V-hash group-excluded: nut embedded={nutEmbedded[..8]} file={nutFile[..8]} equal={nutEmbedded == nutFile}");
+        await Assert.That(nutEmbedded).IsEqualTo(nutFile);
     }
 }

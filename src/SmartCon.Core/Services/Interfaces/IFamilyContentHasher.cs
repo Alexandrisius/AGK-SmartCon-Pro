@@ -22,11 +22,13 @@ public interface IFamilyContentHasher
     /// #209: verification-grade hash for comparing an EMBEDDED
     /// nested family against its source .rfa after a reload (family-editor
     /// stale update). Same sections as <see cref="ComputeForLoadable"/> —
-    /// STRICT on definitions (incl. parameter groups) — except metrics
-    /// that are physically host-dependent, not content: regen-driven
-    /// geometry (volumes, bounds, surface areas, curve lengths) and
-    /// connector sizes/origins, which legitimately move when the host
-    /// drives the nested family's instance parameters. Never stored in the
+    /// STRICT on definitions (formulas, types/values, nested, facts, flags,
+    /// connectors' classification) — except what no reload can physically
+    /// transfer: regen-driven geometry (volumes, bounds, surface areas,
+    /// curve lengths), connector sizes/origins, AND parameter groups
+    /// (proven 2026-08-11: no merge — API or UI — ever propagates a
+    /// parameter's group, so a group-included comparison is unreachable in
+    /// principle; groups stay in the identity hash). Never stored in the
     /// catalog — identity (dedup/versioning) keeps using
     /// <see cref="ComputeForLoadable"/>.
     /// </summary>

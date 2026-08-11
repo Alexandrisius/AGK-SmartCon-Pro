@@ -39,6 +39,13 @@ internal sealed class AttributesActualizationTask : SqlDetectionActualizationTas
     // Active-label variants missing extraction data (A) or carrying broken
     // values (B). Scope: loadable, ACTIVE version only (older versions are
     // history); system families excluded (staged .rvt may not exist).
+    // The no-types clause fires only when a successful run CLAIMED types
+    // (types_count > 0) yet the rows are gone: since FHV8 (#209) the
+    // extractor always skips the phantom default type, so a phantom-only
+    // family legitimately extracts ZERO named types — a Succeeded run with
+    // types_count = 0 and no family_types rows is HEALTHY, not pending
+    // (manual-test regression 2026-08-11: every phantom-only family lit
+    // the amber "update recommended" dot forever).
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
@@ -47,8 +54,12 @@ internal sealed class AttributesActualizationTask : SqlDetectionActualizationTas
           AND (NOT EXISTS(SELECT 1 FROM family_data_import_runs r
                            WHERE r.catalog_item_id = ci.id AND r.version_id = cv.id
                              AND r.status IN ('Succeeded', 'Partial'))
-               OR NOT EXISTS(SELECT 1 FROM family_types t
-                              WHERE t.catalog_item_id = ci.id AND t.version_id = cv.id)
+               OR (NOT EXISTS(SELECT 1 FROM family_types t
+                               WHERE t.catalog_item_id = ci.id AND t.version_id = cv.id)
+                   AND EXISTS(SELECT 1 FROM family_data_import_runs r2
+                               WHERE r2.catalog_item_id = ci.id AND r2.version_id = cv.id
+                                 AND r2.status IN ('Succeeded', 'Partial')
+                                 AND r2.types_count > 0))
                OR EXISTS(SELECT 1 FROM extracted_attribute_values v
                           WHERE v.catalog_item_id = ci.id AND v.version_id = cv.id
                             AND (v.value_text = 'READERROR'

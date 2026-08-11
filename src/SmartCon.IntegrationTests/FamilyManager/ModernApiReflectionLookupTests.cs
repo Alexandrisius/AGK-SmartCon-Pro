@@ -18,6 +18,12 @@ public sealed class ModernApiReflectionLookupTests : RevitApiTest
     [HookExecutor<RevitThreadExecutor>]
     public async Task FloorCreate_ExactTypedReflectionLookup_Found()
     {
+        if (int.TryParse(Application.VersionNumber, out var revitYear) && revitYear < 2022)
+        {
+            Skip.Test("Floor.Create(IList<CurveLoop>) exists on 2022+ runtimes only");
+            return;
+        }
+
         var createMethod = typeof(Floor).GetMethod(
             "Create",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
@@ -32,6 +38,12 @@ public sealed class ModernApiReflectionLookupTests : RevitApiTest
     [HookExecutor<RevitThreadExecutor>]
     public async Task CeilingCreate_ExactTypedReflectionLookup_Found()
     {
+        if (int.TryParse(Application.VersionNumber, out var revitYear) && revitYear < 2022)
+        {
+            Skip.Test("Ceiling.Create(IList<CurveLoop>) exists on 2022+ runtimes only");
+            return;
+        }
+
         var createMethod = typeof(Ceiling).GetMethod(
             "Create",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,

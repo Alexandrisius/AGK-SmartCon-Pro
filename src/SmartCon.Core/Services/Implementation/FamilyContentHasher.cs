@@ -99,19 +99,24 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// <summary>
     /// #209: verification-grade hash for comparing an EMBEDDED
     /// nested family against its source .rfa after a reload. Same sections
-    /// as the identity hash — STRICT on definitions (parameter groups,
-    /// formulas, types/values, nested, facts, flags, connectors'
-    /// classification) — except metrics that are PHYSICALLY
-    /// host-dependent, not content: regen-driven geometry (volumes,
-    /// bounds, surface areas, curve lengths) and connector sizes/origins,
-    /// which legitimately move when the host drives the nested family's
-    /// instance parameters. Form kinds/counts, face/edge counts stay in.
-    /// An overwrite reload does NOT propagate parameter groups (the
-    /// embedded definition keeps the host's grouping) — by design this
-    /// grade detects that as a mismatch: groups are content, and a strict
-    /// product does not pass cosmetic drift as success (owner directive,
-    /// round-5). Never stored in the catalog — identity
-    /// (dedup/versioning) keeps using <see cref="ComputeForLoadable"/>.
+    /// as the identity hash — STRICT on definitions (formulas, types/values,
+    /// nested, facts, flags, connectors' classification) — except metrics
+    /// that are PHYSICALLY non-transferable by any reload, not content:
+    /// regen-driven geometry (volumes, bounds, surface areas, curve lengths)
+    /// and connector sizes/origins, which legitimately move when the host
+    /// drives the nested family's instance parameters, AND parameter groups:
+    /// proven 2026-08-11 (probes + owner's manual test on the real library)
+    /// that NO reload path — API or UI, even a full overwrite that lands new
+    /// types — ever propagates a parameter's group; the embedded definition
+    /// keeps the host's grouping forever (only delete+fresh-load or a parent
+    /// rebuild would change it). A group-included verification hash is
+    /// therefore unreachable in principle — the comparison would fail every
+    /// family whose version diff includes a regroup even after a perfect
+    /// reload. Groups stay in the identity hash (ComputeForLoadable): a fresh
+    /// load into a new project ships the file's grouping, so group changes
+    /// still version-bump the catalog. Form kinds/counts, face/edge counts
+    /// stay in. Never stored in the catalog — identity (dedup/versioning)
+    /// keeps using <see cref="ComputeForLoadable"/>.
     /// </summary>
     public FamilyContentHash? ComputeForEmbeddedVerification(FamilySnapshot snapshot)
     {
@@ -155,7 +160,8 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         {
             sb.Append(Escape(p.Name)).Append('|');
             sb.Append(p.StorageType).Append('|');
-            sb.Append(Escape(p.ParameterGroup ?? string.Empty)).Append('|');
+            if (!verificationGrade)
+                sb.Append(Escape(p.ParameterGroup ?? string.Empty)).Append('|');
             sb.Append(p.IsInstance ? 'I' : 'T').Append('|');
             sb.Append(p.IsShared ? 'S' : 'P').Append('|');
             sb.Append(Escape(p.Formula ?? NullFormulaMarker)).Append('|');

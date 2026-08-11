@@ -228,7 +228,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             if (canVerify
                 && StaleUpdateVerificationPolicy.ShouldSkipReload(
                     await VerifyEmbeddedMatchesResolvedFileAsync(
-                        catalogItemId, resolved, null, ct)
+                        catalogItemId, resolved, null, ct, isPostReload: false)
                     .ConfigureAwait(true)))
             {
                 SmartConLogger.Info(
@@ -285,9 +285,10 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
             // #209 (manual-test bug): in a FAMILY document the reload used
             // to be a silent no-op while markers claimed the new version.
-            // The load service now reloads the nested definition via
-            // LoadFamily(overwrite) — verify the embedded content hash
-            // equals the catalog target version BEFORE writing any marker.
+            // The load service now reloads the nested definition via the
+            // poke + doc-to-doc path (path-load fallback) — verify the
+            // embedded content hash equals the catalog target version
+            // BEFORE writing any marker.
             // A failed verification = failed update (no marker, the family
             // stays stale and the next Check offers it again).
             if (canVerify)
@@ -393,7 +394,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         string catalogItemId,
         FamilyResolvedFile resolved,
         string? familyName,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool isPostReload = true)
     {
         var name = !string.IsNullOrEmpty(familyName)
             ? familyName!
@@ -470,13 +472,26 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
         var actualShort = embeddedHash.Length > 8 ? embeddedHash[..8] : embeddedHash;
         var expectedShort = fileHash.Length > 8 ? fileHash[..8] : fileHash;
+        if (!isPostReload)
+        {
+            // Pre-verify mismatch is the NORMAL "reload needed" branch —
+            // not a failure. The scary Warn is reserved for real
+            // post-reload failures (manual test 2026-08-11: the pre-verify
+            // Warn read as "the family stays stale" right before the
+            // reload succeeded and the marker was written).
+            SmartConLogger.Info(
+                $"UpdateFamily[{catalogItemId}]: pre-verify — embedded '{name}' differs from the resolved file " +
+                $"{resolved.VersionLabel} (embedded {actualShort}… ≠ file {expectedShort}…) — reload will run");
+            return false;
+        }
+
         SmartConLogger.Warn(
             $"UpdateFamily[{catalogItemId}]: POST-RELOAD VERIFICATION FAILED for '{name}' — embedded content " +
             $"does not match the resolved file {resolved.VersionLabel} (embedded hash {actualShort}… ≠ file {expectedShort}…). " +
             "No marker is written; the family stays stale. " +
-            "[Action: Revit API не смог обновить это семейство (подтверждённое расхождение API и UI перезагрузки). " +
-            "Обновите его вручную: в редакторе семейства — вкладка «Вставка» → «Загрузить семейство» с перезаписью, " +
-            "затем повторите «Проверить» — маркер запишется автоматически]");
+            "[Action: обновление не заменило дефиницию — откройте родительское " +
+            "семейство в редакторе, удалите проблемное вложенное и загрузите его заново из каталога (привязки " +
+            "придётся восстановить), либо пересоберите родителя; затем повторите «Проверить»]");
         return false;
     }
 
