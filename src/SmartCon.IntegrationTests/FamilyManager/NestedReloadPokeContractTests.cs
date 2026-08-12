@@ -43,7 +43,7 @@ public sealed class NestedReloadPokeContractTests : RevitApiTest
             : @"d:\Project\dotNET\00_Архив\Библиотеки семейств\Тест";
 
     private const string NutName = "PPR-C0807-F-Гайка-ГОСТ_5915_70-PIEC-PL-0108-G3";
-    private const string NutV1Hash = "C83F0288";
+    private const string NutV1Hash = "CBA8FDEA";
     private const string FlangeName = "PPR-E1401-N-Фланец-ПлоскийПриварной-ГОСТ_33259_2015-PIFT-PL-0104-G3";
 
     private string? _tempDir;
@@ -81,7 +81,7 @@ public sealed class NestedReloadPokeContractTests : RevitApiTest
             return;
         }
 
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConPoke_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConPoke_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
         var pairCopy = Path.Combine(_tempDir, "Фланцевая пара.rfa");
         File.Copy(pairFile, pairCopy);

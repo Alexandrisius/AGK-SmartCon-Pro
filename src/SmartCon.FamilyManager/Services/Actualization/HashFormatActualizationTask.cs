@@ -10,15 +10,17 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v8</c>): recalculates stale
-/// (format v1..v7 / NULL) content hashes to the FHV8 format
+/// CRITICAL actualization task (Id=<c>hash-v9</c>): recalculates stale
+/// (format v1..v8 / NULL) content hashes to the FHV9 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
 /// discriminator in FAMKEY, #215 manual test 2026-08-06; FHV8 —
-/// composite shared-nested content in the loadable hash, #209 ADR-066).
+/// composite shared-nested content in the loadable hash, #209 ADR-066;
+/// FHV9 — PHANTOM section: parameter values of typeless families,
+/// #209 stress test 2026-08-12).
 /// Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1..7 pending, 8 current, -1/-2 terminal (unreadable /
+/// semantics: NULL/1..8 pending, 9 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -65,14 +67,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v8";
+    public override string Id => "hash-v9";
     public override int Order => 10;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (8, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (9, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
@@ -114,7 +116,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 8
+                    SET content_hash = @hash, hash_format_version = 9
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -127,7 +129,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 8, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 9, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -145,8 +147,8 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                     .ConfigureAwait(false);
             }
 
-            // FHV8 is a breaking data format (ADR-058): a database carrying
-            // v8 hashes must not be WRITTEN by a plugin older than the FHV8
+            // FHV8+ are breaking data formats (ADR-058): a database carrying
+            // v9 hashes must not be WRITTEN by a plugin older than the FHV9
             // release — its dedup would silently downgrade/duplicate. Runtime
             // backfill of the forward-compatibility floor (schema-migration
             // backfill like V24 cannot work here: v8 rows appear only AFTER

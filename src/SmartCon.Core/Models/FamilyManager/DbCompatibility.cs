@@ -21,5 +21,5 @@ public static class DbCompatibility
     /// Non-breaking releases (additive columns, optional artifacts) do NOT
     /// bump this floor.
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.8";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
 }

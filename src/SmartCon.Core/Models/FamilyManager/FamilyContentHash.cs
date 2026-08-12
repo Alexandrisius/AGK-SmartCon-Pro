@@ -101,6 +101,19 @@ public sealed record FamilyContentHash(
     ///     every row that is not current (system rows re-stamp, loadable
     ///     rows get the composite hash — nested closures are extracted from
     ///     the managed .rfa itself, no cross-group ordering needed).
+    /// 9 — phantom value coverage (#209 stress test 2026-08-12). Loadable
+    ///     only: <c>FHV9|LOADABLE|{catOrdinal}|...</c> gains the PHANTOM
+    ///     section — parameter values of a TYPELESS family, read from the
+    ///     unnamed current type or a synthesized Transaction+RollBack type
+    ///     so both extraction contexts (raw open vs EditFamily copy) agree.
+    ///     FHV8 skipped the phantom entirely, so an edit of any
+    ///     non-geometric value on a typeless family (e.g. the built-in
+    ///     «Модель») never shifted the hash and the import dialog reported
+    ///     a false Duplicate. The verification grade (FHV8V, ephemeral)
+    ///     intentionally excludes phantom values: embedded ones can be
+    ///     host-driven via associations and are not comparable to the
+    ///     file. Critical task <c>hash-v9</c> recomputes every row that is
+    ///     not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -116,7 +129,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

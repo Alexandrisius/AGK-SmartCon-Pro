@@ -1420,12 +1420,12 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_Fhv8GoldenCanon_IsStable()
+    public void ComputeForLoadable_Fhv9GoldenCanon_IsStable()
     {
         // Golden: a FIXED loadable snapshot must always produce this exact
-        // hash — any drift in the FHV8 loadable canon (escaping, culture,
-        // ordering, section layout, NESTEDHASH pairs) fails loudly here.
-        // When the canon changes ON PURPOSE, bump
+        // hash — any drift in the FHV9 loadable canon (escaping, culture,
+        // ordering, section layout, NESTEDHASH pairs, PHANTOM values) fails
+        // loudly here. When the canon changes ON PURPOSE, bump
         // FamilyContentHashFormat.CurrentVersion and update the golden in
         // the same commit.
         var snapshot = new FamilySnapshot(
@@ -1447,13 +1447,14 @@ public class FamilyContentHasherTests
             SharedNestedFamilyNames: ["Flange"],
             CategoryId: -2008049,
             NonSharedNestedFamilyNames: ["PrivatePart"],
-            SharedNestedContentHashes: [new NestedContentHash("Flange", new string('A', 64))]);
+            SharedNestedContentHashes: [new NestedContentHash("Flange", new string('A', 64))],
+            PhantomTypeValues: [new FamilyParameterValue("Модель", "String", true, "M-1", null, null)]);
 
         var hash = _hasher.ComputeForLoadable(snapshot);
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("B2354B9606039C65FCC691EFC52AE862ECA4EA508F5DAEB11A3F6CB107E8195C", hash.HexString);
+        Assert.Equal("EB223AC43D8E20332EC89FCC4D866BB720708EF499908049CF15919889985DC2", hash.HexString);
     }
 
     private static FamilySnapshot CreateVerificationBaseline()
@@ -1642,6 +1643,109 @@ public class FamilyContentHasherTests
 
         var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
         var verifyB = _hasher.ComputeForEmbeddedVerification(drivenResized);
+        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    private static FamilyParameterValue PhantomValue(string name, string? text, double? number = null)
+    {
+        return new FamilyParameterValue(
+            ParameterName: name,
+            StorageType: number.HasValue ? "Double" : "String",
+            HasValue: true,
+            ValueText: text,
+            ValueNumber: number,
+            ResolvedElementName: null);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValuesPresent_ShiftHash()
+    {
+        // FHV9 (#209 stress test 2026-08-12): typeless-family values are
+        // content — without the PHANTOM section a «Модель» edit on a
+        // typeless family never shifted the hash (false Duplicate).
+        var baseline = CreateLoadableSnapshot();
+        var withPhantom = baseline with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(baseline);
+        var hash2 = _hasher.ComputeForLoadable(withPhantom);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValueChange_ShiftsHash()
+    {
+        var v1 = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+        var v2 = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-200")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(v1);
+        var hash2 = _hasher.ComputeForLoadable(v2);
+
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValues_OrderIndependent()
+    {
+        var a = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("A", "1"), PhantomValue("B", "2")],
+        };
+        var b = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("B", "2"), PhantomValue("A", "1")],
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(a)!.HexString,
+            _hasher.ComputeForLoadable(b)!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomBlankValues_Skipped()
+    {
+        var baseline = CreateLoadableSnapshot();
+        var blankOnly = baseline with
+        {
+            PhantomTypeValues =
+            [
+                new FamilyParameterValue("EmptyText", "String", false, null, null, null),
+                new FamilyParameterValue("EmptyString", "String", true, string.Empty, null, null),
+            ],
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(baseline)!.HexString,
+            _hasher.ComputeForLoadable(blankOnly)!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForEmbeddedVerification_PhantomValues_Ignored()
+    {
+        // Verification grade compares an embedded EditFamily copy with the
+        // source file — embedded phantom values can be host-driven via
+        // associations, so they must NOT participate (same rationale as
+        // parameter groups).
+        var baseline = CreateVerificationBaseline();
+        var withPhantom = baseline with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+
+        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
+        var verifyB = _hasher.ComputeForEmbeddedVerification(withPhantom);
+
         Assert.Equal(verifyA!.HexString, verifyB!.HexString);
     }
 }

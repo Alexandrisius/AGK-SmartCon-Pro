@@ -49,6 +49,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
+        var phantomValues = ExtractPhantomTypeValues(fm, familyDoc);
         var geometry = ExtractGeometry(familyDoc);
         var (sharedNested, nonSharedNested) = ExtractNestedNames(familyDoc);
         var connectors = ExtractConnectors(familyDoc);
@@ -72,7 +73,89 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Facts: facts.Count > 0 ? facts : null,
             Connectors: connectors.Count > 0 ? connectors : null,
             BehaviorFlags: behaviorFlags,
-            NonSharedNestedFamilyNames: nonSharedNested.Count > 0 ? nonSharedNested : null);
+            NonSharedNestedFamilyNames: nonSharedNested.Count > 0 ? nonSharedNested : null,
+            PhantomTypeValues: phantomValues is { Count: > 0 } ? phantomValues : null);
+    }
+
+    /// <summary>
+    /// FHV9 (#209 stress test 2026-08-12): parameter values of a TYPELESS
+    /// family (no named types). FHV8 skipped the phantom default type
+    /// entirely, which dropped value coverage for typeless families — an
+    /// edit of any non-geometric value (e.g. the built-in «Модель») never
+    /// changed the content hash and the import dialog reported a false
+    /// Duplicate. The phantom's values are context-stable when read the
+    /// right way: an EditFamily/editor document carries the unnamed current
+    /// type (Size=1); a raw background open reports Size=0 with no current
+    /// type, so a temporary type is synthesized inside a transaction that is
+    /// rolled back (probe-proven 2026-08-12: NewType works at Size=0,
+    /// RollBack restores Size=0, no trace). Both contexts read the same
+    /// default values, so identity hashes stay comparable across contexts.
+    /// Returns <c>null</c> when the family has named types (values live in
+    /// the TYPES section) or no parameters.
+    /// </summary>
+    private static List<FamilyParameterValue>? ExtractPhantomTypeValues(
+        Autodesk.Revit.DB.FamilyManager fm, Document familyDoc)
+    {
+        var allTypes = fm.Types.Cast<FamilyType>().ToList();
+        if (allTypes.Any(t => !string.IsNullOrWhiteSpace(t.Name)))
+        {
+            return null;
+        }
+
+        var parameters = fm.GetParameters()
+            .Where(p => p.Definition?.Name is not null)
+            .ToList();
+        if (parameters.Count == 0)
+        {
+            return null;
+        }
+
+        if (allTypes.Count == 1)
+        {
+            return ReadPhantomValues(allTypes[0], parameters, familyDoc, "current phantom");
+        }
+
+        try
+        {
+            List<FamilyParameterValue>? values = null;
+            using (var tx = new Transaction(familyDoc, "SmartCon_PhantomValues"))
+            {
+                tx.Start();
+                try
+                {
+                    var synth = fm.NewType("__SmartConPhantomValues__");
+                    fm.CurrentType = synth;
+                    values = ReadPhantomValues(synth, parameters, familyDoc, "synthesized");
+                }
+                finally
+                {
+                    tx.RollBack();
+                }
+            }
+            return values;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Phantom value synthesis failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: значения typeless-семейства не попадут в хэш этого извлечения — проверьте, что документ не находится внутри другой транзакции]");
+            return null;
+        }
+    }
+
+    private static List<FamilyParameterValue> ReadPhantomValues(
+        FamilyType type,
+        List<FamilyParameter> parameters,
+        Document familyDoc,
+        string tag)
+    {
+        var values = new List<FamilyParameterValue>(parameters.Count);
+        foreach (var param in parameters)
+        {
+            values.Add(ExtractParameterValue(type, param, param.Definition.Name, familyDoc));
+        }
+        SmartConLogger.Debug($"ExtractPhantomValues ({tag}): read {values.Count} value(s)");
+        return values.OrderBy(v => v.ParameterName, StringComparer.Ordinal).ToList();
     }
 
     public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(
@@ -463,16 +546,18 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             string typeName;
             if (string.IsNullOrWhiteSpace(familyType.Name))
             {
-                // FHV8 (#209): the unnamed default type is ALWAYS skipped.
-                // It is a phantom Revit synthesizes when a typeless family
-                // is LOADED into a document: the raw .rfa reports
-                // Types.Size=0 while an EditFamily copy of the same family
-                // reports Size=1 with this unnamed type — extracting it
-                // (formerly as '<default>') made the hash depend on the
+                // FHV8 (#209): the unnamed default type is ALWAYS skipped in
+                // the TYPES section. It is a phantom Revit synthesizes when
+                // a typeless family is LOADED into a document: the raw .rfa
+                // reports Types.Size=0 while an EditFamily copy of the same
+                // family reports Size=1 with this unnamed type — extracting
+                // it (formerly as '<default>') made the hash depend on the
                 // extraction context (raw open vs post-load copy) and broke
-                // import↔migration and file↔nested dedup equality. Phantom
-                // values stay covered transitively by the GEOM section
-                // (volume/bbox reflect the current values). The synthetic
+                // import↔migration and file↔nested dedup equality. FHV9:
+                // the phantom's VALUES are extracted separately and
+                // context-stably by ExtractPhantomTypeValues (PHANTOM
+                // section of the identity hash) — the type entry itself
+                // stays skipped here. The synthetic
                 // FamilyTypeSnapshot.DefaultTypeName constant remains for
                 // legacy DB rows and the display rule only.
                 SmartConLogger.Debug("  ExtractTypes: skipping unnamed default type (phantom, FHV8)");

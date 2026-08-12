@@ -53,6 +53,19 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// leaves it <c>null</c>. Part of the content hash (NESTEDHASH section):
 /// a change inside any shared nested family transitively shifts the parent's
 /// hash, so re-importing the parent produces a new version.</param>
+/// <param name="PhantomTypeValues">FHV9 (#209 stress test 2026-08-12):
+/// parameter values of a TYPELESS family (no named types — the phantom
+/// default type), sorted by parameter name. <c>null</c> for families with at
+/// least one named type (their values live in <see cref="Types"/>). The
+/// extractor reads them from the unnamed current type (EditFamily copy
+/// context) or synthesizes a temporary type with Transaction+RollBack
+/// (raw-open context reports <c>Types.Size=0</c> and no CurrentType), so the
+/// values are identical in both extraction contexts. Part of the IDENTITY
+/// hash only (PHANTOM section): the verification grade excludes them because
+/// embedded phantom values can be host-driven via associations and are not
+/// comparable to the file. Without this section a value edit on a typeless
+/// family (e.g. the built-in «Модель») never changed the content hash and
+/// the import dialog reported a false Duplicate.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
@@ -65,7 +78,8 @@ public sealed record FamilySnapshot(
     IReadOnlyList<ConnectorSnapshot>? Connectors = null,
     FamilyBehaviorFlags? BehaviorFlags = null,
     IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
-    IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null);
+    IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null,
+    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null);
 
 /// <summary>
 /// FHV8 (#209): one direct shared-nested child entry of the composite
