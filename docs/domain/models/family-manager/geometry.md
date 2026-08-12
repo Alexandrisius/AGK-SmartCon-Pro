@@ -24,8 +24,14 @@ public sealed record FamilySnapshot(
     IReadOnlyList<FamilyFact>? Facts = null,
     IReadOnlyList<ConnectorSnapshot>? Connectors = null,
     FamilyBehaviorFlags? BehaviorFlags = null,
-    IReadOnlyList<string>? NonSharedNestedFamilyNames = null);
+    IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
+    IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null,
+    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null);
+```
 
+`PhantomTypeValues` (FHV9, #209 стресс-тест 2026-08-12): значения параметров **безтипового** семейства (phantom default type), отсортированные по имени параметра; `null` для семейств с именованными типами (их значения — в `Types`). Извлекаются контекстно-стабильно: из текущего безымянного типа (EditFamily/редактор) или через синтез временного типа `NewType` + Transaction.RollBack (raw-открытие с `Types.Size=0`). Входят ТОЛЬКО в identity-хэш (секция PHANTOM, FHV9); verification-грейд FHV8V их исключает (embedded-значения могут драйвиться хостом через ассоциации). Подробно — [content-hash.md](content-hash.md).
+
+```csharp
 public sealed record FamilyParameterInfo(
     string Name,
     string StorageType,

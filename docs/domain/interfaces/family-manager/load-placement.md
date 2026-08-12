@@ -64,6 +64,37 @@ public interface IFamilyLoadService
 (Revit main thread) до ответа пользователя через WPF `ShowDialog`.
 
 ---
+## IFamilyLoadServiceSourceAware
+
+Source-aware расширение `IFamilyLoadService` (#209) для ветки обновления вложенного
+семейства внутри открытого family-документа. Позволяет передать УЖЕ открытый
+исходный документ, чтобы один цикл обновления (pre-verify → poke → doc-to-doc
+merge → post-verify) делил одно `OpenDocumentFile` на семейство вместо 2-3
+открытий того же файла. Реализуется тем же `RevitFamilyLoadService`; вызывающий
+(`StaleFamilyUpdater`) обнаруживает его через `is`-проверку и при отсутствии
+уходит в legacy-путь `ReloadFamilyPreservingLoadedTypesAsync`.
+Метод синхронный — вызывается только на Revit main thread (внутри ExternalEvent
+callback, I-01). Переданный документ — BORROWED: владение и закрытие остаются
+за вызывающим, сервис его не закрывает; при `null`/null-результате провайдера
+сервис открывает (и закрывает) файл сам. Когда документ передан, guard
+«файл версии открыт в редакторе» пропускается — вызывающий обязан выполнить
+эквивалентную проверку ДО открытия.
+
+**Файл:** `IFamilyLoadServiceSourceAware.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitFamilyLoadService.cs`
+
+```csharp
+public interface IFamilyLoadServiceSourceAware : IFamilyLoadService
+{
+    FamilyLoadResult ReloadNestedInFamilyDocument(
+        string normalizedPath,
+        string familyName,
+        bool overwriteParameterValues,
+        Func<Document?>? preOpenedSourceDocProvider = null);
+}
+```
+
+---
 ## ISharedNestedFamilyRepository
 
 CRUD-репозиторий для имён общих вложенных семейств, персистленных в локальной
