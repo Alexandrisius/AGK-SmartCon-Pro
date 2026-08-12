@@ -774,10 +774,17 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
         // The caller-provided source document is excluded from both guards:
         // it is a legitimate background open done by the caller, not a user
         // editing session. The caller performs the equivalent "source file
-        // open in the editor" check BEFORE opening it.
+        // open in the editor" check BEFORE opening it. Exclusion is by
+        // PATH — ReferenceEquals is unreliable here (Revit may hand out
+        // different managed wrappers for the same underlying document).
+        var providedPath = providedSource?.PathName;
         var openTopLevel = doc.Application.Documents
             .Cast<Document>()
-            .Where(d => d.IsFamilyDocument && !ReferenceEquals(d, providedSource))
+            .Where(d => d.IsFamilyDocument
+                && (string.IsNullOrEmpty(providedPath)
+                    || string.IsNullOrEmpty(d.PathName)
+                    || !string.Equals(
+                        Path.GetFullPath(d.PathName), Path.GetFullPath(providedPath), StringComparison.OrdinalIgnoreCase)))
             .Select(d => d.Title)
             .ToList();
         if (openTopLevel.Contains(familyNameFromPath, StringComparer.OrdinalIgnoreCase))

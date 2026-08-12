@@ -222,9 +222,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             // reload arbitration → post-verify) runs in ONE Revit-thread
             // pass sharing a single OpenDocumentFile of the resolved file
             // (the legacy path below opens it up to 3 times). Returns
-            // NotApplicable for a project document or a guard case the
-            // legacy path handles better (its own guards produce the same
-            // user-facing failure with instructions).
+            // NotApplicable only for a project document — the legacy path
+            // below then runs unchanged.
             if (canVerify && _loadService is IFamilyLoadServiceSourceAware sourceAware)
             {
                 var orchestrated = await _awaitable.RaiseAsync(
@@ -404,7 +403,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     /// the verification grade ignores regen-driven geometry metrics
     /// (volumes/bounds/areas/curve lengths) that legitimately differ when
     /// the host drives the nested family's instance parameters. The full
-    /// identity FHV8 stored in the catalog is NOT used here: it is
+    /// identity FHV9 stored in the catalog is NOT used here: it is
     /// computed from the raw file, and a host-driven embedded definition
     /// can never equal it (the round-3 bug — false failures on families
     /// whose reload actually landed).
@@ -686,9 +685,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     /// source). Semantics mirror the legacy
     /// <see cref="VerifyEmbeddedMatchesResolvedFileAsync"/> flow exactly;
     /// <see cref="FamilyDocumentUpdateKind.NotApplicable"/> means "fall back
-    /// to the legacy path" (project document, or the resolved file is open
-    /// in the editor — the load service's own guard then produces the same
-    /// user-facing failure).
+    /// to the legacy path" (project document).
     /// </summary>
     private (FamilyDocumentUpdateKind Kind, string? FamilyName) UpdateInFamilyDocumentOnRevitThread(
         string catalogItemId,
@@ -818,10 +815,18 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             if (fileHash is not null)
             {
                 var post = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
-                if (post is null
-                    || !string.Equals(post, fileHash, StringComparison.OrdinalIgnoreCase))
+                if (post is null)
                 {
-                    var a = post is null ? "<n/a>" : (post.Length > 8 ? post[..8] : post);
+                    // Same tri-state rule as the legacy policy: null is
+                    // indeterminate (transient EditFamily/extract failure
+                    // right after a successful merge) — trust the reload;
+                    // the next Check/Update re-verifies.
+                    SmartConLogger.Info(
+                        $"UpdateFamily[{catalogItemId}]: post-verify indeterminate for '{name}' — trusting the successful reload");
+                }
+                else if (!string.Equals(post, fileHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    var a = post.Length > 8 ? post[..8] : post;
                     var e = fileHash.Length > 8 ? fileHash[..8] : fileHash;
                     SmartConLogger.Warn(
                         $"UpdateFamily[{catalogItemId}]: POST-RELOAD VERIFICATION FAILED for '{name}' — embedded content " +
@@ -832,8 +837,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                         "придётся восстановить), либо пересоберите родителя; затем повторите «Проверить»]");
                     return (FamilyDocumentUpdateKind.Failed, result.FamilyName ?? name);
                 }
-                SmartConLogger.Info(
-                    $"UpdateFamily[{catalogItemId}]: verified — embedded '{name}' matches the resolved file ({resolved.VersionLabel})");
+                else
+                {
+                    SmartConLogger.Info(
+                        $"UpdateFamily[{catalogItemId}]: verified — embedded '{name}' matches the resolved file ({resolved.VersionLabel})");
+                }
             }
 
             return (FamilyDocumentUpdateKind.Reloaded, result.FamilyName ?? name);
