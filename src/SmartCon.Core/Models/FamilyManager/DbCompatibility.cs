@@ -20,12 +20,12 @@ public static class DbCompatibility
     /// cannot key on them).
     /// Non-breaking releases (additive columns, optional artifacts) do NOT
     /// bump this floor.
-    /// FHV10 note (2026-08-12): the floor stays at the FHV9 reservation —
-    /// v9 hashes never shipped in any release build (latest tag at the
-    /// time: v2.0.1-beta.7), so FHV10 rides the same unreleased train and
-    /// the floor does not move again. If the next beta ships numbered
-    /// below beta.9, this constant must be aligned to it (a higher floor
-    /// would self-gate the migrating build in release mode).
+    /// FHV10 note (2026-08-12): the floor targets the next beta that first
+    /// SHIPS the FHV8+ formats — v2.0.1-beta.8 (v8/v9 hashes never shipped
+    /// in any release build; latest tag at the time: v2.0.1-beta.7). The
+    /// constant must never exceed the version it ships in — a higher floor
+    /// would self-gate the migrating build in release mode (in DEBUG
+    /// builds the gate is off by default).
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.8";
 }
