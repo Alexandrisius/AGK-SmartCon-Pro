@@ -226,5 +226,6 @@ public class StaleSnapshotAdditionalTests
         Assert.Equal(2, (int)StaleReason.VersionMismatch);
         Assert.Equal(3, (int)StaleReason.RevitVersionMismatch);
         Assert.Equal(4, (int)StaleReason.NotInCatalog);
+        Assert.Equal(5, (int)StaleReason.ContentDrift);
     }
 }

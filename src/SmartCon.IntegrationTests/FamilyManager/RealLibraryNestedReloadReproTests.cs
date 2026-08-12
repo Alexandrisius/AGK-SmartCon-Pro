@@ -36,8 +36,8 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 /// in-memory poke of the SOURCE document (add + remove a scratch family
 /// parameter, two commits, never saved) flips it, and doc-to-doc
 /// LoadFamily then takes the full merge path even through the API.
-/// Groups never propagate on ANY merge (API or UI), so FHV8V excludes
-/// them. Production mechanism + contracts:
+/// Groups never propagate on ANY merge (API or UI), so FHV10 does not
+/// hash them. Production mechanism + contracts:
 /// <c>NestedReloadPokeContractTests</c>. The tests below remain as
 /// documentation of the RAW unpoked API behavior.
 /// </summary>
@@ -49,10 +49,15 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             ? overridePath
             : @"d:\Project\dotNET\00_Архив\Библиотеки семейств\Тест";
 
-    // FHV9 pins (2026-08-12, probe-computed from the owner library files).
+    // FHV10 pins (2026-08-12, probe-computed from the owner library files).
     private const string NutName = "PPR-C0807-F-Гайка-ГОСТ_5915_70-PIEC-PL-0108-G3";
-    private const string NutV1Hash = "CBA8FDEA";
-    private const string NutV2Hash = "14D706F7";
+    // FHV10 unified-hash values (2026-08-12): nut v1↔v2 differ ONLY by the
+    // parameter group, which FHV10 never hashes → ONE value for both.
+    // (Consequence: this wall sentinel can no longer SEE a future API fix
+    // for the nut — a successful v2 merge would hash identically; the
+    // content-differing flange keeps the sentinel sharp.)
+    private const string NutV1Hash = "6846AC6F";
+    private const string NutV2Hash = "6846AC6F";
 
     private const string FlangeName = "PPR-E1401-N-Фланец-ПлоскийПриварной-ГОСТ_33259_2015-PIFT-PL-0104-G3";
 
@@ -686,8 +691,9 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         // + the owner's manual UI test on this library) that NO reload path
         // — API or UI, even a full overwrite landing new types — ever
         // propagates a parameter's group, so the verification-grade hash
-        // FHV8V EXCLUDES groups (like regen-driven geometry). On the real
-        // library after a plain path-load:
+        // FHV10 does not hash groups at all (the one non-transferable
+        // field — embedded pollution of anything else disproved by probe).
+        // On the real library after a plain path-load:
         //   · flange (depth-1): the reload lands v2's params/formulas,
         //     the group stays v1 → group-excluded verify MATCHES the file.
         //   · nut (depth-2): the reload no-ops, but v1↔v2 differ ONLY by
@@ -701,14 +707,14 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                 .OfClass(typeof(Family)).Cast<Family>()
                 .First(f => string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase));
             var copy = _pairDoc!.EditFamily(nested);
-            try { return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(copy))!.HexString; }
+            try { return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(copy))!.HexString; }
             finally { copy.Close(false); }
         }
 
         string FileVerifyHash(string fullPath)
         {
             var doc = Application.OpenDocumentFile(fullPath);
-            try { return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(doc))!.HexString; }
+            try { return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString; }
             finally { doc.Close(false); }
         }
 

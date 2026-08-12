@@ -21,6 +21,7 @@ public sealed class StaleReasonToTooltipConverter : IValueConverter
             StaleReason.VersionMismatch => StringLocalization.Keys.FM_StaleTooltipMismatch,
             StaleReason.RevitVersionMismatch => StringLocalization.Keys.FM_StaleTooltipRevitVer,
             StaleReason.NotInCatalog => StringLocalization.Keys.FM_StaleTooltipNotInCatalog,
+            StaleReason.ContentDrift => StringLocalization.Keys.FM_StaleTooltipContentDrift,
             _ => StringLocalization.Keys.FM_StaleTooltipNone,
         };
         return LanguageManager.GetString(key);

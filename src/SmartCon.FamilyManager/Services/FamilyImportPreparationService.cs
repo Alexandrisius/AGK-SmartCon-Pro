@@ -563,7 +563,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                     $"Nested family '{descriptor.FamilyName}' not found in the parent document by UniqueId");
 
             // #209 (2026-08-11): read the ES version marker left by the
-            // stale-update command (written only after FHV8V-verified
+            // stale-update command (written only after FHV10-verified
             // content). Identity-hash matching cannot see past parameter
             // groups (a merge never propagates them), so without the marker
             // an updated embedded family keeps matching its OLD stored
@@ -729,6 +729,10 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 MatchedVersionLabel = matchedVersionLabel,
                 IsCrossNameDuplicate = dedupResult.IsCrossNameDuplicate,
                 MatchedItemName = dedupResult.HashMatch?.MatchedItemName,
+                // #180: the row must show that the version came from the
+                // verified marker, not from content identity (#209 follow-up:
+                // "Duplicate (v2)" on v1-group content read as a lie).
+                IsMarkerResolvedVersion = markerOverride is not null,
             };
 
             SmartConLogger.Info(

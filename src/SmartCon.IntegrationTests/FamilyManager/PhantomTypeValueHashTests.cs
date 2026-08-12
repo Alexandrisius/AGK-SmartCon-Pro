@@ -208,11 +208,13 @@ public sealed class PhantomTypeValueHashTests : RevitApiTest
     }
 
     [Test]
-    public async Task PhantomValue_ValueEdit_DoesNotShiftVerificationHash()
+    public async Task PhantomValue_ValueEdit_ShiftsVerificationHash()
     {
-        // FHV8V (ephemeral verification grade) intentionally ignores
-        // phantom values — embedded ones can be host-driven via
-        // associations and are not comparable to the file.
+        // FHV10 unified hash (2026-08-12): phantom values are content —
+        // the embedded document keeps the authored phantom values even
+        // under a host drive (associations live on instances in the host;
+        // DrivenEmbeddedPollutionProbeTests), so a phantom diff is a REAL
+        // content diff in every context.
         var raw = Application.OpenDocumentFile(_valuePath!);
         _openDocs!.Add(raw);
         var before = VerifyHash(raw);
@@ -227,8 +229,8 @@ public sealed class PhantomTypeValueHashTests : RevitApiTest
         }
         var after = VerifyHash(raw);
 
-        SmartConLogger.Info($"PhantomContract: value edit verify {before[..8]}→{after[..8]} equal={before == after}");
-        await Assert.That(after).IsEqualTo(before);
+        SmartConLogger.Info($"PhantomContract: value edit verify {before[..8]}→{after[..8]} changed={before != after}");
+        await Assert.That(after).IsNotEqualTo(before);
     }
 
     private static string IdentityHash(Document doc)
@@ -241,7 +243,7 @@ public sealed class PhantomTypeValueHashTests : RevitApiTest
     private static string VerifyHash(Document doc)
     {
         return new FamilyContentHasher()
-            .ComputeForEmbeddedVerification(new RevitFamilySnapshotExtractor().ExtractFromFamilyDocument(doc))!
+            .ComputeForLoadable(new RevitFamilySnapshotExtractor().ExtractFromFamilyDocument(doc))!
             .HexString;
     }
 

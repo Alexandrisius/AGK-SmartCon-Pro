@@ -19,13 +19,14 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 /// document, mutates the file to v2 ON THE SAME PATH, runs the production
 /// update (<c>RevitFamilyLoadService.ReloadFamilyPreservingLoadedTypesAsync</c>
 /// — the poke + doc-to-doc path) and asserts:
-///   success + FHV8V(embedded in host) == FHV8V(resolved v2 file).
-/// FHV8V (<c>FamilyContentHasher.ComputeForEmbeddedVerification</c>) excludes
-/// parameter groups and regen-driven metrics (volumes/bounds/curve lengths),
-/// so a landed merge verifies even though the host drives the embedded
-/// definition. Identity FHV9 (<c>ComputeForLoadable</c>) is asserted to
-/// CHANGE where the diff is real — proving the scenario actually mutated
-/// the file.
+///   success + FHV10(embedded in host) == FHV10(resolved v2 file).
+/// FHV10 (<c>FamilyContentHasher.ComputeForLoadable</c>) is the single
+/// unified hash — parameter groups are simply not content (no merge ever
+/// propagates them, probe-proven); everything else in the embedded
+/// EditFamily document is byte-identical to the source file
+/// (DrivenEmbeddedPollutionProbeTests), so a landed merge verifies
+/// byte-for-byte. The identity hash is asserted to CHANGE where the diff
+/// is real — proving the scenario actually mutated the file.
 /// </summary>
 public sealed class NestedUpdateMatrixTests : RevitApiTest
 {
@@ -107,9 +108,13 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
     [Test]
     public async Task Matrix_ParameterGroupOnly_SucceedsAndVerifies()
     {
-        // v1↔v2 differ ONLY by the parameter group (P0 re-added under a
-        // different group): FHV9 identity changes (groups included there),
-        // FHV8V excludes groups, so the update succeeds and verifies.
+        // v1↔v2 differ ONLY by the parameter group: FHV10 never hashes
+        // groups (owner decision 2026-08-12 — the one field no merge can
+        // transfer), so the file hash does NOT change, and the update
+        // succeeds and verifies. The mutation restores the type value
+        // after the remove+add regroup (a bare remove+add would silently
+        // reset P0 10→0 — a REAL content diff the hash must and does
+        // catch; proven 2026-08-12 by the canon-dump probe).
         CreateChildV1(Baseline.Typed);
         SeedHostWithChild();
         var identityV1 = FileLoadableHash(_childPath!);
@@ -118,10 +123,11 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
         {
             RemoveFamilyParameter(doc, "P0");
             AddNumberParameterInDataGroup(doc, "P0");
+            SetTypeParameterValue(doc, "P0", 10.0);
         });
 
         var identityV2 = FileLoadableHash(_childPath!);
-        SmartConLogger.Info($"Matrix group-only: identity {identityV1[..8]}→{identityV2[..8]}");
+        SmartConLogger.Info($"Matrix group-only: identity {identityV1[..8]}→{identityV2[..8]} (unchanged by design, FHV10)");
 
         var result = await UpdateChildInHostAsync();
         var embedded = EmbeddedVerifyHash(_hostDoc!, ChildName);
@@ -130,7 +136,7 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
             $"Matrix group-only: success={result.Success} status={result.Status}, " +
             $"embedded={embedded[..8]} file={file[..8]} equal={embedded == file}");
 
-        await Assert.That(identityV2).IsNotEqualTo(identityV1);
+        await Assert.That(identityV2).IsEqualTo(identityV1);
         await Assert.That(result.Success).IsTrue();
         await Assert.That(embedded).IsEqualTo(file);
     }
@@ -197,11 +203,12 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
     }
 
     [Test]
-    public async Task Matrix_GeometrySizeOnly_MetricsExcluded_Verifies()
+    public async Task Matrix_GeometrySizeOnly_LandedMetrics_Verify()
     {
         // Same topology (one box), different depth: volumes/bounds change,
-        // FHV9 identity changes, FHV8V ignores the metrics — the update
-        // succeeds and verifies.
+        // the unified FHV10 hash changes (metrics are content). The merge
+        // lands the v2 geometry wholesale, so the embedded copy matches
+        // the v2 file byte-for-byte and verifies.
         CreateChildV1(Baseline.Geometry);
         SeedHostWithChild();
         var identityV1 = FileLoadableHash(_childPath!);
@@ -577,7 +584,7 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
         var copy = hostDoc.EditFamily(nested);
         try
         {
-            return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(copy))!.HexString;
+            return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(copy))!.HexString;
         }
         finally
         {
@@ -592,7 +599,7 @@ public sealed class NestedUpdateMatrixTests : RevitApiTest
         var doc = Application.OpenDocumentFile(path);
         try
         {
-            return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(doc))!.HexString;
+            return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString;
         }
         finally
         {

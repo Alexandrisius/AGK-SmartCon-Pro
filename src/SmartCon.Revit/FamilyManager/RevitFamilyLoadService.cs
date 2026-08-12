@@ -705,7 +705,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
     /// the in-memory source is already dirty, while a path-load reads the
     /// untouched (unpoked) file from disk and would hit the same no-op.
     /// Revit NEVER propagates parameter groups on any merge —
-    /// the caller's verification grade (FHV8V) excludes groups for exactly
+    /// the unified FHV10 content hash does not contain groups for exactly
     /// this reason.
     /// </para>
     /// <para>

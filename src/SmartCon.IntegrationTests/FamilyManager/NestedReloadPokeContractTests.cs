@@ -25,9 +25,9 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 ///     lands in the embedded definition inside the pair (depth-2 hoisted,
 ///     family in use via a non-shared assembly).
 ///  3. Parameter groups NEVER propagate on any merge (API or UI) — the
-///     verification-grade hash FHV8V excludes them (see
-///     <c>FamilyContentHasher.ComputeForEmbeddedVerification</c>), so the
-///     nut (v1↔v2 differ ONLY by group) verifies as up-to-date and the
+///     unified FHV10 hash simply does not contain them
+///     (<c>FamilyContentHasher.ComputeForLoadable</c>), so the nut
+///     (v1↔v2 differ ONLY by group) verifies as up-to-date and the
 ///     flange (regroup + real param/formula diff) verifies after its
 ///     content lands.
 /// The production seam under test is
@@ -167,9 +167,10 @@ public sealed class NestedReloadPokeContractTests : RevitApiTest
     {
         // End-to-end through the production seam (ReloadNestedInFamilyDocument
         // with the poke path): the nut's v1↔v2 diff is ONLY the parameter
-        // group — nothing propagates on merge, and FHV8V excludes groups,
-        // so the update succeeds and the embedded content verifies against
-        // the resolved v2 file. Weak on content (there is nothing to land)
+        // group — nothing propagates on merge, and FHV10 does not hash
+        // groups, so the update succeeds and the embedded content verifies
+        // against the resolved v2 file. Weak on content (there is nothing
+        // to land)
         // by design — the content-landing proof is the sibling contracts.
         var result = await CreateService().ReloadFamilyPreservingLoadedTypesAsync(
             new FamilyResolvedFile(_nutV2Path!, null, null),
@@ -261,7 +262,7 @@ public sealed class NestedReloadPokeContractTests : RevitApiTest
         var copy = pairDoc.EditFamily(nested);
         try
         {
-            return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(copy))!.HexString;
+            return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(copy))!.HexString;
         }
         finally
         {
@@ -276,7 +277,7 @@ public sealed class NestedReloadPokeContractTests : RevitApiTest
         var doc = Application.OpenDocumentFile(path);
         try
         {
-            return hasher.ComputeForEmbeddedVerification(extractor.ExtractFromFamilyDocument(doc))!.HexString;
+            return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString;
         }
         finally
         {

@@ -6,7 +6,7 @@ namespace SmartCon.FamilyManager.Services.Import;
 /// #209 (2026-08-11): version resolution override for nested-child import
 /// rows. The embedded copy of a shared nested family carries an ES version
 /// marker written by the stale-update command ONLY after the embedded
-/// content passed FHV8V verification (see StaleFamilyUpdater) — that is a
+/// content passed FHV10 verification (see StaleFamilyUpdater) — that is a
 /// strictly stronger version signal than identity-hash matching, because a
 /// reload merge NEVER propagates parameter groups, so the embedded
 /// identity hash of a correctly updated family keeps matching the OLD

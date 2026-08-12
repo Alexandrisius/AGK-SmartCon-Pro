@@ -31,7 +31,7 @@ public sealed record FamilyVersion(
 
 ## StaleCheckResult
 
-Результат проверки актуальности одного семейства (Issue #69, ADR-030). Содержит enum `StaleReason` (причина, по которой семейство считается устаревшим: `NoEntityStorage` для семейств без ES-маркера, `VersionMismatch`, `RevitVersionMismatch`, `NotInCatalog`) и record `StaleCheckResult` с версиями из каталога и из ES.
+Результат проверки актуальности одного семейства (Issue #69, ADR-030). Содержит enum `StaleReason` (причина, по которой семейство считается устаревшим: `NoEntityStorage` для семейств без ES-маркера, `VersionMismatch`, `RevitVersionMismatch`, `NotInCatalog`, `ContentDrift` — маркер актуален, но контент отредактирован локально после записи маркера, #180) и record `StaleCheckResult` с версиями из каталога и из ES.
 
 **Файл:** `StaleCheckResult.cs`
 
@@ -42,7 +42,8 @@ public enum StaleReason
     NoEntityStorage = 1,
     VersionMismatch = 2,
     RevitVersionMismatch = 3,
-    NotInCatalog = 4
+    NotInCatalog = 4,
+    ContentDrift = 5
 }
 
 public sealed record StaleCheckResult(

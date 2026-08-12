@@ -15,24 +15,18 @@ public interface IFamilyContentHasher
     /// Compute a content hash for a loadable family (.rfa) snapshot.
     /// Returns <c>null</c> if the snapshot is null or empty (no parameters
     /// and no types and no geometry).
+    /// <para>
+    /// FHV10 (owner decision 2026-08-12): this ONE hash serves every
+    /// purpose — import dedup, versioning, embedded verification after a
+    /// nested reload and stale-check content proofs. Parameter groups are
+    /// the only excluded content field (no merge ever propagates them —
+    /// probe-proven); the embedded EditFamily document is byte-identical
+    /// to the source file in every other respect (probe-proven:
+    /// associations live on instances in the host document), so a single
+    /// canonical string is fair in all extraction contexts.
+    /// </para>
     /// </summary>
     FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot);
-
-    /// <summary>
-    /// #209: verification-grade hash for comparing an EMBEDDED
-    /// nested family against its source .rfa after a reload (family-editor
-    /// stale update). Same sections as <see cref="ComputeForLoadable"/> —
-    /// STRICT on definitions (formulas, types/values, nested, facts, flags,
-    /// connectors' classification) — except what no reload can physically
-    /// transfer: regen-driven geometry (volumes, bounds, surface areas,
-    /// curve lengths), connector sizes/origins, AND parameter groups
-    /// (proven 2026-08-11: no merge — API or UI — ever propagates a
-    /// parameter's group, so a group-included comparison is unreachable in
-    /// principle; groups stay in the identity hash). Never stored in the
-    /// catalog — identity (dedup/versioning) keeps using
-    /// <see cref="ComputeForLoadable"/>.
-    /// </summary>
-    FamilyContentHash? ComputeForEmbeddedVerification(FamilySnapshot snapshot);
 
     /// <summary>
     /// Compute a content hash for a system family snapshot. Returns

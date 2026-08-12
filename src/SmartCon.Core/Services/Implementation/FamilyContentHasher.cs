@@ -97,45 +97,8 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     }
 
     /// <summary>
-    /// #209: verification-grade hash for comparing an EMBEDDED
-    /// nested family against its source .rfa after a reload. Same sections
-    /// as the identity hash — STRICT on definitions (formulas, types/values,
-    /// nested, facts, flags, connectors' classification) — except metrics
-    /// that are PHYSICALLY non-transferable by any reload, not content:
-    /// regen-driven geometry (volumes, bounds, surface areas, curve lengths)
-    /// and connector sizes/origins, which legitimately move when the host
-    /// drives the nested family's instance parameters, AND parameter groups:
-    /// proven 2026-08-11 (probes + owner's manual test on the real library)
-    /// that NO reload path — API or UI, even a full overwrite that lands new
-    /// types — ever propagates a parameter's group; the embedded definition
-    /// keeps the host's grouping forever (only delete+fresh-load or a parent
-    /// rebuild would change it). A group-included verification hash is
-    /// therefore unreachable in principle — the comparison would fail every
-    /// family whose version diff includes a regroup even after a perfect
-    /// reload. Groups stay in the identity hash (ComputeForLoadable): a fresh
-    /// load into a new project ships the file's grouping, so group changes
-    /// still version-bump the catalog. Form kinds/counts, face/edge counts
-    /// stay in. Never stored in the catalog — identity (dedup/versioning)
-    /// keeps using <see cref="ComputeForLoadable"/>.
-    /// </summary>
-    public FamilyContentHash? ComputeForEmbeddedVerification(FamilySnapshot snapshot)
-    {
-        if (snapshot is null)
-            return null;
-
-        var canonical = BuildLoadableCanonicalString(snapshot, verificationGrade: true);
-        var hex = ComputeSha256Hex(canonical);
-        // FormatVersion here is nominal — the verify hash is ephemeral
-        // (never stored, only HexString is compared in-session).
-        return new FamilyContentHash(
-            HexString: hex,
-            FormatVersion: FamilyContentHashFormat.CurrentVersion,
-            SourceKind: "loadable-verify");
-    }
-
-    /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV9|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...
+    /// Format: FHV10|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
@@ -143,11 +106,17 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// FHV8 (#209, ADR-066): NESTEDHASH — direct shared-nested children
     /// as sorted (escaped name, composite hash hex) pairs, so a nested
     /// content change transitively shifts every ancestor's hash.
+    /// FHV10 (owner decision 2026-08-12): parameter GROUPS left the hash —
+    /// the only content field a reload merge physically cannot transfer
+    /// (probe-proven twice), so versioning them made the embedded
+    /// verification fork the hash into two divergent grades. ONE hash now
+    /// serves import dedup, versioning, embedded verification and stale
+    /// detection alike; a group-only edit no longer version-bumps.
     /// </summary>
-    internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot, bool verificationGrade = false)
+    internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(768);
-        sb.Append(verificationGrade ? "FHV8V|LOADABLE|" : "FHV9|LOADABLE|");
+        sb.Append("FHV10|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -162,8 +131,9 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         {
             sb.Append(Escape(p.Name)).Append('|');
             sb.Append(p.StorageType).Append('|');
-            if (!verificationGrade)
-                sb.Append(Escape(p.ParameterGroup ?? string.Empty)).Append('|');
+            // FHV10: the parameter GROUP is deliberately NOT hashed — a
+            // reload merge never propagates it (probe-proven), so keeping
+            // it would fork identity from embedded verification forever.
             sb.Append(p.IsInstance ? 'I' : 'T').Append('|');
             sb.Append(p.IsShared ? 'S' : 'P').Append('|');
             sb.Append(Escape(p.Formula ?? NullFormulaMarker)).Append('|');
@@ -188,67 +158,57 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         }
 
         // FHV9 (#209 stress test 2026-08-12): parameter values of a
-        // TYPELESS family (phantom default type). Identity grade ONLY —
-        // the verification grade compares an embedded EditFamily copy
-        // against the source file, and embedded phantom values can be
-        // host-driven via associations (not comparable to the file, same
-        // reason groups are excluded there). Without this section an edit
+        // TYPELESS family (phantom default type). Present in the single unified grade:
+        // extraction is context-stable (editor/EditFamily current type vs
+        // raw-open synthesized type read the same defaults — probe
+        // 2026-08-12), and the host cannot drive them (associations live
+        // on instances in the host, never in the embedded document —
+        // DrivenEmbeddedPollutionProbeTests). Without this section an edit
         // of any non-geometric value on a typeless family (e.g. «Модель»)
         // never shifted the hash and the import dialog lied «Duplicate».
-        if (!verificationGrade)
+        sb.Append("PHANTOM|");
+        if (snapshot.PhantomTypeValues is { Count: > 0 } phantomValues)
         {
-            sb.Append("PHANTOM|");
-            if (snapshot.PhantomTypeValues is { Count: > 0 } phantomValues)
+            foreach (var v in phantomValues.OrderBy(v => v.ParameterName, StringComparer.Ordinal))
             {
-                foreach (var v in phantomValues.OrderBy(v => v.ParameterName, StringComparer.Ordinal))
-                {
-                    AppendParameterValue(sb, v);
-                }
+                AppendParameterValue(sb, v);
             }
         }
 
         sb.Append("GEOM|");
         sb.Append(snapshot.Geometry.TotalFormCount).Append('|');
-        var sortedForms = verificationGrade
-            ? snapshot.Geometry.Forms
-                .OrderBy(f => f.FormKind, StringComparer.Ordinal)
-                .ThenBy(f => f.IsSolid)
-                .ThenBy(f => f.FaceCount)
-                .ThenBy(f => f.EdgeCount)
-                .ThenBy(f => f.SubcategoryName, StringComparer.Ordinal)
-            : snapshot.Geometry.Forms
-                .OrderBy(f => f.FormKind, StringComparer.Ordinal)
-                .ThenBy(f => f.IsSolid)
-                .ThenBy(f => f.Volume);
+        // Deterministic topology-field sort (validator H1): identical
+        // ordering across extraction contexts (raw file vs EditFamily
+        // copy) even when metric tie-breaks would be ambiguous.
+        var sortedForms = snapshot.Geometry.Forms
+            .OrderBy(f => f.FormKind, StringComparer.Ordinal)
+            .ThenBy(f => f.IsSolid)
+            .ThenBy(f => f.FaceCount)
+            .ThenBy(f => f.EdgeCount)
+            .ThenBy(f => f.SubcategoryName, StringComparer.Ordinal);
         foreach (var f in sortedForms)
         {
             sb.Append(f.FormKind).Append('|');
             sb.Append(f.IsSolid ? 'S' : 'V').Append('|');
-            if (!verificationGrade)
-            {
-                sb.Append(f.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-            }
+            sb.Append(f.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
             sb.Append(f.FaceCount).Append('|');
             sb.Append(f.EdgeCount).Append('|');
             sb.Append(Escape(f.SubcategoryName ?? NullSubcatMarker)).Append('|');
-            if (!verificationGrade)
+            sb.Append(f.SurfaceArea.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+            if (f.Bounds is not null)
             {
-                sb.Append(f.SurfaceArea.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-                if (f.Bounds is not null)
-                {
-                    sb.Append(FormatCoord(f.Bounds.MinX)).Append(',');
-                    sb.Append(FormatCoord(f.Bounds.MinY)).Append(',');
-                    sb.Append(FormatCoord(f.Bounds.MinZ)).Append(',');
-                    sb.Append(FormatCoord(f.Bounds.MaxX)).Append(',');
-                    sb.Append(FormatCoord(f.Bounds.MaxY)).Append(',');
-                    sb.Append(FormatCoord(f.Bounds.MaxZ));
-                }
-                else
-                {
-                    sb.Append('-');
-                }
-                sb.Append('|');
+                sb.Append(FormatCoord(f.Bounds.MinX)).Append(',');
+                sb.Append(FormatCoord(f.Bounds.MinY)).Append(',');
+                sb.Append(FormatCoord(f.Bounds.MinZ)).Append(',');
+                sb.Append(FormatCoord(f.Bounds.MaxX)).Append(',');
+                sb.Append(FormatCoord(f.Bounds.MaxY)).Append(',');
+                sb.Append(FormatCoord(f.Bounds.MaxZ));
             }
+            else
+            {
+                sb.Append('-');
+            }
+            sb.Append('|');
         }
 
         sb.Append("GEOM2D|");
@@ -258,12 +218,9 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         sb.Append(snapshot.Geometry.TextNoteCount).Append('|');
         sb.Append(snapshot.Geometry.ReferencePlaneCount).Append('|');
         sb.Append(snapshot.Geometry.DimensionCount).Append('|');
-        if (!verificationGrade)
-        {
-            sb.Append(snapshot.Geometry.TotalSymbolicCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-            sb.Append(snapshot.Geometry.TotalDetailCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-            sb.Append(snapshot.Geometry.TotalModelCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-        }
+        sb.Append(snapshot.Geometry.TotalSymbolicCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+        sb.Append(snapshot.Geometry.TotalDetailCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+        sb.Append(snapshot.Geometry.TotalModelCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
 
         sb.Append("NESTED|");
         var sortedNested = snapshot.SharedNestedFamilyNames
@@ -306,36 +263,23 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         sb.Append(FormatFlag(flags?.AllowsCutWithVoids)).Append('|');
 
         sb.Append("CONN|");
-        var sortedConnectors = verificationGrade
-            ? (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
-                .OrderBy(c => c.Domain)
-                .ThenBy(c => c.Shape)
-                .ThenBy(c => c.SystemClassification)
-                .ThenBy(c => c.LinkedIndex)
-            : (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
-                .OrderBy(c => c.Domain)
-                .ThenBy(c => c.Shape)
-                .ThenBy(c => c.SystemClassification)
-                .ThenBy(c => c.OriginX)
-                .ThenBy(c => c.OriginY)
-                .ThenBy(c => c.OriginZ);
+        var sortedConnectors = (snapshot.Connectors ?? (IReadOnlyList<ConnectorSnapshot>)[])
+            .OrderBy(c => c.Domain)
+            .ThenBy(c => c.Shape)
+            .ThenBy(c => c.SystemClassification)
+            .ThenBy(c => c.LinkedIndex);
         foreach (var c in sortedConnectors)
         {
             sb.Append(c.Domain).Append('|');
             sb.Append(c.Shape).Append('|');
             sb.Append(c.SystemClassification).Append('|');
             sb.Append(c.IsPrimary ? 'P' : '-').Append('|');
-            if (!verificationGrade)
-            {
-                // Connector size/origin move with host-driven geometry —
-                // same class as volumes/bounds (excluded above).
-                sb.Append(FormatSize(c.Width)).Append('|');
-                sb.Append(FormatSize(c.Height)).Append('|');
-                sb.Append(FormatSize(c.Radius)).Append('|');
-                sb.Append(FormatCoord(c.OriginX)).Append('|');
-                sb.Append(FormatCoord(c.OriginY)).Append('|');
-                sb.Append(FormatCoord(c.OriginZ)).Append('|');
-            }
+            sb.Append(FormatSize(c.Width)).Append('|');
+            sb.Append(FormatSize(c.Height)).Append('|');
+            sb.Append(FormatSize(c.Radius)).Append('|');
+            sb.Append(FormatCoord(c.OriginX)).Append('|');
+            sb.Append(FormatCoord(c.OriginY)).Append('|');
+            sb.Append(FormatCoord(c.OriginZ)).Append('|');
             sb.Append(c.LinkedIndex).Append('|');
         }
 

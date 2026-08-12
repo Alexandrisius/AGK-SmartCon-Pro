@@ -786,6 +786,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         row.ExistingCatalogItemId = newExistingId;
         row.ExistingVersionLabel = newExistingVersionLabel;
         row.MatchedVersionLabel = matchedVersionLabel;
+        // #180: a rename re-dedup resolves the version by content hash only
+        // (the ES marker is not consulted at the dialog level) — the shown
+        // label is hash-originated again, so the marker-origin annotation
+        // must not survive.
+        row.IsMarkerResolvedVersion = false;
         row.IsCrossNameDuplicate = isCrossNameDuplicate;
         row.MatchedItemName = matchedItemName;
 

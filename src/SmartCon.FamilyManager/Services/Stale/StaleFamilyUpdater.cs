@@ -395,18 +395,15 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
     /// <summary>
     /// #209 round-4: content verification for the FAMILY-document context.
-    /// Compares the VERIFICATION-GRADE hash
-    /// (<see cref="IFamilyContentHasher.ComputeForEmbeddedVerification"/>)
+    /// Compares the unified FHV10 content hash
+    /// (<see cref="IFamilyContentHasher.ComputeForLoadable"/>)
     /// of the nested family embedded in the active family document against
-    /// the same-grade hash of the resolved source .rfa — both extracted in
-    /// the same live session, so the comparison is context-consistent, and
-    /// the verification grade ignores regen-driven geometry metrics
-    /// (volumes/bounds/areas/curve lengths) that legitimately differ when
-    /// the host drives the nested family's instance parameters. The full
-    /// identity FHV9 stored in the catalog is NOT used here: it is
-    /// computed from the raw file, and a host-driven embedded definition
-    /// can never equal it (the round-3 bug — false failures on families
-    /// whose reload actually landed).
+    /// the same hash of the resolved source .rfa — both extracted in
+    /// the same live session, so the comparison is context-consistent
+    /// (probe 2026-08-12: the embedded EditFamily document keeps the
+    /// authored state byte-for-byte even under a host drive — the merge
+    /// transfers everything except parameter groups, which FHV10 no longer
+    /// hashes at all).
     /// Tri-state: <c>true</c> — embedded matches the file; <c>false</c> —
     /// differs (the reload did not land and the update MUST fail before
     /// any marker is written); <c>null</c> — NOT APPLICABLE / indeterminate
@@ -442,44 +439,12 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 return (null, null);
             }
 
-            // C1 (validator): OpenDocumentFile of an ALREADY-OPEN file
-            // returns the user's live document — hashing it would read
-            // unsaved edits, and the finally-block Close(false) would
-            // destroy them. Detect by PathName up front and bail out.
-            var resolvedFullPath = System.IO.Path.GetFullPath(resolved.AbsolutePath);
-            var alreadyOpen = doc.Application.Documents
-                .Cast<Document>()
-                .Any(d => !string.IsNullOrEmpty(d.PathName)
-                    && string.Equals(
-                        System.IO.Path.GetFullPath(d.PathName), resolvedFullPath, StringComparison.OrdinalIgnoreCase));
-            if (alreadyOpen)
+            var file = EmbeddedContentVerifier.ComputeFileHash(
+                doc, resolved.AbsolutePath, _snapshotExtractor!, _contentHasher!,
+                $"UpdateFamily[{catalogItemId}]");
+            if (file is null)
             {
-                SmartConLogger.Warn(
-                    $"UpdateFamily[{catalogItemId}]: the resolved file is open in the editor — " +
-                    "its on-disk content cannot be trusted for verification " +
-                    "[Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
                 return (null, null);
-            }
-
-            string? file = null;
-            Document? fileDoc = null;
-            try
-            {
-                fileDoc = doc.Application.OpenDocumentFile(resolved.AbsolutePath);
-                var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
-                file = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    $"UpdateFamily[{catalogItemId}]: could not extract the resolved file for verification: " +
-                    $"{ex.GetType().Name}: {ex.Message} " +
-                    "[Action: верификация пропущена — проверьте, что файл версии доступен на диске]");
-                return (null, null);
-            }
-            finally
-            {
-                try { fileDoc?.Close(false); } catch { }
             }
 
             return (embedded, file);
@@ -524,64 +489,14 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
     /// <summary>
     /// Verification-grade hash of a family nested inside an open family
-    /// document: EditFamily → snapshot →
-    /// <see cref="IFamilyContentHasher.ComputeForEmbeddedVerification"/>.
-    /// Returns <c>null</c> (verification not applicable) when the family
-    /// is not found or is open as a top-level document (EditFamily would
-    /// return the user's live document with unsaved edits, and closing it
-    /// would destroy them — skip instead; each case is logged with an
-    /// action).
+    /// document — delegates to <see cref="EmbeddedContentVerifier"/>
+    /// (shared with the stale-check content fallback).
     /// </summary>
     private string? ComputeEmbeddedVerificationHashOnRevitThread(
         Document doc, string familyName, string catalogItemId)
     {
-        var nested = new FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family))
-            .Cast<Autodesk.Revit.DB.Family>()
-            .FirstOrDefault(f => string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase));
-        if (nested is null)
-        {
-            SmartConLogger.Warn(
-                $"UpdateFamily[{catalogItemId}]: family '{familyName}' not found in the family document " +
-                "[Action: верификация пропущена — семейство не вложено в активный документ]");
-            return null;
-        }
-
-        // Guard: the family is open as a top-level document — EditFamily
-        // would return the user's live document (unsaved edits), and the
-        // finally-block Close(false) would destroy them. Match by Title
-        // (file name) AND by OwnerFamily name (renamed files), M2.
-        var isOpenTopLevel = doc.Application.Documents
-            .Cast<Document>()
-            .Any(d => d.IsFamilyDocument
-                && (string.Equals(d.Title, familyName, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(d.OwnerFamily?.Name, familyName, StringComparison.OrdinalIgnoreCase)));
-        if (isOpenTopLevel)
-        {
-            SmartConLogger.Warn(
-                $"UpdateFamily[{catalogItemId}]: '{familyName}' is open in the Family Editor — embedded content cannot be trusted " +
-                "[Action: закройте семейство в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
-            return null;
-        }
-
-        Document? copy = null;
-        try
-        {
-            copy = doc.EditFamily(nested);
-            var snapshot = _snapshotExtractor!.ExtractFromFamilyDocument(copy);
-            return _contentHasher!.ComputeForEmbeddedVerification(snapshot)?.HexString;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"UpdateFamily[{catalogItemId}]: embedded hash computation failed for '{familyName}': {ex.GetType().Name}: {ex.Message} " +
-                "[Action: верификация пропущена — семейство останется stale, повторите «Обновить»]");
-            return null;
-        }
-        finally
-        {
-            try { copy?.Close(false); } catch { }
-        }
+        return EmbeddedContentVerifier.ComputeEmbeddedHash(
+            doc, familyName, _snapshotExtractor!, _contentHasher!, $"UpdateFamily[{catalogItemId}]");
     }
 
     /// <summary>
@@ -729,7 +644,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         {
             fileDoc = doc.Application.OpenDocumentFile(resolved.AbsolutePath);
             var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
-            fileHash = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
+            fileHash = _contentHasher!.ComputeForLoadable(snap)?.HexString;
         }
         catch (Exception ex)
         {
@@ -780,7 +695,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 try
                 {
                     var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
-                    fileHash = _contentHasher!.ComputeForEmbeddedVerification(snap)?.HexString;
+                    fileHash = _contentHasher!.ComputeForLoadable(snap)?.HexString;
                 }
                 catch (Exception ex)
                 {

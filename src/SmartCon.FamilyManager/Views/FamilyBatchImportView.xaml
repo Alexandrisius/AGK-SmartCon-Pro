@@ -373,11 +373,13 @@
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center">
-                                    <TextBlock VerticalAlignment="Center">
+                                    <TextBlock VerticalAlignment="Center"
+                                               ToolTip="{Binding MarkerResolvedTooltip, TargetNullValue={x:Null}}">
                                         <TextBlock.Text>
                                             <MultiBinding Converter="{StaticResource StatusConverter}">
                                                 <Binding Path="Status"/>
                                                 <Binding Path="MatchedVersionLabel"/>
+                                                <Binding Path="IsMarkerResolvedVersion"/>
                                             </MultiBinding>
                                         </TextBlock.Text>
                                     </TextBlock>

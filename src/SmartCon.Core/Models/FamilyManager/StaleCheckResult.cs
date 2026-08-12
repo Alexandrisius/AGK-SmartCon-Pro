@@ -23,6 +23,15 @@ public enum StaleReason
 
     /// <summary>Family exists in the project but is not in the FamilyManager catalog.</summary>
     NotInCatalog = 4,
+
+    /// <summary>
+    /// #180: the ES marker matches the catalog's current version, but the
+    /// FHV10 content proof shows the embedded/loaded copy was EDITED
+    /// LOCALLY (type values, formulas, geometry, connectors) after the
+    /// marker was written. Marker-only checks are blind to this drift.
+    /// «Обновить» restores the catalog content (local edits are lost).
+    /// </summary>
+    ContentDrift = 5,
 }
 
 /// <summary>

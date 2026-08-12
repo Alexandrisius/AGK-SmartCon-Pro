@@ -48,7 +48,7 @@ public interface IFamilyContentHasher
 }
 ```
 
-- `ComputeForLoadable` — returns `null` if the snapshot is null or empty (no parameters, no types, no geometry).
+- `ComputeForLoadable` — returns `null` if the snapshot is null or empty (no parameters, no types, no geometry). FHV10 (2026-08-12): единственный грейд — используется и для identity (дедуп/версии, хранится в БД), и для embedded-верификации (эфемерно, в сессии); отдельного verification-метода больше нет.
 - `ComputeForSystem` — returns `null` if the snapshot is null or has no types.
 
 **v2.0.0 stability rules:**

@@ -51,7 +51,7 @@ namespace SmartCon.Core.Models.FamilyManager;
     /// (<c>SmartCon_FamilyVersion_v1</c>) read from the embedded nested
     /// family element in the parent's family document — set on nested-child
     /// rows only. The marker is written by the stale-update command ONLY
-    /// after the embedded content passed FHV8V verification, so it is a
+    /// after the embedded content passed FHV10 verification, so it is a
     /// stronger version signal than identity-hash matching (which cannot
     /// see past parameter groups — a merge never propagates them).
     /// </param>
@@ -80,4 +80,16 @@ namespace SmartCon.Core.Models.FamilyManager;
     IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
     IReadOnlyList<FamilyDependencyDescriptor>? SharedNestedDependencies = null,
     string? EmbeddedMarkerCatalogItemId = null,
-    string? EmbeddedMarkerVersionLabel = null);
+    string? EmbeddedMarkerVersionLabel = null,
+    /// <summary>
+    /// #180 (2026-08-12): <c>true</c> when <see cref="MatchedVersionLabel"/>
+    /// came from the verified ES marker override
+    /// (<c>EmbeddedMarkerMatchResolver</c>), not from the content-hash
+    /// dedup — i.e. the embedded identity hash disagrees (or has no match).
+    /// Expected after a nested update: a merge never propagates parameter
+    /// groups, so the identity hash keeps matching the OLD version forever.
+    /// Display-only flag: the batch dialog annotates the version as
+    /// marker-resolved so "Duplicate (v2)" is not read as "content-identical
+    /// to v2". Never consumed by import logic (MakeActive/executor).
+    /// </summary>
+    bool IsMarkerResolvedVersion = false);

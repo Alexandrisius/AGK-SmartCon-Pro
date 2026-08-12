@@ -1420,10 +1420,10 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_Fhv9GoldenCanon_IsStable()
+    public void ComputeForLoadable_Fhv10GoldenCanon_IsStable()
     {
         // Golden: a FIXED loadable snapshot must always produce this exact
-        // hash — any drift in the FHV9 loadable canon (escaping, culture,
+        // hash — any drift in the FHV10 loadable canon (escaping, culture,
         // ordering, section layout, NESTEDHASH pairs, PHANTOM values) fails
         // loudly here. When the canon changes ON PURPOSE, bump
         // FamilyContentHashFormat.CurrentVersion and update the golden in
@@ -1454,7 +1454,7 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("EB223AC43D8E20332EC89FCC4D866BB720708EF499908049CF15919889985DC2", hash.HexString);
+        Assert.Equal("8EC56088752ACB441B02732D502644B2E93776CA564A7BFE541FD149FCD62A23", hash.HexString);
     }
 
     private static FamilySnapshot CreateVerificationBaseline()
@@ -1484,15 +1484,17 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_DrivenGeometryNoise_Ignored()
+    public void UnifiedHash_GeometryMetricChange_Detected()
     {
-        // #209 round-4: a host driving the nested family's instance
-        // parameters regenerates embedded geometry at host-pushed sizes —
-        // volumes, bounds, surface areas and curve lengths differ even for
-        // identical definitions. Verification-grade hash must ignore them
-        // (the identity hash must not).
+        // FHV10 unified hash (probe 2026-08-12,
+        // DrivenEmbeddedPollutionProbeTests): the "host-driven regen
+        // pollutes the embedded document" hypothesis is DISPROVED —
+        // associations live on instances in the host, the EditFamily
+        // document keeps the authored state byte-for-byte. So geometry
+        // metrics are hashed like any other content: a metric diff means
+        // a REAL content diff (incl. #180 free-form local edits).
         var baseline = CreateVerificationBaseline();
-        var drivenCopy = baseline with
+        var metricChanged = baseline with
         {
             Geometry = baseline.Geometry with
             {
@@ -1506,28 +1508,28 @@ public class FamilyContentHasherTests
             },
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(drivenCopy);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(metricChanged);
         Assert.NotNull(verifyA);
         Assert.NotNull(verifyB);
-        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
 
         var identityA = _hasher.ComputeForLoadable(baseline);
-        var identityB = _hasher.ComputeForLoadable(drivenCopy);
+        var identityB = _hasher.ComputeForLoadable(metricChanged);
         Assert.NotEqual(identityA!.HexString, identityB!.HexString);
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_ParameterGroupChange_Ignored()
+    public void UnifiedHash_ParameterGroupChange_NeverShiftsHash()
     {
-        // #209 (owner decision 2026-08-11, probe-proven): NO reload path —
-        // API or UI, even a full overwrite that lands new types — ever
-        // propagates a parameter's group; the embedded definition keeps the
-        // host's grouping forever. A group-included verification hash is
-        // unreachable in principle, so the verification grade EXCLUDES
-        // groups (like regen-driven geometry). The identity hash keeps
-        // them: a fresh load ships the file's grouping, so a regroup still
-        // version-bumps the catalog.
+        // FHV10 (owner decision 2026-08-12): parameter groups are NOT
+        // hashed at all — they are the only content field a reload merge
+        // physically cannot transfer (probe-proven twice: UI/plain-merge
+        // 2026-08-11, poke + doc-to-doc 2026-08-12), so versioning them
+        // forked one identification into two divergent grades. The single
+        // unified hash now ignores a regroup in EVERY context: import
+        // dedup, versioning, embedded verification. Product tradeoff
+        // (accepted): a group-only edit no longer version-bumps.
         var baseline = CreateVerificationBaseline();
         var regrouped = baseline with
         {
@@ -1538,19 +1540,15 @@ public class FamilyContentHasherTests
             ],
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(regrouped);
-        Assert.NotNull(verifyA);
-        Assert.NotNull(verifyB);
-        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
-
-        var identityA = _hasher.ComputeForLoadable(baseline);
-        var identityB = _hasher.ComputeForLoadable(regrouped);
-        Assert.NotEqual(identityA!.HexString, identityB!.HexString);
+        var hashA = _hasher.ComputeForLoadable(baseline);
+        var hashB = _hasher.ComputeForLoadable(regrouped);
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.Equal(hashA!.HexString, hashB!.HexString);
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_FormulaChange_Detected()
+    public void UnifiedHash_FormulaChange_Detected()
     {
         var baseline = CreateVerificationBaseline();
         var formulaChanged = baseline with
@@ -1562,16 +1560,16 @@ public class FamilyContentHasherTests
             ],
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(formulaChanged);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(formulaChanged);
         Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_TopologyChange_Detected()
+    public void UnifiedHash_TopologyChange_Detected()
     {
-        // Face/edge counts and form kinds stay in the verification grade —
-        // they are topology, not size.
+        // Face/edge counts and form kinds are hashed — they are topology,
+        // not size.
         var baseline = CreateVerificationBaseline();
         var topologyChanged = baseline with
         {
@@ -1585,13 +1583,13 @@ public class FamilyContentHasherTests
             },
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(topologyChanged);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(topologyChanged);
         Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_TypeValueChange_Detected()
+    public void UnifiedHash_TypeValueChange_Detected()
     {
         // Type values are NOT host-drivable for shared nested families
         // (only instance parameters can be associated in the host).
@@ -1605,24 +1603,25 @@ public class FamilyContentHasherTests
             ],
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(valueChanged);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(valueChanged);
         Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_NullSnapshot_ReturnsNull()
+    public void UnifiedHash_NullSnapshot_ReturnsNull()
     {
-        Assert.Null(_hasher.ComputeForEmbeddedVerification(null!));
+        Assert.Null(_hasher.ComputeForLoadable(null!));
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_MultiFormVolumeReordering_Ignored()
+    public void UnifiedHash_MetricDifferentForms_Detected()
     {
-        // Validator H1: forms of the same kind sorted by Volume in the
-        // identity hash — host-driven sizes can swap their relative order
-        // between the embedded copy and the raw file. The verification
-        // grade sorts only by topology fields, so the swap is invisible.
+        // Forms with the same topology but different metrics are a REAL
+        // content diff (embedded pollution disproved — see
+        // DrivenEmbeddedPollutionProbeTests) and must be detected. The
+        // sort keys stay topology-based, so identical twins still cannot
+        // false-fail on extraction order (validator H1).
         var formA = new FormMetrics("Extrusion", true, 0.5, 6, 9, null, 1.25,
             new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1));
         var formB = new FormMetrics("Extrusion", true, 0.8, 6, 9, null, 1.6,
@@ -1631,9 +1630,8 @@ public class FamilyContentHasherTests
         {
             Geometry = new GeometryMetrics(2, [formA, formB]),
         };
-        var drivenResized = baseline with
+        var resized = baseline with
         {
-            // Host-driven regen shrank B below A — same topology, sizes differ.
             Geometry = new GeometryMetrics(2,
             [
                 formB with { Volume = 0.4, SurfaceArea = 1.1, Bounds = new BoundingBoxSnapshot(0, 0, 0, 0.5, 0.5, 1) },
@@ -1641,9 +1639,9 @@ public class FamilyContentHasherTests
             ]),
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(drivenResized);
-        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(resized);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 
     private static FamilyParameterValue PhantomValue(string name, string? text, double? number = null)
@@ -1731,21 +1729,22 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForEmbeddedVerification_PhantomValues_Ignored()
+    public void UnifiedHash_PhantomValues_Detected()
     {
-        // Verification grade compares an embedded EditFamily copy with the
-        // source file — embedded phantom values can be host-driven via
-        // associations, so they must NOT participate (same rationale as
-        // parameter groups).
+        // Phantom values are hashed (FHV9+/FHV10): the embedded document
+        // keeps the authored phantom values even under a host drive
+        // (probe), and the two extraction contexts (EditFamily current
+        // type vs raw-open synthesized type) read the same defaults
+        // (ADR-068 §6 probe). A phantom diff = real diff.
         var baseline = CreateVerificationBaseline();
         var withPhantom = baseline with
         {
             PhantomTypeValues = [PhantomValue("Модель", "M-100")],
         };
 
-        var verifyA = _hasher.ComputeForEmbeddedVerification(baseline);
-        var verifyB = _hasher.ComputeForEmbeddedVerification(withPhantom);
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(withPhantom);
 
-        Assert.Equal(verifyA!.HexString, verifyB!.HexString);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 }

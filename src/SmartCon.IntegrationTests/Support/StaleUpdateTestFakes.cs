@@ -209,8 +209,9 @@ internal sealed class CountingLoadService : IFamilyLoadServiceSourceAware
 }
 
 /// <summary>
-/// Corrupts the 1st and 3rd <c>ComputeForEmbeddedVerification</c> calls
-/// (embedded pre-verify and embedded post-verify in the orchestration) —
+/// Corrupts the 1st and 3rd <c>ComputeForLoadable</c> calls
+/// (embedded pre-verify and embedded post-verify in the orchestration —
+/// FHV10 unified the verification hash into <c>ComputeForLoadable</c>) —
 /// the negative contract: a post-verify mismatch fails the update and NO
 /// marker is written.
 /// </summary>
@@ -219,10 +220,10 @@ internal sealed class CorruptEmbeddedVerifyHasher : IFamilyContentHasher
     private readonly FamilyContentHasher _inner = new();
     private int _verifyCalls;
 
-    public FamilyContentHash? ComputeForEmbeddedVerification(FamilySnapshot snapshot)
+    public FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot)
     {
         _verifyCalls++;
-        var real = _inner.ComputeForEmbeddedVerification(snapshot);
+        var real = _inner.ComputeForLoadable(snapshot);
         if ((_verifyCalls == 1 || _verifyCalls == 3) && real is not null)
         {
 #pragma warning disable CA1845 // string.Concat(AsSpan) does not exist on net48
@@ -233,11 +234,6 @@ internal sealed class CorruptEmbeddedVerifyHasher : IFamilyContentHasher
 #pragma warning restore CA1845
         }
         return real;
-    }
-
-    public FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot)
-    {
-        return _inner.ComputeForLoadable(snapshot);
     }
 
     public FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot)
@@ -281,4 +277,115 @@ internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogServi
     public bool? ShowAvatarCropper(object viewModel) => null;
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request)
         => SharedFamiliesLoadChoice.OverwriteAll;
+}
+
+/// <summary>Catalog provider over a fixed item list (stale-check tests).</summary>
+internal sealed class StubCatalogProvider : IFamilyCatalogProvider
+{
+    private readonly IReadOnlyList<FamilyCatalogItem> _items;
+
+    public StubCatalogProvider(IReadOnlyList<FamilyCatalogItem> items)
+    {
+        _items = items;
+    }
+
+    public FamilyCatalogCapabilities GetCapabilities()
+        => new(true, true, true, true, true, CatalogProviderKind.Local);
+    public Task<IReadOnlyList<FamilyCatalogItem>> SearchAsync(FamilyCatalogQuery query, CancellationToken ct = default)
+        => Task.FromResult(_items);
+    public Task<FamilyCatalogItem?> GetItemAsync(string id, CancellationToken ct = default)
+        => Task.FromResult<FamilyCatalogItem?>(_items.FirstOrDefault(i => string.Equals(i.Id, id, StringComparison.Ordinal)));
+    public Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<FamilyCatalogVersion>>(Array.Empty<FamilyCatalogVersion>());
+    public Task<FamilyCatalogVersion?> GetVersionByIdAsync(string catalogItemId, string versionId, CancellationToken ct = default)
+        => Task.FromResult<FamilyCatalogVersion?>(null);
+    public Task<FamilyCatalogVersion?> GetVersionByLabelAsync(string catalogItemId, string versionLabel, int targetRevitMajorVersion = 0, CancellationToken ct = default)
+        => Task.FromResult<FamilyCatalogVersion?>(null);
+    public Task<FamilyFileRecord?> GetFileAsync(string fileId, CancellationToken ct = default)
+        => Task.FromResult<FamilyFileRecord?>(null);
+    public Task<int> GetItemCountAsync(CancellationToken ct = default) => Task.FromResult(_items.Count);
+    public Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<int>>(Array.Empty<int>());
+    public Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, string? familySource = null, CancellationToken ct = default)
+        => Task.FromResult<FamilyCatalogItem?>(null);
+    public Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(int revitCategoryId, string familySource, CancellationToken ct = default)
+        => Task.FromResult<FamilyCatalogItem?>(null);
+    public Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(string hexHash, int hashFormatVersion, string familySource, CancellationToken ct = default)
+        => Task.FromResult<ContentHashMatch?>(null);
+    public Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default)
+        => Task.FromResult(_items);
+    public Task<IReadOnlyList<string>> GetAllTagsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+}
+
+internal sealed class NullSystemTypeFinder : ISystemTypeFinder
+{
+    public ElementId? FindTypeByName(
+        Document doc, string typeName, int? categoryOrdinal, string? familyName = null, string? familyKey = null)
+        => null;
+    public IReadOnlyList<SystemTypeLocation> CollectTypes(
+        Document doc, IReadOnlyCollection<int> categoryOrdinals)
+        => Array.Empty<SystemTypeLocation>();
+}
+
+internal sealed class NullSystemTypeVersionStore : ISystemTypeVersionStore
+{
+    public FamilyVersion? ReadFromType(Document doc, ElementId typeId) => null;
+    public void WriteToType(Document doc, ElementId typeId, FamilyVersion version) { }
+    public IReadOnlyDictionary<ElementId, FamilyVersion?> ReadManyFromTypes(Document doc, IEnumerable<ElementId> typeIds)
+        => new Dictionary<ElementId, FamilyVersion?>();
+}
+
+internal sealed class NullFamilyTypeRepository : IFamilyTypeRepository
+{
+    public Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemAsync(string catalogItemId, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<FamilyTypeDescriptor>>(Array.Empty<FamilyTypeDescriptor>());
+    public Task<IReadOnlyList<FamilyTypeDescriptor>> GetTypesForItemVersionAsync(string catalogItemId, string? versionId, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<FamilyTypeDescriptor>>(Array.Empty<FamilyTypeDescriptor>());
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>>> GetAllTypesBatchAsync(IEnumerable<string> catalogItemIds, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<FamilyTypeDescriptor>>>(
+            new Dictionary<string, IReadOnlyList<FamilyTypeDescriptor>>());
+    public Task<IReadOnlyDictionary<string, string>> SyncTypesAsync(
+        string catalogItemId, string? versionId, string? fileId, string runId,
+        IReadOnlyList<FamilyTypeDescriptor> types, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
+    public Task<bool> HasTypesAsync(string catalogItemId, CancellationToken ct = default)
+        => Task.FromResult(false);
+}
+
+/// <summary>
+/// Decorator over the real extractor that counts
+/// <see cref="ExtractFromFamilyDocument"/> calls — the stale-check
+/// fast-path contracts assert ZERO extractions (no document opened) and the
+/// per-run file-hash cache contract asserts the exact extraction count.
+/// </summary>
+internal sealed class CountingSnapshotExtractor : IFamilySnapshotExtractor
+{
+    private readonly IFamilySnapshotExtractor _inner;
+
+    public CountingSnapshotExtractor(IFamilySnapshotExtractor inner)
+    {
+        _inner = inner;
+    }
+
+    public int FamilyDocumentExtractions { get; private set; }
+
+    public FamilySnapshot ExtractFromFamilyDocument(Document familyDoc)
+    {
+        FamilyDocumentExtractions++;
+        return _inner.ExtractFromFamilyDocument(familyDoc);
+    }
+
+    public SystemFamilySnapshot ExtractFromProject(
+        Document projectDoc, IReadOnlyList<string> typeUniqueIds, BuiltInCategory builtInCategory)
+        => _inner.ExtractFromProject(projectDoc, typeUniqueIds, builtInCategory);
+
+    public SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(Document stagedDoc, BuiltInCategory builtInCategory)
+        => _inner.ExtractSystemCategoryFromStagedProject(stagedDoc, builtInCategory);
+
+    public SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId)
+        => _inner.ExtractSingleSystemType(projectDoc, typeId);
+
+    public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(Document familyDoc, CancellationToken ct = default)
+        => _inner.ExtractGeometryPerType(familyDoc, ct);
 }

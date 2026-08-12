@@ -119,7 +119,16 @@ public sealed record FamilyBatchImportItem(
     string? ExistingCategoryId = null,
     string? ExistingCategoryPath = null,
     FamilyHealthReport? HealthReport = null,
-    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null)
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
+    /// <summary>
+    /// #180 (2026-08-12): <see cref="MatchedVersionLabel"/> came from the
+    /// verified ES marker override, not from content-hash dedup (the
+    /// embedded identity hash disagrees or has no match — expected after a
+    /// nested update, a merge never propagates parameter groups).
+    /// Display-only: the status column annotates the version as
+    /// marker-resolved. Never consumed by import logic.
+    /// </summary>
+    bool IsMarkerResolvedVersion = false)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

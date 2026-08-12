@@ -105,7 +105,41 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
     [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
     [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
+    [NotifyPropertyChangedFor(nameof(MarkerResolvedTooltip))]
     private string? _matchedVersionLabel;
+
+    /// <summary>
+    /// #180 (2026-08-12): <c>true</c> when <see cref="MatchedVersionLabel"/>
+    /// came from the verified ES marker override, not from content-hash
+    /// dedup (the embedded identity hash disagrees or has no match —
+    /// expected after a nested update: a merge never propagates parameter
+    /// groups, so the identity hash keeps matching the OLD version). The
+    /// status column annotates the version as marker-resolved so
+    /// "Duplicate (v2)" is not misread as "content-identical to v2".
+    /// Display-only flag — never consumed by import logic.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MarkerResolvedTooltip))]
+    private bool _isMarkerResolvedVersion;
+
+    /// <summary>Localized explanation shown on a marker-resolved version label.</summary>
+    public string? MarkerResolvedTooltip
+    {
+        get
+        {
+            if (!IsMarkerResolvedVersion)
+            {
+                return null;
+            }
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_MarkerResolved_Tooltip)
+                ?? "Version {0} was resolved by the verification marker (content verified during update). The embedded copy's content hash matches a different version: parameter groups never propagate on merge — this is expected.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                MatchedVersionLabel ?? string.Empty);
+        }
+    }
 
     /// <summary>
     /// Issue #126: <c>true</c> when the content hash matched a catalog
@@ -577,6 +611,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedContentHash = item.ContentHash;
         _hashFormatVersion = item.HashFormatVersion;
         _matchedVersionLabel = item.MatchedVersionLabel;
+        _isMarkerResolvedVersion = item.IsMarkerResolvedVersion;
         _isCrossNameDuplicate = item.IsCrossNameDuplicate;
         _matchedItemName = item.MatchedItemName;
         _action = item.Action;

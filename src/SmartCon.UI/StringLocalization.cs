@@ -375,6 +375,8 @@ public static class StringLocalization
         public const string FM_BatchImport_ActionOverwrite = "FM_BatchImport_ActionOverwrite";
         public const string FM_BatchImport_ActionSkip = "FM_BatchImport_ActionSkip";
         public const string FM_BatchImport_OutdatedNested_Tooltip = "FM_BatchImport_OutdatedNested_Tooltip";
+        public const string FM_BatchImport_MarkerResolved_Tooltip = "FM_BatchImport_MarkerResolved_Tooltip";
+        public const string FM_BatchImport_StatusMarkerSuffix = "FM_BatchImport_StatusMarkerSuffix";
         public const string FM_BatchImport_OutdatedNestedBlock_Tooltip = "FM_BatchImport_OutdatedNestedBlock_Tooltip";
         public const string FM_Tree_OutdatedDependencies_Tooltip = "FM_Tree_OutdatedDependencies_Tooltip";
         public const string FM_DependencyGuard_AndMore = "FM_DependencyGuard_AndMore";
@@ -576,6 +578,7 @@ public static class StringLocalization
         public const string FM_StaleTooltipMismatch = "FM_StaleTooltipMismatch";
         public const string FM_StaleTooltipRevitVer = "FM_StaleTooltipRevitVer";
         public const string FM_StaleTooltipNotInCatalog = "FM_StaleTooltipNotInCatalog";
+        public const string FM_StaleTooltipContentDrift = "FM_StaleTooltipContentDrift";
         public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
         public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";

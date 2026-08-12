@@ -227,4 +227,34 @@ public sealed class FamilyBatchImportDependencyTests
         Assert.Equal(FamilyDependencyKind.Routing, link.Kind);
         Assert.Equal("ADSK_Отвод:Стандарт", link.PartName);
     }
+
+    // ---- #180: marker-resolved version origin annotation ----
+
+    [Fact]
+    public void Row_MarkerResolvedVersion_TooltipExplainsOrigin()
+    {
+        // The nested update healed the marker to the ACTIVE version (v2),
+        // but the embedded identity hash keeps matching v1 (parameter
+        // groups never propagate on merge) — the row must disclose that
+        // the shown version is marker-resolved, not content-matched.
+        var item = MakeOutdatedChildItem("Фланец") with
+        {
+            MatchedVersionLabel = "v2",
+            IsMarkerResolvedVersion = true,
+        };
+        var row = new FamilyBatchImportRow(item);
+
+        Assert.True(row.IsMarkerResolvedVersion);
+        Assert.NotNull(row.MarkerResolvedTooltip);
+        Assert.Contains("v2", row.MarkerResolvedTooltip);
+    }
+
+    [Fact]
+    public void Row_HashResolvedVersion_NoMarkerAnnotation()
+    {
+        var row = new FamilyBatchImportRow(MakeOutdatedChildItem("Фланец"));
+
+        Assert.False(row.IsMarkerResolvedVersion);
+        Assert.Null(row.MarkerResolvedTooltip);
+    }
 }

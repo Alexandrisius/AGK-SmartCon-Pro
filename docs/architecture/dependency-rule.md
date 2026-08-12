@@ -26,7 +26,10 @@
 | **ProjectManagement** | да | — | да | — | — | — | — |
 | **FamilyManager** | да | — | да | — | — | — | — |
 | **Tests** | да | — | — | — | да | да | да |
-| **IntegrationTests** | да | да | — | — | — | — | — |
+| **IntegrationTests** | да | да | — | — | — | — | да* |
+
+\* IntegrationTests → FamilyManager: только для оркестрационных тестов
+internal stale-сервисов в реальном Revit (2026-08); WPF-типы модуля запрещены.
 
 ### SmartCon.IntegrationTests (особая роль)
 
@@ -34,8 +37,13 @@
 на `SmartCon.Revit`: его назначение — тестировать границу SmartCon ↔ Revit API
 внутри реального процесса Revit (Nice3point.TUnit.Revit, см.
 `.agents/skills/smartcon-testing/references/integration-testing.md`).
-Ограничения: только Core + Revit, без UI/App/модулей; типы RevitAPIUI в тестах
+Ограничения: без UI/App/модулей-ViewModels; типы RevitAPIUI в тестах
 запрещены (тест-хост без UI-сессии — FileLoadException дестабилизирует сессию).
+**Исключение (2026-08):** разрешена ссылка и на `SmartCon.FamilyManager` —
+оркестрационные тесты stale-update (`StaleUpdaterOrchestrationTests`,
+`StaleCheckContentFallbackTests`) прогоняют настоящие internal-сервисы модуля
+(`StaleFamilyUpdater`, `StaleDetector`) внутри реального Revit; WPF-типы
+модуля по-прежнему запрещены (тот же краш-хост риск).
 
 ### SmartCon.Dependencies (net48 only, ADR-051)
 

@@ -29,8 +29,12 @@ public sealed class FamilyBatchImportStatusConverter : IValueConverter, IMultiVa
 
         var status = values[0] is FamilyBatchImportStatus s ? s : FamilyBatchImportStatus.New;
         var versionLabel = values.Length > 1 ? values[1] as string : null;
+        // #180: third binding — the matched version came from the verified
+        // ES marker, not from content-hash dedup; annotate it so
+        // "Duplicate (v2)" is not misread as "content-identical to v2".
+        var isMarkerResolved = values.Length > 2 && values[2] is bool b && b;
 
-        return StatusToString(status, versionLabel);
+        return StatusToString(status, versionLabel, isMarkerResolved);
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
@@ -38,7 +42,7 @@ public sealed class FamilyBatchImportStatusConverter : IValueConverter, IMultiVa
         throw new NotSupportedException();
     }
 
-    private static string StatusToString(FamilyBatchImportStatus status, string? versionLabel)
+    private static string StatusToString(FamilyBatchImportStatus status, string? versionLabel, bool isMarkerResolved = false)
     {
         var baseText = status switch
         {
@@ -50,7 +54,12 @@ public sealed class FamilyBatchImportStatusConverter : IValueConverter, IMultiVa
         };
 
         if (status == FamilyBatchImportStatus.Duplicate && !string.IsNullOrWhiteSpace(versionLabel))
-            return $"{baseText} ({versionLabel})";
+        {
+            var markerSuffix = isMarkerResolved
+                ? $" — {LanguageManager.GetString(StringLocalization.Keys.FM_BatchImport_StatusMarkerSuffix) ?? "marker"}"
+                : string.Empty;
+            return $"{baseText} ({versionLabel}{markerSuffix})";
+        }
 
         return baseText;
     }

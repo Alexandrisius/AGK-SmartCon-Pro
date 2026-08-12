@@ -117,6 +117,7 @@ ull depending on FamilySource.
 ull for UC-1/UC-2.
 - MatchedVersionLabel — set when Status == Duplicate so the UI can show "Дубликат (v2)".
 - IsCrossNameDuplicate / MatchedItemName — Issue #126: хэш совпал с айтемом под другим именем; прокидывается в batch-строку для ⚠-иконки и tooltip.
+- `EmbeddedMarkerCatalogItemId` / `EmbeddedMarkerVersionLabel` (#209, в сигнатуре записи) — ES-маркер вложенного семейства, прочитанный при подготовке; `IsMarkerResolvedVersion` (#180, 2026-08-12) — matched-версия взята из верифицированного маркера вопреки identity-матчу; batch-диалог помечает такие строки «— маркер» (при FHV10 противоречие структурно невозможно — индикатор краевых случаев).
 ---
 
 ## FamilyContentHash
@@ -133,7 +134,7 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
     public const int RecalculationSkipped = -1;
     public const int RecalculationMissing = -2;
 }
@@ -142,7 +143,7 @@ public static class FamilyContentHashFormat
 - `HexString` — SHA-256 hex string (uppercase, no dashes).
 - `FormatVersion` — algorithm version, bumped when canonical-string format changes so old hashes do not produce false duplicate matches against newly computed hashes.
 - `SourceKind` — `"loadable"` or `"system"`. Used to enforce cross-source separation (system hashes never match loadable hashes and vice versa).
-- `FamilyContentHashFormat.CurrentVersion` — **= 9 (FHV9, #209 стресс-тест 2026-08-12)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`), system-строки мигрированы дешёвым UPDATE флага; v3 — категория стала локале-инвариантным ordinal, добавлены секции FACTS/FLAGS/CONN (loadable) и STRUCT/ROUTING (system), геометрия расширена (bbox/surface/длины кривых), значения экранируются; обе source мигрируются полным пересчётом из файла (задача `hash-v3`); v4–v7 — system-only покрытие (FAMKEY/STRUCT+/SEGMENTS/SUBTYPES/RAILING, WIRE, детерминированный порядок TYPES, Shape-дискриминатор duct; задачи `hash-v5`/`hash-v6`/`hash-v7`); v8 — loadable-only: секция NESTEDHASH (композитные хэши прямых shared-nested детей), задача `hash-v8`; **v9 — loadable-only: секция PHANTOM (значения phantom-типа безтиповых семейств), задача `hash-v9`, floor `DbCompatibility` bump → 2.0.1-beta.9**.
+- `FamilyContentHashFormat.CurrentVersion` — **= 10 (FHV10, решение владельца 2026-08-12)**. История: v1 — loadable canonical string включал имя семейства (`FHV1|LOADABLE|{name}|...`), переименованные файлы давали другой хэш; v2 — имя исключено (`FHV2|LOADABLE|{cat}|...`), system-строки мигрированы дешёвым UPDATE флага; v3 — категория стала локале-инвариантным ordinal, добавлены секции FACTS/FLAGS/CONN (loadable) и STRUCT/ROUTING (system), геометрия расширена (bbox/surface/длины кривых), значения экранируются; обе source мигрируются полным пересчётом из файла (задача `hash-v3`); v4–v7 — system-only покрытие (FAMKEY/STRUCT+/SEGMENTS/SUBTYPES/RAILING, WIRE, детерминированный порядок TYPES, Shape-дискриминатор duct; задачи `hash-v5`/`hash-v6`/`hash-v7`); v8 — loadable-only: секция NESTEDHASH (композитные хэши прямых shared-nested детей), задача `hash-v8`; **v9 — loadable-only: секция PHANTOM (значения phantom-типа безтиповых семейств), задача `hash-v9`, floor `DbCompatibility` bump → 2.0.1-beta.9**; **v10 — loadable-only: группа параметра исключена из PARAMS (единственное поле, непереносимое merge'ем — зонд-доказано), единый хэш для identity и embedded-верификации, задача `hash-v10`, floor остаётся 2.0.1-beta.9 (v9-хэши не выпускались в релизных сборках)**.
 - `FamilyContentHashFormat.RecalculationSkipped` — sentinel `-1`: миграция помечает версии, чей файл безвозвратно нечитаем; исключены из pending-числа и никогда не ретраятся.
 - `FamilyContentHashFormat.RecalculationMissing` — sentinel `-2`: managed-файл отсутствует на диске; исключён из pending-числа (purge/restore — решение пользователя).
 
@@ -203,8 +204,8 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 }
 `
 
-**Canonical string layout (FHV9, #209):**
-- `FHV9|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED|NONSHARED|NESTEDHASH|FACTS|FLAGS|CONN|...` (loadable)
+**Canonical string layout (FHV10, #180 follow-up):**
+- `FHV10|LOADABLE|{catOrdinal}|PARAMS(без группы)|...|TYPES|...|PHANTOM|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED|NONSHARED|NESTEDHASH|FACTS|FLAGS|CONN|...` (loadable)
 - `FHV7|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|STRUCT|...|ROUTING|...|SEGMENTS|SUBTYPES|RAILING|WIRE|...` (system)
 
 **FHV8 (композитный хэш вложенных, #209, ADR-066):**
@@ -218,9 +219,14 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 **FHV9 (значения phantom-типа, #209 стресс-тест 2026-08-12):**
 - Секция `PHANTOM` (только identity-грейд) — значения параметров **безтипового** семейства (нет именованных типов). FHV8 пропускал phantom целиком, и значения typeless-семейств выпали из хэша: правка любого не-геометрического значения (встроенная «Модель» и т.п.) не меняла хэш → ложный «Дубликат» при импорте, невозможно создать новую версию.
 - Экстракция контекстно-стабильна (`RevitFamilySnapshotExtractor.ExtractPhantomTypeValues`): редактор/EditFamily-копия — значения текущего безымянного типа (Size=1); raw-открытие (Size=0, нет CurrentType) — синтез временного типа `NewType` в транзакции с **RollBack** (файл не меняется; зонд-доказано 2026-08-12). Оба контекста читают одни и те же дефолтные значения → равенство «файл ↔ вложенная копия» сохраняется.
-- **Verification-грейд (FHV8V, эфемерный) PHANTOM НЕ включает**: embedded-значения phantom могут драйвиться хостом через ассоциации и не сравнимы с файлом (та же причина, по которой исключены группы параметров). Следствие-дизайн: value-only правка phantom-вложенного не запускает reload при «Обновить» (pre-verify совпадает → только маркер) — осознанное ограничение, задокументированное в ADR-068.
 - Раскатка: критическая задача `hash-v9` пересчитывает все не-current строки (PHANTOM меняет хэши typeless-семейств и их предков через NESTEDHASH); `DbCompatibility.CurrentMinPluginVersion` bump → `2.0.1-beta.9` (breaking data format, прецедент FHV8).
-- Тесты: юнит `FamilyContentHasherTests` (PHANTOM shift/change/order/blank/verify-ignored + golden FHV9), интеграционные `PhantomTypeValueHashTests` (cross-context равенство raw↔EditFamily через persisted phantom, value-edit меняет identity, verify игнорирует).
+
+**FHV10 (группы параметров уходят из хэша — единый хэш на всё, решение владельца 2026-08-12):**
+- Поле `ParameterGroup` исключено из секции PARAMS. Обоснование: группа — единственное контентное поле, которое reload-merge физически не переносит (зонд-доказано дважды: UI/plain-merge 2026-08-11 на реальной библиотеке, poke + doc-to-doc 2026-08-12 в `GroupPropagationProbeTests` — merge приземляет контент, параметр даже пересоздаётся, группа остаётся хостовой). Двойная система хэшей (identity с группами + verification без) давала противоречия «маркер против хэша».
+- Гипотеза «хост загрязняет embedded-документ» (объёмы/габариты/phantom) **опровергнута зондом** `DrivenEmbeddedPollutionProbeTests`: ассоциации живут на экземплярах в хосте, EditFamily-документ хранит авторское состояние байт-в-байт — поэтому метрики и phantom остаются в хэше, и отдельный verification-грейд (FHV8V/FHV9V) упразднён: `ComputeForEmbeddedVerification` удалён, везде `ComputeForLoadable`.
+- Продуктовый трейдофф (принят владельцем): правка ТОЛЬКО группировки параметров больше не порождает новую версию (импорт скажет «Дубликат») — embedded-группы всё равно нельзя обновить. Пары версий «только группа» в существующих базах после пересчёта получают одинаковый хэш (детерминировано, см. ADR-068 addendum).
+- Раскатка: критическая задача `hash-v10`; floor `DbCompatibility` остаётся `2.0.1-beta.9` — v9-хэши не выпускались в релизных сборках, FHV10 едет тем же поездом (если следующая бета выйдет с номером < beta.9, floor надо выровнять под неё).
+- Тесты: юнит `FamilyContentHasherTests` (`UnifiedHash_*` — group-инвариантность, метрики/phantom детектируются, golden FHV10), интеграционные `PhantomTypeValueHashTests`, `GroupPropagationProbeTests`, `DrivenEmbeddedPollutionProbeTests`, `NestedUpdateMatrixTests`.
 
 **v3 rules:**
 - Категория — локале-инвариантный ordinal (display name — только fallback при unknown ordinal).
@@ -228,7 +234,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Коннекторные координаты и bounding box округляются до 1e-4 ft.
 - Blank values excluded (`IsBlankValue(hasValue, text, storageType)`): HasValue=false, empty string, `INVALID` (только ElementId storage), `UNSUPPORTED` (только неизвестные storage), `READERROR`. Numeric zero is NOT blank. Пользовательская строка "INVALID"/"UNSUPPORTED" в текстовом параметре — контент, участвует в хэше.
 - Auto-generated parameters excluded (IsAutoGeneratedParameter(name)): anything containing IfcGUID or IFC GUID (case-insensitive). Revit regenerates these on every .rvt save — including them would break cross-document stability.
-- Тесты: `src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs` — blank-value, ноль, IfcGUID, порядок, cross-source, плюс FHV3-набор: ordinal-категория (locale-invariance), PartType, коннекторы (размер/система/Origin/rounding/linked), behavior-флаги, bbox/surface, длины кривых, non-shared nested, экранирование, слои (материал/порядок), routing (part/порядок/критерий/junction/null-part); golden-тесты FHV7 (system) и FHV9 (loadable, с NESTEDHASH + PHANTOM).
+- Тесты: `src/SmartCon.Tests/FamilyManager/Services/FamilyContentHasherTests.cs` — blank-value, ноль, IfcGUID, порядок, cross-source, плюс FHV3-набор: ordinal-категория (locale-invariance), PartType, коннекторы (размер/система/Origin/rounding/linked), behavior-флаги, bbox/surface, длины кривых, non-shared nested, экранирование, слои (материал/порядок), routing (part/порядок/критерий/junction/null-part); golden-тесты FHV7 (system) и FHV10 (loadable, с NESTEDHASH + PHANTOM, без групп).
 
 ---
 

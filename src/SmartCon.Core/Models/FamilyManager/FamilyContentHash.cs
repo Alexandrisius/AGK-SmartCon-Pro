@@ -109,11 +109,26 @@ public sealed record FamilyContentHash(
     ///     FHV8 skipped the phantom entirely, so an edit of any
     ///     non-geometric value on a typeless family (e.g. the built-in
     ///     «Модель») never shifted the hash and the import dialog reported
-    ///     a false Duplicate. The verification grade (FHV8V, ephemeral)
-    ///     intentionally excludes phantom values: embedded ones can be
-    ///     host-driven via associations and are not comparable to the
-    ///     file. Critical task <c>hash-v9</c> recomputes every row that is
-    ///     not current.
+    ///     a false Duplicate. Critical task <c>hash-v9</c> recomputes
+    ///     every row that is not current.
+    /// 10 — parameter groups leave the hash (owner decision 2026-08-12):
+    ///     <c>FHV10|LOADABLE|...</c> drops the ParameterGroup field from
+    ///     PARAMS. Groups are the only content a reload merge physically
+    ///     cannot transfer (probe-proven: UI/plain-merge 2026-08-11,
+    ///     poke + doc-to-doc 2026-08-12) while the embedded EditFamily
+    ///     document is otherwise byte-identical to the source file
+    ///     (DrivenEmbeddedPollutionProbeTests — host associations live on
+    ///     instances, not in the embedded definition). Keeping groups in
+    ///     identity forked one identification into two divergent grades
+    ///     (marker-vs-hash contradictions, «Duplicate (v2)» on v1-group
+    ///     content). ONE hash now serves import dedup, versioning,
+    ///     embedded verification and stale-check content proofs; a
+    ///     group-only edit no longer version-bumps (accepted product
+    ///     tradeoff: embedded groups cannot be updated anyway). Version
+    ///     pairs that differed ONLY by groups collapse to one hash after
+    ///     the recalculation — deterministic (dedup resolves to one of
+    ///     them), documented in ADR-068 addendum. Critical task
+    ///     <c>hash-v10</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -129,7 +144,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration
