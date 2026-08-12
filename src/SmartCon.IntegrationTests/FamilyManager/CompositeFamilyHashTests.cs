@@ -46,7 +46,7 @@ public sealed class CompositeFamilyHashTests : RevitApiTest
             return;
         }
 
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConHash_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConHash_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
 
         _grandchildPath = Path.Combine(_tempDir, GrandchildName + ".rfa");

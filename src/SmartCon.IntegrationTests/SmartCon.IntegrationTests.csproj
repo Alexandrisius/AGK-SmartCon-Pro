@@ -39,6 +39,12 @@
          в Directory.Build.props) — он internal, но source-generated код TUnit
          живёт в этой же сборке, поэтому доступен. -->
     <EnableTUnitPolyfills Condition="'$(TargetFramework)' == 'net48'">false</EnableTUnitPolyfills>
+
+    <!-- net48: ссылка на SmartCon.FamilyManager тянет native copy-local
+         assets HelixToolkit/SharpDX → SDK сам выводит PlatformTarget=x86
+         для netfx-exe, и CSC падает с CS8012 (RevitAPI "targets a
+         different processor"). Revit x64-only — фиксируем явно. -->
+    <PlatformTarget Condition="'$(TargetFramework)' == 'net48'">x64</PlatformTarget>
   </PropertyGroup>
 
   <!-- Явная ошибка при сборке для R19/R20: Nice3point.TUnit.Revit не существует
@@ -75,6 +81,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
     <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />
+    <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
   </ItemGroup>
 
 </Project>

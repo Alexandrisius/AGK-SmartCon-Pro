@@ -60,7 +60,7 @@ public sealed class FittingDependencyResolverTests : RevitApiTest
         _dependencyRepository = new FakeDependencyRepository();
         _catalog = new FakeCatalogProvider();
 
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConFittingDep_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConFittingDep_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
 
         ElementId? fittingSymbolId = null;

@@ -43,7 +43,7 @@ public sealed class SharedNestedCollectorTests : RevitApiTest
             return;
         }
 
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConNested_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConNested_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
 
         var grandchildPath = Path.Combine(_tempDir, GrandchildName + ".rfa");

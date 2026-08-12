@@ -105,7 +105,7 @@ public sealed class MiniProjectActualizationServiceTests : RevitApiTest
     public async Task MarkManagedFile_MissingFile_ReturnsMissing()
     {
         var outcome = await Service.MarkManagedFileAsync(
-            Path.Combine(Path.GetTempPath(), $"smartcon-missing-{Guid.NewGuid():N}.rvt"), "item-42");
+            Path.Combine(Path.GetTempPath(), $"smartcon-missing-{Guid.NewGuid().ToString("N")}.rvt"), "item-42");
 
         await Assert.That(outcome.Status).IsEqualTo(MiniProjectMarkFileStatus.Missing);
     }
@@ -117,7 +117,7 @@ public sealed class MiniProjectActualizationServiceTests : RevitApiTest
     /// </summary>
     private string CreateUnmarkedStagedFile()
     {
-        _tempDirToCleanup = Path.Combine(Path.GetTempPath(), $"smartcon-mka-{Guid.NewGuid():N}");
+        _tempDirToCleanup = Path.Combine(Path.GetTempPath(), $"smartcon-mka-{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDirToCleanup);
         var path = Path.Combine(_tempDirToCleanup, "Провода.rvt");
 

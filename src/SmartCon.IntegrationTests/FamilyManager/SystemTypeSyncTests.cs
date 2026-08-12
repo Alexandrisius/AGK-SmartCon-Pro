@@ -256,7 +256,7 @@ public sealed class SystemTypeSyncTests : RevitApiTest
         // not touch the shared fixture state (TUnit0018).
         var miniDoc = Application.NewProjectDocument(UnitSystem.Metric);
         var miniPath = Path.Combine(
-            Path.GetTempPath(), $"smartcon-synctest-{Guid.NewGuid():N}.rvt");
+            Path.GetTempPath(), $"smartcon-synctest-{Guid.NewGuid().ToString("N")}.rvt");
         try
         {
             var miniTx = new RevitTransactionService(new StubRevitContext(miniDoc));

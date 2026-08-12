@@ -84,12 +84,53 @@ internal static class SampleFiles
             return null;
         }
 
-        var generic = Array.Find(templates, t =>
+        // A MODEL-family template is required (nesting, extrusions, type
+        // catalogs) — an annotation/detail template breaks such seeds with
+        // "operation is not permitted in this type of family", and an
+        // ADAPTIVE generic model ("Metric Generic Model Adaptive.rft")
+        // rejects plain extrusions the same way. Exact localized file names
+        // first, then a marker match that excludes adaptive templates.
+        string[] exactNames =
+        [
+            "Metric Generic Model.rft",
+            "Метрическая система, типовая модель.rft",
+        ];
+        foreach (var exact in exactNames)
+        {
+            var hit = Array.Find(templates, t =>
+                string.Equals(Path.GetFileName(t), exact, StringComparison.OrdinalIgnoreCase));
+            if (hit is not null)
+            {
+                return hit;
+            }
+        }
+
+        string[] genericModelMarkers =
+        [
+            "Generic Model",
+            "система, типовая модель",
+            "Allgemeines Modell",
+            "Modèle générique",
+            "Modelo generico",
+            "Modelo genérico",
+            "Model ogolny",
+            "Modello generico",
+        ];
+        foreach (var marker in genericModelMarkers)
+        {
+            var localized = Array.Find(templates, t =>
 #if NET8_0_OR_GREATER
-            t.Contains("Generic Model", StringComparison.OrdinalIgnoreCase));
+                t.Contains(marker, StringComparison.OrdinalIgnoreCase)
+                && !t.Contains("Adaptive", StringComparison.OrdinalIgnoreCase));
 #else
-            t.IndexOf("Generic Model", StringComparison.OrdinalIgnoreCase) >= 0);
+                t.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0
+                && t.IndexOf("Adaptive", StringComparison.OrdinalIgnoreCase) < 0);
 #endif
-        return generic ?? templates[0];
+            if (localized is not null)
+            {
+                return localized;
+            }
+        }
+        return templates[0];
     }
 }

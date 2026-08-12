@@ -106,7 +106,7 @@ public sealed class MiniProjectMarkerTests : RevitApiTest
         // document must be closed before reopening, and the After-hook closes
         // whatever _document points at (the reopened one here).
 #pragma warning disable TUnit0018 // reopen flow requires swapping the fixture document
-        _tempPathToCleanup = Path.Combine(Path.GetTempPath(), $"smartcon-mkp-{Guid.NewGuid():N}.rvt");
+        _tempPathToCleanup = Path.Combine(Path.GetTempPath(), $"smartcon-mkp-{Guid.NewGuid().ToString("N")}.rvt");
 
         Marker.MarkAsMiniProject(Doc, "catalog-item-42");
         Doc.SaveAs(_tempPathToCleanup, new SaveAsOptions { OverwriteExistingFile = true });

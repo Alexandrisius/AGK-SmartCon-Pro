@@ -42,7 +42,7 @@ public sealed class NestedFamilyReloadTests : RevitApiTest
             return;
         }
 
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConReload_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConReload_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
         _childPath = Path.Combine(_tempDir, ChildName + ".rfa");
 

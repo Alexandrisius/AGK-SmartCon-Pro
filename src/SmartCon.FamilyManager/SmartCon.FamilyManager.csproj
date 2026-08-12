@@ -49,6 +49,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="SmartCon.App" />
     <InternalsVisibleTo Include="SmartCon.Tests" />
+    <InternalsVisibleTo Include="SmartCon.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>

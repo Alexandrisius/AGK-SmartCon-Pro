@@ -38,7 +38,7 @@ public sealed class MiniProjectSegmentMaterialTests : RevitApiTest
     public void CreateDocuments()
     {
         _sourceDoc = Application.NewProjectDocument(UnitSystem.Metric);
-        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConSegMat_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"SmartConSegMat_{Guid.NewGuid().ToString("N")}");
         Directory.CreateDirectory(_tempDir);
         _miniProjectPath = Path.Combine(_tempDir, "probe.rvt");
 
