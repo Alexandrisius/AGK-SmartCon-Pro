@@ -77,6 +77,22 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
                 if (item.Action == FamilyBatchImportAction.Skip)
                 {
                     skipped++;
+                    // Self-heal (stress test 2026-08-12): a skipped parent
+                    // that is a Duplicate OF ITS CURRENT version (content
+                    // identical) still joins the parent map, so the
+                    // post-loop link write refreshes its current version's
+                    // dependency links from this batch's child rows —
+                    // repairs parent versions imported before dedup-links
+                    // existed (they can never show the drift badge).
+                    if (item.Status == FamilyBatchImportStatus.Duplicate
+                        && item.ExistingCatalogItemId is not null
+                        && string.Equals(
+                            item.MatchedVersionLabel,
+                            item.ExistingVersionLabel,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        importedParentItemIds[item.FilePath] = item.ExistingCatalogItemId;
+                    }
                     Report(progress, i, items.Count, item.FileName,
                         FamilyBatchImportPhase.Importing, FamilyBatchImportRowState.Skipped, null, success, skipped, errors);
                     continue;

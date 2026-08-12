@@ -206,4 +206,81 @@ public sealed class FileFamilyBatchImportExecutorTests
         Assert.False(result.WasStopped);
         Assert.Contains(reports, r => r.Phase == FamilyBatchImportPhase.Paused);
     }
+
+    private static FamilyBatchImportItem MakeDuplicateRow(
+        string fileName,
+        string catalogItemId,
+        string currentLabel,
+        FamilyBatchImportStatus status = FamilyBatchImportStatus.Duplicate,
+        IReadOnlyList<FamilyDependencyLink>? dependencyLinks = null)
+    {
+        return new FamilyBatchImportItem(
+            FilePath: $@"C:\fake\{fileName}.rfa",
+            FileName: fileName,
+            RevitMajorVersion: 2025,
+            Status: status,
+            ExistingCatalogItemId: catalogItemId,
+            ExistingVersionLabel: currentLabel,
+            TargetCategoryId: null,
+            TargetCategoryName: null,
+            FamilySource: "loadable",
+            TypeCount: null,
+            RevitCategory: null,
+            MatchedVersionLabel: currentLabel,
+            DependencyLinks: dependencyLinks)
+        {
+            Action = FamilyBatchImportAction.Skip,
+        };
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SkippedDuplicateParent_HealsCurrentVersionLinks()
+    {
+        // Stress test 2026-08-12: parent versions imported before dedup-links
+        // existed have zero links and can never show the drift badge. A
+        // skipped Duplicate-of-current parent (content identical) must join
+        // the parent map so the link write refreshes its current version.
+        var parent = MakeDuplicateRow("parent", "parent-id", "v3");
+        var child = MakeDuplicateRow("child", "child-id", "v2",
+            dependencyLinks:
+            [new FamilyDependencyLink(@"C:\fake\parent.rfa", "SharedNested", null)]);
+
+        var executor = CreateExecutor();
+        var result = await executor.ExecuteAsync(
+            new[] { parent, child }, null, null, null, CancellationToken.None);
+
+        Assert.Equal(2, result.SkippedCount);
+        _familyDependencyRepository.Verify(
+            r => r.ReplaceForCurrentVersionAsync(
+                "parent-id",
+                It.Is<IReadOnlyList<FamilyDependencyInfo>>(links =>
+                    links.Count == 1
+                    && links[0].ChildCatalogItemId == "child-id"
+                    && links[0].ChildVersionLabel == "v2"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SkippedChangedParent_DoesNotHeal()
+    {
+        // Existing (content changed) + user-chosen Skip: the file's children
+        // do NOT describe the current version's content — no heal.
+        var parent = MakeDuplicateRow("parent", "parent-id", "v3",
+            status: FamilyBatchImportStatus.Existing);
+        var child = MakeDuplicateRow("child", "child-id", "v2",
+            dependencyLinks:
+            [new FamilyDependencyLink(@"C:\fake\parent.rfa", "SharedNested", null)]);
+
+        var executor = CreateExecutor();
+        await executor.ExecuteAsync(
+            new[] { parent, child }, null, null, null, CancellationToken.None);
+
+        _familyDependencyRepository.Verify(
+            r => r.ReplaceForCurrentVersionAsync(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyList<FamilyDependencyInfo>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

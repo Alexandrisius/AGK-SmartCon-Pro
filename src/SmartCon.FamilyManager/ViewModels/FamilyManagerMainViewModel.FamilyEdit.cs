@@ -421,7 +421,14 @@ public sealed partial class FamilyManagerMainViewModel
         // document's path); every other row is a shared-nested child.
         var parentImport = toImport.FirstOrDefault(i =>
             string.Equals(i.FilePath, placeholderFilePath, StringComparison.Ordinal));
-        var childImports = toImport.Where(i =>
+        // ADR-066 dedup-link bug (stress test 2026-08-11): the executor must
+        // receive ALL child rows — including skipped-as-Duplicate ones —
+        // because DependencyLinkPlanner records dedup-links for skipped
+        // children that already exist in the catalog. Filtering them out
+        // here meant a new parent version imported while all its nested
+        // children were duplicates got NO dependency links → the dependency
+        // drift badge never appeared for that parent.
+        var childImports = selectedItems.Where(i =>
             !string.Equals(i.FilePath, placeholderFilePath, StringComparison.Ordinal)).ToList();
 
         if (parentImport is null && childImports.Count == 0)
@@ -432,10 +439,26 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (parentImport is null)
         {
-            // Parent row skipped (e.g. Duplicate) — import only the children.
-            // No new parent version → no dependency links are written against
-            // it (same semantics as the UC-1 planner).
-            await ImportActiveFamilyChildrenAsync(childImports, externalParentItemIds: null)
+            // Parent row skipped — import only the children. Self-heal
+            // (stress test 2026-08-12): when the parent is a Duplicate OF
+            // ITS CURRENT version (content identical), still rewrite the
+            // current version's dependency links from the actual embedded
+            // children — repairs parent versions imported before the
+            // dedup-link fix, which have zero links and can never drift
+            // (pair v3 / crane v2 in the owner's test catalog).
+            var healParents = new Dictionary<string, string>(StringComparer.Ordinal);
+            var skippedParentRow = selectedItems.FirstOrDefault(i =>
+                string.Equals(i.FilePath, placeholderFilePath, StringComparison.Ordinal));
+            if (skippedParentRow is { Status: FamilyBatchImportStatus.Duplicate, ExistingCatalogItemId: not null }
+                && string.Equals(
+                    skippedParentRow.MatchedVersionLabel,
+                    skippedParentRow.ExistingVersionLabel,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                healParents[placeholderFilePath] = skippedParentRow.ExistingCatalogItemId;
+            }
+            await ImportActiveFamilyChildrenAsync(
+                    childImports, healParents.Count > 0 ? healParents : null)
                 .ConfigureAwait(false);
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
             return;
