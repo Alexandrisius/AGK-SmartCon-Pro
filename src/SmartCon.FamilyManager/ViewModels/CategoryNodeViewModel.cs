@@ -20,7 +20,48 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty] private bool _hasStale;
 
     /// <summary>Roll-up: number of stale leaves under this category (recursive).</summary>
-    [ObservableProperty] private int _staleCount;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StaleBadgeTooltip))]
+    private int _staleCount;
+
+    // ── Clickable status badge (#210) ──────────────────────────────────
+
+    /// <summary>#210: the category's notices — a single warning while stale leaves exist.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<StatusNotice> _statusNotices = Array.Empty<StatusNotice>();
+
+    /// <summary>One-line hint for the warning triangle (count + click hint).</summary>
+    public string StaleBadgeTooltip
+    {
+        get
+        {
+            var count = SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty;
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.IsNullOrEmpty(count) ? hint : count + " — " + hint;
+        }
+    }
+
+    private void RebuildStatusNotices()
+    {
+        if (!HasStale)
+        {
+            StatusNotices = Array.Empty<StatusNotice>();
+            return;
+        }
+
+        StatusNotices =
+        [
+            new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryStale_Title)
+                    ?? "В категории есть устаревшие семейства",
+                SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty),
+        ];
+    }
+
+    partial void OnHasStaleChanged(bool value) => RebuildStatusNotices();
+    partial void OnStaleCountChanged(int value) => RebuildStatusNotices();
 
     /// <summary>
     /// True if this category or any descendant category is collapsed.

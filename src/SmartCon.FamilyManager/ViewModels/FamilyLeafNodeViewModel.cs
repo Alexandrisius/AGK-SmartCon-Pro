@@ -56,6 +56,8 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         && MinRevitMajorVersion.Value <= CurrentRevitVersion;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasProblemBadge))]
+    [NotifyPropertyChangedFor(nameof(ProblemBadgeTooltip))]
     private bool _isStale;
 
     [ObservableProperty]
@@ -76,25 +78,120 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     /// Computed batch-wise on tree load (one reverse query for all leaves).
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DependencyReferencedBadgeTooltip))]
     private bool _isDependencyReferenced;
 
-    /// <summary>Localized «Используется как зависимость: …» list for the paperclip tooltip.</summary>
+    /// <summary>Lines «Родитель (версии)» for the paperclip badge details.</summary>
     [ObservableProperty]
-    private string? _dependencyReferencedTooltip;
+    private IReadOnlyList<string>? _dependencyReferencedLines;
 
     /// <summary>
     /// E2 (#209, V30): at least one dependency embedded in this item's
-    /// CURRENT version is no longer the child's active version — the amber
-    /// "требует переимпорта" badge (distinct from stale: the fix is to
-    /// re-import THIS family with the up-to-date nested content). Computed
-    /// batch-wise on tree load together with the paperclip.
+    /// CURRENT version is no longer the child's active version — the
+    /// problem badge (distinct from stale: the fix is to re-import THIS
+    /// family with the up-to-date nested content). Computed batch-wise on
+    /// tree load together with the paperclip.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasProblemBadge))]
+    [NotifyPropertyChangedFor(nameof(ProblemBadgeTooltip))]
     private bool _hasOutdatedDependencies;
 
-    /// <summary>Localized per-child «Фланец: зашита v1, активна v2» lines for the amber badge tooltip.</summary>
+    /// <summary>Per-child lines «Фланец (зашита v1, активна v2)» for the outdated-deps badge details.</summary>
     [ObservableProperty]
-    private string? _outdatedDependenciesTooltip;
+    private IReadOnlyList<string>? _outdatedDependencyLines;
+
+    // ── Clickable status badges (#210) ─────────────────────────────────
+    // The leaf shows at most two clickable badges (StatusBadgeButton
+    // style): the paperclip (used-as-dependency info) and ONE problem
+    // triangle (stale and/or outdated nested). Both open the status
+    // details dialog listing all notices with the full texts that used
+    // to be long tooltips.
+
+    /// <summary>#210: active status notices of this leaf (warnings first, info last).</summary>
+    [ObservableProperty]
+    private IReadOnlyList<StatusNotice> _statusNotices = Array.Empty<StatusNotice>();
+
+    /// <summary><c>true</c> when the problem triangle is shown (stale and/or outdated nested).</summary>
+    public bool HasProblemBadge => IsStale || HasOutdatedDependencies;
+
+    /// <summary>One-line hint for the problem triangle (full texts live in the details dialog).</summary>
+    public string ProblemBadgeTooltip
+    {
+        get
+        {
+            var parts = new List<string>(2);
+            if (IsStale)
+            {
+                parts.Add(SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Stale)
+                    ?? "Устарело");
+            }
+            if (HasOutdatedDependencies)
+            {
+                parts.Add(SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_OutdatedDeps_Short)
+                    ?? "Устарели вложенные");
+            }
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.Join("; ", parts) + " — " + hint;
+        }
+    }
+
+    /// <summary>One-line hint for the paperclip badge (reference list lives in the details dialog).</summary>
+    public string DependencyReferencedBadgeTooltip
+    {
+        get
+        {
+            var title = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_DependencyReferenced_Title)
+                ?? "Используется как зависимость";
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return title + " — " + hint;
+        }
+    }
+
+    private void RebuildStatusNotices()
+    {
+        static string Loc(string key, string fallback) =>
+            SmartCon.UI.LanguageManager.GetString(key) ?? fallback;
+
+        var list = new List<StatusNotice>();
+        if (IsStale)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_Stale_Title, "Семейство устарело"),
+                SmartCon.UI.Converters.StatusTooltipText.ForStaleReason(StaleReason)));
+        }
+        if (HasOutdatedDependencies)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_OutdatedDependencies_Title,
+                    "Вложенные семейства устарели"),
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_OutdatedDeps_Guidance,
+                    "Откройте семейство, перетащите актуальные вложенные версии из каталога и переимпортируйте его с новой версией."),
+                OutdatedDependencyLines));
+        }
+        if (IsDependencyReferenced)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Info,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_DependencyReferenced_Title,
+                    "Используется как зависимость"),
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_DependencyRef_Guard,
+                    "Семейство нельзя удалить из каталога, пока оно используется как зависимость."),
+                DependencyReferencedLines));
+        }
+        StatusNotices = list;
+    }
+
+    partial void OnIsStaleChanged(bool value) => RebuildStatusNotices();
+    partial void OnStaleReasonChanged(StaleReason value) => RebuildStatusNotices();
+    partial void OnIsDependencyReferencedChanged(bool value) => RebuildStatusNotices();
+    partial void OnDependencyReferencedLinesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
+    partial void OnHasOutdatedDependenciesChanged(bool value) => RebuildStatusNotices();
+    partial void OnOutdatedDependencyLinesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
 
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,
@@ -123,6 +220,7 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
         _isStale = isStale;
         _staleReason = staleReason;
         MatchedTags = ComputeMatchedTags(row.Name, row.Tags, searchText);
+        RebuildStatusNotices();
     }
 
     private static IReadOnlyList<string> ComputeMatchedTags(

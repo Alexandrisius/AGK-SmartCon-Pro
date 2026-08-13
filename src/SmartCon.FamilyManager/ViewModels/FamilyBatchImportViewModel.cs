@@ -176,6 +176,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.SelectionChanged += OnRowSelectionChanged;
             row.NameChanged += OnRowNameChanged;
             row.OpenValidationReportRequested += OnRowOpenValidationReport;
+            row.OpenStatusDetailsRequested += OnRowOpenStatusDetails;
             Items.Add(row);
         }
         var commandLockedCount = Items.Count(r => r.CategoryProvenance == CategoryProvenance.Command);
@@ -546,6 +547,45 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.OutdatedDependencyBlockNames = blockedByParent.TryGetValue(row.FilePath, out var lines)
                 ? lines
                 : null;
+        }
+    }
+
+    /// <summary>
+    /// #210: opens the status details dialog for a batch row. Two separate
+    /// views: the problem triangle shows warning/error notices + follow-up
+    /// actions (validation report); the paperclip / info badge shows only
+    /// the related-elements info (dependency parents, marker origin) with
+    /// no actions — warnings never leak into it.
+    /// </summary>
+    private void OnRowOpenStatusDetails(FamilyBatchImportRow row, bool infoOnly)
+    {
+        try
+        {
+            var notices = infoOnly
+                ? row.Notices.Where(n => n.Severity == StatusNoticeSeverity.Info).ToList()
+                : row.Notices.Where(n => n.Severity >= StatusNoticeSeverity.Warning).ToList();
+            if (notices.Count == 0) return;
+
+            var actions = new List<StatusDetailsAction>();
+            if (!infoOnly && (row.HealthReport is not null || row.ValidationReport is not null))
+            {
+                actions.Add(new StatusDetailsAction(
+                    SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_StatusDetails_OpenValidationReport)
+                        ?? "Открыть отчёт о проверке",
+                    () => OnRowOpenValidationReport(row)));
+            }
+
+            var detailsVm = new StatusDetailsViewModel(
+                row.FileName,
+                row.TargetCategoryPath,
+                notices,
+                actions);
+            _dialogService.ShowStatusDetails(detailsVm);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error(
+                $"BatchImport.Badges: failed to open status details for '{row.FileName}': {ex.Message}");
         }
     }
 
@@ -974,6 +1014,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.SelectionChanged -= OnRowSelectionChanged;
             row.NameChanged -= OnRowNameChanged;
             row.OpenValidationReportRequested -= OnRowOpenValidationReport;
+            row.OpenStatusDetailsRequested -= OnRowOpenStatusDetails;
         }
     }
 

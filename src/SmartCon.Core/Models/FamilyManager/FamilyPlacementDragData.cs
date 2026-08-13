@@ -17,4 +17,9 @@ public sealed record FamilyPlacementDragData(
     string? SystemFamilyName = null,
     /// <summary>Issue #190 (ADR-064): locale-invariant system family key —
     /// preferred over <see cref="SystemFamilyName"/> for matching.</summary>
-    string? SystemFamilyKey = null);
+    string? SystemFamilyKey = null,
+    /// <summary>#210: the type is ALREADY in the project but outdated (ES
+    /// marker does not match the catalog). The drop handler must NOT take
+    /// the "already loaded" skip path — it reloads from the catalog so DnD
+    /// never places a stale copy (freshness-on-place).</summary>
+    bool IsStaleInProject = false);

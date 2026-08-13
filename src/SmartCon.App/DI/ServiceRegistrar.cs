@@ -155,6 +155,7 @@ public static class ServiceRegistrar
             presenter.Register<ProfileViewModel>(vm => new ProfileView(vm));
             presenter.Register<FamilyBatchImportViewModel>(vm => new FamilyBatchImportView(vm));
             presenter.Register<ValidationReportViewModel>(vm => new ValidationReportView(vm));
+            presenter.Register<StatusDetailsViewModel>(vm => new StatusDetailsView(vm));
             presenter.Register<ValidationRulesEditorViewModel>(vm => new ValidationRulesEditorView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));

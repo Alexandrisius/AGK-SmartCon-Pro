@@ -14,6 +14,8 @@ public static partial class LocalizationService
         ru["FM_ExtractTypes"] = "Извлечь типоразмеры"; en["FM_ExtractTypes"] = "Extract Types";
         ru["FM_ImportData"] = "Импорт данных"; en["FM_ImportData"] = "Import Data";
         ru["FM_PlaceType"] = "Разместить тип"; en["FM_PlaceType"] = "Place Type";
+        ru["FM_PlaceType_DotLoadPlace"] = "Загрузить и разместить тип"; en["FM_PlaceType_DotLoadPlace"] = "Load and place type";
+        ru["FM_PlaceType_DotUpdatePlace"] = "Обновить и разместить"; en["FM_PlaceType_DotUpdatePlace"] = "Update and place";
         ru["FM_Edit"] = "Редактировать"; en["FM_Edit"] = "Edit";
         ru["FM_ImportActiveFile"] = "Импорт активного файла"; en["FM_ImportActiveFile"] = "Import Active File";
         ru["FM_ActiveDocNotFamily"] = "Активный документ не является семейством"; en["FM_ActiveDocNotFamily"] = "Active document is not a family";
@@ -380,7 +382,6 @@ public static partial class LocalizationService
         ru["FM_BatchImport_MarkerResolved_Tooltip"] = "Версия {0} определена по маркеру верификации (содержимое проверено при обновлении). Контентный хэш зашитой копии соответствует другой версии: группы параметров не переносятся при обновлении — это ожидаемо."; en["FM_BatchImport_MarkerResolved_Tooltip"] = "Version {0} was resolved by the verification marker (content verified during update). The embedded copy's content hash matches a different version: parameter groups never propagate on merge — this is expected.";
         ru["FM_BatchImport_StatusMarkerSuffix"] = "маркер"; en["FM_BatchImport_StatusMarkerSuffix"] = "marker";
         ru["FM_BatchImport_OutdatedNestedBlock_Tooltip"] = "Импорт заблокирован — устаревшие вложенные:\n{0}\nОбновите вложенные семейства внутри родителя и повторите импорт, или выберите «Сделать активной» на строке вложенного."; en["FM_BatchImport_OutdatedNestedBlock_Tooltip"] = "Import blocked — outdated nested families:\n{0}\nUpdate the nested families inside the parent and re-import, or pick \"Make Active\" on the nested row.";
-        ru["FM_Tree_OutdatedDependencies_Tooltip"] = "Вложенные семейства устарели:\n{0}\nОткройте семейство, перетащите актуальные вложенные версии из каталога и переимпортируйте его с новой версией."; en["FM_Tree_OutdatedDependencies_Tooltip"] = "Outdated nested families:\n{0}\nOpen the family, drag the up-to-date nested versions from the catalog into it and re-import it as a new version.";
         ru["FM_DependencyGuard_AndMore"] = "… и ещё {0}"; en["FM_DependencyGuard_AndMore"] = "… and {0} more";
         ru["FM_DependencyDriftBlock_Title"] = "Загрузка заблокирована"; en["FM_DependencyDriftBlock_Title"] = "Load blocked";
         ru["FM_DependencyDriftBlock_Body"] = "Семейство \"{0}\" содержит устаревшие вложенные семейства:\n{1}\n\nЗагрузка заблокирована, чтобы в проект не попали устаревшие копии. Откройте семейство, перетащите в него актуальные вложенные версии из каталога и переимпортируйте его с новой версией."; en["FM_DependencyDriftBlock_Body"] = "Family \"{0}\" embeds outdated nested families:\n{1}\n\nThe load is blocked so outdated copies do not reach the project. Open the family, drag the up-to-date nested versions from the catalog into it and re-import it as a new version.";
@@ -424,6 +425,32 @@ public static partial class LocalizationService
         ru["FM_Gate_Tooltip_Imported"] = "Импорт выполнен — открыть отчёт о проверке"; en["FM_Gate_Tooltip_Imported"] = "Import completed — open the validation report";
         ru["FM_Gate_Tooltip_DependencyFailed"] = "Зависимости не прошли проверку и будут пропущены: {0}. Элемент будет импортирован без них."; en["FM_Gate_Tooltip_DependencyFailed"] = "Dependencies failed validation and will be skipped: {0}. The item will be imported without them.";
         ru["FM_BatchImport_DependencyOf_Tooltip"] = "Зависимость элемента: {0}"; en["FM_BatchImport_DependencyOf_Tooltip"] = "Dependency of: {0}";
+
+        // Status Details dialog + clickable badges (#210)
+        ru["FM_StatusDetails_Title"] = "Детали статуса"; en["FM_StatusDetails_Title"] = "Status Details";
+        ru["FM_StatusDetails_OpenValidationReport"] = "Открыть отчёт о проверке"; en["FM_StatusDetails_OpenValidationReport"] = "Open validation report";
+        ru["FM_Badge_ClickHint"] = "Нажмите для подробностей"; en["FM_Badge_ClickHint"] = "Click for details";
+        ru["FM_Badge_Info_Tooltip"] = "Информация — нажмите для подробностей"; en["FM_Badge_Info_Tooltip"] = "Info — click for details";
+        ru["FM_Badge_Dependency_Tooltip"] = "Зависимость — нажмите для подробностей"; en["FM_Badge_Dependency_Tooltip"] = "Dependency — click for details";
+        ru["FM_Badge_Warning_Tooltip"] = "Предупреждение — нажмите для подробностей"; en["FM_Badge_Warning_Tooltip"] = "Warning — click for details";
+        ru["FM_Badge_Error_Tooltip"] = "Ошибка — нажмите для подробностей"; en["FM_Badge_Error_Tooltip"] = "Error — click for details";
+        ru["FM_Badge_OutdatedDeps_Short"] = "Устарели вложенные"; en["FM_Badge_OutdatedDeps_Short"] = "Nested outdated";
+        ru["FM_Notice_CrossNameDuplicate_Title"] = "Содержимое совпадает под другим именем"; en["FM_Notice_CrossNameDuplicate_Title"] = "Content matches under a different name";
+        ru["FM_Notice_OutdatedNested_Title"] = "Зашита устаревшая версия"; en["FM_Notice_OutdatedNested_Title"] = "Outdated version embedded";
+        ru["FM_Notice_DependencyBlock_Title"] = "Импорт заблокирован устаревшими вложенными"; en["FM_Notice_DependencyBlock_Title"] = "Import blocked by outdated nested families";
+        ru["FM_Notice_FailedDependencies_Title"] = "Зависимости не прошли проверку"; en["FM_Notice_FailedDependencies_Title"] = "Dependencies failed validation";
+        ru["FM_Notice_DependencyOf_Title"] = "Зависимость другого элемента"; en["FM_Notice_DependencyOf_Title"] = "Dependency of another item";
+        ru["FM_Notice_MarkerResolved_Title"] = "Версия определена по маркеру"; en["FM_Notice_MarkerResolved_Title"] = "Version resolved by marker";
+        ru["FM_Notice_Stale_Title"] = "Семейство устарело"; en["FM_Notice_Stale_Title"] = "Family is outdated";
+        ru["FM_Notice_OutdatedDependencies_Title"] = "Вложенные семейства устарели"; en["FM_Notice_OutdatedDependencies_Title"] = "Nested families are outdated";
+        ru["FM_Notice_DependencyReferenced_Title"] = "Используется как зависимость"; en["FM_Notice_DependencyReferenced_Title"] = "Used as a dependency";
+        ru["FM_Notice_CategoryStale_Title"] = "В категории есть устаревшие семейства"; en["FM_Notice_CategoryStale_Title"] = "Category has outdated families";
+        ru["FM_Notice_DependencyBlock_Guidance"] = "Обновите вложенные семейства внутри родителя и повторите импорт, или выберите «Сделать активной» на строке вложенного. Пока конфликт не разрешён, доступно только «Пропустить»."; en["FM_Notice_DependencyBlock_Guidance"] = "Update the nested families inside the parent and re-import, or pick \"Make Active\" on the nested row. Until the conflict is resolved, only \"Skip\" is available.";
+        ru["FM_Notice_FailedDeps_Guidance"] = "Эти зависимости не прошли проверку и будут пропущены — элемент будет импортирован без них."; en["FM_Notice_FailedDeps_Guidance"] = "These dependencies failed validation and will be skipped — the item will be imported without them.";
+        ru["FM_Notice_OutdatedNested_Body"] = "Зашита {0}, активна {1}. Импорт родителя заблокирован: обновите вложенное семейство внутри родителя и повторите импорт — или выберите «Сделать активной», чтобы каталог вернулся на зашитую версию."; en["FM_Notice_OutdatedNested_Body"] = "Embedded {0}, active {1}. The parent's import is blocked: update the nested family inside the parent and re-import — or pick \"Make Active\" to switch the catalog back to the embedded version.";
+        ru["FM_Notice_CrossName_Body"] = "Содержимое совпадает, хотя имя файла другое. «Сделать активной» — файл не импортируется, активируется найденная версия. «Новая версия» — семейство будет переименовано в имя этого файла."; en["FM_Notice_CrossName_Body"] = "The content matches although the file name differs. \"Make Active\" — the file is not imported; the matched version is activated. \"New Version\" — the family will be renamed to this file's name.";
+        ru["FM_Notice_DependencyRef_Guard"] = "Семейство нельзя удалить из каталога, пока оно используется как зависимость."; en["FM_Notice_DependencyRef_Guard"] = "The family cannot be deleted from the catalog while it is used as a dependency.";
+        ru["FM_Notice_OutdatedDeps_Guidance"] = "Откройте семейство, перетащите актуальные вложенные версии из каталога и переимпортируйте его с новой версией."; en["FM_Notice_OutdatedDeps_Guidance"] = "Open the family, drag the up-to-date nested versions from the catalog into it and re-import it as a new version.";
 
         // Validation Report dialog
         ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";

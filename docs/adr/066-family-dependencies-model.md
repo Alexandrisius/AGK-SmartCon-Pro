@@ -155,7 +155,7 @@ FamilyUniqueId, FamilyName)`: collector возвращает identity, не до
 |---|---|
 | **E1** | V29 + репозиторий + collector (routing) + авто-импорт фитингов + связи + sync по связям + маркер + каскад-блок в VM |
 | **E2** | `shared_nested`: collector по SharedNestedFamilyNames (глубина ≤2), те же связи |
-| **E3** | Batch-диалог: `ChildRows` + `RowDetailsTemplate`, expander, multi-select рекурсивно, worst-of-children индикатор |
+| **E3** | ~~Batch-диалог: `ChildRows` + `RowDetailsTemplate`, expander, multi-select рекурсивно, worst-of-children индикатор~~ **As-built (2026-08-13, #210): группировка и рекурсивный мультиселект ОТМЕНЕНЫ владельцем (Ctrl-мультиселект уже есть; у двух родителей с общим вложенным — одна строка с двумя ссылками, список остаётся плоским). Worst-of-children gate не строился: gate-failed ребёнок форс-Skip стандартным гейтом (§4), родитель получает индикатор. Сделано вместо: единый паттерн кликабельных статус-бэйджей — `StatusNotice` (title + буллет-список имён + guidance) + диалог `StatusDetailsView` (два раздельных вида: problem с действиями / info без действий), сплит-кнопка действий по эталону DbTools (ToggleButton⇄Popup, НЕ ContextMenu), presence-точка типа = команда размещения с семантикой по цветам (серый = загрузить+разместить, синий = разместить, оранжевый = обновить+разместить через `PlaceTypeFromIndicator` → `PlaceTypeCoreAsync`), DnD stale-типа перезагружает из каталога (`FamilyPlacementDragData.IsStaleInProject`).** |
 | **E4** | Segment material `<none>` policy (fallback/ошибка импорта), Revit-варианты фитингов |
 
 ### 7. Что НЕ меняется

@@ -40,6 +40,16 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 /// hash them. Production mechanism + contracts:
 /// <c>NestedReloadPokeContractTests</c>. The tests below remain as
 /// documentation of the RAW unpoked API behavior.
+///
+/// ADDENDUM 2026-08-12 (fixture drift): the owner's update-flow manual
+/// test rewrote the v2 nut file in the library (and added a v3), so
+/// v1↔v2 no longer differ ONLY by the parameter group — and with a
+/// substantively-differing incoming file even the RAW unpoked reload
+/// LANDS v2. The 2026-08-11 no-op wall was therefore specific to
+/// group-only-diff content, not to this family in general. The nut
+/// hashes are now computed live from the files in Seed, and the former
+/// wall test asserts a DECISIVE outcome (landed v2 or stayed v1 — never
+/// a silent partial merge).
 /// </summary>
 public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
 {
@@ -51,13 +61,14 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
 
     // FHV10 pins (2026-08-12, probe-computed from the owner library files).
     private const string NutName = "PPR-C0807-F-Гайка-ГОСТ_5915_70-PIEC-PL-0108-G3";
-    // FHV10 unified-hash values (2026-08-12): nut v1↔v2 differ ONLY by the
-    // parameter group, which FHV10 never hashes → ONE value for both.
-    // (Consequence: this wall sentinel can no longer SEE a future API fix
-    // for the nut — a successful v2 merge would hash identically; the
-    // content-differing flange keeps the sentinel sharp.)
-    private const string NutV1Hash = "6846AC6F";
-    private const string NutV2Hash = "6846AC6F";
+
+    // FHV10 hashes of the v1/v2 nut FILES — computed live in Seed. The
+    // former const pins (_nutV1FileHash = _nutV2FileHash = 6846AC6F, 2026-08-12) went
+    // stale the same day: the owner's update-flow manual test rewrote the
+    // v2 file (and added a v3) — the owner library is a living fixture, so
+    // the pins must follow the files, not freeze them.
+    private string? _nutV1FileHash;
+    private string? _nutV2FileHash;
 
     private const string FlangeName = "PPR-E1401-N-Фланец-ПлоскийПриварной-ГОСТ_33259_2015-PIFT-PL-0104-G3";
 
@@ -104,6 +115,25 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         var pairCopy = Path.Combine(_tempDir, "Фланцевая пара.rfa");
         File.Copy(pairFile, pairCopy);
         _pairDoc = Application.OpenDocumentFile(pairCopy);
+
+        var hashExtractor = new RevitFamilySnapshotExtractor();
+        var fileHasher = new FamilyContentHasher();
+        _nutV1FileHash = HashFamilyFile(hashExtractor, fileHasher, _nutV1Path);
+        _nutV2FileHash = HashFamilyFile(hashExtractor, fileHasher, _nutV2Path);
+    }
+
+    private static string HashFamilyFile(
+        RevitFamilySnapshotExtractor extractor, FamilyContentHasher hasher, string fullPath)
+    {
+        var doc = Application.OpenDocumentFile(fullPath);
+        try
+        {
+            return hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString;
+        }
+        finally
+        {
+            doc.Close(false);
+        }
     }
 
     private static string? FindVersionedFile(string familyName, string versionFolder)
@@ -150,7 +180,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
     }
 
     [Test]
-    public async Task ReloadNestedV2_IntoRealFlangePair_KeepsV1_ConfirmedApiWall()
+    public async Task ReloadNestedV2_IntoRealFlangePair_RawReload_DecisiveOutcome()
     {
         var extractor = new RevitFamilySnapshotExtractor();
         var hasher = new FamilyContentHasher();
@@ -173,7 +203,12 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
         }
 
         var beforeHash = HashEmbedded();
-        SmartConLogger.Info($"RealRepro: embedded nut BEFORE reload = {beforeHash[..8]} (expect v1={NutV1Hash})");
+        SmartConLogger.Info($"RealRepro: embedded nut BEFORE reload = {beforeHash[..8]} (expect v1={_nutV1FileHash})");
+
+        // Fixture precondition: the pair must embed the nut v1 — otherwise
+        // the reload outcome below cannot be interpreted (owner library
+        // drift check; the library is mutated by manual tests).
+        await Assert.That(beforeHash).IsEqualTo(_nutV1FileHash);
 
         var v2Path = _nutV2Path!;
         var options = new RevitFamilyLoadOptions(
@@ -192,7 +227,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
 
         var afterHash = HashEmbedded();
         SmartConLogger.Info(
-            $"RealRepro: embedded nut AFTER reload = {afterHash[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+            $"RealRepro: embedded nut AFTER reload = {afterHash[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
 
         // The arbiter: which nut reaches a PROJECT — the hoisted definition
         // (what actually ships) or the stale copy EditFamily shows?
@@ -220,7 +255,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                     {
                         var projectHash = hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(nutCopy))!.HexString;
                         SmartConLogger.Info(
-                            $"RealRepro: PROJECT nut = {projectHash[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+                            $"RealRepro: PROJECT nut = {projectHash[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
                     }
                     finally
                     {
@@ -238,22 +273,22 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             }
         }
 
-        // CONFIRMED WALL (probes 2026-08-11): this real-world family
-        // (Pipe Accessories, shared, single space-named type, lookup-table
-        // formulas) resists EVERY API reload variant — path-load,
-        // doc-to-doc, wrapper via OnSharedFamilyFound, in family and
-        // project documents, even with a type added to the file. Every
-        // variant returns success (OnFamilyFound/OnSharedFamilyFound fire,
-        // overwrite=True) while the embedded definition stays v1 — and the
-        // pair loaded into a project ships the v1 nut too. Matches the
-        // Autodesk-confirmed report that the LoadFamily API does not
-        // replicate the manual UI reload (Revit API forum, 2026-04-30,
-        // Revit 2026.4). The StaleFamilyUpdater post-verify is the arbiter:
-        // it detects the no-op and keeps the family honestly stale. If a
-        // future Revit version fixes the API, this test FAILS — that is
-        // the signal to revisit the production flow.
+        // 2026-08-12 fixture drift: the owner's update-flow manual test
+        // rewrote the v2 nut file (v1↔v2 no longer differ ONLY by the
+        // parameter group), and with a substantively-differing incoming file
+        // the RAW unpoked reload LANDS v2 — the 2026-08-11 no-op wall
+        // (probes: every variant returned success while the embedded
+        // definition stayed v1) was specific to group-only-diff content.
+        // The durable production hazard is neither "wall" nor "landing" but
+        // a SILENT PARTIAL merge (an embedded hash matching neither file) —
+        // that is what this sentinel asserts now. The StaleFamilyUpdater
+        // post-verify remains the arbiter in both outcomes.
+        var landed = afterHash == _nutV2FileHash;
+        var walled = afterHash == _nutV1FileHash;
+        SmartConLogger.Info(
+            $"RealRepro: raw reload outcome = {(landed ? "LANDED v2" : walled ? "WALL (stayed v1)" : "PARTIAL MERGE")}");
         await Assert.That(loaded).IsTrue();
-        await Assert.That(afterHash[..8]).IsEqualTo(NutV1Hash);
+        await Assert.That(landed || walled).IsTrue();
     }
 
     [Test]
@@ -310,7 +345,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                     tx.Commit();
                 }
                 SmartConLogger.Info(
-                    $"RealRepro V{(placeInstance ? 2 : 1)}: nut before = {HashNut(host)[..8]} (expect v1={NutV1Hash}), instance placed={placeInstance}, symbol={symbol?.Name ?? "<none>"}");
+                    $"RealRepro V{(placeInstance ? 2 : 1)}: nut before = {HashNut(host)[..8]} (expect v1={_nutV1FileHash}), instance placed={placeInstance}, symbol={symbol?.Name ?? "<none>"}");
 
                 var options = new RevitFamilyLoadOptions(true, null, null, null);
                 var loaded = false;
@@ -321,7 +356,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                     tx.Commit();
                 }
                 SmartConLogger.Info(
-                    $"RealRepro V{(placeInstance ? 2 : 1)}: LoadFamily(v2) returned {loaded}, nut after = {HashNut(host)[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+                    $"RealRepro V{(placeInstance ? 2 : 1)}: LoadFamily(v2) returned {loaded}, nut after = {HashNut(host)[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
             }
             finally
             {
@@ -456,7 +491,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
             var result = v2Doc.LoadFamily(host, new RevitFamilyLoadOptions(true, null, null, null));
             v2Doc.Close(false);
             SmartConLogger.Info(
-                $"RealRepro A: doc-to-doc LoadFamily returned {(result is null ? "null" : "Family")}, nut after = {Hash()[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+                $"RealRepro A: doc-to-doc LoadFamily returned {(result is null ? "null" : "Family")}, nut after = {Hash()[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
         }
         finally
         {
@@ -601,7 +636,7 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                 try { hash = hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(copy))!.HexString; }
                 finally { copy.Close(false); }
                 SmartConLogger.Info(
-                    $"RealRepro C [project]: reload returned {loaded}, nut in project = {hash[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+                    $"RealRepro C [project]: reload returned {loaded}, nut in project = {hash[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
             }
             finally
             {
@@ -655,14 +690,14 @@ public sealed class RealLibraryNestedReloadReproTests : RevitApiTest
                 wrapper.LoadFamily(nutV2Path, out _);
                 tx.Commit();
             }
-            SmartConLogger.Info($"RealRepro D: before wrapper load, nut = {HashNut(host)[..8]} (v1={NutV1Hash})");
+            SmartConLogger.Info($"RealRepro D: before wrapper load, nut = {HashNut(host)[..8]} (v1={_nutV1FileHash})");
 
             // Doc-to-doc: the wrapper carries nut v2 as its shared nested;
             // the load must raise OnSharedFamilyFound for the nut →
             // source=Family (RevitFamilyLoadOptions default branch).
             var result = wrapper.LoadFamily(host, new RevitFamilyLoadOptions(true, null, null, null));
             SmartConLogger.Info(
-                $"RealRepro D: wrapper doc-to-doc returned {(result is null ? "null" : "Family")}, nut after = {HashNut(host)[..8]} (v1={NutV1Hash}, v2={NutV2Hash})");
+                $"RealRepro D: wrapper doc-to-doc returned {(result is null ? "null" : "Family")}, nut after = {HashNut(host)[..8]} (v1={_nutV1FileHash}, v2={_nutV2FileHash})");
         }
         finally
         {

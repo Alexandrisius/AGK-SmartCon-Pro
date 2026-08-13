@@ -147,8 +147,17 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 }
             }
 
-            if (!isFamilyLoaded || !isTypeLoaded)
+            // #210: freshness-on-place — a stale type takes the reload path
+            // even though it is already in the project (the skip below would
+            // otherwise place the outdated copy).
+            if (!isFamilyLoaded || !isTypeLoaded || dragData.IsStaleInProject)
             {
+                if (dragData.IsStaleInProject && isTypeLoaded)
+                {
+                    SmartConLogger.Info(
+                        $"Type '{typeName}' is stale in the project — refreshing from the catalog before placement");
+                }
+
                 resolved = AsyncBridge.RunSync(() => _fileResolver
                     .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None));
 

@@ -373,8 +373,7 @@
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Center">
-                                    <TextBlock VerticalAlignment="Center"
-                                               ToolTip="{Binding MarkerResolvedTooltip, TargetNullValue={x:Null}}">
+                                    <TextBlock VerticalAlignment="Center">
                                         <TextBlock.Text>
                                             <MultiBinding Converter="{StaticResource StatusConverter}">
                                                 <Binding Path="Status"/>
@@ -383,47 +382,54 @@
                                             </MultiBinding>
                                         </TextBlock.Text>
                                     </TextBlock>
-                                    <!-- Issue #126: warning icon for cross-name duplicates.
-                                         Shown only when the content hash matched an item under
-                                         a DIFFERENT name (the file was renamed). The tooltip
-                                         explains what MakeActive / IncrementVersion will do. -->
-                                    <TextBlock Text="⚠"
-                                               Margin="4,0,0,0"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource WarningBrush}"
-                                               ToolTip="{Binding CrossNameDuplicateTooltip}"
-                                               Visibility="{Binding IsCrossNameDuplicate, Converter={StaticResource BoolToVis}}"/>
-                                    <!-- ADR-066 / E2 (#209): dependency badges live HERE, inline with the
-                                         status text — overlaying them on the validation-status button made
-                                         the icons overlap and unreadable (manual-test feedback). -->
-                                    <iconPacks:PackIconMaterial Kind="LinkVariant"
-                                                                Foreground="#607D8B"
-                                                                Width="12" Height="12"
-                                                                Margin="4,0,0,0"
-                                                                VerticalAlignment="Center"
-                                                                ToolTip="{Binding DependencyOfTooltip}"
-                                                                Visibility="{Binding IsDependency, Converter={StaticResource BoolToVis}}"/>
-                                    <iconPacks:PackIconMaterial Kind="SyncAlert"
-                                                                Foreground="#FFA000"
-                                                                Width="12" Height="12"
-                                                                Margin="4,0,0,0"
-                                                                VerticalAlignment="Center"
-                                                                ToolTip="{Binding OutdatedNestedTooltip}"
-                                                                Visibility="{Binding IsOutdatedNested, Converter={StaticResource BoolToVis}}"/>
-                                    <iconPacks:PackIconMaterial Kind="Cancel"
-                                                                Foreground="#F44336"
-                                                                Width="12" Height="12"
-                                                                Margin="4,0,0,0"
-                                                                VerticalAlignment="Center"
-                                                                ToolTip="{Binding OutdatedDependencyBlockTooltip}"
-                                                                Visibility="{Binding HasOutdatedDependencyBlock, Converter={StaticResource BoolToVis}}"/>
-                                    <iconPacks:PackIconMaterial Kind="AlertCircle"
-                                                                Foreground="#F44336"
-                                                                Width="12" Height="12"
-                                                                Margin="4,0,0,0"
-                                                                VerticalAlignment="Center"
-                                                                ToolTip="{Binding FailedDependenciesTooltip}"
-                                                                Visibility="{Binding HasFailedDependencies, Converter={StaticResource BoolToVis}}"/>
+                                    <!-- #210: clickable badges (StatusBadgeButton pattern — Generic.xaml).
+                                         Paperclip / muted info badge → related-elements view
+                                         (info only, no actions); the ONE problem triangle
+                                         (worst severity colour) → problem view with actions.
+                                         Two separate dialogs by design. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenInfoDetailsCommand}"
+                                            ToolTip="{Binding DependencyBadgeTooltip}"
+                                            Visibility="{Binding IsDependency, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="Paperclip"
+                                                                    Foreground="#607D8B"
+                                                                    Width="11" Height="11"/>
+                                    </Button>
+                                    <!-- Info-only fallback (e.g. a top-level row whose version was
+                                         resolved by the verification marker): keeps the explanation
+                                         reachable when neither badge above is shown. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenInfoDetailsCommand}"
+                                            ToolTip="{Binding InfoBadgeTooltip}"
+                                            Visibility="{Binding ShowInfoBadge, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="InformationOutline"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                                    Width="11" Height="11"/>
+                                    </Button>
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenStatusDetailsCommand}"
+                                            ToolTip="{Binding ProblemBadgeTooltip}"
+                                            Visibility="{Binding HasProblemNotices, Converter={StaticResource BoolToVis}}">
+                                        <!-- Иконка в языке гейта валидации: AlertCircleOutline
+                                             (warning) / CloseCircleOutline (error). Дефолты — в
+                                             Setters стиля: локальные значения на элементе
+                                             перебивают триггеры и не дают смене иконки работать. -->
+                                        <iconPacks:PackIconMaterial Width="12" Height="12">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Kind" Value="AlertCircleOutline"/>
+                                                    <Setter Property="Foreground" Value="#FB8C00"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ProblemBadgeSeverity}"
+                                                                     Value="{x:Static vm:StatusNoticeSeverity.Error}">
+                                                            <Setter Property="Kind" Value="CloseCircleOutline"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                    </Button>
                                 </StackPanel>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>

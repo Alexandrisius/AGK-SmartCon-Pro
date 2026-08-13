@@ -38,7 +38,10 @@ public sealed partial class FamilyManagerMainViewModel
             leaf.FamilySource,
             typeNode.UniqueId,
             typeNode.FamilyName,
-            typeNode.FamilyKey);
+            typeNode.FamilyKey,
+            // #210: freshness-on-place — a stale type is reloaded from the
+            // catalog by the drop handler instead of placing the stale copy.
+            typeNode.IsStaleInProject);
 
         // E2 (#209): a drifted parent must not reach the project via DnD —
         // block before the drag starts (the drop handler never runs).
@@ -256,6 +259,70 @@ public sealed partial class FamilyManagerMainViewModel
         });
     }
 
+    /// <summary>
+    /// #210: click on the presence dot — the third way to place a type
+    /// (DnD, context menu, dot click). Freshness semantics per color:
+    /// grey/blue place directly; orange (stale) refreshes the type through
+    /// the standard update path FIRST, then places — users never place a
+    /// stale copy from the dot.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPlaceTypeFromIndicator))]
+    private async Task PlaceTypeFromIndicator(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null) return;
+
+        typeNode.IsSelected = true;
+        if (typeNode.PresenceState == TypePresenceState.StaleInProject)
+        {
+            await UpdateTypeAsync(typeNode);
+            // The successful loadable update rebuilds the whole tree — the
+            // captured node is orphaned by it. Re-find the live node and
+            // confirm the verdict flipped; a failed update must NEVER fall
+            // through to placing the stale copy.
+            var fresh = FindTypeNode(typeNode);
+            if (fresh is null || fresh.PresenceState == TypePresenceState.StaleInProject)
+            {
+                return;
+            }
+            typeNode = fresh;
+            typeNode.IsSelected = true;
+        }
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return;
+
+        await PlaceTypeCoreAsync(typeNode, leaf);
+    }
+
+    /// <summary>Finds the live type node matching <paramref name="probe"/>
+    /// (same catalog item + type name) in the CURRENT tree.</summary>
+    private FamilyTypeNodeViewModel? FindTypeNode(FamilyTypeNodeViewModel probe) =>
+        EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>())
+            .Where(l => string.Equals(l.CatalogItemId, probe.CatalogItemId, StringComparison.Ordinal))
+            .SelectMany(l => l.Children.OfType<FamilyTypeNodeViewModel>())
+            .FirstOrDefault(t => string.Equals(t.TypeName, probe.TypeName, StringComparison.Ordinal));
+
+    private bool CanPlaceTypeFromIndicator(FamilyTypeNodeViewModel? typeNode)
+    {
+        if (typeNode is null) return false;
+
+        var parent = FindParentOf(TreeNodes, typeNode);
+        if (parent is not FamilyLeafNodeViewModel leaf) return false;
+
+        if (typeNode.PresenceState == TypePresenceState.StaleInProject)
+        {
+            // #221: typeless families (virtual <default> node) update
+            // family-scoped — the per-type guard's IsVirtual exclusion does
+            // not apply; the leaf-level update guard is the right one.
+            return typeNode.IsVirtual ? CanUpdateStaleLeaf(leaf) : CanUpdateType(typeNode);
+        }
+
+        return leaf.ContentStatus == ContentStatus.Active
+            && !leaf.IsRevitIncompatible
+            && _accessControl.CanLoadToProject
+            && _activeBaseCompatibleWithCurrentDoc;
+    }
+
     [RelayCommand(CanExecute = nameof(CanPlaceType))]
     private async Task PlaceTypeAsync()
     {
@@ -264,6 +331,16 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return;
 
+        await PlaceTypeCoreAsync(typeNode, leaf);
+    }
+
+    /// <summary>
+    /// Selection-independent core of type placement (#210: the presence-dot
+    /// shortcut calls it with the node re-found after an update-triggered
+    /// tree rebuild — a selection would not survive it).
+    /// </summary>
+    private async Task PlaceTypeCoreAsync(FamilyTypeNodeViewModel typeNode, FamilyLeafNodeViewModel leaf)
+    {
         if (leaf.FamilySource == "system")
         {
             await PlaceSystemTypeAsync(

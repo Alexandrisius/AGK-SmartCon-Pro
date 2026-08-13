@@ -110,6 +110,14 @@ public interface IFamilyManagerDialogService
     bool? ShowValidationReport(object viewModel);
 
     /// <summary>
+    /// Show the status details dialog (#210, clickable status badges): the
+    /// read-only list of a batch row's / tree node's active status notices
+    /// with full explanations and optional follow-up actions. Returns when
+    /// the user closes it.
+    /// </summary>
+    bool? ShowStatusDetails(object viewModel);
+
+    /// <summary>
     /// Show the validation rules editor for one category-attribute
     /// binding. Returns true when the user saved the rules.
     /// </summary>

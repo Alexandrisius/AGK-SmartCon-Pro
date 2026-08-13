@@ -57,6 +57,37 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
                 ? TypePresenceState.StaleInProject
                 : TypePresenceState.InProject;
 
+    // ── Clickable presence dot (#210) ──────────────────────────────────
+    // The dot is a placement shortcut: click = the same place-type flow as
+    // DnD / context menu, with freshness semantics per color (grey = load
+    // and place, blue = place, orange = update then place). The tooltip
+    // states exactly that action — no status dialog for this tiny state.
+
+    /// <summary>Action label of the dot click for the current <see cref="PresenceState"/>.</summary>
+    public string PresenceBadgeTooltip =>
+        PresenceState switch
+        {
+            TypePresenceState.NotInProject =>
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_PlaceType_DotLoadPlace)
+                    ?? "Загрузить и разместить тип",
+            TypePresenceState.StaleInProject =>
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_PlaceType_DotUpdatePlace)
+                    ?? "Обновить и разместить",
+            _ =>
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_PlaceType)
+                    ?? "Разместить тип",
+        };
+
+    partial void OnIsInProjectChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PresenceBadgeTooltip));
+    }
+
+    partial void OnIsStaleInProjectChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PresenceBadgeTooltip));
+    }
+
     public bool IsSystemType =>
         FamilySource == "system" || (UniqueId is not null && UniqueId.Length > 0);
 

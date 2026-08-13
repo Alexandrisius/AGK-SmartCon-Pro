@@ -218,6 +218,8 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowValidationReport(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    public bool? ShowStatusDetails(object viewModel) => _presenter.ShowDialog(viewModel);
+
     public bool? ShowValidationRulesEditor(object viewModel) => _presenter.ShowDialog(viewModel);
 
     /// <inheritdoc/>

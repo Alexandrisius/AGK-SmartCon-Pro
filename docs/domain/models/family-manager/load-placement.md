@@ -206,5 +206,11 @@ public sealed record FamilyPlacementDragData(
     string FamilySource = "loadable",
     string? UniqueId = null,
     string? SystemFamilyName = null,
-    string? SystemFamilyKey = null);
+    string? SystemFamilyKey = null,
+    bool IsStaleInProject = false);
 ```
+
+`IsStaleInProject` (#210): тип уже в проекте, но устарел (ES-маркер не совпадает
+с каталогом). Drop handler НЕ берёт skip-ветку «уже загружен» — перезагружает
+из каталога, так что DnD никогда не размещает устаревшую копию
+(freshness-on-place); после перезагрузки пишется свежий маркер.

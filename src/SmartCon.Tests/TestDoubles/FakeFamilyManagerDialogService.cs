@@ -77,6 +77,19 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowValidationReport(object viewModel) => throw new NotImplementedException();
 
+    /// <summary>
+    /// Configurable handler for the status details dialog (#210). When set,
+    /// it receives the dialog view model (inspect notices/actions and return
+    /// the dialog result). When null, the call throws — accidental usage
+    /// fails loudly.
+    /// </summary>
+    public Func<object, bool?>? StatusDetailsHandler { get; set; }
+
+    public bool? ShowStatusDetails(object viewModel)
+        => StatusDetailsHandler is null
+            ? throw new NotImplementedException()
+            : StatusDetailsHandler(viewModel);
+
     public bool? ShowValidationRulesEditor(object viewModel) => throw new NotImplementedException();
     public void ShowModelessBatchImportDialog(object viewModel) => throw new NotImplementedException();
     public void ShowDatabaseUpdateProgressDialog(object viewModel)

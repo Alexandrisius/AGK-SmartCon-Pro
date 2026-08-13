@@ -22,9 +22,6 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-            <converters:StaleCountToTooltipConverter x:Key="StaleCountToTooltipConverter"/>
-            <converters:StaleReasonToTooltipConverter x:Key="StaleReasonToTooltipConverter"/>
-            <converters:PresenceStateToTooltipConverter x:Key="PresenceStateToTooltipConverter"/>
             <converters:UnavailableReasonToTooltipConverter x:Key="UnavailableReasonToTooltipConverter"/>
             <converters:TotalItemCountToTooltipConverter x:Key="TotalItemCountToTooltipConverter"/>
             <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
@@ -68,98 +65,6 @@
                 </Setter>
             </Style>
 
-            <Style x:Key="ModernContextMenu" TargetType="ContextMenu">
-                <Setter Property="Background" Value="White"/>
-                <Setter Property="BorderBrush" Value="#FFE0E0E0"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="Padding" Value="4"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="ContextMenu">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="6"
-                                    Padding="{TemplateBinding Padding}"
-                                    SnapsToDevicePixels="True">
-                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                            </Border>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
-            <Style x:Key="ModernMenuItem" TargetType="MenuItem">
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Padding" Value="12,7,16,7"/>
-                <Setter Property="FontSize" Value="12"/>
-                <Setter Property="Cursor" Value="Hand"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="MenuItem">
-                            <Grid>
-                                <Border x:Name="ItemBorder"
-                                        Background="{TemplateBinding Background}"
-                                        CornerRadius="4"
-                                        Padding="{TemplateBinding Padding}"
-                                        Margin="1">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <ContentPresenter ContentSource="Header"
-                                                          VerticalAlignment="Center"
-                                                          RecognizesAccessKey="True"
-                                                          Grid.Column="0"/>
-                                        <Path x:Name="Arrow"
-                                              Grid.Column="1"
-                                              Data="M 0 0 L 4 4 L 0 8 Z"
-                                              Fill="{TemplateBinding Foreground}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              Margin="8,0,0,0"
-                                              Visibility="Collapsed"/>
-                                    </Grid>
-                                </Border>
-                                <Popup x:Name="SubMenuPopup"
-                                       IsOpen="{TemplateBinding IsSubmenuOpen}"
-                                       Placement="Right"
-                                       HorizontalOffset="-4"
-                                       AllowsTransparency="True"
-                                       Focusable="False"
-                                       PopupAnimation="Fade">
-                                    <Border x:Name="SubMenuBorder"
-                                            Background="{DynamicResource SurfaceBrush}"
-                                            BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="4"
-                                            SnapsToDevicePixels="True">
-                                        <ItemsPresenter/>
-                                    </Border>
-                                </Popup>
-                            </Grid>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
-                                </Trigger>
-                                <Trigger Property="HasItems" Value="True">
-                                    <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
             <Style x:Key="DangerMenuItem" TargetType="MenuItem">
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                 <Setter Property="Background" Value="Transparent"/>
@@ -188,45 +93,6 @@
                                     <Setter Property="Foreground" Value="#FFC62828"/>
                                 </Trigger>
                                 <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
-            <Style x:Key="SecondaryToggleButton" TargetType="ToggleButton">
-                <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="Padding" Value="0"/>
-                <Setter Property="Height" Value="28"/>
-                <Setter Property="Cursor" Value="Hand"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="ToggleButton">
-                            <Border x:Name="Bd"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsChecked" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedSurfaceBrush}"/>
-                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource DisabledBgBrush}"/>
                                     <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
@@ -1065,13 +931,18 @@
                             <TextBlock Text="{Binding DisplayName}"
                                        FontWeight="SemiBold" FontSize="12"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Text=" ⚠"
-                                       Foreground="{DynamicResource WarningBrush}"
-                                       FontSize="11"
-                                       VerticalAlignment="Center"
-                                       Margin="4,0,0,0"
-                                       Visibility="{Binding HasStale, Converter={StaticResource BoolToVis}}"
-                                       ToolTip="{Binding StaleCount, Converter={StaticResource StaleCountToTooltipConverter}}"/>
+                            <!-- #210: stale roll-up — clickable badge (StatusBadgeButton
+                                 pattern) opening the status details dialog -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding StaleBadgeTooltip}"
+                                    Visibility="{Binding HasStale, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                            Foreground="{DynamicResource WarningBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
                             <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="11" VerticalAlignment="Center"
@@ -1175,24 +1046,29 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0"/>
 
-                            <Viewbox Width="11" Height="11" Margin="4,0,0,0"
-                                     VerticalAlignment="Center"
-                                     Visibility="{Binding IsDependencyReferenced, Converter={StaticResource BoolToVis}}"
-                                     ToolTip="{Binding DependencyReferencedTooltip}">
+                            <!-- #210: paperclip → related-elements view (info only,
+                                 no warnings, no actions) -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusInfoDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding DependencyReferencedBadgeTooltip}"
+                                    Visibility="{Binding IsDependencyReferenced, Converter={StaticResource BoolToVis}}">
                                 <iconPacks:PackIconMaterial Kind="Paperclip"
-                                                            Width="24" Height="24"
-                                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                            </Viewbox>
+                                                            Foreground="{DynamicResource TextMutedBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
 
-                            <!-- E2 (#209): amber-бейдж «вложенные устарели — требует переимпорта» (НЕ stale) -->
-                            <Viewbox Width="11" Height="11" Margin="4,0,0,0"
-                                     VerticalAlignment="Center"
-                                     Visibility="{Binding HasOutdatedDependencies, Converter={StaticResource BoolToVis}}"
-                                     ToolTip="{Binding OutdatedDependenciesTooltip}">
-                                <iconPacks:PackIconMaterial Kind="SyncAlert"
-                                                            Width="24" Height="24"
-                                                            Foreground="#FFA000"/>
-                            </Viewbox>
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding ProblemBadgeTooltip}"
+                                    Visibility="{Binding HasProblemBadge, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                            Foreground="{DynamicResource WarningBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
 
                             <ItemsControl ItemsSource="{Binding MatchedTags}"
                                           VerticalAlignment="Center"
@@ -1224,14 +1100,6 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-
-                            <TextBlock Text="{loc:Loc FM_Stale}"
-                                       Foreground="{DynamicResource WarningBrush}"
-                                       FontSize="10"
-                                       VerticalAlignment="Center"
-                                       Margin="4,0,0,0"
-                                       Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}"
-                                       ToolTip="{Binding StaleReason, Converter={StaticResource StaleReasonToTooltipConverter}}"/>
                         </StackPanel>
                     </Grid>
                 </HierarchicalDataTemplate>
@@ -1243,50 +1111,57 @@
                                  light blue (Revit Project Browser style) = loaded
                                  and up to date, orange = loaded but outdated
                                  (stale). Radial gradient gives a soft modern
-                                 glow instead of a flat fill. -->
-                            <Ellipse Width="8" Height="8"
-                                     Margin="0,0,6,0"
-                                     VerticalAlignment="Center"
-                                     ToolTip="{Binding PresenceState, Converter={StaticResource PresenceStateToTooltipConverter}}">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Fill">
-                                            <Setter.Value>
-                                                <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
-                                                    <GradientStop Color="#FFB0BEC5" Offset="0"/>
-                                                    <GradientStop Color="#FF78909C" Offset="0.55"/>
-                                                    <GradientStop Color="#0078909C" Offset="1"/>
-                                                </RadialGradientBrush>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.InProject}">
-                                                <Setter Property="Fill">
-                                                    <Setter.Value>
-                                                        <!-- Revit-style light blue (Project Browser "view on sheet" indicator, Revit 2023+) -->
-                                                        <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
-                                                            <GradientStop Color="#FF64B5F6" Offset="0"/>
-                                                            <GradientStop Color="#FF1E88E5" Offset="0.55"/>
-                                                            <GradientStop Color="#001E88E5" Offset="1"/>
-                                                        </RadialGradientBrush>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.StaleInProject}">
-                                                <Setter Property="Fill">
-                                                    <Setter.Value>
-                                                        <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
-                                                            <GradientStop Color="#FFFFB74D" Offset="0"/>
-                                                            <GradientStop Color="#FFF57C00" Offset="0.55"/>
-                                                            <GradientStop Color="#00F57C00" Offset="1"/>
-                                                        </RadialGradientBrush>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
+                                 glow instead of a flat fill.
+                                 #210: the dot is a placement shortcut — click runs the
+                                 place-type flow with freshness semantics per color (grey =
+                                 load+place, blue = place, orange = update+place). -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Margin="0,0,6,0"
+                                    Command="{Binding DataContext.PlaceTypeFromIndicatorCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding PresenceBadgeTooltip}">
+                                <Ellipse Width="8" Height="8">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill">
+                                                <Setter.Value>
+                                                    <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                        <GradientStop Color="#FFB0BEC5" Offset="0"/>
+                                                        <GradientStop Color="#FF78909C" Offset="0.55"/>
+                                                        <GradientStop Color="#0078909C" Offset="1"/>
+                                                    </RadialGradientBrush>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.InProject}">
+                                                    <Setter Property="Fill">
+                                                        <Setter.Value>
+                                                            <!-- Revit-style light blue (Project Browser "view on sheet" indicator, Revit 2023+) -->
+                                                            <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                                <GradientStop Color="#FF64B5F6" Offset="0"/>
+                                                                <GradientStop Color="#FF1E88E5" Offset="0.55"/>
+                                                                <GradientStop Color="#001E88E5" Offset="1"/>
+                                                            </RadialGradientBrush>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PresenceState}" Value="{x:Static coremodels:TypePresenceState.StaleInProject}">
+                                                    <Setter Property="Fill">
+                                                        <Setter.Value>
+                                                            <RadialGradientBrush Center="0.35,0.35" GradientOrigin="0.35,0.35" RadiusX="0.8" RadiusY="0.8">
+                                                                <GradientStop Color="#FFFFB74D" Offset="0"/>
+                                                                <GradientStop Color="#FFF57C00" Offset="0.55"/>
+                                                                <GradientStop Color="#00F57C00" Offset="1"/>
+                                                            </RadialGradientBrush>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                            </Button>
                             <ContentControl VerticalAlignment="Center">
                                 <ContentControl.Style>
                                     <Style TargetType="ContentControl">

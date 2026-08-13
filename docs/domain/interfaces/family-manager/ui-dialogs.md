@@ -31,13 +31,19 @@ public interface IFamilyManagerDialogService
     string? ShowFolderBrowserDialog(string title, string? initialDirectory = null);
     void ShowWarning(string title, string message);
     void ShowError(string title, string message);
-    string? ShowInputDialog(string title, string prompt, string defaultText = "");
+    void ShowInfo(string title, string message);
+    string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "");
     bool ShowConfirmation(string title, string message);
     DialogResult ShowYesNoCancel(string title, string message);
     bool? ShowCategoryTreeEditor(object viewModel);
     bool? ShowProjectBaseRulesEditor(object viewModel);
+    bool? ShowParseRuleEditor(object viewModel);
+    bool? ShowFieldLibrary(object viewModel);
+    bool? ShowAllowedValues(object viewModel);
     string? ShowCategoryPicker(object viewModel);
     string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
+    string? ShowOpenTextFileDialog(string title, string? initialDirectory = null);
+    bool? ShowSharedParameterPicker(object viewModel);
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
     bool? ShowProperties(object viewModel);
     string? ShowAssetOpenFileDialog(string title, FamilyAssetType assetType, string? initialDirectory = null);
@@ -45,6 +51,12 @@ public interface IFamilyManagerDialogService
     bool? ShowAttributeLibrary(object viewModel);
     bool? ShowProfile(object viewModel);
     bool? ShowBatchImportDialog(object viewModel);
+    bool? ShowValidationReport(object viewModel);
+    bool? ShowStatusDetails(object viewModel);
+    bool? ShowValidationRulesEditor(object viewModel);
+    void ShowModelessBatchImportDialog(object viewModel);
+    void ShowDatabaseUpdateProgressDialog(object viewModel);
+    bool? ShowAvatarCropper(object viewModel);
     SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request);
 }
 ```
@@ -53,6 +65,11 @@ public interface IFamilyManagerDialogService
 и возвращает выбор пользователя. **Должен вызываться на Revit main thread.**
 При отмене пользователем возвращает `SharedFamiliesLoadChoice.UseProject` как
 безопасный дефолт.
+
+`ShowStatusDetails` (#210) — диалог деталей статуса кликабельных бэйджей:
+read-only список `StatusNotice` строки batch-диалога / узла дерева
+(title + буллет-список имён + guidance) и опциональные follow-up действия.
+Два раздельных вида: problem (warning/error + действия) и info (только связи).
 
 ---
 
