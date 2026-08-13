@@ -89,8 +89,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private bool _previousLoadWasSearch;
     private readonly HashSet<string> _savedExpandedCategoryIds = new();
     private readonly HashSet<string> _savedExpandedFamilyIds = new();
-    private HashSet<string>? _loadedFamilyNamesCache;
-    private string? _loadedFamilyNamesCacheProjectPath;
     /// <summary>#187 (M1): the tree was loaded at least once this session —
     /// gates the presence refresh on document switches without a DB switch
     /// (audit B4: replaces the write-only _lastTreeCatalogItems list).</summary>
@@ -115,7 +113,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private ObservableCollection<CatalogTreeNodeViewModel> _treeNodes = [];
     [ObservableProperty] private CatalogTreeNodeViewModel? _selectedTreeNode;
     [ObservableProperty] private bool _isLoading;
-    private string? _cachedProjectPath;
     [ObservableProperty] private string _statusMessage = string.Empty;
     [ObservableProperty] private int _totalItemCount;
     [ObservableProperty] private bool _canLoadToProject;
@@ -438,31 +435,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         await LoadTreeAsync();
     }
 
-    /// <summary>
-    /// Returns the set of family names currently loaded in the Revit document.
-    /// The result is cached per project path and invalidated after family load/place operations.
-    /// </summary>
-    private HashSet<string> GetLoadedFamilyNamesCached()
-    {
-        var currentPath = _cachedProjectPath;
-        if (_loadedFamilyNamesCache is not null &&
-            string.Equals(_loadedFamilyNamesCacheProjectPath, currentPath, StringComparison.OrdinalIgnoreCase))
-        {
-            return _loadedFamilyNamesCache;
-        }
-
-        var names = new HashSet<string>(_familySearchService.GetAllLoadedFamilyNames());
-        _loadedFamilyNamesCache = names;
-        _loadedFamilyNamesCacheProjectPath = currentPath;
-        return names;
-    }
-
-    private void InvalidateLoadedFamilyNamesCache()
-    {
-        _loadedFamilyNamesCache = null;
-        _loadedFamilyNamesCacheProjectPath = null;
-    }
-
     private void UpdateAccessProperties()
     {
         // Write capabilities come pre-gated from the service: CanImport/
@@ -616,10 +588,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 // stale type (only "Обновить" is offered), so CanExecute must
                 // agree.
                 CanPlaceType = typeNode.PresenceState != TypePresenceState.StaleInProject
-                    && parentLeaf.ContentStatus == ContentStatus.Active
-                    && !parentLeaf.IsRevitIncompatible
-                    && _accessControl.CanLoadToProject
-                    && _activeBaseCompatibleWithCurrentDoc;
+                    && CanLoadLeafToProject(parentLeaf);
             }
             else
             {
@@ -764,33 +733,22 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     }
 
     /// <summary>
-    /// Triggers tree refresh via ExternalEvent so that Revit API (FilteredElementCollector)
-    /// runs in the correct thread context before LoadTreeAsync builds the UI.
+    /// Triggers tree refresh via ExternalEvent. The RaiseAsync round-trip is
+    /// LOAD-BEARING, not a warm-up (regression 2026-08-13): the first action
+    /// processed by the AwaitableEvent wires <see cref="IRevitContext"/>
+    /// (<c>ProcessQueue → IRevitContextWriter.SetContext</c> — Revit version,
+    /// username). <c>RefreshAccessAndLoadTreeAsync</c> below calls
+    /// <c>DetectRevitVersion()</c>, so the round-trip MUST complete before the
+    /// dispatcher runs it — without it <c>CurrentRevitVersion</c> stays 0 for
+    /// the whole session and every version-gated operation
+    /// (<c>ResolveForLoadAsync</c>: «Загрузить в проект», «Редактировать»)
+    /// fails with "No compatible version found".
     /// </summary>
     private async Task RefreshTreeViaExternalEventAsync()
     {
         try
         {
-            await _awaitableEvent.RaiseAsync(_ =>
-            {
-                try
-                {
-                    _cachedProjectPath = _revitContext.GetDocument().PathName;
-                }
-                catch
-                {
-                    _cachedProjectPath = null;
-                }
-
-                try
-                {
-                    GetLoadedFamilyNamesCached();
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Debug($"GetLoadedFamilyNamesCached failed during refresh (ignored, cache stays stale): {ex.Message}");
-                }
-            });
+            await _awaitableEvent.RaiseAsync(_ => { }).ConfigureAwait(true);
 
             IsLoading = true;
             try
@@ -893,8 +851,6 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     {
         try
         {
-            InvalidateLoadedFamilyNamesCache();
-
             // v2.0.0 (ADR-036, M-019-003): IDispatcher.InvokeAsync returns Task.
             // We don't await here because OnPlacementCompleted is sync and the
             // caller is the placement event handler; UI refresh is opportunistic.

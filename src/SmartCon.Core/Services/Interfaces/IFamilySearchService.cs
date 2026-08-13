@@ -22,9 +22,4 @@ public interface IFamilySearchService
     /// Проверить существование типоразмера в семействе.
     /// </summary>
     bool HasFamilyType(string familyName, string typeName);
-
-    /// <summary>
-    /// Получить имена всех загруженных семейств в активном документе.
-    /// </summary>
-    IReadOnlyCollection<string> GetAllLoadedFamilyNames();
 }

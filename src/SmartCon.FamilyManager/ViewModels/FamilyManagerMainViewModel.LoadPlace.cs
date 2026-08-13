@@ -61,11 +61,50 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        return leaf.ContentStatus == ContentStatus.Active
-            && !leaf.IsRevitIncompatible
-            && _accessControl.CanLoadToProject
-            && _activeBaseCompatibleWithCurrentDoc;
+        return CanLoadLeafToProject(leaf);
     }
+
+    /// <summary>
+    /// The single load-gate predicate for a leaf: every place/update command
+    /// that loads catalog content into the project ANDs the same four
+    /// conditions — active content, Revit-compatible, role allows loading,
+    /// project base matches the document. Pure static form keeps it
+    /// unit-testable (#221 follow-up: the dot and the context menu must never
+    /// disagree — they now share this one predicate).
+    /// </summary>
+    internal static bool CanLoadLeafToProject(
+        ContentStatus leafStatus,
+        bool isRevitIncompatible,
+        bool canLoadToProject,
+        bool activeBaseCompatibleWithCurrentDoc) =>
+        leafStatus == ContentStatus.Active
+        && !isRevitIncompatible
+        && canLoadToProject
+        && activeBaseCompatibleWithCurrentDoc;
+
+    private bool CanLoadLeafToProject(FamilyLeafNodeViewModel leaf) =>
+        CanLoadLeafToProject(
+            leaf.ContentStatus,
+            leaf.IsRevitIncompatible,
+            _accessControl.CanLoadToProject,
+            _activeBaseCompatibleWithCurrentDoc);
+
+    /// <summary>
+    /// Pure form of the «Обновить» gate for a type node (#221 follow-up).
+    /// Deliberately takes no <c>IsVirtual</c>: for a typeless family the
+    /// update is family-scoped (<see cref="UpdateTypeAsync"/> delegates to the
+    /// leaf's stale-update path, which needs no concrete type), so virtual
+    /// <c>&lt;default&gt;</c> nodes update exactly like real ones.
+    /// </summary>
+    internal static bool CanUpdateTypeNode(
+        bool isInProject,
+        bool isStaleInProject,
+        ContentStatus leafStatus,
+        bool isRevitIncompatible,
+        bool canLoadToProject,
+        bool activeBaseCompatibleWithCurrentDoc) =>
+        (isInProject || isStaleInProject)
+        && CanLoadLeafToProject(leafStatus, isRevitIncompatible, canLoadToProject, activeBaseCompatibleWithCurrentDoc);
 
     [RelayCommand(CanExecute = nameof(CanLoadToProject))]
     private async Task LoadToProject()
@@ -109,6 +148,15 @@ public sealed partial class FamilyManagerMainViewModel
         var selectedName = SelectedItem.Name;
         var targetRevit = CurrentRevitVersion;
 
+        // #222: the version the project currently HAS (stale snapshot / ES
+        // marker) — the update report diffs per-type values against the
+        // target version so «успешно» can say WHICH types actually changed.
+        var fromVersionLabel =
+            _staleDetector.GetCachedSnapshot() is { } snapshot
+            && snapshot.Results.TryGetValue(selectedId, out var snapshotEntry)
+                ? snapshotEntry.LoadedVersionLabel
+                : null;
+
         // E2 (#209): hard block — the catalog content embeds outdated
         // nested families; loading it would plant them into the project.
         if (await CheckDependencyDriftBlockAsync(selectedId, selectedName).ConfigureAwait(true)) return;
@@ -117,18 +165,15 @@ public sealed partial class FamilyManagerMainViewModel
         {
             try
             {
-                var success = await _staleUpdater.UpdateFamilyAsync(
-                    selectedId, overwriteParameterValues, CancellationToken.None)
+                var updateResult = await _staleUpdater.UpdateFamilyAsync(
+                        selectedId, overwriteParameterValues, fromVersionLabel, CancellationToken.None)
                     .ConfigureAwait(true);
 
-                if (success)
+                if (updateResult.Success)
                 {
-                    StatusMessage = string.Format(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_LoadSuccess) ?? "Family \"{0}\" updated to latest version",
-                        selectedName);
+                    StatusMessage = BuildUpdateSuccessMessage(selectedName, updateResult);
 
                     _staleDetector.MarkUpdated([selectedId]);
-                    InvalidateLoadedFamilyNamesCache();
                     await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
@@ -145,6 +190,54 @@ public sealed partial class FamilyManagerMainViewModel
                     ex.Message);
             }
         });
+    }
+
+    /// <summary>
+    /// #222: success message of a single stale update. When the content was
+    /// already current (no reload happened) the message says so honestly;
+    /// when the per-type diff is available it names the CHANGED types — and
+    /// distinguishes types loaded in the project from not-loaded ones, so
+    /// «успешно» never reads as «мой параметр обновился» for a change that
+    /// landed in a type the project does not have.
+    /// </summary>
+    private static string BuildUpdateSuccessMessage(string selectedName, StaleFamilyUpdateResult result)
+    {
+        if (result.ContentAlreadyCurrent)
+        {
+            return string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateAlreadyCurrent)
+                    ?? "Family \"{0}\" is already up-to-date — content matches the current catalog version",
+                selectedName);
+        }
+
+        var message = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_LoadSuccess) ?? "Family \"{0}\" updated to latest version",
+            selectedName);
+        if (!result.TypeDiffAvailable)
+        {
+            return message;
+        }
+
+        if (result.ChangedLoadedTypeNames.Count > 0)
+        {
+            message += string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateChangedTypes)
+                    ?? "; changed types: {0}",
+                string.Join(", ", result.ChangedLoadedTypeNames));
+        }
+        if (result.ChangedNotLoadedTypeNames.Count > 0)
+        {
+            message += string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateChangedTypesNotLoaded)
+                    ?? "; changes in not-loaded types: {0}",
+                string.Join(", ", result.ChangedNotLoadedTypeNames));
+        }
+        if (result.ChangedLoadedTypeNames.Count == 0 && result.ChangedNotLoadedTypeNames.Count == 0)
+        {
+            message += LanguageManager.GetString(StringLocalization.Keys.FM_UpdateNoTypeChanges)
+                ?? "; type values unchanged";
+        }
+        return message;
     }
 
     private async Task ExecuteLoadOrUpdateAsync(bool overwriteParameterValues)
@@ -240,7 +333,6 @@ public sealed partial class FamilyManagerMainViewModel
                     // re-evaluates it from scratch. Other categories' stale markers
                     // (and the families that were not updated) stay intact.
                     _staleDetector.MarkUpdated([selectedId]);
-                    InvalidateLoadedFamilyNamesCache();
                     await LoadTreeAsync().ConfigureAwait(true);
                 }
                 else
@@ -309,18 +401,12 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        if (typeNode.PresenceState == TypePresenceState.StaleInProject)
-        {
-            // #221: typeless families (virtual <default> node) update
-            // family-scoped — the per-type guard's IsVirtual exclusion does
-            // not apply; the leaf-level update guard is the right one.
-            return typeNode.IsVirtual ? CanUpdateStaleLeaf(leaf) : CanUpdateType(typeNode);
-        }
-
-        return leaf.ContentStatus == ContentStatus.Active
-            && !leaf.IsRevitIncompatible
-            && _accessControl.CanLoadToProject
-            && _activeBaseCompatibleWithCurrentDoc;
+        // #221: uniform for real and virtual (<default>) type nodes — a stale
+        // type is refreshed through the family-scoped update path first, then
+        // placed; fresh types place directly. Both gates are the leaf
+        // load-gate (a stale presence already implies the family is in the
+        // project, so no extra presence condition is needed here).
+        return CanLoadLeafToProject(leaf);
     }
 
     [RelayCommand(CanExecute = nameof(CanPlaceType))]
@@ -546,7 +632,6 @@ public sealed partial class FamilyManagerMainViewModel
             // Prune only on full success: a partially synchronized item still
             // has stale types and must keep its badge until the next Check.
             _staleDetector.MarkUpdated([leaf.CatalogItemId]);
-            InvalidateLoadedFamilyNamesCache();
             await LoadTreeAsync().ConfigureAwait(true);
         }
     }
@@ -636,10 +721,7 @@ public sealed partial class FamilyManagerMainViewModel
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        return leaf.ContentStatus == ContentStatus.Active
-            && !leaf.IsRevitIncompatible
-            && _accessControl.CanLoadToProject
-            && _activeBaseCompatibleWithCurrentDoc;
+        return CanLoadLeafToProject(leaf);
     }
 
     /// <summary>
@@ -673,16 +755,18 @@ public sealed partial class FamilyManagerMainViewModel
 
     private bool CanUpdateType(FamilyTypeNodeViewModel? typeNode)
     {
-        if (typeNode is null || typeNode.IsVirtual) return false;
-        if (!typeNode.IsInProject && !typeNode.IsStaleInProject) return false;
+        if (typeNode is null) return false;
 
         var parent = FindParentOf(TreeNodes, typeNode);
         if (parent is not FamilyLeafNodeViewModel leaf) return false;
 
-        return leaf.ContentStatus == ContentStatus.Active
-            && !leaf.IsRevitIncompatible
-            && _accessControl.CanLoadToProject
-            && _activeBaseCompatibleWithCurrentDoc;
+        return CanUpdateTypeNode(
+            typeNode.IsInProject,
+            typeNode.IsStaleInProject,
+            leaf.ContentStatus,
+            leaf.IsRevitIncompatible,
+            _accessControl.CanLoadToProject,
+            _activeBaseCompatibleWithCurrentDoc);
     }
 
     /// <summary>
@@ -810,7 +894,9 @@ public sealed partial class FamilyManagerMainViewModel
         _staleDetector.MarkSystemTypeUpdated(
             catalogItemId, StaleDetector.BuildSystemTypeKey(familyKey, familyName, typeName));
 
-        var doc = _revitContext.GetDocument();
+        // TryGetDocument (#219): zero-document state must be a quiet no-op,
+        // not an NRE from the throwing GetDocument().
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return;
 
         var displayName = EnumerateAllLeaves(TreeNodes.OfType<CategoryNodeViewModel>())

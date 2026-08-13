@@ -593,6 +593,10 @@ public static class StringLocalization
         public const string FM_UpdateAllTypes = "FM_UpdateAllTypes";
         public const string FM_UpdateKeepParams = "FM_UpdateKeepParams";
         public const string FM_UpdateOverwriteParams = "FM_UpdateOverwriteParams";
+        public const string FM_UpdateAlreadyCurrent = "FM_UpdateAlreadyCurrent";
+        public const string FM_UpdateChangedTypes = "FM_UpdateChangedTypes";
+        public const string FM_UpdateChangedTypesNotLoaded = "FM_UpdateChangedTypesNotLoaded";
+        public const string FM_UpdateNoTypeChanges = "FM_UpdateNoTypeChanges";
         public const string FM_UpdateBatchAllStale = "FM_UpdateBatchAllStale";
         public const string FM_Check = "FM_Check";
         public const string FM_Stale = "FM_Stale";

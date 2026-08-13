@@ -19,6 +19,8 @@ internal sealed class StubRevitContext : IRevitContext
 
     public Document GetDocument() => _document;
 
+    public Document? TryGetDocument() => _document;
+
     public string GetRevitVersion() => _document.Application.VersionNumber;
 
     public string GetUsername() => _document.Application.Username;

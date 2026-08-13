@@ -8,7 +8,7 @@ module: pipeconnect-interfaces
 
 ## IRevitContext
 
-Доступ к актуальному Document и UIDocument. Не кешировать — запрашивать при каждой операции.
+Доступ к актуальному Document и UIDocument. Не кешировать — запрашивать при каждой операции. `TryGetDocument` (#219) — небросающий вариант для zero-document состояния (стартовая страница: `ActiveUIDocument == null`); `GetDocument()` там падает с `NullReferenceException` — в обходимых местах использовать `TryGetDocument`.
 
 **Файл:** `SmartCon.Core/Services/Interfaces/IRevitContext.cs`
 **Реализация:** `SmartCon.Revit/Context/RevitContext.cs`
@@ -17,6 +17,7 @@ module: pipeconnect-interfaces
 public interface IRevitContext
 {
     Document GetDocument();
+    Document? TryGetDocument();  // null в zero-document состоянии (#219)
     string GetRevitVersion();  // "2025", "2026"
     // UIDocument не экспонируется в Core (I-09). Доступен через RevitContext в Revit-слое.
 }

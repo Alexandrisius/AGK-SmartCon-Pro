@@ -19,7 +19,7 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
     public bool IsFamilyLoaded(string familyName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return false;
 
         var family = FindByName(doc, familyName);
@@ -34,7 +34,7 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
     public IReadOnlyList<string> GetFamilyTypeNames(string familyName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return Array.Empty<string>();
 
         var family = new FilteredElementCollector(doc)
@@ -55,7 +55,7 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
     public bool HasFamilyType(string familyName, string typeName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return false;
 
         var family = FindByName(doc, familyName);
@@ -73,18 +73,6 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
         SmartConLogger.Info($"HasFamilyType('{familyName}', '{typeName}'): {found} — {DescribeFamily(family)}");
         return found;
-    }
-
-    public IReadOnlyCollection<string> GetAllLoadedFamilyNames()
-    {
-        var doc = _revitContext.GetDocument();
-        if (doc is null) return Array.Empty<string>();
-
-        return new FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family))
-            .Cast<Autodesk.Revit.DB.Family>()
-            .Select(f => f.Name)
-            .ToHashSet();
     }
 
     private static Autodesk.Revit.DB.Family? FindByName(Document doc, string familyName)

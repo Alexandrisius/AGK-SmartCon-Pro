@@ -322,3 +322,46 @@ public enum TypePresenceState
     StaleInProject,   // оранжевый — загружен, но устарел относительно каталога
 }
 ```
+
+---
+
+## StaleFamilyUpdateResult
+
+Результат одиночного stale-update (Issue #222, follow-up ручного теста 2026-08-13). Помимо флага успеха несёт **per-type отчёт об изменениях**: какие типы каталога реально изменили значения между ранее загруженной версией (маркер ES / снимок stale) и целевой — с разбиением на типы, загруженные в проект, и незагруженные. Это не даёт «успешно» читаться как «мой параметр обновился», когда изменения приземлились в типы, которых в проекте нет. `ContentAlreadyCurrent` — reload не понадобился (pre-verify skip / арбитраж failed-reload): «уже актуально», а не «обновлено». `TypeDiffAvailable=false` — diff нечестен (неизвестная from-версия, нет строк экстракции, нет optional-зависимости) → показывается простое сообщение об успехе.
+
+**Файл:** `StaleFamilyUpdateResult.cs`
+
+```csharp
+public sealed record StaleFamilyUpdateResult(
+    bool Success,
+    string? FamilyName,
+    IReadOnlyList<string> ChangedLoadedTypeNames,
+    IReadOnlyList<string> ChangedNotLoadedTypeNames,
+    bool TypeDiffAvailable,
+    bool ContentAlreadyCurrent)
+{
+    public static StaleFamilyUpdateResult Failure(string? familyName);
+    public static StaleFamilyUpdateResult SuccessWithoutReport(string? familyName, bool contentAlreadyCurrent);
+}
+```
+
+---
+
+## CatalogVersionTypeDiffLogic
+
+Чистая per-type дифф-логика значений между двумя версиями одного элемента каталога (Issue #222) поверх строк `extracted_attribute_values`. Идентичность типа между версиями — ИМЯ типа (id строк `family_types` per-version); ключ сравнения — `(TypeName, ParameterName)`, сравниваемое значение — `ValueText` с fallback на `ValueRaw`/`ValueNumber` (G17, invariant). Пара (тип, параметр), присутствующая только с одной стороны, считается изменением. Строки без `TypeId` (family-level) и строки для типов вне списка версии — пропускаются. Вынесена в Core ради unit-тестов (`CatalogVersionTypeDiffLogicTests`).
+
+**Файл:** `CatalogVersionTypeDiffLogic.cs` (в `SmartCon.Core/Services/Implementation/`)
+
+```csharp
+public static class CatalogVersionTypeDiffLogic
+{
+    public static IReadOnlyList<string> ComputeChangedTypeNames(
+        IReadOnlyList<ExtractedAttributeValue> fromValues,
+        IReadOnlyDictionary<string, string> fromTypeNames,
+        IReadOnlyList<ExtractedAttributeValue> toValues,
+        IReadOnlyDictionary<string, string> toTypeNames);
+}
+```
+
+**Используется в:** `StaleFamilyUpdater.BuildTypeChangeReportAsync` — результат сортируется ordinal и классифицируется по набору типов, загруженных в проект (`IFamilySearchService.GetFamilyTypeNames`), в `StaleFamilyUpdateResult`.

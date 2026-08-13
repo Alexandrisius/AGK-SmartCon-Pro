@@ -15,20 +15,36 @@ namespace SmartCon.FamilyManager.Services.Stale;
 /// All methods run on the Revit thread (callers marshal via RaiseAsync).
 /// Tri-state everywhere: <c>null</c> = indeterminate (guard tripped,
 /// extraction failed) — never evidence.
+/// <para>
+/// TYPE-SET RULE (owner stress test 2026-08-14): in a PROJECT the file
+/// hash is computed over the INTERSECTION of types — restricted to the
+/// type names present in the embedded copy. The preserve-types reload
+/// (#101) deliberately keeps the project's loaded subset (e.g. 1 of 2
+/// types), while FHV10 hashes the TYPES section whole — an unrestricted
+/// comparison could never match and reported false POST-RELOAD
+/// VERIFICATION FAILED / false ContentDrift for every partially loaded
+/// multi-type family. In a FAMILY DOCUMENT the comparison stays
+/// full-vs-full: the poke + doc-to-doc merge transfers the WHOLE type
+/// set, so a version bump that adds/removes types must mismatch
+/// pre-reload (otherwise the update would be falsely skipped and the new
+/// type would never land — validator finding 2026-08-14).
+/// </para>
 /// </summary>
 internal static class EmbeddedContentVerifier
 {
     /// <summary>
-    /// Verification-grade hash of a family nested inside an open family
-    /// document: EditFamily → snapshot →
+    /// Verification-grade hash of a family nested inside an open document
+    /// (family document or project): EditFamily → snapshot →
     /// <see cref="IFamilyContentHasher.ComputeForLoadable"/> (FHV10: the
     /// unified hash — fair on an embedded document, groups aside they are
-    /// not hashed at all).
-    /// Returns <c>null</c> when the family is not found or is open as a
-    /// top-level document (EditFamily would return the user's live document
+    /// not hashed at all). Also returns the type-name set present in the
+    /// embedded copy — the caller restricts the file hash to the same set
+    /// (see the type-set rule in the class summary).
+    /// Returns <c>(null, [])</c> when the family is not found or is open as
+    /// a top-level document (EditFamily would return the user's live document
     /// with unsaved edits, and closing it would destroy them — skip instead).
     /// </summary>
-    public static string? ComputeEmbeddedHash(
+    public static (string? Hash, IReadOnlyList<string> TypeNames) ComputeEmbeddedHash(
         Document doc,
         string familyName,
         IFamilySnapshotExtractor snapshotExtractor,
@@ -42,9 +58,9 @@ internal static class EmbeddedContentVerifier
         if (nested is null)
         {
             SmartConLogger.Warn(
-                $"{logContext}: family '{familyName}' not found in the family document " +
-                "[Action: верификация пропущена — семейство не вложено в активный документ]");
-            return null;
+                $"{logContext}: family '{familyName}' not found in the active document " +
+                "[Action: верификация пропущена — семейство не загружено в активный документ]");
+            return (null, []);
         }
 
         // Guard: the family is open as a top-level document — EditFamily
@@ -61,7 +77,7 @@ internal static class EmbeddedContentVerifier
             SmartConLogger.Warn(
                 $"{logContext}: '{familyName}' is open in the Family Editor — embedded content cannot be trusted " +
                 "[Action: закройте семейство в редакторе (сохранив или отменив правки) и повторите «Проверить»]");
-            return null;
+            return (null, []);
         }
 
         Document? copy = null;
@@ -69,14 +85,15 @@ internal static class EmbeddedContentVerifier
         {
             copy = doc.EditFamily(nested);
             var snapshot = snapshotExtractor.ExtractFromFamilyDocument(copy);
-            return contentHasher.ComputeForLoadable(snapshot)?.HexString;
+            var hash = contentHasher.ComputeForLoadable(snapshot)?.HexString;
+            return (hash, snapshot.Types.Select(t => t.Name).ToList());
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"{logContext}: embedded hash computation failed for '{familyName}': {ex.GetType().Name}: {ex.Message} " +
                 "[Action: верификация пропущена — семейство останется stale, повторите «Обновить»]");
-            return null;
+            return (null, []);
         }
         finally
         {
@@ -94,6 +111,11 @@ internal static class EmbeddedContentVerifier
     /// OpenDocumentFile per version file per run — duplicate catalog items
     /// resolving to the same file reuse the cached hash (a cached
     /// <c>null</c> is a cached "indeterminate", not a re-open).
+    /// <paramref name="restrictToTypeNames"/> — the type-set rule: when
+    /// supplied, the file snapshot's TYPES are filtered to these names
+    /// before hashing (the embedded copy of a partially loaded family
+    /// carries only the loaded subset — see the class summary). The cache
+    /// key then carries the sorted name set.
     /// </summary>
     public static string? ComputeFileHash(
         Document doc,
@@ -101,10 +123,15 @@ internal static class EmbeddedContentVerifier
         IFamilySnapshotExtractor snapshotExtractor,
         IFamilyContentHasher contentHasher,
         string logContext,
-        IDictionary<string, string?>? fileHashCache = null)
+        IDictionary<string, string?>? fileHashCache = null,
+        IReadOnlyCollection<string>? restrictToTypeNames = null)
     {
         var resolvedFullPath = System.IO.Path.GetFullPath(absolutePath);
-        if (fileHashCache is not null && fileHashCache.TryGetValue(resolvedFullPath, out var cached))
+        var cacheKey = restrictToTypeNames is null
+            ? resolvedFullPath
+            : resolvedFullPath + "|" + string.Join(",",
+                restrictToTypeNames.OrderBy(n => n, StringComparer.Ordinal));
+        if (fileHashCache is not null && fileHashCache.TryGetValue(cacheKey, out var cached))
         {
             SmartConLogger.Debug($"{logContext}: file hash cache hit for {System.IO.Path.GetFileName(resolvedFullPath)}");
             return cached;
@@ -123,7 +150,7 @@ internal static class EmbeddedContentVerifier
                 "[Action: закройте файл версии в редакторе (сохранив или отменив правки) и повторите «Обновить»]");
             if (fileHashCache is not null)
             {
-                fileHashCache[resolvedFullPath] = null;
+                fileHashCache[cacheKey] = null;
             }
             return null;
         }
@@ -134,6 +161,11 @@ internal static class EmbeddedContentVerifier
         {
             fileDoc = doc.Application.OpenDocumentFile(absolutePath);
             var snap = snapshotExtractor.ExtractFromFamilyDocument(fileDoc);
+            if (restrictToTypeNames is not null)
+            {
+                var allowed = new HashSet<string>(restrictToTypeNames, StringComparer.OrdinalIgnoreCase);
+                snap = snap with { Types = snap.Types.Where(t => allowed.Contains(t.Name)).ToList() };
+            }
             file = contentHasher.ComputeForLoadable(snap)?.HexString;
         }
         catch (Exception ex)
@@ -151,7 +183,7 @@ internal static class EmbeddedContentVerifier
 
         if (fileHashCache is not null)
         {
-            fileHashCache[resolvedFullPath] = file;
+            fileHashCache[cacheKey] = file;
         }
         return file;
     }
@@ -169,8 +201,9 @@ internal static class EmbeddedContentVerifier
     }
 
     /// <summary>
-    /// Full verification: embedded vs file. <c>true</c> — content matches;
-    /// <c>false</c> — differs; <c>null</c> — indeterminate.
+    /// Full verification: embedded vs file (the file hash restricted to the
+    /// embedded type set — see the class summary). <c>true</c> — content
+    /// matches; <c>false</c> — differs; <c>null</c> — indeterminate.
     /// <paramref name="fileHashCache"/> — optional per-run cache, see
     /// <see cref="ComputeFileHash"/>.
     /// </summary>
@@ -183,12 +216,19 @@ internal static class EmbeddedContentVerifier
         string logContext,
         IDictionary<string, string?>? fileHashCache = null)
     {
-        var embedded = ComputeEmbeddedHash(doc, familyName, snapshotExtractor, contentHasher, logContext);
+        var (embedded, typeNames) = ComputeEmbeddedHash(doc, familyName, snapshotExtractor, contentHasher, logContext);
         if (embedded is null)
         {
             return null;
         }
-        var file = ComputeFileHash(doc, absolutePath, snapshotExtractor, contentHasher, logContext, fileHashCache);
+        // Type-set rule: restriction ONLY in a project (preserve-types
+        // keeps the loaded subset). In a family document the full merge
+        // transfers every type — full-vs-full is the honest comparison
+        // (a type-adding version bump must mismatch pre-reload).
+        var file = ComputeFileHash(
+            doc, absolutePath, snapshotExtractor, contentHasher, logContext,
+            fileHashCache,
+            restrictToTypeNames: doc.IsFamilyDocument ? null : typeNames);
         return Compare(embedded, file);
     }
 }

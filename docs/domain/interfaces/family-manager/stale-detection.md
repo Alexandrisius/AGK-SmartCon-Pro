@@ -26,7 +26,7 @@ public interface IFamilyVersionStore
 
 ## IStaleDetector
 
-On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69; системные семейства — Issue #104). Все проверки читают ES-маркер через `IFamilyVersionStore` (in-memory). Сессионный снимок **мержится** при каждой проверке (другие категории сохраняются) и **прунится** при успешном Update (только обновлённые). `InvalidateCache` — полный сброс (D-10: Edit/смена БД); `InvalidateItems` — селективный сброс только импортированных (batch-импорт, иначе бейджи прошлых семейств пропадали).
+On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69; системные семейства — Issue #104). Все проверки читают ES-маркер через `IFamilyVersionStore` (in-memory). Сессионный снимок **мержится** при каждой проверке (другие категории сохраняются) и **прунится** при успешном Update (только обновлённые). `InvalidateCache` — полный сброс (D-10: Edit/смена БД); `InvalidateItems` — селективный сброс только импортированных (batch-импорт, иначе бейджи прошлых семейств пропадали). `GetMergedSnapshot` никогда не возвращает `null` (#220): холодный/инвалидированный кэш стартует мерж с пустого снимка — apply-путь бейджей после DnD не превращается в silent no-op. Контентная верификация (#180, #218): когда маркер сам не может свидетельствовать (отсутствует / совпадает с текущей / указывает на сиротский id), доказывается контент по FHV10-хэшу; сиротский id (item удалён и переимпортирован под новым id) лечится перезаписью маркера с правильным id при совпадении контента.
 
 **Файл:** `IStaleDetector.cs`
 
@@ -44,7 +44,7 @@ public interface IStaleDetector
         string catalogItemId, string displayName, Document doc, CancellationToken ct);
 
     FamilyStaleSnapshot? GetCachedSnapshot();
-    FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
+    FamilyStaleSnapshot GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
     void MarkUpdated(IReadOnlyCollection<string> catalogItemIds);
     void InvalidateCache();
     void InvalidateItems(IReadOnlyCollection<string> catalogItemIds);
@@ -57,16 +57,17 @@ public interface IStaleDetector
 
 ## IStaleFamilyUpdater
 
-Обновление семейств в активном проекте — перезагрузка текущей версии из каталога (ADR-030, Issue #69 AC). После успешного обновления пишет новый `FamilyVersion`-маркер через `IFamilyVersionStore`. Хост **обязан** вызвать `IStaleDetector.InvalidateCache()` после. `UpdateBatchAsync` обрабатывает семейства последовательно и отчитывается о прогрессе через `IProgress<>`.
+Обновление семейств в активном проекте — перезагрузка текущей версии из каталога (ADR-030, Issue #69 AC). После успешного обновления пишет новый `FamilyVersion`-маркер через `IFamilyVersionStore`. Хост **обязан** вызвать `IStaleDetector.MarkUpdated([id])` после. `UpdateBatchAsync` обрабатывает семейства последовательно и отчитывается о прогрессе через `IProgress<>`. Контентная верификация едина для family-doc и проекта (#222): pre-verify skip, арбитраж failed-reload и post-verify по FHV10-хэшу (файловый снапшот ограничен embedded-набором типов ТОЛЬКО в проекте — type-set rule; в family-doc full-vs-full). `UpdateFamilyAsync` возвращает `StaleFamilyUpdateResult` с per-type отчётом об изменённых типах (#222); `fromVersionLabel` (из снимка stale / маркера ES) управляет отчётом, `null` — отчёт пропускается (batch).
 
 **Файл:** `IStaleFamilyUpdater.cs`
 
 ```csharp
 public interface IStaleFamilyUpdater
 {
-    Task<bool> UpdateFamilyAsync(
+    Task<StaleFamilyUpdateResult> UpdateFamilyAsync(
         string catalogItemId,
         bool overwriteParameterValues,
+        string? fromVersionLabel,
         CancellationToken ct);
 
     Task<StaleBatchUpdateResult> UpdateBatchAsync(

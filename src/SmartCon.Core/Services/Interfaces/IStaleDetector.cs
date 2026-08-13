@@ -84,8 +84,13 @@ public interface IStaleDetector
     /// are preserved, entries for the same catalog item ID are overwritten by the
     /// fresh result. Used by the VM to update the tree with the COMPLETE picture
     /// of stale markers (not just the ones from the latest Check call).
+    /// <para>
+    /// A cold/invalidated cache is NOT an error (#220): the merge then starts
+    /// from the empty snapshot, so the apply path always recomputes badges —
+    /// the post-DnD tree rebuild must never silently skip them.
+    /// </para>
     /// </summary>
-    FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
+    FamilyStaleSnapshot GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
 
     /// <summary>
     /// Removes the given catalog item IDs from the snapshot. Used after a successful

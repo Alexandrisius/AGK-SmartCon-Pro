@@ -117,54 +117,16 @@ internal sealed class StaleDetector : IStaleDetector
             var targetRevit = ResolveTargetRevit();
             var reason = loaded is null
                 ? StaleReason.NoEntityStorage
-                : ComputeReason(loaded, catalogItem, targetRevit);
+                : SystemTypeStaleLogic.ComputeReason(
+                    loaded, catalogItem.Id, catalogItem.CurrentVersionLabel, targetRevit);
 
             // The same content-verification rule as the category check
-            // (#180): no marker → prove content, heal on match; marker ==
-            // current → re-verify, local edits become ContentDrift; label
-            // drift → stale without opening any document.
-            var canContentVerify = _fileResolver is not null
-                && _snapshotExtractor is not null
-                && _contentHasher is not null;
-            var markerCannotSpeak = reason == StaleReason.NoEntityStorage
-                || reason == StaleReason.None;
-            if (markerCannotSpeak && canContentVerify)
-            {
-                var verdict = await ContentVerifyEmbeddedAsync(
-                    catalogItem, familyName, doc, targetRevit,
-                    new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase), ct).ConfigureAwait(true);
-                if (loaded is null)
-                {
-                    if (verdict == true)
-                    {
-                        SmartConLogger.Debug(
-                            $"CheckEmbedded: '{familyName}' has no version marker " +
-                            $"but content matches {catalogItem.CurrentVersionLabel} — not stale (marker healed)");
-                        reason = StaleReason.None;
-                        await HealMarkerBestEffortAsync(catalogItem, familyName, targetRevit, ct).ConfigureAwait(true);
-                    }
-                    else
-                    {
-                        SmartConLogger.Debug(
-                            $"CheckEmbedded: '{familyName}' has no version marker, " +
-                            $"current={catalogItem.CurrentVersionLabel}, contentVerify={(verdict == false ? "differs" : "indeterminate")} " +
-                            "— verdict stays stale");
-                    }
-                }
-                else if (verdict == false)
-                {
-                    SmartConLogger.Debug(
-                        $"CheckEmbedded: '{familyName}' marker matches {catalogItem.CurrentVersionLabel} " +
-                        "but the content was EDITED LOCALLY — stale (ContentDrift)");
-                    reason = StaleReason.ContentDrift;
-                }
-                else
-                {
-                    SmartConLogger.Debug(
-                        $"CheckEmbedded: '{familyName}' marker matches {catalogItem.CurrentVersionLabel}, " +
-                        $"content re-verify={(verdict == true ? "matches" : "indeterminate — marker stands")} — not stale");
-                }
-            }
+            // (#180 + #218): a marker that cannot speak (missing / matches
+            // current / orphaned id) → prove content, heal on match.
+            reason = await RefineReasonByContentAsync(
+                catalogItem, familyName, loaded, reason, doc, targetRevit,
+                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase), ct)
+                .ConfigureAwait(true);
 
             result = new StaleCheckResult(
                 catalogItemId, familyName,
@@ -350,26 +312,17 @@ internal sealed class StaleDetector : IStaleDetector
         // 5) Compute StaleReason for each.
         var results = new List<StaleCheckResult>(matched.Count);
         var reasonCounter = new HotLoopCounter(sampleEvery: 32);
-        // Content verification (#180, owner decision 2026-08-12): the check
-        // proves CONTENT whenever the marker alone cannot speak. The unified
-        // FHV10 hash is a fair comparison for an embedded / loaded copy: the
-        // one field a merge physically cannot transfer (parameter groups) is
-        // not hashed at all, and everything else in the embedded EditFamily
-        // document is byte-identical to the source file (probes 2026-08-12).
-        //   · NO marker (a fresh import writes none) → slow content proof,
-        //     once: match → not stale + heal the marker (later checks are
-        //     cheap); differs / indeterminate → stale.
-        //   · Marker == current → RE-VERIFY: match → not stale; DIFFERS →
-        //     the copy was edited locally after the marker was written →
-        //     stale (ContentDrift) — «Обновить» restores the catalog content;
-        //     indeterminate → trust the marker (not stale).
-        //   · Marker label != current → stale WITHOUT opening any document
-        //     (fast): «Обновить» reconciles (pre-verify skip → marker). A
-        //     group-only label drift can neither be confirmed nor fixed by a
-        //     content check (merge never propagates groups — ADR-068).
-        var canContentVerify = _fileResolver is not null
-            && _snapshotExtractor is not null
-            && _contentHasher is not null;
+        // Content verification (#180, owner decision 2026-08-12; #218 orphan
+        // markers): the check proves CONTENT whenever the marker alone cannot
+        // speak — missing entirely, matching the current version (local edits
+        // become ContentDrift), or pointing at an orphaned catalog id (the
+        // item was re-imported under a new id; heal re-resolves it). The
+        // unified FHV10 hash is a fair comparison for an embedded / loaded
+        // copy: the one field a merge physically cannot transfer (parameter
+        // groups) is not hashed at all, and everything else in the embedded
+        // EditFamily document is byte-identical to the source file (probes
+        // 2026-08-12). A label drift without id mismatch is stale WITHOUT
+        // opening any document — «Обновить» reconciles it.
         // One OpenDocumentFile per version FILE per check run — duplicate
         // catalog items resolving to the same file share the cached hash
         // (a cached null is a cached "indeterminate").
@@ -377,58 +330,14 @@ internal sealed class StaleDetector : IStaleDetector
         foreach (var (item, familyName, id) in matched)
         {
             versions.TryGetValue(id, out var loaded);
-            StaleReason reason;
-            if (loaded is null)
-            {
-                reason = StaleReason.NoEntityStorage;
-            }
-            else
-            {
-                reason = ComputeReason(loaded, item, targetRevit);
-            }
+            var reason = loaded is null
+                ? StaleReason.NoEntityStorage
+                : SystemTypeStaleLogic.ComputeReason(
+                    loaded, item.Id, item.CurrentVersionLabel, targetRevit);
 
-            var markerCannotSpeak = reason == StaleReason.NoEntityStorage
-                || reason == StaleReason.None;
-            if (markerCannotSpeak && canContentVerify)
-            {
-                var verdict = await ContentVerifyEmbeddedAsync(item, familyName, doc, targetRevit, fileHashCache, ct)
-                    .ConfigureAwait(true);
-                if (loaded is null)
-                {
-                    if (verdict == true)
-                    {
-                        SmartConLogger.Debug(
-                            $"CheckEmbedded: '{familyName}' has no version marker " +
-                            $"but content matches {item.CurrentVersionLabel} — not stale (marker healed)");
-                        reason = StaleReason.None;
-                        await HealMarkerBestEffortAsync(item, familyName, targetRevit, ct)
-                            .ConfigureAwait(true);
-                    }
-                    else
-                    {
-                        SmartConLogger.Debug(
-                            $"CheckEmbedded: '{familyName}' has no version marker, " +
-                            $"current={item.CurrentVersionLabel}, contentVerify={(verdict == false ? "differs" : "indeterminate")} " +
-                            "— verdict stays stale");
-                    }
-                }
-                else if (verdict == false)
-                {
-                    // Marker == current, but the content was edited locally
-                    // after the marker was written (#180): marker-only checks
-                    // never see this; «Обновить» restores the catalog content.
-                    SmartConLogger.Debug(
-                        $"CheckEmbedded: '{familyName}' marker matches {item.CurrentVersionLabel} " +
-                        "but the content was EDITED LOCALLY — stale (ContentDrift)");
-                    reason = StaleReason.ContentDrift;
-                }
-                else
-                {
-                    SmartConLogger.Debug(
-                        $"CheckEmbedded: '{familyName}' marker matches {item.CurrentVersionLabel}, " +
-                        $"content re-verify={(verdict == true ? "matches" : "indeterminate — marker stands")} — not stale");
-                }
-            }
+            reason = await RefineReasonByContentAsync(
+                item, familyName, loaded, reason, doc, targetRevit, fileHashCache, ct)
+                .ConfigureAwait(true);
 
             results.Add(new StaleCheckResult(
                 item.Id, familyName,
@@ -518,6 +427,136 @@ internal sealed class StaleDetector : IStaleDetector
                 $"CheckEmbedded[{item.Id}]: content verified but marker heal failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: вердикт корректен, но следующая «Проверить» снова выполнит контентную верификацию — проверьте ES-схему]");
         }
+    }
+
+    /// <summary>
+    /// Refines the marker-based verdict whenever the marker alone cannot
+    /// speak (#180 + #218): the marker is missing entirely, matches the
+    /// current version (a local edit would stay invisible to marker-only
+    /// checks), or points at a DIFFERENT catalog id. The id-mismatch case is
+    /// split by a catalog lookup:
+    /// <list type="bullet">
+    /// <item><b>Orphaned</b> (#218): the referenced id no longer exists in
+    /// the catalog (the item was deleted and re-imported under a new id).
+    /// The marker cannot testify about the version — the embedded content is
+    /// proven against the current version file instead, and on a match the
+    /// marker is HEALED with the re-resolved id (Info level, no «corrupted»
+    /// scare).</item>
+    /// <item><b>Foreign</b>: the id belongs to another live catalog item —
+    /// genuinely corrupted ES data. Warn + the stale verdict stands.</item>
+    /// </list>
+    /// Content-proof outcomes: <c>true</c> → not stale (missing/orphaned
+    /// marker healed, best-effort); <c>false</c> → <see cref="StaleReason.ContentDrift"/>
+    /// for a loaded family («Обновить» restores the catalog content), the
+    /// no-marker verdict stands otherwise; <c>null</c> (indeterminate) → the
+    /// marker-based verdict stands.
+    /// </summary>
+    private async Task<StaleReason> RefineReasonByContentAsync(
+        FamilyCatalogItem item,
+        string familyName,
+        FamilyVersion? loaded,
+        StaleReason reason,
+        Document doc,
+        int targetRevit,
+        IDictionary<string, string?> fileHashCache,
+        CancellationToken ct)
+    {
+        // #218: orphan-vs-foreign classification of an id mismatch. The
+        // lookup is cheap (one indexed SQLite read) and runs only for the
+        // already-rare mismatch — never on the happy path.
+        var markerOrphaned = false;
+        if (loaded is not null
+            && !string.IsNullOrEmpty(loaded.CatalogItemId)
+            && !string.Equals(loaded.CatalogItemId, item.Id, StringComparison.Ordinal))
+        {
+            bool? referencedExists;
+            try
+            {
+                referencedExists = await _catalog.GetItemAsync(loaded.CatalogItemId!, ct)
+                    .ConfigureAwait(false) is not null;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                referencedExists = null;
+                SmartConLogger.Warn(
+                    $"CheckEmbedded[{item.Id}]: failed to look up the marker's CatalogItemId in the catalog: " +
+                    $"{ex.GetType().Name}: {ex.Message} " +
+                    "[Action: orphan-резолв пропущен, маркер считается чужим — проверьте доступность БД каталога]");
+            }
+
+            if (referencedExists == false)
+            {
+                markerOrphaned = true;
+                SmartConLogger.Info(
+                    $"CheckEmbedded[{item.Id}]: '{familyName}' marker CatalogItemId='{loaded.CatalogItemId}' " +
+                    "no longer exists in the catalog (the item was re-imported under a new id) — " +
+                    "re-resolving by content");
+            }
+            else
+            {
+                SmartConLogger.Warn(
+                    $"CheckEmbedded[{item.Id}]: '{familyName}' ES marker CatalogItemId='{loaded.CatalogItemId}' " +
+                    $"does not match catalog id '{item.Id}'. " +
+                    "[Action: ES data is corrupted for this family; treat as stale]");
+            }
+        }
+
+        var canContentVerify = _fileResolver is not null
+            && _snapshotExtractor is not null
+            && _contentHasher is not null;
+        var markerCannotSpeak = reason == StaleReason.NoEntityStorage
+            || reason == StaleReason.None
+            || markerOrphaned;
+        if (!markerCannotSpeak || !canContentVerify)
+        {
+            return reason;
+        }
+
+        var verdict = await ContentVerifyEmbeddedAsync(
+            item, familyName, doc, targetRevit, fileHashCache, ct).ConfigureAwait(true);
+
+        if (verdict == true)
+        {
+            if (loaded is null || markerOrphaned)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded: '{familyName}' {(loaded is null ? "has no version marker" : "has an orphaned marker")} " +
+                    $"but content matches {item.CurrentVersionLabel} — not stale (marker healed)");
+                await HealMarkerBestEffortAsync(item, familyName, targetRevit, ct).ConfigureAwait(true);
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded: '{familyName}' marker matches {item.CurrentVersionLabel}, " +
+                    "content re-verify=matches — not stale");
+            }
+            return StaleReason.None;
+        }
+
+        if (verdict == false)
+        {
+            if (loaded is null)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded: '{familyName}' has no version marker, " +
+                    $"current={item.CurrentVersionLabel}, contentVerify=differs — verdict stays stale");
+                return reason;
+            }
+
+            // Marker == current, but the content was edited locally (#180);
+            // or an orphaned marker whose content is genuinely older than
+            // the current version (#218). «Обновить» restores the catalog
+            // content in both cases.
+            SmartConLogger.Debug(
+                $"CheckEmbedded: '{familyName}' {(markerOrphaned ? "orphaned marker" : $"marker matches {item.CurrentVersionLabel}")} " +
+                "but the content DIFFERS from the current catalog version — stale (ContentDrift)");
+            return StaleReason.ContentDrift;
+        }
+
+        SmartConLogger.Debug(
+            $"CheckEmbedded: '{familyName}' content verify indeterminate " +
+            $"— marker-based verdict stands ({reason})");
+        return reason;
     }
 
     /// <summary>
@@ -854,11 +893,15 @@ internal sealed class StaleDetector : IStaleDetector
         lock (_cacheLock) return _cachedSnapshot;
     }
 
-    public FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults)
+    public FamilyStaleSnapshot GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults)
     {
         lock (_cacheLock)
         {
-            if (_cachedSnapshot is null) return null;
+            // #220: a null cache (cold start / all-empty checks / DB switch)
+            // must not turn the apply path into a silent no-op — MergeInto
+            // starts from the empty snapshot, so the post-DnD tree rebuild
+            // always recomputes badges instead of keeping them frozen until
+            // the next manual Check.
             return StaleSnapshotLogic.MergeInto(_cachedSnapshot, newResults, _clock.UtcNow);
         }
     }
@@ -989,25 +1032,5 @@ internal sealed class StaleDetector : IStaleDetector
             "[Action: report this warning — RevitVersionMismatch will be skipped " +
             "for this session]");
         return 0;
-    }
-
-    private static StaleReason ComputeReason(FamilyVersion loaded, FamilyCatalogItem item, int targetRevit)
-    {
-        var reason = SystemTypeStaleLogic.ComputeReason(
-            loaded, item.Id, item.CurrentVersionLabel, targetRevit);
-
-        // Defensive: a marker for a different catalog ID would yield a false
-        // "not stale" verdict. This is rare (would require manually-written ES
-        // data with the wrong GUID) but cheap to guard.
-        if (reason == StaleReason.VersionMismatch &&
-            !string.IsNullOrEmpty(loaded.CatalogItemId) &&
-            !string.Equals(loaded.CatalogItemId, item.Id, StringComparison.Ordinal))
-        {
-            SmartConLogger.Warn(
-                $"ComputeReason: ES marker CatalogItemId='{loaded.CatalogItemId}' " +
-                $"does not match catalog id '{item.Id}'. " +
-                "[Action: ES data is corrupted for this family; treat as stale]");
-        }
-        return reason;
     }
 }

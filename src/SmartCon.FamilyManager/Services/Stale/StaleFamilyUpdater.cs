@@ -30,6 +30,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     private readonly IFamilyDependencyRepository? _dependencyRepository;
     private readonly IFamilySnapshotExtractor? _snapshotExtractor;
     private readonly IFamilyContentHasher? _contentHasher;
+    private readonly IAttributeValueRepository? _attributeValueRepository;
+    private readonly IFamilySearchService? _familySearchService;
 
     public StaleFamilyUpdater(
         IFamilyLoadService loadService,
@@ -46,7 +48,9 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         ISystemTypeSyncOrchestrator? systemSyncOrchestrator = null,
         IFamilyDependencyRepository? dependencyRepository = null,
         IFamilySnapshotExtractor? snapshotExtractor = null,
-        IFamilyContentHasher? contentHasher = null)
+        IFamilyContentHasher? contentHasher = null,
+        IAttributeValueRepository? attributeValueRepository = null,
+        IFamilySearchService? familySearchService = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(loadService);
@@ -82,11 +86,14 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         _dependencyRepository = dependencyRepository;
         _snapshotExtractor = snapshotExtractor;
         _contentHasher = contentHasher;
+        _attributeValueRepository = attributeValueRepository;
+        _familySearchService = familySearchService;
     }
 
-    public async Task<bool> UpdateFamilyAsync(
+    public async Task<StaleFamilyUpdateResult> UpdateFamilyAsync(
         string catalogItemId,
         bool overwriteParameterValues,
+        string? fromVersionLabel,
         CancellationToken ct)
     {
         using var _scope = SmartConLogger.BeginScope(
@@ -94,9 +101,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             ("Method", nameof(UpdateFamilyAsync)),
             ("CatalogItemId", catalogItemId));
 
-        var result = await UpdateFamilyCoreAsync(catalogItemId, overwriteParameterValues, ct)
+        return await UpdateFamilyCoreAsync(catalogItemId, overwriteParameterValues, fromVersionLabel, ct)
             .ConfigureAwait(true);
-        return result.success;
     }
 
     public async Task<StaleBatchUpdateResult> UpdateBatchAsync(
@@ -129,13 +135,16 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             if (ct.IsCancellationRequested) break;
             var id = request.CatalogItemIds[i];
 
-            var (ok, familyName) = await UpdateFamilyCoreAsync(id, request.OverwriteParameterValues, ct)
+            // Batch passes no fromVersionLabel — the #222 per-type change
+            // report is a single-update UX feature; the batch result stays
+            // aggregate (ids only).
+            var updateResult = await UpdateFamilyCoreAsync(id, request.OverwriteParameterValues, null, ct)
                 .ConfigureAwait(true);
-            if (ok) successIds.Add(id);
+            if (updateResult.Success) successIds.Add(id);
             else failedIds.Add(id);
             processed++;
 
-            progress?.Report(new StaleBatchUpdateProgress(processed, total, familyName ?? id));
+            progress?.Report(new StaleBatchUpdateProgress(processed, total, updateResult.FamilyName ?? id));
         }
 
         return new StaleBatchUpdateResult(
@@ -147,9 +156,10 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             FailedCatalogItemIds: failedIds);
     }
 
-    private async Task<(bool success, string? familyName)> UpdateFamilyCoreAsync(
+    private async Task<StaleFamilyUpdateResult> UpdateFamilyCoreAsync(
         string catalogItemId,
         bool overwriteParameterValues,
+        string? fromVersionLabel,
         CancellationToken ct)
     {
 #if NET8_0_OR_GREATER
@@ -187,7 +197,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     "[Action: catalog item is not available on disk for the current Revit " +
                     "version; the family will be skipped and the next Check will mark it " +
                     "stale again]");
-                return (false, null);
+                return StaleFamilyUpdateResult.Failure(null);
             }
 
             // Pre-resolve shared-nested names BEFORE entering the ExternalEvent
@@ -234,23 +244,25 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 {
                     if (orchestrated.Kind == FamilyDocumentUpdateKind.Failed)
                     {
-                        return (false, orchestrated.FamilyName);
+                        return StaleFamilyUpdateResult.Failure(orchestrated.FamilyName);
                     }
                     await WriteMarkerBestEffortAsync(catalogItemId, resolved, orchestrated.FamilyName, targetRevit, ct)
                         .ConfigureAwait(true);
-                    return (true, orchestrated.FamilyName);
+                    var alreadyCurrent = orchestrated.Kind is FamilyDocumentUpdateKind.PreVerified
+                        or FamilyDocumentUpdateKind.Arbitrated;
+                    return StaleFamilyUpdateResult.SuccessWithoutReport(orchestrated.FamilyName, alreadyCurrent);
                 }
             }
 
-            // #209 round-3: pre-verify BEFORE any reload — FAMILY-DOCUMENT
-            // context ONLY (the verify returns "not applicable" in a
-            // project, where the preserve-types reload is the proven path
-            // and must always run). Case covered: the previous batch
-            // already reloaded the nested family (a retry's LoadFamily
-            // then returns false for "unchanged" and used to be reported
-            // as a hard failure). If the embedded content already equals
-            // the catalog target, the update is a no-op success — write
-            // the marker without touching Revit.
+            // #209 round-3 + #222: pre-verify BEFORE any reload, uniformly in
+            // family documents and PROJECTS (the content proof applies to a
+            // loaded project family the same way — EditFamily extraction,
+            // see StaleCheckContentFallbackTests). Case covered: the previous
+            // batch already reloaded the family (a retry's LoadFamily then
+            // returns false for "unchanged" and used to be reported as a
+            // hard failure). If the embedded content already equals the
+            // catalog target, the update is a no-op success — write the
+            // marker without touching Revit.
             // (Legacy path — used when the load service is not source-aware.)
             if (canVerify
                 && StaleUpdateVerificationPolicy.ShouldSkipReload(
@@ -264,7 +276,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 var embeddedName = System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath);
                 await WriteMarkerBestEffortAsync(catalogItemId, resolved, embeddedName, targetRevit, ct)
                     .ConfigureAwait(true);
-                return (true, embeddedName);
+                return StaleFamilyUpdateResult.SuccessWithoutReport(embeddedName, contentAlreadyCurrent: true);
             }
 
             // Issue #101: Stale Update must reload the family while preserving
@@ -287,13 +299,12 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
             if (!result.Success)
             {
-                // In a FAMILY document LoadFamily also reports failure when
-                // the file content is UNCHANGED versus what is loaded
-                // (callbacks never fire) — indistinguishable from a real
-                // rejection at this point, so let the content verification
-                // arbitrate. In a PROJECT the verify is not applicable and
-                // the failure stands as-is (a rejected reload must never be
-                // masked as success).
+                // LoadFamily also reports failure when the file content is
+                // UNCHANGED versus what is loaded (callbacks never fire) —
+                // indistinguishable from a real rejection at this point, so
+                // let the content verification arbitrate (uniformly in family
+                // documents and projects, #222). A rejected reload whose
+                // content genuinely differs must never be masked as success.
                 if (canVerify
                     && StaleUpdateVerificationPolicy.ShouldAcceptFailedReload(
                         await VerifyEmbeddedMatchesResolvedFileAsync(
@@ -305,19 +316,19 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                         $"matches catalog {resolved.VersionLabel} — treating as already up-to-date");
                     await WriteMarkerBestEffortAsync(catalogItemId, resolved, result.FamilyName, targetRevit, ct)
                         .ConfigureAwait(true);
-                    return (true, result.FamilyName);
+                    return StaleFamilyUpdateResult.SuccessWithoutReport(result.FamilyName, contentAlreadyCurrent: true);
                 }
-                return (false, result.FamilyName);
+                return StaleFamilyUpdateResult.Failure(result.FamilyName);
             }
 
-            // #209 (manual-test bug): in a FAMILY document the reload used
-            // to be a silent no-op while markers claimed the new version.
-            // The load service now reloads the nested definition via the
-            // poke + doc-to-doc path (path-load fallback) — verify the
-            // embedded content hash equals the catalog target version
-            // BEFORE writing any marker.
-            // A failed verification = failed update (no marker, the family
-            // stays stale and the next Check offers it again).
+            // #209 (manual-test bug) + #222: a reload can be a silent no-op
+            // while markers claim the new version (family document: Revit's
+            // changedness wall; project: LoadFamilySymbol skipped types whose
+            // definition did not change while OTHERS failed to land). Verify
+            // the embedded content hash equals the catalog target version
+            // BEFORE writing any marker — uniformly in family documents and
+            // projects. A failed verification = failed update (no marker,
+            // the family stays stale and the next Check offers it again).
             if (canVerify)
             {
                 var verified = await VerifyEmbeddedMatchesResolvedFileAsync(
@@ -325,14 +336,21 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     .ConfigureAwait(true);
                 if (StaleUpdateVerificationPolicy.ShouldFailSuccessfulReload(verified))
                 {
-                    return (false, result.FamilyName);
+                    return StaleFamilyUpdateResult.Failure(result.FamilyName);
                 }
             }
 
             await WriteMarkerBestEffortAsync(catalogItemId, resolved, result.FamilyName, targetRevit, ct)
                 .ConfigureAwait(true);
 
-            return (true, result.FamilyName);
+            // #222: per-type change report for the single-update UX («успешно»
+            // must not read as «мой параметр обновился» when the changes
+            // landed in types the project does not have loaded).
+            var report = await BuildTypeChangeReportAsync(
+                catalogItemId, result.FamilyName, resolved, fromVersionLabel, targetRevit, ct)
+                .ConfigureAwait(true);
+            return new StaleFamilyUpdateResult(
+                true, result.FamilyName, report.Loaded, report.NotLoaded, report.Available, ContentAlreadyCurrent: false);
         }
         catch (OperationCanceledException)
         {
@@ -346,11 +364,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             SmartConLogger.Warn(
                 $"UpdateFamily[{catalogItemId}]: failed: {ex.Message}. " +
                 "[Action: family skipped, batch continues]");
-            return (false, null);
+            return StaleFamilyUpdateResult.Failure(null);
         }
     }
 
-    private async Task<(bool success, string? familyName)> UpdateSystemFamilyCoreAsync(
+    private async Task<StaleFamilyUpdateResult> UpdateSystemFamilyCoreAsync(
         FamilyCatalogItem item,
         int targetRevit,
         CancellationToken ct)
@@ -369,7 +387,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             SmartConLogger.Warn(
                 $"UpdateSystemFamily[{item.Id}]: no types in the catalog for '{item.Name}'. " +
                 "[Action: reimport the mini-project to rebuild the type list]");
-            return (false, item.Name);
+            return StaleFamilyUpdateResult.Failure(item.Name);
         }
 
         var result = await _awaitable.RaiseAsync(
@@ -387,29 +405,34 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 $"UpdateSystemFamily[{item.Id}]: {result.SuccessCount}/{result.TypeResults.Count} " +
                 $"types synchronized; failed: [{string.Join(", ", failed)}]. " +
                 "[Action: the item stays stale — check the log for per-type errors and retry]");
-            return (false, item.Name);
+            return StaleFamilyUpdateResult.Failure(item.Name);
         }
 
-        return (true, item.Name);
+        return StaleFamilyUpdateResult.SuccessWithoutReport(item.Name, contentAlreadyCurrent: false);
     }
 
     /// <summary>
-    /// #209 round-4: content verification for the FAMILY-document context.
-    /// Compares the unified FHV10 content hash
+    /// #209 round-4 + #222: content verification for BOTH the family-document
+    /// and the project context. Compares the unified FHV10 content hash
     /// (<see cref="IFamilyContentHasher.ComputeForLoadable"/>)
-    /// of the nested family embedded in the active family document against
+    /// of the family embedded/loaded in the active document against
     /// the same hash of the resolved source .rfa — both extracted in
     /// the same live session, so the comparison is context-consistent
     /// (probe 2026-08-12: the embedded EditFamily document keeps the
     /// authored state byte-for-byte even under a host drive — the merge
     /// transfers everything except parameter groups, which FHV10 no longer
-    /// hashes at all).
+    /// hashes at all; the check side applies the same proof to project-loaded
+    /// families, see StaleCheckContentFallbackTests). The file hash is
+    /// restricted to the embedded type set ONLY in a project (type-set rule,
+    /// stress test 2026-08-14) — a partially loaded multi-type family
+    /// otherwise mismatches the TYPES section structurally; in a family
+    /// document the comparison is full-vs-full because the merge transfers
+    /// every type.
     /// Tri-state: <c>true</c> — embedded matches the file; <c>false</c> —
     /// differs (the reload did not land and the update MUST fail before
-    /// any marker is written); <c>null</c> — NOT APPLICABLE / indeterminate
-    /// (active document is a PROJECT — the preserve-types reload there is
-    /// the long-proven path; file unreadable; family not nested in the
-    /// document; open in the editor). Callers must distinguish via
+    /// any marker is written); <c>null</c> — indeterminate (file unreadable;
+    /// family not found in the document; open in the editor; transient
+    /// extraction failure). Callers must distinguish via
     /// <see cref="StaleUpdateVerificationPolicy"/>: only an explicit
     /// <c>true</c> may skip/arbitrate a reload, only an explicit
     /// <c>false</c> fails an otherwise successful one.
@@ -427,21 +450,32 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
         var (embeddedHash, fileHash) = await _awaitable.RaiseAsync<(string?, string?)>(app =>
         {
-            var doc = _revitContext.GetDocument();
-            if (doc is null || !doc.IsFamilyDocument)
+            // TryGetDocument (#219): zero-document state is a quiet
+            // "indeterminate", never an NRE.
+            var doc = _revitContext.TryGetDocument();
+            if (doc is null)
             {
-                return (null, null); // project context — the proven path, no verify
+                return (null, null);
             }
 
-            var embedded = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+            var (embedded, typeNames) = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
             if (embedded is null)
             {
                 return (null, null);
             }
 
+            // Type-set rule (stress test 2026-08-14, validator round): the
+            // file hash is restricted to the embedded type set ONLY in a
+            // project (preserve-types reload keeps the loaded subset —
+            // an unrestricted comparison never matches). In a family
+            // document the full merge transfers every type, so the
+            // comparison stays full-vs-full: a type-adding version bump
+            // must mismatch pre-reload, otherwise the update would be
+            // falsely skipped and the new type would never land.
             var file = EmbeddedContentVerifier.ComputeFileHash(
                 doc, resolved.AbsolutePath, _snapshotExtractor!, _contentHasher!,
-                $"UpdateFamily[{catalogItemId}]");
+                $"UpdateFamily[{catalogItemId}]",
+                restrictToTypeNames: doc.IsFamilyDocument ? null : typeNames);
             if (file is null)
             {
                 return (null, null);
@@ -488,15 +522,136 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     }
 
     /// <summary>
-    /// Verification-grade hash of a family nested inside an open family
-    /// document — delegates to <see cref="EmbeddedContentVerifier"/>
-    /// (shared with the stale-check content fallback).
+    /// Verification-grade hash of a family nested inside an open document —
+    /// delegates to <see cref="EmbeddedContentVerifier"/> (shared with the
+    /// stale-check content fallback). Returns the hash AND the embedded
+    /// type-name set: the file hash is restricted to the same set ONLY in a
+    /// project (type-set rule — a partially loaded family otherwise never
+    /// verifies); the family-document orchestrated path hashes the file
+    /// full-vs-full and ignores the names.
     /// </summary>
-    private string? ComputeEmbeddedVerificationHashOnRevitThread(
+    private (string? Hash, IReadOnlyList<string> TypeNames) ComputeEmbeddedVerificationHashOnRevitThread(
         Document doc, string familyName, string catalogItemId)
     {
         return EmbeddedContentVerifier.ComputeEmbeddedHash(
             doc, familyName, _snapshotExtractor!, _contentHasher!, $"UpdateFamily[{catalogItemId}]");
+    }
+
+    /// <summary>
+    /// #222: per-type change report for the single-update UX — which catalog
+    /// types actually changed values between the version that WAS loaded
+    /// (<paramref name="fromVersionLabel"/>, from the stale snapshot / ES
+    /// marker) and the version updated TO, split by the set of types
+    /// currently loaded in the project. <c>Available == false</c> when the
+    /// diff cannot be computed honestly (unknown from-version, missing
+    /// extraction rows for either version, optional dependency absent) —
+    /// the caller then shows the plain success message.
+    /// </summary>
+    private async Task<(IReadOnlyList<string> Loaded, IReadOnlyList<string> NotLoaded, bool Available)>
+        BuildTypeChangeReportAsync(
+            string catalogItemId,
+            string? familyName,
+            FamilyResolvedFile resolved,
+            string? fromVersionLabel,
+            int targetRevit,
+            CancellationToken ct)
+    {
+        if (fromVersionLabel is null
+            || resolved.VersionId is null
+            || _catalog is null
+            || _typeRepository is null
+            || _attributeValueRepository is null)
+        {
+            return ([], [], false);
+        }
+
+        if (string.Equals(fromVersionLabel, resolved.VersionLabel, StringComparison.OrdinalIgnoreCase))
+        {
+            // Updating to the same version that was loaded — an honest,
+            // empty diff ("type values unchanged"), not a missing report.
+            return ([], [], true);
+        }
+
+        FamilyCatalogVersion? fromVersion;
+        IReadOnlyList<ExtractedAttributeValue> fromValues;
+        IReadOnlyList<ExtractedAttributeValue> toValues;
+        IReadOnlyList<FamilyTypeDescriptor> fromTypes;
+        IReadOnlyList<FamilyTypeDescriptor> toTypes;
+        try
+        {
+            fromVersion = await _catalog
+                .GetVersionByLabelAsync(catalogItemId, fromVersionLabel, targetRevit, ct)
+                .ConfigureAwait(true);
+            if (fromVersion is null)
+            {
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: type-change report unavailable — " +
+                    $"the previously loaded version '{fromVersionLabel}' is not in the catalog");
+                return ([], [], false);
+            }
+
+            fromValues = await _attributeValueRepository
+                .GetValuesForItemAsync(catalogItemId, fromVersion.Id, ct)
+                .ConfigureAwait(true);
+            toValues = await _attributeValueRepository
+                .GetValuesForItemAsync(catalogItemId, resolved.VersionId, ct)
+                .ConfigureAwait(true);
+            fromTypes = await _typeRepository
+                .GetTypesForItemVersionAsync(catalogItemId, fromVersion.Id, ct)
+                .ConfigureAwait(true);
+            toTypes = await _typeRepository
+                .GetTypesForItemVersionAsync(catalogItemId, resolved.VersionId, ct)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SmartConLogger.Warn(
+                $"UpdateFamily[{catalogItemId}]: type-change report failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: отчёт об изменённых типах пропущен — сама семья обновлена корректно; проверьте доступность БД каталога]");
+            return ([], [], false);
+        }
+
+        if (fromValues.Count == 0 || toValues.Count == 0)
+        {
+            SmartConLogger.Info(
+                $"UpdateFamily[{catalogItemId}]: type-change report unavailable — " +
+                "extracted attribute values are missing for one of the versions " +
+                "(re-run the attribute extraction for the catalog)");
+            return ([], [], false);
+        }
+
+        var changed = CatalogVersionTypeDiffLogic.ComputeChangedTypeNames(
+            fromValues, ToTypeNameMap(fromTypes), toValues, ToTypeNameMap(toTypes));
+
+        IReadOnlyList<string> loadedTypeNames = [];
+        if (_familySearchService is not null && !string.IsNullOrEmpty(familyName))
+        {
+            loadedTypeNames = await _awaitable.RaiseAsync(
+                _ => _familySearchService.GetFamilyTypeNames(familyName!),
+                ct).ConfigureAwait(true);
+        }
+
+        var loadedSet = new HashSet<string>(loadedTypeNames, StringComparer.OrdinalIgnoreCase);
+        var loaded = changed.Where(t => loadedSet.Contains(t)).ToList();
+        var notLoaded = changed.Where(t => !loadedSet.Contains(t)).ToList();
+        SmartConLogger.Info(
+            $"UpdateFamily[{catalogItemId}]: type-change report — {changed.Count} changed type(s) " +
+            $"({loaded.Count} loaded, {notLoaded.Count} not loaded) between " +
+            $"{fromVersionLabel} and {resolved.VersionLabel}");
+        return (loaded, notLoaded, true);
+    }
+
+    private static Dictionary<string, string> ToTypeNameMap(IReadOnlyList<FamilyTypeDescriptor> types)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var type in types)
+        {
+            if (!map.ContainsKey(type.Id))
+            {
+                map[type.Id] = type.Name;
+            }
+        }
+        return map;
     }
 
     /// <summary>
@@ -617,7 +772,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         var name = System.IO.Path.GetFileNameWithoutExtension(resolved.AbsolutePath);
         var resolvedFullPath = System.IO.Path.GetFullPath(resolved.AbsolutePath);
 
-        var embeddedHash = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+        var (embeddedHash, _) = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
 
         // Same C1 guard as the legacy verify: opening an ALREADY-OPEN file
         // would return the user's live document.
@@ -640,11 +795,24 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
         string? fileHash = null;
         Document? fileDoc = null;
+
+        // Family-document context: FULL file hash (validator finding
+        // 2026-08-14) — the poke + doc-to-doc merge transfers the whole
+        // type set, so a type-adding/removing version bump must mismatch
+        // pre-reload (else the update is falsely skipped and the new type
+        // never lands) and match post-reload (else a landed reload is
+        // falsely failed). The type-set restriction is a PROJECT-context
+        // rule only — see the legacy verify path.
+        string? ComputeFullFileHash(Document openFileDoc)
+        {
+            var snap = _snapshotExtractor!.ExtractFromFamilyDocument(openFileDoc);
+            return _contentHasher!.ComputeForLoadable(snap)?.HexString;
+        }
+
         try
         {
             fileDoc = doc.Application.OpenDocumentFile(resolved.AbsolutePath);
-            var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
-            fileHash = _contentHasher!.ComputeForLoadable(snap)?.HexString;
+            fileHash = ComputeFullFileHash(fileDoc);
         }
         catch (Exception ex)
         {
@@ -694,8 +862,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             {
                 try
                 {
-                    var snap = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
-                    fileHash = _contentHasher!.ComputeForLoadable(snap)?.HexString;
+                    fileHash = ComputeFullFileHash(fileDoc);
                 }
                 catch (Exception ex)
                 {
@@ -715,7 +882,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             {
                 // Failed-reload arbitration: content may already match (the
                 // "unchanged" false-failure) — treat as success.
-                var postArb = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+                var (postArb, _) = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
                 if (postArb is not null && fileHash is not null
                     && string.Equals(postArb, fileHash, StringComparison.OrdinalIgnoreCase))
                 {
@@ -729,7 +896,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
 
             if (fileHash is not null)
             {
-                var post = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
+                var (post, _) = ComputeEmbeddedVerificationHashOnRevitThread(doc, name, catalogItemId);
                 if (post is null)
                 {
                     // Same tri-state rule as the legacy policy: null is

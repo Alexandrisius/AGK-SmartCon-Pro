@@ -103,6 +103,10 @@ public static partial class LocalizationService
         ru["FM_Update"] = "Обновить"; en["FM_Update"] = "Update";
         ru["FM_UpdateKeepParams"] = "Сохранить параметры"; en["FM_UpdateKeepParams"] = "Keep instance parameters";
         ru["FM_UpdateOverwriteParams"] = "Перезаписать параметры"; en["FM_UpdateOverwriteParams"] = "Overwrite parameters";
+        ru["FM_UpdateAlreadyCurrent"] = "Семейство \"{0}\" уже актуально — содержимое совпадает с текущей версией каталога"; en["FM_UpdateAlreadyCurrent"] = "Family \"{0}\" is already up-to-date — content matches the current catalog version";
+        ru["FM_UpdateChangedTypes"] = "; изменились типы: {0}"; en["FM_UpdateChangedTypes"] = "; changed types: {0}";
+        ru["FM_UpdateChangedTypesNotLoaded"] = "; изменения в незагруженных типах: {0}"; en["FM_UpdateChangedTypesNotLoaded"] = "; changes in not-loaded types: {0}";
+        ru["FM_UpdateNoTypeChanges"] = "; значения типов не изменились"; en["FM_UpdateNoTypeChanges"] = "; type values unchanged";
         ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";

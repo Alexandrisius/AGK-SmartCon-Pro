@@ -321,16 +321,10 @@ public sealed partial class FamilyManagerMainViewModel
         ct.ThrowIfCancellationRequested();
 
         // 0) Get the complete picture: existing snapshot + fresh results.
-        //    Returns null only if the cache has been invalidated (DB switch,
-        //    explicit InvalidateCache) — in that case we have nothing to apply.
+        //    A cold/invalidated cache is no longer a silent no-op (#220):
+        //    GetMergedSnapshot starts from the empty snapshot, so the
+        //    post-DnD tree rebuild always recomputes badges.
         var merged = _staleDetector.GetMergedSnapshot(results);
-        if (merged is null)
-        {
-            // #185: silent no-op is undiagnosable in a race with
-            // InvalidateCache — at least leave a Debug trace.
-            SmartConLogger.Debug("ApplyStaleResultsToTreeAsync: merged snapshot is null (cache invalidated or cold start) — badges not updated");
-            return;
-        }
 
         // 1) Collect all stale IDs from the merged snapshot — covers every
         //    category that was checked in this session.

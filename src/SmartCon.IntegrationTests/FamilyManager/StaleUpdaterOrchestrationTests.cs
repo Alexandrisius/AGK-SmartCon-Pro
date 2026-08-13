@@ -112,7 +112,7 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter();
         var updater = CreateUpdater(counting, writer);
 
-        var ok = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var ok = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
 
         SmartConLogger.Info(
             $"Orchestration single-update: ok={ok} reloadCalls={counting.NestedReloadCalls} " +
@@ -136,8 +136,8 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter();
         var updater = CreateUpdater(counting, writer);
 
-        var first = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
-        var second = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var first = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
+        var second = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
 
         SmartConLogger.Info(
             $"Orchestration double-update: first={first} second={second} " +
@@ -164,7 +164,7 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter();
         var updater = CreateUpdater(counting, writer);
 
-        var ok = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var ok = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
 
         SmartConLogger.Info(
             $"Orchestration source-open guard: ok={ok} reloadCalls={counting.NestedReloadCalls} " +
@@ -192,7 +192,7 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter();
         var updater = CreateUpdater(counting, writer);
 
-        var ok = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var ok = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
 
         SmartConLogger.Info(
             $"Orchestration nested-open guard: ok={ok} reloadCalls={counting.NestedReloadCalls} " +
@@ -215,7 +215,7 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter();
         var updater = CreateUpdater(counting, writer, new CorruptEmbeddedVerifyHasher());
 
-        var ok = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var ok = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
 
         SmartConLogger.Info(
             $"Orchestration post-verify negative: ok={ok} reloadCalls={counting.NestedReloadCalls} " +
@@ -241,7 +241,7 @@ public sealed class StaleUpdaterOrchestrationTests : RevitApiTest
         var writer = new RecordingVersionWriter(_hostDoc, store);
         var updater = CreateUpdater(counting, writer);
 
-        var ok = await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, CancellationToken.None);
+        var ok = (await updater.UpdateFamilyAsync(CatalogItemId, overwriteParameterValues: true, fromVersionLabel: null, CancellationToken.None)).Success;
         await Assert.That(ok).IsTrue();
 
         var nested = FindNestedFamily(_hostDoc!, ChildName);

@@ -166,8 +166,5 @@ public sealed partial class FamilyManagerMainViewModel
     /// evaluated for a specific leaf instead of the current selection.
     /// </summary>
     private bool CanUpdateStaleLeaf(FamilyLeafNodeViewModel leaf) =>
-        leaf.ContentStatus == ContentStatus.Active
-        && !leaf.IsRevitIncompatible
-        && _accessControl.CanLoadToProject
-        && _activeBaseCompatibleWithCurrentDoc;
+        CanLoadLeafToProject(leaf);
 }

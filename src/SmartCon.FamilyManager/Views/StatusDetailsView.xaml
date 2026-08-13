@@ -7,7 +7,7 @@
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{loc:Loc FM_StatusDetails_Title}"
-        Width="520" MinWidth="400" MaxHeight="560"
+        Width="520" MinWidth="440" MinHeight="220" MaxHeight="560"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
@@ -27,21 +27,28 @@
     <Grid Margin="14,12,14,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <!-- Notices take ALL spare height — otherwise the button row
+                 floats mid-window (or clips) when the user resizes the dialog
+                 taller than the content (manual test 2026-08-13). -->
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header: family/node name (+ optional subtitle). No icon —
-             the content carries the meaning, not decorative glyphs. -->
+             the content carries the meaning, not decorative glyphs.
+             Long names WRAP (never clip mid-word); the tooltip always
+             carries the full text (WPF dialogs best practice). -->
         <StackPanel Grid.Row="0" Margin="0,0,0,10">
             <TextBlock Text="{Binding Title}"
                        FontWeight="SemiBold"
                        FontSize="14"
-                       TextTrimming="CharacterEllipsis"/>
+                       TextWrapping="Wrap"
+                       ToolTip="{Binding Title}"/>
             <TextBlock Text="{Binding Subtitle}"
                        Foreground="{DynamicResource TextMutedBrush}"
                        FontSize="11"
                        TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Subtitle}"
                        Visibility="{Binding HasSubtitle, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
