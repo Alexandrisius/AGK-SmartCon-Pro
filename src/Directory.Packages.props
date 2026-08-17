@@ -67,7 +67,7 @@
     <!-- Пины для merged SmartCon.Dependencies (net48, ADR-051): версии = текущее resolved-состояние,
          чтобы merge не менял фактические версии. Microsoft.Bcl.AsyncInterfaces 10.0.1 уже
          развёртывается в проде (тянет CommunityToolkit.Mvvm 8.4.2) — см. Issue #134. -->
-    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.11" />
     <PackageVersion Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
     <PackageVersion Include="System.Numerics.Vectors" Version="4.6.1" />
