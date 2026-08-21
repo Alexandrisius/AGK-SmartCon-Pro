@@ -104,12 +104,17 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
     /// but are never legitimate sync or import targets (manual test
     /// 2026-08-04). All three inherit ElementType (since the 2011 API);
     /// WireConduitType is not Element-derived and never reaches a
-    /// collector — not listed.
+    /// collector — not listed. Revit 2026 replaced WireMaterialType/
+    /// TemperatureRatingType/InsulationType with the Conductor* model —
+    /// those are plain data objects (not Element-derived), so they never
+    /// reach a collector and are not listed either.
     /// </summary>
     internal static bool IsElectricalSettingsObject(ElementType type) => type is
+#if !REVIT2026_OR_GREATER
         Autodesk.Revit.DB.Electrical.WireMaterialType or
         Autodesk.Revit.DB.Electrical.TemperatureRatingType or
         Autodesk.Revit.DB.Electrical.InsulationType or
+#endif
         Autodesk.Revit.DB.Electrical.VoltageType or
         Autodesk.Revit.DB.Electrical.DistributionSysType;
 

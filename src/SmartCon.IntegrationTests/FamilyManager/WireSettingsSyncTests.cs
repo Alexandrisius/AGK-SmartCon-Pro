@@ -20,6 +20,12 @@ namespace SmartCon.IntegrationTests.FamilyManager;
 /// </summary>
 public sealed class WireSettingsSyncTests : RevitApiTest
 {
+#if !REVIT2026_OR_GREATER
+    // Revit 2026 replaced the ElectricalSetting object graph with the
+    // Conductor* model — the ≤2025 seeding/assertion API (WireMaterialTypes,
+    // AddWireMaterialType, TemperatureRatings) does not compile against the
+    // 2026 API. The conductor member sync is compile-time disabled there;
+    // these tests cover the ≤2025 path only.
     [Test]
     [HookExecutor<RevitThreadExecutor>]
     public async Task Sync_WireType_MaterialChangeInReference_CreatedAndAssignedInTarget()
@@ -84,6 +90,7 @@ public sealed class WireSettingsSyncTests : RevitApiTest
             targetDoc.Close(false);
         }
     }
+#endif
 
     [Test]
     [HookExecutor<RevitThreadExecutor>]
@@ -155,6 +162,7 @@ public sealed class WireSettingsSyncTests : RevitApiTest
         }
     }
 
+#if !REVIT2026_OR_GREATER
     [Test]
     [HookExecutor<RevitThreadExecutor>]
     public async Task Sync_WireType_RatingMissingInProject_WarnsAndCountsNotConverged()
@@ -219,6 +227,7 @@ public sealed class WireSettingsSyncTests : RevitApiTest
             targetDoc.Close(false);
         }
     }
+#endif
 
     private sealed class NullFittingDependencyResolver : IFittingDependencyResolver
     {

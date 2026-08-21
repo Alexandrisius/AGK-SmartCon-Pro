@@ -974,14 +974,23 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     /// UI); missing rating/insulation/size/conduit objects are NOT created
     /// (their numeric content — ampacity, diameter — cannot be invented)
     /// and count as NotConverged with a Warn. Revit 2026 replaced this
-    /// object graph with the Conductor* element model — the ≤2025 setter
-    /// signatures are gone there (<see cref="MissingMethodException"/>),
-    /// which surfaces as one Warn + NotConverged per member.
+    /// object graph with the Conductor* element model (WireType.WireMaterial/
+    /// TemperatureRating/Insulation became ElementId, MaxSize became string)
+    /// — the conductor members are compile-time disabled there and counted
+    /// as NotConverged with a single Warn; conduit/neutral members still sync.
     /// </summary>
     private int SyncWireSettings(Document doc, Electrical.WireType source, Electrical.WireType target)
     {
         var notConverged = 0;
 
+#if REVIT2026_OR_GREATER
+        // Conductor* port: #233
+        SmartConLogger.Warn(
+            "Wire conductor settings (material/rating/insulation/max size) are not synced on Revit 2026+ " +
+            "(the ElectricalSetting object graph was replaced by the Conductor* model — port pending) " +
+            "[Action: sync them manually in Manage > MEP Settings > Electrical Conductor and Cable Settings]");
+        notConverged += 4;
+#else
         notConverged += TrySetWireMember("WireMaterial", () =>
         {
             var sourceName = source.WireMaterial?.Name;
@@ -1053,6 +1062,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             }
             target.MaxSize = size;
         });
+#endif
 
         notConverged += TrySetWireMember("Conduit", () =>
         {
@@ -1114,6 +1124,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         return null;
     }
 
+#if !REVIT2026_OR_GREATER
     private static Electrical.WireMaterialType? CreateWireMaterial(Document doc, string name)
     {
         var setting = doc.Settings.ElectricalSetting;
@@ -1125,6 +1136,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             "(impedance factors follow the base; adjust in the electrical settings if they differ).");
         return setting.AddWireMaterialType(name, baseMaterial);
     }
+#endif
 
     private static bool IsValidId(ElementId? id) =>
         id is not null && id != ElementId.InvalidElementId;

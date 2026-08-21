@@ -8,6 +8,11 @@
     <DefineConstants>$(DefineConstants);NET8_0;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
+  <!-- Revit 2026: поверх цепочки добавляем REVIT2026_OR_GREATER (electrical Conductor* model и др.) -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' == '2026'">
+    <DefineConstants>$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
   <!-- net48 + конкретная версия Revit -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019'">
     <!-- Нет OR_GREATER символов — компилируем для самого старого API (Revit 2019) -->

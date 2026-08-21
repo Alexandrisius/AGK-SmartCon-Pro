@@ -1691,12 +1691,17 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     /// <c>ElectricalSetting</c> object graph, NOT element parameters, so the
     /// generic pipeline never sees them (manual test 2026-08-04: a material
     /// change on a wire type did not sync). Revit 2026 replaced this object
-    /// graph with the Conductor* element model — the ≤2025 property
-    /// signatures no longer exist there (<see cref="MissingMethodException"/>),
-    /// so the read is defensive and yields <c>null</c> on 2026+.
+    /// graph with the Conductor* element model (WireType.WireMaterial/
+    /// TemperatureRating/Insulation are ElementId, MaxSize is string) — the
+    /// conductor identity read is not ported yet, so the wire section is
+    /// omitted from the hash on 2026+ (wire types hash without it there).
+    /// Conductor* port: #233.
     /// </summary>
     private static WireSettingsSnapshot? ExtractWireSettings(ElementType elementType)
     {
+#if REVIT2026_OR_GREATER
+        return null;
+#else
         if (elementType is not WireType wireType)
             return null;
 
@@ -1717,6 +1722,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"Wire settings read failed for type '{elementType.Name}': {ex.Message}");
             return null;
         }
+#endif
     }
 
     /// <summary>

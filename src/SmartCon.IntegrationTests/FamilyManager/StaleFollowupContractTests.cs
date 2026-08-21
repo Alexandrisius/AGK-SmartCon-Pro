@@ -566,7 +566,7 @@ public sealed class StaleFollowupContractTests : RevitApiTest
             Status: AttributeValueStatus.Found,
             Message: null,
             ExtractionRunId: "run",
-            ExtractedAtUtc: DateTimeOffset.UnixEpoch);
+            ExtractedAtUtc: new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
     private static FamilyTypeDescriptor TypeDescriptor(string id, string name) =>
         new(Id: id, CatalogItemId: CatalogItemId, Name: name, SortOrder: 0);
