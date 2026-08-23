@@ -150,6 +150,14 @@ public static class StickyCategoryHeaderBehavior
 
         // Перенаправляем wheel в ScrollViewer TreeView, иначе скролл не работает
         // когда курсор над sticky-областью (overlay перехватывает hit-test).
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0
+            && state.ScrollViewer.ExtentWidth > state.ScrollViewer.ViewportWidth)
+        {
+            state.ScrollViewer.ScrollToHorizontalOffset(state.ScrollViewer.HorizontalOffset - e.Delta);
+            e.Handled = true;
+            return;
+        }
+
         const double pixelsPerWheelDelta = 48.0 / 120.0;
         var currentOffset = state.ScrollViewer.VerticalOffset;
         var targetOffset = currentOffset - e.Delta * pixelsPerWheelDelta;

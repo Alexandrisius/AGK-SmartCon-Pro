@@ -440,12 +440,12 @@ internal static void CollapseAll(IEnumerable<CatalogTreeNodeViewModel> roots);
 **RelayCommands (XAML bindings):**
 
 ```csharp
-[RelayCommand] private void ExpandAllTree();         // → ExpandAll(TreeNodes)
-[RelayCommand] private void CollapseAllTree();       // → CollapseAll(TreeNodes)
+[RelayCommand] private void ToggleAllTree();          // → IsTreeFullyExpanded ? CollapseAll(TreeNodes) : ExpandAll(TreeNodes)
 [RelayCommand] private void ToggleSubtree(CategoryNodeViewModel? category);
 ```
 
-- `ExpandAllTreeCommand` / `CollapseAllTreeCommand` привязаны к двум кнопкам в статус-баре (`FamilyManagerPaneControl.xaml` Row 4).
+- `ToggleAllTreeCommand` привязан к единственной toggle-кнопке в статус-баре (`FamilyManagerPaneControl.xaml`, Row 5): иконка и tooltip переключаются DataTrigger'ом по реактивному флагу `IsTreeFullyExpanded` из `FamilyManagerMainViewModel`.
+- `IsTreeFullyExpanded` пересчитывается при каждой смене `TreeNodes` (`OnTreeNodesChanged`) и при любом изменении `IsAnyDescendantCollapsed` у корневых категорий (корни агрегируют свои поддеревья), поэтому ручной collapse одной категории шевроном мгновенно переключает иконку кнопки обратно на «развернуть».
 - `ToggleSubtreeCommand` привязан к hover-reveal кнопке в header каждой категории — клик разворачивает всё поддерево если хоть что-то свёрнуто, иначе сворачивает всё.
 
 **Иконки** (Material Design, filled `PathGeometry`):
@@ -483,12 +483,14 @@ internal static void CollapseAll(IEnumerable<CatalogTreeNodeViewModel> roots);
 - При активном поиске (`SearchText` непустой) дерево уже раскрыто полностью через `expandAll` в `LoadTreeAsync`, поэтому дополнительных действий не требуется.
 - UI virtualization отключена для каталога (300–500 узлов), так что все `TreeViewItem` контейнеры гарантированно существуют к моменту клика. Команды корректно работают и для частично/полностью свёрнутых деревьев.
 - Кнопка в header категории использует `Focusable="False"` чтобы не триггерить `TreeViewItem.IsSelected` при hover-click. Drag-and-drop из header-а папки (не с кнопки) по-прежнему работает через `TreeViewDragDropBehavior`.
-- Кнопки статус-бара используют `Style="{StaticResource FlatIconButton}"` (Generic.xaml) — явный `ControlTemplate` с точно центрированным `ContentPresenter`. Иконка не смещается при hover (в отличие от дефолтного WPF Button).
+- Кнопка статус-бара использует `Style` c `BasedOn="{StaticResource FlatIconButton}"` (Generic.xaml) — явный `ControlTemplate` с точно центрированным `ContentPresenter`. Иконка не смещается при hover (в отличие от дефолтного WPF Button).
+
+**Горизонтальный скролл дерева:** TreeView включает `ScrollViewer.HorizontalScrollBarVisibility="Auto"` и attached property `TreeViewBehaviors.ShiftWheelScrollsHorizontally` (`SmartCon.UI`): Shift+колесо скроллит вбок (`HorizontalOffset - Delta`, конвенция браузеров) только при наличии переполнения, иначе событие не глушится и работает вертикальный скролл. Тот же Shift-паттерн продублирован в `StickyCategoryHeaderBehavior.OnOverlayPreviewMouseWheel`, чтобы жест работал и над sticky-заголовками. Нежелательный горизонтальный дёрг при выделении элементов по-прежнему подавляется `SuppressHorizontalScrollOnBringIntoView`.
 
 **Используется в:**
 
 - `FamilyManagerPaneControl.xaml:624-680` — `HierarchicalDataTemplate` для `CategoryNodeViewModel`, hover-reveal `ToggleSubtreeCommand` с динамической сменой иконки.
-- `FamilyManagerPaneControl.xaml:738-797` — статус-бар с `ExpandAllTreeCommand` / `CollapseAllTreeCommand` + счётчик `TotalItemCount`.
+- `FamilyManagerPaneControl.xaml` — статус-бар с `ToggleAllTreeCommand` (динамическая иконка/tooltip по `IsTreeFullyExpanded`) + счётчик `TotalItemCount`.
 
 Pure logic, ноль зависимостей от Revit API. Unit-тесты в `src/SmartCon.Tests/FamilyManager/ViewModels/FamilyManagerMainExpandCollapseTests.cs` (12 кейсов, включая реактивное обновление `IsAnyDescendantCollapsed`).
 

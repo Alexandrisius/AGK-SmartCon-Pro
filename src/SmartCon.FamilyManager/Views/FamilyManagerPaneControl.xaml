@@ -702,6 +702,8 @@
                        behaviors:TreeViewDragDropBehavior.AutoExpandDelayMilliseconds="500"
                        behaviors:TreeViewDragDropBehavior.AutoScrollTopInset="{Binding ElementName=StickyOverlay, Path=ActualHeight}"
                        behaviors:TreeViewBehaviors.AutoScrollToSelectedItem="True"
+                       behaviors:TreeViewBehaviors.ShiftWheelScrollsHorizontally="True"
+                       ScrollViewer.HorizontalScrollBarVisibility="Auto"
                        behaviors:TreeViewDragDropBehavior.ResolveParentDropTarget="True"
                       fmbehaviors:StickyCategoryHeaderBehavior.Enabled="True"
                       fmbehaviors:StickyCategoryHeaderBehavior.Overlay="{Binding ElementName=StickyStack}"
@@ -1246,35 +1248,38 @@
                         Orientation="Horizontal"
                         Margin="0,0,4,0"
                         VerticalAlignment="Center">
-                <Button Command="{Binding CollapseAllTreeCommand}"
+                <Button Command="{Binding ToggleAllTreeCommand}"
                         Width="28" Height="28"
                         Cursor="Hand"
                         Focusable="False"
                         HorizontalContentAlignment="Center"
-                        VerticalContentAlignment="Center"
-                        ToolTip="{loc:Loc FM_CollapseAllTooltip}"
-                        Style="{StaticResource FlatIconButton}">
-                    <Path Data="{StaticResource UnfoldLessGeometry}"
-                          Fill="{DynamicResource TextSecondaryBrush}"
+                        VerticalContentAlignment="Center">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource FlatIconButton}">
+                            <Setter Property="ToolTip" Value="{loc:Loc FM_ExpandAllTooltip}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTreeFullyExpanded}" Value="True">
+                                    <Setter Property="ToolTip" Value="{loc:Loc FM_CollapseAllTooltip}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <Path Fill="{DynamicResource TextSecondaryBrush}"
                           Width="12" Height="12"
                           Stretch="Uniform"
                           HorizontalAlignment="Center"
-                          VerticalAlignment="Center"/>
-                </Button>
-                <Button Command="{Binding ExpandAllTreeCommand}"
-                        Width="28" Height="28"
-                        Cursor="Hand"
-                        Focusable="False"
-                        HorizontalContentAlignment="Center"
-                        VerticalContentAlignment="Center"
-                        ToolTip="{loc:Loc FM_ExpandAllTooltip}"
-                        Style="{StaticResource FlatIconButton}">
-                    <Path Data="{StaticResource UnfoldMoreGeometry}"
-                          Fill="{DynamicResource TextSecondaryBrush}"
-                          Width="12" Height="12"
-                          Stretch="Uniform"
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Center"/>
+                          VerticalAlignment="Center">
+                        <Path.Style>
+                            <Style TargetType="Path">
+                                <Setter Property="Data" Value="{StaticResource UnfoldMoreGeometry}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTreeFullyExpanded}" Value="True">
+                                        <Setter Property="Data" Value="{StaticResource UnfoldLessGeometry}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Path.Style>
+                    </Path>
                 </Button>
             </StackPanel>
 
