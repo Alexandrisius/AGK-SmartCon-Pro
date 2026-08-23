@@ -33,6 +33,73 @@ namespace SmartCon.FamilyManager.Services.Stale;
 internal static class EmbeddedContentVerifier
 {
     /// <summary>
+    /// Deterministically aligns the family document's current type before
+    /// verification extraction (CURRENT-TYPE RULE, #240 — owner manual
+    /// test 2026-08-23): the GEOM/CONN sections are evaluated at the CURRENT
+    /// type — EditFamily from a project opens with the project's current
+    /// type (e.g. Ф250), while the resolved .rfa opens with its saved
+    /// active type (Ф100); same content, different geometry → false
+    /// POST-RELOAD VERIFICATION FAILED for every multi-type family whose
+    /// project-side current type differs from the file's saved one
+    /// (single-type families are immune). Target: the first (Ordinal)
+    /// name of <paramref name="preferredTypeNames"/> (the embedded type
+    /// set — the file side of a restricted comparison) or of the
+    /// document's own type set (embedded side / unrestricted comparison).
+    /// Both sides are aligned to the same target, so the comparison is
+    /// current-type-independent. This does NOT change the catalog hash
+    /// semantics (DB extraction keeps the file's saved active type) —
+    /// verification hashes are ephemeral. Best-effort: a failed switch is
+    /// logged and the extraction proceeds — an honest mismatch is better
+    /// than breaking the verification flow.
+    /// </summary>
+    internal static void AlignCurrentTypeForVerification(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames,
+        string logContext)
+    {
+        try
+        {
+            var fm = familyDoc.FamilyManager;
+            var byName = new Dictionary<string, FamilyType>(StringComparer.Ordinal);
+            foreach (FamilyType t in fm.Types)
+            {
+                if (!byName.ContainsKey(t.Name))
+                {
+                    byName[t.Name] = t;
+                }
+            }
+
+            var target = preferredTypeNames is not null
+                ? preferredTypeNames
+                    .Where(byName.ContainsKey)
+                    .OrderBy(n => n, StringComparer.Ordinal)
+                    .FirstOrDefault()
+                : byName.Keys.OrderBy(n => n, StringComparer.Ordinal).FirstOrDefault();
+            if (target is null || string.Equals(fm.CurrentType?.Name, target, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var before = fm.CurrentType?.Name ?? "<none>";
+            using (var tx = new Transaction(familyDoc, "SmartCon_VerifyAlignType"))
+            {
+                tx.Start();
+                fm.CurrentType = byName[target];
+                tx.Commit();
+            }
+
+            SmartConLogger.Debug(
+                $"{logContext}: aligned the current type for verification: '{before}' -> '{target}'");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"{logContext}: could not align the current type for verification: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: верификация продолжится, но геометрия может ложно не совпасть — сообщите разработчикам]");
+        }
+    }
+
+    /// <summary>
     /// Verification-grade hash of a family nested inside an open document
     /// (family document or project): EditFamily → snapshot →
     /// <see cref="IFamilyContentHasher.ComputeForLoadable"/> (FHV10: the
@@ -84,6 +151,7 @@ internal static class EmbeddedContentVerifier
         try
         {
             copy = doc.EditFamily(nested);
+            AlignCurrentTypeForVerification(copy, preferredTypeNames: null, logContext);
             var snapshot = snapshotExtractor.ExtractFromFamilyDocument(copy);
             var hash = contentHasher.ComputeForLoadable(snapshot)?.HexString;
             return (hash, snapshot.Types.Select(t => t.Name).ToList());
@@ -160,6 +228,7 @@ internal static class EmbeddedContentVerifier
         try
         {
             fileDoc = doc.Application.OpenDocumentFile(absolutePath);
+            AlignCurrentTypeForVerification(fileDoc, restrictToTypeNames, logContext);
             var snap = snapshotExtractor.ExtractFromFamilyDocument(fileDoc);
             if (restrictToTypeNames is not null)
             {
