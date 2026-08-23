@@ -129,6 +129,18 @@ public sealed record FamilyContentHash(
     ///     the recalculation — deterministic (dedup resolves to one of
     ///     them), documented in ADR-068 addendum. Critical task
     ///     <c>hash-v10</c> recomputes every row that is not current.
+    /// 11 — lookup tables enter the hash (Issue #238, ADR-069): loadable
+    ///     only: <c>FHV11|LOADABLE|...</c> gains the LOOKUP section — raw
+    ///     CSV content (normalized) of the family's embedded lookup tables
+    ///     (таблицы поиска, <c>FamilySizeTable</c>), tables sorted by name.
+    ///     A values-only edit of a lookup table previously never shifted
+    ///     the hash and the import dialog reported a false Duplicate.
+    ///     Merge-safe by probe (2026-08-23): a reload merge transfers
+    ///     lookup-table content into the embedded copy both in a project
+    ///     and in a doc-to-doc load, so the single unified hash stays
+    ///     consistent. The section is omitted for table-less families.
+    ///     Critical task <c>hash-v11</c> recomputes every row that is not
+    ///     current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -144,7 +156,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 11;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

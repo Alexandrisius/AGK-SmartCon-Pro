@@ -54,13 +54,15 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var (sharedNested, nonSharedNested) = ExtractNestedNames(familyDoc);
         var connectors = ExtractConnectors(familyDoc);
         var behaviorFlags = ExtractBehaviorFlags(familyDoc);
+        var lookupTables = ExtractLookupTables(familyDoc);
 
         SmartConLogger.Info(
             $"Family snapshot: '{familyName}', {parameters.Count} params, " +
             $"{types.Count} types, {geometry.TotalFormCount} forms, " +
             $"{sharedNested.Count} shared nested, {nonSharedNested.Count} non-shared nested, " +
             $"{connectors.Count} connectors" +
-            $"{(facts.Count > 0 ? $", {facts.Count} facts" : string.Empty)}");
+            $"{(facts.Count > 0 ? $", {facts.Count} facts" : string.Empty)}" +
+            $"{(lookupTables is { Count: > 0 } ? $", {lookupTables.Count} lookup tables" : string.Empty)}");
 
         return new FamilySnapshot(
             FamilyName: familyName,
@@ -74,7 +76,88 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             Connectors: connectors.Count > 0 ? connectors : null,
             BehaviorFlags: behaviorFlags,
             NonSharedNestedFamilyNames: nonSharedNested.Count > 0 ? nonSharedNested : null,
-            PhantomTypeValues: phantomValues is { Count: > 0 } ? phantomValues : null);
+            PhantomTypeValues: phantomValues is { Count: > 0 } ? phantomValues : null,
+            LookupTables: lookupTables);
+    }
+
+    /// <summary>
+    /// FHV11 (Issue #238): reads the family's embedded lookup tables
+    /// (таблицы поиска, <c>FamilySizeTable</c>) as raw CSV content for the
+    /// LOOKUP hash section. Uses <c>ExportSizeTable</c> to a temp file
+    /// instead of in-memory <c>AsValueString</c> cell reads: the exported
+    /// CSV is Revit's machine-oriented format (<c>##spec##unit</c> headers,
+    /// raw values) — locale-invariant by construction, while
+    /// <c>AsValueString</c> is display formatting. Works without a
+    /// transaction (probe-proven 2026-08-23) and in any family-document
+    /// context: raw .rfa open, EditFamily copy (embedded verification) and
+    /// the actualization engine — the manager is fetched per call.
+    /// Returns <c>null</c> for table-less families (the LOOKUP section is
+    /// then omitted, keeping the hash stable for them).
+    /// </summary>
+    private static IReadOnlyList<LookupTableSnapshot>? ExtractLookupTables(Document familyDoc)
+    {
+        try
+        {
+            var ownerFamilyId = familyDoc.OwnerFamily?.Id;
+            if (ownerFamilyId is null)
+                return null;
+
+            var fstm = FamilySizeTableManager.GetFamilySizeTableManager(familyDoc, ownerFamilyId);
+            if (fstm is null || fstm.NumberOfSizeTables == 0)
+                return null;
+
+            var result = new List<LookupTableSnapshot>();
+            foreach (var tableName in fstm.GetAllSizeTableNames().OrderBy(n => n, StringComparer.Ordinal))
+            {
+                var csv = ExportSizeTableToString(fstm, tableName);
+                if (csv is not null)
+                {
+                    result.Add(new LookupTableSnapshot(tableName, csv));
+                }
+                else
+                {
+                    SmartConLogger.Warn(
+                        $"Lookup table '{tableName}': ExportSizeTable failed — the table is EXCLUDED from the content hash. " +
+                        "[Action: changes to this table will not shift the hash; re-export the lookup table in the family editor]");
+                }
+            }
+
+            return result.Count > 0 ? result : null;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Lookup table extraction failed: {ex.GetType().Name}: {ex.Message}. " +
+                "[Action: the family hash excludes lookup tables for this run — re-open the family and retry]");
+            return null;
+        }
+    }
+
+    private static string? ExportSizeTableToString(FamilySizeTableManager fstm, string tableName)
+    {
+        var tempPath = Path.GetTempFileName();
+        try
+        {
+            if (!fstm.ExportSizeTable(tableName, tempPath))
+                return null;
+
+            // Normalize: line endings + trailing whitespace, so the same
+            // table content hashes identically regardless of the export
+            // environment. (Plain Replace — ordinal; the StringComparison
+            // overload does not exist on net48.)
+            return File.ReadAllText(tempPath)
+                .Replace("\r\n", "\n")
+                .TrimEnd();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"ExportSizeTable('{tableName}') threw: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            try { File.Delete(tempPath); } catch { /* temp file cleanup */ }
+        }
     }
 
     /// <summary>

@@ -26,10 +26,13 @@ public sealed record FamilySnapshot(
     FamilyBehaviorFlags? BehaviorFlags = null,
     IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
     IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null,
-    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null);
+    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null,
+    IReadOnlyList<LookupTableSnapshot>? LookupTables = null);
 ```
 
 `PhantomTypeValues` (FHV9, #209 стресс-тест 2026-08-12): значения параметров **безтипового** семейства (phantom default type), отсортированные по имени параметра; `null` для семейств с именованными типами (их значения — в `Types`). Извлекаются контекстно-стабильно: из текущего безымянного типа (EditFamily/редактор) или через синтез временного типа `NewType` + Transaction.RollBack (raw-открытие с `Types.Size=0`). Входят ТОЛЬКО в identity-хэш (секция PHANTOM, FHV9); verification-грейд FHV8V их исключает (embedded-значения могут драйвиться хостом через ассоциации). Подробно — [content-hash.md](content-hash.md).
+
+`LookupTables` (FHV11, #238, ADR-069): таблицы поиска (`FamilySizeTable` / lookup CSV), встроенные в семейство, отсортированные по имени; `null` для семейств без таблиц. Входят в content hash (секция LOOKUP) — правка значений таблицы сдвигает хэш. Merge-safe (зонд 2026-08-23): reload-merge переносит содержимое таблиц в embedded-копию и в проекте, и при doc-to-doc загрузке, поэтому единый хэш остаётся консистентным между import-dedup и embedded verification.
 
 ```csharp
 public sealed record FamilyParameterInfo(
@@ -73,6 +76,18 @@ public sealed record FamilyParameterValue(
 - `SharedNestedFamilyNames` — names of shared nested families (ADR-034), sorted.
 - `FamilyParameterValue.HasValue` distinguishes "no value" (`false`) from "value is zero" (`true`, `ValueNumber=0`) — hash treats them differently.
 - `FamilyParameterValue.ValueDisplay` — human-readable value formatted per the owning document's unit settings with the unit symbol (e.g. "300 мм", "16 бар"); `null` when not applicable. NOT part of the content hash — display metadata only. `SpecTypeId`/`UnitTypeId` carry the Forge TypeId strings (legacy enum names on R19-R20) and are likewise excluded from the hash.
+
+---
+
+## LookupTableSnapshot
+
+FHV11 (Issue #238, ADR-069): снапшот одной таблицы поиска (`FamilySizeTable` / lookup table CSV), встроенной в loadable-семейство. Содержимое — raw CSV из `FamilySizeTableManager.ExportSizeTable`, нормализованный (CRLF→LF, trim trailing whitespace): машинный формат Revit (`##spec##unit` заголовки, сырые значения) — локале-инвариантен по построению, в отличие от display-форматирования `AsValueString`. Часть `FamilySnapshot.LookupTables`; входит в content hash (секция LOOKUP) — правка значений таблицы сдвигает хэш, и переимпорт принимается как новая версия вместо ложного «Дубликат».
+
+**Файл:** `Models/FamilyManager/LookupTableSnapshot.cs`
+
+```csharp
+public sealed record LookupTableSnapshot(string Name, string CsvContent);
+```
 
 ---
 

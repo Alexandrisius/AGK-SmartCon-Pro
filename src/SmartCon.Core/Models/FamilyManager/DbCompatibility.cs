@@ -21,11 +21,16 @@ public static class DbCompatibility
     /// Non-breaking releases (additive columns, optional artifacts) do NOT
     /// bump this floor.
     /// FHV10 note (2026-08-12): the floor targets the next beta that first
-    /// SHIPS the FHV8+ formats — v2.0.1-beta.8 (v8/v9 hashes never shipped
+    /// SHIPS the FHV8+ formats - v2.0.1-beta.8 (v8/v9 hashes never shipped
     /// in any release build; latest tag at the time: v2.0.1-beta.7). The
-    /// constant must never exceed the version it ships in — a higher floor
+    /// constant must never exceed the version it ships in - a higher floor
     /// would self-gate the migrating build in release mode (in DEBUG
     /// builds the gate is off by default).
+    /// FHV11 note (2026-08-23, Issue #238): the floor targets the next beta
+    /// that first SHIPS FHV11 - v2.0.1-beta.9 (FHV10 hashes never shipped
+    /// in any release build; latest tag at the time: v2.0.1-beta.8). A
+    /// pre-beta.9 plugin writing v11-format rows would mis-dedup (it does
+    /// not know the LOOKUP section).
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.8";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
 }

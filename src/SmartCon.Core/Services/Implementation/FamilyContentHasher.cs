@@ -98,7 +98,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 
     /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV10|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...
+    /// Format: FHV11|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
@@ -112,11 +112,17 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
     /// verification fork the hash into two divergent grades. ONE hash now
     /// serves import dedup, versioning, embedded verification and stale
     /// detection alike; a group-only edit no longer version-bumps.
+    /// FHV11 (Issue #238): LOOKUP — raw CSV content of embedded lookup
+    /// tables (FamilySizeTable), so a table-only edit shifts the hash
+    /// instead of producing a false Duplicate. Merge-safe (probe-proven
+    /// 2026-08-23): a reload merge transfers lookup tables into the
+    /// embedded copy, unlike the groups that killed the two-grade scheme.
+    /// The section is OMITTED for table-less families.
     /// </summary>
     internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(768);
-        sb.Append("FHV10|LOADABLE|");
+        sb.Append("FHV11|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -281,6 +287,21 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             sb.Append(FormatCoord(c.OriginY)).Append('|');
             sb.Append(FormatCoord(c.OriginZ)).Append('|');
             sb.Append(c.LinkedIndex).Append('|');
+        }
+
+        // FHV11 (Issue #238): LOOKUP — raw CSV content of the family's
+        // embedded lookup tables (таблицы поиска, FamilySizeTable). Omitted
+        // entirely for table-less families so their FHV10→FHV11 churn is
+        // limited to the prefix bump. Tables sorted by name (Ordinal) —
+        // multiple tables per family are normal for MEP fittings.
+        if (snapshot.LookupTables is { Count: > 0 } lookupTables)
+        {
+            sb.Append("LOOKUP|");
+            foreach (var table in lookupTables.OrderBy(t => t.Name, StringComparer.Ordinal))
+            {
+                sb.Append(Escape(table.Name)).Append('|');
+                sb.Append(Escape(table.CsvContent)).Append('|');
+            }
         }
 
         return sb.ToString();

@@ -66,6 +66,13 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// comparable to the file. Without this section a value edit on a typeless
 /// family (e.g. the built-in «Модель») never changed the content hash and
 /// the import dialog reported a false Duplicate.</param>
+/// <param name="LookupTables">FHV11 (Issue #238): lookup tables (таблицы
+/// поиска, <c>FamilySizeTable</c>) embedded in the family, sorted by name.
+/// <c>null</c> for families without size tables. Part of the content hash
+/// (LOOKUP section) — probe-proven merge-safe: a reload merge transfers
+/// lookup-table content into the embedded copy both in a project and in a
+/// doc-to-doc family load (2026-08-23), so the single unified hash stays
+/// consistent between import dedup and embedded verification.</param>
 public sealed record FamilySnapshot(
     string FamilyName,
     string Category,
@@ -79,7 +86,8 @@ public sealed record FamilySnapshot(
     FamilyBehaviorFlags? BehaviorFlags = null,
     IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
     IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null,
-    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null);
+    IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null,
+    IReadOnlyList<LookupTableSnapshot>? LookupTables = null);
 
 /// <summary>
 /// FHV8 (#209): one direct shared-nested child entry of the composite

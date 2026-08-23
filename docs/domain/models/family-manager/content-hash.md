@@ -204,8 +204,8 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 }
 `
 
-**Canonical string layout (FHV10, #180 follow-up):**
-- `FHV10|LOADABLE|{catOrdinal}|PARAMS(без группы)|...|TYPES|...|PHANTOM|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED|NONSHARED|NESTEDHASH|FACTS|FLAGS|CONN|...` (loadable)
+**Canonical string layout (FHV11, #238):**
+- `FHV11|LOADABLE|{catOrdinal}|PARAMS(без группы)|...|TYPES|...|PHANTOM|...|GEOM(+surface,bbox)|GEOM2D(+lengths)|NESTED|NONSHARED|NESTEDHASH|FACTS|FLAGS|CONN|...|LOOKUP|...` (loadable)
 - `FHV7|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|STRUCT|...|ROUTING|...|SEGMENTS|SUBTYPES|RAILING|WIRE|...` (system)
 
 **FHV8 (композитный хэш вложенных, #209, ADR-066):**
@@ -227,6 +227,14 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 - Продуктовый трейдофф (принят владельцем): правка ТОЛЬКО группировки параметров больше не порождает новую версию (импорт скажет «Дубликат») — embedded-группы всё равно нельзя обновить. Пары версий «только группа» в существующих базах после пересчёта получают одинаковый хэш (детерминировано, см. ADR-068 addendum).
 - Раскатка: критическая задача `hash-v10`; floor `DbCompatibility` = `2.0.1-beta.8` — первая бета, выпускающая форматы FHV8+ (v9-хэши не выпускались в релизных сборках). Константа не должна превышать версию, в которой шипится.
 - Тесты: юнит `FamilyContentHasherTests` (`UnifiedHash_*` — group-инвариантность, метрики/phantom детектируются, golden FHV10), интеграционные `PhantomTypeValueHashTests`, `GroupPropagationProbeTests`, `DrivenEmbeddedPollutionProbeTests`, `NestedUpdateMatrixTests`.
+
+**FHV11 (lookup tables в хэше, Issue #238, ADR-069):**
+- Секция `LOOKUP` — raw CSV-содержимое встроенных в семейство таблиц поиска (`FamilySizeTable`), нормализованное (CRLF→LF, trim). До FHV11 правка только значений lookup-таблицы не сдвигала хэш → ложный «Дубликат» при загрузке новой версии.
+- Источник контента — `ExportSizeTable` (машинный CSV с `##spec##unit` заголовками, локале-инвариантен), НЕ `AsValueString` (display-форматирование — риск локализации). Экстракция — в той же сессии открытия семейства (`RevitFamilySnapshotExtractor.ExtractLookupTables`), без дополнительных `OpenDocumentFile`.
+- Секция **опускается** для семейств без таблиц (их хэш меняется только префиксом); таблицы сортируются по имени Ordinal (в семействе может быть несколько таблиц). Только loadable-путь — системные семейства таблиц не имеют.
+- Merge-safe (зонд 2026-08-23): reload-merge переносит содержимое таблиц в embedded-копию и в проекте (`LoadFamilySymbol`), и при doc-to-doc загрузке — в отличие от групп параметров (FHV10). Единый хэш сохраняется, post-verify stale-update не зацикливается.
+- Раскатка: критическая задача `hash-v11` пересчитывает все не-current строки; floor `DbCompatibility.CurrentMinPluginVersion` = `2.0.1-beta.9` — первая бета, выпускающая FHV11 (FHV10 в релизных сборках не выпускался; тег на момент решения: v2.0.1-beta.8).
+- Тесты: юнит `FamilyContentHasherTests` (сдвиг хэша от правки CSV, опуск секции, Ordinal-детерминизм порядка таблиц, экранирование `|` в имени таблицы, golden FHV11), интеграционные `LookupTableHashTests` (правка CSV сдвигает хэш на реальном семействе; embedded == file hash после reload — приёмка совместимости с post-verify).
 
 **v3 rules:**
 - Категория — локале-инвариантный ordinal (display name — только fallback при unknown ordinal).

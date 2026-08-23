@@ -1420,12 +1420,12 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_Fhv10GoldenCanon_IsStable()
+    public void ComputeForLoadable_Fhv11GoldenCanon_IsStable()
     {
         // Golden: a FIXED loadable snapshot must always produce this exact
-        // hash — any drift in the FHV10 loadable canon (escaping, culture,
-        // ordering, section layout, NESTEDHASH pairs, PHANTOM values) fails
-        // loudly here. When the canon changes ON PURPOSE, bump
+        // hash — any drift in the FHV11 loadable canon (escaping, culture,
+        // ordering, section layout, NESTEDHASH pairs, PHANTOM values, LOOKUP
+        // section) fails loudly here. When the canon changes ON PURPOSE, bump
         // FamilyContentHashFormat.CurrentVersion and update the golden in
         // the same commit.
         var snapshot = new FamilySnapshot(
@@ -1454,7 +1454,106 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("8EC56088752ACB441B02732D502644B2E93776CA564A7BFE541FD149FCD62A23", hash.HexString);
+        Assert.Equal("A866AF9C1DA96492C41CD6E7728DC176CD9FB72AFEC7FDFCF795DCA6CD0BC17F", hash.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableContent_ShiftsHash()
+    {
+        // FHV11 (Issue #238): an edit of a lookup table's VALUES must shift
+        // the hash — the pre-FHV11 bug was a false Duplicate on a table-only
+        // edit.
+        var baseSnapshot = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,50\n");
+        var editedSnapshot = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,51\n");
+
+        var baseHash = _hasher.ComputeForLoadable(baseSnapshot);
+        var editedHash = _hasher.ComputeForLoadable(editedSnapshot);
+
+        Assert.NotNull(baseHash);
+        Assert.NotNull(editedHash);
+        Assert.NotEqual(baseHash!.HexString, editedHash!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NoLookupTables_SectionOmitted()
+    {
+        // Table-less families get NO LOOKUP section: null and empty list are
+        // the same hash (and differ from any snapshot WITH a table).
+        var withoutTables = CreateLookupSnapshot(csv: null);
+        var emptyTables = CreateLookupSnapshot(csv: null) with { LookupTables = [] };
+        var withTable = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,50\n");
+
+        var hashWithout = _hasher.ComputeForLoadable(withoutTables);
+        var hashEmpty = _hasher.ComputeForLoadable(emptyTables);
+        var hashWith = _hasher.ComputeForLoadable(withTable);
+
+        Assert.NotNull(hashWithout);
+        Assert.NotNull(hashEmpty);
+        Assert.NotNull(hashWith);
+        Assert.Equal(hashWithout!.HexString, hashEmpty!.HexString);
+        Assert.NotEqual(hashWithout.HexString, hashWith!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableOrder_IsDeterministic()
+    {
+        // Multiple tables per family are normal (MEP fittings): the section
+        // sorts tables by name (Ordinal), so extraction order never leaks
+        // into the hash.
+        var tableA = new LookupTableSnapshot("A_table", ",X##number##general\n1\n");
+        var tableB = new LookupTableSnapshot("B_table", ",Y##number##general\n2\n");
+        var ordered = CreateLookupSnapshot(csv: null) with { LookupTables = [tableA, tableB] };
+        var reversed = CreateLookupSnapshot(csv: null) with { LookupTables = [tableB, tableA] };
+
+        var hashOrdered = _hasher.ComputeForLoadable(ordered);
+        var hashReversed = _hasher.ComputeForLoadable(reversed);
+
+        Assert.NotNull(hashOrdered);
+        Assert.NotNull(hashReversed);
+        Assert.Equal(hashOrdered!.HexString, hashReversed!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableNameWithDelimiter_IsEscaped()
+    {
+        // The canonical format escapes '|' (and '%') — a table named with a
+        // delimiter must not collide with a structurally shifted name.
+        var withPipe = CreateLookupSnapshot(csv: null) with
+        {
+            LookupTables = [new LookupTableSnapshot("A|B", ",X##number##general\n1\n")],
+        };
+        var withoutPipe = CreateLookupSnapshot(csv: null) with
+        {
+            LookupTables = [new LookupTableSnapshot("A", "|B,X##number##general\n1\n")],
+        };
+
+        var hashPipe = _hasher.ComputeForLoadable(withPipe);
+        var hashNoPipe = _hasher.ComputeForLoadable(withoutPipe);
+
+        Assert.NotNull(hashPipe);
+        Assert.NotNull(hashNoPipe);
+        Assert.NotEqual(hashPipe!.HexString, hashNoPipe!.HexString);
+    }
+
+    private static FamilySnapshot CreateLookupSnapshot(string? csv)
+    {
+        return new FamilySnapshot(
+            FamilyName: "LookupFamily",
+            Category: "Pipe Fittings",
+            Parameters:
+            [
+                new FamilyParameterInfo(
+                    "Dn", "Double", "PG_GEOMETRY", false, false, "size_lookup(Lookup, \"Dn\", \"\", Dn)", true, false, null, null),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot("DN50",
+                    [new FamilyParameterValue("Dn", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(0, []),
+            SharedNestedFamilyNames: [],
+            CategoryId: -2008049,
+            LookupTables: csv is null ? null : [new LookupTableSnapshot("Lookup", csv)]);
     }
 
     private static FamilySnapshot CreateVerificationBaseline()

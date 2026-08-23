@@ -155,16 +155,19 @@ public sealed record DatabaseConnectionRegistry(
 ```csharp
 public static class DbCompatibility
 {
-    public const string CurrentMinPluginVersion = "2.0.1-beta.5";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
 }
 ```
 
 `CurrentMinPluginVersion` — floor-версия, записываемая в
 `database_meta.min_plugin_version` новых баз (`CreateDatabaseAsync`) и
-backfill'ом миграций (прецедент V24: базы с FHV3-хэшами). Bump только при
+backfill'ом критической задачи актуализации хэша (прецедент V24: базы с
+FHV3-хэшами; FHV8+: runtime-backfill внутри `hash-vN` задачи). Bump только при
 breaking-изменении данных, делающем старый плагин вредным для базы (его дедуп
-молча плодит дубликаты); аддитивные изменения floor не поднимают. Сравнение
-с версией плагина — через `IDatabaseCompatibilityService` + `SemVersion`.
+молча плодит дубликаты); аддитивные изменения floor не поднимают. История
+последних bump'ов: `2.0.1-beta.8` (FHV8+ форматы, 2026-08-12), `2.0.1-beta.9`
+(FHV11 — LOOKUP секция, Issue #238, ADR-069). Сравнение с версией плагина —
+через `IDatabaseCompatibilityService` + `SemVersion`.
 
 ---
 
