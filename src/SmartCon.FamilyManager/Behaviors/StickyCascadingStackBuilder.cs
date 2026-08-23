@@ -1,6 +1,3 @@
-using System.Globalization;
-using SmartCon.Core.Logging;
-
 namespace SmartCon.FamilyManager.Behaviors;
 
 /// <summary>
@@ -43,13 +40,8 @@ public static class StickyCascadingStackBuilder
         if (tops.Count != heights.Count || tops.Count != parentIndices.Count)
             throw new ArgumentException("tops, heights и parentIndices должны быть одинаковой длины");
 
-        using var _scope = SmartConLogger.BeginScope("StickyHeader",
-            ("Method", nameof(BuildCascadingStack)),
-            ("Count", tops.Count),
-            ("ViewportHeight", viewportHeight));
-
-        SmartConLogger.Debug("Start building cascading stack");
-
+        // Без логирования: чистая функция, вызывается на каждый тик скролла.
+        // Результат логирует вызывающий RecalculateSticky при смене стека.
         var result = new List<int>();
         var included = new HashSet<int>();
         var occupiedTop = 0.0;
@@ -66,7 +58,6 @@ public static class StickyCascadingStackBuilder
             lastPinnedIndex = candidate;
         }
 
-        SmartConLogger.Debug($"End building cascading stack: result=[{string.Join(",", result)}]");
         return result;
     }
 

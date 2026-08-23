@@ -84,6 +84,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
     private static readonly Vector4 FallbackColor = new(0.65f, 0.65f, 0.65f, 1f);
 
+    /// <summary>
+    /// Max element count (solid forms + nested instances) for which per-element
+    /// diagnostic lines are emitted. Above this threshold only aggregate
+    /// counters and the final summary are logged — per-element lines from
+    /// families with hundreds of nested instances produced tens of thousands
+    /// of rows per family in smartcon.log.
+    /// </summary>
+    private const int ScanVerboseElementThreshold = 20;
+
     public RevitFamilyGeometryExtractor(IRevitContext revitContext)
     {
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
@@ -261,9 +270,16 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             SmartConLogger.Info(
                 $"FamilyInstance (nested families) scan: {nestedInstances.Count} found");
 
+        // Verbose per-element diagnostics only for small families. For families
+        // with hundreds of nested instances (rebar hosts etc.) per-element lines
+        // produce tens of thousands of log rows per family (see #237) —
+        // aggregate counters + the summary below carry the same information.
+        var scanVerbose = solidForms.Count + nestedInstances.Count <= ScanVerboseElementThreshold;
+
         var totalProcessed = 0;
         var totalSkipped = 0;
         var totalEmpty = 0;
+        var totalSkippedNotVisible = 0;
 
         foreach (var form in solidForms)
         {
@@ -275,23 +291,28 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             bool isVisible;
             try { isVisible = form.Visible; }
             catch { isVisible = true; }
-
             var isVisibleParam = GetIsVisibleParam(form);
-            SmartConLogger.Debug(
-                $"  Scanning {nodeName}: IsSolid={form.IsSolid}, Visible={isVisible}, " +
-                $"IS_VISIBLE_PARAM={FormatNullableInt(isVisibleParam)}, " +
-                $"Category={form.Category?.Name ?? "<null>"}");
+
+            if (scanVerbose)
+                SmartConLogger.Debug(
+                    $"  Scanning {nodeName}: IsSolid={form.IsSolid}, Visible={isVisible}, " +
+                    $"IS_VISIBLE_PARAM={FormatNullableInt(isVisibleParam)}, " +
+                    $"Category={form.Category?.Name ?? "<null>"}");
 
             if (!isVisible)
             {
-                SmartConLogger.Info($"  · {nodeName}: skipped (Visible=false)");
+                totalSkippedNotVisible++;
+                if (scanVerbose)
+                    SmartConLogger.Info($"  · {nodeName}: skipped (Visible=false)");
                 continue;
             }
 
             if (isVisibleParam == 0)
             {
-                SmartConLogger.Info(
-                    $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
+                totalSkippedNotVisible++;
+                if (scanVerbose)
+                    SmartConLogger.Info(
+                        $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
                 continue;
             }
 
@@ -302,27 +323,33 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             // BEFORE get_Geometry to drop them at source.
             if (!IsShownAtDetailLevel(form, ViewDetailLevel.Fine, out var detailSkipReason))
             {
-                SmartConLogger.Info(
-                    $"  · {nodeName}: skipped (not visible at Fine — {detailSkipReason})");
+                totalSkippedNotVisible++;
+                if (scanVerbose)
+                    SmartConLogger.Info(
+                        $"  · {nodeName}: skipped (not visible at Fine — {detailSkipReason})");
                 continue;
             }
 
             try
             {
-                var meshes = ExtractMeshesFromElement(form, options, nodeName);
+                var meshes = ExtractMeshesFromElement(form, options, nodeName, scanVerbose);
                 if (meshes.Count > 0)
                 {
                     result.AddRange(meshes);
                     totalProcessed += meshes.Count;
-                    var verts = meshes.Sum(m => m.VertexCount);
-                    var tris = meshes.Sum(m => m.TriangleCount);
-                    SmartConLogger.Debug(
-                        $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                    if (scanVerbose)
+                    {
+                        var verts = meshes.Sum(m => m.VertexCount);
+                        var tris = meshes.Sum(m => m.TriangleCount);
+                        SmartConLogger.Debug(
+                            $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                    }
                 }
                 else
                 {
                     totalEmpty++;
-                    SmartConLogger.Debug($"  · {nodeName}: no geometry extracted");
+                    if (scanVerbose)
+                        SmartConLogger.Debug($"  · {nodeName}: no geometry extracted");
                 }
             }
             catch (Exception ex)
@@ -342,8 +369,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             var nodeName = $"Nested[{symbolName}]_{instId}";
 
             var instVisibleParam = GetIsVisibleParam(inst);
-            SmartConLogger.Debug(
-                $"  Scanning {nodeName}: IS_VISIBLE_PARAM={FormatNullableInt(instVisibleParam)}");
+            if (scanVerbose)
+                SmartConLogger.Debug(
+                    $"  Scanning {nodeName}: IS_VISIBLE_PARAM={FormatNullableInt(instVisibleParam)}");
 
             // Issue #102: detail-level pre-filter for nested FamilyInstance.
             // This is the primary entry path for coarse-only symbolic graphics
@@ -353,34 +381,42 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             // Value 0 = detail component family with unconditional visibility.
             if (instVisibleParam == 0)
             {
-                SmartConLogger.Info(
-                    $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
+                totalSkippedNotVisible++;
+                if (scanVerbose)
+                    SmartConLogger.Info(
+                        $"  · {nodeName}: skipped (IS_VISIBLE_PARAM=0)");
                 continue;
             }
 
             if (!IsShownAtDetailLevel(inst, ViewDetailLevel.Fine, out var detailSkipReason))
             {
-                SmartConLogger.Info(
-                    $"  · {nodeName}: skipped (not visible at Fine — {detailSkipReason})");
+                totalSkippedNotVisible++;
+                if (scanVerbose)
+                    SmartConLogger.Info(
+                        $"  · {nodeName}: skipped (not visible at Fine — {detailSkipReason})");
                 continue;
             }
 
             try
             {
-                var meshes = ExtractMeshesFromElement(inst, options, nodeName);
+                var meshes = ExtractMeshesFromElement(inst, options, nodeName, scanVerbose);
                 if (meshes.Count > 0)
                 {
                     result.AddRange(meshes);
                     totalProcessed += meshes.Count;
-                    var verts = meshes.Sum(m => m.VertexCount);
-                    var tris = meshes.Sum(m => m.TriangleCount);
-                    SmartConLogger.Debug(
-                        $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                    if (scanVerbose)
+                    {
+                        var verts = meshes.Sum(m => m.VertexCount);
+                        var tris = meshes.Sum(m => m.TriangleCount);
+                        SmartConLogger.Debug(
+                            $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                    }
                 }
                 else
                 {
                     totalEmpty++;
-                    SmartConLogger.Debug($"  · {nodeName}: no geometry extracted");
+                    if (scanVerbose)
+                        SmartConLogger.Debug($"  · {nodeName}: no geometry extracted");
                 }
             }
             catch (Exception ex)
@@ -393,7 +429,8 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
         SmartConLogger.Info(
             $"Geometry extraction summary: {totalProcessed} meshes produced, " +
-            $"{totalEmpty} empty, {totalSkipped} failed");
+            $"{totalEmpty} empty, {totalSkipped} failed, " +
+            $"{totalSkippedNotVisible} skipped (not visible)");
 
         if (result.Count == 0)
         {
@@ -434,7 +471,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     /// </list>
     /// </remarks>
     private static List<MeshData> ExtractMeshesFromElement(
-        Element element, Options options, string nodeName)
+        Element element, Options options, string nodeName, bool verbose)
     {
         GeometryElement? geomElem;
         try
@@ -449,14 +486,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
         if (geomElem is null)
         {
-            SmartConLogger.Debug($"  '{nodeName}': get_Geometry returned null");
+            if (verbose)
+                SmartConLogger.Debug($"  '{nodeName}': get_Geometry returned null");
             return new List<MeshData>();
         }
 
         var groups = new Dictionary<int, MaterialMeshGroup>();
         try
         {
-            CollectMeshWithMaterials(geomElem, groups, ct: default);
+            CollectMeshWithMaterials(geomElem, groups, verbose, stats: null, ct: default);
         }
         catch (Exception ex)
         {
@@ -467,8 +505,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
         if (groups.Count == 0)
         {
-            SmartConLogger.Debug(
-                $"  '{nodeName}': traversal produced no material groups");
+            if (verbose)
+                SmartConLogger.Debug(
+                    $"  '{nodeName}': traversal produced no material groups");
             return new List<MeshData>();
         }
 
@@ -477,14 +516,15 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         {
             if (group.Positions.Count < 3 || group.Indices.Count < 3)
             {
-                SmartConLogger.Debug(
-                    $"  '{nodeName}' material #{group.MaterialIndex}: no triangles " +
-                    $"(positions={group.Positions.Count}, indices={group.Indices.Count})");
+                if (verbose)
+                    SmartConLogger.Debug(
+                        $"  '{nodeName}' material #{group.MaterialIndex}: no triangles " +
+                        $"(positions={group.Positions.Count}, indices={group.Indices.Count})");
                 continue;
             }
 
             var color = GetColorForMaterialId(
-                group.MaterialId, element.Document, element, nodeName);
+                group.MaterialId, element.Document, element, nodeName, verbose);
 
             var materialSuffix = groups.Count > 1
                 ? "__mat" + group.MaterialIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -501,10 +541,11 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
 
         if (result.Count == 0)
         {
-            SmartConLogger.Debug(
-                $"  '{nodeName}': all material groups empty after filtering");
+            if (verbose)
+                SmartConLogger.Debug(
+                    $"  '{nodeName}': all material groups empty after filtering");
         }
-        else
+        else if (verbose)
         {
             SmartConLogger.Debug(
                 $"  '{nodeName}': {result.Count} material group(s) → " +
@@ -512,6 +553,24 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Shared traversal counters for <see cref="CollectMeshWithMaterials"/>.
+    /// One instance per top-level call; recursion accumulates into the same
+    /// instance so the summary reports totals including nested geometry.
+    /// </summary>
+    private sealed class TraversalStats
+    {
+        public int SolidCount;
+        public int InstanceCount;
+        public int DirectMeshCount;
+        public int SkippedEmptySolid;
+        public int UnknownTypeCount;
+
+        public bool HasAny =>
+            SolidCount > 0 || InstanceCount > 0 || DirectMeshCount > 0 ||
+            SkippedEmptySolid > 0 || UnknownTypeCount > 0;
     }
 
     /// <summary>
@@ -574,13 +633,17 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     private static void CollectMeshWithMaterials(
         GeometryElement geomElem,
         Dictionary<int, MaterialMeshGroup> groups,
+        bool verbose,
+        TraversalStats? stats,
         CancellationToken ct)
     {
-        int solidCount = 0;
-        int instanceCount = 0;
-        int directMeshCount = 0;
-        int skippedEmptySolid = 0;
-        int unknownTypeCount = 0;
+        // Stats are shared across recursion so the top-level summary reports
+        // totals including nested GeometryInstance content. Per-object Debug
+        // lines were removed (smartcon.log bloat): Line/Arc objects are
+        // expected in every GeometryElement enumeration and the counters +
+        // the top-level summary carry the same information.
+        var isTopLevel = stats is null;
+        stats ??= new TraversalStats();
 
         foreach (var geomObj in geomElem)
         {
@@ -591,51 +654,44 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 case Solid solid:
                     if (solid.SurfaceArea <= 0)
                     {
-                        skippedEmptySolid++;
-                        SmartConLogger.Debug(
-                            $"    Solid #{solidCount}: SurfaceArea={solid.SurfaceArea:F4} " +
-                            $"Faces={solid.Faces?.Size ?? 0} Edges={solid.Edges?.Size ?? 0} " +
-                            $"Volume={solid.Volume:F4} → skipped (empty/degenerate)");
+                        stats.SkippedEmptySolid++;
                         break;
                     }
-                    AddSolidWithMaterials(solid, groups);
-                    solidCount++;
+                    AddSolidWithMaterials(solid, groups, verbose);
+                    stats.SolidCount++;
                     break;
 
                 case GeometryInstance geomInst:
                     var instanceGeom = geomInst.GetInstanceGeometry();
                     if (instanceGeom is not null)
                     {
-                        var t = geomInst.Transform;
-                        SmartConLogger.Debug(
-                            $"    GeometryInstance: Transform origin=({t.Origin.X:F3},{t.Origin.Y:F3},{t.Origin.Z:F3}) " +
-                            $"BasisX=({t.BasisX.X:F2},{t.BasisX.Y:F2},{t.BasisX.Z:F2})");
-                        CollectMeshWithMaterials(instanceGeom, groups, ct);
-                        instanceCount++;
+                        CollectMeshWithMaterials(instanceGeom, groups, verbose, stats, ct);
+                        stats.InstanceCount++;
                     }
                     break;
 
                 case Mesh directMesh:
                     AddDirectMeshToGroup(directMesh, groups);
-                    directMeshCount++;
+                    stats.DirectMeshCount++;
                     break;
 
                 default:
-                    unknownTypeCount++;
-                    SmartConLogger.Debug(
-                        $"    Unknown geometry type '{geomObj?.GetType().Name ?? "<null>"}' → skipped");
+                    stats.UnknownTypeCount++;
                     break;
             }
         }
 
-        if (solidCount > 0 || instanceCount > 0 || directMeshCount > 0 || skippedEmptySolid > 0 || unknownTypeCount > 0)
+        // Summary only at the top-level call: the method recurses per
+        // GeometryInstance, and logging per recursion level produced one
+        // summary line per nested instance.
+        if (isTopLevel && verbose && stats.HasAny)
         {
             var totalVerts = groups.Values.Sum(g => g.Positions.Count / 3);
             var totalTris = groups.Values.Sum(g => g.Indices.Count / 3);
             SmartConLogger.Debug(
-                $"    CollectMeshWithMaterials: {solidCount} solids, {instanceCount} geometry instances, " +
-                $"{directMeshCount} direct meshes, {skippedEmptySolid} empty solids skipped, " +
-                $"{unknownTypeCount} unknown types skipped → {groups.Count} material group(s), " +
+                $"    CollectMeshWithMaterials: {stats.SolidCount} solids, {stats.InstanceCount} geometry instances, " +
+                $"{stats.DirectMeshCount} direct meshes, {stats.SkippedEmptySolid} empty solids skipped, " +
+                $"{stats.UnknownTypeCount} unknown types skipped → {groups.Count} material group(s), " +
                 $"{totalVerts} verts, {totalTris} tris");
         }
 
@@ -673,7 +729,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     /// normals across face boundaries inside the same material.
     /// </remarks>
     private static void AddSolidWithMaterials(
-        Solid solid, Dictionary<int, MaterialMeshGroup> groups)
+        Solid solid, Dictionary<int, MaterialMeshGroup> groups, bool verbose)
     {
         if (solid.Faces is null || solid.Faces.Size == 0) return;
 
@@ -703,8 +759,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
 
         var producedTris = groups.Values.Sum(g => g.Indices.Count / 3) - beforeTris;
-        SmartConLogger.Debug(
-            $"    AddSolidWithMaterials(Face.Triangulate): {faceCount} face(s) → {producedTris} triangles");
+        if (verbose)
+            SmartConLogger.Debug(
+                $"    AddSolidWithMaterials(Face.Triangulate): {faceCount} face(s) → {producedTris} triangles");
     }
 
     /// <summary>
@@ -952,7 +1009,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     /// </para>
     /// </remarks>
     private static Vector4 GetColorForMaterialId(
-        ElementId materialId, Document doc, Element element, string nodeName)
+        ElementId materialId, Document doc, Element element, string nodeName, bool verbose)
     {
         string? source = null;
 
@@ -967,9 +1024,10 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     var result = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
                     source = "face material '" + material.Name + "'";
-                    SmartConLogger.Debug(
-                        $"GetColorForMaterialId: '{nodeName}' → {source} → " +
-                        $"RGB({r},{g},{b}) → {result}");
+                    if (verbose)
+                        SmartConLogger.Debug(
+                            $"GetColorForMaterialId: '{nodeName}' → {source} → " +
+                            $"RGB({r},{g},{b}) → {result}");
                     return result;
                 }
             }
@@ -983,9 +1041,10 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     var result = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
                     source = "element.Category '" + elemCat.Name + "' material '" + catMat.Name + "'";
-                    SmartConLogger.Debug(
-                        $"GetColorForMaterialId: '{nodeName}' → {source} → " +
-                        $"RGB({r},{g},{b}) → {result}");
+                    if (verbose)
+                        SmartConLogger.Debug(
+                            $"GetColorForMaterialId: '{nodeName}' → {source} → " +
+                            $"RGB({r},{g},{b}) → {result}");
                     return result;
                 }
             }
@@ -1004,9 +1063,10 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                     {
                         var result = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
                         source = "inst.Symbol.Family.Category '" + famCat.Name + "' material '" + famCatMat.Name + "'";
-                        SmartConLogger.Debug(
-                            $"GetColorForMaterialId: '{nodeName}' → {source} → " +
-                            $"RGB({r},{g},{b}) → {result}");
+                        if (verbose)
+                            SmartConLogger.Debug(
+                                $"GetColorForMaterialId: '{nodeName}' → {source} → " +
+                                $"RGB({r},{g},{b}) → {result}");
                         return result;
                     }
                 }
@@ -1025,17 +1085,19 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                     {
                         var result = new Vector4(r / 255f, g / 255f, b / 255f, 1f);
                         source = "OwnerFamily.Category '" + familyCat.Name + "' material '" + catMat.Name + "'";
-                        SmartConLogger.Debug(
-                            $"GetColorForMaterialId: '{nodeName}' → {source} → " +
-                            $"RGB({r},{g},{b}) → {result}");
+                        if (verbose)
+                            SmartConLogger.Debug(
+                                $"GetColorForMaterialId: '{nodeName}' → {source} → " +
+                                $"RGB({r},{g},{b}) → {result}");
                         return result;
                     }
                 }
             }
             catch { }
 
-            SmartConLogger.Debug(
-                $"GetColorForMaterialId: '{nodeName}' → no face material, no category material → FallbackColor");
+            if (verbose)
+                SmartConLogger.Debug(
+                    $"GetColorForMaterialId: '{nodeName}' → no face material, no category material → FallbackColor");
         }
         catch (Exception ex)
         {

@@ -81,7 +81,6 @@ public static class StickyCategoryHeaderBehavior
     private static readonly Dictionary<TreeView, StickyState> _states = [];
 
     private const double FallbackHeaderHeight = 30;
-    private const int DiagnosticSampleModulo = 16;
     private const int MaxCategoryDepth = 100;
 
     private static void OnEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -342,17 +341,12 @@ public static class StickyCategoryHeaderBehavior
         var viewportHeight = state.ScrollViewer.ViewportHeight;
         var scrollOffset = state.ScrollViewer.VerticalOffset;
 
-        using var _scope = SmartConLogger.BeginScope("StickyHeader",
-            ("Method", nameof(RecalculateSticky)),
-            ("ViewportHeight", viewportHeight),
-            ("ScrollOffset", scrollOffset),
-            ("CategoryCount", allCategoryVMs.Count),
-            ("MaterializedTviCount", categoryItems.Count));
-
         if (allCategoryVMs.Count == 0)
         {
-            SmartConLogger.Debug("No categories in tree, clearing overlay");
             ClearOverlay(state);
+            if (ShouldLogStickyState(state, signature: "", tviCount: 0, vmCount: 0))
+                LogStickyStateOnChange(state, "", allCategoryVMs,
+                    [], [], [], 0, scrollOffset, viewportHeight, [], 0);
             return;
         }
 
@@ -363,8 +357,6 @@ public static class StickyCategoryHeaderBehavior
             if (tvi.DataContext is CategoryNodeViewModel cat)
                 vmToTvi[cat] = tvi;
         }
-
-        SmartConLogger.Debug($"vmToTvi mapping: {vmToTvi.Count}/{allCategoryVMs.Count} categories materialised");
 
         // Построить tops, heights, parentIndices по индексам allCategoryVMs.
         var topsList = new List<double>(allCategoryVMs.Count);
@@ -412,18 +404,17 @@ public static class StickyCategoryHeaderBehavior
         // когда достигает верхней границы viewport.
         var stackIndices = StickyCascadingStackBuilder.BuildCascadingStack(topsList, heightsList, parentIndicesList, viewportHeight);
 
-        SmartConLogger.Debug($"BuildCascadingStack output: stackSize={stackIndices.Count} " +
-            $"stack=[{FormatStackNames(stackIndices, allCategoryVMs)}]");
+        var signature = string.Join(",", stackIndices);
 
         if (stackIndices.Count == 0)
         {
             ClearOverlay(state);
-            LogDetailedStateIfSampled(state, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, heightsList);
+            if (ShouldLogStickyState(state, signature, categoryItems.Count, allCategoryVMs.Count))
+                LogStickyStateOnChange(state, signature, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, 0);
             return;
         }
 
         overlay.Children.Clear();
-        SmartConLogger.Debug("Overlay cleared");
 
         var overlayStyle = state.Tree.TryFindResource("StickyOverlayCategoryHeaderStyle") as Style;
         var folderGeometry = state.Tree.TryFindResource("FolderIconGeometry") as Geometry;
@@ -442,10 +433,8 @@ public static class StickyCategoryHeaderBehavior
             overlay.Children.Add(item);
         }
 
-        var overlayHeight = state.OverlayBorder?.ActualHeight ?? 0;
-        SmartConLogger.Debug($"Overlay rebuilt: children={overlay.Children.Count} overlayHeight={overlayHeight.ToString("F0", CultureInfo.InvariantCulture)}");
-
-        LogDetailedStateIfSampled(state, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, heightsList);
+        if (ShouldLogStickyState(state, signature, categoryItems.Count, allCategoryVMs.Count))
+            LogStickyStateOnChange(state, signature, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, overlay.Children.Count);
     }
 
     private static string FormatStackNames(IReadOnlyList<int> indices, IReadOnlyList<CategoryNodeViewModel> vms)
@@ -460,14 +449,24 @@ public static class StickyCategoryHeaderBehavior
     }
 
     /// <summary>
-    /// Детальное логирование состояния Sticky.
-    /// Summary (scroll/vmCount/tviCount/stackSize/occupiedTop) пишется на КАЖДЫЙ вызов —
-    /// это критично для диагностики поведения при скролле.
-    /// Полный дамп дерева пишется сэмплированно (каждый 16-й вызов) или когда
-    /// количество materialised TVI изменилось (чтобы отловить expand/collapse).
+    /// Дешёвая проверка изменилось ли состояние sticky с прошлого залогированного
+    /// вызова. RecalculateSticky вызывается на каждый ScrollChanged/LayoutUpdated,
+    /// поэтому логируем только переходы, а не каждый тик скролла (см. #237).
     /// </summary>
-    private static void LogDetailedStateIfSampled(
+    private static bool ShouldLogStickyState(StickyState state, string signature, int tviCount, int vmCount)
+        => signature != state.LastLoggedSignature
+           || tviCount != state.LastLoggedTviCount
+           || vmCount != state.LastLoggedVmCount;
+
+    /// <summary>
+    /// Детальное логирование состояния Sticky — вызывается только при изменении
+    /// сигнатуры (состав стека) или структуры дерева (число категорий /
+    /// materialised TVI — expand/collapse, пересборка TreeNodes).
+    /// Полный дамп дерева пишется только при структурном изменении.
+    /// </summary>
+    private static void LogStickyStateOnChange(
         StickyState state,
+        string signature,
         List<CategoryNodeViewModel> allCategoryVMs,
         List<double> topsList,
         List<double> heightsList,
@@ -476,26 +475,36 @@ public static class StickyCategoryHeaderBehavior
         double scrollOffset,
         double viewportHeight,
         IReadOnlyList<int> stackIndices,
-        List<double> heightsForOccupied)
+        int overlayChildren)
     {
-        state.CallCounter++;
+        var structureChanged = tviCount != state.LastLoggedTviCount
+            || allCategoryVMs.Count != state.LastLoggedVmCount;
+
+        state.LastLoggedSignature = signature;
+        state.LastLoggedTviCount = tviCount;
+        state.LastLoggedVmCount = allCategoryVMs.Count;
+
+        using var _scope = SmartConLogger.BeginScope("StickyHeader",
+            ("Method", nameof(RecalculateSticky)),
+            ("ScrollOffset", scrollOffset),
+            ("CategoryCount", allCategoryVMs.Count),
+            ("MaterializedTviCount", tviCount));
 
         var occupiedTop = 0.0;
         foreach (var idx in stackIndices)
-            occupiedTop += heightsForOccupied[idx] > 0 ? heightsForOccupied[idx] : 0;
+            occupiedTop += heightsList[idx] > 0 ? heightsList[idx] : 0;
 
-        var summary = $"summary: scroll={scrollOffset.ToString("F0", CultureInfo.InvariantCulture)} viewport={viewportHeight.ToString("F0", CultureInfo.InvariantCulture)} " +
-                      $"vmCount={allCategoryVMs.Count} tviCount={tviCount} " +
-                      $"stackSize={stackIndices.Count} occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)}";
-        SmartConLogger.Debug(summary);
+        SmartConLogger.Debug(
+            $"Sticky state: scroll={scrollOffset.ToString("F0", CultureInfo.InvariantCulture)} " +
+            $"viewport={viewportHeight.ToString("F0", CultureInfo.InvariantCulture)} " +
+            $"vmCount={allCategoryVMs.Count} tviCount={tviCount} " +
+            $"stack=[{FormatStackNames(stackIndices, allCategoryVMs)}] " +
+            $"overlayChildren={overlayChildren} " +
+            $"occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)}");
 
-        var tviChanged = tviCount != state.LastLoggedTviCount;
-        var dumpSample = state.CallCounter % DiagnosticSampleModulo == 0;
-        if (!tviChanged && !dumpSample) return;
+        if (!structureChanged) return;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"diag: scroll={scrollOffset.ToString("F0", CultureInfo.InvariantCulture)}, viewport={viewportHeight.ToString("F0", CultureInfo.InvariantCulture)}, " +
-                      $"vmCount={allCategoryVMs.Count}, tviCount={tviCount}, stackSize={stackIndices.Count}, occupiedTop={occupiedTop.ToString("F0", CultureInfo.InvariantCulture)}");
         sb.AppendLine("VM tree (idx | depth | name | top | height | parentIdx):");
         for (int i = 0; i < allCategoryVMs.Count; i++)
         {
@@ -514,8 +523,6 @@ public static class StickyCategoryHeaderBehavior
         }
 
         SmartConLogger.Debug(sb.ToString());
-
-        state.LastLoggedTviCount = tviCount;
     }
 
     private static int ComputeDepth(List<CategoryNodeViewModel> allCategoryVMs, List<int> parentIndicesList, int idx)
@@ -703,13 +710,17 @@ public static class StickyCategoryHeaderBehavior
     {
         if (tvi.Template is null)
         {
-            SmartConLogger.Debug("FindHeaderRow: TreeViewItem template is null");
+            using var _scopeNull = SmartConLogger.BeginScope("StickyHeader", ("Method", nameof(FindHeaderRow)));
+            SmartConLogger.Debug("TreeViewItem template is null");
             return null;
         }
 
         var header = tvi.Template.FindName("HeaderRow", tvi) as FrameworkElement;
         if (header is null)
-            SmartConLogger.Debug("FindHeaderRow: HeaderRow not found in template");
+        {
+            using var _scopeMissing = SmartConLogger.BeginScope("StickyHeader", ("Method", nameof(FindHeaderRow)));
+            SmartConLogger.Debug("HeaderRow not found in template");
+        }
         return header;
     }
 
@@ -723,6 +734,7 @@ public static class StickyCategoryHeaderBehavior
         }
         catch (Exception ex)
         {
+            using var _scope = SmartConLogger.BeginScope("StickyHeader", ("Method", nameof(GetTopInScp)));
             SmartConLogger.Warn($"TransformToAncestor failed: {ex.GetType().Name}: {ex.Message} [Action: report scroll state in the sticky-line issue]");
             return double.PositiveInfinity;
         }
@@ -730,13 +742,9 @@ public static class StickyCategoryHeaderBehavior
 
     private static void ClearOverlay(StickyState state)
     {
-        using var _scope = SmartConLogger.BeginScope("StickyHeader",
-            ("Method", nameof(ClearOverlay)));
-
-        var overlay = GetOverlay(state.Tree);
-        var previousCount = overlay?.Children.Count ?? 0;
-        overlay?.Children.Clear();
-        SmartConLogger.Debug($"Overlay cleared: previousChildren={previousCount}");
+        // Без собственного scope: вызывается на каждый тик скролла, пока стек
+        // пуст. Переходы состояния логируются в LogStickyStateOnChange.
+        GetOverlay(state.Tree)?.Children.Clear();
     }
 
     // ─── Per-TreeView state ─────────────────────────────────────────────────
@@ -753,8 +761,9 @@ public static class StickyCategoryHeaderBehavior
         public Border? OverlayBorder { get; set; }
         public bool Attached { get; set; }
 
-        // Диагностика.
-        public int CallCounter { get; set; }
+        // Диагностика: логируем только переходы состояния, не каждый тик скролла.
+        public string? LastLoggedSignature { get; set; }
         public int LastLoggedTviCount { get; set; } = -1;
+        public int LastLoggedVmCount { get; set; } = -1;
     }
 }
