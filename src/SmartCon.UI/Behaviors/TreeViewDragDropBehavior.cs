@@ -6,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using SmartCon.Core.Logging;
 using SmartCon.UI.DragDrop;
 
 namespace SmartCon.UI.Behaviors;
@@ -170,6 +171,7 @@ public static class TreeViewDragDropBehavior
     private sealed class DragDropState
     {
         public Point DragStartPoint;
+        public bool IsDragPressValid;
         public Point LastDragOverPosition;
         public bool IsDragging;
         public DispatcherTimer? ExpandTimer;
@@ -207,6 +209,7 @@ public static class TreeViewDragDropBehavior
         if (GetDragDropState(treeView) is not null) return;
 
         treeView.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+        treeView.PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
         treeView.PreviewMouseMove += OnPreviewMouseMove;
         treeView.PreviewDragOver += OnPreviewDragOver;
         treeView.PreviewDragLeave += OnPreviewDragLeave;
@@ -219,6 +222,7 @@ public static class TreeViewDragDropBehavior
     private static void Detach(TreeView treeView)
     {
         treeView.PreviewMouseLeftButtonDown -= OnPreviewMouseLeftButtonDown;
+        treeView.PreviewMouseLeftButtonUp -= OnPreviewMouseLeftButtonUp;
         treeView.PreviewMouseMove -= OnPreviewMouseMove;
         treeView.PreviewDragOver -= OnPreviewDragOver;
         treeView.PreviewDragLeave -= OnPreviewDragLeave;
@@ -242,6 +246,38 @@ public static class TreeViewDragDropBehavior
         if (GetDragDropState(treeView) is not { } state) return;
 
         state.DragStartPoint = e.GetPosition(null);
+
+        // A drag may only be initiated by a press that landed on a tree item.
+        // Presses on the scrollbar, empty padding or any chrome outside
+        // TreeViewItem previously fell back to treeView.SelectedItem once the
+        // drag threshold was exceeded: the user grabbed the scrollbar to scroll,
+        // the cursor drifted a few px off the bar during the vertical drag,
+        // IsMouseOverScrollbar (current-position check) returned false and a real
+        // DnD session started, silently moving the selected family between
+        // categories on release. Gate on the PRESS position instead — the
+        // canonical approach (GongSolutions.WPF.DragDrop gates in
+        // DragSource_PreviewMouseLeftButtonDown the same way). See #236.
+        var pressPos = e.GetPosition(treeView);
+        state.IsDragPressValid =
+            !IsMouseOverScrollbar(treeView, pressPos) &&
+            GetDraggedItemAtPosition(treeView, pressPos) is not null;
+
+        if (!state.IsDragPressValid)
+        {
+            using var _scope = SmartConLogger.BeginScope("FMTree", ("Method", nameof(OnPreviewMouseLeftButtonDown)));
+            SmartConLogger.Debug("Drag press rejected: press did not land on a tree item (scrollbar/padding/chrome)");
+        }
+    }
+
+    private static void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        var treeView = (TreeView)sender;
+        if (GetDragDropState(treeView) is not { } state) return;
+
+        // Reset the press validity so a stale DragStartPoint from a previous
+        // press can never start a drag (e.g. when the press landed on a sibling
+        // overlay above the TreeView and PreviewMouseLeftButtonDown never fired).
+        state.IsDragPressValid = false;
     }
 
     private static void OnPreviewMouseMove(object sender, MouseEventArgs e)
@@ -251,6 +287,7 @@ public static class TreeViewDragDropBehavior
         var treeView = (TreeView)sender;
         if (GetDragDropState(treeView) is not { } state) return;
         if (state.IsDragging) return;
+        if (!state.IsDragPressValid) return;
 
         var position = e.GetPosition(null);
         var diff = state.DragStartPoint - position;
@@ -307,15 +344,22 @@ public static class TreeViewDragDropBehavior
     }
 
     /// <summary>
-    /// Hit-tests the TreeView at the current cursor position and walks up the visual
-    /// tree until the enclosing <see cref="TreeViewItem"/> is found. Returns its
-    /// DataContext (the VM the user is actually dragging from). Returns null when
-    /// the cursor is over a non-item area (scrollbar, padding, chrome) so the caller
-    /// can fall back to <c>treeView.SelectedItem</c>.
+    /// Hit-tests the TreeView at the current cursor position. Returns the
+    /// DataContext of the enclosing TreeViewItem, or null when the cursor is
+    /// over a non-item area (scrollbar, padding, chrome).
     /// </summary>
     private static object? GetDraggedItemUnderCursor(TreeView treeView)
+        => GetDraggedItemAtPosition(treeView, Mouse.GetPosition(treeView));
+
+    /// <summary>
+    /// Hit-tests the TreeView at the given position (TreeView coordinates) and
+    /// walks up the visual tree until the enclosing <see cref="TreeViewItem"/> is
+    /// found. Returns its DataContext (the VM the user is actually dragging from).
+    /// Returns null when the position is over a non-item area (scrollbar, padding,
+    /// chrome) so the caller can fall back to <c>treeView.SelectedItem</c>.
+    /// </summary>
+    private static object? GetDraggedItemAtPosition(TreeView treeView, Point pt)
     {
-        var pt = Mouse.GetPosition(treeView);
         var hit = VisualTreeHelper.HitTest(treeView, pt);
         var current = hit?.VisualHit as DependencyObject;
         while (current is not null && current is not TreeViewItem)
@@ -509,6 +553,7 @@ public static class TreeViewDragDropBehavior
         RemoveDropAdorner(state);
         state.LastValidTarget = null;
         state.IsOverValidDropTarget = false;
+        state.IsDragPressValid = false;
         
         if (state.DragAdorner != null)
         {
