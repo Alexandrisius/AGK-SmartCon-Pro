@@ -44,6 +44,7 @@ public interface IFamilyLoadService
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
+        IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null,
         CancellationToken ct = default);
 }
 ```
@@ -58,6 +59,16 @@ public interface IFamilyLoadService
 из метода и гарантирует синхронное завершение на Revit main thread
 (латентный deadlock: async-методы Microsoft.Data.Sqlite завершаются синхронно,
 но контракт на это не полагается).
+
+Параметр `overwriteOperations` (Issue #239): опциональный план post-pass перезаписи
+значений параметров (per-type значения целевой версии из каталога —
+`extracted_attribute_values`, читаются из SQLite, ноль дополнительных открытий
+файла). Per-symbol merge `LoadFamilySymbol` перезаписывает значения только у
+первого запрошенного символа (2nd..Nth вызовы — no-op, probe-proven); когда план
+передан вместе с `overwriteParameterValues=true`, реализация применяет операции ко
+ВСЕМ загруженным символам внутри той же `TransactionGroup` (один Undo). Игнорируется
+при `overwriteParameterValues=false`, на fresh-load fallback-ветке и в
+family-документ (nested) контексте.
 
 `onSharedDecision` вызывается один раз для каждого конфликтующего shared nested
 (когда Revit сообщает `OnSharedFamilyFound`). Должен блокировать вызывающий поток

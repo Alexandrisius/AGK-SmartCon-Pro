@@ -438,6 +438,7 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
+        IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null,
         CancellationToken ct = default)
     {
         var doc = _revitContext.GetDocument();
@@ -589,7 +590,15 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
             // Reload each symbol. Revit re-reads the family definition on each
             // call when the .rfa has changed (OnFamilyFound fires "only when
             // the family is both loaded and changed" per revitapidocs.com/2026).
-            // Each call applies overwriteParameterValues to that symbol.
+            //
+            // #239 (probe-proven, 2026-08-23): ONLY THE FIRST call performs the
+            // real definition merge — and its parameter-value overwrite lands
+            // on the requested symbol alone. The 2nd..Nth calls return true
+            // yet are no-ops: the definition is already current, no merge, no
+            // parameter overwrite. The catalog post-pass (overwriteOperations,
+            // applied below in this same group) is what lands the values on
+            // every type.
+            //
             // Multiple symbols = multiple definition reloads (API limitation,
             // change-request REVIT-68222); a single TransactionGroup wraps
             // the whole batch so the user gets one Undo entry.
@@ -623,12 +632,10 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
                 }
                 else
                 {
-                    // LoadFamilySymbol returns false when the family is
-                    // loaded but unchanged after the first type reload.
-                    // This is the expected behaviour for the 2nd..Nth
-                    // symbol when no further definition changes remain.
-                    // The type is still present (definition is already
-                    // current), so we treat it as success.
+                    // A false return means the family is already current for
+                    // this symbol. NOTE (#239 probe): the 2nd..Nth calls can
+                    // also return TRUE while being no-ops — the return value
+                    // alone never proves a parameter overwrite happened.
                     reloadedCount++;
                     SmartConLogger.Info(
                         $"Symbol '{typeName}' reload returned false (family already current for this " +
@@ -647,6 +654,15 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
                 return new FamilyLoadResult(false, displayFamilyName, null, errorMessage, FamilyLoadStatus.Failed);
             }
 
+            // Issue #239: land the catalog's per-type parameter values on ALL
+            // loaded symbols (the merge above overwrote only the first one).
+            // Runs inside this same TransactionGroup — one Undo entry, and a
+            // rollback covers the post-pass too.
+            if (overwriteParameterValues && overwriteOperations is { Count: > 0 })
+            {
+                ApplyOverwriteOperations(doc, displayFamilyName, overwriteOperations, groupSession);
+            }
+
             groupSession.Assimilate();
 
             var msg = $"Family '{displayFamilyName}' updated preserving {reloadedCount}/{existingTypeNames.Count} loaded type(s)";
@@ -660,6 +676,153 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
             SmartConLogger.Info($"ReloadFamilyPreservingLoadedTypesAsync exception: {ex.GetType().Name}: {ex.Message}");
             return new FamilyLoadResult(false, displayFamilyName, null, ex.Message, FamilyLoadStatus.Failed);
         }
+    }
+
+    /// <summary>
+    /// Issue #239 post-pass: applies the catalog's per-type parameter values
+    /// to every loaded symbol of the reloaded family, inside the reload's
+    /// TransactionGroup. Revit's per-symbol <c>LoadFamilySymbol</c> merge
+    /// overwrites parameter values only for the FIRST requested symbol — the
+    /// 2nd..Nth calls return true but are no-ops (probe-proven 2026-08-23).
+    /// The values come from the catalog DB (extracted attribute values of the
+    /// target version) — no extra file open. Per-parameter failures are
+    /// isolated (try/catch); the caller's content post-verify arbitrates the
+    /// final state. Logging is captured into locals and emitted AFTER the
+    /// transaction (file I/O inside a transaction callback is a known WPF
+    /// freeze factor in this service).
+    /// </summary>
+    private void ApplyOverwriteOperations(
+        Document doc,
+        string familyName,
+        IReadOnlyList<TypeParameterOverwriteOperation> operations,
+        ITransactionGroupSession groupSession)
+    {
+        var applied = 0;
+        var skipped = 0;
+        var failed = 0;
+        var unresolvedElements = new List<string>();
+        var failureSamples = new List<string>();
+
+        groupSession.RunInTransaction("Overwrite Type Parameter Values", _ =>
+        {
+            // Re-collect AFTER the reload: the merge may have replaced the
+            // Family element with a new one (I-05).
+            var family = FindExistingFamily(doc, familyName);
+            if (family is null)
+            {
+                failed = operations.Count;
+                failureSamples.Add($"family '{familyName}' not found after reload");
+                return;
+            }
+
+            var symbolsByName = new Dictionary<string, Autodesk.Revit.DB.FamilySymbol>(StringComparer.Ordinal);
+            foreach (var sid in family.GetFamilySymbolIds())
+            {
+                if (doc.GetElement(sid) is Autodesk.Revit.DB.FamilySymbol sym
+                    && !string.IsNullOrEmpty(sym.Name)
+                    && !symbolsByName.ContainsKey(sym.Name))
+                {
+                    symbolsByName[sym.Name] = sym;
+                }
+            }
+
+            // Lazy name → ElementId map for ElementId parameters. Material is
+            // the realistic per-type ElementId parameter; values referencing
+            // other element classes fail the name lookup and are reported in
+            // the post-transaction Warn.
+            Dictionary<string, ElementId>? materialsByName = null;
+
+            foreach (var op in operations)
+            {
+                if (!symbolsByName.TryGetValue(op.TypeName, out var symbol))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var param = symbol.LookupParameter(op.ParameterName);
+                if (param is null || param.IsReadOnly)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                try
+                {
+                    bool ok;
+                    switch (op.Kind)
+                    {
+                        case TypeParameterOverwriteKind.SetDouble:
+                            ok = op.ValueNumber.HasValue && param.Set(op.ValueNumber.Value);
+                            break;
+                        case TypeParameterOverwriteKind.SetInteger:
+                            ok = op.ValueNumber.HasValue && param.Set((int)op.ValueNumber.Value);
+                            break;
+                        case TypeParameterOverwriteKind.SetString:
+                            ok = param.Set(op.ValueText ?? string.Empty);
+                            break;
+                        default: // ResolveElementByName
+                            materialsByName ??= BuildMaterialNameMap(doc);
+                            if (op.ValueText is not null
+                                && materialsByName.TryGetValue(op.ValueText, out var materialId))
+                            {
+                                ok = param.Set(materialId);
+                            }
+                            else
+                            {
+                                ok = false;
+                                if (unresolvedElements.Count < 5)
+                                    unresolvedElements.Add($"{op.TypeName}.{op.ParameterName}='{op.ValueText}'");
+                            }
+                            break;
+                    }
+
+                    if (ok) applied++;
+                    else skipped++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    if (failureSamples.Count < 5)
+                        failureSamples.Add($"{op.TypeName}.{op.ParameterName}: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            // Recompute formula-driven parameters before the group commits so
+            // the caller's content post-verify sees the regenerated state.
+            doc.Regenerate();
+        });
+
+        SmartConLogger.Info(
+            $"Overwrite post-pass (#239): applied={applied}, skipped={skipped}, failed={failed} " +
+            $"of {operations.Count} operation(s)");
+
+        if (unresolvedElements.Count > 0)
+        {
+            SmartConLogger.Warn(
+                $"Overwrite post-pass (#239): ElementId value(s) not resolvable by name in the project: " +
+                $"{string.Join(", ", unresolvedElements)}. " +
+                "[Action: load the referenced element (e.g. the material) into the project, or update the family via the editor]");
+        }
+
+        if (failureSamples.Count > 0)
+        {
+            SmartConLogger.Info($"Overwrite post-pass (#239) failure samples: {string.Join(" | ", failureSamples)}");
+        }
+    }
+
+    private static Dictionary<string, ElementId> BuildMaterialNameMap(Document doc)
+    {
+        var map = new Dictionary<string, ElementId>(StringComparer.Ordinal);
+        foreach (var material in new FilteredElementCollector(doc)
+            .OfClass(typeof(Material))
+            .Cast<Material>())
+        {
+            if (!string.IsNullOrEmpty(material.Name) && !map.ContainsKey(material.Name))
+                map[material.Name] = material.Id;
+        }
+
+        return map;
     }
 
     /// <summary>

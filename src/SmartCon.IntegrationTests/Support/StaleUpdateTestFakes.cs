@@ -201,10 +201,11 @@ internal sealed class CountingLoadService : IFamilyLoadServiceSourceAware
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
+        IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null,
         CancellationToken ct = default)
     {
         return _inner.ReloadFamilyPreservingLoadedTypesAsync(
-            file, overwriteParameterValues, onStatusMessage, onSharedDecision, nestedSharedNames, ct);
+            file, overwriteParameterValues, onStatusMessage, onSharedDecision, nestedSharedNames, overwriteOperations, ct);
     }
 }
 

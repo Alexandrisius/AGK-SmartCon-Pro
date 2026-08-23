@@ -122,6 +122,19 @@ public interface IFamilyLoadService
     /// resolves the list from the catalog DB itself (safe only for true
     /// async callers).
     /// </param>
+    /// <param name="overwriteOperations">
+    /// Issue #239: optional post-pass plan (per-type parameter values of the
+    /// update target version, built from the catalog's extracted attribute
+    /// values — no extra file opens). Revit's per-symbol
+    /// <c>LoadFamilySymbol</c> merge overwrites parameter values ONLY for the
+    /// first requested symbol; the 2nd..Nth calls are no-ops (probe-proven).
+    /// When provided together with <paramref name="overwriteParameterValues"/>=true,
+    /// the implementation applies these operations to every loaded symbol
+    /// inside the same <c>TransactionGroup</c> (single Undo), so ALL types
+    /// receive the catalog values. Ignored when
+    /// <paramref name="overwriteParameterValues"/> is false, on the fresh-load
+    /// fallback path and in the family-document (nested) context.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
         FamilyResolvedFile file,
@@ -129,5 +142,6 @@ public interface IFamilyLoadService
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
         IReadOnlyList<string>? nestedSharedNames = null,
+        IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null,
         CancellationToken ct = default);
 }

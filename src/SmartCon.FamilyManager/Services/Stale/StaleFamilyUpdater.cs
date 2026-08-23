@@ -287,6 +287,44 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             // symbols first and calls LoadFamilySymbol per type. When the
             // family is not loaded yet (no symbols to preserve) it falls back
             // to a full LoadFamilyAsync internally.
+            //
+            // Issue #239: the per-symbol merge overwrites parameter values
+            // only for the FIRST reloaded symbol (probe-proven). Build the
+            // overwrite post-pass plan from the catalog — per-type parameter
+            // values of the TARGET version, read from SQLite (zero extra file
+            // opens) — and pass it down: the load service applies it to every
+            // loaded symbol inside the reload's TransactionGroup.
+            IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null;
+            if (overwriteParameterValues
+                && resolved.VersionId is not null
+                && _attributeValueRepository is not null
+                && _typeRepository is not null)
+            {
+                try
+                {
+                    var targetValues = await _attributeValueRepository
+                        .GetValuesForItemAsync(catalogItemId, resolved.VersionId, ct)
+                        .ConfigureAwait(true);
+                    var targetTypes = await _typeRepository
+                        .GetTypesForItemVersionAsync(catalogItemId, resolved.VersionId, ct)
+                        .ConfigureAwait(true);
+                    overwriteOperations = TypeParameterOverwritePlanner.Plan(
+                        targetValues, ToTypeNameMap(targetTypes));
+                    SmartConLogger.Info(
+                        $"UpdateFamily[{catalogItemId}]: overwrite post-pass plan — " +
+                        $"{overwriteOperations.Count} operation(s) from {targetValues.Count} catalog value(s)");
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    SmartConLogger.Warn(
+                        $"UpdateFamily[{catalogItemId}]: failed to build the overwrite post-pass plan: " +
+                        $"{ex.GetType().Name}: {ex.Message}. " +
+                        "[Action: update falls back to Revit's merge only — multi-type families may fail " +
+                        "post-verify and stay stale; check the catalog DB availability]");
+                    overwriteOperations = null;
+                }
+            }
+
             var result = await _awaitable.RaiseAsync(
                 _ => _loadService.ReloadFamilyPreservingLoadedTypesAsync(
                     resolved,
@@ -294,6 +332,7 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                     onStatusMessage: null,
                     onSharedDecision: req => _dialogService.ShowSharedFamiliesLoadModeDialog(req),
                     nestedSharedNames: nestedNames,
+                    overwriteOperations: overwriteOperations,
                     ct: ct).GetAwaiter().GetResult(),
                 ct).ConfigureAwait(true);
 

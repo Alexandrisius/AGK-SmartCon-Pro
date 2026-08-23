@@ -365,3 +365,57 @@ public static class CatalogVersionTypeDiffLogic
 ```
 
 **Используется в:** `StaleFamilyUpdater.BuildTypeChangeReportAsync` — результат сортируется ordinal и классифицируется по набору типов, загруженных в проект (`IFamilySearchService.GetFamilyTypeNames`), в `StaleFamilyUpdateResult`.
+
+---
+
+## TypeParameterOverwriteOperation
+
+Одна запланированная операция перезаписи значения параметра для одного типа семейства в post-pass'е stale-update (Issue #239). Строится из строк `extracted_attribute_values` целевой версии каталога и передаётся в `IFamilyLoadService.ReloadFamilyPreservingLoadedTypesAsync` — Revit-слой исполняет операции на всех загруженных `FamilySymbol` внутри той же `TransactionGroup`, что и reload (per-symbol merge `LoadFamilySymbol` перезаписывает значения только у первого запрошенного символа, probe-proven).
+
+**Файл:** `TypeParameterOverwriteOperation.cs`
+
+```csharp
+public sealed record TypeParameterOverwriteOperation(
+    string TypeName,
+    string ParameterName,
+    TypeParameterOverwriteKind Kind,
+    double? ValueNumber,
+    string? ValueText);
+```
+
+---
+
+## TypeParameterOverwriteKind
+
+Вид операции post-pass перезаписи (Issue #239): `SetDouble` / `SetInteger` / `SetString` — прямой `Parameter.Set` значения (числа в internal units); `ResolveElementByName` — ElementId-параметр (например, «Материал»): каталог хранит разрешённое ИМЯ элемента, Revit-слой восстанавливает живой `ElementId` по имени в проекте (Material map; не найден — skip + Warn).
+
+**Файл:** `TypeParameterOverwriteKind.cs`
+
+```csharp
+public enum TypeParameterOverwriteKind
+{
+    SetDouble,
+    SetInteger,
+    SetString,
+    ResolveElementByName,
+}
+```
+
+---
+
+## TypeParameterOverwritePlanner
+
+Чистый планировщик post-pass'а перезаписи (Issue #239): маппит строки `extracted_attribute_values` целевой версии в per-type операции `TypeParameterOverwriteOperation`. Правила: только `Status=Found`; включаются Type и Instance scope (instance-значения на символе — дефолты типа); Double/Integer → числовой Set (internal units), String → текстовый Set; ElementId → `ResolveElementByName` по разрешённому имени (строки `INVALID`/`READERROR`/null пропускаются); строки без `TypeId` или с неизвестным типом — пропускаются. Вынесен в Core ради unit-тестов (`TypeParameterOverwritePlannerTests`).
+
+**Файл:** `TypeParameterOverwritePlanner.cs` (в `SmartCon.Core/Services/Implementation/`)
+
+```csharp
+public static class TypeParameterOverwritePlanner
+{
+    public static IReadOnlyList<TypeParameterOverwriteOperation> Plan(
+        IReadOnlyList<ExtractedAttributeValue> catalogValues,
+        IReadOnlyDictionary<string, string> typeNameById);
+}
+```
+
+**Используется в:** `StaleFamilyUpdater.UpdateFamilyCoreAsync` — план строится из SQLite до вызова reload (ноль дополнительных открытий семейства) и передаётся в `RevitFamilyLoadService` (исполнение — `ApplyOverwriteOperations`).
