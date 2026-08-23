@@ -61,6 +61,11 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             SourceKind: "loadable");
     }
 
+    public string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot)
+    {
+        return snapshot is null ? null : BuildLoadableCanonicalString(snapshot);
+    }
+
     public FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot)
     {
         if (snapshot is null)

@@ -241,6 +241,11 @@ internal sealed class CorruptEmbeddedVerifyHasher : IFamilyContentHasher
     {
         return _inner.ComputeForSystem(snapshot);
     }
+
+    public string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot)
+    {
+        return _inner.BuildLoadableCanonicalStringForDiagnostics(snapshot);
+    }
 }
 
 internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogService

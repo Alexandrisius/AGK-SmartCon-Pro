@@ -520,6 +520,16 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 return (null, null);
             }
 
+            // Post-reload mismatch diagnostics (#239 follow-up, manual test
+            // 2026-08-23): a failed post-verify must name the differing
+            // content, not just two hash prefixes — log the first differing
+            // canonical tokens with their section context. Failure-only:
+            // costs one extra EditFamily + file open per failed update.
+            if (isPostReload && !string.Equals(embedded, file, StringComparison.OrdinalIgnoreCase))
+            {
+                LogVerificationCanonicalDiff(doc, name, resolved.AbsolutePath, typeNames, catalogItemId);
+            }
+
             return (embedded, file);
         }, ct).ConfigureAwait(true);
 
@@ -574,6 +584,122 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
     {
         return EmbeddedContentVerifier.ComputeEmbeddedHash(
             doc, familyName, _snapshotExtractor!, _contentHasher!, $"UpdateFamily[{catalogItemId}]");
+    }
+
+    /// <summary>
+    /// Post-verify failure diagnostics (#239 follow-up, manual test
+    /// 2026-08-23): recomputes the embedded and file snapshots (same
+    /// restriction as the verification) and logs the first differing
+    /// canonical tokens with the nearest section marker (PARAMS/TYPES/GEOM/
+    /// CONN/LOOKUP/…), so the operator sees WHICH content diverged instead
+    /// of two opaque hash prefixes. Revit thread, failure-path only — every
+    /// step is individually guarded (diagnostics must never break the flow).
+    /// </summary>
+    private void LogVerificationCanonicalDiff(
+        Document doc, string familyName, string filePath, IReadOnlyList<string> typeNames, string catalogItemId)
+    {
+        try
+        {
+            string? embeddedCanonical = null;
+            string? fileCanonical = null;
+
+            var nested = new FilteredElementCollector(doc)
+                .OfClass(typeof(Autodesk.Revit.DB.Family))
+                .Cast<Autodesk.Revit.DB.Family>()
+                .FirstOrDefault(f => string.Equals(f.Name, familyName, StringComparison.OrdinalIgnoreCase));
+            if (nested is not null)
+            {
+                Document? copy = null;
+                try
+                {
+                    copy = doc.EditFamily(nested);
+                    embeddedCanonical = _contentHasher!
+                        .BuildLoadableCanonicalStringForDiagnostics(
+                            _snapshotExtractor!.ExtractFromFamilyDocument(copy));
+                }
+                finally
+                {
+                    try { copy?.Close(false); } catch { }
+                }
+            }
+
+            Document? fileDoc = null;
+            try
+            {
+                fileDoc = doc.Application.OpenDocumentFile(filePath);
+                var fileSnapshot = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
+                if (!doc.IsFamilyDocument)
+                {
+                    var allowed = new HashSet<string>(typeNames, StringComparer.OrdinalIgnoreCase);
+                    fileSnapshot = fileSnapshot with
+                    {
+                        Types = fileSnapshot.Types.Where(t => allowed.Contains(t.Name)).ToList(),
+                    };
+                }
+
+                fileCanonical = _contentHasher!.BuildLoadableCanonicalStringForDiagnostics(fileSnapshot);
+            }
+            finally
+            {
+                try { fileDoc?.Close(false); } catch { }
+            }
+
+            if (embeddedCanonical is null || fileCanonical is null)
+            {
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: VERIFY-DIFF unavailable (embedded={embeddedCanonical is not null}, " +
+                    $"file={fileCanonical is not null})");
+                return;
+            }
+
+            var e = embeddedCanonical.Split('|');
+            var f = fileCanonical.Split('|');
+            var shown = 0;
+            var max = Math.Max(e.Length, f.Length);
+            for (var i = 0; i < max && shown < 8; i++)
+            {
+                var et = i < e.Length ? e[i] : "<end>";
+                var ft = i < f.Length ? f[i] : "<end>";
+                if (et == ft) continue;
+
+                shown++;
+                var section = FindSectionMarker(e, i);
+                SmartConLogger.Info(
+                    $"UpdateFamily[{catalogItemId}]: VERIFY-DIFF[{shown}] section≈{section} token#{i}: " +
+                    $"embedded=[{Truncate(et)}] file=[{Truncate(ft)}]");
+            }
+
+            SmartConLogger.Info(
+                $"UpdateFamily[{catalogItemId}]: VERIFY-DIFF summary: tokens embedded={e.Length} file={f.Length}, " +
+                $"first {shown} difference(s) shown");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Info(
+                $"UpdateFamily[{catalogItemId}]: VERIFY-DIFF failed (diagnostics only): {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private static readonly string[] SectionMarkers =
+    [
+        "PARAMS", "TYPES", "PHANTOM", "GEOM", "GEOM2D", "NESTED", "NONSHARED",
+        "NESTEDHASH", "FACTS", "FLAGS", "CONN", "LOOKUP", "STRUCT", "ROUTING",
+    ];
+
+    private static string FindSectionMarker(string[] tokens, int index)
+    {
+        for (var i = index; i >= 0; i--)
+        {
+            if (Array.IndexOf(SectionMarkers, tokens[i]) >= 0)
+                return tokens[i];
+        }
+
+        return "<prefix>";
+    }
+
+    private static string Truncate(string token)
+    {
+        return token.Length > 60 ? token[..60] + "…" : token;
     }
 
     /// <summary>

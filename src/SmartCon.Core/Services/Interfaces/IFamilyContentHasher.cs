@@ -33,4 +33,12 @@ public interface IFamilyContentHasher
     /// <c>null</c> if the snapshot is null or has no types.
     /// </summary>
     FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
+
+    /// <summary>
+    /// Diagnostics-only: the canonical string behind
+    /// <see cref="ComputeForLoadable"/>. Used to localize a post-verify
+    /// mismatch (first differing token + section context) in failure logs —
+    /// never for hashing decisions. Returns <c>null</c> for a null snapshot.
+    /// </summary>
+    string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot);
 }

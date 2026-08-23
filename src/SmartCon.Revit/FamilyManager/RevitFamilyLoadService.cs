@@ -768,6 +768,11 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
                             {
                                 ok = param.Set(materialId);
                             }
+                            else if (op.ValueText is not null
+                                && TryResolveByNameAnyClass(doc, op.ValueText, out var elementId))
+                            {
+                                ok = param.Set(elementId);
+                            }
                             else
                             {
                                 ok = false;
@@ -823,6 +828,30 @@ public sealed class RevitFamilyLoadService : IFamilyLoadService, IFamilyLoadServ
         }
 
         return map;
+    }
+
+    /// <summary>
+    /// Best-effort ElementId resolution by element name for the #239
+    /// post-pass. ElementId parameters in MEP families reference more than
+    /// materials — electrical load classifications, fill patterns, and
+    /// other non-ElementType elements (manual test 2026-08-23: the ADSK
+    /// fan's «Классификация нагрузок» = 'ОВК' is an
+    /// ElectricalLoadClassification and the material map missed it).
+    /// Fallback LINQ name search across all non-ElementType element classes;
+    /// matches are ordered Material-first so a cross-class name collision
+    /// resolves to the most common per-type reference kind. References to
+    /// ElementType targets (e.g. nested family types) stay unresolved
+    /// (best-effort — the post-verify arbitrates).
+    /// </summary>
+    private static bool TryResolveByNameAnyClass(Document doc, string name, out ElementId elementId)
+    {
+        var best = new FilteredElementCollector(doc)
+            .WhereElementIsNotElementType()
+            .Where(e => string.Equals(e.Name, name, StringComparison.Ordinal))
+            .OrderBy(e => e is Material ? 0 : 1)
+            .FirstOrDefault();
+        elementId = best?.Id ?? ElementId.InvalidElementId;
+        return best is not null;
     }
 
     /// <summary>

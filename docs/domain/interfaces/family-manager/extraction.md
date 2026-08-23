@@ -45,11 +45,13 @@ public interface IFamilyContentHasher
 {
     FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot);
     FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
+    string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot);
 }
 ```
 
 - `ComputeForLoadable` — returns `null` if the snapshot is null or empty (no parameters, no types, no geometry). FHV10 (2026-08-12): единственный грейд — используется и для identity (дедуп/версии, хранится в БД), и для embedded-верификации (эфемерно, в сессии); отдельного verification-метода больше нет.
 - `ComputeForSystem` — returns `null` if the snapshot is null or has no types.
+- `BuildLoadableCanonicalStringForDiagnostics` (2026-08-23) — diagnostics-only: canonical string за `ComputeForLoadable`, для VERIFY-DIFF логов при падении post-verify (первый различающийся токен + секция). Не для решений о хэшировании.
 
 **v2.0.0 stability rules:**
 - Blank parameter values are excluded from the canonical string (`HasValue=false`, empty string, `INVALID`, `UNSUPPORTED`, `READERROR`). Numeric zero is meaningful (e.g. IFC=0).

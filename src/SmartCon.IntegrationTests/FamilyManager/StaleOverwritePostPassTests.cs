@@ -121,6 +121,7 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
                 await Assert.That(v.Label).IsEqualTo(label).Because($"{name}.Label must come from the catalog v2");
                 await Assert.That(v.Flag).IsEqualTo(flag).Because($"{name}.Flag must come from the catalog v2");
                 await Assert.That(v.Computed).IsEqualTo(computed).Because($"{name}.Computed must self-heal from the formula");
+                await Assert.That(v.Mat).IsEqualTo("ProbeMatB").Because($"{name}.Mat (ElementId) must resolve by name to the catalog v2 material");
             }
         }
     }
@@ -238,12 +239,17 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
             var label = doc.FamilyManager.AddParameter("Label", GroupTypeId.General, SpecTypeId.String.Text, false);
             var flag = doc.FamilyManager.AddParameter("Flag", GroupTypeId.General, SpecTypeId.Boolean.YesNo, false);
             var computed = doc.FamilyManager.AddParameter("Computed", GroupTypeId.General, SpecTypeId.Number, false);
+            var mat = doc.FamilyManager.AddParameter("Mat", GroupTypeId.Materials, SpecTypeId.Reference.Material, false);
 #else
             var score = doc.FamilyManager.AddParameter("Score", BuiltInParameterGroup.PG_GENERAL, ParameterType.Number, false);
             var label = doc.FamilyManager.AddParameter("Label", BuiltInParameterGroup.PG_GENERAL, ParameterType.Text, false);
             var flag = doc.FamilyManager.AddParameter("Flag", BuiltInParameterGroup.PG_GENERAL, ParameterType.YesNo, false);
             var computed = doc.FamilyManager.AddParameter("Computed", BuiltInParameterGroup.PG_GENERAL, ParameterType.Number, false);
+            var mat = doc.FamilyManager.AddParameter("Mat", BuiltInParameterGroup.PG_MATERIALS, ParameterType.Material, false);
 #endif
+            var matA = Material.Create(doc, "ProbeMatA");
+            Material.Create(doc, "ProbeMatB");
+
             doc.FamilyManager.NewType(TypeNames[0]);
             doc.FamilyManager.SetFormula(computed, "Score * 2");
 
@@ -254,6 +260,7 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
                 doc.FamilyManager.Set(score, scores[i]);
                 doc.FamilyManager.Set(label, labels[i]);
                 doc.FamilyManager.Set(flag, flags[i]);
+                doc.FamilyManager.Set(mat, matA);
             }
 
             SetCurrentType(doc, currentTypeName);
@@ -275,12 +282,17 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
                 var score = doc.FamilyManager.get_Parameter("Score");
                 var label = doc.FamilyManager.get_Parameter("Label");
                 var flag = doc.FamilyManager.get_Parameter("Flag");
+                var mat = doc.FamilyManager.get_Parameter("Mat");
+                var matB = new FilteredElementCollector(doc)
+                    .OfClass(typeof(Material))
+                    .First(m => m.Name == "ProbeMatB").Id;
                 for (var i = 0; i < TypeNames.Length; i++)
                 {
                     SetCurrentType(doc, TypeNames[i]);
                     doc.FamilyManager.Set(score, scores[i]);
                     doc.FamilyManager.Set(label, labels[i]);
                     doc.FamilyManager.Set(flag, flags[i]);
+                    doc.FamilyManager.Set(mat, matB);
                 }
 
                 SetCurrentType(doc, currentTypeName);
@@ -331,7 +343,7 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
         return doc;
     }
 
-    private sealed record TypeValues(double? Score, string? Label, int? Flag, double? Computed);
+    private sealed record TypeValues(double? Score, string? Label, int? Flag, double? Computed, string? Mat);
 
     private static Dictionary<string, TypeValues> ReadAllValues(Document projectDoc)
     {
@@ -344,11 +356,16 @@ public sealed class StaleOverwritePostPassTests : RevitApiTest
         foreach (var id in family.GetFamilySymbolIds())
         {
             var symbol = (FamilySymbol)projectDoc.GetElement(id);
+            var matId = symbol.LookupParameter("Mat")?.AsElementId();
+            var matName = matId is not null && matId != ElementId.InvalidElementId
+                ? projectDoc.GetElement(matId)?.Name
+                : null;
             result[symbol.Name] = new TypeValues(
                 symbol.LookupParameter("Score")?.AsDouble(),
                 symbol.LookupParameter("Label")?.AsString(),
                 symbol.LookupParameter("Flag")?.AsInteger(),
-                symbol.LookupParameter("Computed")?.AsDouble());
+                symbol.LookupParameter("Computed")?.AsDouble(),
+                matName);
         }
 
         return result;
