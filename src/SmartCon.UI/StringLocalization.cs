@@ -375,8 +375,6 @@ public static class StringLocalization
         public const string FM_AssignEditor_Or = "FM_AssignEditor_Or";
         public const string FM_AssignEditor_ColSource = "FM_AssignEditor_ColSource";
         public const string FM_AssignEditor_ColField = "FM_AssignEditor_ColField";
-        public const string FM_AssignEditor_PickCategory = "FM_AssignEditor_PickCategory";
-        public const string FM_AssignEditor_PickPartType = "FM_AssignEditor_PickPartType";
         public const string FM_AssignEditor_TreeNone = "FM_AssignEditor_TreeNone";
         public const string FM_AssignEditor_TreeCount = "FM_AssignEditor_TreeCount";
         public const string FM_AssignEditor_TreeCountDisabled = "FM_AssignEditor_TreeCountDisabled";

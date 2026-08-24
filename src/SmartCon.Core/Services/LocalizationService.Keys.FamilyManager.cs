@@ -511,8 +511,6 @@ public static partial class LocalizationService
         ru["FM_AssignEditor_Or"] = "ИЛИ"; en["FM_AssignEditor_Or"] = "OR";
         ru["FM_AssignEditor_ColSource"] = "Источник"; en["FM_AssignEditor_ColSource"] = "Source";
         ru["FM_AssignEditor_ColField"] = "Атрибут / поле"; en["FM_AssignEditor_ColField"] = "Attribute / field";
-        ru["FM_AssignEditor_PickCategory"] = "Категория Revit..."; en["FM_AssignEditor_PickCategory"] = "Revit category...";
-        ru["FM_AssignEditor_PickPartType"] = "Тип детали..."; en["FM_AssignEditor_PickPartType"] = "Part Type...";
         ru["FM_AssignEditor_TreeNone"] = "Правила автоназначения не заданы — нажмите для настройки"; en["FM_AssignEditor_TreeNone"] = "No auto-assignment rules — click to configure";
         ru["FM_AssignEditor_TreeCount"] = "Правила автоназначения: {0}"; en["FM_AssignEditor_TreeCount"] = "Auto-assignment rules: {0}";
         ru["FM_AssignEditor_TreeCountDisabled"] = "Правила автоназначения: {0} (отключено: {1})"; en["FM_AssignEditor_TreeCountDisabled"] = "Auto-assignment rules: {0} (disabled: {1})";

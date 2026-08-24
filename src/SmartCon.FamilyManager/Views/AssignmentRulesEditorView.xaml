@@ -6,6 +6,7 @@
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{loc:Loc FM_AssignEditor_Title}"
         Width="1060" Height="620" MinWidth="900" MinHeight="420"
         WindowStartupLocation="CenterScreen"
@@ -20,33 +21,7 @@
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-
-            <!-- Compact picker toggle (combo-like) for the inline search pickers. -->
-            <Style x:Key="AssignmentValuePicker" TargetType="ToggleButton">
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="ToggleButton">
-                            <Border x:Name="Border"
-                                    Background="{DynamicResource SurfaceBrush}"
-                                    BorderBrush="{DynamicResource BorderAltBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3"
-                                    Padding="6,3"
-                                    SnapsToDevicePixels="True">
-                                <ContentPresenter VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" TargetName="Border"/>
-                                </Trigger>
-                                <Trigger Property="IsChecked" Value="True">
-                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" TargetName="Border"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
+            <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -236,43 +211,27 @@
                                                               Margin="0,0,4,0"/>
 
                                                     <Grid Grid.Column="4" VerticalAlignment="Center">
-                                                        <!-- Revit category picker: toggle +
-                                                             popup with live search. The selected
-                                                             label is always rendered on the
-                                                             button — no editable-combo quirks. -->
-                                                        <ToggleButton x:Name="CategoryToggle"
-                                                                      Style="{StaticResource AssignmentValuePicker}"
-                                                                      IsChecked="{Binding IsCategoryPopupOpen}"
-                                                                      VerticalAlignment="Center"
-                                                                      Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="*"/>
-                                                                    <ColumnDefinition Width="Auto"/>
-                                                                </Grid.ColumnDefinitions>
-                                                                <TextBlock Grid.Column="0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
-                                                                    <TextBlock.Style>
-                                                                        <Style TargetType="TextBlock">
-                                                                            <Setter Property="Text" Value="{Binding SelectedCategoryLabel}"/>
-                                                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                                                            <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding SelectedCategoryLabel}" Value="">
-                                                                                    <Setter Property="Text" Value="{loc:Loc FM_AssignEditor_PickCategory}"/>
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                                                </DataTrigger>
-                                                                                <DataTrigger Binding="{Binding SelectedCategoryLabel}" Value="{x:Null}">
-                                                                                    <Setter Property="Text" Value="{loc:Loc FM_AssignEditor_PickCategory}"/>
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                                                </DataTrigger>
-                                                                            </Style.Triggers>
-                                                                        </Style>
-                                                                    </TextBlock.Style>
-                                                                </TextBlock>
-                                                                <iconPacks:PackIconMaterial Grid.Column="1" Kind="ChevronDown" Width="12" Height="12" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                                            </Grid>
-                                                        </ToggleButton>
+                                                        <!-- Revit category: inline autocomplete —
+                                                             type to live-filter the dropdown with
+                                                             highlighted matches (same style as the
+                                                             panel tree search). The picked label is
+                                                             the field's text. -->
+                                                        <TextBox x:Name="CategoryBox"
+                                                                 Text="{Binding CategoryPickerText, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Style="{DynamicResource CompactTextBox}"
+                                                                 VerticalAlignment="Center"
+                                                                 Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
+                                                            <i:Interaction.Triggers>
+                                                                <i:EventTrigger EventName="GotFocus">
+                                                                    <i:InvokeCommandAction Command="{Binding OpenCategoryPickerCommand}"/>
+                                                                </i:EventTrigger>
+                                                                <i:EventTrigger EventName="PreviewMouseLeftButtonDown">
+                                                                    <i:InvokeCommandAction Command="{Binding OpenCategoryPickerCommand}"/>
+                                                                </i:EventTrigger>
+                                                            </i:Interaction.Triggers>
+                                                        </TextBox>
                                                         <Popup IsOpen="{Binding IsCategoryPopupOpen, Mode=TwoWay}"
-                                                               PlacementTarget="{Binding ElementName=CategoryToggle}"
+                                                               PlacementTarget="{Binding ElementName=CategoryBox}"
                                                                Placement="Bottom"
                                                                StaysOpen="False"
                                                                AllowsTransparency="True">
@@ -280,56 +239,45 @@
                                                                     BorderBrush="{DynamicResource BorderAltBrush}"
                                                                     BorderThickness="1"
                                                                     CornerRadius="4"
-                                                                    Padding="6"
                                                                     MinWidth="240">
-                                                                <StackPanel>
-                                                                    <TextBox Text="{Binding CategorySearchText, UpdateSourceTrigger=PropertyChanged}"
-                                                                             Style="{DynamicResource CompactTextBox}"
-                                                                             Margin="0,0,0,6"/>
-                                                                    <ListBox ItemsSource="{Binding FilteredRevitCategories}"
-                                                                             DisplayMemberPath="Label"
-                                                                             SelectedItem="{Binding SelectedCategoryItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                             MaxHeight="260"
-                                                                             BorderThickness="0"
-                                                                             Style="{DynamicResource CompactListBox}"/>
-                                                                </StackPanel>
+                                                                <ListBox ItemsSource="{Binding FilteredRevitCategories}"
+                                                                         SelectedItem="{Binding SelectedCategoryItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                         MaxHeight="260"
+                                                                         BorderThickness="0"
+                                                                         Style="{DynamicResource CompactListBox}">
+                                                                    <ListBox.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <ContentControl>
+                                                                                <ContentControl.Content>
+                                                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                                                        <Binding Path="Label"/>
+                                                                                        <Binding Path="DataContext.CategoryFilterText" RelativeSource="{RelativeSource AncestorType=ListBox}"/>
+                                                                                    </MultiBinding>
+                                                                                </ContentControl.Content>
+                                                                            </ContentControl>
+                                                                        </DataTemplate>
+                                                                    </ListBox.ItemTemplate>
+                                                                </ListBox>
                                                             </Border>
                                                         </Popup>
 
-                                                        <!-- Part Type picker: same pattern. -->
-                                                        <ToggleButton x:Name="PartTypeToggle"
-                                                                      Style="{StaticResource AssignmentValuePicker}"
-                                                                      IsChecked="{Binding IsPartTypePopupOpen}"
-                                                                      VerticalAlignment="Center"
-                                                                      Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="*"/>
-                                                                    <ColumnDefinition Width="Auto"/>
-                                                                </Grid.ColumnDefinitions>
-                                                                <TextBlock Grid.Column="0" TextTrimming="CharacterEllipsis" VerticalAlignment="Center">
-                                                                    <TextBlock.Style>
-                                                                        <Style TargetType="TextBlock">
-                                                                            <Setter Property="Text" Value="{Binding SelectedPartTypeLabel}"/>
-                                                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                                                            <Style.Triggers>
-                                                                                <DataTrigger Binding="{Binding SelectedPartTypeLabel}" Value="">
-                                                                                    <Setter Property="Text" Value="{loc:Loc FM_AssignEditor_PickPartType}"/>
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                                                </DataTrigger>
-                                                                                <DataTrigger Binding="{Binding SelectedPartTypeLabel}" Value="{x:Null}">
-                                                                                    <Setter Property="Text" Value="{loc:Loc FM_AssignEditor_PickPartType}"/>
-                                                                                    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                                                                                </DataTrigger>
-                                                                            </Style.Triggers>
-                                                                        </Style>
-                                                                    </TextBlock.Style>
-                                                                </TextBlock>
-                                                                <iconPacks:PackIconMaterial Grid.Column="1" Kind="ChevronDown" Width="12" Height="12" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center"/>
-                                                            </Grid>
-                                                        </ToggleButton>
+                                                        <!-- Part Type: same inline autocomplete. -->
+                                                        <TextBox x:Name="PartTypeBox"
+                                                                 Text="{Binding PartTypePickerText, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Style="{DynamicResource CompactTextBox}"
+                                                                 VerticalAlignment="Center"
+                                                                 Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
+                                                            <i:Interaction.Triggers>
+                                                                <i:EventTrigger EventName="GotFocus">
+                                                                    <i:InvokeCommandAction Command="{Binding OpenPartTypePickerCommand}"/>
+                                                                </i:EventTrigger>
+                                                                <i:EventTrigger EventName="PreviewMouseLeftButtonDown">
+                                                                    <i:InvokeCommandAction Command="{Binding OpenPartTypePickerCommand}"/>
+                                                                </i:EventTrigger>
+                                                            </i:Interaction.Triggers>
+                                                        </TextBox>
                                                         <Popup IsOpen="{Binding IsPartTypePopupOpen, Mode=TwoWay}"
-                                                               PlacementTarget="{Binding ElementName=PartTypeToggle}"
+                                                               PlacementTarget="{Binding ElementName=PartTypeBox}"
                                                                Placement="Bottom"
                                                                StaysOpen="False"
                                                                AllowsTransparency="True">
@@ -337,19 +285,25 @@
                                                                     BorderBrush="{DynamicResource BorderAltBrush}"
                                                                     BorderThickness="1"
                                                                     CornerRadius="4"
-                                                                    Padding="6"
                                                                     MinWidth="240">
-                                                                <StackPanel>
-                                                                    <TextBox Text="{Binding PartTypeSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                                                             Style="{DynamicResource CompactTextBox}"
-                                                                             Margin="0,0,0,6"/>
-                                                                    <ListBox ItemsSource="{Binding FilteredPartTypes}"
-                                                                             DisplayMemberPath="Label"
-                                                                             SelectedItem="{Binding SelectedPartTypeItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                             MaxHeight="260"
-                                                                             BorderThickness="0"
-                                                                             Style="{DynamicResource CompactListBox}"/>
-                                                                </StackPanel>
+                                                                <ListBox ItemsSource="{Binding FilteredPartTypes}"
+                                                                         SelectedItem="{Binding SelectedPartTypeItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                         MaxHeight="260"
+                                                                         BorderThickness="0"
+                                                                         Style="{DynamicResource CompactListBox}">
+                                                                    <ListBox.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <ContentControl>
+                                                                                <ContentControl.Content>
+                                                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                                                        <Binding Path="Label"/>
+                                                                                        <Binding Path="DataContext.PartTypeFilterText" RelativeSource="{RelativeSource AncestorType=ListBox}"/>
+                                                                                    </MultiBinding>
+                                                                                </ContentControl.Content>
+                                                                            </ContentControl>
+                                                                        </DataTemplate>
+                                                                    </ListBox.ItemTemplate>
+                                                                </ListBox>
                                                             </Border>
                                                         </Popup>
 
