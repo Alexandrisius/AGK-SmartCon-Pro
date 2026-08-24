@@ -145,7 +145,14 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         SourceKind == AssignmentConditionSourceKind.System
         && SystemField is AssignmentSystemField.RevitCategory or AssignmentSystemField.PartType;
 
-    public bool ShowValueField => !IsOrdinalSystemField && Operator is not ValidationRuleOperator.Between;
+    /// <summary>Text value field — only for operators whose engine
+    /// evaluation reads ValueText: IsPresent / HasValue are evaluated on
+    /// the parameter itself (FamilyValidationEngine ignores rule.ValueText).
+    /// Audit #241: forcing a value here blocked saving a legit rule.</summary>
+    public bool ShowValueField =>
+        !IsOrdinalSystemField
+        && Operator is ValidationRuleOperator.Equals or ValidationRuleOperator.NotEquals or ValidationRuleOperator.Contains;
+
     public bool ShowNumberField => !IsOrdinalSystemField && Operator is ValidationRuleOperator.GreaterThan or ValidationRuleOperator.GreaterOrEqual or ValidationRuleOperator.LessThan or ValidationRuleOperator.LessOrEqual;
     public bool ShowRangeFields => !IsOrdinalSystemField && Operator == ValidationRuleOperator.Between;
     public bool ShowCategoryPicker => SourceKind == AssignmentConditionSourceKind.System && SystemField == AssignmentSystemField.RevitCategory;

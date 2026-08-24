@@ -116,7 +116,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         {
             SmartConLogger.Warn(
                 $"Assignment editor: condition {condition.Id} targets SystemFamilyKey which is not editable — it will be dropped on save " +
-                "[Action: пересоздайте условие в редакторе правил автоназначения]");
+                "[Action: если условие ещё нужно — отмените редактирование и пересоздайте его по поддерживаемому полю (Категория Revit / Тип детали / Имя семейства)]");
             return false;
         }
 
