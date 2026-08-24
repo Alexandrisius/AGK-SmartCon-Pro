@@ -257,6 +257,9 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     row.CategoryProvenance = CategoryProvenance.None;
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
+                    // #241: the user explicitly reset the category — a
+                    // stale ambiguous-conflict notice must not survive it.
+                    row.AssignmentConflictCandidates = null;
                 }
                 else
                 {
@@ -538,6 +541,12 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         var ambiguous = 0;
         foreach (var row in candidates)
         {
+            if (_isClosing)
+            {
+                SmartConLogger.Debug("BatchImport.AutoAssign: application skipped — dialog is closing");
+                break;
+            }
+
             if (row.Status != FamilyBatchImportStatus.New) continue;
             if (row.CategoryProvenance != CategoryProvenance.None) continue;
             if (row.IsGateBlocked) continue;
@@ -615,6 +624,12 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         else if (result.Outcome == CategoryAutoAssignOutcome.Ambiguous)
         {
             row.AssignmentConflictCandidates = ResolveCategoryPaths(result.CandidateCategoryIds);
+        }
+        else
+        {
+            // NoMatch: a stale ambiguous-conflict notice must not survive
+            // the re-derivation (e.g. rename to a name no rule matches).
+            row.AssignmentConflictCandidates = null;
         }
     }
 
