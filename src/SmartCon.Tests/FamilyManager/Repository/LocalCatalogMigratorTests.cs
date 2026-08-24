@@ -1266,9 +1266,13 @@ public sealed class LocalCatalogMigratorTests
     public async Task Migrate_V31_CreatesAssignmentTablesWithCheckConstraint()
     {
         // V31 (#241): assignment tables exist on a fresh schema and the
-        // CHECK constraint rejects a condition without attribute_id.
+        // CHECK constraint rejects a condition without attribute_id
+        // (valid category id — the FK must NOT be what fires).
         using var fixture = new TempCatalogFixture();
         await fixture.MigrateAsync();
+
+        var categoryRepository = new SmartCon.FamilyManager.Services.LocalCatalog.LocalCategoryRepository(fixture.GetDatabase());
+        var category = await categoryRepository.AddAsync("CHECK-test", null, 0);
 
         using var connection = fixture.GetDatabase().CreateConnection();
         await connection.OpenAsync();
@@ -1282,10 +1286,11 @@ public sealed class LocalCatalogMigratorTests
         using (var checkCmd = connection.CreateCommand())
         {
             checkCmd.CommandText = """
-                INSERT INTO category_assignment_rule_groups (id, category_id) VALUES ('g1', 'missing-category');
+                INSERT INTO category_assignment_rule_groups (id, category_id) VALUES ('g1', @categoryId);
                 INSERT INTO category_assignment_conditions (id, group_id, source_kind, attribute_id, system_key, operator)
                 VALUES ('c1', 'g1', 'attribute', NULL, NULL, 'Equals')
                 """;
+            checkCmd.Parameters.Add(new SqliteParameter("@categoryId", category.Id));
             await Assert.ThrowsAsync<SqliteException>(() => checkCmd.ExecuteNonQueryAsync());
         }
     }

@@ -113,6 +113,14 @@ public sealed class RevitCategoryLabelService : IRevitCategoryLabelService
         return name.StartsWith("OST_", StringComparison.Ordinal) ? name.Substring(4) : name;
     }
 
+    /// <summary>
+    /// Compile-time canary: if Autodesk removes/reshapes the
+    /// <c>GetLabelFor(BuiltInCategory)</c> overload from the compiled SDK,
+    /// this method fails to compile and forces a rework of the reflection
+    /// resolution above. Never called at runtime (labels go through
+    /// <see cref="GetLabelForMethod"/>; a direct call would JIT-crash on a
+    /// Revit 2019 runtime).
+    /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static string GetLabelDirect(BuiltInCategory category) => LabelUtils.GetLabelFor(category);
 }

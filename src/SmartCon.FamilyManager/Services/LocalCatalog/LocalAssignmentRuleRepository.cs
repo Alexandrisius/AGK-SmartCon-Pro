@@ -135,15 +135,42 @@ internal sealed class LocalAssignmentRuleRepository : IAssignmentRuleRepository
     public async Task<bool> UpdateGroupAsync(string groupId, int? sortOrder, bool? isEnabled, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
+
+        var sets = new List<string>();
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "UPDATE category_assignment_rule_groups SET sort_order = @sortOrder, is_enabled = @isEnabled WHERE id = @id";
+
+        if (sortOrder.HasValue)
+        {
+            sets.Add("sort_order = @sortOrder");
+            cmd.Parameters.Add(new SqliteParameter("@sortOrder", sortOrder.Value));
+        }
+
+        if (isEnabled.HasValue)
+        {
+            sets.Add("is_enabled = @isEnabled");
+            cmd.Parameters.Add(new SqliteParameter("@isEnabled", isEnabled.Value ? 1 : 0));
+        }
+
+        if (sets.Count == 0)
+        {
+            return await GroupExistsAsync(connection, groupId, ct);
+        }
+
+        cmd.CommandText = $"UPDATE category_assignment_rule_groups SET {string.Join(", ", sets)} WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", groupId));
-        cmd.Parameters.Add(new SqliteParameter("@sortOrder", sortOrder ?? 0));
-        cmd.Parameters.Add(new SqliteParameter("@isEnabled", (isEnabled ?? true) ? 1 : 0));
         var affected = await cmd.ExecuteNonQueryAsync(ct);
         return affected > 0;
+    }
+
+    private static async Task<bool> GroupExistsAsync(SqliteConnection connection, string groupId, CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM category_assignment_rule_groups WHERE id = @id";
+        cmd.Parameters.Add(new SqliteParameter("@id", groupId));
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt64(scalar, System.Globalization.CultureInfo.InvariantCulture) > 0;
     }
 
     public async Task<bool> DeleteGroupAsync(string groupId, CancellationToken ct = default)
@@ -192,18 +219,7 @@ internal sealed class LocalAssignmentRuleRepository : IAssignmentRuleRepository
             valueText, valueNumber, minValue, maxValue, nextSortOrder, isEnabled);
     }
 
-    public async Task<bool> UpdateConditionAsync(
-        string conditionId,
-        AssignmentConditionSourceKind? sourceKind,
-        string? attributeId,
-        AssignmentSystemField? systemField,
-        ValidationRuleOperator? op,
-        string? valueText,
-        double? valueNumber,
-        double? minValue,
-        double? maxValue,
-        bool? isEnabled,
-        CancellationToken ct = default)
+    public async Task<bool> UpdateConditionAsync(AssignmentCondition condition, CancellationToken ct = default)
     {
         await EnsureMigratedAsync(ct);
         using var connection = _database.CreateConnection();
@@ -211,18 +227,10 @@ internal sealed class LocalAssignmentRuleRepository : IAssignmentRuleRepository
         using var cmd = connection.CreateCommand();
         cmd.CommandText =
             "UPDATE category_assignment_conditions SET source_kind = @sourceKind, attribute_id = @attributeId, system_key = @systemKey, " +
-            "operator = @operator, value_text = @valueText, value_number = @valueNumber, min_value = @minValue, max_value = @maxValue, is_enabled = @isEnabled " +
+            "operator = @operator, value_text = @valueText, value_number = @valueNumber, min_value = @minValue, max_value = @maxValue, " +
+            "sort_order = @sortOrder, is_enabled = @isEnabled " +
             "WHERE id = @id";
-        cmd.Parameters.Add(new SqliteParameter("@id", conditionId));
-        cmd.Parameters.Add(new SqliteParameter("@sourceKind", ToStorageKind(sourceKind ?? AssignmentConditionSourceKind.Attribute)));
-        cmd.Parameters.Add(new SqliteParameter("@attributeId", (object?)attributeId ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@systemKey", systemField.HasValue ? systemField.Value.ToString() : DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@operator", (op ?? ValidationRuleOperator.Equals).ToString()));
-        cmd.Parameters.Add(new SqliteParameter("@valueText", (object?)valueText ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@valueNumber", (object?)valueNumber ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@minValue", (object?)minValue ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@maxValue", (object?)maxValue ?? DBNull.Value));
-        cmd.Parameters.Add(new SqliteParameter("@isEnabled", (isEnabled ?? true) ? 1 : 0));
+        FillConditionParameters(cmd, condition);
         var affected = await cmd.ExecuteNonQueryAsync(ct);
         return affected > 0;
     }

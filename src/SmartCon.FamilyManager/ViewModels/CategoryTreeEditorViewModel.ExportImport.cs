@@ -502,7 +502,7 @@ public sealed partial class CategoryTreeEditorViewModel
 
                 if (!group.IsEnabled)
                 {
-                    await _assignmentRuleRepository.UpdateGroupAsync(createdGroup.Id, group.SortOrder, false);
+                    await _assignmentRuleRepository.UpdateGroupAsync(createdGroup.Id, null, false);
                 }
 
                 groupsImported++;

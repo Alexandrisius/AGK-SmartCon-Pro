@@ -133,9 +133,15 @@ public sealed class LocalAssignmentRuleRepositoryTests : IDisposable
             group.Id, AssignmentConditionSourceKind.Attribute, attributeId, null,
             ValidationRuleOperator.Contains, "сталь", null, null, null, true);
 
-        await _repository.UpdateConditionAsync(
-            condition.Id, AssignmentConditionSourceKind.Attribute, attributeId, null,
-            ValidationRuleOperator.Between, null, 5, 1, 10, false);
+        await _repository.UpdateConditionAsync(condition with
+        {
+            Operator = ValidationRuleOperator.Between,
+            ValueText = null,
+            ValueNumber = 5,
+            MinValue = 1,
+            MaxValue = 10,
+            IsEnabled = false,
+        });
 
         var loaded = (await _repository.GetGroupsForCategoryAsync(categoryId)).Single().Conditions.Single();
         Assert.Equal(ValidationRuleOperator.Between, loaded.Operator);
@@ -143,6 +149,28 @@ public sealed class LocalAssignmentRuleRepositoryTests : IDisposable
         Assert.Equal(1, loaded.MinValue);
         Assert.Equal(10, loaded.MaxValue);
         Assert.False(loaded.IsEnabled);
+    }
+
+    [Fact]
+    public async Task UpdateGroupAsync_NullFields_KeepStoredValues()
+    {
+        var categoryId = await SeedCategoryAsync();
+        var group = await _repository.CreateGroupAsync(categoryId);
+        var second = await _repository.CreateGroupAsync(categoryId);
+
+        // Partial update: toggling IsEnabled must not touch SortOrder.
+        await _repository.UpdateGroupAsync(second.Id, null, false);
+
+        var loaded = await _repository.GetGroupsForCategoryAsync(categoryId);
+        var loadedSecond = loaded.Single(g => g.Id == second.Id);
+        Assert.False(loadedSecond.IsEnabled);
+        Assert.Equal(1, loadedSecond.SortOrder);
+
+        // Partial update: null for both fields is a no-op existence check.
+        var exists = await _repository.UpdateGroupAsync(group.Id, null, null);
+        Assert.True(exists);
+        var missing = await _repository.UpdateGroupAsync("no-such-group", null, null);
+        Assert.False(missing);
     }
 
     [Fact]

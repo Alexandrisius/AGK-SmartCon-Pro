@@ -25,8 +25,8 @@ public interface IAssignmentRuleRepository
     /// (with a new id and the next sort order of the category).</summary>
     Task<AssignmentRuleGroup> CreateGroupAsync(string categoryId, CancellationToken ct = default);
 
-    /// <summary>Updates the mutable group fields (sort order, enabled
-    /// flag). Returns <c>false</c> when the group does not exist.</summary>
+    /// <summary>Partial update: only the provided fields are written
+    /// (<c>null</c> = keep the stored value).</summary>
     Task<bool> UpdateGroupAsync(string groupId, int? sortOrder, bool? isEnabled, CancellationToken ct = default);
 
     /// <summary>Deletes the group with its conditions (FK CASCADE).
@@ -48,20 +48,11 @@ public interface IAssignmentRuleRepository
         bool isEnabled,
         CancellationToken ct = default);
 
-    /// <summary>Updates the mutable condition fields. Returns <c>false</c>
-    /// when the condition does not exist.</summary>
-    Task<bool> UpdateConditionAsync(
-        string conditionId,
-        AssignmentConditionSourceKind? sourceKind,
-        string? attributeId,
-        AssignmentSystemField? systemField,
-        ValidationRuleOperator? op,
-        string? valueText,
-        double? valueNumber,
-        double? minValue,
-        double? maxValue,
-        bool? isEnabled,
-        CancellationToken ct = default);
+    /// <summary>Full-shape update of one condition (the editor saves the
+    /// whole row — a partial update cannot distinguish "keep" from "set
+    /// NULL" for attribute_id/system_key). Returns <c>false</c> when the
+    /// condition does not exist.</summary>
+    Task<bool> UpdateConditionAsync(AssignmentCondition condition, CancellationToken ct = default);
 
     /// <summary>Deletes one condition. Returns <c>false</c> when the
     /// condition does not exist.</summary>
