@@ -21,7 +21,12 @@ public sealed partial class AssignmentGroupRowViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<AssignmentConditionRowViewModel> _conditions;
 
-    public string? Id { get; }
+    /// <summary>Written back by the editor's save when a new group is
+    /// created — a failed save must not orphan the created row and
+    /// duplicate it on retry (incident of beta.9, #248).</summary>
+    public string? Id { get; private set; }
+
+    public void SetPersistedId(string id) => Id = id;
 
     public AssignmentGroupRowViewModel(string? id, int number, bool isEnabled, IEnumerable<AssignmentConditionRowViewModel> conditions)
     {
@@ -77,7 +82,12 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
     private readonly IReadOnlyList<AssignmentValueItem> _revitCategories;
     private readonly IReadOnlyList<AssignmentValueItem> _partTypes;
 
-    public string? Id { get; }
+    public string? Id { get; private set; }
+
+    /// <summary>Written back by the editor's save after a condition is
+    /// created — a mid-group failure must not duplicate it on retry
+    /// (incident of beta.9, #248).</summary>
+    public void SetPersistedId(string id) => Id = id;
 
     /// <summary>Revit category list for the picker ComboBox
     /// (SelectedValuePath=Key → <see cref="ValueText"/>).</summary>
@@ -160,9 +170,31 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
     partial void OnSourceKindChanged(AssignmentConditionSourceKind value)
     {
-        ClearValueFields();
         OnPropertyChanged(nameof(IsAttributeSource));
         OnPropertyChanged(nameof(SourceKindIndex));
+
+        // Incident #248 (beta.9): a stale SystemField survived switching
+        // back to Attribute and poisoned the stored condition — the DB
+        // CHECK (attribute XOR system) rejected the save. The pair must
+        // always be consistent with the visible UI: switching to System
+        // preselects the first field, switching to Attribute clears the
+        // system field entirely.
+        if (value == AssignmentConditionSourceKind.System)
+        {
+            if (SystemField is null)
+            {
+                SystemField = AssignmentSystemField.RevitCategory;
+                // OnSystemFieldChanged (fired by the setter) already
+                // cleared the values and recomputed the operators.
+                return;
+            }
+        }
+        else
+        {
+            SystemField = null;
+        }
+
+        ClearValueFields();
         RecomputeOperators();
     }
 

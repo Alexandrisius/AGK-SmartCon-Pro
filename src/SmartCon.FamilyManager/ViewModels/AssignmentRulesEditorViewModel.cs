@@ -207,6 +207,10 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                 if (groupRow.Id is null)
                 {
                     group = await _ruleRepository.CreateGroupAsync(_categoryId);
+                    // Write the id back immediately: if a later condition
+                    // insert fails, the retry must UPDATE this group, not
+                    // create an orphan duplicate (incident of beta.9).
+                    groupRow.SetPersistedId(group.Id);
                 }
                 else
                 {
@@ -230,10 +234,11 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                     var condition = MapCondition(group.Id, conditionRow, conditionSortOrder++);
                     if (conditionRow.Id is null)
                     {
-                        await _ruleRepository.CreateConditionAsync(
+                        var created = await _ruleRepository.CreateConditionAsync(
                             group.Id, condition.SourceKind, condition.AttributeId, condition.SystemField,
                             condition.Operator, condition.ValueText, condition.ValueNumber,
                             condition.MinValue, condition.MaxValue, condition.IsEnabled);
+                        conditionRow.SetPersistedId(created.Id);
                     }
                     else
                     {
