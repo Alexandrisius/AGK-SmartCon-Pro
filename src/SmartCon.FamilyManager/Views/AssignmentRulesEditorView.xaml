@@ -318,10 +318,20 @@
                     Visibility="{Binding HasParentRulesToCopy, Converter={StaticResource BoolToVis}}"/>
             <TextBlock Grid.Column="2"
                        Text="{Binding StatusMessage}"
-                       Foreground="{DynamicResource DangerBrush}"
                        VerticalAlignment="Center"
                        Margin="10,0,0,0"
-                       TextWrapping="Wrap"/>
+                       TextWrapping="Wrap">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
         </Grid>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">

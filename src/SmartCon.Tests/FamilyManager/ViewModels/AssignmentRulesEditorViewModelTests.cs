@@ -233,6 +233,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.NotEmpty(vm.StatusMessage);
+        Assert.True(vm.StatusIsError); // validation failure renders red
     }
 
     [Fact]
@@ -290,6 +291,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         Assert.Equal(ValidationRuleOperator.Contains, condition.Operator);
         Assert.Equal("сталь", condition.ValueText);
         Assert.Contains("Оборудование", vm.StatusMessage);
+        Assert.False(vm.StatusIsError); // info message, not an error
     }
 
     [Fact]

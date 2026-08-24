@@ -35,6 +35,11 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    /// <summary>true = the status is an error (red); false = informational
+    /// (neutral color) — the copy-done message must not scream danger.</summary>
+    [ObservableProperty]
+    private bool _statusIsError;
+
     /// <summary>Nearest rule-bearing ancestor exists — the editor shows the
     /// «Взять условия родителя» button (#241).</summary>
     public bool HasParentRulesToCopy => _copyFromCategoryId is not null;
@@ -44,7 +49,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         string.Format(
             Localize(
                 SKeys.FM_AssignEditor_CopyParentTooltip,
-                "Копирует правила категории «{0}» в этот редактор как отправную точку. После копирования правила полностью независимы."),
+                "Копирует правила ближайшей категории-предка с настроенными правилами («{0}») как отправную точку. Если у родителя правил нет — берутся из более старшей категории. После копирования правила полностью независимы."),
             _copyFromCategoryPath ?? string.Empty);
 
     public IReadOnlyList<AssignmentOperatorItem> AttributeOperators { get; }
@@ -155,12 +160,14 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
             if (added == 0)
             {
+                StatusIsError = false;
                 StatusMessage = Localize(
                     SKeys.FM_AssignEditor_CopyParentEmpty,
-                    "В правилах родителя нет условий для копирования");
+                    "В правилах предка нет условий для копирования");
                 return;
             }
 
+            StatusIsError = false;
             StatusMessage = string.Format(
                 Localize(
                     SKeys.FM_AssignEditor_CopyParentDone,
@@ -172,6 +179,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         catch (Exception ex)
         {
             SmartConLogger.Error($"Copy parent rules failed: {ex.Message} [Action: проверьте БД каталога и лог]");
+            StatusIsError = true;
             StatusMessage = string.Format(
                 SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
                 ex.Message);
@@ -257,6 +265,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
         if (!Validate(out var error))
         {
+            StatusIsError = true;
             StatusMessage = error!;
             return;
         }
@@ -337,6 +346,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         catch (Exception ex)
         {
             SmartConLogger.Error($"Failed to save assignment rules: {ex.Message}");
+            StatusIsError = true;
             StatusMessage = string.Format(
                 SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
                 ex.Message);
