@@ -100,7 +100,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                         .Select(c => new AssignmentConditionRowViewModel(
                             c.Id, c.SourceKind, c.AttributeId, c.SystemField, c.Operator,
                             c.ValueText, c.ValueNumber, c.MinValue, c.MaxValue, c.IsEnabled,
-                            AttributeOperators, OrdinalOperators, TextOperators)))));
+                            AttributeOperators, OrdinalOperators, TextOperators,
+                            RevitCategories, PartTypes)))));
     }
 
     /// <summary>
@@ -155,7 +156,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     private AssignmentConditionRowViewModel CreateNewCondition() =>
         new(null, AssignmentConditionSourceKind.Attribute, null, null,
             ValidationRuleOperator.Contains, null, null, null, null, true,
-            AttributeOperators, OrdinalOperators, TextOperators);
+            AttributeOperators, OrdinalOperators, TextOperators,
+            RevitCategories, PartTypes);
 
     private void RenumberGroups()
     {

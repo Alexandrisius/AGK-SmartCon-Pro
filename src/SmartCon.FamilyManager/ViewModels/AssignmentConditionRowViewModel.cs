@@ -74,7 +74,32 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
     [ObservableProperty]
     private IReadOnlyList<AssignmentOperatorItem> _availableOperators;
 
+    private readonly IReadOnlyList<AssignmentValueItem> _revitCategories;
+    private readonly IReadOnlyList<AssignmentValueItem> _partTypes;
+
+    [ObservableProperty]
+    private string _categorySearchText = string.Empty;
+
+    [ObservableProperty]
+    private string _partTypeSearchText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isCategoryPopupOpen;
+
+    [ObservableProperty]
+    private bool _isPartTypePopupOpen;
+
     public string? Id { get; }
+
+    public IReadOnlyList<AssignmentValueItem> FilteredRevitCategories => FilterValues(_revitCategories, CategorySearchText);
+    public IReadOnlyList<AssignmentValueItem> FilteredPartTypes => FilterValues(_partTypes, PartTypeSearchText);
+
+    /// <summary>Selected Revit category label (displayed on the picker
+    /// button); empty when nothing is selected.</summary>
+    public string SelectedCategoryLabel => FindLabel(_revitCategories, ValueText);
+
+    /// <summary>Selected Part Type label (displayed on the picker button).</summary>
+    public string SelectedPartTypeLabel => FindLabel(_partTypes, ValueText);
 
     public AssignmentConditionRowViewModel(
         string? id,
@@ -89,12 +114,16 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         bool isEnabled,
         IReadOnlyList<AssignmentOperatorItem> attributeOperators,
         IReadOnlyList<AssignmentOperatorItem> ordinalOperators,
-        IReadOnlyList<AssignmentOperatorItem> textOperators)
+        IReadOnlyList<AssignmentOperatorItem> textOperators,
+        IReadOnlyList<AssignmentValueItem>? revitCategories = null,
+        IReadOnlyList<AssignmentValueItem>? partTypes = null)
     {
         Id = id;
         _attributeOperators = attributeOperators;
         _ordinalOperators = ordinalOperators;
         _textOperators = textOperators;
+        _revitCategories = revitCategories ?? [];
+        _partTypes = partTypes ?? [];
         _sourceKind = sourceKind;
         _selectedAttributeId = attributeId;
         _systemField = systemField;
@@ -116,6 +145,78 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
             _valueText = valueText ?? valueNumber?.ToString("G15", CultureInfo.InvariantCulture);
         }
     }
+
+    partial void OnCategorySearchTextChanged(string value) =>
+        OnPropertyChanged(nameof(FilteredRevitCategories));
+
+    partial void OnPartTypeSearchTextChanged(string value) =>
+        OnPropertyChanged(nameof(FilteredPartTypes));
+
+    partial void OnIsCategoryPopupOpenChanged(bool value)
+    {
+        if (value) CategorySearchText = string.Empty;
+    }
+
+    partial void OnIsPartTypePopupOpenChanged(bool value)
+    {
+        if (value) PartTypeSearchText = string.Empty;
+    }
+
+    /// <summary>Selection proxy for the category ListBox: only a real user
+    /// pick writes <see cref="ValueText"/> — the filter-driven deselection
+    /// (the current item fell out of the filtered list while typing) must
+    /// NOT clear the stored value. The getter is always null: the list
+    /// shows no selection state by design.</summary>
+    public AssignmentValueItem? SelectedCategoryItem
+    {
+        get => null;
+        set
+        {
+            if (value is null) return;
+            ValueText = value.Key;
+        }
+    }
+
+    /// <summary>Same proxy for the Part Type ListBox.</summary>
+    public AssignmentValueItem? SelectedPartTypeItem
+    {
+        get => null;
+        set
+        {
+            if (value is null) return;
+            ValueText = value.Key;
+        }
+    }
+
+    partial void OnValueTextChanged(string? value)
+    {
+        OnPropertyChanged(nameof(SelectedCategoryLabel));
+        OnPropertyChanged(nameof(SelectedPartTypeLabel));
+        // A selection closes the popup immediately.
+        IsCategoryPopupOpen = false;
+        IsPartTypePopupOpen = false;
+    }
+
+    private static IReadOnlyList<AssignmentValueItem> FilterValues(
+        IReadOnlyList<AssignmentValueItem> source, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return source;
+        }
+
+        return source
+#if NET8_0_OR_GREATER
+            .Where(v => v.Label.Contains(search, StringComparison.OrdinalIgnoreCase))
+#else
+            .Where(v => v.Label.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
+#endif
+            .ToList();
+    }
+
+    private static string FindLabel(IReadOnlyList<AssignmentValueItem> source, string? key) =>
+        key is null ? string.Empty
+        : source.FirstOrDefault(v => string.Equals(v.Key, key, StringComparison.Ordinal))?.Label ?? string.Empty;
 
     public bool IsAttributeSource => SourceKind == AssignmentConditionSourceKind.Attribute;
 

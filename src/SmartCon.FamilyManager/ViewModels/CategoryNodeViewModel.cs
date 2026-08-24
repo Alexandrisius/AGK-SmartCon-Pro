@@ -22,7 +22,6 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AssignmentIconKind))]
     [NotifyPropertyChangedFor(nameof(AssignmentIconBrush))]
-    [NotifyPropertyChangedFor(nameof(AssignmentIconHasCheckBadge))]
     [NotifyPropertyChangedFor(nameof(AssignmentRulesTooltip))]
     private int _assignmentRuleCount;
 
@@ -31,30 +30,24 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AssignmentIconKind))]
     [NotifyPropertyChangedFor(nameof(AssignmentIconBrush))]
-    [NotifyPropertyChangedFor(nameof(AssignmentIconHasCheckBadge))]
     [NotifyPropertyChangedFor(nameof(AssignmentRulesTooltip))]
     private int _disabledAssignmentRuleCount;
 
     /// <summary>
-    /// Filter icon on the category node (outline style — fills look heavy
-    /// on this icon): gray filter outline when no rules (still clickable —
-    /// opens the editor), gray outline with a small green check badge when
-    /// all rules are enabled, orange filter-cog outline when at least one
-    /// rule is disabled. Same three-state semantics as the validation
-    /// shield.
+    /// Filter icon on the category node: gray cog outline when no rules
+    /// (still clickable — opens the editor), gray filter-check when every
+    /// rule is enabled, orange cog outline when at least one rule is
+    /// disabled. Same three-state semantics as the validation shield.
     /// </summary>
     public string AssignmentIconKind =>
-        DisabledAssignmentRuleCount > 0 ? "FilterCogOutline"
-        : "FilterOutline";
+        AssignmentRuleCount == 0 ? "FilterCogOutline"
+        : DisabledAssignmentRuleCount > 0 ? "FilterCogOutline"
+        : "FilterCheck";
 
     public string AssignmentIconBrush =>
-        DisabledAssignmentRuleCount > 0 ? "#FB8C00"
+        AssignmentRuleCount == 0 ? "#9E9E9E"
+        : DisabledAssignmentRuleCount > 0 ? "#FB8C00"
         : "#9E9E9E";
-
-    /// <summary><c>true</c> when the category has rules and all of them are
-    /// enabled — draws the small green check badge over the gray filter.</summary>
-    public bool AssignmentIconHasCheckBadge =>
-        AssignmentRuleCount > 0 && DisabledAssignmentRuleCount == 0;
 
     /// <summary>Tooltip of the filter icon (count + click hint).</summary>
     public string AssignmentRulesTooltip

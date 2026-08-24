@@ -103,7 +103,7 @@
                         </TreeView.ContextMenu>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <Grid MinWidth="180">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -125,10 +125,9 @@
                                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
                                     <!-- #241: auto-assignment rules indicator, right-aligned
                                          in a fixed column so all icons line up (same as the
-                                         validation shield in the attribute list). Outline
-                                         style: gray funnel (none / active), orange filter-cog
-                                         (disabled rules) + a tiny green check badge when all
-                                         rules are enabled. -->
+                                         validation shield in the attribute list). Gray cog
+                                         outline = no rules; gray check = all rules enabled;
+                                         orange cog outline = some rules disabled. -->
                                     <Button Grid.Column="4"
                                             Command="{Binding DataContext.OpenAssignmentRulesForNodeCommand, RelativeSource={RelativeSource AncestorType=TreeView}}"
                                             CommandParameter="{Binding}"
@@ -137,17 +136,9 @@
                                             Padding="0"
                                             Height="18"
                                             VerticalAlignment="Center">
-                                        <Grid Width="16" Height="16">
-                                            <iconPacks:PackIconMaterial Kind="{Binding AssignmentIconKind}"
-                                                                        Foreground="{Binding AssignmentIconBrush}"
-                                                                        Width="14" Height="14"/>
-                                            <iconPacks:PackIconMaterial Kind="Check"
-                                                                        Foreground="#4CAF50"
-                                                                        Width="8" Height="8"
-                                                                        HorizontalAlignment="Right"
-                                                                        VerticalAlignment="Bottom"
-                                                                        Visibility="{Binding AssignmentIconHasCheckBadge, Converter={StaticResource BoolToVis}}"/>
-                                        </Grid>
+                                        <iconPacks:PackIconMaterial Kind="{Binding AssignmentIconKind}"
+                                                                    Foreground="{Binding AssignmentIconBrush}"
+                                                                    Width="14" Height="14"/>
                                     </Button>
                                 </Grid>
                             </HierarchicalDataTemplate>

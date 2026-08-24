@@ -24,6 +24,7 @@ module: family-manager-index
 | [`family-facts.md`](family-facts.md) | Family Facts подсистема (ADR-055): `FamilyFact`, `FamilyFactsData`, `FamilyFactRule`, `FamilyFactRuleSet`, `PartTypeLabelMap` |
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `ValidationRule`, `ValidationRuleOperator`, health-check (`FamilyHealthReport`), гейт-статусы (`FamilyRowGateStatus`), нормализованные входы (`FamilyValidationInput`), отчёты (`FamilyValidationReport`, `RuleViolation`), `FamilyValidationEngine`, `DisplayValueParser` |
 | [`dependencies.md`](dependencies.md) | Зависимости parent→child (ADR-066, V29): `FamilyDependencyKind`, `FamilyDependencyInfo`, `FamilyDependencyDescriptor`, `FamilyDependencyLink` |
+| [`assignment-rules.md`](assignment-rules.md) | Автоназначение категории (#241, ADR-070, V31): `AssignmentRuleGroup`, `AssignmentCondition`, `AssignmentOperatorPolicy`, `CategoryAutoAssignInput/Result/Preloaded`, `RevitCategoryLabel`, `CategoryProvenance.AutoRule` |
 
 ## См. также
 
