@@ -192,6 +192,17 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
             var sortOrder = 0;
             foreach (var groupRow in Groups)
             {
+                // A group with zero conditions is dropped silently — it can
+                // never match anything and only clutters the tree icon.
+                if (groupRow.Conditions.Count == 0)
+                {
+                    if (groupRow.Id is not null)
+                    {
+                        await _ruleRepository.DeleteGroupAsync(groupRow.Id);
+                    }
+                    continue;
+                }
+
                 AssignmentRuleGroup group;
                 if (groupRow.Id is null)
                 {
@@ -233,7 +244,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                 sortOrder++;
             }
 
-            SmartConLogger.Info($"Saved {Groups.Count} assignment rule group(s) for category {_categoryId}");
+            var savedGroupCount = Groups.Count(g => g.Conditions.Count > 0);
+            SmartConLogger.Info($"Saved {savedGroupCount} assignment rule group(s) for category {_categoryId}");
             RequestClose?.Invoke(true);
         }
         catch (Exception ex)
@@ -253,12 +265,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
     private bool Validate(out string? error)
     {
-        if (Groups.Count == 0)
-        {
-            error = Localize(SKeys.FM_AssignEditor_ErrorNoGroups, "Добавьте хотя бы одну группу с условием");
-            return false;
-        }
-
+        // Zero groups is a VALID final state — the user may delete all
+        // rules and save: the category returns to "no rules" (gray icon).
         foreach (var group in Groups)
         {
             foreach (var row in group.Conditions)

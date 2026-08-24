@@ -127,16 +127,74 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAsync_NoGroups_ShowsErrorAndDoesNotClose()
+    public async Task SaveAsync_NoGroups_SavesEmptyAndCloses()
     {
+        // Deleting all groups and saving is the supported way to remove
+        // all rules — the category returns to the no-rules state.
         var vm = await CreateVmAsync("Пустые");
         var closed = false;
         vm.RequestClose += _ => closed = true;
 
         await vm.SaveCommand.ExecuteAsync(null);
 
-        Assert.False(closed);
-        Assert.NotEmpty(vm.StatusMessage);
+        Assert.True(closed);
+        Assert.Empty(vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SaveAsync_AllGroupsDeleted_RulesRemovedFromDatabase()
+    {
+        var category = await _categoryRepository.AddAsync("Удаление", null, 0);
+        var attribute = await _attributeRepository.GetByNameAsync("ADSK_Материал");
+        var group = await _ruleRepository.CreateGroupAsync(category.Id);
+        await _ruleRepository.CreateConditionAsync(
+            group.Id, AssignmentConditionSourceKind.Attribute, attribute!.Id, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+
+        var vm = new AssignmentRulesEditorViewModel(
+            category.Id, "Удаление", _ruleRepository, _attributeRepository, _labelsMock.Object);
+        await vm.InitializeAsync();
+
+        vm.DeleteGroupCommand.Execute(vm.Groups[0]);
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Empty(await _ruleRepository.GetGroupsForCategoryAsync(category.Id));
+    }
+
+    [Fact]
+    public async Task SaveAsync_EmptyGroup_IsDropped()
+    {
+        var vm = await CreateVmAsync("Пустая группа");
+        vm.AddGroupCommand.Execute(null);
+        vm.DeleteConditionCommand.Execute(vm.Groups[0].Conditions[0]);
+        vm.AddGroupCommand.Execute(null);
+        var condition = vm.Groups[1].Conditions[0];
+        condition.SourceKindIndex = 1;
+        condition.SystemField = AssignmentSystemField.PartType;
+        condition.ValueText = "5";
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Empty(vm.StatusMessage);
+        var categoryId = (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Пустая группа").Id;
+        var persisted = Assert.Single(await _ruleRepository.GetGroupsForCategoryAsync(categoryId));
+        Assert.Single(persisted.Conditions);
+    }
+
+    [Fact]
+    public async Task SourceKindSwitch_ClearsStoredValue()
+    {
+        var vm = await CreateVmAsync("Сброс значения");
+        vm.AddGroupCommand.Execute(null);
+        var condition = vm.Groups[0].Conditions[0];
+
+        condition.SourceKindIndex = 1;
+        condition.SystemField = AssignmentSystemField.RevitCategory;
+        condition.ValueText = "-2008049";
+
+        condition.SystemField = AssignmentSystemField.FamilyName;
+
+        Assert.Null(condition.ValueText);
     }
 
     [Fact]

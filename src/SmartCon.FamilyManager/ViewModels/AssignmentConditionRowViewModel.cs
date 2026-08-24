@@ -240,6 +240,7 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
     partial void OnSourceKindChanged(AssignmentConditionSourceKind value)
     {
+        ClearValueFields();
         OnPropertyChanged(nameof(IsAttributeSource));
         OnPropertyChanged(nameof(SourceKindIndex));
         RecomputeOperators();
@@ -249,11 +250,24 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
     {
         if (SourceKind == AssignmentConditionSourceKind.System)
         {
+            // A stored value is never transferable between system fields
+            // (a Revit category ordinal is not a Part Type ordinal nor a
+            // family name) — clear it instead of leaking digits like
+            // "-2008049" into the text box.
+            ClearValueFields();
             OnPropertyChanged(nameof(IsOrdinalSystemField));
             OnPropertyChanged(nameof(ShowCategoryPicker));
             OnPropertyChanged(nameof(ShowPartTypePicker));
             RecomputeOperators();
         }
+    }
+
+    private void ClearValueFields()
+    {
+        ValueText = null;
+        ValueNumberText = null;
+        MinValueText = null;
+        MaxValueText = null;
     }
 
     partial void OnOperatorChanged(ValidationRuleOperator value)
