@@ -48,6 +48,35 @@ public sealed class CategoryAutoAssignEngine : ICategoryAutoAssignEngine
             }
         }
 
+        // Specificity tie-break (#241): a rule on a subcategory is more
+        // precise than the one on its parent, so when both match the
+        // deepest category wins and the parent rule acts as the fallback
+        // for families no child rule claims. Ambiguous remains for honest
+        // ties (same-depth siblings). Without depths (legacy direct calls)
+        // any 2+ matches stay ambiguous.
+        if (matched.Count > 1 && input.CategoryDepthsById is { } depths)
+        {
+            var maxDepth = 0;
+            foreach (var id in matched)
+            {
+                var depth = depths.TryGetValue(id, out var d) ? d : 0;
+                if (depth > maxDepth)
+                {
+                    maxDepth = depth;
+                }
+            }
+
+            var deepest = matched
+                .Where(id => depths.TryGetValue(id, out var d) && d == maxDepth)
+                .ToList();
+            if (deepest.Count > 0)
+            {
+                // Defense in depth: an id missing from the depth map must
+                // not silently turn Ambiguous into NoMatch.
+                matched = deepest;
+            }
+        }
+
         return matched.Count switch
         {
             0 => CategoryAutoAssignResult.NoMatch,

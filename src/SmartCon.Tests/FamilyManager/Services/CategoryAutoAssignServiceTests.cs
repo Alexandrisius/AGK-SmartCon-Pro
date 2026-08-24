@@ -169,6 +169,32 @@ public sealed class CategoryAutoAssignServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Evaluate_ParentAndChildRules_DeepestWins()
+    {
+        // #241 specificity: the parent rule («Фитинги», RevitCategory) is
+        // the fallback; the deeper child rule («Отводы», материал) wins
+        // for families it claims — no Ambiguous, no manual picking.
+        var parentId = await SeedRuleAsync("Фитинги", categoryIdOrdinal: -2008049, systemField: AssignmentSystemField.RevitCategory);
+        var child = await _categoryRepository.AddAsync("Отводы", parentId, 0);
+        var attribute = await _attributeDefRepo.CreateAsync("ADSK_Материал", null);
+        var childGroup = await _ruleRepository.CreateGroupAsync(child.Id);
+        await _ruleRepository.CreateConditionAsync(
+            childGroup.Id, AssignmentConditionSourceKind.Attribute, attribute.Id, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+        var preloaded = await _service.PreloadAsync();
+
+        // A fitting with «сталь» → the deeper child rule wins.
+        var steel = _service.Evaluate(preloaded, Snapshot(parameters: [("ADSK_Материал", "сталь")]), null);
+        Assert.Equal(CategoryAutoAssignOutcome.Matched, steel.Outcome);
+        Assert.Equal(child.Id, steel.CategoryId);
+
+        // A fitting without the attribute → parent fallback.
+        var other = _service.Evaluate(preloaded, Snapshot(familyName: "Кран шаровый"), null);
+        Assert.Equal(CategoryAutoAssignOutcome.Matched, other.Outcome);
+        Assert.Equal(parentId, other.CategoryId);
+    }
+
+    [Fact]
     public async Task Evaluate_DisabledGroup_IsIgnored()
     {
         var categoryId = await SeedRuleAsync("Стальные");

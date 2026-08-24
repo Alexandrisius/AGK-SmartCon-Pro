@@ -30,6 +30,13 @@ public sealed class CategoryAutoAssignEngineTests
             FamilyName: "Отвод 90",
             SystemFamilyKey: null);
 
+    /// <summary>Input with catalog depths — enables the specificity
+    /// tie-break (production always passes them via the service).</summary>
+    private static CategoryAutoAssignInput InputWithDepths(
+        IReadOnlyDictionary<string, int> depths,
+        params ParameterValidationValue[] values) =>
+        Input(values) with { CategoryDepthsById = depths };
+
     private static AssignmentCondition AttrCondition(
         ValidationRuleOperator op,
         string attributeId = "attr-1",
@@ -302,6 +309,58 @@ public sealed class CategoryAutoAssignEngineTests
         Assert.Equal(CategoryAutoAssignOutcome.Ambiguous, result.Outcome);
         Assert.Null(result.CategoryId);
         Assert.Equal(new[] { CategoryB, CategoryA }, result.CandidateCategoryIds);
+    }
+
+    [Fact]
+    public void Evaluate_ParentAndChildBothMatch_DeepestWins()
+    {
+        // Specificity tie-break (#241): a rule on the subcategory beats the
+        // parent's fallback rule — the parent stays the fallback for
+        // families no child rule claims.
+        const string parent = "cat-parent";
+        var result = _engine.Evaluate(
+            InputWithDepths(new Dictionary<string, int> { [parent] = 1, [CategoryA] = 2 }),
+            [
+                Group(parent, SysCondition(AssignmentSystemField.RevitCategory, ValidationRuleOperator.Equals, "-2008049")),
+                Group(CategoryA, SysCondition(AssignmentSystemField.PartType, ValidationRuleOperator.Equals, "5")),
+            ]);
+
+        Assert.Equal(CategoryAutoAssignOutcome.Matched, result.Outcome);
+        Assert.Equal(CategoryA, result.CategoryId);
+    }
+
+    [Fact]
+    public void Evaluate_ParentAndChildBothMatch_ChildRuleDisabled_ParentWins()
+    {
+        const string parent = "cat-parent";
+        var result = _engine.Evaluate(
+            InputWithDepths(new Dictionary<string, int> { [parent] = 1, [CategoryA] = 2 }),
+            [
+                Group(parent, SysCondition(AssignmentSystemField.RevitCategory, ValidationRuleOperator.Equals, "-2008049")),
+                DisabledGroup(CategoryA, SysCondition(AssignmentSystemField.PartType, ValidationRuleOperator.Equals, "5")),
+            ]);
+
+        Assert.Equal(CategoryAutoAssignOutcome.Matched, result.Outcome);
+        Assert.Equal(parent, result.CategoryId);
+    }
+
+    [Fact]
+    public void Evaluate_TwoDeepestSiblingsTie_AmbiguousWithSiblingsOnly()
+    {
+        // Parent matches too, but it is strictly coarser — the candidates
+        // list shows only the tied deepest categories.
+        const string parent = "cat-parent";
+        const string childB = "cat-child-b";
+        var result = _engine.Evaluate(
+            InputWithDepths(new Dictionary<string, int> { [parent] = 1, [CategoryA] = 2, [childB] = 2 }),
+            [
+                Group(parent, SysCondition(AssignmentSystemField.RevitCategory, ValidationRuleOperator.Equals, "-2008049")),
+                Group(CategoryA, SysCondition(AssignmentSystemField.PartType, ValidationRuleOperator.Equals, "5")),
+                Group(childB, SysCondition(AssignmentSystemField.FamilyName, ValidationRuleOperator.Contains, "Отвод")),
+            ]);
+
+        Assert.Equal(CategoryAutoAssignOutcome.Ambiguous, result.Outcome);
+        Assert.Equal(new[] { CategoryA, childB }, result.CandidateCategoryIds);
     }
 
     [Fact]

@@ -21,10 +21,15 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="FamilyName">Family / import item display name.</param>
 /// <param name="SystemFamilyKey">Locale-invariant system family identity
 /// (ADR-064), or <c>null</c> for loadable families.</param>
+/// <param name="CategoryDepthsById">Catalog tree depth (path segment
+/// count) per category id — the specificity tie-break: when several
+/// categories match, the deepest one wins (#241). <c>null</c> = no
+/// tie-break (legacy direct engine calls).</param>
 public sealed record CategoryAutoAssignInput(
     FamilyValidationInput ValidationInput,
     IReadOnlyDictionary<string, string> AttributeNamesById,
     int? RevitCategoryOrdinal,
     IReadOnlyList<FamilyFact> Facts,
     string FamilyName,
-    string? SystemFamilyKey);
+    string? SystemFamilyKey,
+    IReadOnlyDictionary<string, int>? CategoryDepthsById = null);

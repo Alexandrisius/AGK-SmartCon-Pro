@@ -116,6 +116,28 @@ internal sealed class CategoryAutoAssignService : ICategoryAutoAssignService
             revitCategoryOrdinal,
             facts,
             familyName,
-            systemFamilyKey);
+            systemFamilyKey,
+            BuildDepths(preloaded.CategoryPathsById));
     }
+
+    /// <summary>Catalog tree depth per category id (path segment count) —
+    /// feeds the engine's specificity tie-break (#241).</summary>
+    private static IReadOnlyDictionary<string, int> BuildDepths(IReadOnlyDictionary<string, string> pathsById)
+    {
+        var depths = new Dictionary<string, int>(pathsById.Count);
+        foreach (var pair in pathsById)
+        {
+            var count = 0;
+            if (!string.IsNullOrWhiteSpace(pair.Value))
+            {
+                count = pair.Value.Split(PathSeparator, StringSplitOptions.RemoveEmptyEntries).Length;
+            }
+
+            depths[pair.Key] = Math.Max(1, count);
+        }
+
+        return depths;
+    }
+
+    private static readonly string[] PathSeparator = [" > "];
 }
