@@ -17,15 +17,18 @@ internal sealed class CategoryAutoAssignService : ICategoryAutoAssignService
 {
     private readonly IAssignmentRuleRepository _ruleRepository;
     private readonly IAttributeDefinitionRepository _attributeRepository;
+    private readonly ICategoryRepository _categoryRepository;
     private readonly ICategoryAutoAssignEngine _engine;
 
     public CategoryAutoAssignService(
         IAssignmentRuleRepository ruleRepository,
         IAttributeDefinitionRepository attributeRepository,
+        ICategoryRepository categoryRepository,
         ICategoryAutoAssignEngine engine)
     {
         _ruleRepository = ruleRepository;
         _attributeRepository = attributeRepository;
+        _categoryRepository = categoryRepository;
         _engine = engine;
     }
 
@@ -41,9 +44,12 @@ internal sealed class CategoryAutoAssignService : ICategoryAutoAssignService
         var attributes = await _attributeRepository.GetAllAsync(ct);
         var namesById = attributes.ToDictionary(a => a.Id, a => a.Name);
 
-        SmartConLogger.Debug($"Rules preloaded: groups={enabledGroups.Count}, attributes={namesById.Count}");
+        var categories = await _categoryRepository.GetAllAsync(ct);
+        var pathsById = categories.ToDictionary(c => c.Id, c => c.FullPath);
 
-        return new CategoryAutoAssignPreloaded(enabledGroups, namesById, enabledGroups.Count > 0);
+        SmartConLogger.Debug($"Rules preloaded: groups={enabledGroups.Count}, attributes={namesById.Count}, categories={pathsById.Count}");
+
+        return new CategoryAutoAssignPreloaded(enabledGroups, namesById, pathsById, enabledGroups.Count > 0);
     }
 
     public CategoryAutoAssignResult Evaluate(

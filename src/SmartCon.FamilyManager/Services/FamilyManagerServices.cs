@@ -142,6 +142,12 @@ public sealed record FamilyManagerServices(
     /// </summary>
     IFamilyImportValidationService ValidationService,
     /// <summary>
+    /// #241: evaluates the auto-assignment rule groups against batch-row
+    /// snapshots — new families get their catalog category automatically
+    /// in the batch import dialog.
+    /// </summary>
+    ICategoryAutoAssignService AutoAssignService,
+    /// <summary>
     /// Import Validation Gate for category change inside the catalog
     /// (DnD in the tree, category picker in properties): blocks moves
     /// into rule-protected categories when the family fails the rules.

@@ -415,6 +415,7 @@ public static partial class LocalizationService
         ru["FM_CategoryProvenance_Manual"] = "Выбрано вами"; en["FM_CategoryProvenance_Manual"] = "Picked by you";
         ru["FM_CategoryProvenance_AutoName"] = "Из каталога (совпадение имени)"; en["FM_CategoryProvenance_AutoName"] = "From catalog (name match)";
         ru["FM_CategoryProvenance_AutoHash"] = "Из дубликата (совпадение содержимого)"; en["FM_CategoryProvenance_AutoHash"] = "From duplicate (content match)";
+        ru["FM_CategoryProvenance_AutoRule"] = "По правилу автоназначения"; en["FM_CategoryProvenance_AutoRule"] = "By auto-assignment rule";
         ru["FM_CategoryProvenance_None"] = "Категория не назначена"; en["FM_CategoryProvenance_None"] = "No category assigned";
 
         // Import Validation Gate (status column tooltips)
@@ -433,6 +434,7 @@ public static partial class LocalizationService
         // Status Details dialog + clickable badges (#210)
         ru["FM_StatusDetails_Title"] = "Детали статуса"; en["FM_StatusDetails_Title"] = "Status Details";
         ru["FM_StatusDetails_OpenValidationReport"] = "Открыть отчёт о проверке"; en["FM_StatusDetails_OpenValidationReport"] = "Open validation report";
+        ru["FM_StatusDetails_PickCategory"] = "Выбрать категорию..."; en["FM_StatusDetails_PickCategory"] = "Pick a category...";
         ru["FM_Badge_ClickHint"] = "Нажмите для подробностей"; en["FM_Badge_ClickHint"] = "Click for details";
         ru["FM_Badge_Info_Tooltip"] = "Информация — нажмите для подробностей"; en["FM_Badge_Info_Tooltip"] = "Info — click for details";
         ru["FM_Badge_Dependency_Tooltip"] = "Зависимость — нажмите для подробностей"; en["FM_Badge_Dependency_Tooltip"] = "Dependency — click for details";
@@ -440,6 +442,8 @@ public static partial class LocalizationService
         ru["FM_Badge_Error_Tooltip"] = "Ошибка — нажмите для подробностей"; en["FM_Badge_Error_Tooltip"] = "Error — click for details";
         ru["FM_Badge_OutdatedDeps_Short"] = "Устарели вложенные"; en["FM_Badge_OutdatedDeps_Short"] = "Nested outdated";
         ru["FM_Notice_CrossNameDuplicate_Title"] = "Содержимое совпадает под другим именем"; en["FM_Notice_CrossNameDuplicate_Title"] = "Content matches under a different name";
+        ru["FM_Notice_AssignmentConflict_Title"] = "Автоназначение: подходят несколько категорий"; en["FM_Notice_AssignmentConflict_Title"] = "Auto-assignment: several categories match";
+        ru["FM_Notice_AssignmentConflict_Guidance"] = "Условия автоназначения подходят всем перечисленным категориям. Выберите одну вручную через кнопку «…» в колонке «Категория» — до этого семейство остаётся в «Без категории»."; en["FM_Notice_AssignmentConflict_Guidance"] = "The auto-assignment conditions match all of the listed categories. Pick one manually via the \"…\" button in the Category column — until then the family stays in \"No category\".";
         ru["FM_Notice_OutdatedNested_Title"] = "Зашита устаревшая версия"; en["FM_Notice_OutdatedNested_Title"] = "Outdated version embedded";
         ru["FM_Notice_DependencyBlock_Title"] = "Импорт заблокирован устаревшими вложенными"; en["FM_Notice_DependencyBlock_Title"] = "Import blocked by outdated nested families";
         ru["FM_Notice_FailedDependencies_Title"] = "Зависимости не прошли проверку"; en["FM_Notice_FailedDependencies_Title"] = "Dependencies failed validation";

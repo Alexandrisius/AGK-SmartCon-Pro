@@ -193,7 +193,8 @@ public sealed partial class FamilyManagerMainViewModel
                 executor: executor,
                 publishedByUser: _revitContext.GetUsername(),
                 dispatcher: _dispatcher,
-                validationService: _validationService);
+                validationService: _validationService,
+                autoAssignService: _autoAssignService);
 
             _dialogService.ShowModelessBatchImportDialog(vm);
             await vm.DialogCompletion;

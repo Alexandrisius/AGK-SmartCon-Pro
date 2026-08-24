@@ -24,6 +24,7 @@ public sealed class CategoryAutoAssignServiceTests : IDisposable
         _service = new CategoryAutoAssignService(
             _ruleRepository,
             _attributeDefRepo,
+            _categoryRepository,
             new CategoryAutoAssignEngine(new FamilyValidationEngine()));
     }
 

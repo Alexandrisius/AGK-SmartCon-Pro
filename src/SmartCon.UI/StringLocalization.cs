@@ -377,6 +377,10 @@ public static class StringLocalization
         public const string FM_AssignEditor_ErrorFieldRequired = "FM_AssignEditor_ErrorFieldRequired";
         public const string FM_AssignEditor_ErrorCategoryRequired = "FM_AssignEditor_ErrorCategoryRequired";
         public const string FM_AssignEditor_ErrorPartTypeRequired = "FM_AssignEditor_ErrorPartTypeRequired";
+        public const string FM_CategoryProvenance_AutoRule = "FM_CategoryProvenance_AutoRule";
+        public const string FM_Notice_AssignmentConflict_Title = "FM_Notice_AssignmentConflict_Title";
+        public const string FM_Notice_AssignmentConflict_Guidance = "FM_Notice_AssignmentConflict_Guidance";
+        public const string FM_StatusDetails_PickCategory = "FM_StatusDetails_PickCategory";
         public const string FM_RulesEditor_Title = "FM_RulesEditor_Title";
         public const string FM_RulesEditor_Add = "FM_RulesEditor_Add";
         public const string FM_RulesEditor_Save = "FM_RulesEditor_Save";

@@ -326,6 +326,9 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         CategoryProvenance.AutoHash => SmartCon.UI.LanguageManager.GetString(
             SmartCon.UI.StringLocalization.Keys.FM_CategoryProvenance_AutoHash)
             ?? "From duplicate (content match)",
+        CategoryProvenance.AutoRule => SmartCon.UI.LanguageManager.GetString(
+            SmartCon.UI.StringLocalization.Keys.FM_CategoryProvenance_AutoRule)
+            ?? "By auto-assignment rule",
         _ => SmartCon.UI.LanguageManager.GetString(
             SmartCon.UI.StringLocalization.Keys.FM_CategoryProvenance_None)
             ?? "No category assigned",
@@ -429,6 +432,22 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [NotifyPropertyChangedFor(nameof(HasFailedDependencies))]
     [NotifyPropertyChangedFor(nameof(FailedDependenciesTooltip))]
     private IReadOnlyList<string>? _failedDependencyNames;
+
+    /// <summary>
+    /// #241: display paths of the categories whose auto-assignment rules
+    /// ALL matched this row (ambiguous outcome). The row stays «Без
+    /// категории» and the status column shows a warning notice listing the
+    /// candidates — the user picks one via the category picker. Cleared by
+    /// the view-model when the rules are re-evaluated or the user assigns
+    /// a category.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasAssignmentConflict))]
+    private IReadOnlyList<string>? _assignmentConflictCandidates;
+
+    /// <summary><c>true</c> when 2+ auto-assignment rule sets matched and
+    /// the user must pick the category.</summary>
+    public bool HasAssignmentConflict => AssignmentConflictCandidates is { Count: > 0 };
 
     /// <summary><c>true</c> when at least one dependency child failed the gate.</summary>
     public bool HasFailedDependencies => FailedDependencyNames is { Count: > 0 };
@@ -691,6 +710,16 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
                     "Содержимое совпадает, хотя имя файла другое. «Сделать активной» — файл не импортируется, активируется найденная версия. «Новая версия» — семейство будет переименовано в имя этого файла."),
                 [$"{MatchedItemName} ({MatchedVersionLabel})"]));
         }
+        if (HasAssignmentConflict)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_AssignmentConflict_Title,
+                    "Автоназначение: подходят несколько категорий"),
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_AssignmentConflict_Guidance,
+                    "Под условия подходят все перечисленные категории. Выберите одну вручную через кнопку «…» в колонке «Категория» — до этого семейство остаётся в «Без категории»."),
+                AssignmentConflictCandidates));
+        }
         if (IsDependency)
         {
             list.Add(new StatusNotice(
@@ -720,6 +749,17 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     partial void OnMatchedItemNameChanged(string? value) => RebuildNotices();
     partial void OnDependencyParentNamesChanged(IReadOnlyList<string>? value) => RebuildNotices();
     partial void OnFailedDependencyNamesChanged(IReadOnlyList<string>? value) => RebuildNotices();
+    partial void OnAssignmentConflictCandidatesChanged(IReadOnlyList<string>? value) => RebuildNotices();
+
+    partial void OnTargetCategoryIdChanged(string? value)
+    {
+        // #241: an explicit category assignment (user picker or auto-match)
+        // resolves the ambiguous-conflict state.
+        if (!string.IsNullOrEmpty(value) && HasAssignmentConflict)
+        {
+            AssignmentConflictCandidates = null;
+        }
+    }
 
     [ObservableProperty]
     private IReadOnlyList<FamilyBatchImportAction> _availableActions;
