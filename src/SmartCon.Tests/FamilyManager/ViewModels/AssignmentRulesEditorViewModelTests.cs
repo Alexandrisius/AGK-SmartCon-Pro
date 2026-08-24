@@ -79,6 +79,33 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_IsPresentCondition_SavesWithoutValue()
+    {
+        // Audit #241: IsPresent/HasValue need no value — the engine
+        // evaluates them on the parameter itself; the editor must not
+        // block saving with "value required".
+        var vm = await CreateVmAsync("Наличие");
+        var attribute = vm.AvailableAttributes[0];
+        vm.AddGroupCommand.Execute(null);
+        var condition = vm.Groups[0].Conditions[0];
+        condition.SelectedAttributeId = attribute.Id;
+        condition.Operator = ValidationRuleOperator.IsPresent;
+        Assert.False(condition.ShowValueField);
+
+        var saved = false;
+        vm.RequestClose += _ => saved = true;
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.True(saved);
+        Assert.Empty(vm.StatusMessage);
+        var groups = await _ruleRepository.GetGroupsForCategoryAsync(
+            (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Наличие").Id);
+        var stored = Assert.Single(Assert.Single(groups).Conditions);
+        Assert.Equal(ValidationRuleOperator.IsPresent, stored.Operator);
+        Assert.Null(stored.ValueText);
+    }
+
+    [Fact]
     public async Task SaveAsync_NewGroup_PersistsGroupAndCondition()
     {
         var vm = await CreateVmAsync("Новые");

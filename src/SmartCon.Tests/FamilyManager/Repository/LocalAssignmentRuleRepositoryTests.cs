@@ -75,6 +75,32 @@ public sealed class LocalAssignmentRuleRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetGroupsForCategoryAsync_ReturnsOnlyThatCategory_GroupsWithOwnConditions()
+    {
+        // Audit #241: the per-category load must not leak other
+        // categories' groups or conditions.
+        var categoryId = await SeedCategoryAsync();
+        var otherCategoryId = await SeedCategoryAsync("Воздуховоды");
+        var attributeId = await SeedAttributeAsync();
+
+        var ownGroup = await _repository.CreateGroupAsync(categoryId);
+        var foreignGroup = await _repository.CreateGroupAsync(otherCategoryId);
+        await _repository.CreateConditionAsync(
+            ownGroup.Id, AssignmentConditionSourceKind.Attribute, attributeId, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+        await _repository.CreateConditionAsync(
+            foreignGroup.Id, AssignmentConditionSourceKind.Attribute, attributeId, null,
+            ValidationRuleOperator.Contains, "медь", null, null, null, true);
+
+        var loaded = await _repository.GetGroupsForCategoryAsync(categoryId);
+
+        var group = Assert.Single(loaded);
+        Assert.Equal(ownGroup.Id, group.Id);
+        var condition = Assert.Single(group.Conditions);
+        Assert.Equal("сталь", condition.ValueText);
+    }
+
+    [Fact]
     public async Task CreateConditionAsync_SystemKind_PersistsSystemKey()
     {
         var categoryId = await SeedCategoryAsync();

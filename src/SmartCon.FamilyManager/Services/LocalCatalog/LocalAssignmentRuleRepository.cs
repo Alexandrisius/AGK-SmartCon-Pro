@@ -88,7 +88,7 @@ internal sealed class LocalAssignmentRuleRepository : IAssignmentRuleRepository
             return groups.AsReadOnly();
         }
 
-        var conditionsByGroup = await LoadConditionsAsync(connection, ct);
+        var conditionsByGroup = await LoadConditionsAsync(connection, ct, groups.Select(g => g.Id).ToList());
         return groups
             .Select(g => g with { Conditions = conditionsByGroup.TryGetValue(g.Id, out var list) ? list : [] })
             .ToList()
@@ -247,12 +247,35 @@ internal sealed class LocalAssignmentRuleRepository : IAssignmentRuleRepository
         return affected > 0;
     }
 
+    /// <summary>Loads conditions; <paramref name="groupIds"/> narrows the
+    /// query to those groups only (audit #241: the per-category path must
+    /// not scan the whole table). <c>null</c> = no filter; an explicit
+    /// empty list matches nothing.</summary>
     private static async Task<IReadOnlyDictionary<string, IReadOnlyList<AssignmentCondition>>> LoadConditionsAsync(
-        SqliteConnection connection, CancellationToken ct)
+        SqliteConnection connection, CancellationToken ct, IReadOnlyCollection<string>? groupIds = null)
     {
         var result = new Dictionary<string, IReadOnlyList<AssignmentCondition>>();
+        if (groupIds is { Count: 0 })
+        {
+            return result;
+        }
+
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT {ConditionColumns} FROM category_assignment_conditions ORDER BY group_id, sort_order";
+        cmd.CommandText = $"SELECT {ConditionColumns} FROM category_assignment_conditions";
+        if (groupIds is { Count: > 0 })
+        {
+            var names = new List<string>(groupIds.Count);
+            foreach (var id in groupIds.Distinct())
+            {
+                var name = $"@g{names.Count}";
+                names.Add(name);
+                cmd.Parameters.Add(new SqliteParameter(name, id));
+            }
+
+            cmd.CommandText += $" WHERE group_id IN ({string.Join(", ", names)})";
+        }
+
+        cmd.CommandText += " ORDER BY group_id, sort_order";
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {

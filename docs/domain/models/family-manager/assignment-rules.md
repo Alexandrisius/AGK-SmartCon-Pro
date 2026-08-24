@@ -136,7 +136,9 @@ Tri-state результат: `NoMatch` / `Matched(categoryId)` /
 Одна выбираемая категория Revit для редактора условий: ordinal
 (инвариантное хранимое значение) + локализованный label
 (`LabelUtils.GetLabelFor` в языке сессии). Кураторский список MEP-категорий
-— `RevitCategoryLabelService` (SmartCon.Revit).
+— `RevitCategoryLabelService` (SmartCon.Revit). Ограничение: семья вне
+кураторского списка никогда не сматчит правило по RevitCategory — для
+таких семей используйте PartType / FamilyName / атрибутные условия.
 
 **Файл:** `Models/FamilyManager/RevitCategoryLabel.cs`
 
