@@ -6,7 +6,6 @@
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
-        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         Title="{loc:Loc FM_AssignEditor_Title}"
         Width="1060" Height="620" MinWidth="900" MinHeight="420"
         WindowStartupLocation="CenterScreen"
@@ -21,7 +20,6 @@
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
-            <converters:SearchHighlightConverter x:Key="SearchHighlight"/>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -211,55 +209,28 @@
                                                               Margin="0,0,4,0"/>
 
                                                     <Grid Grid.Column="4" VerticalAlignment="Center">
-                                                        <!-- Revit category: editable autocomplete —
-                                                             the framework ComboBox owns its popup
-                                                             (focus/capture safe), the control filters
-                                                             the dropdown view as the user types with
-                                                             highlighted matches. -->
-                                                        <controls:AutoCompleteComboBox ItemsSource="{Binding RevitCategories}"
-                                                                                       SelectedItem="{Binding SelectedCategoryItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                                       Text="{Binding CategoryPickerText, UpdateSourceTrigger=PropertyChanged}"
-                                                                                       TextSearch.TextPath="Label"
-                                                                                       Style="{DynamicResource CompactEditableComboBox}"
-                                                                                       ItemContainerStyle="{DynamicResource CompactComboBoxItem}"
-                                                                                       VerticalAlignment="Center"
-                                                                                       Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
-                                                            <controls:AutoCompleteComboBox.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <ContentControl>
-                                                                        <ContentControl.Content>
-                                                                            <MultiBinding Converter="{StaticResource SearchHighlight}">
-                                                                                <Binding Path="Label"/>
-                                                                                <Binding Path="DataContext.CategoryFilterText" RelativeSource="{RelativeSource AncestorType=controls:AutoCompleteComboBox}"/>
-                                                                            </MultiBinding>
-                                                                        </ContentControl.Content>
-                                                                    </ContentControl>
-                                                                </DataTemplate>
-                                                            </controls:AutoCompleteComboBox.ItemTemplate>
-                                                        </controls:AutoCompleteComboBox>
+                                                        <!-- Revit category: plain ComboBox, same as the
+                                                             operator/attribute pickers — the built-in
+                                                             TextSearch gives type-to-jump search
+                                                             (press "О" → "Оборудование"), Revit-style. -->
+                                                        <ComboBox ItemsSource="{Binding RevitCategories}"
+                                                                  SelectedValuePath="Key"
+                                                                  DisplayMemberPath="Label"
+                                                                  TextSearch.TextPath="Label"
+                                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Style="{DynamicResource CompactComboBox}"
+                                                                  VerticalAlignment="Center"
+                                                                  Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}"/>
 
-                                                        <!-- Part Type: same editable autocomplete. -->
-                                                        <controls:AutoCompleteComboBox ItemsSource="{Binding PartTypes}"
-                                                                                       SelectedItem="{Binding SelectedPartTypeItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                                       Text="{Binding PartTypePickerText, UpdateSourceTrigger=PropertyChanged}"
-                                                                                       TextSearch.TextPath="Label"
-                                                                                       Style="{DynamicResource CompactEditableComboBox}"
-                                                                                       ItemContainerStyle="{DynamicResource CompactComboBoxItem}"
-                                                                                       VerticalAlignment="Center"
-                                                                                       Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
-                                                            <controls:AutoCompleteComboBox.ItemTemplate>
-                                                                <DataTemplate>
-                                                                    <ContentControl>
-                                                                        <ContentControl.Content>
-                                                                            <MultiBinding Converter="{StaticResource SearchHighlight}">
-                                                                                <Binding Path="Label"/>
-                                                                                <Binding Path="DataContext.PartTypeFilterText" RelativeSource="{RelativeSource AncestorType=controls:AutoCompleteComboBox}"/>
-                                                                            </MultiBinding>
-                                                                        </ContentControl.Content>
-                                                                    </ContentControl>
-                                                                </DataTemplate>
-                                                            </controls:AutoCompleteComboBox.ItemTemplate>
-                                                        </controls:AutoCompleteComboBox>
+                                                        <!-- Part Type: same plain ComboBox. -->
+                                                        <ComboBox ItemsSource="{Binding PartTypes}"
+                                                                  SelectedValuePath="Key"
+                                                                  DisplayMemberPath="Label"
+                                                                  TextSearch.TextPath="Label"
+                                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Style="{DynamicResource CompactComboBox}"
+                                                                  VerticalAlignment="Center"
+                                                                  Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}"/>
 
                                                         <TextBox Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                                                                  VerticalAlignment="Center">

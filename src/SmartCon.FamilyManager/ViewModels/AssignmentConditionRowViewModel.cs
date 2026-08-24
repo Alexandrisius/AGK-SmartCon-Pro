@@ -77,40 +77,14 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
     private readonly IReadOnlyList<AssignmentValueItem> _revitCategories;
     private readonly IReadOnlyList<AssignmentValueItem> _partTypes;
 
-    /// <summary>Editable text of the Revit category picker — the selected
-    /// label when a category is picked, free text while the user types.
-    /// The AutoCompleteComboBox filters the dropdown view as the user
-    /// types (highlighted matches, same style as the panel tree search).</summary>
-    [ObservableProperty]
-    private string _categoryPickerText = string.Empty;
-
-    /// <summary>Editable text of the Part Type picker (same pattern).</summary>
-    [ObservableProperty]
-    private string _partTypePickerText = string.Empty;
-
     public string? Id { get; }
 
-    /// <summary>Full Revit category list — the AutoCompleteComboBox
-    /// filters its own view while the user types.</summary>
+    /// <summary>Revit category list for the picker ComboBox
+    /// (SelectedValuePath=Key → <see cref="ValueText"/>).</summary>
     public IReadOnlyList<AssignmentValueItem> RevitCategories => _revitCategories;
 
-    /// <summary>Full Part Type list (same pattern).</summary>
+    /// <summary>Part Type list for the picker ComboBox (same pattern).</summary>
     public IReadOnlyList<AssignmentValueItem> PartTypes => _partTypes;
-
-    /// <summary>The typed filter for the category list highlight — empty
-    /// while the field shows the picked label (no highlight noise on a
-    /// freshly opened full list).</summary>
-    public string CategoryFilterText => PickerFilterText(CategoryPickerText, SelectedCategoryLabel);
-
-    /// <summary>Same for the Part Type list.</summary>
-    public string PartTypeFilterText => PickerFilterText(PartTypePickerText, SelectedPartTypeLabel);
-
-    /// <summary>Selected Revit category label (displayed on the picker
-    /// button); empty when nothing is selected.</summary>
-    public string SelectedCategoryLabel => FindLabel(_revitCategories, ValueText);
-
-    /// <summary>Selected Part Type label (displayed on the picker button).</summary>
-    public string SelectedPartTypeLabel => FindLabel(_partTypes, ValueText);
 
     public AssignmentConditionRowViewModel(
         string? id,
@@ -145,16 +119,6 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         if (sourceKind == AssignmentConditionSourceKind.System && systemField is AssignmentSystemField.RevitCategory or AssignmentSystemField.PartType)
         {
             _valueText = valueText;
-            // Show the picked label in the editable field (loaded condition)
-            // — only for the ACTIVE picker.
-            if (systemField == AssignmentSystemField.RevitCategory)
-            {
-                _categoryPickerText = FindLabel(_revitCategories, valueText);
-            }
-            else
-            {
-                _partTypePickerText = FindLabel(_partTypes, valueText);
-            }
         }
         else if (op is ValidationRuleOperator.Between)
         {
@@ -166,69 +130,6 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
             _valueText = valueText ?? valueNumber?.ToString("G15", CultureInfo.InvariantCulture);
         }
     }
-
-    partial void OnCategoryPickerTextChanged(string value)
-    {
-        OnPropertyChanged(nameof(CategoryFilterText));
-
-        // Typing diverges from the picked label → the pick is no longer
-        // valid until the user picks from the filtered list again.
-        if (!string.Equals(value, SelectedCategoryLabel, StringComparison.Ordinal))
-        {
-            ValueText = null;
-        }
-    }
-
-    partial void OnPartTypePickerTextChanged(string value)
-    {
-        OnPropertyChanged(nameof(PartTypeFilterText));
-
-        if (!string.Equals(value, SelectedPartTypeLabel, StringComparison.Ordinal))
-        {
-            ValueText = null;
-        }
-    }
-
-    /// <summary>Selection proxy for the category dropdown: only a real user
-    /// pick writes <see cref="ValueText"/> — the filter-driven deselection
-    /// (the current item fell out of the filtered list while typing) must
-    /// NOT clear the stored value. The getter is always null: the list
-    /// shows no selection state by design.</summary>
-    public AssignmentValueItem? SelectedCategoryItem
-    {
-        get => null;
-        set
-        {
-            if (value is null) return;
-            ValueText = value.Key;
-            CategoryPickerText = value.Label;
-        }
-    }
-
-    /// <summary>Same proxy for the Part Type dropdown.</summary>
-    public AssignmentValueItem? SelectedPartTypeItem
-    {
-        get => null;
-        set
-        {
-            if (value is null) return;
-            ValueText = value.Key;
-            PartTypePickerText = value.Label;
-        }
-    }
-
-    private static string PickerFilterText(string text, string selectedLabel) =>
-        string.Equals(text, selectedLabel, StringComparison.Ordinal) ? string.Empty : text;
-
-    partial void OnValueTextChanged(string? value)
-    {
-        OnPropertyChanged(nameof(SelectedCategoryLabel));
-        OnPropertyChanged(nameof(SelectedPartTypeLabel));
-    }
-
-    private static string FindLabel(IReadOnlyList<AssignmentValueItem> source, string? key) =>
-        key is null ? string.Empty
-        : source.FirstOrDefault(v => string.Equals(v.Key, key, StringComparison.Ordinal))?.Label ?? string.Empty;
 
     public bool IsAttributeSource => SourceKind == AssignmentConditionSourceKind.Attribute;
 
@@ -280,11 +181,6 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         ValueNumberText = null;
         MinValueText = null;
         MaxValueText = null;
-
-        // The picker texts too — a switch invalidates the pick, and a
-        // stale label would show a selection the model no longer holds.
-        CategoryPickerText = string.Empty;
-        PartTypePickerText = string.Empty;
     }
 
     partial void OnOperatorChanged(ValidationRuleOperator value)
