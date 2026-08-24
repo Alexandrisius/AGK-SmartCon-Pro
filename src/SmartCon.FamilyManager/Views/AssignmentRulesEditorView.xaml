@@ -7,7 +7,7 @@
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         Title="{loc:Loc FM_AssignEditor_Title}"
-        Width="880" Height="560" MinWidth="720" MinHeight="380"
+        Width="1060" Height="620" MinWidth="900" MinHeight="420"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
@@ -42,185 +42,257 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <ItemsControl ItemsSource="{Binding Groups}">
+            <!-- AlternationIndex drives the «ИЛИ» separator between groups
+                 (index > 0) and the «И» prefix inside groups. -->
+            <ItemsControl ItemsSource="{Binding Groups}" AlternationCount="1000">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
+                        <StackPanel>
+                            <!-- «ИЛИ» separator between groups (Emarsys Rule List
+                                 pattern: the relation is displayed ON the separator). -->
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center"
+                                        Margin="0,0,0,8">
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(ItemsControl.AlternationIndex)}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <Separator Width="120"/>
+                                <TextBlock Text="{loc:Loc FM_AssignEditor_Or}"
+                                           FontWeight="Bold"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           Margin="10,0"
+                                           VerticalAlignment="Center"/>
+                                <Separator Width="120"/>
+                            </StackPanel>
+
                         <Border BorderBrush="{DynamicResource BorderAltBrush}"
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Margin="0,0,0,8"
-                                Padding="8">
+                                Padding="10,8,8,8"
+                                Background="{DynamicResource SurfaceBrush}">
                             <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <!-- Left accent rail: visually binds the group's
+                                     conditions together (one OR-operand). -->
+                                <Rectangle Grid.Column="0"
+                                           Width="3"
+                                           Fill="{DynamicResource AccentBrush}"
+                                           RadiusX="1.5" RadiusY="1.5"
+                                           Margin="0,0,10,0"/>
 
-                                <Grid Grid.Row="0" Margin="0,0,0,6">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center">
-                                        <Run Text="{loc:Loc FM_AssignEditor_Group}"/><Run Text=" "/><Run Text="{Binding Number, Mode=OneWay}"/>
-                                    </TextBlock>
-                                    <CheckBox Grid.Column="1"
-                                              IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
-                                              Style="{DynamicResource CompactCheckBox}"
-                                              VerticalAlignment="Center"
-                                              Margin="0,0,8,0"/>
-                                    <Button Grid.Column="2"
-                                            Command="{Binding DataContext.DeleteGroupCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}"
-                                            Style="{DynamicResource FlatIconButton}"
-                                            VerticalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="DeleteOutline"
-                                                                    Foreground="{DynamicResource TextMutedBrush}"
-                                                                    Width="15" Height="15"/>
-                                    </Button>
-                                </Grid>
+                                <Grid Grid.Column="1">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
 
-                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Conditions}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="120"/>
-                                                    <ColumnDefinition Width="180"/>
-                                                    <ColumnDefinition Width="130"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="46"/>
-                                                    <ColumnDefinition Width="36"/>
-                                                </Grid.ColumnDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center">
+                                            <Run Text="{loc:Loc FM_AssignEditor_Group}"/><Run Text=" "/><Run Text="{Binding Number, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <CheckBox Grid.Column="1"
+                                                  IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                  Style="{DynamicResource CompactCheckBox}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,8,0"/>
+                                        <Button Grid.Column="2"
+                                                Command="{Binding DataContext.DeleteGroupCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{DynamicResource FlatIconButton}"
+                                                VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial Kind="DeleteOutline"
+                                                                        Foreground="{DynamicResource TextMutedBrush}"
+                                                                        Width="15" Height="15"/>
+                                        </Button>
+                                    </Grid>
 
-                                                <ComboBox Grid.Column="0"
-                                                          SelectedIndex="{Binding SourceKindIndex, UpdateSourceTrigger=PropertyChanged}"
-                                                          Style="{DynamicResource CompactComboBox}"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,4,0">
-                                                    <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceAttribute}"/>
-                                                    <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceSystem}"/>
-                                                </ComboBox>
+                                    <!-- Conditions: AlternationIndex drives the «И»
+                                         prefix (all rows after the first). -->
+                                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Conditions}" AlternationCount="1000">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="26"/>
+                                                        <ColumnDefinition Width="125"/>
+                                                        <ColumnDefinition Width="215"/>
+                                                        <ColumnDefinition Width="140"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="46"/>
+                                                        <ColumnDefinition Width="36"/>
+                                                    </Grid.ColumnDefinitions>
 
-                                                <ComboBox Grid.Column="1"
-                                                          ItemsSource="{Binding DataContext.AvailableAttributes, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedValuePath="Id"
-                                                          DisplayMemberPath="Name"
-                                                          SelectedValue="{Binding SelectedAttributeId, UpdateSourceTrigger=PropertyChanged}"
-                                                          Style="{DynamicResource CompactComboBox}"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,4,0"
-                                                          Visibility="{Binding IsAttributeSource, Converter={StaticResource BoolToVis}}"/>
-                                                <ComboBox Grid.Column="1"
-                                                          ItemsSource="{Binding DataContext.SystemFields, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedValuePath="Field"
-                                                          DisplayMemberPath="DisplayName"
-                                                          SelectedValue="{Binding SystemField, UpdateSourceTrigger=PropertyChanged}"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,4,0">
-                                                    <ComboBox.Style>
-                                                        <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsAttributeSource}" Value="False">
-                                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </ComboBox.Style>
-                                                </ComboBox>
-
-                                                <ComboBox Grid.Column="2"
-                                                          ItemsSource="{Binding AvailableOperators}"
-                                                          SelectedValuePath="Operator"
-                                                          DisplayMemberPath="DisplayName"
-                                                          SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}"
-                                                          Style="{DynamicResource CompactComboBox}"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,4,0"/>
-
-                                                <Grid Grid.Column="3" VerticalAlignment="Center">
-                                                    <ComboBox ItemsSource="{Binding DataContext.RevitCategories, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedValuePath="Key"
-                                                              DisplayMemberPath="Label"
-                                                              SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                                                              Style="{DynamicResource CompactComboBox}"
-                                                              VerticalAlignment="Center"
-                                                              Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}"/>
-                                                    <ComboBox ItemsSource="{Binding DataContext.PartTypes, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              SelectedValuePath="Key"
-                                                              DisplayMemberPath="Label"
-                                                              SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                                                              Style="{DynamicResource CompactComboBox}"
-                                                              VerticalAlignment="Center"
-                                                              Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}"/>
-                                                    <TextBox Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                                                             VerticalAlignment="Center">
-                                                        <TextBox.Style>
-                                                            <Style TargetType="TextBox" BasedOn="{StaticResource CompactTextBox}">
-                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <!-- «И»: all conditions inside one
+                                                         group must match (AND). -->
+                                                    <TextBlock Grid.Column="0"
+                                                               Text="{loc:Loc FM_AssignEditor_And}"
+                                                               FontWeight="Bold"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Visibility" Value="Visible"/>
                                                                 <Style.Triggers>
-                                                                    <MultiDataTrigger>
-                                                                        <MultiDataTrigger.Conditions>
-                                                                            <Condition Binding="{Binding ShowValueField}" Value="True"/>
-                                                                            <Condition Binding="{Binding ShowCategoryPicker}" Value="False"/>
-                                                                            <Condition Binding="{Binding ShowPartTypePicker}" Value="False"/>
-                                                                        </MultiDataTrigger.Conditions>
-                                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                                    </MultiDataTrigger>
+                                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(ItemsControl.AlternationIndex)}" Value="0">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
-                                                        </TextBox.Style>
-                                                    </TextBox>
-                                                    <TextBox Text="{Binding ValueNumberText, UpdateSourceTrigger=PropertyChanged}"
-                                                             Style="{DynamicResource CompactTextBox}"
-                                                             VerticalAlignment="Center"
-                                                             Visibility="{Binding ShowNumberField, Converter={StaticResource BoolToVis}}"/>
-                                                    <StackPanel Orientation="Horizontal"
-                                                                VerticalAlignment="Center"
-                                                                Visibility="{Binding ShowRangeFields, Converter={StaticResource BoolToVis}}">
-                                                        <TextBox Text="{Binding MinValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+
+                                                    <ComboBox Grid.Column="1"
+                                                              SelectedIndex="{Binding SourceKindIndex, UpdateSourceTrigger=PropertyChanged}"
+                                                              Style="{DynamicResource CompactComboBox}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,4,0">
+                                                        <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceAttribute}"/>
+                                                        <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceSystem}"/>
+                                                    </ComboBox>
+
+                                                    <ComboBox Grid.Column="2"
+                                                              ItemsSource="{Binding DataContext.AvailableAttributes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              SelectedValuePath="Id"
+                                                              DisplayMemberPath="Name"
+                                                              SelectedValue="{Binding SelectedAttributeId, UpdateSourceTrigger=PropertyChanged}"
+                                                              Style="{DynamicResource CompactComboBox}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,4,0"
+                                                              Visibility="{Binding IsAttributeSource, Converter={StaticResource BoolToVis}}"/>
+                                                    <ComboBox Grid.Column="2"
+                                                              ItemsSource="{Binding DataContext.SystemFields, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                              SelectedValuePath="Field"
+                                                              DisplayMemberPath="DisplayName"
+                                                              SelectedValue="{Binding SystemField, UpdateSourceTrigger=PropertyChanged}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,4,0">
+                                                        <ComboBox.Style>
+                                                            <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsAttributeSource}" Value="False">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ComboBox.Style>
+                                                    </ComboBox>
+
+                                                    <ComboBox Grid.Column="3"
+                                                              ItemsSource="{Binding AvailableOperators}"
+                                                              SelectedValuePath="Operator"
+                                                              DisplayMemberPath="DisplayName"
+                                                              SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}"
+                                                              Style="{DynamicResource CompactComboBox}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,4,0"/>
+
+                                                    <Grid Grid.Column="4" VerticalAlignment="Center">
+                                                        <!-- Revit category: editable ComboBox —
+                                                             typing prefix-searches the labels. -->
+                                                        <ComboBox ItemsSource="{Binding DataContext.RevitCategories, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedValuePath="Key"
+                                                                  TextSearch.TextPath="Label"
+                                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Style="{DynamicResource CompactComboBox}"
+                                                                  IsEditable="True"
+                                                                  VerticalAlignment="Center"
+                                                                  Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}"/>
+                                                        <!-- Part Type: same inline search. -->
+                                                        <ComboBox ItemsSource="{Binding DataContext.PartTypes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  SelectedValuePath="Key"
+                                                                  TextSearch.TextPath="Label"
+                                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                  Style="{DynamicResource CompactComboBox}"
+                                                                  IsEditable="True"
+                                                                  VerticalAlignment="Center"
+                                                                  Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}"/>
+                                                        <TextBox Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                 VerticalAlignment="Center">
+                                                            <TextBox.Style>
+                                                                <Style TargetType="TextBox" BasedOn="{StaticResource CompactTextBox}">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    <Style.Triggers>
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding ShowValueField}" Value="True"/>
+                                                                                <Condition Binding="{Binding ShowCategoryPicker}" Value="False"/>
+                                                                                <Condition Binding="{Binding ShowPartTypePicker}" Value="False"/>
+                                                                            </MultiDataTrigger.Conditions>
+                                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                                        </MultiDataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBox.Style>
+                                                        </TextBox>
+                                                        <TextBox Text="{Binding ValueNumberText, UpdateSourceTrigger=PropertyChanged}"
                                                                  Style="{DynamicResource CompactTextBox}"
-                                                                 Width="90"/>
-                                                        <TextBlock Text="—" VerticalAlignment="Center" Margin="6,0"/>
-                                                        <TextBox Text="{Binding MaxValueText, UpdateSourceTrigger=PropertyChanged}"
-                                                                 Style="{DynamicResource CompactTextBox}"
-                                                                 Width="90"/>
-                                                    </StackPanel>
+                                                                 VerticalAlignment="Center"
+                                                                 Visibility="{Binding ShowNumberField, Converter={StaticResource BoolToVis}}"/>
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    VerticalAlignment="Center"
+                                                                    Visibility="{Binding ShowRangeFields, Converter={StaticResource BoolToVis}}">
+                                                            <TextBox Text="{Binding MinValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{DynamicResource CompactTextBox}"
+                                                                     Width="95"/>
+                                                            <TextBlock Text="—" VerticalAlignment="Center" Margin="6,0"/>
+                                                            <TextBox Text="{Binding MaxValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{DynamicResource CompactTextBox}"
+                                                                     Width="95"/>
+                                                        </StackPanel>
+                                                    </Grid>
+
+                                                    <CheckBox Grid.Column="5"
+                                                              IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                              Style="{DynamicResource CompactCheckBox}"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
+
+                                                    <Button Grid.Column="6"
+                                                            Command="{Binding DataContext.DeleteConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{DynamicResource FlatIconButton}"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center">
+                                                        <iconPacks:PackIconMaterial Kind="Close"
+                                                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                                                    Width="14" Height="14"/>
+                                                    </Button>
                                                 </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
 
-                                                <CheckBox Grid.Column="4"
-                                                          IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
-                                                          Style="{DynamicResource CompactCheckBox}"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center"/>
-
-                                                <Button Grid.Column="5"
-                                                        Command="{Binding DataContext.DeleteConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{DynamicResource FlatIconButton}"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center">
-                                                    <iconPacks:PackIconMaterial Kind="Close"
-                                                                                Foreground="{DynamicResource TextMutedBrush}"
-                                                                                Width="14" Height="14"/>
-                                                </Button>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-
-                                <Button Grid.Row="2"
-                                        Command="{Binding DataContext.AddConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding}"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        HorizontalAlignment="Left"
-                                        Margin="0,6,0,0"
-                                        Content="{loc:Loc FM_AssignEditor_AddCondition}"/>
+                                    <Button Grid.Row="2"
+                                            Command="{Binding DataContext.AddConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{DynamicResource SecondaryButton}"
+                                            HorizontalAlignment="Left"
+                                            Margin="26,6,0,0"
+                                            Content="{loc:Loc FM_AssignEditor_AddCondition}"/>
+                                </Grid>
                             </Grid>
                         </Border>
+                        </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

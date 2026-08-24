@@ -324,6 +324,17 @@ public sealed partial class CategoryTreeEditorViewModel
         await OpenAssignmentRulesEditorAsync();
     }
 
+    /// <summary>#241: the filter icon on a category node — selects the
+    /// node and opens its assignment rules editor.</summary>
+    [RelayCommand]
+    private async Task OpenAssignmentRulesForNode(CategoryNodeViewModel? node)
+    {
+        if (node is null) return;
+        SelectedNode = node;
+        node.IsSelected = true;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
     internal async Task OpenAssignmentRulesEditorAsync()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
@@ -337,6 +348,10 @@ public sealed partial class CategoryTreeEditorViewModel
             {
                 SmartConLogger.Info($"Assignment rules saved for category '{node.DisplayName}'");
                 _metadataMediator.RaiseMetadataChanged();
+                // Refresh the tree icon counts in place (no tree rebuild —
+                // expansion state survives).
+                var (total, disabled) = await LoadAssignmentRuleCountsAsync(CancellationToken.None);
+                ApplyAssignmentRuleCounts(RootNodes, total, disabled);
             }
         }
         catch (Exception ex)

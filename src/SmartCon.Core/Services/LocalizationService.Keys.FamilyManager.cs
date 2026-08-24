@@ -434,7 +434,6 @@ public static partial class LocalizationService
         // Status Details dialog + clickable badges (#210)
         ru["FM_StatusDetails_Title"] = "Детали статуса"; en["FM_StatusDetails_Title"] = "Status Details";
         ru["FM_StatusDetails_OpenValidationReport"] = "Открыть отчёт о проверке"; en["FM_StatusDetails_OpenValidationReport"] = "Open validation report";
-        ru["FM_StatusDetails_PickCategory"] = "Выбрать категорию..."; en["FM_StatusDetails_PickCategory"] = "Pick a category...";
         ru["FM_Badge_ClickHint"] = "Нажмите для подробностей"; en["FM_Badge_ClickHint"] = "Click for details";
         ru["FM_Badge_Info_Tooltip"] = "Информация — нажмите для подробностей"; en["FM_Badge_Info_Tooltip"] = "Info — click for details";
         ru["FM_Badge_Dependency_Tooltip"] = "Зависимость — нажмите для подробностей"; en["FM_Badge_Dependency_Tooltip"] = "Dependency — click for details";
@@ -442,8 +441,6 @@ public static partial class LocalizationService
         ru["FM_Badge_Error_Tooltip"] = "Ошибка — нажмите для подробностей"; en["FM_Badge_Error_Tooltip"] = "Error — click for details";
         ru["FM_Badge_OutdatedDeps_Short"] = "Устарели вложенные"; en["FM_Badge_OutdatedDeps_Short"] = "Nested outdated";
         ru["FM_Notice_CrossNameDuplicate_Title"] = "Содержимое совпадает под другим именем"; en["FM_Notice_CrossNameDuplicate_Title"] = "Content matches under a different name";
-        ru["FM_Notice_AssignmentConflict_Title"] = "Автоназначение: подходят несколько категорий"; en["FM_Notice_AssignmentConflict_Title"] = "Auto-assignment: several categories match";
-        ru["FM_Notice_AssignmentConflict_Guidance"] = "Условия автоназначения подходят всем перечисленным категориям. Выберите одну вручную через кнопку «…» в колонке «Категория» — до этого семейство остаётся в «Без категории»."; en["FM_Notice_AssignmentConflict_Guidance"] = "The auto-assignment conditions match all of the listed categories. Pick one manually via the \"…\" button in the Category column — until then the family stays in \"No category\".";
         ru["FM_Notice_OutdatedNested_Title"] = "Зашита устаревшая версия"; en["FM_Notice_OutdatedNested_Title"] = "Outdated version embedded";
         ru["FM_Notice_DependencyBlock_Title"] = "Импорт заблокирован устаревшими вложенными"; en["FM_Notice_DependencyBlock_Title"] = "Import blocked by outdated nested families";
         ru["FM_Notice_FailedDependencies_Title"] = "Зависимости не прошли проверку"; en["FM_Notice_FailedDependencies_Title"] = "Dependencies failed validation";
@@ -507,9 +504,16 @@ public static partial class LocalizationService
         ru["FM_CTE_ImportedFull"] = "Импортировано: категорий новых {0} (существующих {1}), атрибутов {2}, привязок {3}, правил {4}"; en["FM_CTE_ImportedFull"] = "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules";
         ru["FM_CTE_ImportedSkipped"] = " (пропущено: {0})"; en["FM_CTE_ImportedSkipped"] = " (skipped: {0})";
         ru["FM_CTE_ImportedAssignment"] = "групп автоназначения: {0}"; en["FM_CTE_ImportedAssignment"] = "assignment groups: {0}";
-        ru["FM_CTE_ContextMenu_AssignmentRules"] = "Правила автоназначения..."; en["FM_CTE_ContextMenu_AssignmentRules"] = "Auto-assignment Rules...";
+        ru["FM_CTE_ContextMenu_AssignmentRules"] = "Правила автоназначения"; en["FM_CTE_ContextMenu_AssignmentRules"] = "Auto-assignment Rules";
         ru["FM_AssignEditor_Title"] = "Правила автоназначения"; en["FM_AssignEditor_Title"] = "Auto-assignment Rules";
-        ru["FM_AssignEditor_Subtitle"] = "Семейство получит категорию, если выполнены все условия хотя бы одной включённой группы. Условия по атрибутам берутся из библиотеки атрибутов, по системным полям — из данных семейства."; en["FM_AssignEditor_Subtitle"] = "A family gets this category when all conditions of at least one enabled group match. Attribute conditions use the attribute library; system fields come from the family data.";
+        ru["FM_AssignEditor_Subtitle"] = "Семейство получит категорию, если выполнены ВСЕ условия хотя бы ОДНОЙ группы (И внутри группы, ИЛИ между группами). Условия по атрибутам берутся из библиотеки атрибутов, по системным полям — из данных семейства."; en["FM_AssignEditor_Subtitle"] = "A family gets this category when ALL conditions of at least ONE group match (AND within a group, OR between groups). Attribute conditions use the attribute library; system fields come from the family data.";
+        ru["FM_AssignEditor_And"] = "И"; en["FM_AssignEditor_And"] = "AND";
+        ru["FM_AssignEditor_Or"] = "ИЛИ"; en["FM_AssignEditor_Or"] = "OR";
+        ru["FM_AssignEditor_TreeNone"] = "Правила автоназначения не заданы — нажмите для настройки"; en["FM_AssignEditor_TreeNone"] = "No auto-assignment rules — click to configure";
+        ru["FM_AssignEditor_TreeCount"] = "Правила автоназначения: {0}"; en["FM_AssignEditor_TreeCount"] = "Auto-assignment rules: {0}";
+        ru["FM_AssignEditor_TreeCountDisabled"] = "Правила автоназначения: {0} (отключено: {1})"; en["FM_AssignEditor_TreeCountDisabled"] = "Auto-assignment rules: {0} (disabled: {1})";
+        ru["FM_RulePicker_Subtitle"] = "Под правила автоназначения подходят категории ({0}) — выберите одну:"; en["FM_RulePicker_Subtitle"] = "Categories matching the auto-assignment rules ({0}) — pick one:";
+        ru["FM_BatchImport_RuleConflict_Tooltip"] = "Правила автоназначения рекомендуют: {0}. Нажмите, чтобы выбрать из подходящих категорий."; en["FM_BatchImport_RuleConflict_Tooltip"] = "Auto-assignment rules recommend: {0}. Click to pick from the matching categories.";
         ru["FM_AssignEditor_Group"] = "Группа"; en["FM_AssignEditor_Group"] = "Group";
         ru["FM_AssignEditor_AddGroup"] = "Добавить группу"; en["FM_AssignEditor_AddGroup"] = "Add group";
         ru["FM_AssignEditor_AddCondition"] = "Добавить условие"; en["FM_AssignEditor_AddCondition"] = "Add condition";
@@ -518,7 +522,6 @@ public static partial class LocalizationService
         ru["FM_AssignEditor_Field_RevitCategory"] = "Категория Revit"; en["FM_AssignEditor_Field_RevitCategory"] = "Revit category";
         ru["FM_AssignEditor_Field_PartType"] = "Тип детали"; en["FM_AssignEditor_Field_PartType"] = "Part Type";
         ru["FM_AssignEditor_Field_FamilyName"] = "Имя семейства"; en["FM_AssignEditor_Field_FamilyName"] = "Family name";
-        ru["FM_AssignEditor_Field_SystemFamilyKey"] = "Ключ системного семейства"; en["FM_AssignEditor_Field_SystemFamilyKey"] = "System family key";
         ru["FM_AssignEditor_ErrorNoGroups"] = "Добавьте хотя бы одну группу с условием"; en["FM_AssignEditor_ErrorNoGroups"] = "Add at least one group with a condition";
         ru["FM_AssignEditor_ErrorAttributeRequired"] = "Выберите атрибут библиотеки"; en["FM_AssignEditor_ErrorAttributeRequired"] = "Select a library attribute";
         ru["FM_AssignEditor_ErrorFieldRequired"] = "Выберите системное поле"; en["FM_AssignEditor_ErrorFieldRequired"] = "Select a system field";

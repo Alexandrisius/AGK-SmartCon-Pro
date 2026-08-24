@@ -187,6 +187,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
+            row.PickRecommendedCategoryRequested += OnRowPickRecommendedCategoryRequestedAsync;
             row.ActionChanged += OnRowActionChanged;
             row.CategoryChanged += OnRowCategoryChanged;
             row.SelectionChanged += OnRowSelectionChanged;
@@ -257,9 +258,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     row.CategoryProvenance = CategoryProvenance.None;
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
-                    // #241: the user explicitly reset the category — a
-                    // stale ambiguous-conflict notice must not survive it.
-                    row.AssignmentConflictCandidates = null;
+                    // #241: the rules' recommendation survives the reset —
+                    // «Без категории» is not a recommended category, so the
+                    // warning icon stays visible and keeps pointing at the
+                    // recommended categories.
                 }
                 else
                 {
@@ -279,6 +281,38 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         catch (Exception ex)
         {
             SmartCon.Core.Logging.SmartConLogger.Error($"BatchImport.CategoryPicker: failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// #241: the category-column warning icon opens the picker
+    /// pre-filtered to the categories the rules recommend, with a subtitle
+    /// explaining why. An explicit pick from ANY picker is a deliberate
+    /// user instruction → provenance Manual (locked).
+    /// </summary>
+    private async Task OnRowPickRecommendedCategoryRequestedAsync(FamilyBatchImportRow row)
+    {
+        try
+        {
+            if (!row.HasRuleRecommendation) return;
+
+            var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel(allowClear: false);
+            var subtitle = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_RulePicker_Subtitle)
+                    ?? "Под правила автоназначения подходят {0} категорий — выберите одну:",
+                row.RecommendedCategoryIds!.Count);
+            await pickerVm.InitializeRecommendedAsync(row.RecommendedCategoryIds!, subtitle);
+            var result = _dialogService.ShowCategoryPicker(pickerVm);
+            if (!string.IsNullOrEmpty(result))
+            {
+                row.CategoryProvenance = CategoryProvenance.Manual;
+                row.TargetCategoryId = result;
+                row.TargetCategoryPath = pickerVm.SelectedPath;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartCon.Core.Logging.SmartConLogger.Error($"BatchImport.RecommendedPicker: failed: {ex.Message}");
         }
     }
 
@@ -527,18 +561,21 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     }
 
     /// <summary>
-    /// #241: evaluates the assignment rules for the eligible rows
-    /// (Status == New, provenance == None, not gate-blocked) and applies
-    /// the matched category. MUST run on the UI thread. Ambiguous outcomes
-    /// (2+ matching categories) leave the row in «Без категории» with a
-    /// conflict notice — the user picks one via the category picker.
+    /// #241: evaluates the assignment rules for EVERY row and applies the
+    /// matched category only to the eligible ones (Status == New,
+    /// provenance == None, not gate-blocked — Existing/Duplicate and
+    /// Manual/Command rows are NEVER re-categorized automatically). Every
+    /// row gets the recommendation state (ids + display paths) that drives
+    /// the category-column warning icon — including Existing/Duplicate
+    /// rows whose current category differs from the rules' recommendation.
+    /// MUST run on the UI thread.
     /// </summary>
     private List<FamilyBatchImportRow> ApplyAutoAssignment(IEnumerable<FamilyBatchImportRow> candidates)
     {
         using var _scope = SmartConLogger.BeginScope("AutoAssign",
             ("Method", nameof(ApplyAutoAssignment)));
         var assigned = new List<FamilyBatchImportRow>();
-        var ambiguous = 0;
+        var recommended = 0;
         foreach (var row in candidates)
         {
             if (_isClosing)
@@ -546,10 +583,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 SmartConLogger.Debug("BatchImport.AutoAssign: application skipped — dialog is closing");
                 break;
             }
-
-            if (row.Status != FamilyBatchImportStatus.New) continue;
-            if (row.CategoryProvenance != CategoryProvenance.None) continue;
-            if (row.IsGateBlocked) continue;
 
             CategoryAutoAssignResult result;
             try
@@ -565,29 +598,58 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 continue;
             }
 
-            switch (result.Outcome)
+            ApplyRecommendation(row, result);
+
+            if (result.Outcome == CategoryAutoAssignOutcome.Matched
+                && row.Status == FamilyBatchImportStatus.New
+                && row.CategoryProvenance == CategoryProvenance.None
+                && !row.IsGateBlocked)
             {
-                case CategoryAutoAssignOutcome.Matched when result.CategoryId is not null:
-                    AssignAutoRuleCategory(row, result.CategoryId);
-                    assigned.Add(row);
-                    break;
-                case CategoryAutoAssignOutcome.Ambiguous:
-                    row.AssignmentConflictCandidates = ResolveCategoryPaths(result.CandidateCategoryIds);
-                    ambiguous++;
-                    SmartConLogger.Debug(
-                        $"BatchImport.AutoAssign: '{row.FileName}' ambiguous — {result.CandidateCategoryIds.Count} categories match, user must pick");
-                    break;
+                // Re-check the icon state after the assignment: the current
+                // category now equals the recommendation → icon hidden.
+                AssignAutoRuleCategory(row, result.CategoryId!);
+                assigned.Add(row);
+            }
+            else if (result.Outcome != CategoryAutoAssignOutcome.NoMatch)
+            {
+                recommended++;
             }
         }
 
-        if (assigned.Count > 0 || ambiguous > 0)
+        if (assigned.Count > 0 || recommended > 0)
         {
             SmartConLogger.Info(
-                $"Auto-assign: {assigned.Count} row(s) assigned, {ambiguous} ambiguous of {Items.Count}");
+                $"Auto-assign: {assigned.Count} row(s) assigned, {recommended} row(s) recommended (not auto-applied) of {Items.Count}");
             UpdateCanImport();
         }
 
         return assigned;
+    }
+
+    /// <summary>
+    /// #241: stores the rules' recommendation on the row (drives the
+    /// category-column warning icon regardless of the row's eligibility
+    /// for automatic assignment).
+    /// </summary>
+    private void ApplyRecommendation(FamilyBatchImportRow row, CategoryAutoAssignResult result)
+    {
+        switch (result.Outcome)
+        {
+            case CategoryAutoAssignOutcome.Matched when result.CategoryId is not null:
+                row.RecommendedCategoryIds = [result.CategoryId];
+                row.RecommendedCategoryPaths = [ResolveCategoryPath(result.CategoryId)];
+                break;
+            case CategoryAutoAssignOutcome.Ambiguous:
+                row.RecommendedCategoryIds = result.CandidateCategoryIds;
+                row.RecommendedCategoryPaths = ResolveCategoryPaths(result.CandidateCategoryIds);
+                SmartConLogger.Debug(
+                    $"BatchImport.AutoAssign: '{row.FileName}' recommendation — {result.CandidateCategoryIds.Count} categories match");
+                break;
+            default:
+                row.RecommendedCategoryIds = null;
+                row.RecommendedCategoryPaths = null;
+                break;
+        }
     }
 
     /// <summary>
@@ -598,10 +660,10 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// </summary>
     private void TryAutoAssignRow(FamilyBatchImportRow row)
     {
-        if (_autoAssignRules is not { HasRules: true }) return;
-        if (row.Status != FamilyBatchImportStatus.New) return;
-        if (row.CategoryProvenance != CategoryProvenance.None) return;
-        if (row.IsGateBlocked) return;
+        if (_autoAssignRules is not { HasRules: true })
+        {
+            return;
+        }
 
         CategoryAutoAssignResult result;
         try
@@ -613,50 +675,45 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         {
             SmartConLogger.Warn(
                 $"BatchImport.AutoAssign: re-evaluation failed for '{row.FileName}': {ex.Message} " +
-                "[Action: проверьте логи; строка остаётся в «Без категории»]");
+                "[Action: проверьте логи; рекомендация строки может быть неактуальной]");
             return;
         }
 
-        if (result.Outcome == CategoryAutoAssignOutcome.Matched && result.CategoryId is not null)
+        ApplyRecommendation(row, result);
+
+        if (result.Outcome == CategoryAutoAssignOutcome.Matched
+            && result.CategoryId is not null
+            && row.Status == FamilyBatchImportStatus.New
+            && row.CategoryProvenance == CategoryProvenance.None
+            && !row.IsGateBlocked)
         {
             AssignAutoRuleCategory(row, result.CategoryId);
-        }
-        else if (result.Outcome == CategoryAutoAssignOutcome.Ambiguous)
-        {
-            row.AssignmentConflictCandidates = ResolveCategoryPaths(result.CandidateCategoryIds);
-        }
-        else
-        {
-            // NoMatch: a stale ambiguous-conflict notice must not survive
-            // the re-derivation (e.g. rename to a name no rule matches).
-            row.AssignmentConflictCandidates = null;
         }
     }
 
     private void AssignAutoRuleCategory(FamilyBatchImportRow row, string categoryId)
     {
-        var path = _autoAssignRules!.CategoryPathsById.TryGetValue(categoryId, out var categoryPath)
-            ? categoryPath
-            : categoryId;
-        row.AssignmentConflictCandidates = null;
         // Provenance BEFORE the path: the CategoryChanged batch-apply
         // (fired by the path setter) must observe the row's new provenance.
         row.CategoryProvenance = CategoryProvenance.AutoRule;
         row.TargetCategoryId = categoryId;
-        row.TargetCategoryPath = path;
+        row.TargetCategoryPath = ResolveCategoryPath(categoryId);
         row.CategoryFlashToken++;
         SmartConLogger.Debug(
-            $"BatchImport.AutoAssign: '{row.FileName}' -> '{path}' (provenance=AutoRule)");
+            $"BatchImport.AutoAssign: '{row.FileName}' -> '{row.TargetCategoryPath}' (provenance=AutoRule)");
     }
+
+    private string ResolveCategoryPath(string categoryId) =>
+        _autoAssignRules?.CategoryPathsById.TryGetValue(categoryId, out var path) == true
+            ? path
+            : categoryId;
 
     private List<string> ResolveCategoryPaths(IReadOnlyList<string> categoryIds)
     {
         var paths = new List<string>(categoryIds.Count);
         foreach (var id in categoryIds)
         {
-            paths.Add(_autoAssignRules?.CategoryPathsById.TryGetValue(id, out var path) == true
-                ? path
-                : id);
+            paths.Add(ResolveCategoryPath(id));
         }
 
         return paths;
@@ -779,17 +836,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_StatusDetails_OpenValidationReport)
                         ?? "Открыть отчёт о проверке",
                     () => OnRowOpenValidationReport(row)));
-            }
-
-            // #241: an ambiguous auto-assignment offers the category
-            // picker directly from the notice dialog. The pick handler has
-            // its own try/catch — a fire-and-forget here is safe.
-            if (!infoOnly && row.HasAssignmentConflict)
-            {
-                actions.Add(new StatusDetailsAction(
-                    SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_StatusDetails_PickCategory)
-                        ?? "Выбрать категорию...",
-                    () => _ = OnRowPickCategoryRequestedAsync(row)));
             }
 
             var detailsVm = new StatusDetailsViewModel(
@@ -1102,6 +1148,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             SmartConLogger.Debug(
                 $"BatchImport.Category: '{row.FileName}' rename kept locked category " +
                 $"'{row.TargetCategoryId ?? "<none>"}' (status={newStatus}, provenance={row.CategoryProvenance})");
+
+            // #241: a locked row keeps its category, but the RULES'
+            // recommendation still follows the new name — the category
+            // column's warning icon must reflect the renamed family.
+            TryAutoAssignRow(row);
         }
 
         if (row.ShowCategoryMoveWarning)

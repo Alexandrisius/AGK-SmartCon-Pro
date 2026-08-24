@@ -118,4 +118,55 @@ public sealed class CategoryPickerStaticTests
         Assert.Contains(result, n => n.Id == "1");
         Assert.Contains(result, n => n.Id == "2");
     }
+
+    [Fact]
+    public void FilterNodesWithIds_Leaf_IncludesAncestors()
+    {
+        var nodes = new List<CategoryNode>
+        {
+            MakeNode("1", "Pipes"),
+            MakeNode("2", "Steel Pipes", "1"),
+            MakeNode("3", "Copper Pipes", "1"),
+        };
+        var tree = new CategoryTree(nodes);
+
+        var result = CategoryPickerViewModel.FilterNodesWithIds(tree, new HashSet<string> { "2" });
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, n => n.Id == "1");
+        Assert.Contains(result, n => n.Id == "2");
+    }
+
+    [Fact]
+    public void FilterNodesWithIds_TwoBranches_KeepsBothWithAncestors()
+    {
+        var nodes = new List<CategoryNode>
+        {
+            MakeNode("1", "Pipes"),
+            MakeNode("2", "Steel Pipes", "1"),
+            MakeNode("3", "Ducts"),
+            MakeNode("4", "Round Ducts", "3"),
+            MakeNode("5", "Other"),
+        };
+        var tree = new CategoryTree(nodes);
+
+        var result = CategoryPickerViewModel.FilterNodesWithIds(tree, new HashSet<string> { "2", "4" });
+
+        Assert.Equal(4, result.Count);
+        Assert.DoesNotContain(result, n => n.Id == "5");
+    }
+
+    [Fact]
+    public void FilterNodesWithIds_UnknownId_ReturnsEmpty()
+    {
+        var nodes = new List<CategoryNode>
+        {
+            MakeNode("1", "Pipes"),
+        };
+        var tree = new CategoryTree(nodes);
+
+        var result = CategoryPickerViewModel.FilterNodesWithIds(tree, new HashSet<string> { "missing" });
+
+        Assert.Empty(result);
+    }
 }

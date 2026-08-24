@@ -69,7 +69,6 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
             new(AssignmentSystemField.RevitCategory, Localize(SKeys.FM_AssignEditor_Field_RevitCategory, "Категория Revit")),
             new(AssignmentSystemField.PartType, Localize(SKeys.FM_AssignEditor_Field_PartType, "Тип детали")),
             new(AssignmentSystemField.FamilyName, Localize(SKeys.FM_AssignEditor_Field_FamilyName, "Имя семейства")),
-            new(AssignmentSystemField.SystemFamilyKey, Localize(SKeys.FM_AssignEditor_Field_SystemFamilyKey, "Ключ системного семейства")),
         ];
     }
 
@@ -97,10 +96,30 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                     index + 1,
                     g.IsEnabled,
                     g.Conditions.OrderBy(c => c.SortOrder)
+                        .Where(ConditionEditable)
                         .Select(c => new AssignmentConditionRowViewModel(
                             c.Id, c.SourceKind, c.AttributeId, c.SystemField, c.Operator,
                             c.ValueText, c.ValueNumber, c.MinValue, c.MaxValue, c.IsEnabled,
                             AttributeOperators, OrdinalOperators, TextOperators)))));
+    }
+
+    /// <summary>
+    /// SystemFamilyKey conditions are engine-supported but not editable in
+    /// the dialog (no user-friendly picker). A stored one (e.g. from a
+    /// hand-edited test database) is dropped on save — with a warning, not
+    /// a silent binding-null CHECK violation.
+    /// </summary>
+    private static bool ConditionEditable(AssignmentCondition condition)
+    {
+        if (condition.SystemField == AssignmentSystemField.SystemFamilyKey)
+        {
+            SmartConLogger.Warn(
+                $"Assignment editor: condition {condition.Id} targets SystemFamilyKey which is not editable — it will be dropped on save " +
+                "[Action: пересоздайте условие в редакторе правил автоназначения]");
+            return false;
+        }
+
+        return true;
     }
 
     [RelayCommand]

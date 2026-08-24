@@ -8,11 +8,11 @@ using Xunit;
 namespace SmartCon.Tests.FamilyManager.ViewModels;
 
 /// <summary>
-/// #241: auto-assignment integration in the batch import dialog — new
-/// rows get their category from the rule evaluation (provenance AutoRule),
-/// Existing/Duplicate rows keep the catalog category, ambiguous outcomes
-/// surface the conflict notice, rename re-derivation re-evaluates the
-/// rules.
+/// #241 (UX v2): auto-assignment integration in the batch import dialog.
+/// New rows get the matched category automatically (provenance AutoRule);
+/// EVERY row carries the rules' recommendation driving the Category-column
+/// warning icon — including Existing/Duplicate rows whose catalog category
+/// is never overridden but flagged when it differs from the recommendation.
 /// </summary>
 public sealed class FamilyBatchImportAutoAssignTests
 {
@@ -101,7 +101,10 @@ public sealed class FamilyBatchImportAutoAssignTests
         Assert.Equal(CatSteel, row.TargetCategoryId);
         Assert.Equal("Стальные", row.TargetCategoryPath);
         Assert.Equal(CategoryProvenance.AutoRule, row.CategoryProvenance);
-        Assert.Null(row.AssignmentConflictCandidates);
+
+        // The current category equals the recommendation — no conflict icon.
+        Assert.True(row.HasRuleRecommendation);
+        Assert.False(row.ShowRuleConflictIcon);
 
         // The follow-up gate revalidation must cover the ASSIGNED category.
         await WaitForAsync(() => row.ValidationRulesCount == 1);
@@ -109,7 +112,7 @@ public sealed class FamilyBatchImportAutoAssignTests
     }
 
     [Fact]
-    public async Task Vm_ExistingRowWithCatalogCategory_NotOverridden()
+    public async Task Vm_ExistingRow_CategoryNotOverridden_ButConflictIconShown()
     {
         SetupGate("cat-existing");
         _evaluate = (_, _, _) => CategoryAutoAssignResult.Matched(CatSteel);
@@ -122,15 +125,21 @@ public sealed class FamilyBatchImportAutoAssignTests
             autoAssignService: _autoAssignMock.Object);
 
         var row = vm.Items[0];
-        await Task.Delay(80);
+        await WaitForAsync(() => row.HasRuleRecommendation);
 
+        // The catalog category is NOT overridden...
         Assert.Equal(CategoryProvenance.AutoName, row.CategoryProvenance);
         Assert.Equal("cat-existing", row.TargetCategoryId);
         Assert.Equal("Существующая", row.TargetCategoryPath);
+        // ...but the rules recommend a different one → the warning icon
+        // shows in the Category column.
+        Assert.Equal([CatSteel], row.RecommendedCategoryIds);
+        Assert.Equal(["Стальные"], row.RecommendedCategoryPaths);
+        Assert.True(row.ShowRuleConflictIcon);
     }
 
     [Fact]
-    public async Task Vm_Ambiguous_RowStaysNoCategory_WithConflictNotice()
+    public async Task Vm_Ambiguous_RowStaysNoCategory_IconShowsCandidates()
     {
         _evaluate = (_, _, _) => CategoryAutoAssignResult.Ambiguous([CatSteel, CatFittings]);
 
@@ -141,19 +150,18 @@ public sealed class FamilyBatchImportAutoAssignTests
             autoAssignService: _autoAssignMock.Object);
 
         var row = vm.Items[0];
-        await WaitForAsync(() => row.HasAssignmentConflict);
+        await WaitForAsync(() => row.HasRuleRecommendation);
 
         Assert.Null(row.TargetCategoryId);
         Assert.Equal(CategoryProvenance.None, row.CategoryProvenance);
-        Assert.Equal(2, row.AssignmentConflictCandidates!.Count);
-        Assert.Contains("Стальные", row.AssignmentConflictCandidates);
-        Assert.Contains("Фитинги", row.AssignmentConflictCandidates);
-        // The conflict surfaces as a clickable problem notice.
-        Assert.True(row.HasProblemNotices);
+        Assert.Equal(2, row.RecommendedCategoryIds!.Count);
+        Assert.Contains("Стальные", row.RecommendedCategoryPaths!);
+        Assert.Contains("Фитинги", row.RecommendedCategoryPaths!);
+        Assert.True(row.ShowRuleConflictIcon);
     }
 
     [Fact]
-    public async Task Vm_ManualPick_ClearsConflictNotice()
+    public async Task Vm_PickRecommendedCategory_IconDisappears()
     {
         _evaluate = (_, _, _) => CategoryAutoAssignResult.Ambiguous([CatSteel, CatFittings]);
 
@@ -164,15 +172,40 @@ public sealed class FamilyBatchImportAutoAssignTests
             autoAssignService: _autoAssignMock.Object);
 
         var row = vm.Items[0];
-        await WaitForAsync(() => row.HasAssignmentConflict);
+        await WaitForAsync(() => row.ShowRuleConflictIcon);
 
-        // The user picks a category manually — the conflict notice clears.
+        // The user picks one of the recommended categories — the icon
+        // disappears (current category now satisfies the rules).
         row.CategoryProvenance = CategoryProvenance.Manual;
         row.TargetCategoryId = CatSteel;
         row.TargetCategoryPath = "Стальные";
 
-        await WaitForAsync(() => !row.HasAssignmentConflict);
-        Assert.Null(row.AssignmentConflictCandidates);
+        await WaitForAsync(() => !row.ShowRuleConflictIcon);
+        Assert.True(row.HasRuleRecommendation);
+    }
+
+    [Fact]
+    public async Task Vm_PickNonRecommendedCategory_IconStays()
+    {
+        _evaluate = (_, _, _) => CategoryAutoAssignResult.Matched(CatSteel);
+
+        using var vm = new FamilyBatchImportViewModel(
+            [MakeItem("Elbow", snapshot: SnapshotWithParam())],
+            _dialogMock.Object,
+            _factoryMock.Object,
+            autoAssignService: _autoAssignMock.Object);
+
+        var row = vm.Items[0];
+        await WaitForAsync(() => row.CategoryProvenance == CategoryProvenance.AutoRule);
+
+        // The user overrides the auto-assigned category with a category
+        // that does NOT match the rules — the warning stays active.
+        row.CategoryProvenance = CategoryProvenance.Manual;
+        row.TargetCategoryId = "cat-other";
+        row.TargetCategoryPath = "Другая";
+
+        await WaitForAsync(() => row.ShowRuleConflictIcon);
+        Assert.Equal([CatSteel], row.RecommendedCategoryIds);
     }
 
     [Fact]
@@ -193,7 +226,8 @@ public sealed class FamilyBatchImportAutoAssignTests
         var row = vm.Items[0];
         Assert.Equal(CategoryProvenance.None, row.CategoryProvenance);
         Assert.Null(row.TargetCategoryId);
-        Assert.False(row.HasAssignmentConflict);
+        Assert.False(row.HasRuleRecommendation);
+        Assert.False(row.ShowRuleConflictIcon);
     }
 
     [Fact]
@@ -211,6 +245,7 @@ public sealed class FamilyBatchImportAutoAssignTests
         await WaitForAsync(() => row.GateStatus == FamilyRowGateStatus.Passed);
 
         Assert.Equal(FamilyRowGateStatus.Passed, row.GateStatus);
+        Assert.False(row.HasRuleRecommendation);
     }
 
     [Fact]
@@ -235,12 +270,64 @@ public sealed class FamilyBatchImportAutoAssignTests
         Assert.Equal(CatSteel, row.TargetCategoryId);
 
         // Rename to a name the rules do not match — the automatic
-        // category is re-derived away (AutoRule is NOT locked).
+        // category is re-derived away (AutoRule is NOT locked) and the
+        // recommendation clears too (no rule matches anymore).
         _evaluate = (_, _, _) => CategoryAutoAssignResult.NoMatch;
         row.FileName = "Отвод Б";
 
         await WaitForAsync(() => row.CategoryProvenance == CategoryProvenance.None);
         Assert.Null(row.TargetCategoryId);
+        Assert.False(row.HasRuleRecommendation);
+        Assert.False(row.ShowRuleConflictIcon);
+    }
+
+    [Fact]
+    public async Task Vm_Rename_NewRowMatchingOtherRule_Reassigned()
+    {
+        _catalogMock
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((FamilyCatalogItem?)null);
+        _evaluate = (_, _, name) => name switch
+        {
+            "Отвод А" => CategoryAutoAssignResult.Matched(CatSteel),
+            "Отвод Б" => CategoryAutoAssignResult.Matched(CatFittings),
+            _ => CategoryAutoAssignResult.NoMatch,
+        };
+
+        using var vm = new FamilyBatchImportViewModel(
+            [MakeItem("Отвод А", snapshot: SnapshotWithParam())],
+            _dialogMock.Object,
+            _factoryMock.Object,
+            catalogProvider: _catalogMock.Object,
+            autoAssignService: _autoAssignMock.Object);
+
+        var row = vm.Items[0];
+        await WaitForAsync(() => row.CategoryProvenance == CategoryProvenance.AutoRule);
+        Assert.Equal(CatSteel, row.TargetCategoryId);
+
+        row.FileName = "Отвод Б";
+
+        await WaitForAsync(() => row.TargetCategoryId == CatFittings);
+        Assert.Equal(CategoryProvenance.AutoRule, row.CategoryProvenance);
+        Assert.Equal("Фитинги", row.TargetCategoryPath);
+        Assert.False(row.ShowRuleConflictIcon);
+    }
+
+    [Fact]
+    public void Row_ShowRuleConflictIcon_NotifiesOnCategoryChange()
+    {
+        // The icon must re-render when the target category changes — the
+        // binding listens to PropertyChanged, not the getter.
+        var row = new FamilyBatchImportRow(MakeItem("Elbow", snapshot: SnapshotWithParam()));
+        row.RecommendedCategoryIds = [CatSteel];
+
+        var notifications = new List<string>();
+        row.PropertyChanged += (_, e) => notifications.Add(e.PropertyName!);
+
+        row.TargetCategoryId = CatSteel;
+
+        Assert.Contains(nameof(FamilyBatchImportRow.ShowRuleConflictIcon), notifications);
+        Assert.False(row.ShowRuleConflictIcon);
     }
 
     private static FamilySnapshot SnapshotWithParam() =>

@@ -116,6 +116,22 @@
                                     <TextBlock Text="{Binding FamilyCount, StringFormat='({0})'}"
                                                Margin="4,0,0,0" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
+                                    <!-- #241: auto-assignment rules indicator — gray
+                                         filter outline (none), green filter-check
+                                         (rules active), orange filter-cog (disabled
+                                         rules). Click opens the rules editor. -->
+                                    <Button Command="{Binding DataContext.OpenAssignmentRulesForNodeCommand, RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{DynamicResource FlatIconButton}"
+                                            ToolTip="{Binding AssignmentRulesTooltip}"
+                                            Margin="6,0,0,0"
+                                            Padding="2,0"
+                                            Height="20"
+                                            VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial Kind="{Binding AssignmentIconKind}"
+                                                                    Foreground="{Binding AssignmentIconBrush}"
+                                                                    Width="14" Height="14"/>
+                                    </Button>
                                 </StackPanel>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>

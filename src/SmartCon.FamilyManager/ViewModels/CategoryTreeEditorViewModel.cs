@@ -113,8 +113,56 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message} [Action: проверьте БД каталога; counts могут быть неполными до Refresh]");
         }
 
+        // #241: per-category assignment rule counts for the tree filter icon.
+        var (assignmentCounts, assignmentDisabledCounts) = await LoadAssignmentRuleCountsAsync(ct);
+
         var tree = new CategoryTree(nodes);
         RootNodes = BuildTreeNodes(tree, null, familyCounts);
+        ApplyAssignmentRuleCounts(RootNodes, assignmentCounts, assignmentDisabledCounts);
+    }
+
+    /// <summary>#241: loads (total, disabled) assignment group counts per
+    /// category — the tree icon's three states. Failure degrades to empty
+    /// counts (gray icons), never breaks the tree load.</summary>
+    private async Task<(IReadOnlyDictionary<string, int> Total, IReadOnlyDictionary<string, int> Disabled)> LoadAssignmentRuleCountsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var groups = await _assignmentRuleRepository.GetGroupsWithConditionsAsync(ct);
+            var total = new Dictionary<string, int>();
+            var disabled = new Dictionary<string, int>();
+            foreach (var group in groups)
+            {
+                total[group.CategoryId] = total.TryGetValue(group.CategoryId, out var count) ? count + 1 : 1;
+                if (!group.IsEnabled)
+                {
+                    disabled[group.CategoryId] = disabled.TryGetValue(group.CategoryId, out var disabledCount) ? disabledCount + 1 : 1;
+                }
+            }
+
+            return (total, disabled);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"CategoryTreeEditor assignment rule counts failed: {ex.Message} [Action: проверьте БД каталога; индикаторы правил могут быть скрыты до обновления]");
+            return (new Dictionary<string, int>(), new Dictionary<string, int>());
+        }
+    }
+
+    private static void ApplyAssignmentRuleCounts(
+        IEnumerable<CatalogTreeNodeViewModel> nodes,
+        IReadOnlyDictionary<string, int> total,
+        IReadOnlyDictionary<string, int> disabled)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat)
+            {
+                cat.AssignmentRuleCount = total.TryGetValue(cat.CategoryId, out var count) ? count : 0;
+                cat.DisabledAssignmentRuleCount = disabled.TryGetValue(cat.CategoryId, out var disabledCount) ? disabledCount : 0;
+            }
+            ApplyAssignmentRuleCounts(node.Children, total, disabled);
+        }
     }
 
     private static ObservableCollection<CategoryNodeViewModel> BuildTreeNodes(

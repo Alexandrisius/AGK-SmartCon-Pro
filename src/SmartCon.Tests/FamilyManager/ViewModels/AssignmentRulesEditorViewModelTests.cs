@@ -53,7 +53,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         Assert.NotEmpty(vm.AvailableAttributes);
         Assert.NotEmpty(vm.RevitCategories);
         Assert.NotEmpty(vm.PartTypes);
-        Assert.Equal(4, vm.SystemFields.Count);
+        Assert.Equal(3, vm.SystemFields.Count);
     }
 
     [Fact]
