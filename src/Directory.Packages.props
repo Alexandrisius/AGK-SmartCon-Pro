@@ -62,7 +62,7 @@
     <PackageVersion Include="System.Text.Encoding.CodePages" Version="8.0.0" />
 
     <!-- Universal charset detector (Mozilla algorithm) для автоопределения кодировок Type Catalog -->
-    <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
+    <PackageVersion Include="UTF.Unknown" Version="2.7.0" />
 
     <!-- Пины для merged SmartCon.Dependencies (net48, ADR-051): версии = текущее resolved-состояние,
          чтобы merge не менял фактические версии. Microsoft.Bcl.AsyncInterfaces 10.0.1 уже
