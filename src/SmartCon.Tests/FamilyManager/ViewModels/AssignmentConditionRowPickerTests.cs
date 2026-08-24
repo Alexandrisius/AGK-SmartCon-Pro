@@ -5,10 +5,12 @@ using Xunit;
 namespace SmartCon.Tests.FamilyManager.ViewModels;
 
 /// <summary>
-/// Inline autocomplete pickers of the assignment condition editor (#241):
-/// the editable field shows the picked label, typing live-filters the
-/// dropdown and invalidates the pick until re-picked, focus resets to the
-/// full list.
+/// Editable autocomplete pickers of the assignment condition editor (#241)
+/// — the VM side: the editable field shows the picked label, typing
+/// diverging from it invalidates the pick until re-picked, the highlight
+/// filter text is empty while the field shows the picked label. The
+/// dropdown filtering itself lives in the AutoCompleteComboBox control
+/// (view-level), not in the VM.
 /// </summary>
 public sealed class AssignmentConditionRowPickerTests
 {
@@ -31,20 +33,18 @@ public sealed class AssignmentConditionRowPickerTests
             Ops, Ops, Ops, Categories, []);
 
     [Fact]
-    public void Pick_SetsKeyTextAndClosesPopup()
+    public void Pick_SetsKeyAndText()
     {
         var row = NewRow();
-        row.IsCategoryPopupOpen = true;
 
         row.SelectedCategoryItem = Categories[0];
 
         Assert.Equal("-2008049", row.ValueText);
         Assert.Equal("Фитинги трубопроводов", row.CategoryPickerText);
-        Assert.False(row.IsCategoryPopupOpen);
     }
 
     [Fact]
-    public void TypingDivergentText_InvalidatesPickAndOpensPopup()
+    public void TypingDivergentText_InvalidatesPick()
     {
         var row = NewRow();
         row.SelectedCategoryItem = Categories[0];
@@ -52,71 +52,26 @@ public sealed class AssignmentConditionRowPickerTests
         row.CategoryPickerText = "трубы";
 
         Assert.Null(row.ValueText);
-        Assert.True(row.IsCategoryPopupOpen);
     }
 
     [Fact]
-    public void Typing_FiltersListByContains()
+    public void FilterText_FollowsTypedText_EmptyWhenShowingPickedLabel()
     {
         var row = NewRow();
+        row.SelectedCategoryItem = Categories[0];
+
+        // The field shows the picked label — no highlight noise.
+        Assert.Equal(string.Empty, row.CategoryFilterText);
 
         row.CategoryPickerText = "воздух";
 
-        Assert.Single(row.FilteredRevitCategories);
-        Assert.Equal("-2008010", row.FilteredRevitCategories[0].Key);
-    }
-
-    [Fact]
-    public void OpenPicker_ResetsTextToPickedLabelAndShowsFullList()
-    {
-        var row = NewRow();
-        row.SelectedCategoryItem = Categories[0];
-
-        // User erased and typed garbage → the pick is invalidated by
-        // design (typing diverges from the picked label).
-        row.CategoryPickerText = "xyz";
-        row.IsCategoryPopupOpen = false;
-        Assert.Null(row.ValueText);
-
-        row.OpenCategoryPickerCommand.Execute(null);
-
-        // No valid pick left — the field resets to empty, the full
-        // unfiltered list is shown for a fresh pick.
-        Assert.Equal(string.Empty, row.CategoryPickerText);
-        Assert.Equal(3, row.FilteredRevitCategories.Count);
-        Assert.True(row.IsCategoryPopupOpen);
-    }
-
-    [Fact]
-    public void OpenPicker_WithValidPick_RestoresLabel()
-    {
-        var row = NewRow();
-        row.SelectedCategoryItem = Categories[0];
-        row.IsCategoryPopupOpen = false;
-
-        row.OpenCategoryPickerCommand.Execute(null);
-
-        // The pick survives a focus-open with unchanged text.
-        Assert.Equal("Фитинги трубопроводов", row.CategoryPickerText);
-        Assert.Equal("-2008049", row.ValueText);
-        Assert.Equal(3, row.FilteredRevitCategories.Count);
-    }
-
-    [Fact]
-    public void FilterText_EmptyWhenShowingPickedLabel()
-    {
-        var row = NewRow();
-        row.SelectedCategoryItem = Categories[0];
-
-        row.OpenCategoryPickerCommand.Execute(null);
-
-        Assert.Equal(string.Empty, row.CategoryFilterText);
+        Assert.Equal("воздух", row.CategoryFilterText);
     }
 
     [Fact]
     public void NullItemPick_DoesNotClearStoredValue()
     {
-        // The ListBox pushes null when the filtered list loses the current
+        // The dropdown pushes null when the filtered list loses the current
         // item — must not wipe the stored key.
         var row = NewRow();
         row.SelectedCategoryItem = Categories[0];
@@ -151,6 +106,16 @@ public sealed class AssignmentConditionRowPickerTests
 
         Assert.Null(row.ValueText);
         Assert.Equal(string.Empty, row.CategoryPickerText);
-        Assert.False(row.IsCategoryPopupOpen);
+    }
+
+    [Fact]
+    public void FullLists_AreExposedForTheDropdown()
+    {
+        // The AutoCompleteComboBox filters its own view — the VM exposes
+        // the full, unfiltered lists.
+        var row = NewRow();
+
+        Assert.Equal(3, row.RevitCategories.Count);
+        Assert.Same(Categories, row.RevitCategories);
     }
 }

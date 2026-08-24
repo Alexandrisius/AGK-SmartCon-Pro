@@ -211,101 +211,55 @@
                                                               Margin="0,0,4,0"/>
 
                                                     <Grid Grid.Column="4" VerticalAlignment="Center">
-                                                        <!-- Revit category: inline autocomplete —
-                                                             type to live-filter the dropdown with
-                                                             highlighted matches (same style as the
-                                                             panel tree search). The picked label is
-                                                             the field's text. -->
-                                                        <TextBox x:Name="CategoryBox"
-                                                                 Text="{Binding CategoryPickerText, UpdateSourceTrigger=PropertyChanged}"
-                                                                 Style="{DynamicResource CompactTextBox}"
-                                                                 VerticalAlignment="Center"
-                                                                 Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
-                                                            <i:Interaction.Triggers>
-                                                                <i:EventTrigger EventName="GotFocus">
-                                                                    <i:InvokeCommandAction Command="{Binding OpenCategoryPickerCommand}"/>
-                                                                </i:EventTrigger>
-                                                                <i:EventTrigger EventName="PreviewMouseLeftButtonDown">
-                                                                    <i:InvokeCommandAction Command="{Binding OpenCategoryPickerCommand}"/>
-                                                                </i:EventTrigger>
-                                                            </i:Interaction.Triggers>
-                                                        </TextBox>
-                                                        <Popup IsOpen="{Binding IsCategoryPopupOpen, Mode=TwoWay}"
-                                                               PlacementTarget="{Binding ElementName=CategoryBox}"
-                                                               Placement="Bottom"
-                                                               StaysOpen="False"
-                                                               AllowsTransparency="True">
-                                                            <Border Background="{DynamicResource SurfaceBrush}"
-                                                                    BorderBrush="{DynamicResource BorderAltBrush}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="4"
-                                                                    MinWidth="240">
-                                                                <ListBox ItemsSource="{Binding FilteredRevitCategories}"
-                                                                         SelectedItem="{Binding SelectedCategoryItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                         MaxHeight="260"
-                                                                         BorderThickness="0"
-                                                                         Style="{DynamicResource CompactListBox}">
-                                                                    <ListBox.ItemTemplate>
-                                                                        <DataTemplate>
-                                                                            <ContentControl>
-                                                                                <ContentControl.Content>
-                                                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
-                                                                                        <Binding Path="Label"/>
-                                                                                        <Binding Path="DataContext.CategoryFilterText" RelativeSource="{RelativeSource AncestorType=ListBox}"/>
-                                                                                    </MultiBinding>
-                                                                                </ContentControl.Content>
-                                                                            </ContentControl>
-                                                                        </DataTemplate>
-                                                                    </ListBox.ItemTemplate>
-                                                                </ListBox>
-                                                            </Border>
-                                                        </Popup>
+                                                        <!-- Revit category: editable autocomplete —
+                                                             the framework ComboBox owns its popup
+                                                             (focus/capture safe), the control filters
+                                                             the dropdown view as the user types with
+                                                             highlighted matches. -->
+                                                        <controls:AutoCompleteComboBox ItemsSource="{Binding RevitCategories}"
+                                                                                       SelectedItem="{Binding SelectedCategoryItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                       Text="{Binding CategoryPickerText, UpdateSourceTrigger=PropertyChanged}"
+                                                                                       TextSearch.TextPath="Label"
+                                                                                       Style="{DynamicResource CompactEditableComboBox}"
+                                                                                       ItemContainerStyle="{DynamicResource CompactComboBoxItem}"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
+                                                            <controls:AutoCompleteComboBox.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <ContentControl>
+                                                                        <ContentControl.Content>
+                                                                            <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                                                <Binding Path="Label"/>
+                                                                                <Binding Path="DataContext.CategoryFilterText" RelativeSource="{RelativeSource AncestorType=controls:AutoCompleteComboBox}"/>
+                                                                            </MultiBinding>
+                                                                        </ContentControl.Content>
+                                                                    </ContentControl>
+                                                                </DataTemplate>
+                                                            </controls:AutoCompleteComboBox.ItemTemplate>
+                                                        </controls:AutoCompleteComboBox>
 
-                                                        <!-- Part Type: same inline autocomplete. -->
-                                                        <TextBox x:Name="PartTypeBox"
-                                                                 Text="{Binding PartTypePickerText, UpdateSourceTrigger=PropertyChanged}"
-                                                                 Style="{DynamicResource CompactTextBox}"
-                                                                 VerticalAlignment="Center"
-                                                                 Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
-                                                            <i:Interaction.Triggers>
-                                                                <i:EventTrigger EventName="GotFocus">
-                                                                    <i:InvokeCommandAction Command="{Binding OpenPartTypePickerCommand}"/>
-                                                                </i:EventTrigger>
-                                                                <i:EventTrigger EventName="PreviewMouseLeftButtonDown">
-                                                                    <i:InvokeCommandAction Command="{Binding OpenPartTypePickerCommand}"/>
-                                                                </i:EventTrigger>
-                                                            </i:Interaction.Triggers>
-                                                        </TextBox>
-                                                        <Popup IsOpen="{Binding IsPartTypePopupOpen, Mode=TwoWay}"
-                                                               PlacementTarget="{Binding ElementName=PartTypeBox}"
-                                                               Placement="Bottom"
-                                                               StaysOpen="False"
-                                                               AllowsTransparency="True">
-                                                            <Border Background="{DynamicResource SurfaceBrush}"
-                                                                    BorderBrush="{DynamicResource BorderAltBrush}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="4"
-                                                                    MinWidth="240">
-                                                                <ListBox ItemsSource="{Binding FilteredPartTypes}"
-                                                                         SelectedItem="{Binding SelectedPartTypeItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                         MaxHeight="260"
-                                                                         BorderThickness="0"
-                                                                         Style="{DynamicResource CompactListBox}">
-                                                                    <ListBox.ItemTemplate>
-                                                                        <DataTemplate>
-                                                                            <ContentControl>
-                                                                                <ContentControl.Content>
-                                                                                    <MultiBinding Converter="{StaticResource SearchHighlight}">
-                                                                                        <Binding Path="Label"/>
-                                                                                        <Binding Path="DataContext.PartTypeFilterText" RelativeSource="{RelativeSource AncestorType=ListBox}"/>
-                                                                                    </MultiBinding>
-                                                                                </ContentControl.Content>
-                                                                            </ContentControl>
-                                                                        </DataTemplate>
-                                                                    </ListBox.ItemTemplate>
-                                                                </ListBox>
-                                                            </Border>
-                                                        </Popup>
+                                                        <!-- Part Type: same editable autocomplete. -->
+                                                        <controls:AutoCompleteComboBox ItemsSource="{Binding PartTypes}"
+                                                                                       SelectedItem="{Binding SelectedPartTypeItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                       Text="{Binding PartTypePickerText, UpdateSourceTrigger=PropertyChanged}"
+                                                                                       TextSearch.TextPath="Label"
+                                                                                       Style="{DynamicResource CompactEditableComboBox}"
+                                                                                       ItemContainerStyle="{DynamicResource CompactComboBoxItem}"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
+                                                            <controls:AutoCompleteComboBox.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <ContentControl>
+                                                                        <ContentControl.Content>
+                                                                            <MultiBinding Converter="{StaticResource SearchHighlight}">
+                                                                                <Binding Path="Label"/>
+                                                                                <Binding Path="DataContext.PartTypeFilterText" RelativeSource="{RelativeSource AncestorType=controls:AutoCompleteComboBox}"/>
+                                                                            </MultiBinding>
+                                                                        </ContentControl.Content>
+                                                                    </ContentControl>
+                                                                </DataTemplate>
+                                                            </controls:AutoCompleteComboBox.ItemTemplate>
+                                                        </controls:AutoCompleteComboBox>
 
                                                         <TextBox Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                                                                  VerticalAlignment="Center">

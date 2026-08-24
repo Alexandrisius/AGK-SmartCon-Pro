@@ -509,6 +509,80 @@
         </Setter>
     </Style>
 
+    <!-- Editable variant of CompactComboBox for AutoCompleteComboBox:
+         template MUST contain PART_EditableTextBox or IsEditable breaks. -->
+    <Style x:Key="CompactEditableComboBox" TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+        <Setter Property="Cursor" Value="IBeam"/>
+        <Setter Property="MaxDropDownHeight" Value="260"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="ToggleButton"
+                                      Focusable="False"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                      ClickMode="Press"
+                                      Background="Transparent"
+                                      BorderThickness="0">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border Background="Transparent" CornerRadius="4"/>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                IsHitTestVisible="False"/>
+                        <TextBox x:Name="PART_EditableTextBox"
+                                 Margin="6,2,22,2"
+                                 VerticalContentAlignment="Center"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Style="{x:Null}"/>
+                        <Path Data="M0,0 L4,4 L8,0 z"
+                              Fill="#555"
+                              IsHitTestVisible="False"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center"
+                              Margin="0,0,6,0"/>
+                        <Popup Placement="Bottom"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True"
+                               Focusable="False">
+                            <Border Background="White"
+                                    CornerRadius="6"
+                                    Margin="0,1,0,0"
+                                    BorderBrush="{DynamicResource BorderAltBrush}"
+                                    BorderThickness="1"
+                                    Padding="4"
+                                    MinWidth="{Binding ActualWidth, ElementName=Border}">
+                                <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Border" Property="Background" Value="{DynamicResource DisabledBgBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="CompactComboBoxItem" TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="Background" Value="Transparent"/>

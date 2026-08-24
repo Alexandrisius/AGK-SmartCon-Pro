@@ -76,13 +76,11 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
     private readonly IReadOnlyList<AssignmentValueItem> _revitCategories;
     private readonly IReadOnlyList<AssignmentValueItem> _partTypes;
-    private bool _suppressCategoryPopup;
-    private bool _suppressPartTypePopup;
 
     /// <summary>Editable text of the Revit category picker — the selected
     /// label when a category is picked, free text while the user types.
-    /// Typing live-filters the dropdown (highlighted matches, same style
-    /// as the panel tree search).</summary>
+    /// The AutoCompleteComboBox filters the dropdown view as the user
+    /// types (highlighted matches, same style as the panel tree search).</summary>
     [ObservableProperty]
     private string _categoryPickerText = string.Empty;
 
@@ -90,22 +88,14 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
     [ObservableProperty]
     private string _partTypePickerText = string.Empty;
 
-    [ObservableProperty]
-    private bool _isCategoryPopupOpen;
-
-    [ObservableProperty]
-    private bool _isPartTypePopupOpen;
-
     public string? Id { get; }
 
-    /// <summary>Full list right after the popup opens (text == selected
-    /// label); filtered by the typed text otherwise.</summary>
-    public IReadOnlyList<AssignmentValueItem> FilteredRevitCategories =>
-        FilterValues(_revitCategories, CategoryFilterText);
+    /// <summary>Full Revit category list — the AutoCompleteComboBox
+    /// filters its own view while the user types.</summary>
+    public IReadOnlyList<AssignmentValueItem> RevitCategories => _revitCategories;
 
-    /// <summary>Part Type list filtered by the typed text.</summary>
-    public IReadOnlyList<AssignmentValueItem> FilteredPartTypes =>
-        FilterValues(_partTypes, PartTypeFilterText);
+    /// <summary>Full Part Type list (same pattern).</summary>
+    public IReadOnlyList<AssignmentValueItem> PartTypes => _partTypes;
 
     /// <summary>The typed filter for the category list highlight — empty
     /// while the field shows the picked label (no highlight noise on a
@@ -179,9 +169,7 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
     partial void OnCategoryPickerTextChanged(string value)
     {
-        OnPropertyChanged(nameof(FilteredRevitCategories));
         OnPropertyChanged(nameof(CategoryFilterText));
-        if (_suppressCategoryPopup) return;
 
         // Typing diverges from the picked label → the pick is no longer
         // valid until the user picks from the filtered list again.
@@ -189,23 +177,19 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         {
             ValueText = null;
         }
-        IsCategoryPopupOpen = true;
     }
 
     partial void OnPartTypePickerTextChanged(string value)
     {
-        OnPropertyChanged(nameof(FilteredPartTypes));
         OnPropertyChanged(nameof(PartTypeFilterText));
-        if (_suppressPartTypePopup) return;
 
         if (!string.Equals(value, SelectedPartTypeLabel, StringComparison.Ordinal))
         {
             ValueText = null;
         }
-        IsPartTypePopupOpen = true;
     }
 
-    /// <summary>Selection proxy for the category ListBox: only a real user
+    /// <summary>Selection proxy for the category dropdown: only a real user
     /// pick writes <see cref="ValueText"/> — the filter-driven deselection
     /// (the current item fell out of the filtered list while typing) must
     /// NOT clear the stored value. The getter is always null: the list
@@ -216,50 +200,21 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
         set
         {
             if (value is null) return;
-            _suppressCategoryPopup = true;
             ValueText = value.Key;
             CategoryPickerText = value.Label;
-            _suppressCategoryPopup = false;
-            IsCategoryPopupOpen = false;
         }
     }
 
-    /// <summary>Same proxy for the Part Type ListBox.</summary>
+    /// <summary>Same proxy for the Part Type dropdown.</summary>
     public AssignmentValueItem? SelectedPartTypeItem
     {
         get => null;
         set
         {
             if (value is null) return;
-            _suppressPartTypePopup = true;
             ValueText = value.Key;
             PartTypePickerText = value.Label;
-            _suppressPartTypePopup = false;
-            IsPartTypePopupOpen = false;
         }
-    }
-
-    /// <summary>Focus on the category field: reset the text to the picked
-    /// label and open the full (unfiltered) list.</summary>
-    [CommunityToolkit.Mvvm.Input.RelayCommand]
-    public void OpenCategoryPicker()
-    {
-        _suppressCategoryPopup = true;
-        CategoryPickerText = SelectedCategoryLabel;
-        _suppressCategoryPopup = false;
-        OnPropertyChanged(nameof(FilteredRevitCategories));
-        IsCategoryPopupOpen = true;
-    }
-
-    /// <summary>Focus on the Part Type field (same pattern).</summary>
-    [CommunityToolkit.Mvvm.Input.RelayCommand]
-    public void OpenPartTypePicker()
-    {
-        _suppressPartTypePopup = true;
-        PartTypePickerText = SelectedPartTypeLabel;
-        _suppressPartTypePopup = false;
-        OnPropertyChanged(nameof(FilteredPartTypes));
-        IsPartTypePopupOpen = true;
     }
 
     private static string PickerFilterText(string text, string selectedLabel) =>
@@ -267,28 +222,8 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
     partial void OnValueTextChanged(string? value)
     {
-        // Only label refresh — popup lifetime is driven explicitly (open
-        // on focus/typing, close on pick). Closing here would collapse the
-        // dropdown mid-typing when ValueText clears on divergence.
         OnPropertyChanged(nameof(SelectedCategoryLabel));
         OnPropertyChanged(nameof(SelectedPartTypeLabel));
-    }
-
-    private static IReadOnlyList<AssignmentValueItem> FilterValues(
-        IReadOnlyList<AssignmentValueItem> source, string search)
-    {
-        if (string.IsNullOrWhiteSpace(search))
-        {
-            return source;
-        }
-
-        return source
-#if NET8_0_OR_GREATER
-            .Where(v => v.Label.Contains(search, StringComparison.OrdinalIgnoreCase))
-#else
-            .Where(v => v.Label.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0)
-#endif
-            .ToList();
     }
 
     private static string FindLabel(IReadOnlyList<AssignmentValueItem> source, string? key) =>
@@ -348,12 +283,8 @@ public sealed partial class AssignmentConditionRowViewModel : ObservableObject
 
         // The picker texts too — a switch invalidates the pick, and a
         // stale label would show a selection the model no longer holds.
-        _suppressCategoryPopup = true;
         CategoryPickerText = string.Empty;
-        _suppressCategoryPopup = false;
-        _suppressPartTypePopup = true;
         PartTypePickerText = string.Empty;
-        _suppressPartTypePopup = false;
     }
 
     partial void OnOperatorChanged(ValidationRuleOperator value)
