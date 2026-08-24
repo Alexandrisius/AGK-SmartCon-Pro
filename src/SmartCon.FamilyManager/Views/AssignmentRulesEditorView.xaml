@@ -49,7 +49,9 @@
                     <DataTemplate>
                         <StackPanel>
                             <!-- «ИЛИ» separator between groups (Emarsys Rule List
-                                 pattern: the relation is displayed ON the separator). -->
+                                 pattern: the relation is displayed ON the separator).
+                                 Kept deliberately quiet — thin lines + small muted
+                                 text, same visual weight as the «И» prefix. -->
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Center"
                                         Margin="0,0,0,8">
@@ -63,14 +65,13 @@
                                         </Style.Triggers>
                                     </Style>
                                 </StackPanel.Style>
-                                <Separator Width="120"/>
+                                <Separator Width="140" Foreground="{DynamicResource BorderAltBrush}"/>
                                 <TextBlock Text="{loc:Loc FM_AssignEditor_Or}"
-                                           FontWeight="Bold"
-                                           FontSize="14"
-                                           Foreground="{DynamicResource AccentBrush}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextMutedBrush}"
                                            Margin="10,0"
                                            VerticalAlignment="Center"/>
-                                <Separator Width="120"/>
+                                <Separator Width="140" Foreground="{DynamicResource BorderAltBrush}"/>
                             </StackPanel>
 
                         <Border BorderBrush="{DynamicResource BorderAltBrush}"
@@ -136,7 +137,6 @@
                                                         <ColumnDefinition Width="215"/>
                                                         <ColumnDefinition Width="140"/>
                                                         <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="46"/>
                                                         <ColumnDefinition Width="36"/>
                                                     </Grid.ColumnDefinitions>
 
@@ -211,6 +211,7 @@
                                                              typing prefix-searches the labels. -->
                                                         <ComboBox ItemsSource="{Binding DataContext.RevitCategories, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                   SelectedValuePath="Key"
+                                                                  DisplayMemberPath="Label"
                                                                   TextSearch.TextPath="Label"
                                                                   SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                                                                   Style="{DynamicResource CompactComboBox}"
@@ -220,6 +221,7 @@
                                                         <!-- Part Type: same inline search. -->
                                                         <ComboBox ItemsSource="{Binding DataContext.PartTypes, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                   SelectedValuePath="Key"
+                                                                  DisplayMemberPath="Label"
                                                                   TextSearch.TextPath="Label"
                                                                   SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                                                                   Style="{DynamicResource CompactComboBox}"
@@ -261,13 +263,7 @@
                                                         </StackPanel>
                                                     </Grid>
 
-                                                    <CheckBox Grid.Column="5"
-                                                              IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}"
-                                                              Style="{DynamicResource CompactCheckBox}"
-                                                              HorizontalAlignment="Center"
-                                                              VerticalAlignment="Center"/>
-
-                                                    <Button Grid.Column="6"
+                                                    <Button Grid.Column="5"
                                                             Command="{Binding DataContext.DeleteConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{DynamicResource FlatIconButton}"
