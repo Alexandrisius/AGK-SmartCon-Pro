@@ -37,4 +37,11 @@ public enum CategoryProvenance
     /// batch apply). Locked: rename never resets it.
     /// </summary>
     Manual = 4,
+
+    /// <summary>
+    /// Assigned by an auto-assignment rule (#241). Automatic provenance:
+    /// the rename handler re-derives it (re-evaluates the rules with the
+    /// row's current name); a manual pick replaces it.
+    /// </summary>
+    AutoRule = 5,
 }

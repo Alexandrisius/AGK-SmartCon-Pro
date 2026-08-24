@@ -415,6 +415,7 @@ public static partial class LocalizationService
         ru["FM_CategoryProvenance_Manual"] = "Выбрано вами"; en["FM_CategoryProvenance_Manual"] = "Picked by you";
         ru["FM_CategoryProvenance_AutoName"] = "Из каталога (совпадение имени)"; en["FM_CategoryProvenance_AutoName"] = "From catalog (name match)";
         ru["FM_CategoryProvenance_AutoHash"] = "Из дубликата (совпадение содержимого)"; en["FM_CategoryProvenance_AutoHash"] = "From duplicate (content match)";
+        ru["FM_CategoryProvenance_AutoRule"] = "По правилу автоназначения"; en["FM_CategoryProvenance_AutoRule"] = "By auto-assignment rule";
         ru["FM_CategoryProvenance_None"] = "Категория не назначена"; en["FM_CategoryProvenance_None"] = "No category assigned";
 
         // Import Validation Gate (status column tooltips)
@@ -502,6 +503,32 @@ public static partial class LocalizationService
         ru["FM_CTE_UnbindRulesMessage"] = "У атрибута \"{0}\" заданы правила валидации ({1}). При отвязке они будут удалены без возможности восстановления. Продолжить?"; en["FM_CTE_UnbindRulesMessage"] = "Attribute \"{0}\" has validation rules ({1}). Unbinding will permanently delete them. Continue?";
         ru["FM_CTE_ImportedFull"] = "Импортировано: категорий новых {0} (существующих {1}), атрибутов {2}, привязок {3}, правил {4}"; en["FM_CTE_ImportedFull"] = "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules";
         ru["FM_CTE_ImportedSkipped"] = " (пропущено: {0})"; en["FM_CTE_ImportedSkipped"] = " (skipped: {0})";
+        ru["FM_CTE_ImportedAssignment"] = "групп автоназначения: {0}"; en["FM_CTE_ImportedAssignment"] = "assignment groups: {0}";
+        ru["FM_CTE_ContextMenu_AssignmentRules"] = "Правила автоназначения"; en["FM_CTE_ContextMenu_AssignmentRules"] = "Auto-assignment Rules";
+        ru["FM_AssignEditor_Title"] = "Правила автоназначения"; en["FM_AssignEditor_Title"] = "Auto-assignment Rules";
+        ru["FM_AssignEditor_Subtitle"] = "Семейство получит категорию, если выполнены ВСЕ условия хотя бы ОДНОЙ группы (И внутри группы, ИЛИ между группами). Условия по атрибутам берутся из библиотеки атрибутов, по системным полям — из данных семейства."; en["FM_AssignEditor_Subtitle"] = "A family gets this category when ALL conditions of at least ONE group match (AND within a group, OR between groups). Attribute conditions use the attribute library; system fields come from the family data.";
+        ru["FM_AssignEditor_And"] = "И"; en["FM_AssignEditor_And"] = "AND";
+        ru["FM_AssignEditor_Or"] = "ИЛИ"; en["FM_AssignEditor_Or"] = "OR";
+        ru["FM_AssignEditor_ColSource"] = "Источник"; en["FM_AssignEditor_ColSource"] = "Source";
+        ru["FM_AssignEditor_ColField"] = "Атрибут / поле"; en["FM_AssignEditor_ColField"] = "Attribute / field";
+        ru["FM_AssignEditor_TreeNone"] = "Правила автоназначения не заданы — нажмите для настройки"; en["FM_AssignEditor_TreeNone"] = "No auto-assignment rules — click to configure";
+        ru["FM_AssignEditor_TreeCount"] = "Правила автоназначения: {0}"; en["FM_AssignEditor_TreeCount"] = "Auto-assignment rules: {0}";
+        ru["FM_AssignEditor_TreeCountDisabled"] = "Правила автоназначения: {0} (отключено: {1})"; en["FM_AssignEditor_TreeCountDisabled"] = "Auto-assignment rules: {0} (disabled: {1})";
+        ru["FM_RulePicker_Subtitle"] = "Под правила автоназначения подходят категории ({0}) — выберите одну:"; en["FM_RulePicker_Subtitle"] = "Categories matching the auto-assignment rules ({0}) — pick one:";
+        ru["FM_BatchImport_RuleConflict_Tooltip"] = "Правила автоназначения рекомендуют: {0}. Нажмите, чтобы выбрать из подходящих категорий."; en["FM_BatchImport_RuleConflict_Tooltip"] = "Auto-assignment rules recommend: {0}. Click to pick from the matching categories.";
+        ru["FM_AssignEditor_Group"] = "Группа"; en["FM_AssignEditor_Group"] = "Group";
+        ru["FM_AssignEditor_AddGroup"] = "Добавить группу"; en["FM_AssignEditor_AddGroup"] = "Add group";
+        ru["FM_AssignEditor_AddCondition"] = "Добавить условие"; en["FM_AssignEditor_AddCondition"] = "Add condition";
+        ru["FM_AssignEditor_SourceAttribute"] = "Атрибут библиотеки"; en["FM_AssignEditor_SourceAttribute"] = "Library attribute";
+        ru["FM_AssignEditor_SourceSystem"] = "Системное поле"; en["FM_AssignEditor_SourceSystem"] = "System field";
+        ru["FM_AssignEditor_Field_RevitCategory"] = "Категория Revit"; en["FM_AssignEditor_Field_RevitCategory"] = "Revit category";
+        ru["FM_AssignEditor_Field_PartType"] = "Тип детали"; en["FM_AssignEditor_Field_PartType"] = "Part Type";
+        ru["FM_AssignEditor_Field_FamilyName"] = "Имя семейства"; en["FM_AssignEditor_Field_FamilyName"] = "Family name";
+        ru["FM_AssignEditor_ErrorNoGroups"] = "Добавьте хотя бы одну группу с условием"; en["FM_AssignEditor_ErrorNoGroups"] = "Add at least one group with a condition";
+        ru["FM_AssignEditor_ErrorAttributeRequired"] = "Выберите атрибут библиотеки"; en["FM_AssignEditor_ErrorAttributeRequired"] = "Select a library attribute";
+        ru["FM_AssignEditor_ErrorFieldRequired"] = "Выберите системное поле"; en["FM_AssignEditor_ErrorFieldRequired"] = "Select a system field";
+        ru["FM_AssignEditor_ErrorCategoryRequired"] = "Выберите категорию Revit"; en["FM_AssignEditor_ErrorCategoryRequired"] = "Select a Revit category";
+        ru["FM_AssignEditor_ErrorPartTypeRequired"] = "Выберите тип детали"; en["FM_AssignEditor_ErrorPartTypeRequired"] = "Select a Part Type";
         ru["FM_RulesEditor_Title"] = "Правила валидации"; en["FM_RulesEditor_Title"] = "Validation Rules";
         ru["FM_RulesEditor_Add"] = "Добавить правило"; en["FM_RulesEditor_Add"] = "Add rule";
         ru["FM_RulesEditor_Save"] = "Сохранить"; en["FM_RulesEditor_Save"] = "Save";

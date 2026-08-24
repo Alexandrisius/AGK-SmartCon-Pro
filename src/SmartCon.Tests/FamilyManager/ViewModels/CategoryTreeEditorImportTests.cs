@@ -39,7 +39,8 @@ public sealed class CategoryTreeEditorImportTests : IDisposable
 
     private CategoryTreeEditorViewModel CreateVm() =>
         new(_categoryRepository, _dialogMock.Object, _attributeRepository, _bindingService, _mediator, _factoryMock.Object,
-            new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
+            new LocalValidationRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()),
+            new LocalAssignmentRuleRepository(_fixture.GetDatabase(), _fixture.GetMigrator()));
 
     [Fact]
     public async Task AddRootCommand_CreatesCategoryImmediately()

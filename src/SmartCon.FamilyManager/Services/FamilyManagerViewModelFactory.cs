@@ -34,6 +34,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyFactRepository _factRepository;
     private readonly IValidationRuleRepository _ruleRepository;
     private readonly ICategoryChangeGateService _categoryChangeGate;
+    private readonly IAssignmentRuleRepository _assignmentRuleRepository;
+    private readonly IRevitCategoryLabelService _revitCategoryLabels;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -62,7 +64,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyManagerUserSettingsRepository userSettingsRepository,
         IFamilyFactRepository factRepository,
         IValidationRuleRepository ruleRepository,
-        ICategoryChangeGateService categoryChangeGate)
+        ICategoryChangeGateService categoryChangeGate,
+        IAssignmentRuleRepository assignmentRuleRepository,
+        IRevitCategoryLabelService revitCategoryLabels)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -91,6 +95,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _factRepository = factRepository;
         _ruleRepository = ruleRepository;
         _categoryChangeGate = categoryChangeGate;
+        _assignmentRuleRepository = assignmentRuleRepository;
+        _revitCategoryLabels = revitCategoryLabels;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -114,7 +120,14 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {
         return new CategoryTreeEditorViewModel(
-            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository);
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository,
+            _assignmentRuleRepository);
+    }
+
+    public AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(string categoryId, string categoryPath)
+    {
+        return new AssignmentRulesEditorViewModel(
+            categoryId, categoryPath, _assignmentRuleRepository, _attributeDefRepository, _revitCategoryLabels);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()

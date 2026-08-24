@@ -76,6 +76,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IAboutDialogService _aboutDialogService;
     private readonly IFamilyImportValidationService _validationService;
     private readonly ICategoryChangeGateService _categoryChangeGate;
+    private readonly ICategoryAutoAssignService _autoAssignService;
     private readonly IMiniProjectMarker _miniProjectMarker;
     private readonly ISystemTypeFinder _systemTypeFinder;
 
@@ -253,6 +254,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _aboutDialogService = services.AboutDialogService;
         _validationService = services.ValidationService;
         _categoryChangeGate = services.CategoryChangeGate;
+        _autoAssignService = services.AutoAssignService;
         _miniProjectMarker = services.MiniProjectMarker;
         _systemTypeFinder = services.SystemTypeFinder;
 

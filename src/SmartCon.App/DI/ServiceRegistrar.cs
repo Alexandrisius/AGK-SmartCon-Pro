@@ -9,6 +9,7 @@ using SmartCon.FamilyManager;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.LocalCatalog;
+using SmartCon.FamilyManager.Services.Validation;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.FamilyManager.Views;
 using SmartCon.PipeConnect.Services;
@@ -157,6 +158,7 @@ public static class ServiceRegistrar
             presenter.Register<ValidationReportViewModel>(vm => new ValidationReportView(vm));
             presenter.Register<StatusDetailsViewModel>(vm => new StatusDetailsView(vm));
             presenter.Register<ValidationRulesEditorViewModel>(vm => new ValidationRulesEditorView(vm));
+            presenter.Register<AssignmentRulesEditorViewModel>(vm => new AssignmentRulesEditorView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
@@ -214,6 +216,11 @@ public static class ServiceRegistrar
         services.AddSingleton<ICategoryAttributeBindingService>(sp => sp.GetRequiredService<LocalCategoryAttributeBindingService>());
         services.AddSingleton<LocalValidationRuleRepository>();
         services.AddSingleton<IValidationRuleRepository>(sp => sp.GetRequiredService<LocalValidationRuleRepository>());
+        services.AddSingleton<LocalAssignmentRuleRepository>();
+        services.AddSingleton<IAssignmentRuleRepository>(sp => sp.GetRequiredService<LocalAssignmentRuleRepository>());
+        services.AddSingleton<ICategoryAutoAssignEngine, CategoryAutoAssignEngine>();
+        services.AddSingleton<ICategoryAutoAssignService, CategoryAutoAssignService>();
+        services.AddSingleton<IRevitCategoryLabelService, RevitCategoryLabelService>();
         services.AddSingleton<LocalAttributeValueRepository>();
         services.AddSingleton<IAttributeValueRepository>(sp => sp.GetRequiredService<LocalAttributeValueRepository>());
         services.AddSingleton<LocalFamilyDataImportRunRepository>();

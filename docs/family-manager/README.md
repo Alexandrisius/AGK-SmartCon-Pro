@@ -101,6 +101,8 @@ ExtensibleStorage остаётся паттерном существующих �
 | 27 | `family_types.family_key` — locale-invariant идентичность системной семьи | ADR-064 |
 | 28 | `catalog_versions.es_marker_version` — детект задачи `mini-project-marker-v1` | ADR-062 |
 | 29 | `family_dependencies` — связи parent→child (routing-фитинги, shared nested) | ADR-066 |
+| 30 | `family_dependencies.child_version_label` — embedded child version | #209 |
+| 31 | `category_assignment_rule_groups` + `category_assignment_conditions` — правила автоназначения категорий (CHECK attribute/system, FK CASCADE) | ADR-070 |
 
 ## Ключевые интерфейсы и модели
 

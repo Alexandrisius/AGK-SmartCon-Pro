@@ -407,7 +407,8 @@ public sealed partial class FamilyManagerMainViewModel
             importPrecomputer: _importPrecomputer,
             dedupService: _dedupService,
             dispatcher: _dispatcher,
-            validationService: _validationService);
+            validationService: _validationService,
+            autoAssignService: _autoAssignService);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -1150,7 +1151,8 @@ public sealed partial class FamilyManagerMainViewModel
             executor: executor,
             publishedByUser: _revitContext.GetUsername(),
             dispatcher: _dispatcher,
-            validationService: _validationService);
+            validationService: _validationService,
+            autoAssignService: _autoAssignService);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;

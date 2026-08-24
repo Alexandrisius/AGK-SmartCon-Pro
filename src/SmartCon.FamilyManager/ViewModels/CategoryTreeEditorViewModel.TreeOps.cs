@@ -316,4 +316,48 @@ public sealed partial class CategoryTreeEditorViewModel
         if (SelectedNode is not CategoryNodeViewModel node) return;
         await Delete();
     }
+
+    [RelayCommand]
+    private async Task ContextMenuAssignmentRules()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
+    /// <summary>#241: the filter icon on a category node — selects the
+    /// node and opens its assignment rules editor.</summary>
+    [RelayCommand]
+    private async Task OpenAssignmentRulesForNode(CategoryNodeViewModel? node)
+    {
+        if (node is null) return;
+        SelectedNode = node;
+        node.IsSelected = true;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
+    internal async Task OpenAssignmentRulesEditorAsync()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+
+        try
+        {
+            var vm = _viewModelFactory.CreateAssignmentRulesEditorViewModel(node.CategoryId, node.DisplayName);
+            await vm.InitializeAsync();
+            var saved = _dialogService.ShowAssignmentRulesEditor(vm);
+            if (saved == true)
+            {
+                SmartConLogger.Info($"Assignment rules saved for category '{node.DisplayName}'");
+                _metadataMediator.RaiseMetadataChanged();
+                // Refresh the tree icon counts in place (no tree rebuild —
+                // expansion state survives).
+                var (total, disabled) = await LoadAssignmentRuleCountsAsync(CancellationToken.None);
+                ApplyAssignmentRuleCounts(RootNodes, total, disabled);
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Open assignment rules editor for '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
+    }
 }

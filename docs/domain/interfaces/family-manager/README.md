@@ -22,6 +22,7 @@ module: family-manager-interfaces-index
 | [`actualization.md`](actualization.md) | Актуализация БД (ADR-054): `ICatalogActualizationService`, `IDatabaseActualizationTask`, `IFamilyMigrationExtractor`, `IDatabaseUpdateStateService` |
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `IValidationRuleRepository`, `IFamilyValidationEngine`, `IFamilyHealthChecker`, `IFamilyImportValidationService`, `ICategoryChangeGateService` |
 | [`dependencies.md`](dependencies.md) | Зависимости parent→child (ADR-066, V29): `IFamilyDependencyRepository`, `IFamilyDependencyCollector` |
+| [`assignment-rules.md`](assignment-rules.md) | Автоназначение категории (#241, ADR-070, V31): `ICategoryAutoAssignEngine`, `ICategoryAutoAssignService`, `IAssignmentRuleRepository`, `IRevitCategoryLabelService` |
 
 ## См. также
 

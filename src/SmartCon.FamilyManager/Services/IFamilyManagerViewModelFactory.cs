@@ -31,4 +31,6 @@ public interface IFamilyManagerViewModelFactory
         int validationRulesCount);
     ValidationRulesEditorViewModel CreateValidationRulesEditorViewModel(
         string bindingId, string attributeName, string categoryPath);
+    AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(
+        string categoryId, string categoryPath);
 }

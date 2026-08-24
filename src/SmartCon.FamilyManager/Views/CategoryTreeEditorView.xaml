@@ -103,20 +103,44 @@
                         </TreeView.ContextMenu>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal">
-                                    <Path Data="{StaticResource FolderIconGeometry}"
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="20"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Path Grid.Column="0" Data="{StaticResource FolderIconGeometry}"
                                            Fill="{DynamicResource TextMutedBrush}"
                                            Width="13" Height="13"
                                            Margin="0,0,6,0"
                                            Stretch="Uniform"
                                            VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding DisplayName}" 
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" 
                                                VerticalAlignment="Center"
                                                FontSize="12"/>
-                                    <TextBlock Text="{Binding FamilyCount, StringFormat='({0})'}"
+                                    <TextBlock Grid.Column="2" Text="{Binding FamilyCount, StringFormat='({0})'}"
                                                Margin="4,0,0,0" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
-                                </StackPanel>
+                                    <!-- #241: auto-assignment rules indicator, right-aligned
+                                         in a fixed column so all icons line up (same as the
+                                         validation shield in the attribute list). Gray cog
+                                         outline = no rules; gray check = all rules enabled;
+                                         orange cog outline = some rules disabled. -->
+                                    <Button Grid.Column="4"
+                                            Command="{Binding DataContext.OpenAssignmentRulesForNodeCommand, RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{DynamicResource FlatIconButton}"
+                                            ToolTip="{Binding AssignmentRulesTooltip}"
+                                            Padding="0"
+                                            Height="18"
+                                            VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial Kind="{Binding AssignmentIconKind}"
+                                                                    Foreground="{Binding AssignmentIconBrush}"
+                                                                    Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                         <TreeView.ItemContainerStyle>
@@ -131,6 +155,7 @@
                                                      DataContext="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource Self}}">
                                             <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Rename}" Command="{Binding ContextMenuRenameCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                                             <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AddChild}" Command="{Binding ContextMenuAddChildCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
+                                            <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_AssignmentRules}" Command="{Binding ContextMenuAssignmentRulesCommand}" Style="{StaticResource ModernMenuItem}"></MenuItem>
                                             <MenuItem Header="{loc:Loc FM_CTE_ContextMenu_Delete}" Command="{Binding ContextMenuDeleteCommand}" Style="{StaticResource DangerMenuItem}"></MenuItem>
                                         </ContextMenu>
                                     </Setter.Value>
