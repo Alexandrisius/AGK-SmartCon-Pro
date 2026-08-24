@@ -21,6 +21,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IValidationRuleRepository _ruleRepository;
+    private readonly IAssignmentRuleRepository _assignmentRuleRepository;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
 
     [ObservableProperty] private ObservableCollection<CategoryNodeViewModel> _rootNodes = [];
@@ -42,7 +43,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         ICategoryAttributeBindingService bindingService,
         IFamilyManagerMetadataMediator metadataMediator,
         IFamilyManagerViewModelFactory viewModelFactory,
-        IValidationRuleRepository ruleRepository)
+        IValidationRuleRepository ruleRepository,
+        IAssignmentRuleRepository assignmentRuleRepository)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
@@ -51,6 +53,7 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         _metadataMediator = metadataMediator;
         _viewModelFactory = viewModelFactory;
         _ruleRepository = ruleRepository;
+        _assignmentRuleRepository = assignmentRuleRepository;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)

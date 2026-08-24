@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 30)
+        if (initialVersion < 31)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v30");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v31");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -87,6 +87,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 28, MigrateV28Async, ct);
         await RunMigrationAsync(connection, 29, MigrateV29Async, ct);
         await RunMigrationAsync(connection, 30, MigrateV30Async, ct);
+        await RunMigrationAsync(connection, 31, MigrateV31Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1337,6 +1338,68 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             SmartConLogger.Info(columnAdded
                 ? "Migration v30: family_dependencies.child_version_label — embedded child version for dependency drift detection (E2, #209)"
                 : "Migration v30: child_version_label already present — version bumped to 30");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V31 (#241): adds the auto-assignment rule tables
+    /// (<c>category_assignment_rule_groups</c> + conditions with the
+    /// attribute/system CHECK constraint). Plain CREATE IF NOT EXISTS —
+    /// no data rewrite.
+    /// </summary>
+    private static async Task MigrateV31Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 31) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var tablesCreated = false;
+            if (!await TableExistsAsync(connection, "category_assignment_rule_groups", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateCategoryAssignmentRuleGroups;
+                await cmd.ExecuteNonQueryAsync(ct);
+                tablesCreated = true;
+            }
+
+            if (!await TableExistsAsync(connection, "category_assignment_conditions", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateCategoryAssignmentConditions;
+                await cmd.ExecuteNonQueryAsync(ct);
+                tablesCreated = true;
+            }
+
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateCategoryAssignmentRuleIndexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '31' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            if (tablesCreated)
+            {
+                SmartConLogger.Info("Migration v31: added category_assignment_rule_groups + category_assignment_conditions (auto-assignment, #241)");
+            }
+            else
+            {
+                SmartConLogger.Debug("Migration v31: assignment tables already present (fresh schema) — version bumped to 31");
+            }
         }
         catch
         {

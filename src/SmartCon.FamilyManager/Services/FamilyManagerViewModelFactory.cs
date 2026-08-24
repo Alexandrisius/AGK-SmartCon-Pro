@@ -34,6 +34,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IFamilyFactRepository _factRepository;
     private readonly IValidationRuleRepository _ruleRepository;
     private readonly ICategoryChangeGateService _categoryChangeGate;
+    private readonly IAssignmentRuleRepository _assignmentRuleRepository;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -62,7 +63,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IFamilyManagerUserSettingsRepository userSettingsRepository,
         IFamilyFactRepository factRepository,
         IValidationRuleRepository ruleRepository,
-        ICategoryChangeGateService categoryChangeGate)
+        ICategoryChangeGateService categoryChangeGate,
+        IAssignmentRuleRepository assignmentRuleRepository)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -91,6 +93,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _factRepository = factRepository;
         _ruleRepository = ruleRepository;
         _categoryChangeGate = categoryChangeGate;
+        _assignmentRuleRepository = assignmentRuleRepository;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -114,7 +117,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {
         return new CategoryTreeEditorViewModel(
-            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository);
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository,
+            _assignmentRuleRepository);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()

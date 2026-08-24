@@ -359,6 +359,7 @@ public static class StringLocalization
         public const string FM_CTE_UnbindRulesMessage = "FM_CTE_UnbindRulesMessage";
         public const string FM_CTE_ImportedFull = "FM_CTE_ImportedFull";
         public const string FM_CTE_ImportedSkipped = "FM_CTE_ImportedSkipped";
+        public const string FM_CTE_ImportedAssignment = "FM_CTE_ImportedAssignment";
         public const string FM_RulesEditor_Title = "FM_RulesEditor_Title";
         public const string FM_RulesEditor_Add = "FM_RulesEditor_Add";
         public const string FM_RulesEditor_Save = "FM_RulesEditor_Save";

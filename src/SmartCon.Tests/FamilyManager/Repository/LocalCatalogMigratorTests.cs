@@ -43,6 +43,8 @@ public sealed class LocalCatalogMigratorTests
         Assert.Contains("family_facts", tables);
         Assert.Contains("family_dependencies", tables);
         Assert.Contains("category_validation_rules", tables);
+        Assert.Contains("category_assignment_rule_groups", tables);
+        Assert.Contains("category_assignment_conditions", tables);
     }
 
     [Fact]
@@ -72,7 +74,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
     }
 
     [Fact]
@@ -111,7 +113,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -163,7 +165,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -215,7 +217,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -285,7 +287,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -353,7 +355,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -626,7 +628,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -697,7 +699,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -730,7 +732,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -793,7 +795,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
     }
 
     [Fact]
@@ -1062,7 +1064,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("30", version);
+        Assert.Equal("31", version);
 
         foreach (var (table, column) in new[]
         {
@@ -1180,7 +1182,7 @@ public sealed class LocalCatalogMigratorTests
 
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-        Assert.Equal("30", (string?)await versionCmd.ExecuteScalarAsync());
+        Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
 
         // Orphans are gone from both rebuilt tables.
         foreach (var (table, ghostId) in new[]
@@ -1244,7 +1246,7 @@ public sealed class LocalCatalogMigratorTests
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
             var version = (string?)await versionCmd.ExecuteScalarAsync();
-            Assert.Equal("30", version);
+            Assert.Equal("31", version);
         }
 
         using (var cmd = verify.CreateCommand())
@@ -1257,6 +1259,70 @@ public sealed class LocalCatalogMigratorTests
         {
             cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_validation_rules_binding'";
             Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V31_CreatesAssignmentTablesWithCheckConstraint()
+    {
+        // V31 (#241): assignment tables exist on a fresh schema and the
+        // CHECK constraint rejects a condition without attribute_id.
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("31", (string?)(await versionCmd.ExecuteScalarAsync()));
+        }
+
+        using (var checkCmd = connection.CreateCommand())
+        {
+            checkCmd.CommandText = """
+                INSERT INTO category_assignment_rule_groups (id, category_id) VALUES ('g1', 'missing-category');
+                INSERT INTO category_assignment_conditions (id, group_id, source_kind, attribute_id, system_key, operator)
+                VALUES ('c1', 'g1', 'attribute', NULL, NULL, 'Equals')
+                """;
+            await Assert.ThrowsAsync<SqliteException>(() => checkCmd.ExecuteNonQueryAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V31_RewindFromV30_RecreatesTables()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewindCmd = connection.CreateCommand();
+            rewindCmd.CommandText = """
+                DROP TABLE category_assignment_conditions;
+                DROP TABLE category_assignment_rule_groups;
+                UPDATE schema_info SET value = '30' WHERE key = 'schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using (var versionCmd = verify.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("31", (string?)(await versionCmd.ExecuteScalarAsync()));
+        }
+
+        using (var tableCmd = verify.CreateCommand())
+        {
+            tableCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('category_assignment_rule_groups','category_assignment_conditions')";
+            Assert.Equal(2L, (long)(await tableCmd.ExecuteScalarAsync())!);
         }
     }
 }

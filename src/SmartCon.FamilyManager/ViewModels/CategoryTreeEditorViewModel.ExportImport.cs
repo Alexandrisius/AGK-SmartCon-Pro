@@ -4,6 +4,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Json;
 using SmartCon.FamilyManager.Models.Metadata;
 using SmartCon.UI;
@@ -110,6 +111,9 @@ public sealed partial class CategoryTreeEditorViewModel
             }
         }
 
+        // Auto-assignment rules (package v4, #241).
+        var assignmentRules = await BuildAssignmentRulesExportAsync(tree, attrById, ct);
+
         return new MetadataExportPackage
         {
             Sections = new MetadataExportSections { Categories = true, Attributes = true, Bindings = true },
@@ -119,8 +123,90 @@ public sealed partial class CategoryTreeEditorViewModel
                 Name = a.Name,
                 Group = a.Group
             }).ToList(),
-            Bindings = bindings
+            Bindings = bindings,
+            AssignmentRules = assignmentRules
         };
+    }
+
+    private async Task<List<MetadataExportAssignmentRule>> BuildAssignmentRulesExportAsync(
+        CategoryTree tree,
+        Dictionary<string, AttributeDefinition> attrById,
+        CancellationToken ct)
+    {
+        var groups = await _assignmentRuleRepository.GetGroupsWithConditionsAsync(ct);
+        if (groups.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<MetadataExportAssignmentRule>();
+        foreach (var byCategory in groups.GroupBy(g => g.CategoryId))
+        {
+            if (tree.GetById(byCategory.Key) is null)
+            {
+                SmartConLogger.Warn(
+                    $"Assignment export: category {byCategory.Key} not found — rules skipped " +
+                    "[Action: пересоздайте правила автоназначения для этой категории]");
+                continue;
+            }
+
+            result.Add(new MetadataExportAssignmentRule
+            {
+                CategoryPath = tree.BuildFullPath(byCategory.Key),
+                Groups = byCategory
+                    .OrderBy(g => g.SortOrder)
+                    .Select(g => new MetadataExportAssignmentGroup
+                    {
+                        SortOrder = g.SortOrder,
+                        IsEnabled = g.IsEnabled,
+                        Conditions = BuildConditionExports(g, attrById)
+                    })
+                    .ToList()
+            });
+        }
+
+        return result;
+    }
+
+    private static List<MetadataExportAssignmentCondition> BuildConditionExports(
+        AssignmentRuleGroup group,
+        Dictionary<string, AttributeDefinition> attrById)
+    {
+        var conditions = new List<MetadataExportAssignmentCondition>();
+        foreach (var condition in group.Conditions.OrderBy(c => c.SortOrder))
+        {
+            string? attributeName = null;
+            if (condition.SourceKind == AssignmentConditionSourceKind.Attribute)
+            {
+                attributeName = condition.AttributeId is not null
+                    && attrById.TryGetValue(condition.AttributeId, out var attr)
+                        ? attr.Name
+                        : null;
+
+                if (attributeName is null)
+                {
+                    SmartConLogger.Warn(
+                        $"Assignment export: condition {condition.Id} references a missing attribute — condition skipped " +
+                        "[Action: пересоздайте условие в редакторе правил автоназначения]");
+                    continue;
+                }
+            }
+
+            conditions.Add(new MetadataExportAssignmentCondition
+            {
+                SourceKind = condition.SourceKind.ToString(),
+                AttributeName = attributeName,
+                SystemKey = condition.SystemField?.ToString(),
+                Operator = condition.Operator.ToString(),
+                ValueText = condition.ValueText,
+                ValueNumber = condition.ValueNumber,
+                MinValue = condition.MinValue,
+                MaxValue = condition.MaxValue,
+                IsEnabled = condition.IsEnabled,
+            });
+        }
+
+        return conditions;
     }
 
     private static List<MetadataExportCategoryNode> BuildExportCategoryTree(CategoryTree tree, string? parentId)
@@ -192,6 +278,7 @@ public sealed partial class CategoryTreeEditorViewModel
             var (categoriesCreated, categoriesReused) = await ImportCategoriesToDbAsync(package.Categories);
             var attributesImported = await ImportAttributesAsync(package.Attributes);
             var bindingResult = await ImportBindingsToDbAsync(package.Bindings);
+            var assignmentResult = await ImportAssignmentRulesToDbAsync(package.AssignmentRules);
 
             // Reload the editor from the DB: the tree, the binding
             // checkboxes and the rule badges all reflect the import
@@ -205,7 +292,15 @@ public sealed partial class CategoryTreeEditorViewModel
                     ?? "Imported: {0} new categories ({1} existing), {2} attributes, {3} bindings, {4} rules",
                 categoriesCreated, categoriesReused, attributesImported,
                 bindingResult.BindingsImported, bindingResult.RulesImported);
-            var skippedTotal = bindingResult.BindingsSkipped + bindingResult.RulesSkipped;
+            if (assignmentResult.GroupsImported > 0)
+            {
+                summary += ", " + string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_CTE_ImportedAssignment)
+                        ?? "assignment groups: {0}",
+                    assignmentResult.GroupsImported);
+            }
+            var skippedTotal = bindingResult.BindingsSkipped + bindingResult.RulesSkipped
+                + assignmentResult.GroupsSkipped + assignmentResult.ConditionsSkipped;
             if (skippedTotal > 0)
             {
                 summary += string.Format(
@@ -220,7 +315,9 @@ public sealed partial class CategoryTreeEditorViewModel
                 $"ImportFromJson: categoriesCreated={categoriesCreated}, categoriesReused={categoriesReused}, " +
                 $"attributesImported={attributesImported}, bindings={bindingResult.BindingsImported} " +
                 $"(skipped={bindingResult.BindingsSkipped}), rules={bindingResult.RulesImported} " +
-                $"(skipped={bindingResult.RulesSkipped}), warnings={bindingResult.Warnings.Count}");
+                $"(skipped={bindingResult.RulesSkipped}), assignmentGroups={assignmentResult.GroupsImported} " +
+                $"(skipped={assignmentResult.GroupsSkipped}, conditionsSkipped={assignmentResult.ConditionsSkipped}), " +
+                $"warnings={bindingResult.Warnings.Count + assignmentResult.Warnings.Count}");
         }
         catch (Exception ex)
         {
@@ -311,7 +408,8 @@ public sealed partial class CategoryTreeEditorViewModel
         if (source.Sections is not null
             && source.Categories is not null
             && source.Attributes is not null
-            && source.Bindings is not null)
+            && source.Bindings is not null
+            && source.AssignmentRules is not null)
         {
             return source;
         }
@@ -324,7 +422,149 @@ public sealed partial class CategoryTreeEditorViewModel
             Sections = source.Sections ?? new MetadataExportSections(),
             Categories = source.Categories ?? [],
             Attributes = source.Attributes ?? [],
-            Bindings = source.Bindings ?? []
+            Bindings = source.Bindings ?? [],
+            AssignmentRules = source.AssignmentRules ?? []
         };
     }
+
+    /// <summary>
+    /// Writes package assignment rules to the DB (#241). Policy mirrors
+    /// the validation-rule import: existing groups of a category are never
+    /// overwritten (package groups are appended); a condition whose
+    /// attribute/operator/system key cannot be resolved is skipped with a
+    /// warning; a group that lost all its conditions is not created.
+    /// </summary>
+    private async Task<AssignmentImportResult> ImportAssignmentRulesToDbAsync(
+        List<MetadataExportAssignmentRule> assignmentRules)
+    {
+        var groupsImported = 0;
+        var groupsSkipped = 0;
+        var conditionsSkipped = 0;
+        var warnings = new List<string>();
+
+        if (assignmentRules.Count == 0)
+        {
+            return new AssignmentImportResult(0, 0, 0, warnings);
+        }
+
+        var allCategories = await _categoryRepository.GetAllAsync();
+        var pathToCategory = allCategories
+            .ToDictionary(c => c.FullPath, c => c, StringComparer.OrdinalIgnoreCase);
+
+        var allAttributes = await _attributeDefRepository.GetAllAsync();
+        var nameToAttr = allAttributes
+            .ToDictionary(a => a.Name, a => a, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var rule in assignmentRules)
+        {
+            if (!pathToCategory.TryGetValue(rule.CategoryPath, out var category))
+            {
+                warnings.Add($"Assignment rule skipped: category '{rule.CategoryPath}' not found.");
+                groupsSkipped += rule.Groups.Count;
+                conditionsSkipped += rule.Groups.Sum(g => g.Conditions.Count);
+                continue;
+            }
+
+            foreach (var group in rule.Groups)
+            {
+                var importedConditions = 0;
+                AssignmentRuleGroup? createdGroup = null;
+
+                foreach (var condition in group.Conditions)
+                {
+                    var parsed = ParseAssignmentCondition(condition, nameToAttr, warnings);
+                    if (parsed is null)
+                    {
+                        conditionsSkipped++;
+                        continue;
+                    }
+
+                    createdGroup ??= await _assignmentRuleRepository.CreateGroupAsync(category.Id);
+                    await _assignmentRuleRepository.CreateConditionAsync(
+                        createdGroup.Id,
+                        parsed.Value.SourceKind,
+                        parsed.Value.AttributeId,
+                        parsed.Value.SystemField,
+                        parsed.Value.Operator,
+                        condition.ValueText,
+                        condition.ValueNumber,
+                        condition.MinValue,
+                        condition.MaxValue,
+                        condition.IsEnabled);
+                    importedConditions++;
+                }
+
+                if (createdGroup is null)
+                {
+                    groupsSkipped++;
+                    continue;
+                }
+
+                if (!group.IsEnabled)
+                {
+                    await _assignmentRuleRepository.UpdateGroupAsync(createdGroup.Id, group.SortOrder, false);
+                }
+
+                groupsImported++;
+            }
+        }
+
+        return new AssignmentImportResult(groupsImported, groupsSkipped, conditionsSkipped, warnings);
+    }
+
+    private static (AssignmentConditionSourceKind SourceKind, string? AttributeId, AssignmentSystemField? SystemField, ValidationRuleOperator Operator)?
+        ParseAssignmentCondition(
+            MetadataExportAssignmentCondition condition,
+            Dictionary<string, AttributeDefinition> nameToAttr,
+            List<string> warnings)
+    {
+        if (!Enum.TryParse<AssignmentConditionSourceKind>(condition.SourceKind, out var sourceKind)
+            || !Enum.IsDefined(typeof(AssignmentConditionSourceKind), sourceKind))
+        {
+            warnings.Add($"Assignment condition skipped: unknown source kind '{condition.SourceKind}'.");
+            return null;
+        }
+
+        string? attributeId = null;
+        AssignmentSystemField? systemField = null;
+
+        if (sourceKind == AssignmentConditionSourceKind.Attribute)
+        {
+            if (condition.AttributeName is null
+                || !nameToAttr.TryGetValue(condition.AttributeName, out var attribute))
+            {
+                warnings.Add($"Assignment condition skipped: attribute '{condition.AttributeName ?? "<null>"}' not found.");
+                return null;
+            }
+
+            attributeId = attribute.Id;
+        }
+        else
+        {
+            if (!Enum.TryParse<AssignmentSystemField>(condition.SystemKey, out var parsedField)
+                || !Enum.IsDefined(typeof(AssignmentSystemField), parsedField))
+            {
+                warnings.Add($"Assignment condition skipped: unknown system field '{condition.SystemKey ?? "<null>"}'.");
+                return null;
+            }
+
+            systemField = parsedField;
+        }
+
+        if (!Enum.TryParse<ValidationRuleOperator>(condition.Operator, out var ruleOperator)
+            || !Enum.IsDefined(typeof(ValidationRuleOperator), ruleOperator)
+            || !AssignmentOperatorPolicy.IsAllowed(sourceKind, systemField, ruleOperator))
+        {
+            warnings.Add($"Assignment condition skipped: operator '{condition.Operator}' is unknown or not allowed.");
+            return null;
+        }
+
+        return (sourceKind, attributeId, systemField, ruleOperator);
+    }
+
+    private sealed record AssignmentImportResult(
+        int GroupsImported,
+        int GroupsSkipped,
+        int ConditionsSkipped,
+        IReadOnlyList<string> Warnings);
 }
