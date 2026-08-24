@@ -260,6 +260,104 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task CopyParentRules_AppendsCopiedGroupsAsFreshRows()
+    {
+        // #241 editor sugar: the parent's rules arrive as NEW rows (ids
+        // null) — a starting point, fully independent after save.
+        var parent = await _categoryRepository.AddAsync("Оборудование", null, 0);
+        var parentGroup = await _ruleRepository.CreateGroupAsync(parent.Id);
+        var parentAttribute = await _attributeRepository.GetByNameAsync("ADSK_Материал");
+        await _ruleRepository.CreateConditionAsync(
+            parentGroup.Id, AssignmentConditionSourceKind.Attribute, parentAttribute!.Id, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+
+        var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
+        var vm = new AssignmentRulesEditorViewModel(
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            parent.Id, "Оборудование");
+        await vm.InitializeAsync();
+
+        Assert.True(vm.HasParentRulesToCopy);
+        Assert.Empty(vm.Groups);
+
+        await vm.CopyParentRulesCommand.ExecuteAsync(null);
+
+        var group = Assert.Single(vm.Groups);
+        Assert.Null(group.Id);
+        Assert.Equal(1, group.Number);
+        var condition = Assert.Single(group.Conditions);
+        Assert.Null(condition.Id);
+        Assert.Equal(ValidationRuleOperator.Contains, condition.Operator);
+        Assert.Equal("сталь", condition.ValueText);
+        Assert.Contains("Оборудование", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task CopyParentRules_SavesUnderChild_NotParent()
+    {
+        var parent = await _categoryRepository.AddAsync("Оборудование", null, 0);
+        var parentGroup = await _ruleRepository.CreateGroupAsync(parent.Id);
+        var parentAttribute = await _attributeRepository.GetByNameAsync("ADSK_Материал");
+        await _ruleRepository.CreateConditionAsync(
+            parentGroup.Id, AssignmentConditionSourceKind.Attribute, parentAttribute!.Id, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+
+        var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
+        var vm = new AssignmentRulesEditorViewModel(
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            parent.Id, "Оборудование");
+        await vm.InitializeAsync();
+        await vm.CopyParentRulesCommand.ExecuteAsync(null);
+
+        var saved = false;
+        vm.RequestClose += _ => saved = true;
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.True(saved);
+        var parentGroups = await _ruleRepository.GetGroupsForCategoryAsync(parent.Id);
+        Assert.Single(parentGroups.Single().Conditions); // parent untouched
+        var childGroups = await _ruleRepository.GetGroupsForCategoryAsync(child.Id);
+        Assert.Equal("сталь", Assert.Single(childGroups.Single().Conditions).ValueText);
+    }
+
+    [Fact]
+    public async Task CopyParentRules_AppendsAfterExisting_AndRenumbers()
+    {
+        var parent = await _categoryRepository.AddAsync("Оборудование", null, 0);
+        var parentGroup = await _ruleRepository.CreateGroupAsync(parent.Id);
+        var parentAttribute = await _attributeRepository.GetByNameAsync("ADSK_Материал");
+        await _ruleRepository.CreateConditionAsync(
+            parentGroup.Id, AssignmentConditionSourceKind.Attribute, parentAttribute!.Id, null,
+            ValidationRuleOperator.Contains, "сталь", null, null, null, true);
+
+        var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
+        var vm = new AssignmentRulesEditorViewModel(
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            parent.Id, "Оборудование");
+        await vm.InitializeAsync();
+        vm.AddGroupCommand.Execute(null);
+
+        await vm.CopyParentRulesCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.Groups.Count);
+        Assert.Equal(1, vm.Groups[0].Number);
+        Assert.Equal(2, vm.Groups[1].Number);
+        Assert.Null(vm.Groups[1].Id);
+    }
+
+    [Fact]
+    public async Task CopyParentRules_NoSource_HiddenAndNoOp()
+    {
+        var vm = new AssignmentRulesEditorViewModel(
+            "cat", "Категория", _ruleRepository, _attributeRepository, _labelsMock.Object);
+        await vm.InitializeAsync();
+
+        Assert.False(vm.HasParentRulesToCopy);
+        vm.CopyParentRulesCommand.Execute(null);
+        Assert.Empty(vm.Groups);
+    }
+
+    [Fact]
     public async Task SourceKindSwitch_ResetsOperatorToAllowed()
     {
         var vm = await CreateVmAsync("Операторы");

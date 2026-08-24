@@ -300,13 +300,23 @@
         <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <Button Grid.Column="0"
                     Command="{Binding AddGroupCommand}"
                     Style="{DynamicResource SecondaryButton}"
                     Content="{loc:Loc FM_AssignEditor_AddGroup}"/>
-            <TextBlock Grid.Column="1"
+            <!-- #241: copies the nearest rule-bearing ancestor's rules as
+                 NEW independent rows — a starting point to refine. -->
+            <Button Grid.Column="1"
+                    Command="{Binding CopyParentRulesCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="8,0,0,0"
+                    Content="{loc:Loc FM_AssignEditor_CopyParent}"
+                    ToolTip="{Binding CopyParentRulesTooltip}"
+                    Visibility="{Binding HasParentRulesToCopy, Converter={StaticResource BoolToVis}}"/>
+            <TextBlock Grid.Column="2"
                        Text="{Binding StatusMessage}"
                        Foreground="{DynamicResource DangerBrush}"
                        VerticalAlignment="Center"

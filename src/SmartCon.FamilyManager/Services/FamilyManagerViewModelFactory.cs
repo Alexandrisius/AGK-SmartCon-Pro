@@ -124,10 +124,12 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             _assignmentRuleRepository);
     }
 
-    public AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(string categoryId, string categoryPath)
+    public AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(
+        string categoryId, string categoryPath, string? copyFromCategoryId = null, string? copyFromCategoryPath = null)
     {
         return new AssignmentRulesEditorViewModel(
-            categoryId, categoryPath, _assignmentRuleRepository, _attributeDefRepository, _revitCategoryLabels);
+            categoryId, categoryPath, _assignmentRuleRepository, _attributeDefRepository, _revitCategoryLabels,
+            copyFromCategoryId, copyFromCategoryPath);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()

@@ -514,6 +514,10 @@ public static partial class LocalizationService
         ru["FM_AssignEditor_TreeNone"] = "Правила автоназначения не заданы — нажмите для настройки"; en["FM_AssignEditor_TreeNone"] = "No auto-assignment rules — click to configure";
         ru["FM_AssignEditor_TreeCount"] = "Правила автоназначения: {0}"; en["FM_AssignEditor_TreeCount"] = "Auto-assignment rules: {0}";
         ru["FM_AssignEditor_TreeCountDisabled"] = "Правила автоназначения: {0} (отключено: {1})"; en["FM_AssignEditor_TreeCountDisabled"] = "Auto-assignment rules: {0} (disabled: {1})";
+        ru["FM_AssignEditor_CopyParent"] = "Взять условия родителя"; en["FM_AssignEditor_CopyParent"] = "Copy parent rules";
+        ru["FM_AssignEditor_CopyParentTooltip"] = "Копирует правила категории «{0}» в этот редактор как отправную точку. После копирования правила полностью независимы."; en["FM_AssignEditor_CopyParentTooltip"] = "Copies the rules of category '{0}' into this editor as a starting point. Afterwards they are fully independent.";
+        ru["FM_AssignEditor_CopyParentDone"] = "Добавлено групп из «{0}»: {1}. Проверьте условия и сохраните."; en["FM_AssignEditor_CopyParentDone"] = "Groups copied from '{0}': {1}. Review the conditions and save.";
+        ru["FM_AssignEditor_CopyParentEmpty"] = "В правилах родителя нет условий для копирования"; en["FM_AssignEditor_CopyParentEmpty"] = "Parent rules have no conditions to copy";
         ru["FM_RulePicker_Subtitle"] = "Под правила автоназначения подходят категории ({0}) — выберите одну:"; en["FM_RulePicker_Subtitle"] = "Categories matching the auto-assignment rules ({0}) — pick one:";
         ru["FM_BatchImport_RuleConflict_Tooltip"] = "Правила автоназначения рекомендуют: {0}. Нажмите, чтобы выбрать из подходящих категорий."; en["FM_BatchImport_RuleConflict_Tooltip"] = "Auto-assignment rules recommend: {0}. Click to pick from the matching categories.";
         ru["FM_AssignEditor_Group"] = "Группа"; en["FM_AssignEditor_Group"] = "Group";

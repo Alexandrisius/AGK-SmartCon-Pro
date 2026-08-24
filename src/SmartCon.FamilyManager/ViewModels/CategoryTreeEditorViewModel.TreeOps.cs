@@ -341,7 +341,9 @@ public sealed partial class CategoryTreeEditorViewModel
 
         try
         {
-            var vm = _viewModelFactory.CreateAssignmentRulesEditorViewModel(node.CategoryId, node.DisplayName);
+            var copyFrom = FindNearestAncestorWithRules(node);
+            var vm = _viewModelFactory.CreateAssignmentRulesEditorViewModel(
+                node.CategoryId, node.DisplayName, copyFrom?.CategoryId, copyFrom?.Path);
             await vm.InitializeAsync();
             var saved = _dialogService.ShowAssignmentRulesEditor(vm);
             if (saved == true)
@@ -359,5 +361,24 @@ public sealed partial class CategoryTreeEditorViewModel
             SmartConLogger.Error($"Open assignment rules editor for '{node.DisplayName}' failed: {ex.Message}");
             StatusMessage = ex.Message;
         }
+    }
+
+    /// <summary>#241: nearest ancestor with configured rules — the source
+    /// for the editor's «Взять условия родителя» button. Null when no
+    /// ancestor has rules.</summary>
+    internal static (string CategoryId, string Path)? FindNearestAncestorWithRules(CategoryNodeViewModel node)
+    {
+        var current = node.Parent;
+        while (current is not null)
+        {
+            if (current is CategoryNodeViewModel category && category.AssignmentRuleCount > 0)
+            {
+                return (category.CategoryId, category.FullPath);
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 }

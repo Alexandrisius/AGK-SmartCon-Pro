@@ -157,7 +157,6 @@ Tri-state результат: `NoMatch` / `Matched(categoryId)` /
 **Файл:** `Models/FamilyManager/CategoryProvenance.cs`
 
 ## Batch-диалог: рекомендация и конфликт-иконка
-
 `FamilyBatchImportRow` несёт `RecommendedCategoryIds/Paths` (рекомендация
 правил для ЛЮБОЙ строки — New, Existing, Duplicate) и computed
 `ShowRuleConflictIcon` — иконка ⚠ в колонке «Категория», пока текущая
@@ -168,3 +167,16 @@ Tri-state результат: `NoMatch` / `Matched(categoryId)` /
 
 **Файлы:** `SmartCon.FamilyManager/ViewModels/FamilyBatchImportRow.cs`,
 `CategoryPickerViewModel.cs`
+
+## Редактор: «Взять условия родителя»
+
+Кнопка в редакторе правил подкатегории (#241): правила ближайшего
+предка с настроенными правилами копируются в редактор как НОВЫЕ
+независимые строки (id null → при сохранении создаются заново).
+Источник резолвится в дереве (`FindNearestAncestorWithRules` — подъём
+по Parent до первого узла с `AssignmentRuleCount > 0`). Чисто
+редакторский сахар: наследования правил нет, скопированное никак не
+связано с родителем в рантайме.
+
+**Файлы:** `AssignmentRulesEditorViewModel.cs` (CopyParentRules),
+`CategoryTreeEditorViewModel.TreeOps.cs` (FindNearestAncestorWithRules)

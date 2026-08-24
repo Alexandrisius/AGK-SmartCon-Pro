@@ -378,6 +378,10 @@ public static class StringLocalization
         public const string FM_AssignEditor_TreeNone = "FM_AssignEditor_TreeNone";
         public const string FM_AssignEditor_TreeCount = "FM_AssignEditor_TreeCount";
         public const string FM_AssignEditor_TreeCountDisabled = "FM_AssignEditor_TreeCountDisabled";
+        public const string FM_AssignEditor_CopyParent = "FM_AssignEditor_CopyParent";
+        public const string FM_AssignEditor_CopyParentTooltip = "FM_AssignEditor_CopyParentTooltip";
+        public const string FM_AssignEditor_CopyParentDone = "FM_AssignEditor_CopyParentDone";
+        public const string FM_AssignEditor_CopyParentEmpty = "FM_AssignEditor_CopyParentEmpty";
         public const string FM_RulePicker_Subtitle = "FM_RulePicker_Subtitle";
         public const string FM_BatchImport_RuleConflict_Tooltip = "FM_BatchImport_RuleConflict_Tooltip";
         public const string FM_AssignEditor_ErrorNoGroups = "FM_AssignEditor_ErrorNoGroups";

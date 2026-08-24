@@ -24,6 +24,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     private readonly IAssignmentRuleRepository _ruleRepository;
     private readonly IAttributeDefinitionRepository _attributeRepository;
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
+    private readonly string? _copyFromCategoryId;
+    private readonly string? _copyFromCategoryPath;
 
     public string CategoryPath { get; }
 
@@ -32,6 +34,18 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
+
+    /// <summary>Nearest rule-bearing ancestor exists — the editor shows the
+    /// «Взять условия родителя» button (#241).</summary>
+    public bool HasParentRulesToCopy => _copyFromCategoryId is not null;
+
+    /// <summary>Names the ancestor whose rules will be copied.</summary>
+    public string CopyParentRulesTooltip =>
+        string.Format(
+            Localize(
+                SKeys.FM_AssignEditor_CopyParentTooltip,
+                "Копирует правила категории «{0}» в этот редактор как отправную точку. После копирования правила полностью независимы."),
+            _copyFromCategoryPath ?? string.Empty);
 
     public IReadOnlyList<AssignmentOperatorItem> AttributeOperators { get; }
     public IReadOnlyList<AssignmentOperatorItem> OrdinalOperators { get; }
@@ -46,12 +60,16 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         string categoryPath,
         IAssignmentRuleRepository ruleRepository,
         IAttributeDefinitionRepository attributeRepository,
-        IRevitCategoryLabelService revitCategoryLabels)
+        IRevitCategoryLabelService revitCategoryLabels,
+        string? copyFromCategoryId = null,
+        string? copyFromCategoryPath = null)
     {
         _categoryId = categoryId;
         _ruleRepository = ruleRepository;
         _attributeRepository = attributeRepository;
         _revitCategoryLabels = revitCategoryLabels;
+        _copyFromCategoryId = copyFromCategoryId;
+        _copyFromCategoryPath = copyFromCategoryPath;
         CategoryPath = categoryPath;
 
         AttributeOperators = AssignmentOperatorPolicy.AttributeOperators
@@ -97,12 +115,75 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
                     g.IsEnabled,
                     g.Conditions.OrderBy(c => c.SortOrder)
                         .Where(ConditionEditable)
-                        .Select(c => new AssignmentConditionRowViewModel(
-                            c.Id, c.SourceKind, c.AttributeId, c.SystemField, c.Operator,
-                            c.ValueText, c.ValueNumber, c.MinValue, c.MaxValue, c.IsEnabled,
-                            AttributeOperators, OrdinalOperators, TextOperators,
-                            RevitCategories, PartTypes)))));
+                        .Select(c => CreateConditionRow(c, c.Id)))));
     }
+
+    /// <summary>#241: appends the nearest rule-bearing ancestor's groups to
+    /// this editor as NEW rows (ids null — saved as fresh rules). Pure
+    /// editor sugar: the copies are fully independent afterwards, nothing
+    /// links them to the parent at runtime.</summary>
+    [RelayCommand]
+    private async Task CopyParentRulesAsync()
+    {
+        if (_copyFromCategoryId is null)
+        {
+            return;
+        }
+
+        using var _scope = SmartConLogger.BeginScope("AssignRules",
+            ("Method", nameof(CopyParentRulesAsync)),
+            ("CopyFromCategoryId", _copyFromCategoryId));
+
+        try
+        {
+            var groups = await _ruleRepository.GetGroupsForCategoryAsync(_copyFromCategoryId);
+            var added = 0;
+            foreach (var group in groups.OrderBy(g => g.SortOrder))
+            {
+                var conditions = group.Conditions.OrderBy(c => c.SortOrder)
+                    .Where(ConditionEditable)
+                    .Select(c => CreateConditionRow(c, null))
+                    .ToList();
+                if (conditions.Count == 0)
+                {
+                    continue;
+                }
+
+                Groups.Add(new AssignmentGroupRowViewModel(null, Groups.Count + 1, group.IsEnabled, conditions));
+                added++;
+            }
+
+            if (added == 0)
+            {
+                StatusMessage = Localize(
+                    SKeys.FM_AssignEditor_CopyParentEmpty,
+                    "В правилах родителя нет условий для копирования");
+                return;
+            }
+
+            StatusMessage = string.Format(
+                Localize(
+                    SKeys.FM_AssignEditor_CopyParentDone,
+                    "Добавлено групп из «{0}»: {1}. Проверьте условия и сохраните."),
+                _copyFromCategoryPath ?? string.Empty,
+                added);
+            SmartConLogger.Info($"Copied {added} assignment rule group(s) from '{_copyFromCategoryPath}'");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Copy parent rules failed: {ex.Message} [Action: проверьте БД каталога и лог]");
+            StatusMessage = string.Format(
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
+                ex.Message);
+        }
+    }
+
+    private AssignmentConditionRowViewModel CreateConditionRow(AssignmentCondition c, string? id) =>
+        new(
+            id, c.SourceKind, c.AttributeId, c.SystemField, c.Operator,
+            c.ValueText, c.ValueNumber, c.MinValue, c.MaxValue, c.IsEnabled,
+            AttributeOperators, OrdinalOperators, TextOperators,
+            RevitCategories, PartTypes);
 
     /// <summary>
     /// SystemFamilyKey conditions are engine-supported but not editable in
@@ -115,8 +196,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         if (condition.SystemField == AssignmentSystemField.SystemFamilyKey)
         {
             SmartConLogger.Warn(
-                $"Assignment editor: condition {condition.Id} targets SystemFamilyKey which is not editable — it will be dropped on save " +
-                "[Action: если условие ещё нужно — отмените редактирование и пересоздайте его по поддерживаемому полю (Категория Revit / Тип детали / Имя семейства)]");
+                $"Assignment editor: condition {condition.Id} targets SystemFamilyKey which is not editable — it is skipped (load/copy) and will not be saved " +
+                "[Action: если условие ещё нужно — пересоздайте его по поддерживаемому полю (Категория Revit / Тип детали / Имя семейства)]");
             return false;
         }
 
