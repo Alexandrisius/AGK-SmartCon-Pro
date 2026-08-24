@@ -110,4 +110,20 @@ public static class PartTypeLabelMap
             return null;
         return LocalizationService.CurrentLanguage == Language.RU ? pair.Ru : pair.En;
     }
+
+    /// <summary>
+    /// All known Part Type entries as (ordinal-string key, localized
+    /// label), sorted by label — the picker source for the auto-assignment
+    /// editor (#241). Keys are the invariant ordinal strings stored in
+    /// <see cref="FamilyFact.ValueKey"/> and assignment condition values.
+    /// </summary>
+    public static IReadOnlyList<(string Key, string Label)> GetAllEntries()
+    {
+        var currentLanguage = LocalizationService.CurrentLanguage;
+        return Labels
+            .Select(kvp => (Key: kvp.Key.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Label: currentLanguage == Language.RU ? kvp.Value.Ru : kvp.Value.En))
+            .OrderBy(e => e.Label, StringComparer.CurrentCulture)
+            .ToList();
+    }
 }

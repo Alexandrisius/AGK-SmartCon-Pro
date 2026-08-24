@@ -316,4 +316,33 @@ public sealed partial class CategoryTreeEditorViewModel
         if (SelectedNode is not CategoryNodeViewModel node) return;
         await Delete();
     }
+
+    [RelayCommand]
+    private async Task ContextMenuAssignmentRules()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
+    internal async Task OpenAssignmentRulesEditorAsync()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+
+        try
+        {
+            var vm = _viewModelFactory.CreateAssignmentRulesEditorViewModel(node.CategoryId, node.DisplayName);
+            await vm.InitializeAsync();
+            var saved = _dialogService.ShowAssignmentRulesEditor(vm);
+            if (saved == true)
+            {
+                SmartConLogger.Info($"Assignment rules saved for category '{node.DisplayName}'");
+                _metadataMediator.RaiseMetadataChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Open assignment rules editor for '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
+    }
 }

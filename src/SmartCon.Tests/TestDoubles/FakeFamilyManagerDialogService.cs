@@ -91,6 +91,7 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
             : StatusDetailsHandler(viewModel);
 
     public bool? ShowValidationRulesEditor(object viewModel) => throw new NotImplementedException();
+    public bool? ShowAssignmentRulesEditor(object viewModel) => throw new NotImplementedException();
     public void ShowModelessBatchImportDialog(object viewModel) => throw new NotImplementedException();
     public void ShowDatabaseUpdateProgressDialog(object viewModel)
     {

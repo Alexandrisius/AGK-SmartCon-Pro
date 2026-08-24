@@ -124,6 +124,12 @@ public interface IFamilyManagerDialogService
     bool? ShowValidationRulesEditor(object viewModel);
 
     /// <summary>
+    /// Show the auto-assignment rules editor for one category (#241).
+    /// Returns true when the user saved the rules.
+    /// </summary>
+    bool? ShowAssignmentRulesEditor(object viewModel);
+
+    /// <summary>
     /// Show the batch import dialog as a modeless window (Issue #127): the
     /// dialog stays open during the import and drives progress/cancellation
     /// through its view model. Returns immediately; the caller awaits the
