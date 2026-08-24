@@ -314,13 +314,16 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         }
         else if (row.ShowValueField)
         {
-            // Equals auto-detects number vs text for attribute conditions;
-            // system text fields stay text.
-            if (row.SourceKind == AssignmentConditionSourceKind.Attribute
+            // Equals/NotEquals auto-detect number vs text for attribute
+            // conditions; system text fields stay text.
+            var parsedNumber = row.SourceKind == AssignmentConditionSourceKind.Attribute
                 && row.Operator is ValidationRuleOperator.Equals or ValidationRuleOperator.NotEquals
-                && ParseNumber(row.ValueText) is not null)
+                    ? ParseNumber(row.ValueText)
+                    : null;
+
+            if (parsedNumber is not null)
             {
-                valueNumber = ParseNumber(row.ValueText);
+                valueNumber = parsedNumber;
             }
             else
             {

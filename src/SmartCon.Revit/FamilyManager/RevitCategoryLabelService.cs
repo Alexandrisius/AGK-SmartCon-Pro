@@ -21,6 +21,13 @@ namespace SmartCon.Revit.FamilyManager;
 /// through cached reflection with an enum-name fallback (pattern of #153,
 /// see docs/multi-version-guide.md: an API that changed inside the
 /// configuration range is resolved via reflection).
+/// <para>
+/// Threading/context: LabelUtils is a static resource-string lookup —
+/// per Tammik (thebuildingcoder 0925) such utility classes "can be called
+/// from any valid context with no need for an object instance"; the editor
+/// dialog runs on Revit's main UI thread. Any failure degrades to the
+/// enum-name fallback, never crashes.
+/// </para>
 /// </remarks>
 public sealed class RevitCategoryLabelService : IRevitCategoryLabelService
 {
