@@ -33,12 +33,17 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     private ObservableCollection<AssignmentGroupRowViewModel> _groups = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
     private string _statusMessage = string.Empty;
 
     /// <summary>true = the status is an error (red); false = informational
     /// (neutral color) — the copy-done message must not scream danger.</summary>
     [ObservableProperty]
     private bool _statusIsError;
+
+    /// <summary>Drives the status bar icon/text visibility — the bar frame
+    /// itself is permanent (bottom-docked, like the panel's status bar).</summary>
+    public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
 
     /// <summary>Nearest rule-bearing ancestor exists — the editor shows the
     /// «Взять условия родителя» button (#241).</summary>

@@ -297,11 +297,14 @@
             </ItemsControl>
         </ScrollViewer>
 
+        <!-- One row: secondary actions left, primary actions right. -->
         <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Button Grid.Column="0"
                     Command="{Binding AddGroupCommand}"
@@ -316,36 +319,59 @@
                     Content="{loc:Loc FM_AssignEditor_CopyParent}"
                     ToolTip="{Binding CopyParentRulesTooltip}"
                     Visibility="{Binding HasParentRulesToCopy, Converter={StaticResource BoolToVis}}"/>
-            <TextBlock Grid.Column="2"
-                       Text="{Binding StatusMessage}"
-                       VerticalAlignment="Center"
-                       Margin="10,0,0,0"
-                       TextWrapping="Wrap">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding StatusIsError}" Value="True">
-                                <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
-        </Grid>
-
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Content="{loc:Loc FM_RulesEditor_Save}"
+            <Button Grid.Column="3"
+                    Content="{loc:Loc FM_RulesEditor_Save}"
                     Command="{Binding SaveCommand}"
                     IsDefault="True"
                     MinWidth="90"
-                    Margin="0,0,8,0"
                     Style="{DynamicResource PrimaryButton}"/>
-            <Button Content="{loc:Loc FM_RulesEditor_Cancel}"
+            <Button Grid.Column="4"
+                    Content="{loc:Loc FM_RulesEditor_Cancel}"
                     Command="{Binding CancelCommand}"
                     IsCancel="True"
                     MinWidth="90"
+                    Margin="8,0,0,0"
                     Style="{DynamicResource SecondaryButton}"/>
-        </StackPanel>
+        </Grid>
+
+        <!-- Permanent bottom status bar (same visual identity as the
+             panel's status bar): icon + muted text; icon/text collapse
+             while there is nothing to say, the frame stays. -->
+        <Border Grid.Row="3" Margin="0,8,0,0" Style="{DynamicResource StatusBarBorder}">
+            <StackPanel Orientation="Horizontal"
+                        Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVis}}">
+                <iconPacks:PackIconMaterial Width="14" Height="14"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,6,0">
+                    <iconPacks:PackIconMaterial.Style>
+                        <Style TargetType="iconPacks:PackIconMaterial">
+                            <Setter Property="Kind" Value="InformationOutline"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                    <Setter Property="Kind" Value="AlertOutline"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </iconPacks:PackIconMaterial.Style>
+                </iconPacks:PackIconMaterial>
+                <TextBlock Text="{Binding StatusMessage}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding StatusMessage}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </Border>
     </Grid>
 </controls:DialogWindowBase>
