@@ -460,29 +460,27 @@ public static partial class LocalizationService
         // Validation Report dialog
         ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";
         ru["FM_ValidationReport_Close"] = "Закрыть"; en["FM_ValidationReport_Close"] = "Close";
-        ru["FM_ValidationReport_ColSection"] = "Проверка"; en["FM_ValidationReport_ColSection"] = "Section";
         ru["FM_ValidationReport_ColType"] = "Тип"; en["FM_ValidationReport_ColType"] = "Type";
         ru["FM_ValidationReport_ColAttribute"] = "Атрибут"; en["FM_ValidationReport_ColAttribute"] = "Attribute";
         ru["FM_ValidationReport_ColCheck"] = "Условие"; en["FM_ValidationReport_ColCheck"] = "Check";
         ru["FM_ValidationReport_ColExpected"] = "Ожидалось"; en["FM_ValidationReport_ColExpected"] = "Expected";
         ru["FM_ValidationReport_ColActual"] = "Фактически"; en["FM_ValidationReport_ColActual"] = "Actual";
-        ru["FM_ValidationReport_SectionHealth"] = "Системная"; en["FM_ValidationReport_SectionHealth"] = "System";
-        ru["FM_ValidationReport_SectionRules"] = "Правила"; en["FM_ValidationReport_SectionRules"] = "Rules";
         ru["FM_ValidationReport_EmptyValue"] = "<пусто>"; en["FM_ValidationReport_EmptyValue"] = "<empty>";
         ru["FM_ValidationReport_SummaryPassed"] = "Все проверки пройдены (для категории не заданы правила)"; en["FM_ValidationReport_SummaryPassed"] = "All checks passed (no rules configured for the category)";
+        ru["FM_ValidationReport_SummaryPassedWithWarnings"] = "Проверки пройдены, есть предупреждения: {0}"; en["FM_ValidationReport_SummaryPassedWithWarnings"] = "Checks passed, warnings: {0}";
         ru["FM_ValidationReport_SummaryPassedRules"] = "Все проверки пройдены ({0} правил)"; en["FM_ValidationReport_SummaryPassedRules"] = "All checks passed ({0} rules)";
         ru["FM_ValidationReport_SummaryFailed"] = "Проверка не пройдена — {0}"; en["FM_ValidationReport_SummaryFailed"] = "Check failed — {0}";
         ru["FM_ValidationReport_SummaryHealthErrors"] = "системные ошибки: {0}"; en["FM_ValidationReport_SummaryHealthErrors"] = "system errors: {0}";
+        // Validation Report dialog — sections + clipboard (system issues are
+        // free-text cards above the rule-violations table, one unified report)
+        ru["FM_ValidationReport_HealthSection"] = "Системные проблемы ({0})"; en["FM_ValidationReport_HealthSection"] = "System issues ({0})";
+        ru["FM_ValidationReport_ViolationsSection"] = "Нарушения правил ({0})"; en["FM_ValidationReport_ViolationsSection"] = "Rule violations ({0})";
+        ru["FM_HealthReport_Copy"] = "Копировать"; en["FM_HealthReport_Copy"] = "Copy";
+        ru["FM_HealthReport_CopyTooltip"] = "Скопировать весь отчёт в буфер обмена"; en["FM_HealthReport_CopyTooltip"] = "Copy the whole report to the clipboard";
+        ru["FM_HealthReport_ErrorLabel"] = "[Ошибка] "; en["FM_HealthReport_ErrorLabel"] = "[Error] ";
+        ru["FM_HealthReport_WarningLabel"] = "[Предупреждение] "; en["FM_HealthReport_WarningLabel"] = "[Warning] ";
         ru["FM_ValidationReport_SummaryHealthWarnings"] = "предупреждения: {0}"; en["FM_ValidationReport_SummaryHealthWarnings"] = "warnings: {0}";
-        ru["FM_ValidationReport_SummaryRuleViolations"] = "нарушений правил: {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_SummaryRuleViolations"] = "rule violations: {0} (rules: {1}, types: {2})";
-        ru["FM_ValidationReport_HealthSkipped"] = "Системная проверка: не выполнялась"; en["FM_ValidationReport_HealthSkipped"] = "System check: not performed";
-        ru["FM_ValidationReport_HealthPassedLine"] = "Системная проверка: пройдена"; en["FM_ValidationReport_HealthPassedLine"] = "System check: passed";
-        ru["FM_ValidationReport_HealthWarningsLine"] = "Системная проверка: предупреждений {0}"; en["FM_ValidationReport_HealthWarningsLine"] = "System check: {0} warning(s)";
-        ru["FM_ValidationReport_HealthErrorsLine"] = "Системная проверка: ошибок {0}"; en["FM_ValidationReport_HealthErrorsLine"] = "System check: {0} error(s)";
-        ru["FM_ValidationReport_RulesNone"] = "Правила категории: не заданы"; en["FM_ValidationReport_RulesNone"] = "Category rules: not configured";
-        ru["FM_ValidationReport_RulesNotChecked"] = "Правила категории: не проверялись"; en["FM_ValidationReport_RulesNotChecked"] = "Category rules: not checked";
-        ru["FM_ValidationReport_RulesPassedLine"] = "Правила категории: пройдены ({0} правил на {1} типах)"; en["FM_ValidationReport_RulesPassedLine"] = "Category rules: passed ({0} rules on {1} types)";
-        ru["FM_ValidationReport_RulesViolationsLine"] = "Правила категории: нарушений {0} (правил: {1}, типов: {2})"; en["FM_ValidationReport_RulesViolationsLine"] = "Category rules: {0} violation(s) (rules: {1}, types: {2})";
+        ru["FM_ValidationReport_SummaryRuleViolations"] = "нарушений правил: {0}"; en["FM_ValidationReport_SummaryRuleViolations"] = "rule violations: {0}";
 
         // Validation rule operators
         ru["FM_RuleOp_IsPresent"] = "Параметр присутствует"; en["FM_RuleOp_IsPresent"] = "Parameter exists";
@@ -520,6 +518,7 @@ public static partial class LocalizationService
         ru["FM_BatchImport_RuleConflict_Tooltip"] = "Правила автоназначения рекомендуют: {0}. Нажмите, чтобы выбрать из подходящих категорий."; en["FM_BatchImport_RuleConflict_Tooltip"] = "Auto-assignment rules recommend: {0}. Click to pick from the matching categories.";
         ru["FM_AssignEditor_Group"] = "Группа"; en["FM_AssignEditor_Group"] = "Group";
         ru["FM_AssignEditor_AddGroup"] = "Добавить группу"; en["FM_AssignEditor_AddGroup"] = "Add group";
+        ru["FM_AssignEditor_EmptyGroups"] = "Группы условий не заданы. Нажмите «Добавить группу», чтобы задать первое правило."; en["FM_AssignEditor_EmptyGroups"] = "No rule groups yet. Click 'Add group' to create the first rule.";
         ru["FM_AssignEditor_AddCondition"] = "Добавить условие"; en["FM_AssignEditor_AddCondition"] = "Add condition";
         ru["FM_AssignEditor_SourceAttribute"] = "Атрибут библиотеки"; en["FM_AssignEditor_SourceAttribute"] = "Library attribute";
         ru["FM_AssignEditor_SourceSystem"] = "Системное поле"; en["FM_AssignEditor_SourceSystem"] = "System field";

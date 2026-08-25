@@ -28,7 +28,6 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -64,43 +63,113 @@
 
         <TextBlock Grid.Row="2"
                    Text="{Binding Summary}"
-                   Margin="0,0,0,6"
+                   Margin="28,0,0,8"
                    Foreground="{DynamicResource TextMutedBrush}"
                    TextWrapping="Wrap"/>
 
-        <StackPanel Grid.Row="3" Margin="0,0,0,10">
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
-                <iconPacks:PackIconMaterial Kind="{Binding HealthStatusIconKind}"
-                                            Foreground="{Binding HealthStatusBrush}"
-                                            Width="13" Height="13"
-                                            Margin="0,0,6,0"
-                                            VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding HealthStatusText}"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           VerticalAlignment="Center"/>
-            </StackPanel>
-            <StackPanel Orientation="Horizontal">
-                <iconPacks:PackIconMaterial Kind="{Binding RulesStatusIconKind}"
-                                            Foreground="{Binding RulesStatusBrush}"
-                                            Width="13" Height="13"
-                                            Margin="0,0,6,0"
-                                            VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding RulesStatusText}"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           VerticalAlignment="Center"/>
-            </StackPanel>
-        </StackPanel>
+        <!-- Content: system issues as wrapped selectable cards on top,
+             rule violations as a table below. The cards row sizes to its
+             content (capped + scrollable when numerous) so a single card
+             never leaves a dead gap before the table; the table takes
+             all remaining height. -->
+        <Grid Grid.Row="3">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="2*"/>
+            </Grid.RowDefinitions>
 
-        <DataGrid x:Name="IssuesGrid"
-                  Grid.Row="4"
-                  ItemsSource="{Binding Issues}"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  Style="{DynamicResource CompactDataGrid}"
-                  CanUserResizeColumns="True"
-                  CanUserSortColumns="False"
-                  SelectionMode="Single"
-                  SelectionUnit="FullRow">
+            <TextBlock Grid.Row="0"
+                       Text="{Binding HealthSectionTitle}"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,4"
+                       Visibility="{Binding HasHealthCards, Converter={StaticResource BoolToVis}}"/>
+
+            <ScrollViewer Grid.Row="1"
+                          MaxHeight="240"
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="{Binding HasHealthCards, Converter={StaticResource BoolToVis}}">
+                <ItemsControl ItemsSource="{Binding HealthCards}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,0,0,6"
+                                    Padding="10,6"
+                                    CornerRadius="6"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource BorderAltBrush}"
+                                    Background="{DynamicResource SurfaceBrush}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <iconPacks:PackIconMaterial Grid.Column="0"
+                                                                Width="15" Height="15"
+                                                                Margin="0,0,8,0"
+                                                                VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial.Style>
+                                            <Style TargetType="iconPacks:PackIconMaterial">
+                                                <Setter Property="Kind" Value="AlertCircleOutline"/>
+                                                <Setter Property="Foreground" Value="#FB8C00"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                        <Setter Property="Kind" Value="CloseCircleOutline"/>
+                                                        <Setter Property="Foreground" Value="#F44336"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </iconPacks:PackIconMaterial.Style>
+                                    </iconPacks:PackIconMaterial>
+
+                                    <StackPanel Grid.Column="1">
+                                        <!-- Family-level issues (document warnings) carry no
+                                             type: the empty line is collapsed, otherwise it
+                                             leaves a ghost 16px gap and the centered icon
+                                             floats above the text's visual center. -->
+                                        <TextBlock Text="{Binding TypeName}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="{Binding HasTypeName, Converter={StaticResource BoolToVis}}"/>
+                                        <!-- Read-only borderless TextBox (not TextBlock): the user can
+                                             select and copy any fragment of Revit's error text. -->
+                                        <TextBox Text="{Binding Description}"
+                                                 IsReadOnly="True"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 Padding="0"
+                                                 Margin="0,2,0,0"
+                                                 FontSize="12"
+                                                 Foreground="{DynamicResource TextSecondaryBrush}"
+                                                 TextWrapping="Wrap"
+                                                 Cursor="IBeam"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock Grid.Row="2"
+                       Text="{Binding ViolationsSectionTitle}"
+                       FontWeight="SemiBold"
+                       Margin="0,4,0,4"
+                       Visibility="{Binding HasViolations, Converter={StaticResource BoolToVis}}"/>
+
+            <DataGrid x:Name="IssuesGrid"
+                      Grid.Row="3"
+                      ItemsSource="{Binding Issues}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      Style="{DynamicResource CompactDataGrid}"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="False"
+                      SelectionMode="Single"
+                      SelectionUnit="FullRow"
+                      Visibility="{Binding HasViolations, Converter={StaticResource BoolToVis}}">
             <DataGrid.CellStyle>
                 <Style TargetType="DataGridCell" BasedOn="{StaticResource CompactDataGridCell}">
                     <Setter Property="Padding" Value="8,0"/>
@@ -113,51 +182,6 @@
                 </Style>
             </DataGrid.ColumnHeaderStyle>
             <DataGrid.Columns>
-                <DataGridTemplateColumn x:Name="ColSeverity" Width="32">
-                    <DataGridTemplateColumn.HeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
-                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                        </Style>
-                    </DataGridTemplateColumn.HeaderStyle>
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
-                                                            Foreground="#F44336"
-                                                            Width="15" Height="15"
-                                                            HorizontalAlignment="Center"
-                                                            VerticalAlignment="Center">
-                                    <iconPacks:PackIconMaterial.Style>
-                                        <Style TargetType="iconPacks:PackIconMaterial">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsError}" Value="True">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </iconPacks:PackIconMaterial.Style>
-                                </iconPacks:PackIconMaterial>
-                                <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
-                                                            Foreground="#FB8C00"
-                                                            Width="15" Height="15"
-                                                            HorizontalAlignment="Center"
-                                                            VerticalAlignment="Center">
-                                    <iconPacks:PackIconMaterial.Style>
-                                        <Style TargetType="iconPacks:PackIconMaterial">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsError}" Value="False">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </iconPacks:PackIconMaterial.Style>
-                                </iconPacks:PackIconMaterial>
-                            </Grid>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
                 <DataGridTextColumn x:Name="ColType" Binding="{Binding TypeName}" Width="*" MinWidth="80">
                     <DataGridTextColumn.HeaderStyle>
                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
@@ -231,8 +255,15 @@
                 </DataGridTextColumn>
             </DataGrid.Columns>
         </DataGrid>
+        </Grid>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="{loc:Loc FM_HealthReport_Copy}"
+                    Command="{Binding CopyCommand}"
+                    ToolTip="{loc:Loc FM_HealthReport_CopyTooltip}"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Style="{DynamicResource SecondaryButton}"/>
             <Button Content="{loc:Loc FM_ValidationReport_Close}"
                     Command="{Binding CloseCommand}"
                     IsDefault="True"

@@ -33,6 +33,10 @@
     <Color x:Key="SelectedPressedSurfaceColor">#BBDEFB</Color>
     <Color x:Key="StatusBarSurfaceColor">#F8F8F8</Color>
     <Color x:Key="AlternateRowSurfaceColor">#FAFAFA</Color>
+    <!-- Recessed zone container (rule groups canvas, etc.): sits between the
+         window background (#F5F5F5) and white cards placed inside it — the
+         canonical "gray canvas, white cards" nesting pattern. -->
+    <Color x:Key="ZoneSurfaceColor">#F0F0F0</Color>
     <Color x:Key="GridLineColor">#F0F0F0</Color>
 
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
@@ -59,6 +63,7 @@
     <SolidColorBrush x:Key="SelectedPressedSurfaceBrush" Color="{StaticResource SelectedPressedSurfaceColor}"/>
     <SolidColorBrush x:Key="StatusBarSurfaceBrush" Color="{StaticResource StatusBarSurfaceColor}"/>
     <SolidColorBrush x:Key="AlternateRowSurfaceBrush" Color="{StaticResource AlternateRowSurfaceColor}"/>
+    <SolidColorBrush x:Key="ZoneSurfaceBrush" Color="{StaticResource ZoneSurfaceColor}"/>
     <SolidColorBrush x:Key="GridLineBrush" Color="{StaticResource GridLineColor}"/>
 
     <!-- ══════════════════════════════════════════════════════════════════

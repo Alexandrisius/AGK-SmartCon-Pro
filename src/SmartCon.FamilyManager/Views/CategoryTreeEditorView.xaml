@@ -71,9 +71,9 @@
                 CornerRadius="6">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="200"/>
+                    <ColumnDefinition Width="9*" MinWidth="200"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="2*" MinWidth="300"/>
+                    <ColumnDefinition Width="11*" MinWidth="300"/>
                 </Grid.ColumnDefinitions>
 
                 <DockPanel Grid.Column="0" Margin="12">
@@ -263,7 +263,7 @@
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="8,6"
+                                    <Border Padding="6,2"
                                             Background="Transparent">
                                         <Border.ContextMenu>
                                             <ContextMenu Style="{StaticResource ModernContextMenu}">
@@ -278,7 +278,7 @@
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="28"/>
+                                                <ColumnDefinition Width="22"/>
                                             </Grid.ColumnDefinitions>
 
                                             <CheckBox Grid.Column="0" Margin="0,0,8,0">
@@ -314,7 +314,7 @@
                                                     Command="{Binding OpenValidationRulesCommand}"
                                                     IsEnabled="{Binding CanEditRules}"
                                                     ToolTip="{Binding RulesTooltip}"
-                                                    Width="24" Height="24"
+                                                    Width="18" Height="18"
                                                     Margin="4,0,0,0"
                                                     HorizontalAlignment="Center"
                                                     VerticalAlignment="Center"
@@ -322,7 +322,7 @@
                                                     Style="{DynamicResource FlatIconButton}">
                                                 <iconPacks:PackIconMaterial Kind="{Binding ShieldIconKind}"
                                                                             Foreground="{Binding ShieldBrush}"
-                                                                            Width="15" Height="15"/>
+                                                                            Width="13" Height="13"/>
                                             </Button>
                                         </Grid>
                                     </Border>

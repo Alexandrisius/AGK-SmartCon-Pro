@@ -33,6 +33,16 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     [ObservableProperty]
     private ObservableCollection<AssignmentGroupRowViewModel> _groups = [];
 
+    /// <summary>Empty-state flag for the groups zone — the placeholder text
+    /// inside the bordered container must disappear as soon as a group exists.</summary>
+    public bool HasNoGroups => Groups.Count == 0;
+
+    partial void OnGroupsChanged(ObservableCollection<AssignmentGroupRowViewModel> value)
+    {
+        value.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNoGroups));
+        OnPropertyChanged(nameof(HasNoGroups));
+    }
+
     /// <summary>Nearest rule-bearing ancestor exists — the editor shows the
     /// «Копировать условия предка» button (#241).</summary>
     public bool HasParentRulesToCopy => _copyFromCategoryId is not null;

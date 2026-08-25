@@ -28,6 +28,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
@@ -40,10 +41,22 @@
                        TextWrapping="Wrap"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <!-- AlternationIndex drives the «ИЛИ» separator between groups
-                 (index > 0) and the «И» prefix inside groups. -->
-            <ItemsControl ItemsSource="{Binding Groups}" AlternationCount="1000">
+        <!-- Bordered container for the groups zone: the «Добавить группу»
+             button below must visibly belong to a region even when the
+             list is empty (same role as the DataGrid contour in the
+             validation rules editor). -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource BorderAltBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Background="{DynamicResource ZoneSurfaceBrush}"
+                MinHeight="64"
+                Padding="8">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <!-- AlternationIndex drives the «ИЛИ» separator between groups
+                         (index > 0) and the «И» prefix inside groups. -->
+                    <ItemsControl ItemsSource="{Binding Groups}" AlternationCount="1000">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <StackPanel>
@@ -51,7 +64,8 @@
                                  no decorative lines (enterprise style). -->
                             <TextBlock Text="{loc:Loc FM_AssignEditor_Or}"
                                        FontSize="11"
-                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        HorizontalAlignment="Center"
                                        Margin="0,0,0,4">
                                 <TextBlock.Style>
@@ -145,8 +159,9 @@
                                                          group must match (AND). -->
                                                     <TextBlock Grid.Column="0"
                                                                Text="{loc:Loc FM_AssignEditor_And}"
+                                                               FontWeight="Bold"
                                                                FontSize="11"
-                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"
                                                                HorizontalAlignment="Center"
                                                                VerticalAlignment="Center">
                                                         <TextBlock.Style>
@@ -294,16 +309,28 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </ScrollViewer>
+                </ScrollViewer>
 
-        <!-- One row: secondary actions left, primary actions right. -->
-        <Grid Grid.Row="2" Margin="0,8,0,0">
+                <!-- Empty state: explains the zone and the way out — the
+                     «Добавить группу» button below never floats in the air. -->
+                <TextBlock Text="{loc:Loc FM_AssignEditor_EmptyGroups}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Visibility="{Binding HasNoGroups, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+
+        <!-- Canonical dialog anatomy (MS Win32 UX Guide: control-scoped
+             commands group with their control, never in the commit row):
+             content commands under the list they extend, commit buttons
+             alone on the bottom row. -->
+        <Grid Grid.Row="2" Margin="0,6,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Button Grid.Column="0"
                     Command="{Binding AddGroupCommand}"
@@ -318,13 +345,21 @@
                     Content="{loc:Loc FM_AssignEditor_CopyParent}"
                     ToolTip="{Binding CopyParentRulesTooltip}"
                     Visibility="{Binding HasParentRulesToCopy, Converter={StaticResource BoolToVis}}"/>
-            <Button Grid.Column="3"
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="1"
                     Content="{loc:Loc FM_RulesEditor_Save}"
                     Command="{Binding SaveCommand}"
                     IsDefault="True"
                     MinWidth="90"
                     Style="{DynamicResource PrimaryButton}"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="2"
                     Content="{loc:Loc FM_RulesEditor_Cancel}"
                     Command="{Binding CancelCommand}"
                     IsCancel="True"
