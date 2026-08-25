@@ -5,6 +5,7 @@ using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.Tests.FamilyManager.Repository;
+using SmartCon.Tests.TestDoubles;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.ViewModels;
@@ -21,6 +22,7 @@ public sealed class SaveAsyncCheckConstraintReproTests : IDisposable
     private readonly LocalAttributeDefinitionRepository _attributeRepository;
     private readonly LocalCategoryRepository _categoryRepository;
     private readonly Mock<IRevitCategoryLabelService> _labelsMock;
+    private readonly FakeFamilyManagerDialogService _dialogFake = new();
 
     public SaveAsyncCheckConstraintReproTests()
     {
@@ -43,7 +45,7 @@ public sealed class SaveAsyncCheckConstraintReproTests : IDisposable
     {
         var category = await _categoryRepository.AddAsync(categoryName, null, 0);
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
         return vm;
     }
@@ -68,7 +70,7 @@ public sealed class SaveAsyncCheckConstraintReproTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.True(saved);
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var groups = await _ruleRepository.GetGroupsForCategoryAsync(
             (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Оборудование").Id);
         var stored = Assert.Single(Assert.Single(groups).Conditions);
@@ -103,7 +105,7 @@ public sealed class SaveAsyncCheckConstraintReproTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.True(saved);
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var groups = await _ruleRepository.GetGroupsForCategoryAsync(
             (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Смешанные").Id);
         var stored = Assert.Single(Assert.Single(groups).Conditions);
@@ -162,7 +164,7 @@ public sealed class SaveAsyncCheckConstraintReproTests : IDisposable
     {
         var category = _categoryRepository.AddAsync(categoryName, null, 0).GetAwaiter().GetResult();
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         vm.InitializeAsync().GetAwaiter().GetResult();
         return vm;
     }

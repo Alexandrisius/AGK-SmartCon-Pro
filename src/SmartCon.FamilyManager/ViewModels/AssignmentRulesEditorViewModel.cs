@@ -24,6 +24,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     private readonly IAssignmentRuleRepository _ruleRepository;
     private readonly IAttributeDefinitionRepository _attributeRepository;
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
+    private readonly IFamilyManagerDialogService _dialogService;
     private readonly string? _copyFromCategoryId;
     private readonly string? _copyFromCategoryPath;
 
@@ -32,21 +33,8 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
     [ObservableProperty]
     private ObservableCollection<AssignmentGroupRowViewModel> _groups = [];
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasStatusMessage))]
-    private string _statusMessage = string.Empty;
-
-    /// <summary>true = the status is an error (red); false = informational
-    /// (neutral color) — the copy-done message must not scream danger.</summary>
-    [ObservableProperty]
-    private bool _statusIsError;
-
-    /// <summary>Drives the status bar icon/text visibility — the bar frame
-    /// itself is permanent (bottom-docked, like the panel's status bar).</summary>
-    public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
-
     /// <summary>Nearest rule-bearing ancestor exists — the editor shows the
-    /// «Взять условия родителя» button (#241).</summary>
+    /// «Копировать условия предка» button (#241).</summary>
     public bool HasParentRulesToCopy => _copyFromCategoryId is not null;
 
     /// <summary>Names the ancestor whose rules will be copied.</summary>
@@ -71,6 +59,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         IAssignmentRuleRepository ruleRepository,
         IAttributeDefinitionRepository attributeRepository,
         IRevitCategoryLabelService revitCategoryLabels,
+        IFamilyManagerDialogService dialogService,
         string? copyFromCategoryId = null,
         string? copyFromCategoryPath = null)
     {
@@ -78,6 +67,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         _ruleRepository = ruleRepository;
         _attributeRepository = attributeRepository;
         _revitCategoryLabels = revitCategoryLabels;
+        _dialogService = dialogService;
         _copyFromCategoryId = copyFromCategoryId;
         _copyFromCategoryPath = copyFromCategoryPath;
         CategoryPath = categoryPath;
@@ -165,29 +155,16 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
             if (added == 0)
             {
-                StatusIsError = false;
-                StatusMessage = Localize(
-                    SKeys.FM_AssignEditor_CopyParentEmpty,
-                    "В правилах предка нет условий для копирования");
+                // Only reachable via stale rule counts — nothing to do.
                 return;
             }
 
-            StatusIsError = false;
-            StatusMessage = string.Format(
-                Localize(
-                    SKeys.FM_AssignEditor_CopyParentDone,
-                    "Добавлено групп из «{0}»: {1}. Проверьте условия и сохраните."),
-                _copyFromCategoryPath ?? string.Empty,
-                added);
             SmartConLogger.Info($"Copied {added} assignment rule group(s) from '{_copyFromCategoryPath}'");
         }
         catch (Exception ex)
         {
             SmartConLogger.Error($"Copy parent rules failed: {ex.Message} [Action: проверьте БД каталога и лог]");
-            StatusIsError = true;
-            StatusMessage = string.Format(
-                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
-                ex.Message);
+            ShowError(ex.Message);
         }
     }
 
@@ -270,8 +247,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
 
         if (!Validate(out var error))
         {
-            StatusIsError = true;
-            StatusMessage = error!;
+            ShowError(error!);
             return;
         }
 
@@ -351,10 +327,7 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         catch (Exception ex)
         {
             SmartConLogger.Error($"Failed to save assignment rules: {ex.Message}");
-            StatusIsError = true;
-            StatusMessage = string.Format(
-                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_ImportError) ?? "Error: {0}",
-                ex.Message);
+            ShowError(ex.Message);
         }
     }
 
@@ -493,6 +466,13 @@ public sealed partial class AssignmentRulesEditorViewModel : ObservableObject, I
         if (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var current))
             return current;
         return null;
+    }
+
+    private void ShowError(string message)
+    {
+        _dialogService.ShowError(
+            Localize(SKeys.FM_AssignEditor_Title, "Правила автоназначения"),
+            message);
     }
 
     private static string Localize(string key, string fallback) =>

@@ -44,7 +44,13 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
         InfoCalls++;
         LastInfoMessage = message;
     }
-    public void ShowError(string title, string message) => throw new NotImplementedException();
+    public int ErrorCalls { get; private set; }
+    public string? LastErrorMessage { get; private set; }
+    public void ShowError(string title, string message)
+    {
+        ErrorCalls++;
+        LastErrorMessage = message;
+    }
     public string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "") => throw new NotImplementedException();
     public DialogResult ShowYesNoCancel(string title, string message) => throw new NotImplementedException();
     public bool? ShowCategoryTreeEditor(object viewModel) => throw new NotImplementedException();

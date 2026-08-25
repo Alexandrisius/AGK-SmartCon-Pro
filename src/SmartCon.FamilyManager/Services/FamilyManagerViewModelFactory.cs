@@ -129,7 +129,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     {
         return new AssignmentRulesEditorViewModel(
             categoryId, categoryPath, _assignmentRuleRepository, _attributeDefRepository, _revitCategoryLabels,
-            copyFromCategoryId, copyFromCategoryPath);
+            _dialogService, copyFromCategoryId, copyFromCategoryPath);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()

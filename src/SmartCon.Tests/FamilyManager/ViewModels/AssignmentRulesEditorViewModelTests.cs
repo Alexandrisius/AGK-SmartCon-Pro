@@ -5,6 +5,7 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.ViewModels;
 using SmartCon.Tests.FamilyManager.Repository;
+using SmartCon.Tests.TestDoubles;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.ViewModels;
@@ -16,6 +17,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     private readonly LocalAttributeDefinitionRepository _attributeRepository;
     private readonly LocalCategoryRepository _categoryRepository;
     private readonly Mock<IRevitCategoryLabelService> _labelsMock;
+    private readonly FakeFamilyManagerDialogService _dialogFake = new();
 
     public AssignmentRulesEditorViewModelTests()
     {
@@ -39,7 +41,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     {
         var category = await _categoryRepository.AddAsync(categoryName, null, 0);
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, categoryName, _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
         return vm;
     }
@@ -67,7 +69,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
             ValidationRuleOperator.Contains, "сталь", null, null, null, true);
 
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, "Стальные", _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, "Стальные", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
 
         var loadedGroup = Assert.Single(vm.Groups);
@@ -97,7 +99,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.True(saved);
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var groups = await _ruleRepository.GetGroupsForCategoryAsync(
             (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Наличие").Id);
         var stored = Assert.Single(Assert.Single(groups).Conditions);
@@ -122,7 +124,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.True(saved);
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var groups = await _ruleRepository.GetGroupsForCategoryAsync(
             (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Новые").Id);
         var persisted = Assert.Single(groups);
@@ -144,7 +146,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         await vm.SaveCommand.ExecuteAsync(null);
 
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var categoryId = (await _categoryRepository.GetAllAsync()).First(c => c.Name == "По категории").Id;
         var persisted = Assert.Single(await _ruleRepository.GetGroupsForCategoryAsync(categoryId));
         var persistedCondition = Assert.Single(persisted.Conditions);
@@ -165,7 +167,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         await vm.SaveCommand.ExecuteAsync(null);
 
         Assert.True(closed);
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
     }
 
     [Fact]
@@ -179,7 +181,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
             ValidationRuleOperator.Contains, "сталь", null, null, null, true);
 
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, "Удаление", _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, "Удаление", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
 
         vm.DeleteGroupCommand.Execute(vm.Groups[0]);
@@ -202,7 +204,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         await vm.SaveCommand.ExecuteAsync(null);
 
-        Assert.Empty(vm.StatusMessage);
+        Assert.Equal(0, _dialogFake.ErrorCalls);
         var categoryId = (await _categoryRepository.GetAllAsync()).First(c => c.Name == "Пустая группа").Id;
         var persisted = Assert.Single(await _ruleRepository.GetGroupsForCategoryAsync(categoryId));
         Assert.Single(persisted.Conditions);
@@ -232,8 +234,8 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         await vm.SaveCommand.ExecuteAsync(null);
 
-        Assert.NotEmpty(vm.StatusMessage);
-        Assert.True(vm.StatusIsError); // validation failure renders red
+        Assert.Equal(1, _dialogFake.ErrorCalls);
+        Assert.False(string.IsNullOrEmpty(_dialogFake.LastErrorMessage));
     }
 
     [Fact]
@@ -242,7 +244,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         var category = await _categoryRepository.AddAsync("С удалением", null, 0);
         await _ruleRepository.CreateGroupAsync(category.Id);
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, "С удалением", _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, "С удалением", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
 
         vm.DeleteGroupCommand.Execute(vm.Groups[0]);
@@ -274,7 +276,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
         var vm = new AssignmentRulesEditorViewModel(
-            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake,
             parent.Id, "Оборудование");
         await vm.InitializeAsync();
 
@@ -290,8 +292,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
         Assert.Null(condition.Id);
         Assert.Equal(ValidationRuleOperator.Contains, condition.Operator);
         Assert.Equal("сталь", condition.ValueText);
-        Assert.Contains("Оборудование", vm.StatusMessage);
-        Assert.False(vm.StatusIsError); // info message, not an error
+        Assert.Equal(0, _dialogFake.ErrorCalls);
     }
 
     [Fact]
@@ -306,7 +307,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
         var vm = new AssignmentRulesEditorViewModel(
-            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake,
             parent.Id, "Оборудование");
         await vm.InitializeAsync();
         await vm.CopyParentRulesCommand.ExecuteAsync(null);
@@ -334,7 +335,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
 
         var child = await _categoryRepository.AddAsync("Отопительные приборы", parent.Id, 0);
         var vm = new AssignmentRulesEditorViewModel(
-            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object,
+            child.Id, "Отопительные приборы", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake,
             parent.Id, "Оборудование");
         await vm.InitializeAsync();
         vm.AddGroupCommand.Execute(null);
@@ -351,7 +352,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
     public async Task CopyParentRules_NoSource_HiddenAndNoOp()
     {
         var vm = new AssignmentRulesEditorViewModel(
-            "cat", "Категория", _ruleRepository, _attributeRepository, _labelsMock.Object);
+            "cat", "Категория", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
 
         Assert.False(vm.HasParentRulesToCopy);
@@ -388,7 +389,7 @@ public sealed class AssignmentRulesEditorViewModelTests : IDisposable
             ValidationRuleOperator.Contains, "сталь", null, null, null, true);
 
         var vm = new AssignmentRulesEditorViewModel(
-            category.Id, "Тогл", _ruleRepository, _attributeRepository, _labelsMock.Object);
+            category.Id, "Тогл", _ruleRepository, _attributeRepository, _labelsMock.Object, _dialogFake);
         await vm.InitializeAsync();
 
         vm.Groups[0].IsEnabled = false;
