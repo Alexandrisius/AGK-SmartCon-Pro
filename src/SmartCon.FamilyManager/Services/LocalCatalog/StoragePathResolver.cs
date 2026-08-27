@@ -96,6 +96,44 @@ public sealed class StoragePathResolver
         return absolutePath;
     }
 
+    /// <summary>
+    /// #249 (Phase 5): the shared CAS preview pool —
+    /// <c>{db-root}/files/_shared/models/{shard2}/{view3dHash}.glb</c>.
+    /// Files are immutable by construction (the name IS the content hash,
+    /// I-16); versions reference pool files via
+    /// <c>family_assets.relative_path</c> rows, so identical preview
+    /// content is stored once — across versions AND across families.
+    /// </summary>
+    public const string SharedPreviewPoolRelativePrefix = "files/_shared/models/";
+
+    /// <summary>
+    /// <c>true</c> when a <c>family_assets.relative_path</c> points into
+    /// the shared CAS preview pool (and therefore must NOT be deleted
+    /// or moved together with the owning version — refcount rules apply).
+    /// </summary>
+    public static bool IsSharedPreviewPoolPath(string? relativePath)
+        => relativePath is not null
+            && relativePath.StartsWith(SharedPreviewPoolRelativePrefix, StringComparison.Ordinal);
+
+    /// <summary>Relative path of a pooled preview file for a VIEW3D hash.</summary>
+    public static string GetSharedPreviewRelativePath(string view3dHash)
+        => SharedPreviewPoolRelativePrefix + view3dHash[..2] + "/" + view3dHash + ".glb";
+
+    /// <summary>Absolute path of a pooled preview file for a VIEW3D hash.</summary>
+    public string GetSharedPreviewFilePath(string view3dHash)
+        => Path.Combine(GetDatabaseRoot(), GetSharedPreviewRelativePath(view3dHash));
+
+    /// <summary>Absolute path of the shared preview pool directory.</summary>
+    public string GetSharedPreviewPoolDirectory()
+        => Path.Combine(GetFilesRoot(), "_shared", "models");
+
+    /// <summary>Ensures the shard directory of a pooled preview file exists.</summary>
+    public void EnsureSharedPreviewDirectory(string view3dHash)
+    {
+        Directory.CreateDirectory(
+            Path.Combine(GetSharedPreviewPoolDirectory(), view3dHash[..2]));
+    }
+
     public static string GetAssetTypeFolder(FamilyAssetType? assetType) => assetType switch
     {
         FamilyAssetType.Image => "images",

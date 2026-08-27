@@ -439,6 +439,22 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
 
         SmartConLogger.Info(
             $"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}, failedDirectories={failedDirectories}");
+
+        // #249 (Phase 5): garbage sweep of the shared CAS preview pool —
+        // crashed imports and historical bugs leave pool files with zero
+        // references; the purge pass is the natural storage-hygiene
+        // moment to collect them.
+        try
+        {
+            await LocalCatalog.SharedPreviewPoolCleanup
+                .SweepOrphanedPoolFilesAsync(_database, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"CAS pool sweep skipped: {ex.Message}");
+        }
+
         return (deletedItems, deletedVersions, failedDirectories, guardedSkippedItems);
     }
 
@@ -558,10 +574,21 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
             await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
+        // #249 (Phase 5): capture the item's CAS pool paths before the
+        // CASCADE delete — refcount cleanup runs after the row is gone.
+        var capturedPoolPaths = await CapturePoolPathsAsync(connection, itemId, null, ct)
+            .ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM catalog_items WHERE id = @id";
         cmd.Parameters.Add(new SqliteParameter("@id", itemId));
-        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
+        var deleted = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false) > 0;
+        foreach (var poolPath in capturedPoolPaths)
+        {
+            await LocalCatalog.SharedPreviewPoolCleanup
+                .DeletePoolFileIfOrphanedAsync(_database, poolPath, ct)
+                .ConfigureAwait(false);
+        }
+        return deleted;
     }
 
     private async Task<int> DeleteVersionDbOnlyAsync(string itemId, string label, CancellationToken ct)
@@ -573,10 +600,73 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
             await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
+        // #249 (Phase 5): the label's family_assets rows are bound by
+        // (item, label) with no FK to catalog_versions — deleting only
+        // the version row would orphan them (pre-existing gap, now also
+        // breaking CAS refcounting). Capture pool paths, delete the asset
+        // rows, then the version row; refcount-clean the pool after.
+        var capturedPoolPaths = await CapturePoolPathsAsync(connection, itemId, label, ct)
+            .ConfigureAwait(false);
+        using (var assetsCmd = connection.CreateCommand())
+        {
+            assetsCmd.CommandText = "DELETE FROM family_assets WHERE catalog_item_id = @id AND version_label = @label";
+            assetsCmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            assetsCmd.Parameters.Add(new SqliteParameter("@label", label));
+            await assetsCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        int deleted;
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM catalog_versions WHERE catalog_item_id = @id AND version_label = @label";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            cmd.Parameters.Add(new SqliteParameter("@label", label));
+            deleted = await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        foreach (var poolPath in capturedPoolPaths)
+        {
+            await LocalCatalog.SharedPreviewPoolCleanup
+                .DeletePoolFileIfOrphanedAsync(_database, poolPath, ct)
+                .ConfigureAwait(false);
+        }
+        return deleted;
+    }
+
+    /// <summary>
+    /// #249 (Phase 5): reads the CAS pool paths referenced by an item's
+    /// (optionally one label's) <c>family_assets</c> rows — captured
+    /// BEFORE the rows are deleted so refcount cleanup can run after.
+    /// </summary>
+    private static async Task<List<string>> CapturePoolPathsAsync(
+        Microsoft.Data.Sqlite.SqliteConnection connection,
+        string itemId, string? label, CancellationToken ct)
+    {
+        var paths = new List<string>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM catalog_versions WHERE catalog_item_id = @id AND version_label = @label";
+        cmd.CommandText = label is null
+            ? """
+                SELECT relative_path FROM family_assets
+                WHERE catalog_item_id = @id AND relative_path LIKE @poolPrefix
+                """
+            : """
+                SELECT relative_path FROM family_assets
+                WHERE catalog_item_id = @id AND version_label = @label
+                  AND relative_path LIKE @poolPrefix
+                """;
         cmd.Parameters.Add(new SqliteParameter("@id", itemId));
-        cmd.Parameters.Add(new SqliteParameter("@label", label));
-        return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        if (label is not null)
+        {
+            cmd.Parameters.Add(new SqliteParameter("@label", label));
+        }
+        cmd.Parameters.Add(new SqliteParameter("@poolPrefix",
+            LocalCatalog.StoragePathResolver.SharedPreviewPoolRelativePrefix + "%"));
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (!reader.IsDBNull(0))
+            {
+                paths.Add(reader.GetString(0));
+            }
+        }
+        return paths;
     }
 }

@@ -259,8 +259,10 @@ public sealed partial class FamilyContentHasher : IFamilyContentHasher
     /// Coordinates (connector origins, bounding boxes) are rounded to
     /// 1e-4 ft (~0.03 mm) — fine enough to catch hand-moved connectors,
     /// coarse enough to absorb regen noise across Revit versions.
+    /// Internal: shared with <c>FamilyPreviewHasher</c> (VIEW3D) so both
+    /// quantize identically.
     /// </summary>
-    private static string FormatCoord(double value)
+    internal static string FormatCoord(double value)
         => value.ToString("0.####", CultureInfo.InvariantCulture);
 
     private static bool ContainsOrdinalIgnoreCase(string haystack, string needle)
@@ -272,7 +274,7 @@ public sealed partial class FamilyContentHasher : IFamilyContentHasher
 #endif
     }
 
-    private static string ComputeSha256Hex(string input)
+    internal static string ComputeSha256Hex(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(input);
 #if NET8_0_OR_GREATER

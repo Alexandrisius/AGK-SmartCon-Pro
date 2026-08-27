@@ -11,6 +11,15 @@ public interface IFamilyAssetService
     /// <summary>Add an asset file to a catalog item. File is copied into managed storage.</summary>
     Task<FamilyAsset> AddAssetAsync(string catalogItemId, string? versionLabel, FamilyAssetType assetType, string sourceFilePath, string? description, CancellationToken ct = default);
 
+    /// <summary>
+    /// #249 (Phase 5): register an asset row pointing at an EXISTING file
+    /// in the shared CAS preview pool — no copy, no move (pool files are
+    /// immutable and shared across versions/families). The row is what
+    /// ties the version to the pooled content; refcount rules apply at
+    /// deletion time.
+    /// </summary>
+    Task<FamilyAsset> RegisterPooledAssetAsync(string catalogItemId, string? versionLabel, FamilyAssetType assetType, string pooledRelativePath, string? description, CancellationToken ct = default);
+
     /// <summary>Get all assets for a catalog item, optionally filtered by version.</summary>
     Task<IReadOnlyList<FamilyAsset>> GetAssetsAsync(string catalogItemId, string? versionLabel = null, CancellationToken ct = default);
 

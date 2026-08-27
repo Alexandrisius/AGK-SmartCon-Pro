@@ -289,10 +289,39 @@ internal sealed partial class LocalCatalogProvider
         int assetsDeleted;
         int dbFilesDeleted = 0;
         int runsCleared;
+        // #249 (Phase 5): CAS pool paths referenced by this label's assets
+        // (captured inside the tx, cleaned after the commit).
+        var capturedPoolPaths = new List<string>();
 
         using var tx = connection.BeginTransaction();
         try
         {
+            // #249 (Phase 5): capture the CAS pool paths referenced by this
+            // label's assets BEFORE the delete — after commit, each pooled
+            // file is deleted only when no other version/family references
+            // it anymore (refcount, Plan v3).
+            using (var poolCmd = connection.CreateCommand())
+            {
+                poolCmd.Transaction = tx;
+                poolCmd.CommandText = """
+                    SELECT relative_path FROM family_assets
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                      AND relative_path LIKE @poolPrefix
+                    """;
+                poolCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                poolCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                poolCmd.Parameters.Add(new SqliteParameter("@poolPrefix",
+                    StoragePathResolver.SharedPreviewPoolRelativePrefix + "%"));
+                using var poolReader = await poolCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await poolReader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    if (!poolReader.IsDBNull(0))
+                    {
+                        capturedPoolPaths.Add(poolReader.GetString(0));
+                    }
+                }
+            }
+
             // family_assets are bound by (catalog_item_id, version_label) — no FK
             // to catalog_versions; cleanup is explicit.
             using (var assetsCmd = connection.CreateCommand())
@@ -381,6 +410,16 @@ internal sealed partial class LocalCatalogProvider
         SmartConLogger.Info(
             $"deleted DB rows: versions={versionsDeleted} assets={assetsDeleted} " +
             $"files={dbFilesDeleted} importRunsCleared={runsCleared}");
+
+        // #249 (Phase 5): pooled preview files shared with other
+        // versions/families are deleted only when the last reference is
+        // gone — AFTER the DB commit (rollback can never orphan a
+        // reference).
+        foreach (var poolPath in capturedPoolPaths)
+        {
+            await SharedPreviewPoolCleanup.DeletePoolFileIfOrphanedAsync(_database, poolPath, ct)
+                .ConfigureAwait(false);
+        }
 
         // Step 3: Filesystem cleanup — best effort, after DB commit (so we never leave orphan files on rollback).
         var dbRoot = _database.GetDatabaseRoot();

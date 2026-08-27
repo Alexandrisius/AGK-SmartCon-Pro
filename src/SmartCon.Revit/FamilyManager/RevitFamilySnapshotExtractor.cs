@@ -288,11 +288,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     $"ExtractGeometryPerType: no named type — using family name '{familyName}' as type name");
             }
 
-            var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
-            result.Add(new FamilyGeometryPerType(typeName, familyName, meshes));
+            var extraction = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
+            result.Add(new FamilyGeometryPerType(
+                typeName, familyName, extraction.Meshes,
+                new PreviewTypeSnapshot(typeName, extraction.PreviewForms, extraction.PreviewNestedInstances)));
             SmartConLogger.Info(
-                $"ExtractGeometryPerType: single type '{typeName}' → {meshes.Count} meshes, " +
-                $"{(meshes.Count > 0 ? meshes.Sum(m => m.TriangleCount) : 0)} triangles");
+                $"ExtractGeometryPerType: single type '{typeName}' → {extraction.Meshes.Count} meshes, " +
+                $"{(extraction.Meshes.Count > 0 ? extraction.Meshes.Sum(m => m.TriangleCount) : 0)} triangles");
             return result;
         }
 
@@ -354,14 +356,16 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     // See: docs/adr/042-familymanager-3d-preview.md (net48
                     // white-dialog bug).
 
-                    var meshes = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
+                    var extraction = RevitFamilyGeometryExtractor.ExtractMeshesFromFamilyDoc(familyDoc, ct);
 
-                    if (meshes.Count > 0 && !meshes.All(m => m.IsEmpty))
+                    if (extraction.Meshes.Count > 0 && !extraction.Meshes.All(m => m.IsEmpty))
                     {
-                        var triCount = meshes.Sum(m => m.TriangleCount);
-                        result.Add(new FamilyGeometryPerType(ft.Name, familyName, meshes));
+                        var triCount = extraction.Meshes.Sum(m => m.TriangleCount);
+                        result.Add(new FamilyGeometryPerType(
+                            ft.Name, familyName, extraction.Meshes,
+                            new PreviewTypeSnapshot(ft.Name, extraction.PreviewForms, extraction.PreviewNestedInstances)));
                         SmartConLogger.Info(
-                            $"ExtractGeometryPerType: type '{ft.Name}' → {meshes.Count} meshes, {triCount} triangles");
+                            $"ExtractGeometryPerType: type '{ft.Name}' → {extraction.Meshes.Count} meshes, {triCount} triangles");
                     }
                     else
                     {
@@ -1163,7 +1167,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
-    private static FormMetrics ExtractFormMetrics(GenericForm form, Options options, Document familyDoc)
+    internal static FormMetrics ExtractFormMetrics(GenericForm form, Options options, Document familyDoc)
     {
         var formKind = form.GetType().Name;
         var isSolid = form.IsSolid;

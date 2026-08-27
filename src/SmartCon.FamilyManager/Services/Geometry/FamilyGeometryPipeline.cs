@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.Geometry;
@@ -20,6 +21,21 @@ namespace SmartCon.FamilyManager.Services.Geometry;
 /// and registration happen on the calling (background) thread using their
 /// own async SQLite/I/O operations.
 /// <para>
+/// <b>CAS preview pool (#249, Phase 5):</b> generated GLBs live in the
+/// shared content-addressed pool
+/// (<c>files/_shared/models/{shard2}/{view3dHash}.glb</c>) — immutable
+/// files keyed by the VIEW3D hash of their normalized per-type inputs.
+/// Two reuse tiers: (1) the whole pipeline is SKIPPED when the new
+/// version's DEF/GEOM/TYPES section hashes match another version of the
+/// same item (the preview assets are simply re-linked); (2) per type,
+/// the GLB serialization+write is skipped when the pool already holds
+/// the file for the type's VIEW3D hash (a geometry edit of one type
+/// reuses every other type's preview — across versions AND families).
+/// Legacy extraction products without a preview snapshot
+/// (<see cref="FamilyGeometryPerType.Preview"/> == <c>null</c>) fall back
+/// to the pre-CAS per-version write.
+/// </para>
+/// <para>
 /// <b>Failure contract:</b> all exceptions are caught and logged as Warn
 /// with an <c>[Action: ...]</c> suggestion (smartcon-logging L9). The
 /// pipeline NEVER rethrows — the import transaction already committed
@@ -34,6 +50,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
     private readonly IFamilyAssetService _assetService;
     private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly LocalCatalog.LocalCatalogDatabase _database;
+    private readonly LocalCatalog.StoragePathResolver _pathResolver;
 
     public FamilyGeometryPipeline(
         IFamilyGeometryExtractor extractor,
@@ -47,6 +64,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
         _assetService = assetService ?? throw new ArgumentNullException(nameof(assetService));
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _database = database ?? throw new ArgumentNullException(nameof(database));
+        _pathResolver = new LocalCatalog.StoragePathResolver(database);
     }
 
     public async Task RunAsync(
@@ -69,6 +87,17 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             $"Geometry pipeline start: family='{familyName}', v='{versionLabel}', " +
             $"hasPreextractedGeometry={geometryPerType is not null && geometryPerType.Count > 0}, " +
             $"managedRfaPath='{Path.GetFileName(managedRfaPath ?? "")}'");
+
+        // 0. #249 (Phase 5), reuse tier 1: when another version of the
+        //    same item carries identical DEF/GEOM/TYPES section hashes,
+        //    the per-type preview content is identical by construction —
+        //    re-link its pooled preview assets instead of re-extracting
+        //    and re-writing anything (a text-only edit costs ZERO Revit
+        //    work and ZERO new files).
+        if (await TryReuseFromPreviousVersionAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false))
+        {
+            return;
+        }
 
         // 1. Obtain geometry: either pre-extracted from Prepare (H1)
         //    or extract now from managed .rfa (H2/H3).
@@ -125,6 +154,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
         // 3. Write N GLBs (one per type) and register each as a Model3D asset.
         var writtenCount = 0;
+        var reusedCount = 0;
         var skippedEmptyCount = 0;
         foreach (var gpt in geometry)
         {
@@ -138,6 +168,52 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 continue;
             }
 
+            // Description encodes the type name so the UI can
+            // filter/select per-type assets.
+            var description = gpt.TypeName.Length == 0
+                ? FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::"
+                : FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::" + gpt.TypeName;
+
+            // #249 (Phase 5), reuse tier 2 (per-type CAS): the VIEW3D hash
+            // of the type's normalized preview inputs keys the shared
+            // pool — a hit skips the GLB serialization AND the file write;
+            // the version simply references the pooled file. Legacy
+            // extraction products without a preview snapshot fall back to
+            // the pre-CAS per-version write.
+            if (gpt.Preview is not null)
+            {
+                var view3dHash = FamilyPreviewHasher.ComputeForType(gpt.Preview);
+                if (view3dHash is not null)
+                {
+                    var pooledRelPath = LocalCatalog.StoragePathResolver.GetSharedPreviewRelativePath(view3dHash);
+                    var pooledAbsPath = _pathResolver.GetSharedPreviewFilePath(view3dHash);
+                    var poolHit = File.Exists(pooledAbsPath);
+                    if (!poolHit)
+                    {
+                        if (!await WriteGlbToPoolAsync(gpt, pooledAbsPath, view3dHash, ct).ConfigureAwait(false))
+                        {
+                            SmartConLogger.Warn(
+                                $"GLB write failed for type '{gpt.TypeName}' '{familyName}' v{versionLabel} " +
+                                "[Action: import continues; this type's 3D preview will be unavailable]");
+                            continue;
+                        }
+                    }
+
+                    var pooledAsset = await _assetService.RegisterPooledAssetAsync(
+                        catalogItemId, versionLabel, FamilyAssetType.Model3D, pooledRelPath, description, ct).ConfigureAwait(false);
+                    writtenCount++;
+                    if (poolHit) reusedCount++;
+
+                    SmartConLogger.Info(
+                        $"Geometry pipeline {(poolHit ? "REUSED" : "OK")}: type='{gpt.TypeName}', " +
+                        $"view3d={view3dHash[..12]}…, asset={pooledAsset.Id}, " +
+                        $"{gpt.Meshes.Count} meshes, {gpt.TotalTriangleCount} triangles");
+                    continue;
+                }
+            }
+
+            // Pre-CAS fallback (legacy extraction products without a
+            // preview snapshot — unit-test fakes and pre-#249 callers).
             var preview = new FamilyGeometryPreview(
                 catalogItemId, versionLabel,
                 string.IsNullOrEmpty(gpt.TypeName) ? gpt.FamilyName : $"{gpt.FamilyName} [{gpt.TypeName}]",
@@ -157,18 +233,12 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                     continue;
                 }
 
-                // Description encodes the type name so the UI can
-                // filter/select per-type assets.
-                var description = gpt.TypeName.Length == 0
-                    ? FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::"
-                    : FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + familyName + "::" + gpt.TypeName;
-
                 var asset = await _assetService.AddAssetAsync(
                     catalogItemId, versionLabel, FamilyAssetType.Model3D, tempPath, description, ct).ConfigureAwait(false);
                 writtenCount++;
 
                 SmartConLogger.Info(
-                    $"Geometry pipeline OK: type='{gpt.TypeName}', GLB asset={asset.Id}, file='{asset.FileName}', " +
+                    $"Geometry pipeline OK (legacy path): type='{gpt.TypeName}', GLB asset={asset.Id}, file='{asset.FileName}', " +
                     $"{gpt.Meshes.Count} meshes, {gpt.TotalTriangleCount} triangles");
             }
             finally
@@ -186,7 +256,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
         SmartConLogger.Info(
             $"Geometry pipeline finished: family='{familyName}', v='{versionLabel}', " +
-            $"written={writtenCount}, skippedEmpty={skippedEmptyCount}, totalTypes={geometry.Count}");
+            $"written={writtenCount} (reusedFromPool={reusedCount}), skippedEmpty={skippedEmptyCount}, totalTypes={geometry.Count}");
 
         if (writtenCount > 0)
         {
@@ -201,6 +271,212 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             // GLB write failures are NOT marked: those are transient and
             // must stay pending for a retry.
             await WriteGlbStateAsync(catalogItemId, versionLabel, -1, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// #249 (Phase 5), reuse tier 1: re-links the previous version's
+    /// pooled preview assets when its DEF/GEOM/TYPES section hashes
+    /// match the CURRENT version's stored section hashes (written by the
+    /// import transaction before this hook runs). A match proves the
+    /// per-type preview inputs are identical — no extraction, no GLB
+    /// write, no new files. Returns <c>true</c> when the pipeline's work
+    /// is done (assets re-linked or the terminal no-geometry marker
+    /// carried over).
+    /// </summary>
+    private async Task<bool> TryReuseFromPreviousVersionAsync(
+        string catalogItemId, string versionLabel, CancellationToken ct)
+    {
+        try
+        {
+            using var connection = _database.CreateConnection();
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+
+            // The CURRENT version's section hashes — no analytics (legacy
+            // import path) → no reuse decision possible.
+            string? currentJson;
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT section_hashes FROM catalog_versions
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                    LIMIT 1
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                cmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                currentJson = Convert.ToString(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
+            }
+            var current = ContentSectionJsonSerializer.Deserialize(currentJson);
+            if (current is null)
+            {
+                return false;
+            }
+
+            // The latest OTHER version with section analytics.
+            string? previousLabel = null;
+            string? previousJson = null;
+            int? previousGlbState = null;
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT version_label, section_hashes, glb_state FROM catalog_versions
+                    WHERE catalog_item_id = @itemId AND version_label <> @label
+                      AND section_hashes IS NOT NULL
+                    ORDER BY published_at_utc DESC
+                    LIMIT 1
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                cmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    previousLabel = reader.GetString(0);
+                    previousJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+                    previousGlbState = reader.IsDBNull(2) ? null : reader.GetInt32(2);
+                }
+            }
+            var previous = ContentSectionJsonSerializer.Deserialize(previousJson);
+            if (previous is null || previousLabel is null)
+            {
+                return false;
+            }
+
+            foreach (var key in new[] { "DEF", "GEOM", "TYPES" })
+            {
+                if (!current.TryGetValue(key, out var currentHash)
+                    || !previous.TryGetValue(key, out var previousHash)
+                    || !string.Equals(currentHash, previousHash, StringComparison.Ordinal))
+                {
+                    SmartConLogger.Debug(
+                        $"Preview reuse: section '{key}' differs from {previousLabel} — full pipeline");
+                    return false;
+                }
+            }
+
+            // The previous version was a terminal no-geometry family —
+            // the same content yields the same verdict, carry the marker.
+            if (previousGlbState == -1)
+            {
+                await WriteGlbStateAsync(catalogItemId, versionLabel, -1, ct).ConfigureAwait(false);
+                SmartConLogger.Info(
+                    $"Preview reuse: carried over the terminal no-geometry marker from {previousLabel}");
+                return true;
+            }
+
+            // Re-link the previous version's auto-preview rows (they
+            // reference pooled files — the rows, never the bytes).
+            var linked = 0;
+            var previousAssets = new List<(string FileName, string RelativePath, long SizeBytes, string? Description)>();
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT file_name, relative_path, size_bytes, description FROM family_assets
+                    WHERE catalog_item_id = @itemId AND version_label = @prevLabel
+                      AND asset_type = 'Model3D' AND description LIKE @prefix
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                cmd.Parameters.Add(new SqliteParameter("@prevLabel", previousLabel));
+                cmd.Parameters.Add(new SqliteParameter("@prefix",
+                    FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + "%"));
+                using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    previousAssets.Add((
+                        reader.GetString(0),
+                        reader.GetString(1),
+                        reader.GetInt64(2),
+                        reader.IsDBNull(3) ? null : reader.GetString(3)));
+                }
+            }
+
+            if (previousAssets.Count == 0)
+            {
+                return false;
+            }
+
+            var now = DateTimeOffset.UtcNow.ToString("o");
+            foreach (var asset in previousAssets)
+            {
+                using var insertCmd = connection.CreateCommand();
+                insertCmd.CommandText = """
+                    INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc, is_primary)
+                    VALUES (@id, @itemId, @label, 'Model3D', @fileName, @relPath, @size, @description, @created, 0)
+                    """;
+                insertCmd.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString()));
+                insertCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                insertCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                insertCmd.Parameters.Add(new SqliteParameter("@fileName", asset.FileName));
+                insertCmd.Parameters.Add(new SqliteParameter("@relPath", asset.RelativePath));
+                insertCmd.Parameters.Add(new SqliteParameter("@size", asset.SizeBytes));
+                insertCmd.Parameters.Add(new SqliteParameter("@description", (object?)asset.Description ?? DBNull.Value));
+                insertCmd.Parameters.Add(new SqliteParameter("@created", now));
+                await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                linked++;
+            }
+
+            await WriteGlbStateAsync(catalogItemId, versionLabel, null, ct).ConfigureAwait(false);
+            SmartConLogger.Info(
+                $"Preview reuse: re-linked {linked} pooled preview asset(s) from {previousLabel} " +
+                $"(DEF/GEOM/TYPES sections match) — extraction and GLB writes skipped");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"TryReuseFromPreviousVersionAsync skipped: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Writes one type's GLB into the shared CAS pool: serialize to a
+    /// temp file, then move into the pool path. The move is race-safe:
+    /// pool files are immutable and content-identical for the same hash,
+    /// so a concurrent writer producing the file first is fine (the temp
+    /// file is simply discarded). Returns <c>false</c> on a GLB
+    /// serialization failure.
+    /// </summary>
+    private async Task<bool> WriteGlbToPoolAsync(
+        FamilyGeometryPerType gpt, string pooledAbsPath, string view3dHash, CancellationToken ct)
+    {
+        var preview = new FamilyGeometryPreview(
+            string.Empty, string.Empty,
+            // #249 (Phase 5): content-pure bytes — a NEUTRAL root node
+            // name (no family/type names in the pooled bytes; the asset
+            // row's description carries the display name).
+            "preview",
+            gpt.Meshes);
+
+        string? tempPath = null;
+        try
+        {
+            tempPath = Path.Combine(Path.GetTempPath(),
+                $"sc_preview_{Guid.NewGuid().ToString("N")}.glb");
+            var ok = await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false);
+            if (!ok)
+            {
+                return false;
+            }
+
+            _pathResolver.EnsureSharedPreviewDirectory(view3dHash);
+            if (File.Exists(pooledAbsPath))
+            {
+                // A concurrent writer won the race — identical content by
+                // construction (the name IS the content hash).
+                return true;
+            }
+            File.Move(tempPath, pooledAbsPath);
+            return true;
+        }
+        finally
+        {
+            if (tempPath is not null)
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (Exception cleanupEx)
+                {
+                    SmartConLogger.Debug($"Temp GLB cleanup failed for '{Path.GetFileName(tempPath)}': {cleanupEx.Message}");
+                }
+            }
         }
     }
 
@@ -301,13 +577,25 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
                     if (!string.IsNullOrEmpty(relPath))
                     {
-                        var absPath = Path.Combine(dbRoot, relPath);
-                        if (File.Exists(absPath))
+                        if (LocalCatalog.StoragePathResolver.IsSharedPreviewPoolPath(relPath))
                         {
-                            try { File.Delete(absPath); }
-                            catch (Exception ioEx)
+                            // #249 (Phase 5): pooled files are shared —
+                            // delete only when the last reference is gone
+                            // (refcount, Plan v3).
+                            await LocalCatalog.SharedPreviewPoolCleanup
+                                .DeletePoolFileIfOrphanedAsync(_database, relPath, ct)
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            var absPath = Path.Combine(dbRoot, relPath);
+                            if (File.Exists(absPath))
                             {
-                                SmartConLogger.Debug($"Stale GLB file delete failed for '{Path.GetFileName(absPath)}': {ioEx.Message}");
+                                try { File.Delete(absPath); }
+                                catch (Exception ioEx)
+                                {
+                                    SmartConLogger.Debug($"Stale GLB file delete failed for '{Path.GetFileName(absPath)}': {ioEx.Message}");
+                                }
                             }
                         }
                     }
