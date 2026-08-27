@@ -403,7 +403,7 @@
                                             Command="{Binding OpenDiffDetailsCommand}"
                                             ToolTip="{loc:Loc FM_Diff_BadgeTooltip}"
                                             Visibility="{Binding ShowDiffBadge, Converter={StaticResource BoolToVis}}">
-                                        <iconPacks:PackIconMaterial Kind="Compare"
+                                        <iconPacks:PackIconMaterial Kind="SwapHorizontal"
                                                                     Foreground="{DynamicResource AccentBrush}"
                                                                     Width="12" Height="12"/>
                                     </Button>

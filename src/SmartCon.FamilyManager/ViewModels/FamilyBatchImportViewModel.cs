@@ -926,7 +926,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     StatusNoticeSeverity.Info,
                     Fmt(StringLocalization.Keys.FM_Diff_Sections, "Изменённые секции ({0})", diff.ChangedSections.Count),
                     null,
-                    diff.ChangedSections));
+                    diff.ChangedSections.Select(DescribeSection).ToList()));
             }
             if (!typesPending && diff.ChangedTypes.Count > 0)
             {
@@ -1004,6 +1004,43 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 Loc(StringLocalization.Keys.FM_Diff_ClassNoneHint,
                     "Секции совпадают — различий с активной версией не найдено.")),
         };
+    }
+
+    /// <summary>
+    /// Maps a content-section key (DEF, GEOM, …) to the localized
+    /// user-facing name shown in the diff window — raw keys are storage
+    /// identifiers, meaningless to the user. Unknown/future keys fall
+    /// back to the raw key so nothing is ever hidden.
+    /// </summary>
+    private static string DescribeSection(string sectionKey)
+    {
+        var (locKey, fallback) = sectionKey switch
+        {
+            FamilyContentSectionNames.Meta => (StringLocalization.Keys.FM_Diff_Section_META, "Метаданные (формат, категория)"),
+            FamilyContentSectionNames.Params => (StringLocalization.Keys.FM_Diff_Section_PARAMS, "Структура параметров"),
+            FamilyContentSectionNames.Types => (StringLocalization.Keys.FM_Diff_Section_TYPES, "Типоразмеры и их значения"),
+            FamilyContentSectionNames.Phantom => (StringLocalization.Keys.FM_Diff_Section_PHANTOM, "Фантомные типы"),
+            FamilyContentSectionNames.Def => (StringLocalization.Keys.FM_Diff_Section_DEF, "Привязки параметров (видимость, материал, размеры)"),
+            FamilyContentSectionNames.Geom => (StringLocalization.Keys.FM_Diff_Section_GEOM, "3D-геометрия"),
+            FamilyContentSectionNames.Geom2d => (StringLocalization.Keys.FM_Diff_Section_GEOM2D, "2D-графика (условные обозначения)"),
+            FamilyContentSectionNames.Nested => (StringLocalization.Keys.FM_Diff_Section_NESTED, "Вложенные семейства"),
+            FamilyContentSectionNames.NonShared => (StringLocalization.Keys.FM_Diff_Section_NONSHARED, "Необщие вложенные семейства"),
+            FamilyContentSectionNames.NestedHash => (StringLocalization.Keys.FM_Diff_Section_NESTEDHASH, "Содержимое вложенных семейств"),
+            FamilyContentSectionNames.Facts => (StringLocalization.Keys.FM_Diff_Section_FACTS, "Факты семейства (Part Type)"),
+            FamilyContentSectionNames.Flags => (StringLocalization.Keys.FM_Diff_Section_FLAGS, "Флаги семейства"),
+            FamilyContentSectionNames.Conn => (StringLocalization.Keys.FM_Diff_Section_CONN, "Коннекторы"),
+            FamilyContentSectionNames.Lookup => (StringLocalization.Keys.FM_Diff_Section_LOOKUP, "Lookup-таблицы"),
+            FamilyContentSectionNames.FamKey => (StringLocalization.Keys.FM_Diff_Section_FAMKEY, "Ключ семейства"),
+            FamilyContentSectionNames.Struct => (StringLocalization.Keys.FM_Diff_Section_STRUCT, "Структура (слои)"),
+            FamilyContentSectionNames.Routing => (StringLocalization.Keys.FM_Diff_Section_ROUTING, "Маршрутизация (правила)"),
+            FamilyContentSectionNames.Segments => (StringLocalization.Keys.FM_Diff_Section_SEGMENTS, "Сегменты и материалы"),
+            FamilyContentSectionNames.Subtypes => (StringLocalization.Keys.FM_Diff_Section_SUBTYPES, "Подтипы"),
+            FamilyContentSectionNames.Railing => (StringLocalization.Keys.FM_Diff_Section_RAILING, "Ограждение (структура)"),
+            FamilyContentSectionNames.Wire => (StringLocalization.Keys.FM_Diff_Section_WIRE, "Провод (параметры)"),
+            FamilyContentSectionNames.Values => (StringLocalization.Keys.FM_Diff_Section_VALUES, "Значения параметров"),
+            _ => (string.Empty, sectionKey),
+        };
+        return string.IsNullOrEmpty(locKey) ? fallback : Loc(locKey, fallback);
     }
 
     private static string Loc(string key, string fallback)

@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Models.FamilyManager;
-using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -88,6 +87,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
         string? hash;
+        IReadOnlyList<ContentSectionHash>? sections = null;
         SystemFamilySnapshot? trimmedSystem = null;
         if (context.SystemSnapshot is not null)
         {
@@ -95,10 +95,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                     context.SystemSnapshot, context.Group, Database, ct)
                 .ConfigureAwait(false);
             hash = _contentHasher.ComputeForSystem(trimmedSystem)?.HexString;
+            sections = hash is null ? null : _contentHasher.ComputeSectionsForSystem(trimmedSystem);
         }
         else
         {
-            hash = ComputeLoadableHash(context)?.HexString;
+            var (loadableHash, loadableSections) = ActualizationSectionComposer.ComputeLoadable(
+                context, _contentHasher, _compositeComposer);
+            hash = loadableHash?.HexString;
+            sections = hash is null ? null : loadableSections;
         }
 
         if (hash is null)
@@ -110,6 +114,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 .ConfigureAwait(false);
             return;
         }
+
+        // Sections ride along in the same UPDATE (#249 follow-up): without
+        // this, section-hashes-v1 could only DETECT the group after hash-v12
+        // had stamped hash_format_version=12 — i.e. on a SECOND «Обновить
+        // базу» run. Null sections (computation failed) leave the columns
+        // NULL and the backstop task picks the group up on the next run.
+        var hashesJson = sections is null ? null : ContentSectionJsonSerializer.SerializeHashes(sections);
+        var stringsJson = sections is null ? null : ContentSectionJsonSerializer.SerializeStrings(sections);
 
         // One UPDATE for ALL Revit variants of the group (the content is
         // identical across variants), plus the item's denormalized hash
@@ -125,10 +137,13 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 12
+                    SET content_hash = @hash, hash_format_version = 12,
+                        section_hashes = @secHashes, section_strings = @secStrings
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
+                cmd.Parameters.Add(new SqliteParameter("@secHashes", (object?)hashesJson ?? DBNull.Value));
+                cmd.Parameters.Add(new SqliteParameter("@secStrings", (object?)stringsJson ?? DBNull.Value));
                 await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -246,42 +261,6 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             SmartConLogger.Info(
                 $"Healed family_key for {updated} family_types row(s) of '{group.ItemName}' ({group.VersionLabel}) from the staged snapshot (FHV7)");
         }
-    }
-
-    /// <summary>
-    /// FHV8 (#209): composite hash for a loadable row. When the extraction
-    /// carried the shared-nested closure (snapshots + flat subtree scans),
-    /// the hash is composed bottom-up over the direct edges derived by
-    /// subtraction; otherwise the plain own-content hash is computed
-    /// (identical to a family without shared nested children).
-    /// </summary>
-    private FamilyContentHash? ComputeLoadableHash(FamilyActualizationContext context)
-    {
-        if (context.SharedNestedSubtrees is not { Count: > 0 } subtrees)
-        {
-            return _contentHasher.ComputeForLoadable(context.Snapshot);
-        }
-
-        var snapshots = new Dictionary<string, FamilySnapshot>(StringComparer.OrdinalIgnoreCase);
-        var rootName = FamilyNameNormalizer.Normalize(context.Snapshot.FamilyName);
-        snapshots[rootName] = context.Snapshot;
-        foreach (var nested in context.SharedNestedSnapshots ?? (IReadOnlyList<FamilySnapshot>)Array.Empty<FamilySnapshot>())
-        {
-            // Last-wins on a normalized-name collision (same heuristic as
-            // the import-time preparation queue).
-            snapshots[FamilyNameNormalizer.Normalize(nested.FamilyName)] = nested;
-        }
-
-        var flatSubtrees = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subtree in subtrees)
-        {
-            flatSubtrees[subtree.OwnerFamilyName] = subtree.NestedFamilyNames;
-        }
-
-        var composed = _compositeComposer.Compose(snapshots, flatSubtrees);
-        return composed.TryGetValue(rootName, out var hash)
-            ? hash
-            : _contentHasher.ComputeForLoadable(context.Snapshot);
     }
 
     private async Task WriteMarkerAsync(

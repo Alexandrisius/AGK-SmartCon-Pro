@@ -720,7 +720,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                         stats.SkippedEmptySolid++;
                         break;
                     }
-                    AddSolidWithMaterials(solid, groups, verbose);
+                    AddSolidWithMaterials(solid, groups);
                     stats.SolidCount++;
                     break;
 
@@ -792,12 +792,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     /// normals across face boundaries inside the same material.
     /// </remarks>
     private static void AddSolidWithMaterials(
-        Solid solid, Dictionary<int, MaterialMeshGroup> groups, bool verbose)
+        Solid solid, Dictionary<int, MaterialMeshGroup> groups)
     {
         if (solid.Faces is null || solid.Faces.Size == 0) return;
-
-        var faceCount = solid.Faces.Size;
-        var beforeTris = groups.Values.Sum(g => g.Indices.Count / 3);
 
         foreach (Face face in solid.Faces)
         {
@@ -820,11 +817,6 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 SmartConLogger.Debug($"    AddSolidWithMaterials: Face.Triangulate(1.0) failed: {ex.Message}");
             }
         }
-
-        var producedTris = groups.Values.Sum(g => g.Indices.Count / 3) - beforeTris;
-        if (verbose)
-            SmartConLogger.Debug(
-                $"    AddSolidWithMaterials(Face.Triangulate): {faceCount} face(s) → {producedTris} triangles");
     }
 
     /// <summary>

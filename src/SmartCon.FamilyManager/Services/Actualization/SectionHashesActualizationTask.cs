@@ -1,7 +1,6 @@
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
-using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -11,13 +10,13 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// <summary>
 /// OPTIONAL actualization task (Id=<c>section-hashes-v1</c>, Issue #249,
 /// Phase 4): backfills <c>catalog_versions.section_hashes</c> /
-/// <c>section_strings</c> for versions imported before the content-
-/// section analytics existed. Detection: the version's content hash is
-/// current (= <see cref="FamilyContentHashFormat.CurrentVersion"/>) but
-/// <c>section_hashes</c> is NULL — older-format versions are the
-/// critical hash task's job (it runs first, Order 12 &lt; 80, and its
-/// recompute does NOT write sections — this task then fills them in
-/// the same engine pass). Loadable sections are composed with the
+/// <c>section_strings</c> for versions whose section columns are still
+/// NULL. Detection: the version's content hash is current (= <see
+/// cref="FamilyContentHashFormat.CurrentVersion"/>) but <c>section_hashes</c>
+/// is NULL. Since the #249 follow-up, <see cref="HashFormatActualizationTask"/>
+/// writes sections inline with its recompute, so this task is the BACKSTOP:
+/// versions whose inline section computation failed, and databases written
+/// by intermediate builds. Loadable sections are composed with the
 /// shared-nested closure (the same enriched snapshot as the identity
 /// hash — composite-consistent NESTEDHASH); system groups are trimmed
 /// via <see cref="SystemTypeCatalogTrimHelper"/>.
@@ -59,7 +58,8 @@ internal sealed class SectionHashesActualizationTask : SqlDetectionActualization
         }
         else
         {
-            sections = ComputeLoadableSections(context);
+            sections = ActualizationSectionComposer.ComputeLoadable(
+                context, _contentHasher, _compositeComposer).Sections;
         }
 
         if (sections is null)
@@ -103,38 +103,5 @@ internal sealed class SectionHashesActualizationTask : SqlDetectionActualization
             tx.Rollback();
             throw;
         }
-    }
-
-    /// <summary>
-    /// Loadable sections of the group — composed with the shared-nested
-    /// closure when the extraction carried it (same enriched snapshot as
-    /// <see cref="HashFormatActualizationTask"/>'s identity hash, so the
-    /// NESTEDHASH section is composite-consistent).
-    /// </summary>
-    private IReadOnlyList<ContentSectionHash>? ComputeLoadableSections(FamilyActualizationContext context)
-    {
-        if (context.SharedNestedSubtrees is not { Count: > 0 } subtrees)
-        {
-            return _contentHasher.ComputeSectionsForLoadable(context.Snapshot);
-        }
-
-        var snapshots = new Dictionary<string, FamilySnapshot>(StringComparer.OrdinalIgnoreCase);
-        var rootName = FamilyNameNormalizer.Normalize(context.Snapshot.FamilyName);
-        snapshots[rootName] = context.Snapshot;
-        foreach (var nested in context.SharedNestedSnapshots ?? (IReadOnlyList<FamilySnapshot>)Array.Empty<FamilySnapshot>())
-        {
-            snapshots[FamilyNameNormalizer.Normalize(nested.FamilyName)] = nested;
-        }
-
-        var flatSubtrees = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subtree in subtrees)
-        {
-            flatSubtrees[subtree.OwnerFamilyName] = subtree.NestedFamilyNames;
-        }
-
-        var composed = _compositeComposer.ComposeDetailed(snapshots, flatSubtrees);
-        return composed.TryGetValue(rootName, out var result)
-            ? result.Sections
-            : _contentHasher.ComputeSectionsForLoadable(context.Snapshot);
     }
 }

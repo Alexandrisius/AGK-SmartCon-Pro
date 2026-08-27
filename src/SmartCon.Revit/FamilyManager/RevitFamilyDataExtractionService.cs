@@ -308,7 +308,6 @@ public sealed class RevitFamilyDataExtractionService : IFamilyDataExtractionServ
                         ? Compatibility.RevitUnitsCompat.FormatDisplayValue(familyDoc, param, dblVal.Value)
                             ?? Core.Services.Implementation.UnitSymbolFixup.Correct(familyType.AsValueString(param))
                         : Core.Services.Implementation.UnitSymbolFixup.Correct(familyType.AsValueString(param));
-                    ParameterUnitDiagnostics.LogFamilyTypeDouble(familyType, param, parameterName, dblVal, "ManagedFile");
                     break;
                 case StorageType.Integer:
                     var intVal = familyType.AsInteger(param);

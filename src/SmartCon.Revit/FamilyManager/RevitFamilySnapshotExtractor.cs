@@ -721,7 +721,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                         specTypeId = Compatibility.RevitUnitsCompat.GetSpecTypeIdString(param.Definition);
                         unitTypeId = Compatibility.RevitUnitsCompat.GetUnitTypeIdString(param);
                     }
-                    ParameterUnitDiagnostics.LogFamilyTypeDouble(familyType, param, parameterName, dblVal, "Snapshot");
                     break;
 
                 case StorageType.Integer:
@@ -1727,7 +1726,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                         valueDisplay = Compatibility.RevitUnitsCompat.FormatDisplayValue(projectDoc, param, dblVal);
                         specTypeId = Compatibility.RevitUnitsCompat.GetSpecTypeIdString(param.Definition);
                         unitTypeId = Compatibility.RevitUnitsCompat.GetUnitTypeIdString(param);
-                        ParameterUnitDiagnostics.LogParameterDouble(param, paramName!, dblVal, "SystemSnapshot");
                         break;
 
                     case StorageType.Integer:
