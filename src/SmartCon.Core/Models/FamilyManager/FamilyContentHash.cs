@@ -160,6 +160,17 @@ public sealed record FamilyContentHash(
     ///     NOT affected — <c>family_type_hashes</c> rows stay valid.
     ///     Critical task <c>hash-v12</c> recomputes every row that is
     ///     not current.
+    /// 13 — sketch-content isolation (Issue #249, manual-test follow-up):
+    ///     GEOM2D no longer counts SKETCH-OWNED model curves (matched via
+    ///     <c>Sketch.Profile</c> + <c>Curve.Reference.ElementId</c>) — they
+    ///     are the parametric skeleton of 3D forms, already measured by the
+    ///     GEOM metrics, so "added a 3D body" stopped firing the 2D
+    ///     section. Both DEF/DIMS and the GEOM2D dimension count now cover
+    ///     only LABELED dimensions (an unlabeled dimension — including the
+    ///     automatic ones Revit leaves even on API-created extrusions — is
+    ///     not parameter wiring). Per-type hashes (TYPES substrings) and
+    ///     the VIEW3D preview hash are NOT affected. Critical task
+    ///     <c>hash-v13</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -175,7 +186,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 12;
+    public const int CurrentVersion = 13;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

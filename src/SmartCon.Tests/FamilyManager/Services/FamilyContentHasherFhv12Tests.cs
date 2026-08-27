@@ -195,9 +195,32 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv12()
+    public void MetaSection_IsFhv13()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV12|LOADABLE|", canonical);
+        Assert.StartsWith("FHV13|LOADABLE|", canonical);
+    }
+
+    [Fact]
+    public void DefSection_UnlabeledDimensions_AreExcluded()
+    {
+        // FHV13 (#249 follow-up): an unlabeled dimension is not parameter
+        // wiring — Revit creates automatic sketch dimensions on every
+        // sketch, and listing them made every 3D edit fire the DEF section.
+        var snapshot = CreateBaseSnapshot() with
+        {
+            Definitions = CreateDefinitions() with
+            {
+                Dimensions =
+                [
+                    CreateDefinitions().Dimensions[0],                              // labeled "Diameter"
+                    new DimensionDefinitionSnapshot(null, "Линейный", 0),           // automatic junk
+                ],
+            },
+        };
+
+        var canonical = FamilyContentHasher.BuildLoadableCanonicalString(snapshot);
+        Assert.Contains("DIMS|Diameter|", canonical);
+        Assert.DoesNotContain("Линейный", canonical);
     }
 }

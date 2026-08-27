@@ -9,23 +9,27 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v12</c>): recalculates stale
-/// (format v1..v11 / NULL) content hashes to the FHV12 format
+/// CRITICAL actualization task (Id=<c>hash-v13</c>): recalculates stale
+/// (format v1..v12 / NULL) content hashes to the FHV13 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
 /// discriminator in FAMKEY, #215 manual test 2026-08-06; FHV8 —
-/// composite shared-nested content in the loadable hash, #209 ADR-066;
-/// FHV9 — PHANTOM section: parameter values of typeless families,
-/// #209 stress test 2026-08-12; FHV10 — parameter groups leave the
-/// loadable hash: the one content field no merge can transfer, and the
-/// last difference between identity and embedded verification — one
-/// unified hash now, owner decision 2026-08-12; FHV11 — LOOKUP section:
-/// raw CSV content of embedded lookup tables (FamilySizeTable) enters
-/// the loadable hash, Issue #238 ADR-069; FHV12 — DEF section
-/// (definition wiring) + strengthened GEOM (centroid, face-kind
-/// histogram, edge lengths, resolved RGBA, visibility flags, nested
-/// instance placements), system FHV8 prefix bump, Issue #249 Phase 3).
+    /// composite shared-nested content in the loadable hash, #209 ADR-066;
+    /// FHV9 — PHANTOM section: parameter values of typeless families,
+    /// #209 stress test 2026-08-12; FHV10 — parameter groups leave the
+    /// loadable hash: the one content field no merge can transfer, and the
+    /// last difference between identity and embedded verification — one
+    /// unified hash now, owner decision 2026-08-12; FHV11 — LOOKUP section:
+    /// raw CSV content of embedded lookup tables (FamilySizeTable) enters
+    /// the loadable hash, Issue #238 ADR-069; FHV12 — DEF section
+    /// (definition wiring) + strengthened GEOM (centroid, face-kind
+    /// histogram, edge lengths, resolved RGBA, visibility flags, nested
+    /// instance placements), system FHV8 prefix bump, Issue #249 Phase 3;
+    /// FHV13 — sketch-content isolation: GEOM2D counts only free 2D
+    /// elements (sketch-owned curves/dimensions are 3D-form wiring,
+    /// covered by GEOM), DEF/DIMS lists only labeled dimensions, Issue
+    /// #249 manual-test follow-up).
 /// Owns the <c>hash_format_version</c> marker
 /// semantics: NULL/1..11 pending, 12 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
@@ -74,14 +78,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v12";
+    public override string Id => "hash-v13";
     public override int Order => 12;
     public override bool IsCritical => true;
 
-    protected override string DetectionSql => """
+    protected override string DetectionSql => $"""
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (12, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN ({FamilyContentHashFormat.CurrentVersion}, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
@@ -116,7 +120,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         }
 
         // Sections ride along in the same UPDATE (#249 follow-up): without
-        // this, section-hashes-v1 could only DETECT the group after hash-v12
+        // this, section-hashes-v1 could only DETECT the group after hash-v13
         // had stamped hash_format_version=12 — i.e. on a SECOND «Обновить
         // базу» run. Null sections (computation failed) leave the columns
         // NULL and the backstop task picks the group up on the next run.
@@ -137,7 +141,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 12,
+                    SET content_hash = @hash, hash_format_version = {FamilyContentHashFormat.CurrentVersion},
                         section_hashes = @secHashes, section_strings = @secStrings
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
@@ -151,9 +155,9 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             {
                 using var itemCmd = connection.CreateCommand();
                 itemCmd.Transaction = tx;
-                itemCmd.CommandText = """
+                itemCmd.CommandText = $"""
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 12, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = {FamilyContentHashFormat.CurrentVersion}, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));

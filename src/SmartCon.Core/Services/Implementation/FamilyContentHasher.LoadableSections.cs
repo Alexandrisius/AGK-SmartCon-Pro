@@ -15,7 +15,7 @@ public sealed partial class FamilyContentHasher
 {
     /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV12|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
+    /// Format: FHV13|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
@@ -100,7 +100,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildLoadableMetaSection(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV12|LOADABLE|");
+        sb.Append("FHV13|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -236,7 +236,14 @@ public sealed partial class FamilyContentHasher
             }
 
             sb.Append("DIMS|");
+            // FHV13 (#249 follow-up): only LABELED dimensions — a label IS
+            // the wiring this section exists to catch. Unlabeled dimensions
+            // (including Revit's automatic sketch dimensions created on
+            // every sketch) are not parameter bindings; their geometric
+            // effect is measured by the GEOM metrics, and listing them made
+            // every "added a 3D body" edit fire the DEF section.
             var sortedDims = def.Dimensions
+                .Where(d => d.LabelParameterName is not null)
                 .OrderBy(d => d.LabelParameterName, StringComparer.Ordinal)
                 .ThenBy(d => d.StyleName, StringComparer.Ordinal)
                 .ThenBy(d => d.SegmentCount);

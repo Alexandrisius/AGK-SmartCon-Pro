@@ -789,15 +789,22 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .Cast<GenericForm>()
                 .ToList();
 
+            // FHV13 (#249 follow-up): elements owned by form sketches are
+            // the parametric skeleton of 3D forms — already measured by the
+            // GEOM metrics — so GEOM2D counts only FREE 2D content. Without
+            // the exclusion, every "added a 3D body" edit fired the 2D
+            // section (sketch curves + Revit's automatic sketch dimensions).
+            var sketchOwnedIds = CollectSketchOwnedElementIds(familyDoc);
+
             var (symbolicCount, symbolicLength) = CountAndMeasureCurves(familyDoc,
-                new CurveElementFilter(CurveElementType.SymbolicCurve));
+                new CurveElementFilter(CurveElementType.SymbolicCurve), sketchOwnedIds);
             var (detailCount, detailLength) = CountAndMeasureCurves(familyDoc,
-                new CurveElementFilter(CurveElementType.DetailCurve));
+                new CurveElementFilter(CurveElementType.DetailCurve), sketchOwnedIds);
             var (modelCount, modelLength) = CountAndMeasureCurves(familyDoc,
-                new CurveElementFilter(CurveElementType.ModelCurve));
+                new CurveElementFilter(CurveElementType.ModelCurve), sketchOwnedIds);
             var textNoteCount = CountElements(familyDoc, typeof(TextNote));
             var refPlaneCount = CountElements(familyDoc, typeof(ReferencePlane));
-            var dimensionCount = CountElements(familyDoc, typeof(Dimension));
+            var dimensionCount = CountLabeledDimensions(familyDoc, sketchOwnedIds);
 
             // FHV12 (#249, Phase 3): nested instance placements are content
             // even in a form-less family (a pure container family).
@@ -1107,11 +1114,58 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     }
 
     /// <summary>
+    /// FHV13 (#249 follow-up): element ids of the model curves owned by
+    /// form sketches — matched via <c>Curve.Reference.ElementId</c> of the
+    /// <c>Sketch.Profile</c> geometry (the documented mapping; works on
+    /// every supported Revit version, unlike <c>Sketch.GetAllElements</c>
+    /// which is 2024+). Best-effort: an unreadable sketch keeps its curves
+    /// counted (fail-open, pre-FHV13 behaviour).
+    /// </summary>
+    private static HashSet<ElementId> CollectSketchOwnedElementIds(Document doc)
+    {
+        var ids = new HashSet<ElementId>();
+        try
+        {
+            foreach (var sketch in new FilteredElementCollector(doc)
+                .OfClass(typeof(Sketch))
+                .Cast<Sketch>())
+            {
+                try
+                {
+                    foreach (CurveArray curveArray in sketch.Profile)
+                    {
+                        foreach (Curve curve in curveArray)
+                        {
+                            var id = curve.Reference?.ElementId;
+                            if (id is not null && id != ElementId.InvalidElementId)
+                            {
+                                ids.Add(id);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // single sketch unreadable — its elements stay counted
+                }
+            }
+        }
+        catch
+        {
+            // sketch collection unsupported — fall back to counting everything
+        }
+        return ids;
+    }
+
+    /// <summary>
     /// Count curve elements matching the filter and sum their geometry
     /// curve lengths (ADR-056). Length catches 2D edits that keep the
-    /// element count constant (redrawn line of the same kind).
+    /// element count constant (redrawn line of the same kind). Elements
+    /// owned by form sketches (FHV13) are excluded — they are 3D-form
+    /// wiring, measured by the GEOM metrics.
     /// </summary>
-    private static (int Count, double TotalLength) CountAndMeasureCurves(Document doc, ElementFilter filter)
+    private static (int Count, double TotalLength) CountAndMeasureCurves(
+        Document doc, ElementFilter filter, ISet<ElementId>? excludeIds = null)
     {
         try
         {
@@ -1119,6 +1173,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             double length = 0;
             foreach (var element in new FilteredElementCollector(doc).WherePasses(filter))
             {
+                if (excludeIds is not null && excludeIds.Contains(element.Id))
+                {
+                    continue;
+                }
                 count++;
                 try
                 {
@@ -1138,6 +1196,42 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
+    /// <summary>
+    /// FHV13 (#249 follow-up): number of LABELED dimensions not owned by a
+    /// form sketch. Unlabeled dimensions — including Revit's automatic
+    /// sketch dimensions, which even API-created extrusions leave behind —
+    /// are not parameter wiring: their geometric effect is measured by the
+    /// GEOM metrics, and counting them fired GEOM2D on every 3D edit.
+    /// </summary>
+    private static int CountLabeledDimensions(Document doc, ISet<ElementId> excludeIds)
+    {
+        var count = 0;
+        try
+        {
+            foreach (var dim in new FilteredElementCollector(doc)
+                .OfClass(typeof(Dimension))
+                .Cast<Dimension>())
+            {
+                if (excludeIds.Contains(dim.Id))
+                {
+                    continue;
+                }
+                bool isLabeled;
+                try { isLabeled = dim.FamilyLabel is not null; }
+                catch { isLabeled = false; }
+                if (isLabeled)
+                {
+                    count++;
+                }
+            }
+        }
+        catch
+        {
+            // partial count stands
+        }
+        return count;
+    }
+
     private static int CountElements(Document doc, ElementFilter filter)
     {
         try
@@ -1152,13 +1246,20 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
-    private static int CountElements(Document doc, Type elementType)
+    private static int CountElements(Document doc, Type elementType, ISet<ElementId>? excludeIds = null)
     {
         try
         {
-            return new FilteredElementCollector(doc)
-                .OfClass(elementType)
-                .ToElements().Count;
+            var count = 0;
+            foreach (var element in new FilteredElementCollector(doc).OfClass(elementType))
+            {
+                if (excludeIds is not null && excludeIds.Contains(element.Id))
+                {
+                    continue;
+                }
+                count++;
+            }
+            return count;
         }
         catch
         {

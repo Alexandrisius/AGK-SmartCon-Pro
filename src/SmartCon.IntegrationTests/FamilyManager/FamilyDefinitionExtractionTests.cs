@@ -238,6 +238,24 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
     }
 
     [Test]
+    public async Task Extract_Geom2d_SketchOwnedElementsExcluded()
+    {
+        // FHV13 (#249 follow-up): the extrusion's sketch curves and any
+        // automatic sketch dimensions are 3D-form wiring — GEOM2D counts
+        // only FREE 2D content. The fixture child has ONE extrusion
+        // (4 sketch curves) and ONE free labeled dimension; the generic
+        // template ships no free model lines.
+        var doc = OpenChild();
+        var snapshot = new RevitFamilySnapshotExtractor().ExtractFromFamilyDocument(doc);
+
+        SmartConLogger.Info(
+            $"GEOM2D: model={snapshot.Geometry.ModelCurveCount}/{snapshot.Geometry.TotalModelCurveLength}, " +
+            $"dim={snapshot.Geometry.DimensionCount}, refPlanes={snapshot.Geometry.ReferencePlaneCount}");
+        await Assert.That(snapshot.Geometry.ModelCurveCount).IsEqualTo(0);
+        await Assert.That(snapshot.Geometry.DimensionCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Extract_Geometry_ConditionallyHiddenForm_IncludedWithFlag()
     {
         // FHV12 blind-spot fix: a form invisible on the CURRENT type
