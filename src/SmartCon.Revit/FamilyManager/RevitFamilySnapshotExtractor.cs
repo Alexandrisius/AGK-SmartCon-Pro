@@ -909,7 +909,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     }
 
                     result.Add(new NestedInstanceSnapshot(
-                        familyName, symbolName,
+                        familyName!, symbolName,
                         transform.Origin.X, transform.Origin.Y, transform.Origin.Z,
                         transform.BasisX.X, transform.BasisX.Y, transform.BasisX.Z,
                         transform.BasisY.X, transform.BasisY.Y, transform.BasisY.Z,

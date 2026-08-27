@@ -80,9 +80,9 @@ public sealed class CompositeFamilyHashComposer
     {
         var detailed = ComposeDetailed(snapshots, flatSubtrees);
         var result = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, value) in detailed)
+        foreach (var kvp in detailed)
         {
-            result[name] = value.Hash;
+            result[kvp.Key] = kvp.Value.Hash;
         }
         return result;
     }

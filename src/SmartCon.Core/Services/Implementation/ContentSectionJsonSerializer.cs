@@ -43,7 +43,7 @@ public static class ContentSectionJsonSerializer
         }
         try
         {
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json!);
         }
         catch (JsonException)
         {

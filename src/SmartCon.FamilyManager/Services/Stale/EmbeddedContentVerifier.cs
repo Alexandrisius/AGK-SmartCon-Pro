@@ -455,15 +455,15 @@ internal static class EmbeddedContentVerifier
         bool fullSet)
     {
         var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, hash) in embedded)
+        foreach (var kvp in embedded)
         {
-            if (file.TryGetValue(name, out var fileHash))
+            if (file.TryGetValue(kvp.Key, out var fileHash))
             {
-                map[name] = !string.Equals(hash, fileHash, StringComparison.OrdinalIgnoreCase);
+                map[kvp.Key] = !string.Equals(kvp.Value, fileHash, StringComparison.OrdinalIgnoreCase);
             }
             else if (fullSet)
             {
-                map[name] = true;
+                map[kvp.Key] = true;
             }
         }
 

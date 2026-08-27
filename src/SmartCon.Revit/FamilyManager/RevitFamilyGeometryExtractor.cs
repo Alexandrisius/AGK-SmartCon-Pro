@@ -441,7 +441,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                         {
                             var transform = inst.GetTransform();
                             previewNestedInstances.Add(new NestedInstanceSnapshot(
-                                nestedFamilyName,
+                                nestedFamilyName!,
                                 inst.Symbol?.Name ?? string.Empty,
                                 transform.Origin.X, transform.Origin.Y, transform.Origin.Z,
                                 transform.BasisX.X, transform.BasisX.Y, transform.BasisX.Z,

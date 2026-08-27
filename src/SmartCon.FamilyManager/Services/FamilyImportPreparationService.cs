@@ -685,10 +685,10 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var detailed = composer.ComposeDetailed(snapshots, flatSubtrees);
         var hashes = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
         var sectionsByName = new Dictionary<string, IReadOnlyList<ContentSectionHash>?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, value) in detailed)
+        foreach (var kvp in detailed)
         {
-            hashes[name] = value.Hash;
-            sectionsByName[name] = value.Sections;
+            hashes[kvp.Key] = kvp.Value.Hash;
+            sectionsByName[kvp.Key] = kvp.Value.Sections;
         }
 
         foreach (var i in itemIndexes)

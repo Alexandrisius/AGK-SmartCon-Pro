@@ -599,8 +599,10 @@ internal sealed class StaleDetector : IStaleDetector
             }
             else
             {
-                _loadableTypeStaleByType[catalogItemId] =
-                    new Dictionary<string, bool>(perTypeStale, StringComparer.OrdinalIgnoreCase);
+                // net48: Dictionary has no IReadOnlyDictionary ctor —
+                // project via LINQ instead.
+                _loadableTypeStaleByType[catalogItemId] = perTypeStale
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
             }
         }
     }
