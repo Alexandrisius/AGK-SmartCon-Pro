@@ -1353,7 +1353,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             MatchedItemName: r.MatchedItemName,
             ExistingCategoryId: r.ExistingCategoryId,
             ExistingCategoryPath: r.ExistingCategoryPath,
-            DependencyLinks: r.DependencyLinks)
+            DependencyLinks: r.DependencyLinks,
+            PerTypeHashes: r.PerTypeHashes)
         {
             Action = r.Action
         }).ToList();

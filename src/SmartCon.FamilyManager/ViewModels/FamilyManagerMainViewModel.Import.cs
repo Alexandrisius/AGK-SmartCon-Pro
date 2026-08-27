@@ -151,7 +151,8 @@ public sealed partial class FamilyManagerMainViewModel
                     ExistingCategoryPath: existingCategoryName,
                     HealthReport: p.HealthReport,
                     DependencyLinks: p.DependencyLinks,
-                    IsMarkerResolvedVersion: p.IsMarkerResolvedVersion)
+                    IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
+                    PerTypeHashes: p.PerTypeHashes)
                 {
                     // ADR-066: dependency rows exist to guarantee PRESENCE in
                     // the catalog. Duplicates default to Skip (dedup-link).
@@ -603,7 +604,8 @@ public sealed partial class FamilyManagerMainViewModel
                 ExistingCategoryPath: existingCategoryName,
                 HealthReport: p.HealthReport,
                 DependencyLinks: p.DependencyLinks,
-                IsMarkerResolvedVersion: p.IsMarkerResolvedVersion)
+                IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
+                PerTypeHashes: p.PerTypeHashes)
             {
                 // ADR-066: dependency rows (routing fittings, shared nested)
                 // exist to guarantee PRESENCE in the catalog. Duplicates

@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 31)
+        if (initialVersion < 32)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v31");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v32");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -88,6 +88,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 29, MigrateV29Async, ct);
         await RunMigrationAsync(connection, 30, MigrateV30Async, ct);
         await RunMigrationAsync(connection, 31, MigrateV31Async, ct);
+        await RunMigrationAsync(connection, 32, MigrateV32Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1408,6 +1409,61 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V32 (#249, Phase 2): adds <c>family_type_hashes</c> — per-type
+    /// content hashes of a catalog version (per-type stale detection for
+    /// loadable families, content-grade #179 for system, cross-family
+    /// type dedup for the future cloud). Plain CREATE IF NOT EXISTS +
+    /// indexes — no data rewrite; legacy versions are backfilled by the
+    /// optional <c>type-hashes-v1</c> actualization task.
+    /// </summary>
+    private static async Task MigrateV32Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 32) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var tableCreated = false;
+            if (!await TableExistsAsync(connection, "family_type_hashes", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyTypeHashes;
+                await cmd.ExecuteNonQueryAsync(ct);
+                tableCreated = true;
+            }
+
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.Transaction = tx;
+                idxCmd.CommandText = FamilyCatalogSql.CreateFamilyTypeHashesIndexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '32' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            if (tableCreated)
+            {
+                SmartConLogger.Info("Migration v32: added family_type_hashes (per-type content hashes, #249)");
+            }
+            else
+            {
+                SmartConLogger.Debug("Migration v32: family_type_hashes already present (fresh schema) — version bumped to 32");
+            }
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1632,6 +1688,21 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             v16IdxCmd.CommandText = FamilyCatalogSql.CreateV16Indexes;
             await v16IdxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_type_hashes", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyTypeHashes;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Indexes are idempotent (CREATE INDEX IF NOT EXISTS) — same healing
+        // rationale as the nested-shared indexes above.
+        using (var typeHashIdxCmd = connection.CreateCommand())
+        {
+            typeHashIdxCmd.CommandText = FamilyCatalogSql.CreateFamilyTypeHashesIndexes;
+            await typeHashIdxCmd.ExecuteNonQueryAsync(ct);
         }
     }
 

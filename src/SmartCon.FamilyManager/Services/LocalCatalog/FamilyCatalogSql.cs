@@ -459,7 +459,8 @@ internal static class FamilyCatalogSql
         {CreateDbUsers};
         {CreateFamilyNestedSharedFamilies};
         {CreateFamilyDependencies};
-        {CreateFamilyFacts}
+        {CreateFamilyFacts};
+        {CreateFamilyTypeHashes}
         """;
 
     public const string MigrateV9AddLoadedVersionLabel = """
@@ -498,6 +499,37 @@ internal static class FamilyCatalogSql
 
     public const string CreateFamilyFactsIndexes = """
         CREATE INDEX IF NOT EXISTS ix_family_facts_key ON family_facts (fact_key, value_key)
+        """;
+
+    /// <summary>
+    /// V32 (Issue #249, Phase 2): per-type content hashes of a catalog
+    /// version — one row per (version, type). <c>type_identity_key</c> is
+    /// computed in C# (<c>typeName.ToUpperInvariant()</c> for loadable,
+    /// <c>SystemTypeIdentityKey.Build</c> "TOKEN|NAME" for system — one
+    /// category can hold same-named types of different system families,
+    /// FHV6), so the key is culture-correct for Cyrillic unlike SQLite's
+    /// NOCASE collation (see the comment in
+    /// <see cref="CreateFamilyNestedSharedFamilies"/>). Populated at import
+    /// from the Prepare-time snapshot hashes and backfilled for legacy
+    /// versions by the optional <c>type-hashes-v1</c> actualization task.
+    /// Typeless loadable families legitimately have ZERO rows — the
+    /// backfill detection keys off <c>family_types</c>, not off this table.
+    /// </summary>
+    public const string CreateFamilyTypeHashes = """
+        CREATE TABLE IF NOT EXISTS family_type_hashes (
+            catalog_version_id TEXT NOT NULL,
+            type_identity_key TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            type_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            PRIMARY KEY (catalog_version_id, type_identity_key),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyTypeHashesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_hash ON family_type_hashes (type_hash);
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_key ON family_type_hashes (type_identity_key)
         """;
 
     public const string MigrateV10AddFamilyTypesNameIndex = """
@@ -612,7 +644,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id);
-        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes;
+        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes + ";" + CreateFamilyTypeHashesIndexes;
 
     /// <summary>
     /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+

@@ -92,4 +92,12 @@ namespace SmartCon.Core.Models.FamilyManager;
     /// marker-resolved so "Duplicate (v2)" is not read as "content-identical
     /// to v2". Never consumed by import logic (MakeActive/executor).
     /// </summary>
-    bool IsMarkerResolvedVersion = false);
+    bool IsMarkerResolvedVersion = false,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes computed from
+    /// <see cref="LoadableSnapshot"/>/<see cref="SystemSnapshot"/> at
+    /// Prepare time, carried to the DB writer so
+    /// <c>family_type_hashes</c> is populated without re-opening the
+    /// family file. <c>null</c> when preparation failed before hashing.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null);

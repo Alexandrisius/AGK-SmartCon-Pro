@@ -733,6 +733,13 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 // verified marker, not from content identity (#209 follow-up:
                 // "Duplicate (v2)" on v1-group content read as a lie).
                 IsMarkerResolvedVersion = markerOverride is not null,
+                // #249 (Phase 2): per-type content hashes of the baked-in
+                // type values — persisted to family_type_hashes at import.
+                // LoadableSnapshot is non-null here (filtered at the top
+                // of the loop).
+                PerTypeHashes = _contentHasher.ComputePerTypeHashesForLoadable(r.LoadableSnapshot!)
+                    ?.Select(kvp => FamilyTypeHashEntry.ForLoadableType(kvp.Key, kvp.Value))
+                    .ToList(),
             };
 
             SmartConLogger.Info(
@@ -1198,6 +1205,11 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             .ConfigureAwait(false);
 
         var hash = _contentHasher.ComputeForSystem(snapshot);
+        // #249 (Phase 2): per-type content hashes — the DB writer persists
+        // them to family_type_hashes without re-opening the staged file.
+        var perTypeHashes = _contentHasher.ComputePerTypeHashesForSystem(snapshot)
+            ?.Select(FamilyTypeHashEntry.ForSystemType)
+            .ToList();
         var displayName = analysis.DisplayName;
         var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
@@ -1241,7 +1253,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
             IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
             MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
-            RoutingDependencies: routingDependencies);
+            RoutingDependencies: routingDependencies,
+            PerTypeHashes: perTypeHashes);
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(

@@ -128,7 +128,14 @@ public sealed record FamilyBatchImportItem(
     /// Display-only: the status column annotates the version as
     /// marker-resolved. Never consumed by import logic.
     /// </summary>
-    bool IsMarkerResolvedVersion = false)
+    bool IsMarkerResolvedVersion = false,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes from Prepare,
+    /// written to <c>family_type_hashes</c> by the import transaction.
+    /// <c>null</c> for legacy/folder imports — the optional
+    /// <c>type-hashes-v1</c> actualization task backfills them.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

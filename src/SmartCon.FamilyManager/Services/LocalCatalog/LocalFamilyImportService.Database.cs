@@ -322,6 +322,51 @@ internal sealed partial class LocalFamilyImportService
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Issue #249 (Phase 2): replace the per-type content-hash rows of one
+    /// catalog version inside the caller's transaction. Always DELETEs the
+    /// previous rows first (an overwrite invalidates them by definition);
+    /// inserts the new set when <paramref name="entries"/> is non-null.
+    /// A <c>null</c> set therefore means "unknown — pending backfill",
+    /// which is exactly what the <c>type-hashes-v1</c> actualization task
+    /// detects (no rows + <c>family_types</c> present).
+    /// </summary>
+    private static async Task ReplaceTypeHashesAsync(
+        SqliteConnection connection,
+        string versionId,
+        IReadOnlyList<FamilyTypeHashEntry>? entries,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        using (var deleteCmd = connection.CreateCommand())
+        {
+            deleteCmd.CommandText = "DELETE FROM family_type_hashes WHERE catalog_version_id = @versionId";
+            deleteCmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+            await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        if (entries is null || entries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var entry in entries)
+        {
+            using var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = """
+                INSERT OR REPLACE INTO family_type_hashes
+                    (catalog_version_id, type_identity_key, type_name, type_hash, created_at_utc)
+                VALUES (@versionId, @identityKey, @typeName, @typeHash, @createdAtUtc)
+                """;
+            insertCmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+            insertCmd.Parameters.Add(new SqliteParameter("@identityKey", entry.TypeIdentityKey));
+            insertCmd.Parameters.Add(new SqliteParameter("@typeName", entry.TypeName));
+            insertCmd.Parameters.Add(new SqliteParameter("@typeHash", entry.HashHex));
+            insertCmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
+            await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     private static async Task InsertTagAsync(SqliteConnection connection, string catalogItemId, string tag, CancellationToken ct)
     {
         var normalizedTag = FamilySearchNormalizer.Normalize(tag);
@@ -519,6 +564,14 @@ internal sealed partial class LocalFamilyImportService
             // so FK references (family_types.version_id) remain valid.
             await UpdateVersionAsync(connection, currentVersion.Id, finalMetadata, now,
                 item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct, item.FamilySource);
+
+            // #249 (Phase 2): the overwrite REPLACED the content, so the
+            // previous per-type hashes are invalid by definition. Replace
+            // them with the freshly computed set; when the dialog lost the
+            // snapshot (legacy path, null) the rows are cleared so the
+            // type-hashes-v1 actualization task re-detects the version as
+            // pending instead of serving stale hashes.
+            await ReplaceTypeHashesAsync(connection, currentVersion.Id, item.PerTypeHashes, now, ct);
 
             tx.Commit();
 

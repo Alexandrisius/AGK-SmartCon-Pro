@@ -64,4 +64,11 @@ public sealed record FamilyImportRequest(
     string? PublishedBy = null,
     IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null,
     int? RevitCategoryId = null,
-    IReadOnlyList<FamilyFact>? Facts = null);
+    IReadOnlyList<FamilyFact>? Facts = null,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes from Prepare,
+    /// written to <c>family_type_hashes</c> in the import transaction.
+    /// <c>null</c> for legacy/folder imports — backfilled by the optional
+    /// <c>type-hashes-v1</c> actualization task.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null);

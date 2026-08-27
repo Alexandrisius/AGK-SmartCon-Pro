@@ -380,7 +380,8 @@ public sealed partial class FamilyManagerMainViewModel
             MatchedItemName: prepared.MatchedItemName,
             ExistingCategoryId: existingCategoryId,
             ExistingCategoryPath: existingCategoryName,
-            HealthReport: prepared.HealthReport)
+            HealthReport: prepared.HealthReport,
+            PerTypeHashes: prepared.PerTypeHashes)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -610,7 +611,8 @@ public sealed partial class FamilyManagerMainViewModel
                 HashFormatVersion: importItem.HashFormatVersion,
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
-                SystemSnapshot: null)
+                SystemSnapshot: null,
+                PerTypeHashes: importItem.PerTypeHashes)
             {
                 Action = FamilyBatchImportAction.MakeActive,
                 PublishedByUser = _revitContext.GetUsername()
@@ -653,7 +655,8 @@ public sealed partial class FamilyManagerMainViewModel
                 HashFormatVersion: importItem.HashFormatVersion,
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
-                SystemSnapshot: null)
+                SystemSnapshot: null,
+                PerTypeHashes: importItem.PerTypeHashes)
             {
                 Action = FamilyBatchImportAction.OverwriteCurrent,
                 PublishedByUser = _revitContext.GetUsername()
@@ -693,7 +696,8 @@ public sealed partial class FamilyManagerMainViewModel
                 PublishedBy: _revitContext.GetUsername(),
                 PreextractedGeometry: importItem.GeometryPerType,
                 RevitCategoryId: importItem.LoadableSnapshot?.CategoryId ?? importItem.SystemSnapshot?.CategoryId,
-                Facts: importItem.LoadableSnapshot?.Facts);
+                Facts: importItem.LoadableSnapshot?.Facts,
+                PerTypeHashes: importItem.PerTypeHashes);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }

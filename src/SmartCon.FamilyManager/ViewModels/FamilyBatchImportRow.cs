@@ -97,6 +97,14 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     private int? _hashFormatVersion;
 
     /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes computed at Prepare.
+    /// Read-only — never changes during the dialog lifetime, so a plain
+    /// get-only property is enough (no INPC needed). Written to
+    /// <c>family_type_hashes</c> by the import transaction.
+    /// </summary>
+    public IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes { get; }
+
+    /// <summary>
     /// Phase 27: version label that the content hash matched (e.g. "v2").
     /// Displayed in the dialog as "Duplicate (v2)". Null when status is
     /// not Duplicate.
@@ -833,6 +841,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedManagedPath = item.PrecomputedManagedPath;
         _precomputedContentHash = item.ContentHash;
         _hashFormatVersion = item.HashFormatVersion;
+        PerTypeHashes = item.PerTypeHashes;
         _matchedVersionLabel = item.MatchedVersionLabel;
         _isMarkerResolvedVersion = item.IsMarkerResolvedVersion;
         _isCrossNameDuplicate = item.IsCrossNameDuplicate;
