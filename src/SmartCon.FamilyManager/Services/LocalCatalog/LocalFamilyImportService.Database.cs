@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -367,6 +368,40 @@ internal sealed partial class LocalFamilyImportService
         }
     }
 
+    /// <summary>
+    /// Issue #249 (Phase 4): write the canonical content sections of one
+    /// catalog version (JSON maps into <c>section_hashes</c> /
+    /// <c>section_strings</c>) inside the caller's transaction. A
+    /// <c>null</c> set CLEARS the columns — after an overwrite without a
+    /// fresh snapshot the stale analytics must not be served (the
+    /// <c>section-hashes-v1</c> task re-detects the version as pending).
+    /// </summary>
+    private static async Task WriteVersionSectionsAsync(
+        SqliteConnection connection,
+        string versionId,
+        IReadOnlyList<ContentSectionHash>? sections,
+        CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE catalog_versions
+            SET section_hashes = @hashes, section_strings = @strings
+            WHERE id = @versionId
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        if (sections is null)
+        {
+            cmd.Parameters.Add(new SqliteParameter("@hashes", DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@strings", DBNull.Value));
+        }
+        else
+        {
+            cmd.Parameters.Add(new SqliteParameter("@hashes", ContentSectionJsonSerializer.SerializeHashes(sections)));
+            cmd.Parameters.Add(new SqliteParameter("@strings", ContentSectionJsonSerializer.SerializeStrings(sections)));
+        }
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     private static async Task InsertTagAsync(SqliteConnection connection, string catalogItemId, string tag, CancellationToken ct)
     {
         var normalizedTag = FamilySearchNormalizer.Normalize(tag);
@@ -572,6 +607,11 @@ internal sealed partial class LocalFamilyImportService
             // type-hashes-v1 actualization task re-detects the version as
             // pending instead of serving stale hashes.
             await ReplaceTypeHashesAsync(connection, currentVersion.Id, item.PerTypeHashes, now, ct);
+
+            // #249 (Phase 4): same rule for the content sections — the
+            // overwrite invalidated them; a null set clears the columns so
+            // the section-hashes-v1 task re-detects the version.
+            await WriteVersionSectionsAsync(connection, currentVersion.Id, item.Sections, ct);
 
             tx.Commit();
 

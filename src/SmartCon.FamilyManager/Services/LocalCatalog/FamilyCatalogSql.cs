@@ -502,6 +502,22 @@ internal static class FamilyCatalogSql
         """;
 
     /// <summary>
+    /// V33 (Issue #249, Phase 4): analytics columns on
+    /// <c>catalog_versions</c> — the canonical content sections of the
+    /// version as two flat JSON maps (section name → section SHA-256 hex;
+    /// section name → canonical substring), written at import and
+    /// backfilled for legacy versions by the optional
+    /// <c>section-hashes-v1</c> actualization task. Powers the batch
+    /// dialog's "what changed" diff against the active version without
+    /// re-opening the family file. Analytics only — the identity hash
+    /// column is untouched.
+    /// </summary>
+    public const string MigrateV33AddSectionColumns = """
+        ALTER TABLE catalog_versions ADD COLUMN section_hashes TEXT;
+        ALTER TABLE catalog_versions ADD COLUMN section_strings TEXT
+        """;
+
+    /// <summary>
     /// V32 (Issue #249, Phase 2): per-type content hashes of a catalog
     /// version — one row per (version, type). <c>type_identity_key</c> is
     /// computed in C# (<c>typeName.ToUpperInvariant()</c> for loadable,

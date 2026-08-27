@@ -142,12 +142,70 @@ public sealed class LocalFamilyImportServiceTypeHashTests : IDisposable
         Assert.Empty(await ReadRowsAsync(result.Results[0].VersionId!));
     }
 
+    [Fact]
+    public async Task ImportFile_WithSections_WritesJsonColumns()
+    {
+        var path = _fixture.CreateFakeRfaFile("FamSections.rfa");
+        var sections = new[]
+        {
+            new ContentSectionHash("META", "FHV12|LOADABLE|-1|", "M1"),
+            new ContentSectionHash("TYPES", "TYPES|", "T1"),
+        };
+        var request = new FamilyImportRequest(
+            path, 2025, null, null, null,
+            ContentHash: "H1",
+            HashFormatVersion: 12,
+            Sections: sections);
+
+        var result = await _importService.ImportFileAsync(request);
+
+        Assert.True(result.Success);
+        var (hashesJson, stringsJson) = await ReadSectionColumnsAsync(result.VersionId!);
+        var hashes = SmartCon.Core.Services.Implementation.ContentSectionJsonSerializer.Deserialize(hashesJson);
+        var strings = SmartCon.Core.Services.Implementation.ContentSectionJsonSerializer.Deserialize(stringsJson);
+        Assert.NotNull(hashes);
+        Assert.NotNull(strings);
+        Assert.Equal("M1", hashes!["META"]);
+        Assert.Equal("FHV12|LOADABLE|-1|", strings!["META"]);
+    }
+
+    [Fact]
+    public async Task OverwriteCurrent_NullSections_ClearsStaleColumns()
+    {
+        var (item, _) = await SeedOverwriteScenarioAsync(
+            Hashes(("OLD", "000")),
+            sections: new[] { new ContentSectionHash("META", "x", "OLDHASH") });
+
+        var result = await _importService.ImportBatchAsync(new[] { item }, null, null);
+
+        Assert.True(result.Results[0].Success, result.Results[0].ErrorMessage);
+        var (hashesJson, stringsJson) = await ReadSectionColumnsAsync(result.Results[0].VersionId!);
+        Assert.Null(hashesJson);
+        Assert.Null(stringsJson);
+    }
+
+    private async Task<(string? Hashes, string? Strings)> ReadSectionColumnsAsync(string versionId)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT section_hashes, section_strings FROM catalog_versions WHERE id = @id";
+        cmd.Parameters.Add(new SqliteParameter("@id", versionId));
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new InvalidOperationException("version row must exist");
+        return (
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
+
     private async Task<(FamilyBatchImportItem Item, string AbsolutePath)> SeedOverwriteScenarioAsync(
-        IReadOnlyList<FamilyTypeHashEntry>? seedHashes)
+        IReadOnlyList<FamilyTypeHashEntry>? seedHashes,
+        IReadOnlyList<ContentSectionHash>? sections = null)
     {
         var seedPath = _fixture.CreateFakeRfaFile("FamOw.rfa");
         var seed = await _importService.ImportFileAsync(
-            new FamilyImportRequest(seedPath, 2025, null, null, null, PerTypeHashes: seedHashes));
+            new FamilyImportRequest(seedPath, 2025, null, null, null,
+                PerTypeHashes: seedHashes, Sections: sections));
         Assert.True(seed.Success);
 
         var versions = await _fixture.GetProvider().GetVersionsAsync(seed.CatalogItemId!);

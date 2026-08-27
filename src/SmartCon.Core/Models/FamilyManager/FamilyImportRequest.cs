@@ -71,4 +71,11 @@ public sealed record FamilyImportRequest(
     /// <c>null</c> for legacy/folder imports — backfilled by the optional
     /// <c>type-hashes-v1</c> actualization task.
     /// </summary>
-    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null);
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare,
+    /// written to <c>catalog_versions.section_hashes/section_strings</c>
+    /// in the import transaction. <c>null</c> for legacy/folder imports —
+    /// backfilled by the <c>section-hashes-v1</c> task.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null);

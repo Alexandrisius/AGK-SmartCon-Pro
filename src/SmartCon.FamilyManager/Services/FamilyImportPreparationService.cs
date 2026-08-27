@@ -682,7 +682,14 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         }
 
         var composer = new CompositeFamilyHashComposer(_contentHasher);
-        var hashes = composer.Compose(snapshots, flatSubtrees);
+        var detailed = composer.ComposeDetailed(snapshots, flatSubtrees);
+        var hashes = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
+        var sectionsByName = new Dictionary<string, IReadOnlyList<ContentSectionHash>?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in detailed)
+        {
+            hashes[name] = value.Hash;
+            sectionsByName[name] = value.Sections;
+        }
 
         foreach (var i in itemIndexes)
         {
@@ -740,6 +747,12 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 PerTypeHashes = _contentHasher.ComputePerTypeHashesForLoadable(r.LoadableSnapshot!)
                     ?.Select(kvp => FamilyTypeHashEntry.ForLoadableType(kvp.Key, kvp.Value))
                     .ToList(),
+                // #249 (Phase 4): canonical sections of the SAME enriched
+                // snapshot as the identity hash (composite-consistent
+                // NESTEDHASH) — persisted to section_hashes/section_strings.
+                Sections = sectionsByName.TryGetValue(normalized, out var sections)
+                    ? sections
+                    : null,
             };
 
             SmartConLogger.Info(
@@ -1210,6 +1223,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var perTypeHashes = _contentHasher.ComputePerTypeHashesForSystem(snapshot)
             ?.Select(FamilyTypeHashEntry.ForSystemType)
             .ToList();
+        // #249 (Phase 4): canonical sections — persisted to
+        // section_hashes/section_strings at import.
+        var systemSections = _contentHasher.ComputeSectionsForSystem(snapshot);
         var displayName = analysis.DisplayName;
         var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
@@ -1254,7 +1270,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
             MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
             RoutingDependencies: routingDependencies,
-            PerTypeHashes: perTypeHashes);
+            PerTypeHashes: perTypeHashes,
+            Sections: systemSections);
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(

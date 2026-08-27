@@ -110,6 +110,24 @@ public static partial class LocalizationService
         // #249 (Phase 2): pre-update per-type replacement confirmation.
         ru["FM_UpdateReplaceTypesTitle"] = "Обновление семейства"; en["FM_UpdateReplaceTypesTitle"] = "Family update";
         ru["FM_UpdateReplaceTypesConfirm"] = "В проекте изменены типы: {0}.\n\nОбновление заменит ваши локальные правки этих типов содержимым каталога (остальные типы: {1} — совпадают с каталогом).\n\nПродолжить?"; en["FM_UpdateReplaceTypesConfirm"] = "Types modified in the project: {0}.\n\nThe update will replace your local edits of these types with the catalog content (the other types: {1} — match the catalog).\n\nContinue?";
+        // #249 (Phase 4): "what changed" diff window in the batch dialog.
+        ru["FM_Diff_BadgeTooltip"] = "Что изменилось относительно активной версии"; en["FM_Diff_BadgeTooltip"] = "What changed vs the active version";
+        ru["FM_Diff_Subtitle"] = "сравнение с активной версией {0}"; en["FM_Diff_Subtitle"] = "comparison with the active version {0}";
+        ru["FM_Diff_ClassMajor"] = "Существенные изменения"; en["FM_Diff_ClassMajor"] = "Major changes";
+        ru["FM_Diff_ClassMajorHint"] = "Изменены геометрия, привязки или коннекторы — рекомендуется «Новая версия», чтобы не потерять предыдущее содержимое."; en["FM_Diff_ClassMajorHint"] = "Geometry, wiring or connectors changed — a new version is recommended to keep the previous content.";
+        ru["FM_Diff_ClassMinor"] = "Умеренные изменения"; en["FM_Diff_ClassMinor"] = "Moderate changes";
+        ru["FM_Diff_ClassMinorHint"] = "Изменены значения типов, параметры или вложения — проверьте секции ниже перед выбором действия."; en["FM_Diff_ClassMinorHint"] = "Type values, parameters or nested content changed — review the sections below before choosing an action.";
+        ru["FM_Diff_ClassTrivial"] = "Косметические изменения"; en["FM_Diff_ClassTrivial"] = "Cosmetic changes";
+        ru["FM_Diff_ClassTrivialHint"] = "Геометрия и параметры не затронуты — можно «Перезаписать текущую» вместо создания новой версии (экономия места)."; en["FM_Diff_ClassTrivialHint"] = "Geometry and parameters are untouched — you can «Overwrite current» instead of creating a new version (saves storage).";
+        ru["FM_Diff_ClassNone"] = "Содержимое идентично"; en["FM_Diff_ClassNone"] = "Identical content";
+        ru["FM_Diff_ClassNoneHint"] = "Секции совпадают — различий с активной версией не найдено."; en["FM_Diff_ClassNoneHint"] = "Sections match — no differences from the active version found.";
+        ru["FM_Diff_Sections"] = "Изменённые секции ({0})"; en["FM_Diff_Sections"] = "Changed sections ({0})";
+        ru["FM_Diff_ChangedTypes"] = "Изменённые типы ({0})"; en["FM_Diff_ChangedTypes"] = "Changed types ({0})";
+        ru["FM_Diff_AddedTypes"] = "Новые типы ({0})"; en["FM_Diff_AddedTypes"] = "Added types ({0})";
+        ru["FM_Diff_RemovedTypes"] = "Удалённые типы ({0})"; en["FM_Diff_RemovedTypes"] = "Removed types ({0})";
+        ru["FM_Diff_OverwriteAction"] = "Перезаписать текущую версию"; en["FM_Diff_OverwriteAction"] = "Overwrite the current version";
+        ru["FM_Diff_PendingAnalytics"] = "Аналитика активной версии ещё не вычислена"; en["FM_Diff_PendingAnalytics"] = "Active version analytics not computed yet";
+        ru["FM_Diff_PendingAnalyticsHint"] = "Выполните «Обновить базу» — сравнение секций станет точным (per-type списки уже актуальны)."; en["FM_Diff_PendingAnalyticsHint"] = "Run «Update database» — the section comparison will become precise (per-type lists are already up to date).";
         ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";

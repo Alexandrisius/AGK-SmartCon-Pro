@@ -24,4 +24,13 @@ public sealed record ContentSectionHash(
     string SectionName,
     string CanonicalString,
     string HashHex,
-    string? TypeName = null);
+    string? TypeName = null)
+{
+    /// <summary>
+    /// Flat storage/diff key of the section: <c>"STRUCT"</c> for a plain
+    /// section, <c>"STRUCT|{TypeName}"</c> for a per-type entry of a
+    /// system family. Shared by the JSON serializer and the diff
+    /// computer so both sides always agree.
+    /// </summary>
+    public string Key => TypeName is null ? SectionName : SectionName + "|" + TypeName;
+}

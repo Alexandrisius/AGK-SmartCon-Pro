@@ -231,6 +231,13 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                     await ReplaceTypeHashesAsync(connection, versionId, request.PerTypeHashes, now, ct).ConfigureAwait(false);
                 }
 
+                // #249 (Phase 4): canonical content sections. null → the
+                // section-hashes-v1 actualization task backfills them.
+                if (request.Sections is not null)
+                {
+                    await WriteVersionSectionsAsync(connection, versionId, request.Sections, ct).ConfigureAwait(false);
+                }
+
                 if (existingItem is null && request.Tags is not null)
                 {
                     foreach (var tag in request.Tags)
@@ -497,7 +504,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PreextractedGeometry: item.GeometryPerType,
                         RevitCategoryId: item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId,
                         Facts: item.LoadableSnapshot?.Facts,
-                        PerTypeHashes: item.PerTypeHashes);
+                        PerTypeHashes: item.PerTypeHashes,
+                        Sections: item.Sections);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -577,7 +585,8 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         RevitCategory: item.RevitCategory,
                         RevitCategoryId: item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId,
                         Facts: item.LoadableSnapshot?.Facts,
-                        PerTypeHashes: item.PerTypeHashes);
+                        PerTypeHashes: item.PerTypeHashes,
+                        Sections: item.Sections);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -762,6 +771,12 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 if (request.PerTypeHashes is not null)
                 {
                     await ReplaceTypeHashesAsync(connection, versionId, request.PerTypeHashes, now, ct).ConfigureAwait(false);
+                }
+
+                // #249 (Phase 4): canonical content sections — see ImportFileAsync.
+                if (request.Sections is not null)
+                {
+                    await WriteVersionSectionsAsync(connection, versionId, request.Sections, ct).ConfigureAwait(false);
                 }
 
                 tx.Commit();

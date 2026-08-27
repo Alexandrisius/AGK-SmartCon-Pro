@@ -100,4 +100,12 @@ namespace SmartCon.Core.Models.FamilyManager;
     /// <c>family_type_hashes</c> is populated without re-opening the
     /// family file. <c>null</c> when preparation failed before hashing.
     /// </summary>
-    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null);
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections computed at
+    /// Prepare from the SAME enriched snapshot as
+    /// <see cref="ContentHash"/> (composite-consistent NESTEDHASH),
+    /// persisted to <c>catalog_versions.section_hashes/section_strings</c>
+    /// at import. <c>null</c> when preparation failed before hashing.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null);

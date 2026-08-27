@@ -105,6 +105,15 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes { get; }
 
     /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare.
+    /// Read-only like <see cref="PerTypeHashes"/>. Written to
+    /// <c>catalog_versions.section_hashes/section_strings</c> by the
+    /// import transaction; also the INCOMING side of the "what changed"
+    /// diff against the active version.
+    /// </summary>
+    public IReadOnlyList<ContentSectionHash>? Sections { get; }
+
+    /// <summary>
     /// Phase 27: version label that the content hash matched (e.g. "v2").
     /// Displayed in the dialog as "Duplicate (v2)". Null when status is
     /// not Duplicate.
@@ -376,6 +385,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     [NotifyPropertyChangedFor(nameof(CategoryMoveWarningTooltip))]
     [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
     [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
+    [NotifyPropertyChangedFor(nameof(ShowDiffBadge))]
     private FamilyBatchImportStatus _status;
 
     [ObservableProperty]
@@ -842,6 +852,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedContentHash = item.ContentHash;
         _hashFormatVersion = item.HashFormatVersion;
         PerTypeHashes = item.PerTypeHashes;
+        Sections = item.Sections;
         _matchedVersionLabel = item.MatchedVersionLabel;
         _isMarkerResolvedVersion = item.IsMarkerResolvedVersion;
         _isCrossNameDuplicate = item.IsCrossNameDuplicate;
@@ -1092,6 +1103,37 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
 
     /// <summary>(row, infoOnly) — infoOnly: только info-заметки без действий.</summary>
     public event Action<FamilyBatchImportRow, bool>? OpenStatusDetailsRequested;
+
+    /// <summary>
+    /// #249 (Phase 4): shows the "what changed" diff badge — only for
+    /// rows whose content differs from the active catalog version
+    /// (Existing). New and Duplicate rows have no meaningful diff (New
+    /// has no active version; Duplicate is content-identical).
+    /// </summary>
+    public bool ShowDiffBadge => Status == FamilyBatchImportStatus.Existing;
+
+    /// <summary>
+    /// #249 (Phase 4): opens the "what changed" diff against the active
+    /// version (change class + changed sections + per-type lists) —
+    /// fired by the diff badge.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenDiffDetails()
+    {
+        var handler = OpenDiffDetailsRequested;
+        if (handler is null) return;
+        try
+        {
+            await handler(this);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"OpenDiffDetails failed for '{FileName}': {ex.GetType().Name}: {ex.Message} [Action: закройте batch dialog и повторите, проверьте логи smartcon.log]");
+        }
+    }
+
+    /// <summary>#249 (Phase 4): async diff request (DB analytics read).</summary>
+    public event Func<FamilyBatchImportRow, Task>? OpenDiffDetailsRequested;
 
     [RelayCommand]
     private async Task PickCategory()

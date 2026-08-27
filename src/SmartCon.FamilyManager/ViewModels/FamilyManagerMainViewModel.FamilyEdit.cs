@@ -381,7 +381,8 @@ public sealed partial class FamilyManagerMainViewModel
             ExistingCategoryId: existingCategoryId,
             ExistingCategoryPath: existingCategoryName,
             HealthReport: prepared.HealthReport,
-            PerTypeHashes: prepared.PerTypeHashes)
+            PerTypeHashes: prepared.PerTypeHashes,
+            Sections: prepared.Sections)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -409,7 +410,8 @@ public sealed partial class FamilyManagerMainViewModel
             dedupService: _dedupService,
             dispatcher: _dispatcher,
             validationService: _validationService,
-            autoAssignService: _autoAssignService);
+            autoAssignService: _autoAssignService,
+                analyticsRepository: _contentHashAnalytics);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -612,7 +614,8 @@ public sealed partial class FamilyManagerMainViewModel
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
                 SystemSnapshot: null,
-                PerTypeHashes: importItem.PerTypeHashes)
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.MakeActive,
                 PublishedByUser = _revitContext.GetUsername()
@@ -656,7 +659,8 @@ public sealed partial class FamilyManagerMainViewModel
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
                 SystemSnapshot: null,
-                PerTypeHashes: importItem.PerTypeHashes)
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.OverwriteCurrent,
                 PublishedByUser = _revitContext.GetUsername()
@@ -697,7 +701,8 @@ public sealed partial class FamilyManagerMainViewModel
                 PreextractedGeometry: importItem.GeometryPerType,
                 RevitCategoryId: importItem.LoadableSnapshot?.CategoryId ?? importItem.SystemSnapshot?.CategoryId,
                 Facts: importItem.LoadableSnapshot?.Facts,
-                PerTypeHashes: importItem.PerTypeHashes);
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }
@@ -1156,7 +1161,8 @@ public sealed partial class FamilyManagerMainViewModel
             publishedByUser: _revitContext.GetUsername(),
             dispatcher: _dispatcher,
             validationService: _validationService,
-            autoAssignService: _autoAssignService);
+            autoAssignService: _autoAssignService,
+                analyticsRepository: _contentHashAnalytics);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;

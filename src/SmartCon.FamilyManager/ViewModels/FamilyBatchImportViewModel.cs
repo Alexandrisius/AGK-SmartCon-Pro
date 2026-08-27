@@ -5,6 +5,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
@@ -69,6 +70,14 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly IFamilyImportPrecomputer? _importPrecomputer;
     private readonly IContentHashDedupService? _dedupService;
     private readonly IFamilyBatchImportExecutor? _executor;
+    /// <summary>
+    /// #249 (Phase 4): read access to the stored content analytics of the
+    /// ACTIVE version (section hashes + per-type hashes) for the "what
+    /// changed" diff. Nullable for backward compatibility with older test
+    /// fixtures — the diff then degrades to the "analytics pending"
+    /// notice instead of failing.
+    /// </summary>
+    private readonly IContentHashAnalyticsRepository? _analyticsRepository;
     private readonly string? _categoryId;
     private readonly string? _publishedByUser;
     /// <summary>
@@ -142,7 +151,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? publishedByUser = null,
         IDispatcher? dispatcher = null,
         IFamilyImportValidationService? validationService = null,
-        ICategoryAutoAssignService? autoAssignService = null)
+        ICategoryAutoAssignService? autoAssignService = null,
+        IContentHashAnalyticsRepository? analyticsRepository = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
@@ -150,6 +160,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         _importPrecomputer = importPrecomputer;
         _dedupService = dedupService;
         _executor = executor;
+        _analyticsRepository = analyticsRepository;
         _categoryId = defaultCategoryId;
         _publishedByUser = publishedByUser;
         _dispatcher = dispatcher ?? new InlineDispatcher();
@@ -194,6 +205,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.NameChanged += OnRowNameChanged;
             row.OpenValidationReportRequested += OnRowOpenValidationReport;
             row.OpenStatusDetailsRequested += OnRowOpenStatusDetails;
+            row.OpenDiffDetailsRequested += OnRowOpenDiffDetailsAsync;
             Items.Add(row);
         }
         var commandLockedCount = Items.Count(r => r.CategoryProvenance == CategoryProvenance.Command);
@@ -852,6 +864,145 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
     }
 
+    /// <summary>
+    /// #249 (Phase 4): the "what changed" diff of an Existing row against
+    /// the ACTIVE catalog version — change class (trivial/minor/major),
+    /// changed sections, per-type lists, and for a trivial class the
+    /// «Перезаписать текущую» follow-up action (the storage saver:
+    /// fewer cosmetic new versions, fewer duplicate files).
+    /// </summary>
+    private async Task OnRowOpenDiffDetailsAsync(FamilyBatchImportRow row)
+    {
+        try
+        {
+            IReadOnlyDictionary<string, string>? activeHashes = null;
+            IReadOnlyList<FamilyTypeHashEntry>? activeTypes = null;
+            if (_analyticsRepository is not null
+                && !string.IsNullOrEmpty(row.ExistingCatalogItemId)
+                && !string.IsNullOrEmpty(row.ExistingVersionLabel))
+            {
+                activeHashes = await _analyticsRepository.GetSectionHashesAsync(
+                    row.ExistingCatalogItemId!, row.ExistingVersionLabel!, CancellationToken.None)
+                    .ConfigureAwait(true);
+                activeTypes = await _analyticsRepository.GetTypeHashesAsync(
+                    row.ExistingCatalogItemId!, row.ExistingVersionLabel!, CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+
+            var diff = ContentVersionDiffComputer.Compute(
+                row.Sections ?? (IReadOnlyList<ContentSectionHash>)[],
+                row.PerTypeHashes,
+                activeHashes,
+                activeTypes);
+
+            var notices = new List<StatusNotice>();
+            var (classSeverity, classTitle, classExplanation) = DescribeClass(diff.Class);
+            notices.Add(new StatusNotice(classSeverity, classTitle, classExplanation));
+
+            if (activeHashes is null)
+            {
+                notices.Add(new StatusNotice(
+                    StatusNoticeSeverity.Warning,
+                    Loc(StringLocalization.Keys.FM_Diff_PendingAnalytics,
+                        "Аналитика активной версии ещё не вычислена"),
+                    Loc(StringLocalization.Keys.FM_Diff_PendingAnalyticsHint,
+                        "Выполните «Обновить базу» — сравнение секций станет точным (per-type списки уже актуальны).")));
+            }
+
+            if (diff.ChangedSections.Count > 0)
+            {
+                notices.Add(new StatusNotice(
+                    StatusNoticeSeverity.Info,
+                    Fmt(StringLocalization.Keys.FM_Diff_Sections, "Изменённые секции ({0})", diff.ChangedSections.Count),
+                    null,
+                    diff.ChangedSections));
+            }
+            if (diff.ChangedTypes.Count > 0)
+            {
+                notices.Add(new StatusNotice(
+                    StatusNoticeSeverity.Info,
+                    Fmt(StringLocalization.Keys.FM_Diff_ChangedTypes, "Изменённые типы ({0})", diff.ChangedTypes.Count),
+                    null,
+                    diff.ChangedTypes));
+            }
+            if (diff.AddedTypes.Count > 0)
+            {
+                notices.Add(new StatusNotice(
+                    StatusNoticeSeverity.Info,
+                    Fmt(StringLocalization.Keys.FM_Diff_AddedTypes, "Новые типы ({0})", diff.AddedTypes.Count),
+                    null,
+                    diff.AddedTypes));
+            }
+            if (diff.RemovedTypes.Count > 0)
+            {
+                notices.Add(new StatusNotice(
+                    StatusNoticeSeverity.Info,
+                    Fmt(StringLocalization.Keys.FM_Diff_RemovedTypes, "Удалённые типы ({0})", diff.RemovedTypes.Count),
+                    null,
+                    diff.RemovedTypes));
+            }
+
+            var actions = new List<StatusDetailsAction>();
+            if (diff.Class == ContentChangeClass.Trivial
+                && row.AvailableActions.Contains(FamilyBatchImportAction.OverwriteCurrent))
+            {
+                actions.Add(new StatusDetailsAction(
+                    Loc(StringLocalization.Keys.FM_Diff_OverwriteAction, "Перезаписать текущую версию"),
+                    () => row.Action = FamilyBatchImportAction.OverwriteCurrent));
+            }
+
+            var detailsVm = new StatusDetailsViewModel(
+                row.FileName,
+                Fmt(StringLocalization.Keys.FM_Diff_Subtitle,
+                    "сравнение с активной версией {0}", row.ExistingVersionLabel ?? "?"),
+                notices,
+                actions);
+            _dialogService.ShowStatusDetails(detailsVm);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error(
+                $"BatchImport.Diff: failed to open the diff details for '{row.FileName}': {ex.Message}");
+        }
+    }
+
+    private static (StatusNoticeSeverity Severity, string Title, string Explanation) DescribeClass(
+        ContentChangeClass changeClass)
+    {
+        return changeClass switch
+        {
+            ContentChangeClass.Major => (
+                StatusNoticeSeverity.Error,
+                Loc(StringLocalization.Keys.FM_Diff_ClassMajor, "Существенные изменения"),
+                Loc(StringLocalization.Keys.FM_Diff_ClassMajorHint,
+                    "Изменены геометрия, привязки или коннекторы — рекомендуется «Новая версия», чтобы не потерять предыдущее содержимое.")),
+            ContentChangeClass.Minor => (
+                StatusNoticeSeverity.Warning,
+                Loc(StringLocalization.Keys.FM_Diff_ClassMinor, "Умеренные изменения"),
+                Loc(StringLocalization.Keys.FM_Diff_ClassMinorHint,
+                    "Изменены значения типов, параметры или вложения — проверьте секции ниже перед выбором действия.")),
+            ContentChangeClass.Trivial => (
+                StatusNoticeSeverity.Info,
+                Loc(StringLocalization.Keys.FM_Diff_ClassTrivial, "Косметические изменения"),
+                Loc(StringLocalization.Keys.FM_Diff_ClassTrivialHint,
+                    "Геометрия и параметры не затронуты — можно «Перезаписать текущую» вместо создания новой версии (экономия места).")),
+            _ => (
+                StatusNoticeSeverity.Info,
+                Loc(StringLocalization.Keys.FM_Diff_ClassNone, "Содержимое идентично"),
+                Loc(StringLocalization.Keys.FM_Diff_ClassNoneHint,
+                    "Секции совпадают — различий с активной версией не найдено.")),
+        };
+    }
+
+    private static string Loc(string key, string fallback)
+        => SmartCon.UI.LanguageManager.GetString(key) ?? fallback;
+
+    private static string Fmt(string key, string fallback, params object[] args)
+        => string.Format(
+            System.Globalization.CultureInfo.CurrentCulture,
+            SmartCon.UI.LanguageManager.GetString(key) ?? fallback,
+            args);
+
     private void OnRowOpenValidationReport(FamilyBatchImportRow row)
     {
         try
@@ -1354,7 +1505,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             ExistingCategoryId: r.ExistingCategoryId,
             ExistingCategoryPath: r.ExistingCategoryPath,
             DependencyLinks: r.DependencyLinks,
-            PerTypeHashes: r.PerTypeHashes)
+            PerTypeHashes: r.PerTypeHashes,
+            Sections: r.Sections)
         {
             Action = r.Action
         }).ToList();

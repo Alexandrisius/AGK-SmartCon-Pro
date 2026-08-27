@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 32)
+        if (initialVersion < 33)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v32");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v33");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -89,6 +89,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 30, MigrateV30Async, ct);
         await RunMigrationAsync(connection, 31, MigrateV31Async, ct);
         await RunMigrationAsync(connection, 32, MigrateV32Async, ct);
+        await RunMigrationAsync(connection, 33, MigrateV33Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1464,6 +1465,56 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
     }
 
+    /// <summary>
+    /// V33 (#249, Phase 4): adds <c>catalog_versions.section_hashes</c>
+    /// and <c>section_strings</c> — the canonical content sections as two
+    /// flat JSON maps for the batch dialog's "what changed" diff. Plain
+    /// ADD COLUMN — no data rewrite; legacy versions are backfilled by
+    /// the optional <c>section-hashes-v1</c> actualization task.
+    /// </summary>
+    private static async Task MigrateV33Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 33) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnsAdded = false;
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "section_hashes", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN section_hashes TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnsAdded = true;
+            }
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "section_strings", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN section_strings TEXT";
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnsAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '33' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info(columnsAdded
+                ? "Migration v33: catalog_versions +section_hashes/+section_strings (content-section analytics, #249)"
+                : "Migration v33: section columns already present — version bumped to 33");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
     private static async Task EnsureCriticalColumnsAsync(SqliteConnection connection, CancellationToken ct)
     {
         if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
@@ -1703,6 +1754,20 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         {
             typeHashIdxCmd.CommandText = FamilyCatalogSql.CreateFamilyTypeHashesIndexes;
             await typeHashIdxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "section_hashes", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN section_hashes TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_versions", "section_strings", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_versions ADD COLUMN section_strings TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
         }
     }
 

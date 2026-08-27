@@ -170,4 +170,10 @@ public sealed record FamilyManagerServices(
     /// items (<c>family_dependencies</c>, V29). Consumed by the batch-import
     /// executor to persist routing-fitting links after import (E1).
     /// </summary>
-    IFamilyDependencyRepository FamilyDependencyRepository);
+    IFamilyDependencyRepository FamilyDependencyRepository,
+    /// <summary>
+    /// Issue #249 (Phase 4): read access to the stored content analytics
+    /// of catalog versions (section hashes + per-type hashes) — the batch
+    /// dialog's "what changed" diff against the active version.
+    /// </summary>
+    IContentHashAnalyticsRepository ContentHashAnalytics);

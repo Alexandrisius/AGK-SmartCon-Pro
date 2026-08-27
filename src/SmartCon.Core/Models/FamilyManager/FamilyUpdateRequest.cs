@@ -31,4 +31,9 @@ public sealed record FamilyUpdateRequest(
     /// <c>null</c> for legacy paths — backfilled by the optional
     /// <c>type-hashes-v1</c> actualization task.
     /// </summary>
-    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null);
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare —
+    /// see <c>FamilyImportRequest.Sections</c>.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null);

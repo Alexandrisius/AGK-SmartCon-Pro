@@ -79,6 +79,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly ICategoryAutoAssignService _autoAssignService;
     private readonly IMiniProjectMarker _miniProjectMarker;
     private readonly ISystemTypeFinder _systemTypeFinder;
+    /// <summary>#249 (Phase 4): stored content analytics for the batch
+    /// dialog's "what changed" diff.</summary>
+    private readonly IContentHashAnalyticsRepository _contentHashAnalytics;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -257,6 +260,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _autoAssignService = services.AutoAssignService;
         _miniProjectMarker = services.MiniProjectMarker;
         _systemTypeFinder = services.SystemTypeFinder;
+        _contentHashAnalytics = services.ContentHashAnalytics;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();

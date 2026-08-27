@@ -152,7 +152,8 @@ public sealed partial class FamilyManagerMainViewModel
                     HealthReport: p.HealthReport,
                     DependencyLinks: p.DependencyLinks,
                     IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
-                    PerTypeHashes: p.PerTypeHashes)
+                    PerTypeHashes: p.PerTypeHashes,
+                    Sections: p.Sections)
                 {
                     // ADR-066: dependency rows exist to guarantee PRESENCE in
                     // the catalog. Duplicates default to Skip (dedup-link).
@@ -195,7 +196,8 @@ public sealed partial class FamilyManagerMainViewModel
                 publishedByUser: _revitContext.GetUsername(),
                 dispatcher: _dispatcher,
                 validationService: _validationService,
-                autoAssignService: _autoAssignService);
+                autoAssignService: _autoAssignService,
+                analyticsRepository: _contentHashAnalytics);
 
             _dialogService.ShowModelessBatchImportDialog(vm);
             await vm.DialogCompletion;
@@ -605,7 +607,8 @@ public sealed partial class FamilyManagerMainViewModel
                 HealthReport: p.HealthReport,
                 DependencyLinks: p.DependencyLinks,
                 IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
-                PerTypeHashes: p.PerTypeHashes)
+                PerTypeHashes: p.PerTypeHashes,
+                Sections: p.Sections)
             {
                 // ADR-066: dependency rows (routing fittings, shared nested)
                 // exist to guarantee PRESENCE in the catalog. Duplicates

@@ -626,6 +626,24 @@ public static class StringLocalization
         public const string FM_UpdateBatchAllStale = "FM_UpdateBatchAllStale";
         public const string FM_UpdateReplaceTypesTitle = "FM_UpdateReplaceTypesTitle";
         public const string FM_UpdateReplaceTypesConfirm = "FM_UpdateReplaceTypesConfirm";
+        // #249 (Phase 4): "what changed" diff window in the batch dialog.
+        public const string FM_Diff_BadgeTooltip = "FM_Diff_BadgeTooltip";
+        public const string FM_Diff_Subtitle = "FM_Diff_Subtitle";
+        public const string FM_Diff_ClassMajor = "FM_Diff_ClassMajor";
+        public const string FM_Diff_ClassMajorHint = "FM_Diff_ClassMajorHint";
+        public const string FM_Diff_ClassMinor = "FM_Diff_ClassMinor";
+        public const string FM_Diff_ClassMinorHint = "FM_Diff_ClassMinorHint";
+        public const string FM_Diff_ClassTrivial = "FM_Diff_ClassTrivial";
+        public const string FM_Diff_ClassTrivialHint = "FM_Diff_ClassTrivialHint";
+        public const string FM_Diff_ClassNone = "FM_Diff_ClassNone";
+        public const string FM_Diff_ClassNoneHint = "FM_Diff_ClassNoneHint";
+        public const string FM_Diff_Sections = "FM_Diff_Sections";
+        public const string FM_Diff_ChangedTypes = "FM_Diff_ChangedTypes";
+        public const string FM_Diff_AddedTypes = "FM_Diff_AddedTypes";
+        public const string FM_Diff_RemovedTypes = "FM_Diff_RemovedTypes";
+        public const string FM_Diff_OverwriteAction = "FM_Diff_OverwriteAction";
+        public const string FM_Diff_PendingAnalytics = "FM_Diff_PendingAnalytics";
+        public const string FM_Diff_PendingAnalyticsHint = "FM_Diff_PendingAnalyticsHint";
         public const string FM_Check = "FM_Check";
         public const string FM_Stale = "FM_Stale";
         public const string FM_StaleTooltipNone = "FM_StaleTooltipNone";
