@@ -411,7 +411,7 @@ public sealed partial class FamilyManagerMainViewModel
             dispatcher: _dispatcher,
             validationService: _validationService,
             autoAssignService: _autoAssignService,
-                analyticsRepository: _contentHashAnalytics);
+            analyticsRepository: _contentHashAnalytics);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -1162,7 +1162,7 @@ public sealed partial class FamilyManagerMainViewModel
             dispatcher: _dispatcher,
             validationService: _validationService,
             autoAssignService: _autoAssignService,
-                analyticsRepository: _contentHashAnalytics);
+            analyticsRepository: _contentHashAnalytics);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;

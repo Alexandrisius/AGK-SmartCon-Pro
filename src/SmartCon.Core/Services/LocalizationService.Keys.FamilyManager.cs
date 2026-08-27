@@ -127,7 +127,7 @@ public static partial class LocalizationService
         ru["FM_Diff_RemovedTypes"] = "Удалённые типы ({0})"; en["FM_Diff_RemovedTypes"] = "Removed types ({0})";
         ru["FM_Diff_OverwriteAction"] = "Перезаписать текущую версию"; en["FM_Diff_OverwriteAction"] = "Overwrite the current version";
         ru["FM_Diff_PendingAnalytics"] = "Аналитика активной версии ещё не вычислена"; en["FM_Diff_PendingAnalytics"] = "Active version analytics not computed yet";
-        ru["FM_Diff_PendingAnalyticsHint"] = "Выполните «Обновить базу» — сравнение секций станет точным (per-type списки уже актуальны)."; en["FM_Diff_PendingAnalyticsHint"] = "Run «Update database» — the section comparison will become precise (per-type lists are already up to date).";
+        ru["FM_Diff_PendingAnalyticsHint"] = "Выполните «Обновить базу» — сравнение секций и класс изменений станут точными (per-type списки показаны по готовым данным)."; en["FM_Diff_PendingAnalyticsHint"] = "Run «Update database» — the section comparison and change class will become precise (per-type lists are shown from ready data).";
         ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";
