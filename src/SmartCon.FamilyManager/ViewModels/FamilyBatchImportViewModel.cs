@@ -889,27 +889,38 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     .ConfigureAwait(true);
             }
 
+            var sectionsPending = activeHashes is null;
+            var typesPending = activeTypes is null;
+
+            // When the ACTIVE side's analytics are pending, never show a
+            // FAKE classification (every incoming section would read as
+            // changed → a misleading red "Major" for every legacy row).
+            // Sections/classification appear only on real data; per-type
+            // lists are shown when the type analytics are ready
+            // (independent of the section side).
             var diff = ContentVersionDiffComputer.Compute(
-                row.Sections ?? (IReadOnlyList<ContentSectionHash>)[],
+                sectionsPending ? (IReadOnlyList<ContentSectionHash>)[] : (row.Sections ?? (IReadOnlyList<ContentSectionHash>)[]),
                 row.PerTypeHashes,
-                activeHashes,
-                activeTypes);
+                activeHashes ?? new Dictionary<string, string>(),
+                activeTypes ?? (IReadOnlyList<FamilyTypeHashEntry>)[]);
 
             var notices = new List<StatusNotice>();
-            var (classSeverity, classTitle, classExplanation) = DescribeClass(diff.Class);
-            notices.Add(new StatusNotice(classSeverity, classTitle, classExplanation));
-
-            if (activeHashes is null)
+            if (!sectionsPending)
+            {
+                var (classSeverity, classTitle, classExplanation) = DescribeClass(diff.Class);
+                notices.Add(new StatusNotice(classSeverity, classTitle, classExplanation));
+            }
+            else
             {
                 notices.Add(new StatusNotice(
                     StatusNoticeSeverity.Warning,
                     Loc(StringLocalization.Keys.FM_Diff_PendingAnalytics,
                         "Аналитика активной версии ещё не вычислена"),
                     Loc(StringLocalization.Keys.FM_Diff_PendingAnalyticsHint,
-                        "Выполните «Обновить базу» — сравнение секций станет точным (per-type списки уже актуальны).")));
+                        "Выполните «Обновить базу» — сравнение секций и класс изменений станут точными (per-type списки показаны по готовым данным).")));
             }
 
-            if (diff.ChangedSections.Count > 0)
+            if (!sectionsPending && diff.ChangedSections.Count > 0)
             {
                 notices.Add(new StatusNotice(
                     StatusNoticeSeverity.Info,
@@ -917,7 +928,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     null,
                     diff.ChangedSections));
             }
-            if (diff.ChangedTypes.Count > 0)
+            if (!typesPending && diff.ChangedTypes.Count > 0)
             {
                 notices.Add(new StatusNotice(
                     StatusNoticeSeverity.Info,
@@ -925,7 +936,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     null,
                     diff.ChangedTypes));
             }
-            if (diff.AddedTypes.Count > 0)
+            if (!typesPending && diff.AddedTypes.Count > 0)
             {
                 notices.Add(new StatusNotice(
                     StatusNoticeSeverity.Info,
@@ -933,7 +944,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     null,
                     diff.AddedTypes));
             }
-            if (diff.RemovedTypes.Count > 0)
+            if (!typesPending && diff.RemovedTypes.Count > 0)
             {
                 notices.Add(new StatusNotice(
                     StatusNoticeSeverity.Info,
@@ -943,7 +954,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             }
 
             var actions = new List<StatusDetailsAction>();
-            if (diff.Class == ContentChangeClass.Trivial
+            if (!sectionsPending
+                && diff.Class == ContentChangeClass.Trivial
                 && row.AvailableActions.Contains(FamilyBatchImportAction.OverwriteCurrent))
             {
                 actions.Add(new StatusDetailsAction(

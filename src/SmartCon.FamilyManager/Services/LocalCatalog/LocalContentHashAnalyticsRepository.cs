@@ -37,12 +37,44 @@ internal sealed class LocalContentHashAnalyticsRepository : IContentHashAnalytic
         return ContentSectionJsonSerializer.Deserialize(json);
     }
 
-    public async Task<IReadOnlyList<FamilyTypeHashEntry>> GetTypeHashesAsync(
+    public async Task<IReadOnlyList<FamilyTypeHashEntry>?> GetTypeHashesAsync(
         string catalogItemId, string versionLabel, CancellationToken ct)
     {
-        var result = new List<FamilyTypeHashEntry>();
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
+
+        // PENDING check first: the version stores types in family_types
+        // but the backfill has not written any hash rows — report null
+        // (pending), NOT an empty list (which would read as "typeless").
+        using (var pendingCmd = connection.CreateCommand())
+        {
+            pendingCmd.CommandText = """
+                SELECT COUNT(*) FROM family_types ft
+                JOIN catalog_versions cv ON cv.id = ft.version_id
+                WHERE cv.catalog_item_id = @itemId AND cv.version_label = @label
+                """;
+            pendingCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            pendingCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+            var storedTypes = Convert.ToInt64(await pendingCmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
+            if (storedTypes > 0)
+            {
+                using var hashCountCmd = connection.CreateCommand();
+                hashCountCmd.CommandText = """
+                    SELECT COUNT(*) FROM family_type_hashes fth
+                    JOIN catalog_versions cv ON cv.id = fth.catalog_version_id
+                    WHERE cv.catalog_item_id = @itemId AND cv.version_label = @label
+                    """;
+                hashCountCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                hashCountCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                var hashRows = Convert.ToInt64(await hashCountCmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
+                if (hashRows == 0)
+                {
+                    return null;
+                }
+            }
+        }
+
+        var result = new List<FamilyTypeHashEntry>();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT fth.type_identity_key, fth.type_name, fth.type_hash

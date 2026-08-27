@@ -29,10 +29,13 @@ public interface IContentHashAnalyticsRepository
         string catalogItemId, string versionLabel, CancellationToken ct);
 
     /// <summary>
-    /// Per-type content hashes of the given version label (empty when
-    /// not computed yet — the <c>type-hashes-v1</c> backfill is pending
-    /// or the family is typeless).
+    /// Per-type content hashes of the given version label, or
+    /// <c>null</c> when the analytics are PENDING (the version stores
+    /// types in <c>family_types</c> but the <c>type-hashes-v1</c>
+    /// backfill has not run yet). An EMPTY list is a legitimate answer
+    /// for a typeless family — callers can therefore distinguish
+    /// "pending" from "typeless" and never show a fake all-added diff.
     /// </summary>
-    Task<IReadOnlyList<FamilyTypeHashEntry>> GetTypeHashesAsync(
+    Task<IReadOnlyList<FamilyTypeHashEntry>?> GetTypeHashesAsync(
         string catalogItemId, string versionLabel, CancellationToken ct);
 }

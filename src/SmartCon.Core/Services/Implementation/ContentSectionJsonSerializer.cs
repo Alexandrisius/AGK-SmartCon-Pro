@@ -9,10 +9,9 @@ namespace SmartCon.Core.Services.Implementation;
 /// <c>catalog_versions.section_hashes</c> and
 /// <c>catalog_versions.section_strings</c> columns. System families
 /// carry per-type entries (<see cref="ContentSectionHash.TypeName"/>) —
-/// their keys are flattened to <c>"SECTION|{TypeName}"</c> so the map
-/// stays flat and collision-free (section names never contain '|',
-/// type names are escaped by the map being JSON, not the canonical
-/// string). Both maps are written in canonical section order.
+/// their keys are flattened via <see cref="ContentSectionHash.Key"/> so
+/// the map stays flat and collision-free. Entries are written in the
+/// input list's order (the canonical section order the hasher emits).
 /// </summary>
 public static class ContentSectionJsonSerializer
 {
