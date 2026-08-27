@@ -132,11 +132,12 @@ public interface IStaleDetector
 
     /// <summary>
     /// #249 (Phase 2): per-type stale verdicts of one LOADABLE catalog
-    /// item (typeName upper-invariant → isStale), or null when no
-    /// per-type proof exists (never content-checked, indeterminate
-    /// verification, or a family-level match). Feeds the orange presence
-    /// dot on the exact drifted type node; a null map falls back to the
-    /// family-level (leaf-scoped) dot — the pre-#249 behaviour.
+    /// item (original type name, ordinal-ignore-case → isStale), or null
+    /// when no per-type proof exists (never content-checked,
+    /// indeterminate verification, or a family-level match). Feeds the
+    /// orange presence dot on the exact drifted type node; a null map
+    /// falls back to the family-level (leaf-scoped) dot — the pre-#249
+    /// behaviour.
     /// </summary>
     IReadOnlyDictionary<string, bool>? GetLoadableTypeStaleMap(string catalogItemId);
 

@@ -34,10 +34,10 @@ internal sealed class StaleDetector : IStaleDetector
     /// orange presence dot on the exact outdated type node.</summary>
     private readonly Dictionary<string, Dictionary<string, bool>> _systemTypeStaleByType = new(StringComparer.Ordinal);
     /// <summary>#249 (Phase 2): per-type stale verdicts for LOADABLE items —
-    /// catalogItemId → (typeName upper-invariant → isStale). Filled only
-    /// when the content verification produced a per-type proof; an absent
-    /// entry means "no per-type data" and the tree falls back to the
-    /// family-level (leaf-scoped) dot — the pre-#249 behaviour.</summary>
+    /// catalogItemId → (original type name, OrdinalIgnoreCase → isStale).
+    /// Filled only when the content verification produced a per-type proof;
+    /// an absent entry means "no per-type data" and the tree falls back to
+    /// the family-level (leaf-scoped) dot — the pre-#249 behaviour.</summary>
     private readonly Dictionary<string, Dictionary<string, bool>> _loadableTypeStaleByType = new(StringComparer.Ordinal);
 
     public StaleDetector(

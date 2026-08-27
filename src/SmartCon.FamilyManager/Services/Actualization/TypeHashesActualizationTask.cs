@@ -78,6 +78,20 @@ internal sealed class TypeHashesActualizationTask : SqlDetectionActualizationTas
             return;
         }
 
+        // An EMPTY set with family_types rows present is data drift (the
+        // catalog stores types the extraction no longer sees): invalidate
+        // the stale rows (DELETE) so nothing serves wrong hashes, log a
+        // Warn instead of a success Info — the group is re-detected on
+        // the next run and the drift stays visible.
+        var isDriftedEmptySet = entries.Count == 0;
+        if (isDriftedEmptySet)
+        {
+            SmartConLogger.Warn(
+                $"Per-type hash computation returned an empty set for '{context.OpenedVariant.FileName}' " +
+                $"(item '{context.Group.ItemName}') while family_types rows exist — invalidating stale rows. " +
+                $"[Action: данные рассинхронизированы — переимпортируйте семейство для восстановления per-type хэшей]");
+        }
+
         // One write for ALL Revit variants of the group (the content is
         // identical across variants) in a single transaction.
         using var connection = Database.CreateConnection();
@@ -115,9 +129,12 @@ internal sealed class TypeHashesActualizationTask : SqlDetectionActualizationTas
             }
 
             tx.Commit();
-            SmartConLogger.Info(
-                $"type-hashes-v1: wrote {entries.Count} per-type hash(es) for '{context.Group.ItemName}' " +
-                $"({context.Group.VersionLabel}, {context.Group.Variants.Count} variant(s))");
+            if (!isDriftedEmptySet)
+            {
+                SmartConLogger.Info(
+                    $"type-hashes-v1: wrote {entries.Count} per-type hash(es) for '{context.Group.ItemName}' " +
+                    $"({context.Group.VersionLabel}, {context.Group.Variants.Count} variant(s))");
+            }
         }
         catch
         {
