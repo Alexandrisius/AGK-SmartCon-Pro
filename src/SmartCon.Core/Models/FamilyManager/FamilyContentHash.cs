@@ -141,6 +141,25 @@ public sealed record FamilyContentHash(
     ///     consistent. The section is omitted for table-less families.
     ///     Critical task <c>hash-v11</c> recomputes every row that is not
     ///     current.
+    /// 12 — definition wiring + strengthened geometry (Issue #249,
+    ///     Phase 3): loadable <c>FHV12|LOADABLE|...</c> gains the DEF
+    ///     section (type-independent wiring: form visibility/material/
+    ///     extrusion-offset parameter bindings, dimension labels,
+    ///     reference-plane names + Defines Origin) and the GEOM section
+    ///     is strengthened per form (volume-weighted centroid, face-kind
+    ///     histogram, summed edge lengths, resolved RGBA material color,
+    ///     visibility flags) plus nested FamilyInstance placements
+    ///     (symbol identity + quantized transform + visibility) — moving
+    ///     a nested part or re-binding a dimension label previously
+    ///     passed the hash silently. The snapshot extractor now reads
+    ///     with <c>IncludeNonVisibleObjects = true</c> (conditionally
+    ///     visible forms enter the metrics), aligned with the GLB
+    ///     extractor. System <c>FHV8|SYSTEM|...</c> — prefix bump only
+    ///     (content unchanged; per-type hashes ride along as a side
+    ///     product, #179). The per-type hashes (TYPES substrings) are
+    ///     NOT affected — <c>family_type_hashes</c> rows stay valid.
+    ///     Critical task <c>hash-v12</c> recomputes every row that is
+    ///     not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -156,7 +175,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 12;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

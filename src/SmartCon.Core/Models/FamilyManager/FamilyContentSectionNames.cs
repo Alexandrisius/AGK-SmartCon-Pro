@@ -23,6 +23,9 @@ public static class FamilyContentSectionNames
     /// <summary>Parameter values of a typeless family (phantom default type).</summary>
     public const string Phantom = "PHANTOM";
 
+    /// <summary>Form/dimension/reference-plane definition wiring (FHV12).</summary>
+    public const string Def = "DEF";
+
     /// <summary>Per-form 3D geometry metrics.</summary>
     public const string Geom = "GEOM";
 

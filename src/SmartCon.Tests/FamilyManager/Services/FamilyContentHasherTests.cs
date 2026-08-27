@@ -1398,10 +1398,10 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_Fhv7GoldenCanon_IsStable()
+    public void ComputeForSystem_Fhv8GoldenCanon_IsStable()
     {
         // Golden: a FIXED snapshot must always produce this exact hash — any
-        // drift in the FHV7 canon (escaping, culture, ordering, section
+        // drift in the FHV8 canon (escaping, culture, ordering, section
         // layout, WIRE fields, duct FAMKEY) fails loudly here instead of
         // silently re-flagging every field catalog. When the canon changes ON
         // PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
@@ -1416,18 +1416,18 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("E2B1CB20263E0E4A8C96A9B650E27C67A855CEA70285D589B07C7BC04B541575", hash.HexString);
+        Assert.Equal("2C3DE661B90241DE85A278EEB3060A3D36F4C0450FEC39DE6655369862386877", hash.HexString);
     }
 
     [Fact]
-    public void ComputeForLoadable_Fhv11GoldenCanon_IsStable()
+    public void ComputeForLoadable_Fhv12GoldenCanon_IsStable()
     {
         // Golden: a FIXED loadable snapshot must always produce this exact
-        // hash — any drift in the FHV11 loadable canon (escaping, culture,
-        // ordering, section layout, NESTEDHASH pairs, PHANTOM values, LOOKUP
-        // section) fails loudly here. When the canon changes ON PURPOSE, bump
-        // FamilyContentHashFormat.CurrentVersion and update the golden in
-        // the same commit.
+        // hash — any drift in the FHV12 loadable canon (escaping, culture,
+        // ordering, section layout, NESTEDHASH pairs, PHANTOM values, DEF
+        // wiring, LOOKUP section) fails loudly here. When the canon changes
+        // ON PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
+        // the golden in the same commit.
         var snapshot = new FamilySnapshot(
             FamilyName: "GoldenFamily",
             Category: "Pipe Fittings",
@@ -1454,7 +1454,7 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("A866AF9C1DA96492C41CD6E7728DC176CD9FB72AFEC7FDFCF795DCA6CD0BC17F", hash.HexString);
+        Assert.Equal("4859FDD8C16DDFBACA96163554A8A2E9CA063083BDF2BF748C1457A8E4365D3E", hash.HexString);
     }
 
     [Fact]

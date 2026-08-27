@@ -31,6 +31,11 @@ public static class DbCompatibility
     /// in any release build; latest tag at the time: v2.0.1-beta.8). A
     /// pre-beta.9 plugin writing v11-format rows would mis-dedup (it does
     /// not know the LOOKUP section).
+    /// FHV12 note (2026-08-27, Issue #249): the floor targets the next beta
+    /// that first SHIPS FHV12 - v2.0.1-beta.10 (FHV11 hashes never shipped
+    /// in any release build; latest tag at the time: v2.0.1-beta.9). A
+    /// pre-beta.10 plugin writing v12-format rows would mis-dedup (it does
+    /// not know the DEF section and the strengthened GEOM metrics).
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

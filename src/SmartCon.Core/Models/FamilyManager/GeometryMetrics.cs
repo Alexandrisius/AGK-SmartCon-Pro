@@ -43,7 +43,15 @@ public sealed record GeometryMetrics(
     int DimensionCount = 0,
     double TotalSymbolicCurveLength = 0,
     double TotalDetailCurveLength = 0,
-    double TotalModelCurveLength = 0);
+    double TotalModelCurveLength = 0,
+    /// <summary>
+    /// FHV12 (#249, Phase 3): nested <c>FamilyInstance</c> placements
+    /// inside the family document — symbol identity + quantized transform
+    /// + visibility. Pre-FHV12 only the nested family NAMES were hashed
+    /// (NESTED section): moving or rotating a nested part inside the
+    /// family passed the content hash silently.
+    /// </summary>
+    IReadOnlyList<NestedInstanceSnapshot>? NestedInstances = null);
 
 /// <summary>
 /// Metrics for a single <c>GenericForm</c> element inside a family
@@ -79,7 +87,83 @@ public sealed record FormMetrics(
     int EdgeCount,
     string? SubcategoryName,
     double SurfaceArea = 0,
-    BoundingBoxSnapshot? Bounds = null);
+    BoundingBoxSnapshot? Bounds = null,
+    /// <summary>
+    /// FHV12 (#249, Phase 3): volume-weighted centroid of the form's
+    /// solids (<c>Solid.ComputeCentroid()</c>), hashed with 1e-4 ft
+    /// rounding like connector origins. Catches translations that keep
+    /// volume, face counts AND the axis-aligned bounds (e.g. a shape
+    /// moved within its own bounding box).
+    /// </summary>
+    PointSnapshot? Centroid = null,
+    /// <summary>
+    /// FHV12: histogram of the form's face kinds (PlanarFace,
+    /// CylindricalFace, ConicalFace, RevolvedFace, …) — face KINDS are
+    /// stable across regenerations, unlike tessellation vertex counts
+    /// (Autodesk forum). Sorted by kind ordinal.
+    /// </summary>
+    IReadOnlyList<FaceTypeCount>? FaceTypes = null,
+    /// <summary>
+    /// FHV12: summed edge lengths of all solids (internal units, feet) —
+    /// stabler than the edge COUNT for shape edits that re-split edges.
+    /// </summary>
+    double TotalEdgeLength = 0,
+    /// <summary>
+    /// FHV12: the form's resolved display color (RGBA 0-255) through the
+    /// same fallback chain the GLB preview uses (face/form material →
+    /// element category → family category → owner). <c>null</c> when no
+    /// level resolved a material — a deterministic state.
+    /// </summary>
+    MaterialColorSnapshot? MaterialColor = null,
+    /// <summary>
+    /// FHV12: the form's visibility flags — the raw
+    /// <c>IS_VISIBLE_PARAM</c> value (the associable "Visible" parameter,
+    /// per-type through its binding) and the Fine detail-level flag from
+    /// <c>GenericForm.GetVisibility()</c>. A binding flip shifts the hash
+    /// even when every metric stays identical.
+    /// </summary>
+    FormVisibilitySnapshot? Visibility = null);
+
+/// <summary>A 3D point in internal units (feet), hashed with 1e-4 ft rounding.</summary>
+public sealed record PointSnapshot(double X, double Y, double Z);
+
+/// <summary>One face-kind counter of a <see cref="FormMetrics"/> histogram (FHV12).</summary>
+public sealed record FaceTypeCount(string FaceKind, int Count);
+
+/// <summary>Resolved display color (RGBA, 0-255 per channel) of a form (FHV12).</summary>
+public sealed record MaterialColorSnapshot(int R, int G, int B, int A);
+
+/// <summary>
+/// Visibility flags of a family form (FHV12): the raw
+/// <c>IS_VISIBLE_PARAM</c> value (<c>null</c> when unreadable) and the
+/// Fine detail-level flag (<c>null</c> when the visibility object is
+/// unavailable).
+/// </summary>
+public sealed record FormVisibilitySnapshot(int? IsVisibleParamValue, bool? IsShownInFine);
+
+/// <summary>
+/// One nested <c>FamilyInstance</c> placement inside a family document
+/// (FHV12, #249 Phase 3): the symbol identity (family + symbol name —
+/// user content, locale-stable), the placement transform quantized to
+/// 1e-4 ft (origin + basis vectors), and the raw
+/// <c>IS_VISIBLE_PARAM</c> value.
+/// </summary>
+public sealed record NestedInstanceSnapshot(
+    string FamilyName,
+    string SymbolName,
+    double OriginX,
+    double OriginY,
+    double OriginZ,
+    double BasisXx,
+    double BasisXy,
+    double BasisXz,
+    double BasisYx,
+    double BasisYy,
+    double BasisYz,
+    double BasisZx,
+    double BasisZy,
+    double BasisZz,
+    int? IsVisibleParamValue);
 
 /// <summary>
 /// Axis-aligned bounding box in internal units (feet). Hashed with

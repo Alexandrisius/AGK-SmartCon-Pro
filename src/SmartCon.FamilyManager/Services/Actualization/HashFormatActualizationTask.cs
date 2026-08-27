@@ -10,8 +10,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v11</c>): recalculates stale
-/// (format v1..v10 / NULL) content hashes to the FHV11 format
+/// CRITICAL actualization task (Id=<c>hash-v12</c>): recalculates stale
+/// (format v1..v11 / NULL) content hashes to the FHV12 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -23,9 +23,12 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// last difference between identity and embedded verification — one
 /// unified hash now, owner decision 2026-08-12; FHV11 — LOOKUP section:
 /// raw CSV content of embedded lookup tables (FamilySizeTable) enters
-/// the loadable hash, Issue #238 ADR-069).
+/// the loadable hash, Issue #238 ADR-069; FHV12 — DEF section
+/// (definition wiring) + strengthened GEOM (centroid, face-kind
+/// histogram, edge lengths, resolved RGBA, visibility flags, nested
+/// instance placements), system FHV8 prefix bump, Issue #249 Phase 3).
 /// Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1..10 pending, 11 current, -1/-2 terminal (unreadable /
+/// semantics: NULL/1..11 pending, 12 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -72,14 +75,14 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v11";
-    public override int Order => 11;
+    public override string Id => "hash-v12";
+    public override int Order => 12;
     public override bool IsCritical => true;
 
     protected override string DetectionSql => """
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (11, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (12, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
@@ -122,7 +125,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 11
+                    SET content_hash = @hash, hash_format_version = 12
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -135,7 +138,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 itemCmd.Transaction = tx;
                 itemCmd.CommandText = """
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 11, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = 12, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));

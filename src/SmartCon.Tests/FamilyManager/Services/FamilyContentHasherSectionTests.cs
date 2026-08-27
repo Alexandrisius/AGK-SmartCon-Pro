@@ -205,7 +205,7 @@ public sealed class FamilyContentHasherSectionTests
         Assert.Equal(
             new[]
             {
-                "META", "PARAMS", "TYPES", "PHANTOM", "GEOM", "GEOM2D",
+                "META", "PARAMS", "TYPES", "PHANTOM", "DEF", "GEOM", "GEOM2D",
                 "NESTED", "NONSHARED", "NESTEDHASH", "FACTS", "FLAGS", "CONN", "LOOKUP",
             },
             sections!.Select(s => s.SectionName).ToArray());
@@ -220,7 +220,7 @@ public sealed class FamilyContentHasherSectionTests
 
         Assert.NotNull(sections);
         Assert.DoesNotContain(sections!, s => s.SectionName == "LOOKUP");
-        Assert.Equal(12, sections!.Count);
+        Assert.Equal(13, sections!.Count);
 
         // The byte-identity criterion holds for table-less families too.
         var concat = string.Concat(sections.Select(s => s.CanonicalString));

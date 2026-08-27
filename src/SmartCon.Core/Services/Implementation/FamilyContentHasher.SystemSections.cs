@@ -18,7 +18,7 @@ public sealed partial class FamilyContentHasher
 {
     /// <summary>
     /// Build the canonical string for a system family snapshot.
-    /// Format: FHV7|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|...|STRUCT|...|ROUTING|...|SEGMENTS|...|SUBTYPES|...|RAILING|...|WIRE|...
+    /// Format: FHV8|SYSTEM|{catId}|TYPES|{typeName}|{params}|FAMKEY|...|STRUCT|...|ROUTING|...|SEGMENTS|...|SUBTYPES|...|RAILING|...|WIRE|...
     /// The category display name is NOT part of the hash (v3, Issue #159):
     /// it is UI-locale dependent — the ordinal is the identity.
     /// STRUCT/ROUTING/SEGMENTS/SUBTYPES/RAILING/WIRE live inside the per-type
@@ -39,6 +39,10 @@ public sealed partial class FamilyContentHasher
     /// FHV7 (#215): FAMKEY gains the duct Shape discriminator
     /// (Duct.Round/Rectangular/Oval instead of "Single") — the
     /// "Воздуховоды" category has three system families, not one.
+    /// FHV8 (#249, Phase 3): prefix bump only (content unchanged) —
+    /// aligned with the loadable FHV12 so a single global
+    /// hash_format_version (=12) covers both kinds; per-type content
+    /// hashes ride along as a side product (#179).
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
@@ -101,7 +105,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildSystemMetaSection(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV7|SYSTEM|");
+        sb.Append("FHV8|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
         sb.Append("TYPES|");
         return sb.ToString();

@@ -51,6 +51,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var types = ExtractTypes(fm, familyDoc);
         var phantomValues = ExtractPhantomTypeValues(fm, familyDoc);
         var geometry = ExtractGeometry(familyDoc);
+        var definitions = ExtractDefinitions(familyDoc);
         var (sharedNested, nonSharedNested) = ExtractNestedNames(familyDoc);
         var connectors = ExtractConnectors(familyDoc);
         var behaviorFlags = ExtractBehaviorFlags(familyDoc);
@@ -77,7 +78,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             BehaviorFlags: behaviorFlags,
             NonSharedNestedFamilyNames: nonSharedNested.Count > 0 ? nonSharedNested : null,
             PhantomTypeValues: phantomValues is { Count: > 0 } ? phantomValues : null,
-            LookupTables: lookupTables);
+            LookupTables: lookupTables,
+            Definitions: definitions);
     }
 
     /// <summary>
@@ -794,6 +796,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             var refPlaneCount = CountElements(familyDoc, typeof(ReferencePlane));
             var dimensionCount = CountElements(familyDoc, typeof(Dimension));
 
+            // FHV12 (#249, Phase 3): nested instance placements are content
+            // even in a form-less family (a pure container family).
+            var nestedInstances = ExtractNestedInstances(familyDoc);
+
             if (forms.Count == 0)
             {
                 SmartConLogger.Debug(
@@ -804,20 +810,33 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     0, Array.Empty<FormMetrics>(),
                     symbolicCount, detailCount, modelCount,
                     textNoteCount, refPlaneCount, dimensionCount,
-                    symbolicLength, detailLength, modelLength);
+                    symbolicLength, detailLength, modelLength,
+                    nestedInstances.Count > 0 ? nestedInstances : null);
             }
 
+            // FHV12 (#249, Phase 3): IncludeNonVisibleObjects = true —
+            // conditionally visible solids (IS_VISIBLE_PARAM = 0 on the
+            // current type) enter the metrics WITH their visibility flag
+            // recorded, closing the blind spot of conditional forms
+            // invisible on the default type. Aligned with the GLB
+            // extractor's options. NOTE: forms are NOT filtered by
+            // form.Visible — probe 2026-08-27 showed form.Visible tracks
+            // IS_VISIBLE_PARAM (both are the same "Visible" flag), so
+            // filtering would drop exactly the conditional forms this
+            // change exists to capture. FHV11 already counted invisible
+            // forms (with zeroed metrics); FHV12 measures them.
             var options = new Options
             {
                 ComputeReferences = false,
-                DetailLevel = ViewDetailLevel.Fine
+                DetailLevel = ViewDetailLevel.Fine,
+                IncludeNonVisibleObjects = true
             };
 
             var metricsList = new List<FormMetrics>(forms.Count);
 
             foreach (var form in forms)
             {
-                var metric = ExtractFormMetrics(form, options);
+                var metric = ExtractFormMetrics(form, options, familyDoc);
                 metricsList.Add(metric);
             }
 
@@ -828,9 +847,10 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .ToList();
 
             SmartConLogger.Debug(
-                $"Geometry: {forms.Count} forms, " +
+                $"Geometry: {forms.Count} forms ({metricsList.Count} visible in editor), " +
                 $"{sortedMetrics.Count(f => f.IsSolid)} solid, " +
-                $"{sortedMetrics.Count(f => !f.IsSolid)} void. " +
+                $"{sortedMetrics.Count(f => !f.IsSolid)} void, " +
+                $"{nestedInstances.Count} nested instances. " +
                 $"2D: symbolic={symbolicCount}, detail={detailCount}, model={modelCount}, " +
                 $"text={textNoteCount}, refPlane={refPlaneCount}, dim={dimensionCount}");
 
@@ -838,7 +858,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 forms.Count, sortedMetrics,
                 symbolicCount, detailCount, modelCount,
                 textNoteCount, refPlaneCount, dimensionCount,
-                symbolicLength, detailLength, modelLength);
+                symbolicLength, detailLength, modelLength,
+                nestedInstances.Count > 0 ? nestedInstances : null);
         }
         catch (Exception ex)
         {
@@ -846,6 +867,239 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"Geometry extraction failed: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: hash will use 0 forms — check family document for corruption]");
             return new GeometryMetrics(0, Array.Empty<FormMetrics>());
+        }
+    }
+
+    /// <summary>
+    /// FHV12 (#249, Phase 3): nested <c>FamilyInstance</c> placements —
+    /// symbol identity + transform + visibility flag. Pre-FHV12 only the
+    /// nested family names participated in the hash (NESTED section):
+    /// moving or rotating a nested part passed silently.
+    /// </summary>
+    private static List<NestedInstanceSnapshot> ExtractNestedInstances(Document familyDoc)
+    {
+        var result = new List<NestedInstanceSnapshot>();
+        try
+        {
+            var collector = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(FamilyInstance));
+            foreach (FamilyInstance fi in collector)
+            {
+                try
+                {
+                    var familyName = fi.Symbol?.Family?.Name;
+                    if (string.IsNullOrEmpty(familyName))
+                    {
+                        continue;
+                    }
+                    var symbolName = fi.Symbol?.Name ?? string.Empty;
+                    var transform = fi.GetTransform();
+                    int? isVisibleParam = null;
+                    try
+                    {
+                        isVisibleParam = fi.get_Parameter(BuiltInParameter.IS_VISIBLE_PARAM)?.AsInteger();
+                    }
+                    catch
+                    {
+                        // flag unreadable — null recorded
+                    }
+
+                    result.Add(new NestedInstanceSnapshot(
+                        familyName, symbolName,
+                        transform.Origin.X, transform.Origin.Y, transform.Origin.Z,
+                        transform.BasisX.X, transform.BasisX.Y, transform.BasisX.Z,
+                        transform.BasisY.X, transform.BasisY.Y, transform.BasisY.Z,
+                        transform.BasisZ.X, transform.BasisZ.Y, transform.BasisZ.Z,
+                        isVisibleParam));
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug($"Nested instance read failed (Id={fi.Id}): {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Nested instance collection failed: {ex.Message}");
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// FHV12 (#249, Phase 3): DEF — the type-independent definition
+    /// wiring of the family: which FAMILY parameters drive each form's
+    /// visibility/material/extrusion offsets, each dimension's label and
+    /// each reference plane's identity. One collector pass per element
+    /// class, zero regenerations. Bindings are read via
+    /// <c>FamilyManager.GetAssociatedFamilyParameter</c> — the same API
+    /// <c>AssociateElementParameterToFamilyParameter</c> writes through,
+    /// so a re-binding to a different parameter with identical current
+    /// values is caught here (the pre-FHV12 blind spot).
+    /// </summary>
+    private static DefinitionMetrics ExtractDefinitions(Document familyDoc)
+    {
+        var fm = familyDoc.FamilyManager;
+        var forms = new List<FormDefinitionSnapshot>();
+        var dimensions = new List<DimensionDefinitionSnapshot>();
+        var planes = new List<ReferencePlaneDefinitionSnapshot>();
+
+        try
+        {
+            foreach (var form in new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(GenericForm)).Cast<GenericForm>())
+            {
+                string? subcategory;
+                try
+                {
+                    subcategory = form.Subcategory?.Name;
+                }
+                catch
+                {
+                    subcategory = null;
+                }
+
+                double? startOffset = null;
+                double? endOffset = null;
+                string? startBinding = null;
+                string? endBinding = null;
+                if (form is Extrusion extrusion)
+                {
+                    startBinding = GetParameterBindingName(fm, form, BuiltInParameter.EXTRUSION_START_PARAM);
+                    endBinding = GetParameterBindingName(fm, form, BuiltInParameter.EXTRUSION_END_PARAM);
+                    try
+                    {
+                        startOffset = extrusion.StartOffset;
+                        endOffset = extrusion.EndOffset;
+                    }
+                    catch
+                    {
+                        // offsets unreadable — null recorded
+                    }
+                }
+
+                forms.Add(new FormDefinitionSnapshot(
+                    form.GetType().Name,
+                    form.IsSolid,
+                    subcategory,
+                    GetParameterBindingName(fm, form, BuiltInParameter.IS_VISIBLE_PARAM),
+                    GetParameterBindingName(fm, form, BuiltInParameter.MATERIAL_ID_PARAM),
+                    startBinding,
+                    endBinding,
+                    startOffset,
+                    endOffset));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Definition extraction (forms) failed: {ex.Message}");
+        }
+
+        try
+        {
+            foreach (var dim in new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(Dimension)).Cast<Dimension>())
+            {
+                string? label = null;
+                try
+                {
+                    label = dim.FamilyLabel?.Definition?.Name;
+                }
+                catch
+                {
+                    // unlabeled or unreadable — null recorded
+                }
+
+                string styleName;
+                try
+                {
+                    styleName = familyDoc.GetElement(dim.GetTypeId())?.Name ?? string.Empty;
+                }
+                catch
+                {
+                    styleName = string.Empty;
+                }
+
+                var segmentCount = 0;
+                try
+                {
+                    segmentCount = dim.Segments?.Size ?? 0;
+                }
+                catch
+                {
+                    // segments unreadable — 0 recorded
+                }
+
+                dimensions.Add(new DimensionDefinitionSnapshot(label, styleName, segmentCount));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Definition extraction (dimensions) failed: {ex.Message}");
+        }
+
+        try
+        {
+            foreach (var plane in new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(ReferencePlane)).Cast<ReferencePlane>())
+            {
+                string name;
+                try
+                {
+                    // ReferencePlane.Name throws for unnamed planes — fall
+                    // back to the generic element name, then to empty.
+                    name = plane.Name ?? string.Empty;
+                }
+                catch
+                {
+                    name = string.Empty;
+                }
+
+                bool? definesOrigin = null;
+                try
+                {
+                    var value = plane.get_Parameter(BuiltInParameter.DATUM_PLANE_DEFINES_ORIGIN)?.AsInteger();
+                    if (value.HasValue)
+                    {
+                        definesOrigin = value.Value != 0;
+                    }
+                }
+                catch
+                {
+                    // flag unreadable — null recorded
+                }
+
+                planes.Add(new ReferencePlaneDefinitionSnapshot(name, definesOrigin));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Definition extraction (reference planes) failed: {ex.Message}");
+        }
+
+        return new DefinitionMetrics(forms, dimensions, planes);
+    }
+
+    /// <summary>
+    /// Name of the FAMILY parameter associated with the element's
+    /// built-in parameter, or <c>null</c> when the parameter is missing
+    /// or not associated. Best-effort:
+    /// <c>GetAssociatedFamilyParameter</c> may reject non-associable
+    /// parameters — the binding then records null.
+    /// </summary>
+    private static string? GetParameterBindingName(Autodesk.Revit.DB.FamilyManager fm, Element element, BuiltInParameter bip)
+    {
+        try
+        {
+            var parameter = element.get_Parameter(bip);
+            if (parameter is null)
+            {
+                return null;
+            }
+            return fm.GetAssociatedFamilyParameter(parameter)?.Definition?.Name;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -909,7 +1163,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         }
     }
 
-    private static FormMetrics ExtractFormMetrics(GenericForm form, Options options)
+    private static FormMetrics ExtractFormMetrics(GenericForm form, Options options, Document familyDoc)
     {
         var formKind = form.GetType().Name;
         var isSolid = form.IsSolid;
@@ -917,6 +1171,9 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         double surfaceArea = 0;
         int faceCount = 0;
         int edgeCount = 0;
+        double totalEdgeLength = 0;
+        double centroidX = 0, centroidY = 0, centroidZ = 0;
+        var faceTypes = new Dictionary<string, int>(StringComparer.Ordinal);
         string? subcategoryName = null;
         BoundingBoxSnapshot? bounds = null;
 
@@ -929,7 +1186,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 {
                     if (geomObj is Solid solid && solid.Volume > 0)
                     {
-                        AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount);
+                        AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
+                            ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes);
                     }
                     else if (geomObj is GeometryInstance geomInst)
                     {
@@ -940,7 +1198,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                             {
                                 if (innerObj is Solid innerSolid && innerSolid.Volume > 0)
                                 {
-                                    AccumulateSolid(innerSolid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount);
+                                    AccumulateSolid(innerSolid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
+                                        ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes);
                                 }
                             }
                         }
@@ -979,6 +1238,12 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             subcategoryName = null;
         }
 
+        // FHV12 (#249, Phase 3): volume-weighted centroid — null when the
+        // form produced no measurable solid (a deterministic state).
+        PointSnapshot? centroid = volume > 0
+            ? new PointSnapshot(centroidX / volume, centroidY / volume, centroidZ / volume)
+            : null;
+
         return new FormMetrics(
             FormKind: formKind,
             IsSolid: isSolid,
@@ -987,11 +1252,124 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             EdgeCount: edgeCount,
             SubcategoryName: subcategoryName,
             SurfaceArea: surfaceArea,
-            Bounds: bounds);
+            Bounds: bounds,
+            Centroid: centroid,
+            FaceTypes: faceTypes.Count > 0
+                ? faceTypes.Select(kv => new FaceTypeCount(kv.Key, kv.Value)).ToList()
+                : null,
+            TotalEdgeLength: totalEdgeLength,
+            MaterialColor: ResolveFormMaterialColor(form, familyDoc),
+            Visibility: ExtractFormVisibility(form));
+    }
+
+    /// <summary>
+    /// FHV12 (#249, Phase 3): resolved display color of a form through a
+    /// fallback chain mirroring the GLB extractor
+    /// (<c>RevitFamilyGeometryExtractor.GetColorForMaterialId</c>):
+    /// form material parameter → element category material → owner family
+    /// category material → <c>null</c> (deterministic "no color" state —
+    /// the GLB side falls back to a constant grey, but for the HASH a
+    /// null marker is the more honest, equally deterministic state).
+    /// </summary>
+    private static MaterialColorSnapshot? ResolveFormMaterialColor(GenericForm form, Document familyDoc)
+    {
+        try
+        {
+            var materialId = form.get_Parameter(BuiltInParameter.MATERIAL_ID_PARAM)?.AsElementId();
+            var color = TryGetMaterialColorById(familyDoc, materialId);
+            if (color is not null)
+            {
+                return color;
+            }
+        }
+        catch
+        {
+            // fall through to the category chain
+        }
+
+        try
+        {
+            var color = TryGetMaterialColorById(familyDoc, form.Category?.Material?.Id);
+            if (color is not null)
+            {
+                return color;
+            }
+        }
+        catch
+        {
+            // fall through to the owner category
+        }
+
+        try
+        {
+            return TryGetMaterialColorById(familyDoc, familyDoc.OwnerFamily?.FamilyCategory?.Material?.Id);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static MaterialColorSnapshot? TryGetMaterialColorById(Document doc, ElementId? materialId)
+    {
+        if (materialId is null)
+        {
+            return null;
+        }
+        try
+        {
+            if (doc.GetElement(materialId) is Material material)
+            {
+                var c = material.Color;
+                if (c is not null && c.IsValid)
+                {
+                    return new MaterialColorSnapshot(c.Red, c.Green, c.Blue, 255);
+                }
+            }
+        }
+        catch
+        {
+            // unresolved level — caller walks the fallback chain
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// FHV12 (#249, Phase 3): visibility flags of a form — the raw
+    /// <c>IS_VISIBLE_PARAM</c> value (the associable "Visible" parameter)
+    /// and the Fine detail-level flag (<c>GenericForm.GetVisibility()</c>).
+    /// Best-effort per flag: an unreadable flag records null.
+    /// </summary>
+    private static FormVisibilitySnapshot ExtractFormVisibility(GenericForm form)
+    {
+        int? isVisibleParam = null;
+        try
+        {
+            isVisibleParam = form.get_Parameter(BuiltInParameter.IS_VISIBLE_PARAM)?.AsInteger();
+        }
+        catch
+        {
+            // flag unreadable — null recorded
+        }
+
+        bool? isShownInFine = null;
+        try
+        {
+            isShownInFine = form.GetVisibility()?.IsShownInFine;
+        }
+        catch
+        {
+            // visibility object unavailable — null recorded
+        }
+
+        return new FormVisibilitySnapshot(isVisibleParam, isShownInFine);
     }
 
     private static void AccumulateSolid(
-        Solid solid, ref double volume, ref double surfaceArea, ref int faceCount, ref int edgeCount)
+        Solid solid, ref double volume, ref double surfaceArea, ref int faceCount, ref int edgeCount,
+        ref double totalEdgeLength,
+        ref double centroidX, ref double centroidY, ref double centroidZ,
+        Dictionary<string, int> faceTypes)
     {
         volume += solid.Volume;
         faceCount += solid.Faces.Size;
@@ -1001,11 +1379,43 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             foreach (Face face in solid.Faces)
             {
                 surfaceArea += face.Area;
+                // FHV12: face-kind histogram — kinds are stable across
+                // regenerations, unlike tessellation vertex counts.
+                var kind = face.GetType().Name;
+                faceTypes.TryGetValue(kind, out var count);
+                faceTypes[kind] = count + 1;
             }
         }
         catch (Exception ex)
         {
             SmartConLogger.Debug($"Face area accumulation failed: {ex.Message}");
+        }
+        try
+        {
+            foreach (Edge edge in solid.Edges)
+            {
+                var curve = edge.AsCurve();
+                if (curve is not null)
+                {
+                    totalEdgeLength += curve.Length;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Edge length accumulation failed: {ex.Message}");
+        }
+        try
+        {
+            // FHV12: volume-weighted centroid accumulation.
+            var c = solid.ComputeCentroid();
+            centroidX += c.X * solid.Volume;
+            centroidY += c.Y * solid.Volume;
+            centroidZ += c.Z * solid.Volume;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug($"Centroid accumulation failed: {ex.Message}");
         }
     }
 
