@@ -369,7 +369,14 @@ public sealed partial class FamilyContentHasher
             .ThenBy(n => n.SymbolName, StringComparer.Ordinal)
             .ThenBy(n => n.OriginX)
             .ThenBy(n => n.OriginY)
-            .ThenBy(n => n.OriginZ);
+            .ThenBy(n => n.OriginZ)
+            // Full content key (validator H1): two placements of the same
+            // symbol at the same point with different rotations must not
+            // leak the extraction order either.
+            .ThenBy(n => n.BasisXx).ThenBy(n => n.BasisXy).ThenBy(n => n.BasisXz)
+            .ThenBy(n => n.BasisYx).ThenBy(n => n.BasisYy).ThenBy(n => n.BasisYz)
+            .ThenBy(n => n.BasisZx).ThenBy(n => n.BasisZy).ThenBy(n => n.BasisZz)
+            .ThenBy(n => n.IsVisibleParamValue);
         foreach (var n in sortedInstances)
         {
             sb.Append(Escape(n.FamilyName)).Append('|');
