@@ -313,7 +313,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
                 var exists = await _attributeDefRepository.NameExistsAsync(draft.Name, null);
                 if (exists)
                 {
-                    var errorTitle = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error";
+                    var errorTitle = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error";
                     var errorMsg = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AttrExists) ?? "Attribute \"{0}\" already exists.", draft.Name);
                     _dialogService.ShowWarning(errorTitle, errorMsg);
                     return;

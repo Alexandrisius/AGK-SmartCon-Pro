@@ -51,6 +51,7 @@ public static partial class LocalizationService
         ru["FM_Status_Deprecated"] = "Неактуальное"; en["FM_Status_Deprecated"] = "Deprecated";
         ru["FM_ImportSuccess"] = "Импортировано: {0}"; en["FM_ImportSuccess"] = "Imported: {0}";
         ru["FM_ImportError"] = "Ошибка импорта: {0}"; en["FM_ImportError"] = "Import error: {0}";
+        ru["FM_ImportErrorTitle"] = "Ошибка импорта"; en["FM_ImportErrorTitle"] = "Import error";
         ru["FM_ImportPrepareError"] = "Ошибка подготовки"; en["FM_ImportPrepareError"] = "Preparation error";
         ru["FM_ImportResultFormat"] = "Импортировано: {0}, пропущено: {1}, ошибок: {2} / {3}"; en["FM_ImportResultFormat"] = "Imported: {0}, skipped: {1}, errors: {2} / {3}";
         ru["FM_ImportStatusImport"] = "Импорт: {0}/{1}"; en["FM_ImportStatusImport"] = "Import: {0}/{1}";

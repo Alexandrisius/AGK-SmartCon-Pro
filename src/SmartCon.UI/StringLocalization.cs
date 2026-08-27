@@ -255,6 +255,7 @@ public static class StringLocalization
         public const string FM_Status_Deprecated = "FM_Status_Deprecated";
         public const string FM_ImportSuccess = "FM_ImportSuccess";
         public const string FM_ImportError = "FM_ImportError";
+        public const string FM_ImportErrorTitle = "FM_ImportErrorTitle";
         public const string FM_ImportPrepareError = "FM_ImportPrepareError";
         public const string FM_ImportResultFormat = "FM_ImportResultFormat";
         public const string FM_ImportStatusImport = "FM_ImportStatusImport";

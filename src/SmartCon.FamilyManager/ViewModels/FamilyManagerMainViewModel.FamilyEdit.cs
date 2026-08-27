@@ -159,7 +159,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 case ActiveDocumentKind.None:
                     _dialogService.ShowError(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error",
                         LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject)
                             ?? "Активный документ не является проектом. Откройте проект Revit.");
                     return;
@@ -281,7 +281,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             SmartConLogger.Error($"FAILED: {ex}");
             _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error",
                 ex.Message);
         }
         finally
@@ -523,7 +523,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (!isMakeActive && string.IsNullOrEmpty(resolvedManagedPath))
         {
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Import error";
             return;
         }
 
@@ -559,7 +559,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             if (string.IsNullOrEmpty(saveAsPath))
             {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Import error";
                 return;
             }
         }
