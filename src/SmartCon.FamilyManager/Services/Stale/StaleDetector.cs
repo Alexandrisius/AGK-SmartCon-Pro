@@ -33,6 +33,12 @@ internal sealed class StaleDetector : IStaleDetector
     /// catalogItemId → (typeKey "FAMILY|NAME" upper → isStale). Feeds the
     /// orange presence dot on the exact outdated type node.</summary>
     private readonly Dictionary<string, Dictionary<string, bool>> _systemTypeStaleByType = new(StringComparer.Ordinal);
+    /// <summary>#249 (Phase 2): per-type stale verdicts for LOADABLE items —
+    /// catalogItemId → (typeName upper-invariant → isStale). Filled only
+    /// when the content verification produced a per-type proof; an absent
+    /// entry means "no per-type data" and the tree falls back to the
+    /// family-level (leaf-scoped) dot — the pre-#249 behaviour.</summary>
+    private readonly Dictionary<string, Dictionary<string, bool>> _loadableTypeStaleByType = new(StringComparer.Ordinal);
 
     public StaleDetector(
         IFamilyVersionStore store,
@@ -125,7 +131,7 @@ internal sealed class StaleDetector : IStaleDetector
             // current / orphaned id) → prove content, heal on match.
             reason = await RefineReasonByContentAsync(
                 catalogItem, familyName, loaded, reason, doc, targetRevit,
-                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase), ct)
+                new Dictionary<string, EmbeddedContentVerifier.FileProof>(StringComparer.OrdinalIgnoreCase), ct)
                 .ConfigureAwait(true);
 
             result = new StaleCheckResult(
@@ -324,9 +330,10 @@ internal sealed class StaleDetector : IStaleDetector
         // 2026-08-12). A label drift without id mismatch is stale WITHOUT
         // opening any document — «Обновить» reconciles it.
         // One OpenDocumentFile per version FILE per check run — duplicate
-        // catalog items resolving to the same file share the cached hash
-        // (a cached null is a cached "indeterminate").
-        var fileHashCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        // catalog items resolving to the same file share the cached proof
+        // (family hash + per-type hashes; a cached null-field entry is a
+        // cached "indeterminate").
+        var fileProofCache = new Dictionary<string, EmbeddedContentVerifier.FileProof>(StringComparer.OrdinalIgnoreCase);
         foreach (var (item, familyName, id) in matched)
         {
             versions.TryGetValue(id, out var loaded);
@@ -336,7 +343,7 @@ internal sealed class StaleDetector : IStaleDetector
                     loaded, item.Id, item.CurrentVersionLabel, targetRevit);
 
             reason = await RefineReasonByContentAsync(
-                item, familyName, loaded, reason, doc, targetRevit, fileHashCache, ct)
+                item, familyName, loaded, reason, doc, targetRevit, fileProofCache, ct)
                 .ConfigureAwait(true);
 
             results.Add(new StaleCheckResult(
@@ -358,17 +365,20 @@ internal sealed class StaleDetector : IStaleDetector
 
     /// <summary>
     /// FHV10 content proof for an embedded nested family in a family
-    /// document: <c>true</c> — embedded content matches the current catalog
-    /// version file; <c>false</c> — differs; <c>null</c> — indeterminate
-    /// (file unresolvable, guards tripped) and the caller keeps the
-    /// marker-based verdict.
+    /// document or project: <see cref="LoadableVerificationResult.Verdict"/>
+    /// — <c>true</c> embedded content matches the current catalog version
+    /// file, <c>false</c> differs, <c>null</c> indeterminate (file
+    /// unresolvable, guards tripped) and the caller keeps the marker-based
+    /// verdict. <see cref="LoadableVerificationResult.PerTypeStale"/> (#249,
+    /// Phase 2) resolves WHICH loaded types drifted — it feeds the
+    /// per-type orange dot in the tree.
     /// </summary>
-    private async Task<bool?> ContentVerifyEmbeddedAsync(
+    private async Task<LoadableVerificationResult> ContentVerifyEmbeddedAsync(
         FamilyCatalogItem item,
         string familyName,
         Document doc,
         int targetRevit,
-        IDictionary<string, string?> fileHashCache,
+        IDictionary<string, EmbeddedContentVerifier.FileProof> fileProofCache,
         CancellationToken ct)
     {
         FamilyResolvedFile resolved;
@@ -382,17 +392,17 @@ internal sealed class StaleDetector : IStaleDetector
             SmartConLogger.Warn(
                 $"CheckEmbedded[{item.Id}]: failed to resolve the current version file: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: контентная верификация пропущена — проверьте, что файл версии доступен на диске]");
-            return null;
+            return new LoadableVerificationResult(null, null);
         }
         if (string.IsNullOrEmpty(resolved.AbsolutePath))
         {
-            return null;
+            return new LoadableVerificationResult(null, null);
         }
 
         return await _awaitable.RaiseAsync(
-            _ => EmbeddedContentVerifier.VerifyEmbeddedAgainstFile(
+            _ => EmbeddedContentVerifier.VerifyEmbeddedAgainstFileDetailed(
                 doc, familyName, resolved.AbsolutePath,
-                _snapshotExtractor!, _contentHasher!, $"CheckEmbedded[{item.Id}]", fileHashCache),
+                _snapshotExtractor!, _contentHasher!, $"CheckEmbedded[{item.Id}]", fileProofCache),
             ct).ConfigureAwait(true);
     }
 
@@ -458,7 +468,7 @@ internal sealed class StaleDetector : IStaleDetector
         StaleReason reason,
         Document doc,
         int targetRevit,
-        IDictionary<string, string?> fileHashCache,
+        IDictionary<string, EmbeddedContentVerifier.FileProof> fileProofCache,
         CancellationToken ct)
     {
         // #218: orphan-vs-foreign classification of an id mismatch. The
@@ -509,14 +519,22 @@ internal sealed class StaleDetector : IStaleDetector
             || markerOrphaned;
         if (!markerCannotSpeak || !canContentVerify)
         {
+            // No per-type proof without a content verification — clear any
+            // stale map from a previous check so the tree falls back to the
+            // family-level (leaf-scoped) dot (#249, Phase 2).
+            ClearLoadableTypeStaleMap(item.Id);
             return reason;
         }
 
-        var verdict = await ContentVerifyEmbeddedAsync(
-            item, familyName, doc, targetRevit, fileHashCache, ct).ConfigureAwait(true);
+        var verification = await ContentVerifyEmbeddedAsync(
+            item, familyName, doc, targetRevit, fileProofCache, ct).ConfigureAwait(true);
+        var verdict = verification.Verdict;
 
         if (verdict == true)
         {
+            // A content match clears the per-type drift too — the tree
+            // falls back to the (now non-stale) leaf verdict.
+            ClearLoadableTypeStaleMap(item.Id);
             if (loaded is null || markerOrphaned)
             {
                 SmartConLogger.Debug(
@@ -535,6 +553,9 @@ internal sealed class StaleDetector : IStaleDetector
 
         if (verdict == false)
         {
+            // #249 (Phase 2): keep the per-type drift map for the tree;
+            // without a proof the entry is cleared (leaf-scoped fallback).
+            StoreLoadableTypeStaleMap(item.Id, verification.PerTypeStale);
             if (loaded is null)
             {
                 SmartConLogger.Debug(
@@ -547,16 +568,49 @@ internal sealed class StaleDetector : IStaleDetector
             // or an orphaned marker whose content is genuinely older than
             // the current version (#218). «Обновить» restores the catalog
             // content in both cases.
+            var changedTypes = verification.PerTypeStale?.Count(kv => kv.Value) ?? 0;
             SmartConLogger.Debug(
                 $"CheckEmbedded: '{familyName}' {(markerOrphaned ? "orphaned marker" : $"marker matches {item.CurrentVersionLabel}")} " +
-                "but the content DIFFERS from the current catalog version — stale (ContentDrift)");
+                $"but the content DIFFERS from the current catalog version — stale (ContentDrift, {changedTypes} changed type(s))");
             return StaleReason.ContentDrift;
         }
 
+        ClearLoadableTypeStaleMap(item.Id);
         SmartConLogger.Debug(
             $"CheckEmbedded: '{familyName}' content verify indeterminate " +
             $"— marker-based verdict stands ({reason})");
         return reason;
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): stores the per-type drift map of a loadable item
+    /// (a null proof clears the entry → the tree falls back to the
+    /// family-level dot). Threading: same discipline as
+    /// <see cref="_systemTypeStaleByType"/> — mutated under
+    /// <see cref="_cacheLock"/>.
+    /// </summary>
+    private void StoreLoadableTypeStaleMap(string catalogItemId, IReadOnlyDictionary<string, bool>? perTypeStale)
+    {
+        lock (_cacheLock)
+        {
+            if (perTypeStale is null)
+            {
+                _loadableTypeStaleByType.Remove(catalogItemId);
+            }
+            else
+            {
+                _loadableTypeStaleByType[catalogItemId] =
+                    new Dictionary<string, bool>(perTypeStale, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    private void ClearLoadableTypeStaleMap(string catalogItemId)
+    {
+        lock (_cacheLock)
+        {
+            _loadableTypeStaleByType.Remove(catalogItemId);
+        }
     }
 
     /// <summary>
@@ -914,6 +968,7 @@ internal sealed class StaleDetector : IStaleDetector
             foreach (var id in catalogItemIds)
             {
                 _systemTypeStaleByType.Remove(id);
+                _loadableTypeStaleByType.Remove(id);
             }
             if (_cachedSnapshot is null) return;
             var before = _cachedSnapshot.Results.Count;
@@ -938,6 +993,7 @@ internal sealed class StaleDetector : IStaleDetector
         {
             _cachedSnapshot = null;
             _systemTypeStaleByType.Clear();
+            _loadableTypeStaleByType.Clear();
         }
     }
 
@@ -949,6 +1005,7 @@ internal sealed class StaleDetector : IStaleDetector
             foreach (var id in catalogItemIds)
             {
                 _systemTypeStaleByType.Remove(id);
+                _loadableTypeStaleByType.Remove(id);
             }
             if (_cachedSnapshot is null) return;
             var before = _cachedSnapshot.Results.Count;
@@ -971,6 +1028,21 @@ internal sealed class StaleDetector : IStaleDetector
         lock (_cacheLock)
         {
             return _systemTypeStaleByType.TryGetValue(catalogItemId, out var map) ? map : null;
+        }
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): per-type stale verdicts of one LOADABLE catalog
+    /// item (typeName upper-invariant → isStale), or null when no
+    /// per-type proof exists (never content-checked, indeterminate
+    /// verification, or a family-level match). The tree falls back to
+    /// the family-level (leaf-scoped) dot on null.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? GetLoadableTypeStaleMap(string catalogItemId)
+    {
+        lock (_cacheLock)
+        {
+            return _loadableTypeStaleByType.TryGetValue(catalogItemId, out var map) ? map : null;
         }
     }
 

@@ -161,6 +161,10 @@ public sealed partial class FamilyManagerMainViewModel
         // nested families; loading it would plant them into the project.
         if (await CheckDependencyDriftBlockAsync(selectedId, selectedName).ConfigureAwait(true)) return;
 
+        // #249 (Phase 2): pre-update per-type report — name the drifted
+        // types whose local edits the catalog content will replace.
+        if (!ConfirmDriftedTypesReplacement(selectedId)) return;
+
         await _awaitableEvent.RaiseAsyncTask(async _ =>
         {
             try
@@ -190,6 +194,40 @@ public sealed partial class FamilyManagerMainViewModel
                     ex.Message);
             }
         });
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): pre-update confirmation naming the DRIFTED types
+    /// whose local edits the catalog content will replace. Silent (true)
+    /// when no per-type proof exists (the pre-#249 behaviour) or when
+    /// every compared type matches the catalog.
+    /// </summary>
+    private bool ConfirmDriftedTypesReplacement(string catalogItemId)
+    {
+        var map = _staleDetector.GetLoadableTypeStaleMap(catalogItemId);
+        if (map is null)
+        {
+            return true;
+        }
+
+        var drifted = map
+            .Where(kv => kv.Value)
+            .Select(kv => kv.Key)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        if (drifted.Count == 0)
+        {
+            return true;
+        }
+
+        var title = LanguageManager.GetString(StringLocalization.Keys.FM_UpdateReplaceTypesTitle)
+            ?? "Family update";
+        var message = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_UpdateReplaceTypesConfirm)
+                ?? "Types modified in the project: {0}.\n\nThe update will replace your local edits of these types with the catalog content (the other types: {1} — match the catalog).\n\nContinue?",
+            string.Join(", ", drifted),
+            map.Count - drifted.Count);
+        return _dialogService.ShowConfirmation(title, message);
     }
 
     /// <summary>

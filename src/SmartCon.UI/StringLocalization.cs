@@ -624,6 +624,8 @@ public static class StringLocalization
         public const string FM_UpdateChangedTypesNotLoaded = "FM_UpdateChangedTypesNotLoaded";
         public const string FM_UpdateNoTypeChanges = "FM_UpdateNoTypeChanges";
         public const string FM_UpdateBatchAllStale = "FM_UpdateBatchAllStale";
+        public const string FM_UpdateReplaceTypesTitle = "FM_UpdateReplaceTypesTitle";
+        public const string FM_UpdateReplaceTypesConfirm = "FM_UpdateReplaceTypesConfirm";
         public const string FM_Check = "FM_Check";
         public const string FM_Stale = "FM_Stale";
         public const string FM_StaleTooltipNone = "FM_StaleTooltipNone";

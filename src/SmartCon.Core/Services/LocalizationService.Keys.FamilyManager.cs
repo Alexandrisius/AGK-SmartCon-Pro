@@ -107,6 +107,9 @@ public static partial class LocalizationService
         ru["FM_UpdateChangedTypes"] = "; изменились типы: {0}"; en["FM_UpdateChangedTypes"] = "; changed types: {0}";
         ru["FM_UpdateChangedTypesNotLoaded"] = "; изменения в незагруженных типах: {0}"; en["FM_UpdateChangedTypesNotLoaded"] = "; changes in not-loaded types: {0}";
         ru["FM_UpdateNoTypeChanges"] = "; значения типов не изменились"; en["FM_UpdateNoTypeChanges"] = "; type values unchanged";
+        // #249 (Phase 2): pre-update per-type replacement confirmation.
+        ru["FM_UpdateReplaceTypesTitle"] = "Обновление семейства"; en["FM_UpdateReplaceTypesTitle"] = "Family update";
+        ru["FM_UpdateReplaceTypesConfirm"] = "В проекте изменены типы: {0}.\n\nОбновление заменит ваши локальные правки этих типов содержимым каталога (остальные типы: {1} — совпадают с каталогом).\n\nПродолжить?"; en["FM_UpdateReplaceTypesConfirm"] = "Types modified in the project: {0}.\n\nThe update will replace your local edits of these types with the catalog content (the other types: {1} — match the catalog).\n\nContinue?";
         ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";

@@ -442,6 +442,12 @@ public sealed partial class FamilyManagerMainViewModel
                 var leafPresent = snapshot.LoadableFamilies.Contains(familyKey);
                 leaf.IsInProject = leafPresent;
 
+                // #249 (Phase 2): per-type drift map from the content
+                // verification — the orange dot lands on the exact drifted
+                // types. Null (no per-type proof) → the pre-#249 leaf-scoped
+                // fallback: every loaded type of a stale family gets the dot.
+                var loadableStaleMap = _staleDetector.GetLoadableTypeStaleMap(leaf.CatalogItemId);
+
                 foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
                 {
                     bool typePresent;
@@ -462,14 +468,32 @@ public sealed partial class FamilyManagerMainViewModel
                     }
                     if (typePresent) marked++;
                     typeNode.IsInProject = typePresent;
-                    // #187: loadable stale is leaf-scoped (the whole family
-                    // version is outdated) — every loaded type of a stale
-                    // family gets the orange dot.
-                    typeNode.IsStaleInProject = typePresent && leaf.IsStale;
+                    typeNode.IsStaleInProject = typePresent
+                        && IsLoadableTypeStale(loadableStaleMap, typeNode, leaf);
                 }
             }
         }
         return marked;
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): per-type stale verdict for a LOADABLE type node.
+    /// With a content-proof map the dot follows the map (virtual nodes —
+    /// the typeless family itself — have no per-type identity and always
+    /// take the leaf verdict; a real type absent from the map was
+    /// compared and did NOT drift). Without a map (no proof ran) the
+    /// pre-#249 leaf-scoped verdict applies.
+    /// </summary>
+    private static bool IsLoadableTypeStale(
+        IReadOnlyDictionary<string, bool>? loadableStaleMap,
+        FamilyTypeNodeViewModel typeNode,
+        FamilyLeafNodeViewModel leaf)
+    {
+        if (loadableStaleMap is null || typeNode.IsVirtual)
+        {
+            return leaf.IsStale;
+        }
+        return loadableStaleMap.TryGetValue(typeNode.TypeName, out var stale) && stale;
     }
 
     /// <summary>
@@ -483,14 +507,17 @@ public sealed partial class FamilyManagerMainViewModel
         {
             if (leaf.FamilySource != "system")
             {
-                // Loadable: leaf-scoped stale — refresh the per-type dots
-                // with the leaf's own IsStale flag. #212: virtual nodes are
-                // NOT skipped — the typeless family's node carries the same
-                // leaf-scoped verdict as real types (its presence/stale is
-                // the family's).
+                // Loadable: #249 (Phase 2) per-type map when a content
+                // proof exists; otherwise the leaf-scoped verdict (the
+                // pre-#249 behaviour). #212: virtual nodes are NOT
+                // skipped — the typeless family's node carries the same
+                // leaf-scoped verdict as real types (its presence/stale
+                // is the family's).
+                var loadableStaleMap = _staleDetector.GetLoadableTypeStaleMap(leaf.CatalogItemId);
                 foreach (var typeNode in leaf.Children.OfType<FamilyTypeNodeViewModel>())
                 {
-                    typeNode.IsStaleInProject = typeNode.IsInProject && leaf.IsStale;
+                    typeNode.IsStaleInProject = typeNode.IsInProject
+                        && IsLoadableTypeStale(loadableStaleMap, typeNode, leaf);
                 }
                 continue;
             }
