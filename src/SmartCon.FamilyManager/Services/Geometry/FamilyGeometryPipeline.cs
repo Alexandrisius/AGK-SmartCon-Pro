@@ -88,18 +88,25 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             $"hasPreextractedGeometry={geometryPerType is not null && geometryPerType.Count > 0}, " +
             $"managedRfaPath='{Path.GetFileName(managedRfaPath ?? "")}'");
 
-        // 0. #249 (Phase 5), reuse tier 1: when another version of the
-        //    same item carries identical DEF/GEOM/TYPES section hashes,
-        //    the per-type preview content is identical by construction —
-        //    re-link its pooled preview assets instead of re-extracting
-        //    and re-writing anything (a text-only edit costs ZERO Revit
-        //    work and ZERO new files).
+        // 0. #249 (Phase 5): delete any previous auto-extracted Preview
+        //    assets for this (catalog_item_id, version_label) FIRST —
+        //    OverwriteCurrent (ADR-040) re-imports the same version with
+        //    new geometry, and both reuse tiers below INSERT rows;
+        //    without this order the overwrite would duplicate them.
+        await DeletePreviousAutoExtractedAssetAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false);
+
+        // 1. #249 (Phase 5), reuse tier 1: when another version of the
+        //    same item carries identical DEF/GEOM/TYPES/NESTED* section
+        //    hashes, the per-type preview content is identical by
+        //    construction — re-link its POOLED preview assets instead of
+        //    re-extracting and re-writing anything (a text-only edit
+        //    costs ZERO Revit work and ZERO new files).
         if (await TryReuseFromPreviousVersionAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false))
         {
             return;
         }
 
-        // 1. Obtain geometry: either pre-extracted from Prepare (H1)
+        // 2. Obtain geometry: either pre-extracted from Prepare (H1)
         //    or extract now from managed .rfa (H2/H3).
         IReadOnlyList<FamilyGeometryPerType>? geometry = geometryPerType;
 
@@ -145,12 +152,6 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             SmartConLogger.Info(
                 $"Geometry pipeline using pre-extracted geometry: {geometry.Count} type(s)");
         }
-
-        // 2. Delete any previous auto-extracted Preview assets for this
-        //    (catalog_item_id, version_label) — supports OverwriteCurrent
-        //    (ADR-040) where the same version is re-imported with new
-        //    geometry.
-        await DeletePreviousAutoExtractedAssetAsync(catalogItemId, versionLabel, ct).ConfigureAwait(false);
 
         // 3. Write N GLBs (one per type) and register each as a Model3D asset.
         var writtenCount = 0;
@@ -341,7 +342,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 return false;
             }
 
-            foreach (var key in new[] { "DEF", "GEOM", "TYPES" })
+            foreach (var key in new[] { "DEF", "GEOM", "TYPES", "NESTED", "NONSHARED", "NESTEDHASH" })
             {
                 if (!current.TryGetValue(key, out var currentHash)
                     || !previous.TryGetValue(key, out var previousHash)
@@ -363,8 +364,14 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                 return true;
             }
 
-            // Re-link the previous version's auto-preview rows (they
-            // reference pooled files — the rows, never the bytes).
+            // Re-link the previous version's POOLED auto-preview rows
+            // (they reference pool files — the rows, never the bytes).
+            // LEGACY (pre-CAS) rows point inside the previous version's
+            // own directory — re-linking them would break the preview the
+            // moment that directory is deleted with the old version
+            // (validator HIGH-1). Only pool paths are re-linkable; a
+            // previous version without pooled rows sends us through the
+            // full pipeline (which then writes into the pool).
             var linked = 0;
             var previousAssets = new List<(string FileName, string RelativePath, long SizeBytes, string? Description)>();
             using (var cmd = connection.CreateCommand())
@@ -373,11 +380,14 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
                     SELECT file_name, relative_path, size_bytes, description FROM family_assets
                     WHERE catalog_item_id = @itemId AND version_label = @prevLabel
                       AND asset_type = 'Model3D' AND description LIKE @prefix
+                      AND relative_path LIKE @poolPrefix
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
                 cmd.Parameters.Add(new SqliteParameter("@prevLabel", previousLabel));
                 cmd.Parameters.Add(new SqliteParameter("@prefix",
                     FamilyGeometryGlbWriter.AutoExtractedAssetDescriptionPrefix + "%"));
+                cmd.Parameters.Add(new SqliteParameter("@poolPrefix",
+                    LocalCatalog.StoragePathResolver.SharedPreviewPoolRelativePrefix + "%"));
                 using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
@@ -429,11 +439,15 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
 
     /// <summary>
     /// Writes one type's GLB into the shared CAS pool: serialize to a
-    /// temp file, then move into the pool path. The move is race-safe:
-    /// pool files are immutable and content-identical for the same hash,
-    /// so a concurrent writer producing the file first is fine (the temp
-    /// file is simply discarded). Returns <c>false</c> on a GLB
-    /// serialization failure.
+    /// temp file IN THE TARGET SHARD DIRECTORY (same volume → the move
+    /// is an atomic rename; a %TEMP%-based move could degrade to
+    /// copy+delete and publish a truncated file on a crash — validator
+    /// LOW-1), then rename onto the pool path. A concurrent writer
+    /// winning the race is fine: pool files are immutable and
+    /// content-identical for the same hash, so an
+    /// <see cref="IOException"/> from the losing rename is treated as a
+    /// race-win, never as a failure (validator MED-3). Returns
+    /// <c>false</c> only on a GLB serialization failure.
     /// </summary>
     private async Task<bool> WriteGlbToPoolAsync(
         FamilyGeometryPerType gpt, string pooledAbsPath, string view3dHash, CancellationToken ct)
@@ -449,22 +463,32 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
         string? tempPath = null;
         try
         {
-            tempPath = Path.Combine(Path.GetTempPath(),
-                $"sc_preview_{Guid.NewGuid().ToString("N")}.glb");
+            _pathResolver.EnsureSharedPreviewDirectory(view3dHash);
+            // Same-directory temp → atomic rename on every filesystem.
+            tempPath = pooledAbsPath + ".tmp-" + Guid.NewGuid().ToString("N");
             var ok = await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false);
             if (!ok)
             {
                 return false;
             }
 
-            _pathResolver.EnsureSharedPreviewDirectory(view3dHash);
             if (File.Exists(pooledAbsPath))
             {
-                // A concurrent writer won the race — identical content by
-                // construction (the name IS the content hash).
+                // A concurrent writer won the race before the rename —
+                // identical content by construction (the name IS the
+                // content hash).
                 return true;
             }
-            File.Move(tempPath, pooledAbsPath);
+            try
+            {
+                File.Move(tempPath, pooledAbsPath);
+            }
+            catch (IOException)
+            {
+                // Race-loser: the file appeared between the check and the
+                // rename — same content, so this IS the win case.
+                return File.Exists(pooledAbsPath);
+            }
             return true;
         }
         finally

@@ -228,7 +228,7 @@ public sealed class FamilyGeometryPipelineTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(poolAbs)!);
         File.WriteAllText(poolAbs, "GLB-BYTES");
 
-        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\"}";
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
         using (var conn = _fixture.GetDatabase().CreateConnection())
         {
             await conn.OpenAsync();
@@ -268,6 +268,178 @@ public sealed class FamilyGeometryPipelineTests : IDisposable
             cmd.Parameters.Add(new SqliteParameter("@id", itemId));
             var rel = Convert.ToString(await cmd.ExecuteScalarAsync());
             Assert.Equal(poolRel, rel);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Level1Reuse_LegacyRowsAreNotRelinked_FullPipelineRuns()
+    {
+        // Validator HIGH-1: the previous version's rows point INSIDE its
+        // own directory (pre-CAS layout) — re-linking them would break
+        // the preview when that directory is deleted. Level-1 must
+        // refuse and the full pipeline must run.
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", versionLabel: "v1", currentLabel: "v2");
+        var version2 = await CatalogSeedHelper.SeedAdditionalVariantAsync(_fixture, itemId, "FamA", "v2", 2025);
+
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE catalog_versions SET section_hashes = @h WHERE catalog_item_id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@h", sectionsJson));
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            await cmd.ExecuteNonQueryAsync();
+
+            // LEGACY auto-preview row: files/{itemId}/v1/models/preview.glb
+            // (NOT a pool path).
+            using var assetCmd = conn.CreateCommand();
+            assetCmd.CommandText = """
+                INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc)
+                VALUES (@aid, @itemId, 'v1', 'Model3D', 'preview.glb', @relPath, 9, 'auto-extracted-preview:FamA::T1', @t)
+                """;
+            assetCmd.Parameters.Add(new SqliteParameter("@aid", Guid.NewGuid().ToString()));
+            assetCmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+            assetCmd.Parameters.Add(new SqliteParameter("@relPath", $"files/{itemId}/v1/models/preview.glb"));
+            assetCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+            await assetCmd.ExecuteNonQueryAsync();
+        }
+
+        IReadOnlyList<FamilyGeometryPerType> geometry =
+            [new FamilyGeometryPerType("T1", "FamA", [OneTriangleMesh()], Preview("T1"))];
+        _extractor
+            .Setup(x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(geometry);
+        SetupWriterCreatingFile();
+        SetupPooledRegistration();
+
+        await _sut.RunAsync(null, "files/x/FamA.rfa", itemId, version2, "v2", "FamA");
+
+        // The legacy row was NOT re-linked: the extractor ran and a fresh
+        // pooled asset was registered for v2.
+        _extractor.Verify(
+            x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _assetService.Verify(
+            x => x.RegisterPooledAssetAsync(itemId, "v2", FamilyAssetType.Model3D,
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM family_assets WHERE catalog_item_id = @id AND version_label = 'v2' AND relative_path LIKE 'files/_shared/%'";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            Assert.Equal(0, Convert.ToInt32(await cmd.ExecuteScalarAsync()));
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_OverwriteWithMatchingPrevious_NoDuplicateAssetRows()
+    {
+        // Validator HIGH-2: OverwriteCurrent re-runs the pipeline for the
+        // SAME label (old auto-preview rows exist). With level-1 reuse
+        // the stale rows must be deleted BEFORE the re-link — never
+        // duplicated.
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", versionLabel: "v1", currentLabel: "v2");
+        var version2 = await CatalogSeedHelper.SeedAdditionalVariantAsync(_fixture, itemId, "FamA", "v2", 2025);
+
+        const string hash = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+        var poolRel = SmartCon.FamilyManager.Services.LocalCatalog.StoragePathResolver.GetSharedPreviewRelativePath(hash);
+        var poolAbs = Path.Combine(_fixture.GetDatabaseRoot(), poolRel);
+        Directory.CreateDirectory(Path.GetDirectoryName(poolAbs)!);
+        File.WriteAllText(poolAbs, "GLB-BYTES");
+
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE catalog_versions SET section_hashes = @h WHERE catalog_item_id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@h", sectionsJson));
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            await cmd.ExecuteNonQueryAsync();
+
+            // The OVERWRITTEN label's own stale row + v2's pooled row.
+            foreach (var (label, relPath) in new[]
+            {
+                ("v1", $"files/{itemId}/v1/models/preview.glb"),
+                ("v2", poolRel),
+            })
+            {
+                using var assetCmd = conn.CreateCommand();
+                assetCmd.CommandText = """
+                    INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc)
+                    VALUES (@aid, @itemId, @label, 'Model3D', @fileName, @relPath, 9, 'auto-extracted-preview:FamA::T1', @t)
+                    """;
+                assetCmd.Parameters.Add(new SqliteParameter("@aid", Guid.NewGuid().ToString()));
+                assetCmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+                assetCmd.Parameters.Add(new SqliteParameter("@label", label));
+                assetCmd.Parameters.Add(new SqliteParameter("@fileName", Path.GetFileName(relPath)));
+                assetCmd.Parameters.Add(new SqliteParameter("@relPath", relPath));
+                assetCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+                await assetCmd.ExecuteNonQueryAsync();
+            }
+        }
+
+        // Overwrite of v1: sections still match v2 → level-1 re-link from
+        // v2, but the stale v1 row must be gone.
+        await _sut.RunAsync(null, "files/x/FamA.rfa", itemId, "ver1", "v1", "FamA");
+
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT relative_path FROM family_assets
+                WHERE catalog_item_id = @id AND version_label = 'v1' AND asset_type = 'Model3D'
+                  AND description LIKE 'auto-extracted-preview:%'
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            var rows = new List<string?>();
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                rows.Add(reader.IsDBNull(0) ? null : reader.GetString(0));
+            var row = Assert.Single(rows);
+            Assert.Equal(poolRel, row);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_Level1Reuse_PreviousTerminalMarker_CarriedOver()
+    {
+        // The previous version was a terminal no-geometry family
+        // (glb_state = -1); identical sections → the marker carries over
+        // without any extraction.
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", versionLabel: "v1", currentLabel: "v2", glbState: -1);
+        var version2 = await CatalogSeedHelper.SeedAdditionalVariantAsync(_fixture, itemId, "FamA", "v2", 2025);
+
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE catalog_versions SET section_hashes = @h WHERE catalog_item_id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@h", sectionsJson));
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await _sut.RunAsync(null, "files/x/FamA.rfa", itemId, version2, "v2", "FamA");
+
+        _extractor.Verify(
+            x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT glb_state FROM catalog_versions WHERE catalog_item_id = @id AND version_label = 'v2'";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            Assert.Equal(-1, Convert.ToInt32(await cmd.ExecuteScalarAsync()));
         }
     }
 }
