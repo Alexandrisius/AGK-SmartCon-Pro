@@ -35,6 +35,53 @@ public interface IFamilyContentHasher
     FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot);
 
     /// <summary>
+    /// Compute the ordered canonical sections of a loadable family
+    /// snapshot (Issue #249, Phase 1). Concatenating the sections in
+    /// order reproduces the canonical string behind
+    /// <see cref="ComputeForLoadable"/> byte-for-byte. Sections are an
+    /// analytics layer (per-section diff, change classification) — the
+    /// single identity hash is unchanged. Returns <c>null</c> for a null
+    /// snapshot.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? ComputeSectionsForLoadable(FamilySnapshot snapshot);
+
+    /// <summary>
+    /// Compute the ordered canonical sections of a system family snapshot
+    /// (Issue #249, Phase 1): the META prefix followed by per-type entries
+    /// (VALUES, FAMKEY, STRUCT, ROUTING, SEGMENTS, SUBTYPES, RAILING,
+    /// WIRE) carrying <see cref="ContentSectionHash.TypeName"/>.
+    /// Concatenating the sections in order reproduces the canonical
+    /// string behind <see cref="ComputeForSystem"/> byte-for-byte.
+    /// Returns <c>null</c> for a null snapshot or a snapshot without types.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? ComputeSectionsForSystem(SystemFamilySnapshot snapshot);
+
+    /// <summary>
+    /// Compute per-type content hashes of a loadable family (Issue #249,
+    /// Phase 2): type name → SHA-256 of the type's canonical substring
+    /// (escaped name + ordinal-sorted parameter values, exactly as
+    /// embedded in the TYPES section). Per-type GEOMETRY is deliberately
+    /// not measured (a regeneration per type is unacceptable for fittings
+    /// with 200 types); baked-in parameter values determine the type's
+    /// geometry (ADR-033). Keys compare ordinal-ignore-case.
+    /// Returns <c>null</c> for a null snapshot.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? ComputePerTypeHashesForLoadable(FamilySnapshot snapshot);
+
+    /// <summary>
+    /// Compute per-type content hashes of a system family (Issue #249,
+    /// Phase 2; content-grade #179): one <see cref="SystemTypeContentHash"/>
+    /// per type — SHA-256 of the type's full canonical body (name +
+    /// values + FAMKEY + STRUCT + ROUTING + SEGMENTS + SUBTYPES + RAILING
+    /// + WIRE). A list is returned (not a dictionary) because one snapshot
+    /// can contain same-named types of different system families; key the
+    /// entries via <see cref="SystemTypeContentHash.IdentityKey"/> when a
+    /// lookup map is needed. Returns <c>null</c> for a null snapshot or a
+    /// snapshot without types.
+    /// </summary>
+    IReadOnlyList<SystemTypeContentHash>? ComputePerTypeHashesForSystem(SystemFamilySnapshot snapshot);
+
+    /// <summary>
     /// Diagnostics-only: the canonical string behind
     /// <see cref="ComputeForLoadable"/>. Used to localize a post-verify
     /// mismatch (first differing token + section context) in failure logs —

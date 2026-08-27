@@ -242,6 +242,26 @@ internal sealed class CorruptEmbeddedVerifyHasher : IFamilyContentHasher
         return _inner.ComputeForSystem(snapshot);
     }
 
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForLoadable(FamilySnapshot snapshot)
+    {
+        return _inner.ComputeSectionsForLoadable(snapshot);
+    }
+
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForSystem(SystemFamilySnapshot snapshot)
+    {
+        return _inner.ComputeSectionsForSystem(snapshot);
+    }
+
+    public IReadOnlyDictionary<string, string>? ComputePerTypeHashesForLoadable(FamilySnapshot snapshot)
+    {
+        return _inner.ComputePerTypeHashesForLoadable(snapshot);
+    }
+
+    public IReadOnlyList<SystemTypeContentHash>? ComputePerTypeHashesForSystem(SystemFamilySnapshot snapshot)
+    {
+        return _inner.ComputePerTypeHashesForSystem(snapshot);
+    }
+
     public string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot)
     {
         return _inner.BuildLoadableCanonicalStringForDiagnostics(snapshot);
