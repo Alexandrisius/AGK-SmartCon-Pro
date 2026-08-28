@@ -43,6 +43,57 @@ public static class SystemTypeStaleLogic
     }
 
     /// <summary>
+    /// #253: refines a per-type <see cref="StaleReason.VersionMismatch"/>
+    /// verdict of a SYSTEM type from the catalog DB alone — the type's
+    /// per-type content hash at the marker's version vs the current
+    /// version, plus the shared-section rule (a changed section outside
+    /// VALUES affects every type). Mirrors the loadable DB map
+    /// (<c>StaleDetector.ComputeDbPerTypeStaleAsync</c>): a type whose
+    /// content is identical between the two versions is NOT stale even
+    /// though its marker is older — updating it would be a no-op.
+    /// <c>null</c> when the analytics are incomplete for THIS type (the
+    /// caller keeps the marker-based verdict); the family/item-level
+    /// verdict is never refined — only the per-type dots.
+    /// </summary>
+    public static bool? RefineVersionMismatchWithContent(
+        IReadOnlyList<FamilyTypeHashEntry>? fromVersionTypes,
+        IReadOnlyList<FamilyTypeHashEntry>? currentVersionTypes,
+        IReadOnlyList<string> sharedChangedSections,
+        string typeIdentityKey)
+    {
+        if (fromVersionTypes is null || currentVersionTypes is null)
+        {
+            return null;
+        }
+
+        var from = fromVersionTypes.FirstOrDefault(
+            e => string.Equals(e.TypeIdentityKey, typeIdentityKey, StringComparison.OrdinalIgnoreCase));
+        if (from is null)
+        {
+            // No hash row for THIS type at the marker's version — the
+            // analytics cannot prove anything about it (backfill pending /
+            // legacy row), so the marker verdict stands.
+            return null;
+        }
+
+        if (sharedChangedSections.Count > 0)
+        {
+            return true;
+        }
+
+        var to = currentVersionTypes.FirstOrDefault(
+            e => string.Equals(e.TypeIdentityKey, typeIdentityKey, StringComparison.OrdinalIgnoreCase));
+        if (to is null)
+        {
+            // The type was REMOVED in the current version — the project's
+            // copy is outdated by definition (same rule as the loadable map).
+            return true;
+        }
+
+        return !string.Equals(from.HashHex, to.HashHex, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Aggregate per-type markers of one system catalog item into a single
     /// verdict. The item is stale when ANY of its project-loaded types has
     /// a MISMATCHED marker (first non-None reason wins, in type order).

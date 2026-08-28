@@ -114,4 +114,96 @@ public sealed class SystemTypeStaleLogicTests
 
         Assert.Equal(StaleReason.None, reason);
     }
+
+    // ── #253: RefineVersionMismatchWithContent ─────────────────────────
+
+    private static FamilyTypeHashEntry Entry(string key, string hash)
+        => new(key, key, hash);
+
+    [Fact]
+    public void Refine_SameContentHash_NotStale()
+    {
+        // Marker is older (v1 vs v2), but THIS type's content is identical
+        // between the versions — updating it would be a no-op.
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Базовая", "A1")],
+            [Entry("WALL|Базовая", "A1")],
+            [],
+            "WALL|Базовая");
+
+        Assert.False(refined);
+    }
+
+    [Fact]
+    public void Refine_ChangedContentHash_Stale()
+    {
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Базовая", "A1")],
+            [Entry("WALL|Базовая", "A2")],
+            [],
+            "WALL|Базовая");
+
+        Assert.True(refined);
+    }
+
+    [Fact]
+    public void Refine_RemovedInCurrentVersion_Stale()
+    {
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Базовая", "A1")],
+            [Entry("WALL|Другая", "B1")],
+            [],
+            "WALL|Базовая");
+
+        Assert.True(refined);
+    }
+
+    [Fact]
+    public void Refine_SharedSectionChanged_EscalatesToStale()
+    {
+        // STRUCT/ROUTING/... changed — every type is stale even when THIS
+        // type's own VALUES hash is untouched (the round-5/6 rule).
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Базовая", "A1")],
+            [Entry("WALL|Базовая", "A1")],
+            ["STRUCT"],
+            "WALL|Базовая");
+
+        Assert.True(refined);
+    }
+
+    [Fact]
+    public void Refine_NullAnalytics_Indeterminate()
+    {
+        Assert.Null(SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            null, [Entry("WALL|Базовая", "A1")], [], "WALL|Базовая"));
+        Assert.Null(SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Базовая", "A1")], null, [], "WALL|Базовая"));
+    }
+
+    [Fact]
+    public void Refine_TypeMissingAtMarkerVersion_Indeterminate()
+    {
+        // No hash row for THIS type at the marker's version — cannot prove
+        // either way; the marker verdict stands.
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|Другая", "B1")],
+            [Entry("WALL|Базовая", "A1")],
+            [],
+            "WALL|Базовая");
+
+        Assert.Null(refined);
+    }
+
+    [Fact]
+    public void Refine_KeyMatch_IsCaseInsensitive()
+    {
+        var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+            [Entry("WALL|БАЗОВАЯ", "A1")],
+            [Entry("wall|базовая", "A2")],
+            [],
+            "Wall|Базовая");
+
+        Assert.True(refined);
+    }
 }

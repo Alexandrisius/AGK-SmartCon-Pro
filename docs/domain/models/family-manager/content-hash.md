@@ -355,7 +355,7 @@ public sealed record FamilyTypeHashEntry(string TypeIdentityKey, string TypeName
 
 ## SystemTypeContentHash
 
-Per-type хэш system-семейства (#249): `IdentityKey` (канонический `SystemTypeIdentityKey.Build` — «TOKEN|NAME», FHV6: одноимённые типы разных system-семейств не пересекаются), `TypeName`, `HashHex`. Фундамент для #253 (system per-type stale detection).
+Per-type хэш system-семейства (#249): `IdentityKey` (канонический `SystemTypeIdentityKey.Build` — «TOKEN|NAME», FHV6: одноимённые типы разных system-семейств не пересекаются), `TypeName`, `HashHex`. Используется детектором для per-type уточнения system-точек (#253, `SystemTypeStaleLogic.RefineVersionMismatchWithContent`).
 
 **Файл:** `Models/FamilyManager/SystemTypeContentHash.cs`
 

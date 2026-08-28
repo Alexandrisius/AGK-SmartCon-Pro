@@ -764,6 +764,69 @@ internal sealed class StaleDetector : IStaleDetector
     }
 
     /// <summary>
+    /// #253: refines ONE system type's VersionMismatch dot from the catalog
+    /// DB (per-type content hashes of the marker's version vs the current
+    /// one + the shared-section rule) — zero document opens, the same
+    /// semantics the loadable DB map
+    /// (<see cref="ComputeDbPerTypeStaleAsync"/>) applies. Returns
+    /// <c>null</c> when the analytics cannot prove anything (pending
+    /// backfill / foreign marker label) — the caller keeps the marker-based
+    /// dot. <paramref name="memo"/> caches the (types ×2 + shared sections)
+    /// triple per (item, marker label) across the item's types and across
+    /// items of one check run.
+    /// </summary>
+    private async Task<bool?> RefineSystemTypeStaleAsync(
+        string catalogItemId,
+        FamilyTypeDescriptor descriptor,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>? From, IReadOnlyList<FamilyTypeHashEntry>? To, IReadOnlyList<string> Shared)> memo,
+        CancellationToken ct)
+    {
+        try
+        {
+            var memoKey = catalogItemId + "|" + fromVersionLabel;
+            if (!memo.TryGetValue(memoKey, out var analytics))
+            {
+                var from = await _contentHashAnalytics!.GetTypeHashesAsync(catalogItemId, fromVersionLabel, ct)
+                    .ConfigureAwait(false);
+                var to = await _contentHashAnalytics.GetTypeHashesAsync(catalogItemId, currentVersionLabel, ct)
+                    .ConfigureAwait(false);
+                var shared = await ComputeChangedSharedSectionsAsync(catalogItemId, fromVersionLabel, currentVersionLabel, ct)
+                    .ConfigureAwait(false);
+                analytics = (from, to, shared);
+                memo[memoKey] = analytics;
+            }
+
+            var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+                analytics.From,
+                analytics.To,
+                analytics.Shared,
+                SystemTypeIdentityKey.Build(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name));
+            if (refined.HasValue)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded[{catalogItemId}]: system per-type '{descriptor.Name}' " +
+                    $"{fromVersionLabel}→{currentVersionLabel} refined by content hash: stale={refined.Value}" +
+                    (analytics.Shared.Count > 0
+                        ? $" (shared sections changed: {string.Join(", ", analytics.Shared)})"
+                        : string.Empty));
+            }
+            return refined;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Mirror ComputeDbPerTypeStaleAsync: a transient analytics
+            // failure degrades to the marker-based dot — it must never
+            // abort the whole stale check.
+            SmartConLogger.Warn(
+                $"CheckEmbedded[{catalogItemId}]: system per-type content refinement failed: {ex.Message} " +
+                "[Action: per-type уточнение отключено для этого типа до следующей «Проверить»; повторите проверку]");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// System-family branch of <see cref="CheckCategoryAsync"/> (Issue #104):
     /// matches each system catalog item's types (from <c>family_types</c>)
     /// against project <c>ElementType</c> elements by (type name, category
@@ -917,27 +980,50 @@ internal sealed class StaleDetector : IStaleDetector
 
         // #187: per-type stale map — one verdict per (family, name) type so
         // the tree can paint the ORANGE presence dot on the exact outdated
-        // type, not just the leaf roll-up.
+        // type, not just the leaf roll-up. #253: a VersionMismatch dot is
+        // refined from the catalog DB (content hashes + shared sections) —
+        // computed BEFORE the lock because the refinement awaits DB reads.
+        var analyticsMemo = new Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<string>)>(StringComparer.Ordinal);
+        var refinedTypeMaps = new Dictionary<string, Dictionary<string, bool>>(StringComparer.Ordinal);
+        foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+        {
+            var item = group.First().Item;
+            var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var (_, descriptor, typeId) in group)
+            {
+                markers.TryGetValue(typeId, out var marker);
+                // Stress test 2026-08-05 (semantics change): a missing
+                // marker is NOT stale — template-native types have
+                // unknown provenance, not proven outdatedness. Only a
+                // marker mismatch paints the orange dot.
+                var reason = marker is null
+                    ? StaleReason.None
+                    : SystemTypeStaleLogic.ComputeReason(
+                        marker, item.Id, item.CurrentVersionLabel, targetRevit);
+                var isTypeStale = reason != StaleReason.None;
+                if (isTypeStale
+                    && reason == StaleReason.VersionMismatch
+                    && marker is not null
+                    && item.CurrentVersionLabel is not null
+                    && _contentHashAnalytics is not null)
+                {
+                    var refined = await RefineSystemTypeStaleAsync(
+                        item.Id, descriptor, marker.VersionLabel, item.CurrentVersionLabel, analyticsMemo, ct)
+                        .ConfigureAwait(false);
+                    if (refined.HasValue)
+                    {
+                        isTypeStale = refined.Value;
+                    }
+                }
+                typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = isTypeStale;
+            }
+            refinedTypeMaps[group.Key] = typeMap;
+        }
         lock (_cacheLock)
         {
-            foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+            foreach (var kvp in refinedTypeMaps)
             {
-                var item = group.First().Item;
-                var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
-                foreach (var (_, descriptor, typeId) in group)
-                {
-                    markers.TryGetValue(typeId, out var marker);
-                    // Stress test 2026-08-05 (semantics change): a missing
-                    // marker is NOT stale — template-native types have
-                    // unknown provenance, not proven outdatedness. Only a
-                    // marker mismatch paints the orange dot.
-                    var reason = marker is null
-                        ? StaleReason.None
-                        : SystemTypeStaleLogic.ComputeReason(
-                            marker, item.Id, item.CurrentVersionLabel, targetRevit);
-                    typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
-                }
-                _systemTypeStaleByType[group.Key] = typeMap;
+                _systemTypeStaleByType[kvp.Key] = kvp.Value;
             }
         }
 
@@ -1036,6 +1122,9 @@ internal sealed class StaleDetector : IStaleDetector
         var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
 
         // #187: per-type stale map (orange presence dot per exact type).
+        // #253: VersionMismatch dots refined from the catalog DB (same
+        // semantics as the batch path).
+        var analyticsMemo = new Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<string>)>(StringComparer.Ordinal);
         var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var (descriptor, typeId) in foundPairs)
         {
@@ -1044,7 +1133,22 @@ internal sealed class StaleDetector : IStaleDetector
                 ? StaleReason.None
                 : SystemTypeStaleLogic.ComputeReason(
                     marker, catalogItemId, catalogItem.CurrentVersionLabel, targetRevit);
-            typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;
+            var isTypeStale = typeReason != StaleReason.None;
+            if (isTypeStale
+                && typeReason == StaleReason.VersionMismatch
+                && marker is not null
+                && catalogItem.CurrentVersionLabel is not null
+                && _contentHashAnalytics is not null)
+            {
+                var refined = await RefineSystemTypeStaleAsync(
+                    catalogItemId, descriptor, marker.VersionLabel, catalogItem.CurrentVersionLabel, analyticsMemo, ct)
+                    .ConfigureAwait(false);
+                if (refined.HasValue)
+                {
+                    isTypeStale = refined.Value;
+                }
+            }
+            typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = isTypeStale;
         }
         lock (_cacheLock)
         {
