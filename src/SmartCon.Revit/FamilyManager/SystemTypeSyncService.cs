@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using Electrical = Autodesk.Revit.DB.Electrical;
 
@@ -25,6 +26,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     private readonly ISegmentSyncService _segmentSync;
     private readonly IFittingDependencyResolver _fittingResolver;
     private readonly ICompoundStructureSyncService _structureSync;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
 
     public SystemTypeSyncService(
         ITransactionService tx,
@@ -34,7 +36,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         IMaterialSyncService materialSync,
         ISegmentSyncService segmentSync,
         IFittingDependencyResolver fittingResolver,
-        ICompoundStructureSyncService structureSync)
+        ICompoundStructureSyncService structureSync,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(tx);
@@ -63,6 +66,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         _segmentSync = segmentSync;
         _fittingResolver = fittingResolver;
         _structureSync = structureSync;
+        _routingRuleRepository = routingRuleRepository;
     }
 
     public SystemTypeSyncResult SyncTypeFromSource(
@@ -75,6 +79,34 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         string? familyName = null,
         string? familyKey = null,
         int? categoryOrdinal = null)
+        => SyncTypeFromSourceCore(
+            sourceDoc, activeDoc, typeName, catalogItemId, versionLabel,
+            sourceRevitVersion, familyName, familyKey, categoryOrdinal,
+            stagingMode: false);
+
+    public SystemTypeSyncResult StageTypeFromSource(
+        Document sourceDoc,
+        Document stagingDoc,
+        string typeName,
+        int? categoryOrdinal = null,
+        string? familyName = null,
+        string? familyKey = null)
+        => SyncTypeFromSourceCore(
+            sourceDoc, stagingDoc, typeName, string.Empty, string.Empty,
+            0, familyName, familyKey, categoryOrdinal,
+            stagingMode: true);
+
+    private SystemTypeSyncResult SyncTypeFromSourceCore(
+        Document sourceDoc,
+        Document activeDoc,
+        string typeName,
+        string catalogItemId,
+        string versionLabel,
+        int sourceRevitVersion,
+        string? familyName,
+        string? familyKey,
+        int? categoryOrdinal,
+        bool stagingMode)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(sourceDoc);
@@ -131,6 +163,23 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             ? SystemFamilyKeyResolver.Resolve(sourceType)
             : familyKey;
         var template = _snapshotExtractor.ExtractSingleSystemType(sourceDoc, sourceTypeId);
+        if (stagingMode)
+        {
+            // ADR-072: the staging project carries no fittings — the routing
+            // written into the mini is SLIM (segment rules + no-part rules
+            // only), so no fitting family (and no family-internal material
+            // record) ever enters the mini-project.
+            template = template with { Routing = SlimRoutingForStaging(template.Routing) };
+        }
+        else
+        {
+            // ADR-072 (plan item 3): the slim mini-project carries no fittings —
+            // routing syncs from the catalog DB (V34), not from the mini. The
+            // legacy fallback (pre-V34 versions without stored routing) keeps
+            // reading the mini — an empty DB snapshot would otherwise erase the
+            // target's fitting rules.
+            template = SubstituteRoutingFromDb(template, catalogItemId);
+        }
 
         // Phase A — fitting dependencies. LoadFamily throws when the target
         // document is modifiable, so catalog loads happen BEFORE the sync
@@ -139,7 +188,9 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         // a routing rule pointing to it. This is acceptable — LoadFamily
         // cannot be rolled back by design, the fitting is a regular catalog
         // family with its own stale lifecycle, and the next sync reuses it.
-        if (template.Routing is not null)
+        // Staging skips Phase A entirely: the mini-project must stay slim
+        // (no fittings), and its routing holds no fitting references.
+        if (!stagingMode && template.Routing is not null)
         {
             EnsureFittingDependencies(activeDoc, template.Routing, sourceRevitVersion, catalogItemId);
         }
@@ -180,7 +231,18 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             var notConverged = 0;
             if (template.Routing is not null && target is MEPCurveType mepCurveType)
             {
-                notConverged = SyncRoutingPreferences(sourceDoc, doc, mepCurveType, template.Routing);
+                // ADR-072 (plan item 2b): manager-less types (flex/conduit/
+                // cable-tray — RoutingPreferenceManager is null, probe-
+                // verified) sync their routing as plain parameter values;
+                // pipe/duct go through the RoutingPreferenceManager.
+                bool hasRoutingManager;
+                using (var probe = mepCurveType.RoutingPreferenceManager)
+                {
+                    hasRoutingManager = probe is not null;
+                }
+                notConverged = hasRoutingManager
+                    ? SyncRoutingPreferences(sourceDoc, doc, mepCurveType, template.Routing)
+                    : SyncRoutingParamsFromDb(doc, mepCurveType, template.Routing);
             }
 
             if (template.Structure is not null && target is HostObjAttributes)
@@ -214,12 +276,15 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                 notConverged += SyncWireSettings(doc, sourceWire, targetWire);
             }
 
-            RevitFamilyVersionStore.WriteEntityToElement(target, new FamilyVersion(
-                SchemaVersion: FamilyVersion.CurrentSchemaVersion,
-                CatalogItemId: catalogItemId,
-                VersionLabel: versionLabel,
-                LoadedAtUtc: _clock.UtcNow,
-                SourceRevitVersion: sourceRevitVersion));
+            if (!stagingMode)
+            {
+                RevitFamilyVersionStore.WriteEntityToElement(target, new FamilyVersion(
+                    SchemaVersion: FamilyVersion.CurrentSchemaVersion,
+                    CatalogItemId: catalogItemId,
+                    VersionLabel: versionLabel,
+                    LoadedAtUtc: _clock.UtcNow,
+                    SourceRevitVersion: sourceRevitVersion));
+            }
 
             result = new SystemTypeSyncResult(
                 typeName, status, written, skipped, NotConvergedCount: notConverged);
@@ -243,6 +308,186 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             $"Type '{typeName}': {result.Status}, {result.ParametersWritten} parameters written, " +
             $"{result.ParametersSkipped} skipped, not converged: {result.NotConvergedCount}.");
         return result;
+    }
+
+    /// <summary>
+    /// ADR-072 staging: reduces the source routing to what a slim
+    /// mini-project may physically hold — segment rules (resolved by the
+    /// segment synchronizer into a created segment) and no-part rules
+    /// ("Нет" — legal content needing no fitting). Every fitting reference
+    /// is dropped, so no fitting family and no family-internal material
+    /// record enters the staging project (the #254 duplication class is
+    /// absent by construction).
+    /// </summary>
+    private static RoutingPreferencesSnapshot? SlimRoutingForStaging(RoutingPreferencesSnapshot? routing)
+    {
+        if (routing is null)
+            return null;
+        var slimRules = routing.Rules
+            .Where(r => r.GroupType == (int)RoutingPreferenceRuleGroupType.Segments
+                || RoutingGroupKeys.IsParamGroup(r.GroupKey)
+                || r.PartName is null)
+            .Select(r => RoutingGroupKeys.IsParamGroup(r.GroupKey) && r.PartName is not null
+                // Parameter groups (flex/conduit/tray) are kept but forced
+                // to "Нет": a custom template prototype could carry fitting
+                // references in its routing parameters, and Duplicate()
+                // would inherit them into the slim mini.
+                ? r with { PartName = null }
+                : r)
+            .ToList();
+        return slimRules.Count == routing.Rules.Count
+            ? routing
+            : routing with { Rules = slimRules };
+    }
+
+    /// <summary>
+    /// ADR-072 (plan item 3): replaces the routing of the extracted
+    /// template with the catalog-DB routing of the item's CURRENT version.
+    /// Fallbacks (all non-destructive — never erase target rules on
+    /// missing data): no repository (tests/legacy wiring), no stored rows
+    /// (pre-V34 version), no rows for THIS type (routing-less or added
+    /// later), DB read failure — the mini-project routing is kept.
+    /// </summary>
+    private SystemTypeSnapshot SubstituteRoutingFromDb(SystemTypeSnapshot template, string catalogItemId)
+    {
+        if (_routingRuleRepository is null)
+            return template;
+
+        try
+        {
+            return Core.Threading.AsyncBridge.RunSync(async () =>
+            {
+                if (!await _routingRuleRepository.HasRulesForCurrentVersionAsync(catalogItemId)
+                        .ConfigureAwait(false))
+                {
+                    return template;
+                }
+
+                var (rules, settings) = await _routingRuleRepository
+                    .ReadForCurrentVersionAsync(catalogItemId)
+                    .ConfigureAwait(false);
+                var dbRouting = RoutingRuleRecordMapper.ToSnapshot(
+                    template.Name, template.FamilyKey ?? string.Empty, rules, settings);
+                return dbRouting is null ? template : template with { Routing = dbRouting };
+            });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Routing read from the catalog DB failed for '{template.Name}': {ex.Message} " +
+                "[Action: routing is read from the mini-project (legacy mode); check the catalog DB and re-run the sync]");
+            return template;
+        }
+    }
+
+    /// <summary>
+    /// Parameter-based routing sync of manager-less MEPCurve types
+    /// (ADR-072 plan item 2b, FHV19): each <c>"Param:&lt;BIP&gt;"</c>
+    /// rule is written as the fitting-symbol parameter value
+    /// (<c>InvalidElementId</c> for no-part/"Нет" rules); the preferred
+    /// junction of flex types is written to
+    /// <c>RBS_CURVETYPE_PREFERRED_BRANCH_PARAM</c> (visible there only).
+    /// Fittings are already loaded by Phase A
+    /// (<see cref="EnsureFittingDependencies"/>) before the transaction.
+    /// </summary>
+    private int SyncRoutingParamsFromDb(
+        Document activeDoc,
+        MEPCurveType target,
+        RoutingPreferencesSnapshot routing)
+    {
+        var notConverged = 0;
+
+        foreach (Parameter candidate in target.Parameters)
+        {
+            if (!RoutingDrivingParameters.IsPreferredBranch(candidate))
+                continue;
+            if (candidate.IsReadOnly)
+                break;
+            try
+            {
+                if (!candidate.Set(routing.PreferredJunctionType))
+                {
+                    notConverged++;
+                    SmartConLogger.Debug($"PreferredBranch write rejected on '{target.Name}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                notConverged++;
+                SmartConLogger.Debug($"PreferredBranch write skipped: {ex.Message}");
+            }
+            break;
+        }
+
+        foreach (var rule in routing.Rules)
+        {
+            if (!RoutingGroupKeys.IsParamGroup(rule.GroupKey))
+                continue;
+            var bipName = RoutingGroupKeys.ParamNameOf(rule.GroupKey);
+            if (bipName is null || !Enum.TryParse(bipName, out BuiltInParameter bip))
+            {
+                notConverged++;
+                SmartConLogger.Warn(
+                    $"Routing group key '{rule.GroupKey}' is not a known built-in parameter. " +
+                    "[Action: rule skipped; reimport the category with the current plugin]");
+                continue;
+            }
+
+            Parameter? param = null;
+            try { param = target.get_Parameter(bip); }
+            catch (Exception ex) { SmartConLogger.Debug($"get_Parameter({bipName}) failed: {ex.Message}"); }
+            if (param is null || param.IsReadOnly)
+            {
+                notConverged++;
+                SmartConLogger.Warn(
+                    $"Routing parameter '{bipName}' is not writable on type '{target.Name}'. " +
+                    "[Action: rule skipped; check the type's routing settings in the project]");
+                continue;
+            }
+
+            var value = ElementId.InvalidElementId;
+            if (rule.PartName is not null)
+            {
+                var separator = rule.PartName.IndexOf(':');
+                if (separator <= 0 || separator == rule.PartName.Length - 1)
+                {
+                    notConverged++;
+                    SmartConLogger.Warn(
+                        $"Routing part token '{rule.PartName}' ({bipName}) is not 'Family:Type'. " +
+                        "[Action: rule skipped; fix the routing in the catalog editor]");
+                    continue;
+                }
+                var symbol = FindFittingSymbol(
+                    activeDoc,
+                    rule.PartName.Substring(0, separator),
+                    rule.PartName.Substring(separator + 1));
+                if (symbol is null)
+                {
+                    notConverged++;
+                    SmartConLogger.Warn(
+                        $"Routing part '{rule.PartName}' ({bipName}) could not be resolved in the project. " +
+                        "[Action: rule skipped; check the dependency warnings above]");
+                    continue;
+                }
+                value = symbol.Id;
+            }
+
+            try
+            {
+                if (!param.Set(value))
+                {
+                    notConverged++;
+                    SmartConLogger.Debug($"Param.Set({bipName}) rejected on '{target.Name}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                notConverged++;
+                SmartConLogger.Debug($"Param.Set({bipName}) failed on '{target.Name}': {ex.Message}");
+            }
+        }
+
+        return notConverged;
     }
 
     /// <summary>

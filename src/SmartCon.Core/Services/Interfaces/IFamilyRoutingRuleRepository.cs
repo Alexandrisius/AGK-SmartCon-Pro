@@ -46,4 +46,34 @@ public interface IFamilyRoutingRuleRepository
         string catalogItemId,
         string catalogVersionId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Same as <see cref="ReplaceForVersionAsync"/> but resolves the item's
+    /// CURRENT version (join by <c>current_version_label</c>) — the import
+    /// writes the routing of the version it just made active. No-op when
+    /// the item has no current version.
+    /// </summary>
+    Task ReplaceForCurrentVersionAsync(
+        string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules,
+        IReadOnlyList<FamilyRoutingTypeSettings> settings,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Same as <see cref="ReadForVersionAsync"/> but resolves the item's
+    /// CURRENT version (join by <c>current_version_label</c>) — the sync
+    /// path always reads the routing of the active version.
+    /// </summary>
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)>
+        ReadForCurrentVersionAsync(
+            string catalogItemId,
+            CancellationToken ct = default);
+
+    /// <summary>
+    /// Same as <see cref="HasRulesForVersionAsync"/> for the item's
+    /// CURRENT version.
+    /// </summary>
+    Task<bool> HasRulesForCurrentVersionAsync(
+        string catalogItemId,
+        CancellationToken ct = default);
 }

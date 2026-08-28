@@ -181,6 +181,59 @@ internal sealed class LocalFamilyRoutingRuleRepository : IFamilyRoutingRuleRepos
         return result is long value && value != 0;
     }
 
+    public async Task ReplaceForCurrentVersionAsync(
+        string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules,
+        IReadOnlyList<FamilyRoutingTypeSettings> settings,
+        CancellationToken ct = default)
+    {
+        var versionId = await ResolveCurrentVersionIdAsync(catalogItemId, ct);
+        if (versionId is null)
+        {
+            SmartConLogger.Warn(
+                $"Routing rules not written: item {catalogItemId} has no current version. " +
+                "[Action: повторите импорт родителя — правила запишутся для его активной версии]");
+            return;
+        }
+        await ReplaceForVersionAsync(catalogItemId, versionId, rules, settings, ct);
+    }
+
+    public async Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)>
+        ReadForCurrentVersionAsync(
+            string catalogItemId,
+            CancellationToken ct = default)
+    {
+        var versionId = await ResolveCurrentVersionIdAsync(catalogItemId, ct);
+        return versionId is null
+            ? ((IReadOnlyList<FamilyRoutingRuleInfo>)Array.Empty<FamilyRoutingRuleInfo>(),
+                (IReadOnlyList<FamilyRoutingTypeSettings>)Array.Empty<FamilyRoutingTypeSettings>())
+            : await ReadForVersionAsync(catalogItemId, versionId, ct);
+    }
+
+    public async Task<bool> HasRulesForCurrentVersionAsync(
+        string catalogItemId,
+        CancellationToken ct = default)
+    {
+        var versionId = await ResolveCurrentVersionIdAsync(catalogItemId, ct);
+        return versionId is not null && await HasRulesForVersionAsync(catalogItemId, versionId, ct);
+    }
+
+    private async Task<string?> ResolveCurrentVersionIdAsync(string catalogItemId, CancellationToken ct)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT cv.id
+            FROM catalog_versions cv
+            INNER JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+            WHERE cv.catalog_item_id = @itemId AND cv.version_label = ci.current_version_label
+            LIMIT 1
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        return (await cmd.ExecuteScalarAsync(ct)) as string;
+    }
+
     private static IReadOnlyList<RoutingCriterionSnapshot> DeserializeCriteria(string json)
     {
         try

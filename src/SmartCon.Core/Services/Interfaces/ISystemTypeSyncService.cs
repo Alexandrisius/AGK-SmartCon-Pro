@@ -59,4 +59,26 @@ public interface ISystemTypeSyncService
         string? familyName = null,
         string? familyKey = null,
         int? categoryOrdinal = null);
+
+    /// <summary>
+    /// Manual mini-project staging (ADR-072): clones <paramref name="typeName"/>
+    /// from <paramref name="sourceDoc"/> into the freshly created
+    /// <paramref name="stagingDoc"/> WITHOUT CopyElements — duplicate a
+    /// same-family template prototype, write the type parameters, sync the
+    /// segment and write a SLIM routing (segment rules + no-part rules
+    /// only — the staging project carries no fittings, so the material-
+    /// duplication class of #254 cannot be born). No fitting loads, no ES
+    /// version marker, no catalog-DB routing substitution.
+    /// <see cref="SystemTypeSyncStatus.FamilyNotFound"/> signals the caller
+    /// to fall back to CopyElements for this type (prototype-less system
+    /// family — ADR-072 §2.7 п.6).
+    /// </summary>
+    /// <remarks>Must be called on the Revit main thread (I-01).</remarks>
+    SystemTypeSyncResult StageTypeFromSource(
+        Document sourceDoc,
+        Document stagingDoc,
+        string typeName,
+        int? categoryOrdinal = null,
+        string? familyName = null,
+        string? familyKey = null);
 }

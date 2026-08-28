@@ -10,6 +10,7 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
     private readonly IFileFamilyStagingService _staging;
     private readonly IFamilyImportService _importService;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
 
     public FileFamilyBatchImportExecutor(
@@ -18,11 +19,13 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
         IFamilyDependencyRepository familyDependencyRepository,
         IFamilyDataImportService dataImportService,
         ISharedNestedFamilyRepository sharedNestedRepository,
-        int revitVersion)
+        int revitVersion,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null)
     {
         _staging = staging;
         _importService = importService;
         _familyDependencyRepository = familyDependencyRepository;
+        _routingRuleRepository = routingRuleRepository;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
     }
@@ -166,9 +169,17 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
             }
             if (!stopped)
             {
+                // ADR-072 (item 2): routing rules first — the link writer's
+                // routing-table augmentation (item 5) reads them.
+                if (_routingRuleRepository is not null)
+                {
+                    await RoutingRuleWriter.WriteAsync(
+                            items, importedParentItemIds, _routingRuleRepository, ct)
+                        .ConfigureAwait(false);
+                }
                 await DependencyLinkWriter.WriteAsync(
                         items, importedParentItemIds, importedLoadableOriginalPaths,
-                        _familyDependencyRepository, ct)
+                        _familyDependencyRepository, _routingRuleRepository, catalog: null, ct)
                     .ConfigureAwait(false);
             }
         }

@@ -18,17 +18,20 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
     private readonly ITransactionService _transactionService;
     private readonly ILoadableFamilyScanner _loadableFamilyScanner;
     private readonly IMiniProjectMarker _miniProjectMarker;
+    private readonly ISystemTypeSyncService _systemTypeSyncService;
 
     public SystemFamilyRevitOperations(
         IRevitUIContext revitUIContext,
         ITransactionService transactionService,
         ILoadableFamilyScanner loadableFamilyScanner,
-        IMiniProjectMarker miniProjectMarker)
+        IMiniProjectMarker miniProjectMarker,
+        ISystemTypeSyncService systemTypeSyncService)
     {
         _revitUIContext = revitUIContext;
         _transactionService = transactionService;
         _loadableFamilyScanner = loadableFamilyScanner;
         _miniProjectMarker = miniProjectMarker;
+        _systemTypeSyncService = systemTypeSyncService;
     }
 
     public SelectedElementsAnalysis? PickSelectedElements()
@@ -290,25 +293,55 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             TemplateCollisionResolver.RenameConflictingTemplateTypes(
                 _transactionService, newDoc, category, sourceTypeNames);
 
-            ICollection<ElementId> copiedTypeIds = [];
-            var copyCommitted = _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
+            ICollection<ElementId> copiedTypeIds;
+            // ADR-072 (#254): MEPCurve categories (pipe/duct/flex/conduit/
+            // cable tray) are staged MANUALLY — Duplicate a same-family
+            // template prototype + parameter writes + segment sync + slim
+            // routing. Nothing is copied, so no fitting family and no
+            // family-internal material record enters the mini-project and
+            // the material-duplication class of #254 cannot be born
+            // (Revit 2024+ duplicates colliding material names inside
+            // CopyElements; there is no API hook to prevent it). Non-MEP
+            // categories keep the CopyElements path (no routing deps drag
+            // along; evaluated separately in ADR-072 Phase 4).
+            var isMepCurveCategory = sourceTypeIds.Any(id => sourceDoc.GetElement(id) is MEPCurveType);
+            if (isMepCurveCategory)
             {
-                var options = new CopyPasteOptions();
-                options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
-
-                copiedTypeIds = ElementTransformUtils.CopyElements(
-                    sourceDoc, sourceTypeIds, doc, null, options);
-            });
-
-            if (!copyCommitted || copiedTypeIds.Count == 0)
+                copiedTypeIds = StageMepCurveTypesManually(
+                    sourceDoc, newDoc, sourceTypeIds, category, displayName);
+            }
+            else
             {
-                // Silent rollback (#178 pattern): without this guard the
-                // mini-project would be SAVED EMPTY and reported as success.
+                ICollection<ElementId> copied = [];
+                var copyCommitted = _transactionService.RunInTransaction(newDoc, "Copy system types", doc =>
+                {
+                    var options = new CopyPasteOptions();
+                    options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
+
+                    copied = ElementTransformUtils.CopyElements(
+                        sourceDoc, sourceTypeIds, doc, null, options);
+                });
+                copiedTypeIds = copied;
+
+                if (!copyCommitted)
+                {
+                    // Silent rollback (#178 pattern): without this guard the
+                    // mini-project would be SAVED EMPTY and reported as success.
+                    SmartConLogger.Warn(
+                        $"'{displayName}': 'Copy system types' rolled back or copied 0 types — mini-project NOT saved. " +
+                        "[Action: check the source category has placeable types and re-run the import]");
+                    return new CreateCleanProjectResult(
+                        false, null, "Copy system types rolled back or copied 0 types", 0);
+                }
+            }
+
+            if (copiedTypeIds.Count == 0)
+            {
                 SmartConLogger.Warn(
-                    $"'{displayName}': 'Copy system types' rolled back or copied 0 types — mini-project NOT saved. " +
+                    $"'{displayName}': staging produced 0 types — mini-project NOT saved. " +
                     "[Action: check the source category has placeable types and re-run the import]");
                 return new CreateCleanProjectResult(
-                    false, null, "Copy system types rolled back or copied 0 types", 0);
+                    false, null, "Staging produced 0 types", 0);
             }
 
             // The renamed template types are intentionally LEFT in the
@@ -371,6 +404,89 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
                 try { Marshal.ReleaseComObject(newDoc); } catch { }
             }
         }
+    }
+
+    /// <summary>
+    /// ADR-072 (#254): manual staging of MEPCurve types — per type
+    /// <see cref="ISystemTypeSyncService.StageTypeFromSource"/> (Duplicate
+    /// a same-family template prototype + parameter writes + segment sync +
+    /// slim routing). Types whose system family has NO prototype in the
+    /// template (<see cref="SystemTypeSyncStatus.FamilyNotFound"/>) fall
+    /// back to CopyElements (ADR-072 §2.7 п.6 — prototype-less families;
+    /// for MEPCurve this is exotic — P0.3 verified every MEPCurve family
+    /// has a template prototype, but the guard is mandatory, never fatal).
+    /// Returns the ids of the staged types in <paramref name="newDoc"/>.
+    /// </summary>
+    private List<ElementId> StageMepCurveTypesManually(
+        Document sourceDoc,
+        Document newDoc,
+        IReadOnlyList<ElementId> sourceTypeIds,
+        BuiltInCategory category,
+        string displayName)
+    {
+        var stagedNames = new List<string>();
+        var fallbackIds = new List<ElementId>();
+
+        foreach (var id in sourceTypeIds)
+        {
+            if (sourceDoc.GetElement(id) is not ElementType sourceType)
+                continue;
+
+            var result = _systemTypeSyncService.StageTypeFromSource(
+                sourceDoc, newDoc, sourceType.Name, (int)category,
+                sourceType.FamilyName, SystemFamilyKeyResolver.Resolve(sourceType));
+
+            if (result.IsSuccess)
+            {
+                stagedNames.Add(sourceType.Name);
+                continue;
+            }
+
+            SmartConLogger.Warn(
+                $"'{displayName}': manual staging of '{sourceType.Name}' failed ({result.Status}: {result.ErrorMessage}) — " +
+                "the type falls back to CopyElements. " +
+                "[Action: проверьте лог; тип будет скопирован, а не создан вручную]");
+            fallbackIds.Add(id);
+        }
+
+        var stagedIds = new List<ElementId>();
+        if (stagedNames.Count > 0)
+        {
+            var nameSet = new HashSet<string>(stagedNames, StringComparer.Ordinal);
+            foreach (var t in new FilteredElementCollector(newDoc)
+                .OfClass(typeof(ElementType))
+                .OfCategory(category)
+                .Cast<ElementType>())
+            {
+                if (nameSet.Contains(t.Name))
+                    stagedIds.Add(t.Id);
+            }
+        }
+
+        if (fallbackIds.Count > 0)
+        {
+            ICollection<ElementId> copied = [];
+            var committed = _transactionService.RunInTransaction(newDoc, "Copy system types (fallback)", doc =>
+            {
+                var options = new CopyPasteOptions();
+                options.SetDuplicateTypeNamesHandler(new SkipDuplicateTypesHandler());
+                copied = ElementTransformUtils.CopyElements(sourceDoc, fallbackIds, doc, null, options);
+            });
+            if (committed)
+            {
+                stagedIds.AddRange(copied);
+            }
+            else
+            {
+                SmartConLogger.Warn(
+                    $"'{displayName}': CopyElements fallback rolled back for {fallbackIds.Count} type(s). " +
+                    "[Action: типы пропущены; проверьте лог транзакции и повторите импорт]");
+            }
+        }
+
+        SmartConLogger.Info(
+            $"'{displayName}': manual staging — staged={stagedNames.Count}, copy-fallback={fallbackIds.Count}");
+        return stagedIds;
     }
 
     /// <summary>

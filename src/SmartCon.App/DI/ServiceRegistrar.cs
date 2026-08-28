@@ -320,7 +320,19 @@ public static class ServiceRegistrar
         services.AddSingleton<ISegmentSyncService, RevitSegmentSyncService>();
         services.AddSingleton<IFittingDependencyResolver, CatalogFittingDependencyResolver>();
         services.AddSingleton<ICompoundStructureSyncService, RevitCompoundStructureSyncService>();
-        services.AddSingleton<ISystemTypeSyncService, SystemTypeSyncService>();
+        // ADR-072 (#254): routing sync reads the catalog DB (V34) — the
+        // ctor's optional routing-rule repository must be wired in
+        // production (tests default to the mini-reading legacy path).
+        services.AddSingleton<ISystemTypeSyncService>(sp => new SystemTypeSyncService(
+            sp.GetRequiredService<ITransactionService>(),
+            sp.GetRequiredService<IFamilySnapshotExtractor>(),
+            sp.GetRequiredService<ISystemTypeFinder>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<IMaterialSyncService>(),
+            sp.GetRequiredService<ISegmentSyncService>(),
+            sp.GetRequiredService<IFittingDependencyResolver>(),
+            sp.GetRequiredService<ICompoundStructureSyncService>(),
+            sp.GetRequiredService<IFamilyRoutingRuleRepository>()));
         services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();
