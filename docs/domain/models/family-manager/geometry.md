@@ -408,3 +408,19 @@ public sealed record FamilyGeometryPerType(
 - `TypeName` — `FamilyType.Name` from `FamilyManager`. Empty string for families with no types.
 - `FamilyName` — family display name (without `.rfa` extension).
 - `Meshes` — all non-empty `MeshData` entries extracted for this type. May be empty (the pipeline skips writing a GLB for empty types).
+
+---
+
+## PreviewTypeSnapshot
+
+Per-type входы VIEW3D-хэша превью (#249, Phase 5): GLB-filtered метрики форм (`FormMetrics` — те же FHV12-поля, что в GEOM) и размещения вложенных (`NestedInstanceSnapshot`) ОДНОГО типа. Имя типа в хэш НЕ входит (rename-independent CAS reuse); ElementId отсутствуют по построению (GLB content-pure).
+
+**Файл:** `Models/FamilyManager/PreviewTypeSnapshot.cs`
+
+---
+
+## FamilyPreviewHasher
+
+Вычислитель per-type VIEW3D-хэша (#249, Phase 5, ADR-071): SHA-256 нормализованных входов `PreviewTypeSnapshot` (формы после GLB-фильтров видимости + nested-размещения), квантование координат общим `FamilyContentHasher.FormatCoord` (включая канонизацию `-0`, FHV16). Ключ файла в CAS-пуле превью (`files/_shared/models/{shard2}/{hash40}.glb`).
+
+**Файл:** `Services/Implementation/FamilyPreviewHasher.cs`

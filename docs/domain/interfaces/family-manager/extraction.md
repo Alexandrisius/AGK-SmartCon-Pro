@@ -15,7 +15,9 @@ Extracts structured snapshots from open Revit documents for content-hash computa
 ```csharp
 public interface IFamilySnapshotExtractor
 {
-    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null);
     SystemFamilySnapshot ExtractFromProject(
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,
@@ -26,7 +28,7 @@ public interface IFamilySnapshotExtractor
 }
 ```
 
-- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`).
+- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`). **FHV15 (#249):** type-dependent sections (GEOM metrics, DEF offsets, CONN positions) are measured at a deterministic reference type — the first-Ordinal name of `preferredTypeNames` ∩ document's named types (the verifier's type-set rule), or the document's first named type by default — inside a rolled-back transaction (`SmartCon_HashReferenceType`, I-03b), so the user's current-type choice never shifts the hash and the document/IsModified stay untouched.
 - `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
 - `ExtractSystemCategoryFromStagedProject` (ADR-056) — extracts a `SystemFamilySnapshot` from a staged mini-project (.rvt) during database actualization. Type discovery: placed instances first (domain truth); when nothing is placed (Phase-2 categories) ALL types of the category are collected — the caller trims them to the catalog's authoritative type list (`family_types`).
 
