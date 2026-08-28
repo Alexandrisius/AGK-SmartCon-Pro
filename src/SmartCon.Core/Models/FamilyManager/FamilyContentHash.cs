@@ -230,6 +230,19 @@ public sealed record FamilyContentHash(
     ///     preview bytes invisibly to both CAS tiers and the GEOM section
     ///     (stale preview color with a fresh hash). Critical task
     ///     <c>hash-v18</c> recomputes every row that is not current.
+    /// 19 — parameter-based routing (Issue #254, ADR-072): flex pipe/duct,
+    ///     conduit and cable tray types have NO RoutingPreferenceManager
+    ///     (probe-verified 2026-08-29: the property is null) — their
+    ///     fitting selection lives in visible built-in parameters
+    ///     (RBS_CURVETYPE_DEFAULT_*/MULTISHAPE_*/PREFERRED_BRANCH). Those
+    ///     parameters leave the VALUES section (their ElementId tokens
+    ///     referenced project fittings — the same phantom-diff class as
+    ///     #254) and become ROUTING rules with string group keys
+    ///     ("Param:&lt;BIP&gt;"); PREFERRED_BRANCH maps to
+    ///     PreferredJunctionType. System META prefix FHV8→FHV9. Pipe/duct
+    ///     tokens are byte-identical (their routing bips are hidden).
+    ///     Critical task <c>hash-v19</c> recomputes every row that is not
+    ///     current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -245,7 +258,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

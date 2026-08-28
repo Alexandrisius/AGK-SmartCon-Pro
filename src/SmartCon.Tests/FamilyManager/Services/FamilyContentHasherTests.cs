@@ -1398,14 +1398,15 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_Fhv8GoldenCanon_IsStable()
+    public void ComputeForSystem_Fhv9GoldenCanon_IsStable()
     {
         // Golden: a FIXED snapshot must always produce this exact hash — any
-        // drift in the FHV8 canon (escaping, culture, ordering, section
-        // layout, WIRE fields, duct FAMKEY) fails loudly here instead of
-        // silently re-flagging every field catalog. When the canon changes ON
-        // PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
-        // the golden in the same commit.
+        // drift in the FHV9 canon (escaping, culture, ordering, section
+        // layout, WIRE fields, duct FAMKEY, param-routing group keys) fails
+        // loudly here instead of silently re-flagging every field catalog.
+        // When the canon changes ON PURPOSE, bump
+        // FamilyContentHashFormat.CurrentVersion and update the golden in
+        // the same commit.
         var snapshot = CreateSystemSnapshot(types:
         [
             new SystemTypeSnapshot("Wire", [new SystemParameterValue("Diameter", "Double", true, "2.5", 2.5, null)],
@@ -1416,7 +1417,37 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("2C3DE661B90241DE85A278EEB3060A3D36F4C0450FEC39DE6655369862386877", hash.HexString);
+        Assert.Equal("94AB88EAA6E7E45BFA09259A1F56D207D9B702477B8CD67E9534146B9C0BB531", hash.HexString);
+    }
+
+    [Fact]
+    public void ComputeSectionsForSystem_ParamRoutingRule_StringGroupKeyInCanon()
+    {
+        // FHV19 (ADR-072): a parameter-based routing rule (flex/conduit/
+        // cable-tray — no RoutingPreferenceManager) serializes its string
+        // group key into the ROUTING section; a manager rule of the same
+        // part keeps the int token.
+        var paramRule = new RoutingRuleSnapshot(
+            RoutingGroupKeys.ParamGroupType, "FlexTee:Standard", string.Empty,
+            Array.Empty<RoutingCriterionSnapshot>(),
+            GroupKey: RoutingGroupKeys.ForParam("RBS_CURVETYPE_DEFAULT_TEE_PARAM"));
+        var managerRule = new RoutingRuleSnapshot(
+            2, "FlexTee:Standard", string.Empty, Array.Empty<RoutingCriterionSnapshot>());
+
+        var paramSections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Flex", [], Routing: new RoutingPreferencesSnapshot(1, [paramRule])),
+        ]));
+        var managerSections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Flex", [], Routing: new RoutingPreferencesSnapshot(1, [managerRule])),
+        ]));
+
+        var paramRouting = paramSections!.Single(s => s.SectionName == FamilyContentSectionNames.Routing);
+        var managerRouting = managerSections!.Single(s => s.SectionName == FamilyContentSectionNames.Routing);
+        Assert.Contains("Param:RBS_CURVETYPE_DEFAULT_TEE_PARAM", paramRouting.CanonicalString);
+        Assert.Contains("|2|FlexTee:Standard|", managerRouting.CanonicalString);
+        Assert.NotEqual(paramRouting.HashHex, managerRouting.HashHex);
     }
 
     [Fact]

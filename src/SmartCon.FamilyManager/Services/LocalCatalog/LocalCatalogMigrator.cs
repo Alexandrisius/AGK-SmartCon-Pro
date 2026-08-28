@@ -90,6 +90,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 31, MigrateV31Async, ct);
         await RunMigrationAsync(connection, 32, MigrateV32Async, ct);
         await RunMigrationAsync(connection, 33, MigrateV33Async, ct);
+        await RunMigrationAsync(connection, 34, MigrateV34Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1507,6 +1508,59 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             SmartConLogger.Info(columnsAdded
                 ? "Migration v33: catalog_versions +section_hashes/+section_strings (content-section analytics, #249)"
                 : "Migration v33: section columns already present — version bumped to 33");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
+    /// catalog data (<c>family_routing_rules</c> +
+    /// <c>family_routing_type_settings</c>) — additive table creation,
+    /// no data rewrite; pre-V34 versions are served by the sync
+    /// legacy-fallback (read routing from the mini-project) until the
+    /// optional backfill actualization fills the tables.
+    /// </summary>
+    private static async Task MigrateV34Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 34) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var created = false;
+            if (!await TableExistsAsync(connection, "family_routing_rules", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyRoutingRules;
+                await cmd.ExecuteNonQueryAsync(ct);
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyRoutingRulesIndexes;
+                await cmd.ExecuteNonQueryAsync(ct);
+                created = true;
+            }
+            if (!await TableExistsAsync(connection, "family_routing_type_settings", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.CreateFamilyRoutingTypeSettings;
+                await cmd.ExecuteNonQueryAsync(ct);
+                created = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '34' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info(created
+                ? "Migration v34: added family_routing_rules + family_routing_type_settings — routing as catalog data (#254, ADR-072)"
+                : "Migration v34: routing tables already present (fresh schema) — version bumped to 34");
         }
         catch
         {

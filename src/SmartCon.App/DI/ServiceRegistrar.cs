@@ -239,6 +239,10 @@ public static class ServiceRegistrar
         services.AddSingleton<ISharedNestedFamilyRepository>(sp => sp.GetRequiredService<LocalSharedNestedFamilyRepository>());
         services.AddSingleton<LocalFamilyDependencyRepository>();
         services.AddSingleton<IFamilyDependencyRepository>(sp => sp.GetRequiredService<LocalFamilyDependencyRepository>());
+        // ADR-072 (#254): routing rules of system MEPCurve types as catalog
+        // data (V34) — sync/editor read routing from DB, not from the mini.
+        services.AddSingleton<LocalFamilyRoutingRuleRepository>();
+        services.AddSingleton<IFamilyRoutingRuleRepository>(sp => sp.GetRequiredService<LocalFamilyRoutingRuleRepository>());
         services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();

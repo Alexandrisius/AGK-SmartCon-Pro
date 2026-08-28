@@ -460,7 +460,9 @@ internal static class FamilyCatalogSql
         {CreateFamilyNestedSharedFamilies};
         {CreateFamilyDependencies};
         {CreateFamilyFacts};
-        {CreateFamilyTypeHashes}
+        {CreateFamilyTypeHashes};
+        {CreateFamilyRoutingRules};
+        {CreateFamilyRoutingTypeSettings}
         """;
 
     public const string MigrateV9AddLoadedVersionLabel = """
@@ -590,6 +592,58 @@ internal static class FamilyCatalogSql
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
         )
+        """;
+
+    /// <summary>
+    /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
+    /// catalog DATA — the mini-project no longer carries fittings, so the
+    /// routing of a version lives here instead of the staged .rvt.
+    /// <c>group_key</c> is the string group identity
+    /// (<see cref="RoutingGroupKeys"/>: manager group name or
+    /// <c>"Param:&lt;BIP&gt;"</c>); <c>part_name</c> NULL = no-part rule
+    /// ("Нет"); <c>criteria_json</c> preserves arbitrary criterion kinds.
+    /// Scoping mirrors <c>family_types</c>: (family_key, type_name) —
+    /// one category item can hold same-named types of different system
+    /// families (FHV6).
+    /// </summary>
+    public const string CreateFamilyRoutingRules = """
+        CREATE TABLE IF NOT EXISTS family_routing_rules (
+            catalog_item_id TEXT NOT NULL,
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            group_key TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            part_name TEXT,
+            description TEXT NOT NULL DEFAULT '',
+            criteria_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (catalog_version_id, family_key, type_name, group_key, rule_order),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    /// <summary>
+    /// V34 (#254, ADR-072): per-type routing scalars (PreferredJunctionType
+    /// — manager types, or RBS_CURVETYPE_PREFERRED_BRANCH_PARAM — flex).
+    /// Presence of a row doubles as the "this version's routing is stored
+    /// as data" marker for the legacy fallback (a legitimately rule-less
+    /// type keeps its settings row).
+    /// </summary>
+    public const string CreateFamilyRoutingTypeSettings = """
+        CREATE TABLE IF NOT EXISTS family_routing_type_settings (
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            preferred_junction_type INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_version_id, family_key, type_name),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyRoutingRulesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_routing_rules_item ON family_routing_rules (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_routing_rules_version ON family_routing_rules (catalog_version_id)
         """;
 
     /// <summary>

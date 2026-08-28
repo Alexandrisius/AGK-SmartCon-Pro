@@ -43,6 +43,13 @@ public sealed partial class FamilyContentHasher
     /// aligned with the loadable FHV12 so a single global
     /// hash_format_version (=12) covers both kinds; per-type content
     /// hashes ride along as a side product (#179).
+    /// FHV9 (#254, ADR-072): parameter-based routing enters ROUTING —
+    /// flex/conduit/cable-tray types have no RoutingPreferenceManager,
+    /// their fitting selection lives in visible built-in parameters
+    /// (RBS_CURVETYPE_*); those leave VALUES and become ROUTING rules
+    /// with string group keys ("Param:<BIP>"). Pipe/duct tokens are
+    /// byte-identical (their routing bips are hidden from
+    /// Element.Parameters).
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
@@ -105,7 +112,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildSystemMetaSection(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV8|SYSTEM|");
+        sb.Append("FHV9|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
         sb.Append("TYPES|");
         return sb.ToString();
@@ -198,7 +205,14 @@ public sealed partial class FamilyContentHasher
             sb.Append(t.Routing.PreferredJunctionType).Append('|');
             foreach (var rule in t.Routing.Rules)
             {
-                sb.Append(rule.GroupType).Append('|');
+                // FHV19 (ADR-072): parameter-based groups (flex/conduit/
+                // cable-tray — no RoutingPreferenceManager) carry a string
+                // group key; manager-based groups keep the pre-FHV19 int
+                // token byte-for-byte.
+                if (rule.GroupType == RoutingGroupKeys.ParamGroupType)
+                    sb.Append(Escape(rule.GroupKey ?? RoutingGroupKeys.ParamPrefix)).Append('|');
+                else
+                    sb.Append(rule.GroupType).Append('|');
                 sb.Append(Escape(rule.PartName ?? NullPartMarker)).Append('|');
                 sb.Append(Escape(rule.Description)).Append('|');
                 foreach (var criterion in rule.Criteria)

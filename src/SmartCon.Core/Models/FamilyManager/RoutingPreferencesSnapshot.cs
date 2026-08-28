@@ -25,7 +25,11 @@ public sealed record RoutingPreferencesSnapshot(
 /// One routing preference rule.
 /// </summary>
 /// <param name="GroupType"><c>RoutingPreferenceRuleGroupType</c> enum
-/// ordinal (Segments, Elbows, Junctions, …).</param>
+/// ordinal (Segments, Elbows, Junctions, …) for manager-based groups;
+/// <see cref="RoutingGroupKeys.ParamGroupType"/> (<c>-1</c>) for
+/// parameter-based routing (FHV19, ADR-072: flex/conduit/cable-tray types
+/// have no RoutingPreferenceManager — their fitting selection lives in
+/// visible built-in parameters).</param>
 /// <param name="PartName">Resolved name of the referenced MEP part:
 /// <c>"{Family}:{Type}"</c> for fitting symbols, element name for
 /// segments; <c>null</c> when the rule references
@@ -35,11 +39,17 @@ public sealed record RoutingPreferencesSnapshot(
 /// (may be empty — escaped into the canonical string as-is).</param>
 /// <param name="Criteria">Selection criteria of the rule, in rule
 /// order.</param>
+/// <param name="GroupKey">String group identity for parameter-based
+/// groups (<c>"Param:&lt;BuiltInParameter-name&gt;"</c>); <c>null</c> for
+/// manager-based groups, whose identity is <paramref name="GroupType"/>.
+/// Kept out of the manager path so pipe/duct ROUTING tokens stay
+/// byte-identical to pre-FHV19.</param>
 public sealed record RoutingRuleSnapshot(
     int GroupType,
     string? PartName,
     string Description,
-    IReadOnlyList<RoutingCriterionSnapshot> Criteria);
+    IReadOnlyList<RoutingCriterionSnapshot> Criteria,
+    string? GroupKey = null);
 
 /// <summary>
 /// One routing criterion. Only <c>PrimarySizeCriterion</c> carries

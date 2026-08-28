@@ -2012,15 +2012,29 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var name = elementType.Name;
 
         var paramDict = new SortedDictionary<string, Parameter>(StringComparer.Ordinal);
+        var routingDrivingCount = 0;
         foreach (Parameter param in elementType.Parameters)
         {
             var pname = param.Definition?.Name;
             if (string.IsNullOrEmpty(pname)) continue;
+            // FHV19 (ADR-072): routing-driving parameters (fitting selection
+            // of manager-less MEPCurve types — flex/conduit/cable-tray) leave
+            // VALUES and become ROUTING rules. Their ElementId tokens
+            // reference project fittings — the same phantom-diff class as
+            // #254. On pipe/duct these built-ins are hidden from
+            // Element.Parameters, so this filter is a no-op there.
+            if (RoutingDrivingParameters.TryGetRoutingParam(param) is not null
+                || RoutingDrivingParameters.IsPreferredBranch(param))
+            {
+                routingDrivingCount++;
+                continue;
+            }
             paramDict[pname!] = param;
         }
 
         SmartConLogger.Debug(
-            $"ExtractSystemType '{name}': {paramDict.Count} params from Element.Parameters: " +
+            $"ExtractSystemType '{name}': {paramDict.Count} params from Element.Parameters " +
+            $"({routingDrivingCount} routing-driving excluded to ROUTING): " +
             $"[{string.Join(", ", paramDict.Keys)}]");
 
         var values = new List<SystemParameterValue>(paramDict.Count);
@@ -2258,7 +2272,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         {
             using var manager = mepCurveType.RoutingPreferenceManager;
             if (manager is null)
-                return null;
+            {
+                // FHV19 (ADR-072): flex/conduit/cable-tray types have no
+                // RoutingPreferenceManager (probe RoutingStorageReality
+                // 2026-08-29) — their fitting selection lives in visible
+                // built-in parameters.
+                return ExtractParamBasedRouting(elementType, doc);
+            }
 
             var rules = new List<RoutingRuleSnapshot>();
             foreach (RoutingPreferenceRuleGroupType group in Enum.GetValues(typeof(RoutingPreferenceRuleGroupType)))
@@ -2295,6 +2315,91 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"RoutingPreferences read failed for type '{elementType.Name}': {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Parameter-based routing of manager-less MEPCurve types — flex
+    /// pipe/duct, conduit, cable tray (FHV19, ADR-072). Each visible
+    /// routing-driving built-in parameter becomes one rule in a
+    /// <c>"Param:&lt;BIP&gt;"</c> group (deterministic key order);
+    /// <c>RBS_CURVETYPE_PREFERRED_BRANCH_PARAM</c> maps to
+    /// <see cref="RoutingPreferencesSnapshot.PreferredJunctionType"/>.
+    /// <c>null</c> when the type exposes no routing-driving parameters at
+    /// all (canonical "not routed" state).
+    /// </summary>
+    private static RoutingPreferencesSnapshot? ExtractParamBasedRouting(
+        ElementType elementType, Document doc)
+    {
+        var keyed = new List<KeyValuePair<string, RoutingRuleSnapshot>>();
+        var preferredJunction = 0;
+        var foundAny = false;
+
+        foreach (Parameter param in elementType.Parameters)
+        {
+            if (RoutingDrivingParameters.IsPreferredBranch(param))
+            {
+                foundAny = true;
+                try
+                {
+                    if (param.HasValue)
+                        preferredJunction = param.AsInteger();
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug(
+                        $"PreferredBranch read failed for type '{elementType.Name}': {ex.Message}");
+                }
+                continue;
+            }
+
+            var bip = RoutingDrivingParameters.TryGetRoutingParam(param);
+            if (bip is null)
+                continue;
+            foundAny = true;
+
+            string? partName = null;
+            try
+            {
+                if (param.HasValue)
+                {
+                    var partId = param.AsElementId();
+                    if (partId is not null && partId != ElementId.InvalidElementId)
+                    {
+                        var element = doc.GetElement(partId);
+                        partName = element switch
+                        {
+                            FamilySymbol symbol => $"{symbol.Family?.Name}:{symbol.Name}",
+                            _ => element?.Name,
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Debug(
+                    $"Param routing rule read failed ({bip}) for type '{elementType.Name}': {ex.Message}");
+                partName = null;
+            }
+
+            var groupKey = RoutingDrivingParameters.GroupKey(bip.Value);
+            keyed.Add(new KeyValuePair<string, RoutingRuleSnapshot>(
+                groupKey,
+                new RoutingRuleSnapshot(
+                    RoutingGroupKeys.ParamGroupType,
+                    partName,
+                    string.Empty,
+                    Array.Empty<RoutingCriterionSnapshot>(),
+                    GroupKey: groupKey)));
+        }
+
+        if (!foundAny)
+            return null;
+
+        var rules = keyed
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => pair.Value)
+            .ToList();
+        return new RoutingPreferencesSnapshot(preferredJunction, rules);
     }
 
     private static RoutingRuleSnapshot ConvertRoutingRule(
