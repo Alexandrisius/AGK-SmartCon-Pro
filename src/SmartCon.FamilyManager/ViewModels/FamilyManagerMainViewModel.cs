@@ -64,6 +64,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
+    private readonly IFamilyRoutingRuleRepository _routingRuleRepository;
     private readonly IDispatcher _dispatcher;
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
@@ -238,6 +239,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _clock = services.Clock;
         _sharedNestedRepository = services.SharedNestedRepository;
         _familyDependencyRepository = services.FamilyDependencyRepository;
+        _routingRuleRepository = services.FamilyRoutingRuleRepository;
 
         // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
         // Application.Current?.Dispatcher. The latter is null in net48 Revit

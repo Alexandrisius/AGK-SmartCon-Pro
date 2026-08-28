@@ -1,7 +1,7 @@
 # ADR-072: Ручной staging мини-проектов MEPCurve + routing как данные каталога (Issue #254)
 
 **Date:** 2026-08-28
-**Status:** accepted (владелец 2026-08-29: «реализовать»; Фаза 0 завершена — §2.7)
+**Status:** accepted (владелец 2026-08-29: «реализовать»; Фазы 0, 1+2, 2b РЕАЛИЗОВАНЫ 2026-08-29 — см. «Статус реализации» ниже; остались Ф3 редактор, Ф4 non-MEP, Ф5 UX-гейт)
 **Related:** Issue #254, ADR-061 (system family sync), ADR-062 (mini-project marker), ADR-064 (family key), ADR-065 (FHV4), ADR-066 (dependencies model), ADR-067 (dependency guard), ADR-055 (family facts / part_type), ADR-054 (actualization engine), ADR-071 (content hash hierarchy), #104, #178, #183, #188, #190
 
 > **Назначение документа:** полный самодостаточный контекст расследования #254 и план
@@ -335,6 +335,40 @@ category» — для conduit/tray/flex эти параметры **живые**
   roughness/sizes токен-в-токен) до и после SaveAs.
 
 ## 3. План по фазам
+
+> ### Статус реализации (2026-08-29)
+>
+> - **Фаза 0 — DONE** (§2.7; probe-файл удалён после Ф1+2).
+> - **Фазы 1+2 — DONE** (gate-валидация general: PASS после фикса 1 блокера).
+>   Отклонение от плана: вместо отдельного `ManualSystemStagingService` —
+>   `ISystemTypeSyncService.StageTypeFromSource` (staging-режим ядра sync) +
+>   `SystemFamilyRevitOperations.StageMepCurveTypesManually` (максимальный
+>   reuse battle-tested машинерии; P0.1 доказал этот путь). Пункты 1-6, 2a
+>   (FHV19), 2b (dispatch) реализованы полностью. Найденный и исправленный
+>   блокер: executors создавались в ViewModels без `IFamilyRoutingRuleRepository`
+>   (optional-параметр молча null → п.2/4/5 были бы inert + деструктивный
+>   legacy-fallback) — фикс: репозиторий добавлен в `FamilyManagerServices` и
+>   проброшен в 3 production-точки. Minor-1 учтён: импортная запись ставит
+>   `routing_backfilled = 1` (backfill-задача не трогает новые версии).
+> - **Фаза 2b — DONE** (V35 tracking-колонка, `RoutingSectionParser` file-free
+>   pass, `RevitMiniProjectRoutingSlimmingService` + `RoutingBackfillActualizationTask`
+>   routing-backfill-v1). Найденные тестами факты: `Segment.MaterialId` —
+>   свойство, не геометрия (`GetMaterialIds` его не видит — orphan-детект
+>   обязан сканить сегменты явно); каскадные орфаны (материалы удалённых
+>   фитингов) требуют re-scan после удаления семейств; коллекторам внутри
+>   транзакции нельзя доверять проверку name-availability (ренеймы пар
+>   вычисляются upfront).
+> - **Семантический дрейф slim-состояния (зафиксирован, minor-4 валидатора):**
+>   ручной staging оставляет no-part правила в fitting-группах мини,
+>   slimming-сервис legacy-мини удаляет их полностью — новые и вылеченные
+>   мини различаются по ROUTING. Безвредно: при reimport/sync routing
+>   подменяется из БД.
+> - **Гейты:** unit 3015/3015; integration R25 228/0/10; net48 226/0/11
+>   (скипы = baseline); builds R25/R21 0/0. Ручной тест владельцем — после
+>   Ф3 (редактор) одним сценарием.
+> - **Осталось:** Ф3 (редактор + динамические links + per-type hashes + UX
+>   подсказка archived-locked), Ф4 (оценка non-MEP), Ф5 (UX-гейт импорта на
+>   мини-проекте).
 
 ### Фаза 0 — probe-валидация (integration, disposable; ~0.5-1 день)
 

@@ -827,7 +827,8 @@ public sealed partial class FamilyManagerMainViewModel
             _familyDependencyRepository,
             _dataImportService,
             _sharedNestedRepository,
-            CurrentRevitVersion);
+            CurrentRevitVersion,
+            _routingRuleRepository);
         var result = await executor.ExecuteAsync(
                 childImports, categoryId: null, progress: null, pauseGate: null,
                 CancellationToken.None, externalParentItemIds)
@@ -1146,7 +1147,8 @@ public sealed partial class FamilyManagerMainViewModel
             _staleDetector,
             _catalogProvider,
             _familyDependencyRepository,
-            CurrentRevitVersion);
+            CurrentRevitVersion,
+            _routingRuleRepository);
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems,

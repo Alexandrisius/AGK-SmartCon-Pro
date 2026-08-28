@@ -196,6 +196,16 @@ internal sealed class LocalFamilyRoutingRuleRepository : IFamilyRoutingRuleRepos
             return;
         }
         await ReplaceForVersionAsync(catalogItemId, versionId, rules, settings, ct);
+
+        // ADR-072 Phase 2b (review minor-1): a version whose routing was
+        // just written at import is backfilled AND slim by construction —
+        // mark it so the optional backfill task never re-opens its file.
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE catalog_versions SET routing_backfilled = 1 WHERE id = @vid AND routing_backfilled = 0";
+        cmd.Parameters.Add(new SqliteParameter("@vid", versionId));
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)>

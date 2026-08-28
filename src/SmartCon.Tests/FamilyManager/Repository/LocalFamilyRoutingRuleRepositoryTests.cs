@@ -133,6 +133,32 @@ public sealed class LocalFamilyRoutingRuleRepositoryTests
         Assert.Equal(2, count);
     }
 
+    [Fact]
+    public async Task ReplaceForCurrentVersion_MarksVersionBackfilled()
+    {
+        using var fixture = await CreateAndMigrate();
+        var (itemId, versionId) = await SeedItemWithVersionAsync(fixture, "pipes-5");
+        var sut = new LocalFamilyRoutingRuleRepository(fixture.GetDatabase());
+
+        // The seed's current version is 'v1' — the import-path write
+        // resolves it and marks routing_backfilled = 1 (review minor-1:
+        // the optional backfill task must never re-open a fresh file).
+        await sut.ReplaceForCurrentVersionAsync(itemId, [],
+            [new FamilyRoutingTypeSettings("Pipe A", "K", 1)]);
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT routing_backfilled FROM catalog_versions WHERE id = @vid";
+        cmd.Parameters.Add(new SqliteParameter("@vid", versionId));
+        var marker = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.Equal(1, marker);
+
+        var (rules, settings) = await sut.ReadForCurrentVersionAsync(itemId);
+        Assert.Empty(rules);
+        Assert.Single(settings);
+    }
+
     private static async Task<(string ItemId, string VersionId)> SeedItemWithVersionAsync(
         TempCatalogFixture fixture, string itemId)
     {

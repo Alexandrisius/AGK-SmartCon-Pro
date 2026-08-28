@@ -176,4 +176,11 @@ public sealed record FamilyManagerServices(
     /// of catalog versions (section hashes + per-type hashes) — the batch
     /// dialog's "what changed" diff against the active version.
     /// </summary>
-    IContentHashAnalyticsRepository ContentHashAnalytics);
+    IContentHashAnalyticsRepository ContentHashAnalytics,
+    /// <summary>
+    /// ADR-072 (#254): routing rules of system MEPCurve types as catalog
+    /// data (V34) — consumed by the batch executors to persist routing
+    /// after import (<c>RoutingRuleWriter</c>) and to regenerate
+    /// dependency links from stored rules (plan items 2/5).
+    /// </summary>
+    IFamilyRoutingRuleRepository FamilyRoutingRuleRepository);

@@ -241,6 +241,8 @@ Issue #183: `familyName` ограничивает матчинг одной си
 
 Ядро синхронизации системного типа (Issue #104, ADR-061): читает эталон из открытого мини-проекта и записывает в проект БЕЗ копирования элементов. Существующий тип перезаписывается на месте; отсутствующий создаётся `Duplicate()` типа-болванки той же категории. Одна транзакция на тип: создание + параметры (+фолбэк создания материала при ElementId-резолве) + сегменты + структура + правила трассировки + ES-маркер (одна точка отмены). Вызывается на Revit main thread; владельцем sourceDoc является caller (оркестратор переиспользует одно открытие на батч).
 
+ADR-072 (#254): routing читается из каталожной БД (V34) с недеструктивным legacy-fallback (pre-V34 версия / тип без правил / ошибка БД → routing мини-проекта); dispatch по `RoutingPreferenceManager is null` — manager-less типы (flex/conduit/tray) пишут routing как значения параметров (`SyncRoutingParamsFromDb`). `StageTypeFromSource` — staging-режим ручного создания slim мини-проекта (без Phase A, без ES-маркера, slim routing: Segments + no-part правила, param-группы принудительно в «Нет»).
+
 **Файл:** `ISystemTypeSyncService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/SystemTypeSyncService.cs`
 
@@ -256,6 +258,57 @@ public interface ISystemTypeSyncService
         int sourceRevitVersion,
         string? familyName = null,
         string? familyKey = null);
+
+    // ADR-072: ручной staging slim мини-проекта (FamilyNotFound →
+    // caller делает CopyElements fallback для этого типа).
+    SystemTypeSyncResult StageTypeFromSource(
+        Document sourceDoc,
+        Document stagingDoc,
+        string typeName,
+        int? categoryOrdinal = null,
+        string? familyName = null,
+        string? familyKey = null);
+}
+```
+
+---
+
+## IFamilyRoutingRuleRepository
+
+Хранилище правил трассировки системных MEPCurve-типов как данных каталога (ADR-072, таблицы V34 `family_routing_rules` + `family_routing_type_settings`). Правила версионируются с итемом (scope: версия + family_key + type_name + group_key). Запись — при импорте (RoutingRuleWriter, из финального снапшота) и file-free/mini backfill (Ф2b); чтение — sync (только CURRENT версия), reimport-from-mini подмена, будущий редактор (Ф3). `HasRulesForVersionAsync` — дискриминатор legacy-fallback: отсутствие строк = pre-V34 версия (легитимно пустой routing хранит settings-строку, поэтому отсутствие строк ≠ «нет правил»).
+
+**Файл:** `IFamilyRoutingRuleRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyRoutingRuleRepository.cs`
+
+```csharp
+public interface IFamilyRoutingRuleRepository
+{
+    Task ReplaceForVersionAsync(string catalogItemId, string catalogVersionId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForVersionAsync(
+        string catalogItemId, string catalogVersionId, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForCurrentVersionAsync(
+        string catalogItemId, CancellationToken ct = default);
+    Task<bool> HasRulesForVersionAsync(string catalogItemId, string catalogVersionId, CancellationToken ct = default);
+    Task<bool> HasRulesForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IMiniProjectRoutingSlimmingService
+
+Лечение legacy мини-проектов в managed-хранилище (ADR-072, Ф2b): pre-slim экстракция полного routing (источник backfill для версий без section_strings) → slim: fitting-группы очищены (Segments сохранены), routing-параметры в «Нет», протащенные фитинги (инстансы+семейства) удалены, orphan-материалы (включая #254-дубли и каскадные после удаления семейств) удалены, суффиксные рабочие копии collision-пар переименованы в чистое имя → save in place → удаление `name.NNNN.rvt` → восстановление read-only (I-16 exception). `AlreadySlim` возвращает snapshot=null — stored DB rules защищены от перезаписи slim-состоянием. Маршаллинг на Revit UI thread через awaitable event (I-01).
+
+**Файл:** `IMiniProjectRoutingSlimmingService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitMiniProjectRoutingSlimmingService.cs`
+
+```csharp
+public interface IMiniProjectRoutingSlimmingService
+{
+    Task<MiniProjectSlimmingOutcome> SlimManagedFileAsync(string absolutePath, CancellationToken ct = default);
 }
 ```
 

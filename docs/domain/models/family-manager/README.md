@@ -25,6 +25,7 @@ module: family-manager-index
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `ValidationRule`, `ValidationRuleOperator`, health-check (`FamilyHealthReport`), гейт-статусы (`FamilyRowGateStatus`), нормализованные входы (`FamilyValidationInput`), отчёты (`FamilyValidationReport`, `RuleViolation`), `FamilyValidationEngine`, `DisplayValueParser` |
 | [`dependencies.md`](dependencies.md) | Зависимости parent→child (ADR-066, V29): `FamilyDependencyKind`, `FamilyDependencyInfo`, `FamilyDependencyDescriptor`, `FamilyDependencyLink` |
 | [`assignment-rules.md`](assignment-rules.md) | Автоназначение категории (#241, ADR-070, V31): `AssignmentRuleGroup`, `AssignmentCondition`, `AssignmentOperatorPolicy`, `CategoryAutoAssignInput/Result/Preloaded`, `RevitCategoryLabel`, `CategoryProvenance.AutoRule` |
+| [`routing.md`](routing.md) | Routing как данные каталога (#254, ADR-072, V34/V35): `RoutingGroupKeys`, `FamilyRoutingRuleInfo`, `FamilyRoutingTypeSettings`, `RoutingRuleRecordMapper`, `RoutingSectionParser`, `RoutingDrivingParameters`, `MiniProjectSlimmingOutcome` |
 
 ## См. также
 
