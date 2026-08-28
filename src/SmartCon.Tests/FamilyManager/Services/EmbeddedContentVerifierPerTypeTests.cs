@@ -72,4 +72,62 @@ public sealed class EmbeddedContentVerifierPerTypeTests
         Assert.True(map["ДУ50"]);
         Assert.True(map["ду50"]);
     }
+
+    [Fact]
+    public void SharedSections_PerTypeSectionsExcluded()
+    {
+        // Round-6 alignment (#249): TYPES/VALUES are answered by the
+        // per-type hash comparison — they must NOT trigger the escalation.
+        var embeddedSections = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["TYPES"] = "t-old", ["GEOM"] = "g1", ["DEF"] = "d1",
+        };
+        var fileSections = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["TYPES"] = "t-new", ["GEOM"] = "g1", ["DEF"] = "d1",
+        };
+
+        var changed = EmbeddedContentVerifier.ComputeChangedSharedSections(embeddedSections, fileSections);
+
+        Assert.Empty(changed);
+    }
+
+    [Fact]
+    public void SharedSections_SharedChangeDetected()
+    {
+        // The user's scenario (round 6): a GEOM2D-only edit must escalate —
+        // per-type hashes alone answered "0 changed types".
+        var embeddedSections = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["TYPES"] = "t1", ["GEOM"] = "g1", ["GEOM2D"] = "2d-old", ["DEF"] = "d1",
+        };
+        var fileSections = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["TYPES"] = "t1", ["GEOM"] = "g1", ["GEOM2D"] = "2d-new", ["DEF"] = "d1",
+        };
+
+        var changed = EmbeddedContentVerifier.ComputeChangedSharedSections(embeddedSections, fileSections);
+
+        Assert.Equal(["GEOM2D"], changed);
+    }
+
+    [Fact]
+    public void SharedSections_MissingSideCountsAsChanged_OtherSideMissing()
+    {
+        var embeddedSections = new Dictionary<string, string>(StringComparer.Ordinal) { ["GEOM"] = "g1" };
+        var fileSections = new Dictionary<string, string>(StringComparer.Ordinal) { ["DEF"] = "d1" };
+
+        var changed = EmbeddedContentVerifier.ComputeChangedSharedSections(embeddedSections, fileSections);
+
+        Assert.Equal(2, changed.Count);
+        Assert.Contains("GEOM", changed);
+        Assert.Contains("DEF", changed);
+    }
+
+    [Fact]
+    public void SharedSections_NullAnalytics_Empty()
+    {
+        Assert.Empty(EmbeddedContentVerifier.ComputeChangedSharedSections(null, new Dictionary<string, string>()));
+        Assert.Empty(EmbeddedContentVerifier.ComputeChangedSharedSections(new Dictionary<string, string>(), null));
+    }
 }

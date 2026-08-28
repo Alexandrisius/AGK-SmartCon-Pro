@@ -111,6 +111,35 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
     }
 
     [Test]
+    public async Task Check_SharedSectionEditLocally_PerTypeMapFlagsEveryLoadedType()
+    {
+        // Round-6 alignment (#249, the owner's "added 2D lines, types stayed
+        // blue" scenario): a FREE symbolic line changes GEOM2D — a SHARED
+        // section that no per-type value hash sees. The pre-fix verifier
+        // map answered "0 changed types" (blue types, silent confirm) while
+        // the VersionMismatch DB path escalated the same edit to every
+        // type. Both paths must agree: every loaded type is stale.
+        var projectDoc = SeedProjectWithChild();
+        var detector = CreateDetector(projectDoc, out var store);
+        WriteCurrentMarker(projectDoc, store);
+
+        EditEmbeddedChildAddFreeLineLocally(projectDoc);
+
+        var results = await detector.CheckCategoryAsync(null, projectDoc, CancellationToken.None);
+
+        var verdict = results.First(r => string.Equals(r.FamilyName, ChildName, StringComparison.OrdinalIgnoreCase));
+        var map = detector.GetLoadableTypeStaleMap(CatalogItemId);
+        SmartConLogger.Info(
+            $"Shared-section check: IsStale={verdict.IsStale} Reason={verdict.Reason} " +
+            $"map=[{(map is null ? "<null>" : string.Join(",", map.Select(kv => $"{kv.Key}={kv.Value}")))}]");
+        await Assert.That(verdict.IsStale).IsTrue();
+        await Assert.That(verdict.Reason).IsEqualTo(StaleReason.ContentDrift);
+        await Assert.That(map).IsNotNull();
+        await Assert.That(map!["TypeA"]).IsTrue();
+        await Assert.That(map["TypeB"]).IsTrue();
+    }
+
+    [Test]
     public async Task Check_OneTypeEditedLocally_PerTypeMapFlagsOnlyThatType()
     {
         // Marker == current v1; the local edit touches ONLY TypeA's P0
@@ -440,6 +469,39 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
             if (pushed is null)
             {
                 throw new InvalidOperationException("LoadFamily(edited copy back into host) returned null");
+            }
+        }
+        finally
+        {
+            copy.Close(false);
+        }
+    }
+
+    /// <summary>
+    /// Simulates a local SHARED-content edit of the embedded child: adds a
+    /// FREE symbolic curve (GEOM2D — no type value changes) and loads the
+    /// copy back. Same EditFamily → push-back pattern as
+    /// <see cref="EditEmbeddedChildTypeValueLocally"/>.
+    /// </summary>
+    private void EditEmbeddedChildAddFreeLineLocally(Document hostDoc)
+    {
+        var nested = FindNestedFamily(hostDoc, ChildName);
+        var copy = hostDoc.EditFamily(nested);
+        try
+        {
+            using (var tx = new Transaction(copy, "Local 2D edit"))
+            {
+                tx.Start();
+                var plane = Plane.CreateByNormalAndOrigin(XYZ.BasisZ, XYZ.Zero);
+                var sketchPlane = SketchPlane.Create(copy, plane);
+                copy.FamilyCreate.NewSymbolicCurve(
+                    Line.CreateBound(new XYZ(0, 1, 0), new XYZ(1, 1, 0)), sketchPlane);
+                tx.Commit();
+            }
+            var pushed = copy.LoadFamily(hostDoc, new OverwriteLoadOptions());
+            if (pushed is null)
+            {
+                throw new InvalidOperationException("LoadFamily(2D-edited copy back into host) returned null");
             }
         }
         finally

@@ -58,13 +58,16 @@ internal static class EmbeddedContentVerifier
 
     /// <summary>
     /// Internal proof record of one embedded extraction: the family-level
-    /// hash, the embedded type-name set and the per-type content hashes —
-    /// all from ONE EditFamily + extraction pass (#249, Phase 2).
+    /// hash, the embedded type-name set, the per-type content hashes AND
+    /// the section hashes — all from ONE EditFamily + extraction pass
+    /// (#249, Phase 2; sections added in round 6 for the shared-section
+    /// escalation, see <see cref="ComputeChangedSharedSections"/>).
     /// </summary>
     private sealed record EmbeddedProof(
         string? Hash,
         IReadOnlyList<string> TypeNames,
-        IReadOnlyDictionary<string, string>? PerTypeHashes);
+        IReadOnlyDictionary<string, string>? PerTypeHashes,
+        IReadOnlyDictionary<string, string>? SectionHashes);
 
     /// <summary>
     /// <see cref="ComputeEmbeddedHash"/> core, additionally returning the
@@ -88,7 +91,7 @@ internal static class EmbeddedContentVerifier
             SmartConLogger.Warn(
                 $"{logContext}: family '{familyName}' not found in the active document " +
                 "[Action: верификация пропущена — семейство не загружено в активный документ]");
-            return new EmbeddedProof(null, [], null);
+            return new EmbeddedProof(null, [], null, null);
         }
 
         // Guard: the family is open as a top-level document — EditFamily
@@ -105,7 +108,7 @@ internal static class EmbeddedContentVerifier
             SmartConLogger.Warn(
                 $"{logContext}: '{familyName}' is open in the Family Editor — embedded content cannot be trusted " +
                 "[Action: закройте семейство в редакторе (сохранив или отменив правки) и повторите «Проверить»]");
-            return new EmbeddedProof(null, [], null);
+            return new EmbeddedProof(null, [], null, null);
         }
 
         Document? copy = null;
@@ -118,14 +121,16 @@ internal static class EmbeddedContentVerifier
             var snapshot = snapshotExtractor.ExtractFromFamilyDocument(copy);
             var hash = contentHasher.ComputeForLoadable(snapshot)?.HexString;
             var perType = contentHasher.ComputePerTypeHashesForLoadable(snapshot);
-            return new EmbeddedProof(hash, snapshot.Types.Select(t => t.Name).ToList(), perType);
+            var sections = contentHasher.ComputeSectionsForLoadable(snapshot)
+                ?.ToDictionary(s => s.Key, s => s.HashHex, StringComparer.Ordinal);
+            return new EmbeddedProof(hash, snapshot.Types.Select(t => t.Name).ToList(), perType, sections);
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"{logContext}: embedded hash computation failed for '{familyName}': {ex.GetType().Name}: {ex.Message} " +
                 "[Action: верификация пропущена — семейство останется stale, повторите «Обновить»]");
-            return new EmbeddedProof(null, [], null);
+            return new EmbeddedProof(null, [], null, null);
         }
         finally
         {
@@ -176,14 +181,17 @@ internal static class EmbeddedContentVerifier
 
     /// <summary>
     /// Internal proof record of one file open: the (optionally
-    /// type-restricted) family-level hash AND the per-type content hashes
-    /// of the same restricted snapshot — ONE OpenDocumentFile per version
-    /// file per run (#249, Phase 2). Both fields are <c>null</c> when the
-    /// file proof is indeterminate (guard tripped / extraction failed).
+    /// type-restricted) family-level hash, the per-type content hashes AND
+    /// the section hashes of the same restricted snapshot — ONE
+    /// OpenDocumentFile per version file per run (#249, Phase 2; sections
+    /// added in round 6 for the shared-section escalation). All fields are
+    /// <c>null</c> when the file proof is indeterminate (guard tripped /
+    /// extraction failed).
     /// </summary>
     internal sealed record FileProof(
         string? Hash,
-        IReadOnlyDictionary<string, string>? PerTypeHashes);
+        IReadOnlyDictionary<string, string>? PerTypeHashes,
+        IReadOnlyDictionary<string, string>? SectionHashes = null);
 
     /// <summary>
     /// <see cref="ComputeFileHash"/> with per-type resolution: opens the
@@ -269,7 +277,9 @@ internal static class EmbeddedContentVerifier
             }
             var hash = contentHasher.ComputeForLoadable(snap)?.HexString;
             var perType = contentHasher.ComputePerTypeHashesForLoadable(snap);
-            return new FileProof(hash, perType);
+            var sections = contentHasher.ComputeSectionsForLoadable(snap)
+                ?.ToDictionary(s => s.Key, s => s.HashHex, StringComparer.Ordinal);
+            return new FileProof(hash, perType, sections);
         }
         catch (Exception ex)
         {
@@ -370,9 +380,61 @@ internal static class EmbeddedContentVerifier
             return new LoadableVerificationResult(verdict, null);
         }
 
-        return new LoadableVerificationResult(
-            verdict,
-            ComputePerTypeStale(embedded.PerTypeHashes, file.PerTypeHashes, fullSet: doc.IsFamilyDocument));
+        var map = ComputePerTypeStale(embedded.PerTypeHashes, file.PerTypeHashes, fullSet: doc.IsFamilyDocument);
+
+        // Shared-section escalation (#249, manual-test round 6 — the same
+        // rule the DB-side VersionMismatch map applies, commit 58fdef2):
+        // per-type hashes track per-type VALUES only, so a change in a
+        // SHARED section (GEOM, GEOM2D, DEF, CONN, …) affects EVERY loaded
+        // type. Without this the verifier path showed "0 changed types"
+        // (blue types, silent update-confirm) for the very edit the
+        // VersionMismatch path escalated — identical content changes
+        // indicated differently depending on the import path.
+        var sharedChanged = ComputeChangedSharedSections(embedded.SectionHashes, file.SectionHashes);
+        if (sharedChanged.Count > 0)
+        {
+            map = map.ToDictionary(kvp => kvp.Key, _ => true, StringComparer.OrdinalIgnoreCase);
+            SmartConLogger.Debug(
+                $"{logContext}: shared sections changed ({string.Join(", ", sharedChanged)}) " +
+                $"— all {map.Count} compared type(s) stale");
+        }
+
+        return new LoadableVerificationResult(verdict, map);
+    }
+
+    /// <summary>
+    /// Section keys whose hashes differ between the embedded and the file
+    /// proof, excluding the per-type sections (<c>TYPES</c>/<c>VALUES</c> —
+    /// those are answered by the per-type hash comparison). Mirrors
+    /// <c>StaleDetector.ComputeChangedSharedSectionsAsync</c> exactly (round
+    /// 6 alignment). Empty when either side has no section analytics (the
+    /// values-level answer then stands alone).
+    /// </summary>
+    internal static IReadOnlyList<string> ComputeChangedSharedSections(
+        IReadOnlyDictionary<string, string>? embeddedSections,
+        IReadOnlyDictionary<string, string>? fileSections)
+    {
+        if (embeddedSections is null || fileSections is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var changed = new List<string>();
+        foreach (var key in embeddedSections.Keys.Concat(fileSections.Keys).Distinct(StringComparer.Ordinal))
+        {
+            if (string.Equals(key, FamilyContentSectionNames.Types, StringComparison.Ordinal)
+                || string.Equals(key, FamilyContentSectionNames.Values, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (!embeddedSections.TryGetValue(key, out var a)
+                || !fileSections.TryGetValue(key, out var b)
+                || !string.Equals(a, b, StringComparison.Ordinal))
+            {
+                changed.Add(key);
+            }
+        }
+        return changed;
     }
 
     /// <summary>
