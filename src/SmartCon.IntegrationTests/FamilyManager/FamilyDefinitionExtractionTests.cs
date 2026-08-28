@@ -458,6 +458,83 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
         await Assert.That(hashAtA).IsEqualTo(hashAtB);
     }
 
+    [Test]
+    public async Task Extract_GeomSection_StableAcrossNonGeometricEdit()
+    {
+        // FHV17 contract (#249, manual-test round 5 — the production "text
+        // edit flipped GEOM" bug): several nested placements share the same
+        // quantized X (the bolt-circle shape of the failing family), so the
+        // entry order must come from the EMITTED canonical content, never
+        // from raw-double sub-quantization noise. A text-only parameter
+        // edit triggers a regen; the GEOM section must not move (TYPES
+        // legitimately does — the value lives there).
+        var host = Application.NewFamilyDocument(_template!);
+        _openDocs!.Add(host);
+        FamilyParameter? note = null;
+        using (var tx = new Transaction(host, "seed nested row"))
+        {
+            tx.Start();
+#if REVIT2022_OR_GREATER
+            note = host.FamilyManager.AddParameter("Note", GroupTypeId.General, SpecTypeId.String.Text, false);
+#else
+            note = host.FamilyManager.AddParameter("Note", BuiltInParameterGroup.PG_GENERAL, ParameterType.Text, false);
+#endif
+            // A named type so a current type exists for the later Set —
+            // a fresh template has none ("There is no current type").
+            host.FamilyManager.NewType("T1");
+            if (!host.LoadFamily(_childPath!, out _))
+            {
+                throw new InvalidOperationException("LoadFamily(child) returned false");
+            }
+            var symbol = new FilteredElementCollector(host)
+                .OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>()
+                .First(s => string.Equals(s.Family?.Name, "SmartConDefChild", StringComparison.OrdinalIgnoreCase));
+            if (!symbol.IsActive)
+            {
+                symbol.Activate();
+            }
+            // Six placements in ONE quantized X bucket (0.5 ft), spread in
+            // Y — the pre-FHV17 raw-double sort ordered these by whatever
+            // FP noise the transform evaluation left below 1e-4 ft.
+            for (var i = 0; i < 6; i++)
+            {
+                var placed = host.FamilyCreate.NewFamilyInstance(
+                    new XYZ(0.5, 0.25 * i, 0), symbol, Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+                if (placed is null)
+                {
+                    throw new InvalidOperationException("NewFamilyInstance(child) returned null");
+                }
+            }
+            tx.Commit();
+        }
+
+        var extractor = new RevitFamilySnapshotExtractor();
+        var hasher = new FamilyContentHasher();
+
+        var before = hasher.ComputeSectionsForLoadable(extractor.ExtractFromFamilyDocument(host))
+            ?.FirstOrDefault(s => s.SectionName == FamilyContentSectionNames.Geom);
+
+        // The non-geometric edit: a text value on the type (this is what
+        // the user did — «изменил текстовый параметр "Стоимость"»).
+        using (var tx2 = new Transaction(host, "text-only edit"))
+        {
+            tx2.Start();
+            host.FamilyManager.Set(note!, "v2");
+            tx2.Commit();
+        }
+
+        var after = hasher.ComputeSectionsForLoadable(extractor.ExtractFromFamilyDocument(host))
+            ?.FirstOrDefault(s => s.SectionName == FamilyContentSectionNames.Geom);
+
+        SmartConLogger.Info(
+            $"FHV17 GEOM stability: before={(before is null ? "<null>" : before.HashHex[..12])}, " +
+            $"after={(after is null ? "<null>" : after.HashHex[..12])}");
+        await Assert.That(before).IsNotNull();
+        await Assert.That(after).IsNotNull();
+        await Assert.That(after!.CanonicalString).IsEqualTo(before!.CanonicalString);
+        await Assert.That(after.HashHex).IsEqualTo(before.HashHex);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private Document OpenChild()

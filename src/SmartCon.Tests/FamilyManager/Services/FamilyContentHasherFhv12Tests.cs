@@ -195,10 +195,72 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv16()
+    public void MetaSection_IsFhv17()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV16|LOADABLE|", canonical);
+        Assert.StartsWith("FHV17|LOADABLE|", canonical);
+    }
+
+    [Fact]
+    public void GeomSection_SubQuantizationNoise_OrderStable()
+    {
+        // FHV17 (#249, manual-test round 5 — the "text edit flipped GEOM"
+        // production bug): the production bolt circle had every nested
+        // placement in the SAME quantized X bucket (-0.4724) while the raw
+        // X values differed below 1e-4. The pre-FHV17 sort compared RAW
+        // doubles, so the entry order was decided by sub-quantization FP
+        // noise — and a regen (even from a text-only parameter edit)
+        // re-rolled that noise, flipping the GEOM hash and marking every
+        // loaded type stale. Simulate two extractions whose emitted
+        // content is identical but whose raw noise is assigned differently.
+        var proto = CreateRichGeometry().NestedInstances![0];
+        // Extraction 1: raw X orders A before B.
+        var a1 = proto with { OriginX = 0.1000001, OriginY = 0.2 };
+        var b1 = proto with { OriginX = 0.1000002, OriginY = 0.3 };
+        // Extraction 2 (post-regen): the SAME logical placements, but the
+        // noise crossed — raw X now orders B before A.
+        var a2 = proto with { OriginX = 0.1000002, OriginY = 0.2 };
+        var b2 = proto with { OriginX = 0.1000001, OriginY = 0.3 };
+
+        var extraction1 = CreateBaseSnapshot() with
+        {
+            Geometry = CreateRichGeometry() with { NestedInstances = [a1, b1] },
+        };
+        var extraction2 = CreateBaseSnapshot() with
+        {
+            Geometry = CreateRichGeometry() with { NestedInstances = [b2, a2] },
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(extraction1)!.HexString,
+            _hasher.ComputeForLoadable(extraction2)!.HexString);
+    }
+
+    [Fact]
+    public void DefSection_SubQuantizationOffsetNoise_OrderStable()
+    {
+        // FHV17: same class of bug in the DEF bound-form sort — raw
+        // extrusion offsets below the 0.###### emission grid reordered
+        // otherwise identical-prefix bound-form entries between
+        // extractions.
+        var proto = CreateDefinitions().Forms[0];
+        var a1 = proto with { ExtrusionStartOffset = 0.1000001, ExtrusionEndOffset = 0.5 };
+        var b1 = proto with { ExtrusionStartOffset = 0.1000002, ExtrusionEndOffset = 0.6 };
+        var a2 = proto with { ExtrusionStartOffset = 0.1000002, ExtrusionEndOffset = 0.5 };
+        var b2 = proto with { ExtrusionStartOffset = 0.1000001, ExtrusionEndOffset = 0.6 };
+
+        var extraction1 = CreateBaseSnapshot() with
+        {
+            Definitions = CreateDefinitions() with { Forms = [a1, b1] },
+        };
+        var extraction2 = CreateBaseSnapshot() with
+        {
+            Definitions = CreateDefinitions() with { Forms = [b2, a2] },
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(extraction1)!.HexString,
+            _hasher.ComputeForLoadable(extraction2)!.HexString);
     }
 
     [Fact]

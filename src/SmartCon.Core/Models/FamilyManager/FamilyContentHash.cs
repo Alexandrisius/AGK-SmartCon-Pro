@@ -210,6 +210,18 @@ public sealed record FamilyContentHash(
     ///     origins and the VIEW3D preview hash (affected pooled previews
     ///     re-render once). Critical task <c>hash-v16</c> recomputes every
     ///     row that is not current.
+    /// 17 — canonical-order determinism (Issue #249, manual-test round 5;
+    ///     none of 12..16 ever shipped): multi-entry segments (GEOM forms,
+    ///     NESTEDINST placements, DEF bound forms, CONN connectors) now sort
+    ///     by their full EMITTED canonical entry instead of raw doubles.
+    ///     The raw sort keys carried sub-quantization regen noise (the
+    ///     emission rounds to 1e-4 ft / 6 significant digits, the raw key
+    ///     did not), so any regen — including one triggered by a text-only
+    ///     parameter edit — could reorder identical emitted entries and
+    ///     flip the GEOM hash, marking every loaded type stale. Sorting by
+    ///     the emitted string makes the canonical order identical to the
+    ///     canonical content by construction. Critical task
+    ///     <c>hash-v17</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -225,7 +237,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

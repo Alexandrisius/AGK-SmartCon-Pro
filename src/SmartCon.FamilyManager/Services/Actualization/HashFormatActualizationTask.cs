@@ -9,8 +9,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v16</c>): recalculates stale
-/// (format v1..v15 / NULL) content hashes to the FHV16 format
+/// CRITICAL actualization task (Id=<c>hash-v17</c>): recalculates stale
+/// (format v1..v16 / NULL) content hashes to the FHV17 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -36,9 +36,13 @@ namespace SmartCon.FamilyManager.Services.Actualization;
     /// FHV15 — deterministic reference type: evaluated sections are
     /// measured at the first-Ordinal named type inside a rolled-back
     /// transaction, not at the saved current type, Issue #249
-    /// manual-test round 3; FHV16 — negative-zero canonicalization in FormatCoord (phantom GEOM diffs on symmetric parts), Issue #249 manual-test round 4).
+    /// manual-test round 3; FHV16 — negative-zero canonicalization in FormatCoord (phantom GEOM diffs on symmetric parts), Issue #249 manual-test round 4;
+    /// FHV17 — canonical-order determinism: multi-entry segments sort by
+    /// their emitted canonical strings instead of raw doubles that carried
+    /// sub-quantization regen noise into the entry order (phantom GEOM
+    /// diffs on non-geometric edits), Issue #249 manual-test round 5).
 /// Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1..11 pending, 12 current, -1/-2 terminal (unreadable /
+/// semantics: NULL/1..16 pending, 17 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -85,7 +89,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v16";
+    public override string Id => "hash-v17";
     public override int Order => 12;
     public override bool IsCritical => true;
 
@@ -127,10 +131,11 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         }
 
         // Sections ride along in the same UPDATE (#249 follow-up): without
-        // this, section-hashes-v1 could only DETECT the group after hash-v16
-        // had stamped hash_format_version=12 — i.e. on a SECOND «Обновить
-        // базу» run. Null sections (computation failed) leave the columns
-        // NULL and the backstop task picks the group up on the next run.
+        // this, section-hashes-v1 could only DETECT the group after the
+        // hash-format task had stamped hash_format_version — i.e. on a
+        // SECOND «Обновить базу» run. Null sections (computation failed)
+        // leave the columns NULL and the backstop task picks the group up
+        // on the next run.
         var hashesJson = sections is null ? null : ContentSectionJsonSerializer.SerializeHashes(sections);
         var stringsJson = sections is null ? null : ContentSectionJsonSerializer.SerializeStrings(sections);
 
