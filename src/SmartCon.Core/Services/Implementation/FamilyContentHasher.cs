@@ -260,10 +260,16 @@ public sealed partial class FamilyContentHasher : IFamilyContentHasher
     /// 1e-4 ft (~0.03 mm) — fine enough to catch hand-moved connectors,
     /// coarse enough to absorb regen noise across Revit versions.
     /// Internal: shared with <c>FamilyPreviewHasher</c> (VIEW3D) so both
-    /// quantize identically.
+    /// quantize identically. FHV16 (#249): values formatting to "-0"
+    /// (IEEE -0.0 or small negatives rounding to zero) canonicalize to
+    /// "0" — regen noise flipped the sign of a zero coordinate between
+    /// extractions and produced phantom GEOM diffs on symmetric families.
     /// </summary>
     internal static string FormatCoord(double value)
-        => value.ToString("0.####", CultureInfo.InvariantCulture);
+    {
+        var formatted = value.ToString("0.####", CultureInfo.InvariantCulture);
+        return formatted == "-0" ? "0" : formatted;
+    }
 
     private static bool ContainsOrdinalIgnoreCase(string haystack, string needle)
     {

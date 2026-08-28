@@ -195,10 +195,41 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv15()
+    public void MetaSection_IsFhv16()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV15|LOADABLE|", canonical);
+        Assert.StartsWith("FHV16|LOADABLE|", canonical);
+    }
+
+    [Fact]
+    public void GeomSection_NegativeZero_CanonicalizesToZero()
+    {
+        // FHV16 (#249, manual-test round 4): IEEE -0.0 formats as "-0" —
+        // regen noise flipped the sign of a zero centroid coordinate
+        // between extractions and produced phantom GEOM diffs on
+        // symmetric families.
+        var withNegZero = CreateBaseSnapshot() with
+        {
+            Geometry = new GeometryMetrics(1,
+            [
+                new FormMetrics("Extrusion", true, 0.5, 6, 9, null, 2.5,
+                    Centroid: new PointSnapshot(0.5, -0.0, -0.0)),
+            ]),
+        };
+        var withPosZero = CreateBaseSnapshot() with
+        {
+            Geometry = new GeometryMetrics(1,
+            [
+                new FormMetrics("Extrusion", true, 0.5, 6, 9, null, 2.5,
+                    Centroid: new PointSnapshot(0.5, 0.0, 0.0)),
+            ]),
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(withNegZero)!.HexString,
+            _hasher.ComputeForLoadable(withPosZero)!.HexString);
+        Assert.DoesNotContain("-0", FamilyContentHasher.BuildLoadableCanonicalString(withNegZero)
+            .Split("GEOM|")[1]);
     }
 
     [Fact]

@@ -200,6 +200,16 @@ public sealed record FamilyContentHash(
     ///     the committed AlignCurrentTypeForVerification is gone.
     ///     Critical task <c>hash-v15</c> recomputes every row that is
     ///     not current.
+    /// 16 — negative-zero canonicalization (Issue #249, manual-test round 4;
+    ///     none of 12..15 ever shipped): <c>FormatCoord</c> canonicalizes
+    ///     values formatting to "-0" (IEEE -0.0 or small negatives rounding
+    ///     to zero) to "0" — regen noise flipped the sign of a zero
+    ///     coordinate (centroid of symmetric parts) between extractions,
+    ///     producing phantom GEOM diffs on a text-only edit. The shared
+    ///     helper covers bounds/centroid/nested placements/connector
+    ///     origins and the VIEW3D preview hash (affected pooled previews
+    ///     re-render once). Critical task <c>hash-v16</c> recomputes every
+    ///     row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -215,7 +225,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 16;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration
