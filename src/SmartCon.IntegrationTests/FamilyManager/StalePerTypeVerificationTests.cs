@@ -195,6 +195,62 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
         await Assert.That(map.ContainsKey("TypeB")).IsFalse();
     }
 
+    [Test]
+    public async Task Check_VersionMismatch_PerTypeMapComesFromCatalogDb()
+    {
+        // #249 follow-up (manual test): marker v1 vs catalog current v2 —
+        // the family verdict is VersionMismatch, but the per-type map must
+        // come from the CATALOG DB (per-type hashes of v1 vs v2 — no content
+        // verification, no EditFamily, immune to the open-editor guard):
+        // only the type whose hash changed between the versions is stale.
+        var projectDoc = SeedProjectWithChild();
+        var context = new StubRevitContext(projectDoc);
+        var store = new RevitFamilyVersionStore(new RevitTransactionService(context));
+        WriteCurrentMarker(projectDoc, store);   // marker v1
+
+        var analytics = new StubContentHashAnalytics
+        {
+            ["v1"] =
+            [
+                FamilyTypeHashEntry.ForLoadableType("TypeA", new string('A', 64)),
+                FamilyTypeHashEntry.ForLoadableType("TypeB", new string('B', 64)),
+            ],
+            ["v2"] =
+            [
+                FamilyTypeHashEntry.ForLoadableType("TypeA", new string('A', 64)),   // unchanged
+                FamilyTypeHashEntry.ForLoadableType("TypeB", new string('C', 64)),   // changed
+            ],
+        };
+
+        var detector = new StaleDetector(
+            store,
+            new StubCatalogProvider(new[] { CreateItem() with { CurrentVersionLabel = "v2" } }),
+            new InlineAwaitableEvent(),
+            context,
+            new StubClock(),
+            new NullSystemTypeFinder(),
+            new NullSystemTypeVersionStore(),
+            new NullFamilyTypeRepository(),
+            fileResolver: new StubFileResolver(_childPath!, "v2"),
+            snapshotExtractor: new RevitFamilySnapshotExtractor(),
+            contentHasher: new FamilyContentHasher(),
+            versionWriter: null,
+            contentHashAnalytics: analytics);
+
+        var results = await detector.CheckCategoryAsync(null, projectDoc, CancellationToken.None);
+
+        var verdict = results.First(r => string.Equals(r.FamilyName, ChildName, StringComparison.OrdinalIgnoreCase));
+        var map = detector.GetLoadableTypeStaleMap(CatalogItemId);
+        SmartConLogger.Info(
+            $"VersionMismatch DB map: IsStale={verdict.IsStale} Reason={verdict.Reason} " +
+            $"map=[{(map is null ? "<null>" : string.Join(",", map.Select(kv => $"{kv.Key}={kv.Value}")))}]");
+        await Assert.That(verdict.IsStale).IsTrue();
+        await Assert.That(verdict.Reason).IsEqualTo(StaleReason.VersionMismatch);
+        await Assert.That(map).IsNotNull();
+        await Assert.That(map!["TypeA"]).IsFalse();
+        await Assert.That(map["TypeB"]).IsTrue();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private int CurrentRevitMajor => int.Parse(Application.VersionNumber);
@@ -345,5 +401,23 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
             overwriteParameterValues = true;
             return true;
         }
+    }
+
+    /// <summary>Per-type hash analytics stub keyed by version label.</summary>
+    private sealed class StubContentHashAnalytics
+        : Dictionary<string, IReadOnlyList<FamilyTypeHashEntry>>, SmartCon.Core.Services.Interfaces.IContentHashAnalyticsRepository
+    {
+        public Task<IReadOnlyDictionary<string, string>?> GetSectionHashesAsync(
+            string catalogItemId, string versionLabel, CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
+
+        public Task<IReadOnlyDictionary<string, string>?> GetSectionStringsAsync(
+            string catalogItemId, string versionLabel, CancellationToken ct)
+            => Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
+
+        public Task<IReadOnlyList<FamilyTypeHashEntry>?> GetTypeHashesAsync(
+            string catalogItemId, string versionLabel, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<FamilyTypeHashEntry>?>(
+                TryGetValue(versionLabel, out var entries) ? entries : null);
     }
 }

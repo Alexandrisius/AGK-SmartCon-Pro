@@ -27,6 +27,7 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilySnapshotExtractor? _snapshotExtractor;
     private readonly IFamilyContentHasher? _contentHasher;
     private readonly IFamilyVersionWriter? _versionWriter;
+    private readonly IContentHashAnalyticsRepository? _contentHashAnalytics;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
     /// <summary>#187: per-type stale verdicts for system items —
@@ -52,7 +53,8 @@ internal sealed class StaleDetector : IStaleDetector
         IFamilyFileResolver? fileResolver = null,
         IFamilySnapshotExtractor? snapshotExtractor = null,
         IFamilyContentHasher? contentHasher = null,
-        IFamilyVersionWriter? versionWriter = null)
+        IFamilyVersionWriter? versionWriter = null,
+        IContentHashAnalyticsRepository? contentHashAnalytics = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(store);
@@ -85,6 +87,7 @@ internal sealed class StaleDetector : IStaleDetector
         _snapshotExtractor = snapshotExtractor;
         _contentHasher = contentHasher;
         _versionWriter = versionWriter;
+        _contentHashAnalytics = contentHashAnalytics;
     }
 
     public async Task<StaleCheckResult> CheckFamilyAsync(
@@ -519,10 +522,31 @@ internal sealed class StaleDetector : IStaleDetector
             || markerOrphaned;
         if (!markerCannotSpeak || !canContentVerify)
         {
-            // No per-type proof without a content verification — clear any
-            // stale map from a previous check so the tree falls back to the
-            // family-level (leaf-scoped) dot (#249, Phase 2).
-            ClearLoadableTypeStaleMap(item.Id);
+            // #249 (follow-up, manual test): a VersionMismatch marker is a
+            // valid FAMILY-level verdict ("an older version is embedded"),
+            // but it must NOT paint every type stale — the per-type answer
+            // is computable from the catalog alone: per-type hashes of the
+            // marker's version vs the current one. No document opens, no
+            // EditFamily — immune to the open-editor guard that made the
+            // embedded proof (and with it the per-type map) unavailable
+            // right after "Import Active File".
+            if (reason == StaleReason.VersionMismatch
+                && loaded?.VersionLabel is not null
+                && item.CurrentVersionLabel is not null
+                && _contentHashAnalytics is not null)
+            {
+                StoreLoadableTypeStaleMap(item.Id,
+                    await ComputeDbPerTypeStaleAsync(
+                        item.Id, loaded.VersionLabel!, item.CurrentVersionLabel, ct)
+                        .ConfigureAwait(false));
+            }
+            else
+            {
+                // No per-type proof without a content verification — clear any
+                // stale map from a previous check so the tree falls back to the
+                // family-level (leaf-scoped) dot (#249, Phase 2).
+                ClearLoadableTypeStaleMap(item.Id);
+            }
             return reason;
         }
 
@@ -604,6 +628,73 @@ internal sealed class StaleDetector : IStaleDetector
                 _loadableTypeStaleByType[catalogItemId] = perTypeStale
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
             }
+        }
+    }
+
+    /// <summary>
+    /// #249 (follow-up, manual test): per-type drift map for a VersionMismatch
+    /// verdict, computed PURELY from the catalog DB — per-type content hashes
+    /// of the embedded (marker) version vs the current version. Types whose
+    /// hashes match are NOT stale (their embedded content equals the current
+    /// version's, the family-level verdict notwithstanding); types removed
+    /// in the current version are stale; types added in the current version
+    /// are not (the project cannot have them). <c>null</c> when either
+    /// version's analytics are pending — the tree then keeps the pre-fix
+    /// leaf-scoped fallback.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, bool>?> ComputeDbPerTypeStaleAsync(
+        string catalogItemId,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        CancellationToken ct)
+    {
+        try
+        {
+            var from = await _contentHashAnalytics!.GetTypeHashesAsync(catalogItemId, fromVersionLabel, ct)
+                .ConfigureAwait(false);
+            var to = await _contentHashAnalytics.GetTypeHashesAsync(catalogItemId, currentVersionLabel, ct)
+                .ConfigureAwait(false);
+            if (from is null || to is null)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded[{catalogItemId}]: per-type analytics pending for " +
+                    $"{fromVersionLabel} or {currentVersionLabel} — leaf-scoped stale fallback");
+                return null;
+            }
+
+            var toByKey = new Dictionary<string, FamilyTypeHashEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in to)
+            {
+                toByKey[entry.TypeIdentityKey] = entry;
+            }
+
+            var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in from)
+            {
+                map[entry.TypeName] = !toByKey.TryGetValue(entry.TypeIdentityKey, out var other)
+                    || !string.Equals(entry.HashHex, other.HashHex, StringComparison.OrdinalIgnoreCase);
+            }
+            foreach (var entry in to)
+            {
+                // New in the current version — the project cannot carry it.
+                // (net48: Dictionary has no TryAdd.)
+                if (!map.ContainsKey(entry.TypeName))
+                {
+                    map[entry.TypeName] = false;
+                }
+            }
+
+            SmartConLogger.Debug(
+                $"CheckEmbedded[{catalogItemId}]: DB per-type drift between {fromVersionLabel} and " +
+                $"{currentVersionLabel}: {map.Count(kv => kv.Value)} stale of {map.Count} type(s)");
+            return map;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SmartConLogger.Warn(
+                $"CheckEmbedded[{catalogItemId}]: DB per-type drift computation failed: {ex.Message} " +
+                "[Action: per-type индикация отключена для этого семейства до следующей «Проверить»; повторите проверку]");
+            return null;
         }
     }
 
