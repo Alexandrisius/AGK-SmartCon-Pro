@@ -150,11 +150,13 @@ Coordinates the end-to-end 3D geometry preview pipeline triggered from `LocalFam
 public interface IFamilyGeometryPipeline
 {
     Task RunAsync(
-        string managedRfaPath,
+        IReadOnlyList<FamilyGeometryPerType>? geometryPerType,
+        string? managedRfaPath,
         string catalogItemId,
         string versionId,
         string versionLabel,
         string familyName,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
         CancellationToken ct = default);
 }
 ```
@@ -162,3 +164,4 @@ public interface IFamilyGeometryPipeline
 **Контракт:**
 - Safe to invoke from any thread — internally marshals Revit API calls to the UI thread via `IFamilyManagerAwaitableEvent`.
 - Implementations MUST swallow all exceptions and log a Warn with an `[Action: ...]` suggestion (skill smartcon-logging L9) — geometry preview is a nice-to-have and MUST NOT break the import transaction that already committed before the hook was reached.
+- `overwriteBaselineSectionHashes` (#252): pre-overwrite section hashes той же версии, захваченные `OverwriteCurrentAsync` ДО перезаписи строки каталога. Когда новые секции совпадают с baseline по DEF/GEOM/TYPES/NESTED*, preview-контент не менялся — пайплайн консервирует существующие pooled-ассеты версии и пропускает и удаление stale-ассетов, и mesh-extraction (текстовый overwrite = ноль Revit-работы). `null` на путях новой версии (H1/H2).

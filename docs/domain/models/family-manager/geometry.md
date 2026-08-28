@@ -233,6 +233,18 @@ public sealed record BoundingBoxSnapshot(
 - `FormKind` — `"Extrusion"`, `"Sweep"`, `"Revolution"`, `"Blend"`, `"SweptBlend"`, or `"GenericForm"` for free-form.
 - `TotalSymbolicCurveLength` / `TotalDetailCurveLength` / `TotalModelCurveLength` — summed 2D curve lengths (feet), catch redraws that keep element counts constant (ADR-056).
 
+**FHV12+ поля FormMetrics** (#249, ADR-071): `Centroid`, `FaceTypes` (гистограмма видов граней), `TotalEdgeLength`, `MaterialColor` (form-level RGBA), `Visibility` — см. исходник; канон GEOM-секции в `FamilyContentHasher.LoadableSections.cs`. `NestedInstances` на GeometryMetrics — размещения вложенных (NESTEDINST).
+
+**FHV18 (#251):** `FormMetrics.FaceColors` — гистограмма resolved per-face цветов формы (`FaceColorCount(MaterialColorSnapshot Color, int Count)`): материал грани → form-level fallback; paint одной грани (#108) теперь сдвигает и GEOM-секцию, и VIEW3D-хэш превью (общий `AccumulateSolid` на обоих путях экстракции).
+
+**#250:** `NestedInstanceSnapshot.ContentMetrics` (`FormMetrics?`) — контентный отпечаток вложенного символа из `GetSymbolGeometry()` (placement-invariant), заполняется ТОЛЬКО preview-экстракцией (`RevitFamilySnapshotExtractor.ComputeNestedContentMetrics`) и эмитится ТОЛЬКО VIEW3D-хэшем; GEOM-секция его не содержит (там контент shared-вложенных — NESTEDHASH).
+
+## FaceColorCount
+
+Один bucket гистограммы цветов граней формы (FHV18, #251): resolved RGBA + число граней в bucket'е. Грань без собственного материала попадает в form-level bucket; грани без цвета совсем не считаются (их покрывает FaceCount).
+
+**Файл:** `Models/FamilyManager/GeometryMetrics.cs`
+
 ---
 
 ## ConnectorSnapshot (ADR-056)
@@ -413,7 +425,7 @@ public sealed record FamilyGeometryPerType(
 
 ## PreviewTypeSnapshot
 
-Per-type входы VIEW3D-хэша превью (#249, Phase 5): GLB-filtered метрики форм (`FormMetrics` — те же FHV12-поля, что в GEOM) и размещения вложенных (`NestedInstanceSnapshot`) ОДНОГО типа. Имя типа в хэш НЕ входит (rename-independent CAS reuse); ElementId отсутствуют по построению (GLB content-pure).
+Per-type входы VIEW3D-хэша превью (#249, Phase 5): GLB-filtered метрики форм (`FormMetrics` — те же FHV12-поля, что в GEOM, плюс FHV18 per-face гистограмма) и размещения вложенных (`NestedInstanceSnapshot` с `ContentMetrics`, #250) ОДНОГО типа. Имя типа в хэш НЕ входит (rename-independent CAS reuse); ElementId отсутствуют по построению (GLB content-pure).
 
 **Файл:** `Models/FamilyManager/PreviewTypeSnapshot.cs`
 
@@ -421,6 +433,6 @@ Per-type входы VIEW3D-хэша превью (#249, Phase 5): GLB-filtered �
 
 ## FamilyPreviewHasher
 
-Вычислитель per-type VIEW3D-хэша (#249, Phase 5, ADR-071): SHA-256 нормализованных входов `PreviewTypeSnapshot` (формы после GLB-фильтров видимости + nested-размещения), квантование координат общим `FamilyContentHasher.FormatCoord` (включая канонизацию `-0`, FHV16). Ключ файла в CAS-пуле превью (`files/_shared/models/{shard2}/{hash40}.glb`).
+Вычислитель per-type VIEW3D-хэша (#249, Phase 5, ADR-071): SHA-256 нормализованных входов `PreviewTypeSnapshot` (формы после GLB-фильтров видимости + nested-размещения с контентными отпечатками), квантование координат общим `FamilyContentHasher.FormatCoord` (включая канонизацию `-0`, FHV16), сортировка записей по эмитированной строке (FHV17). Ключ файла в CAS-пуле превью (`files/_shared/models/{shard2}/{hash40}.glb`). Маркер формата канона: `VIEW3D|2|` (2 = FHV18: per-face гистограмма форм + контент вложенных, #251/#250).
 
 **Файл:** `Services/Implementation/FamilyPreviewHasher.cs`

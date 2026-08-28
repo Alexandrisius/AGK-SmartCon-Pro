@@ -134,7 +134,7 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 18;
     public const int RecalculationSkipped = -1;
     public const int RecalculationMissing = -2;
 }

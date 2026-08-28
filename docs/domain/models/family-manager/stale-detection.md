@@ -426,7 +426,7 @@ public static class TypeParameterOverwritePlanner
 
 Семантика оранжевых точек по типам loadable-семейства (ADR-071):
 
-- **ContentDrift** (маркер == current, локальная правка): карта из embedded-верификации (EditFamily vs файл текущей версии, per-type hashes из `LoadableVerificationResult.PerTypeStale`).
+- **ContentDrift** (маркер == current, локальная правка): карта из embedded-верификации (EditFamily vs файл текущей версии, per-type hashes из `LoadableVerificationResult.PerTypeStale`) **с той же shared-section эскалацией** (round-6 alignment): proof-записи верификатора несут секционные хэши обеих сторон; изменилась любая секция кроме TYPES/VALUES = все сравниваемые типы stale — иначе одна и та же правка (например, 2D-линии через OverwriteCurrent) давала индикацию, отличную от пути новой версии, а confirm о потере локальной правки геометрии молча пропускался.
 - **VersionMismatch** (маркер старше current): карта **чисто из БД** (`StaleDetector.ComputeDbPerTypeStaleAsync`) — per-type хэши версии маркера vs текущей (`family_type_hashes`) + секционные хэши (`section_hashes`): изменилась любая секция кроме TYPES/VALUES = **все типы stale** (геометрия общая); изменились только значения = точка только на изменённых. Ноль открытий документов, иммунитет к open-editor guard после «Импорт активного файла».
 - Карта `null` (analytics pending / верификация indeterminate) → fallback на семейную точку (pre-#249 поведение).
 - Confirm-диалог перед «Обновить» — только для ContentDrift (единственный случай потери пользовательских правок); для VersionMismatch обновление идёт молча.
