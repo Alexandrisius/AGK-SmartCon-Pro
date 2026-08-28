@@ -23,7 +23,7 @@ namespace SmartCon.FamilyManager.Services.Geometry;
 /// <para>
 /// <b>CAS preview pool (#249, Phase 5):</b> generated GLBs live in the
 /// shared content-addressed pool
-/// (<c>files/_shared/models/{shard2}/{view3dHash}.glb</c>) — immutable
+/// (<c>files/_shared/models/{shard2}/{view3dHash-40}.glb</c>) — immutable
 /// files keyed by the VIEW3D hash of their normalized per-type inputs.
 /// Two reuse tiers: (1) the whole pipeline is SKIPPED when the new
 /// version's DEF/GEOM/TYPES section hashes match another version of the
