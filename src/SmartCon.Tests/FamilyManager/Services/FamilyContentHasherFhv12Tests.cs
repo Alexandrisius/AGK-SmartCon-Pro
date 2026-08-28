@@ -195,10 +195,52 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv13()
+    public void MetaSection_IsFhv14()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV13|LOADABLE|", canonical);
+        Assert.StartsWith("FHV14|LOADABLE|", canonical);
+    }
+
+    [Fact]
+    public void DefSection_UnboundForms_AreExcluded()
+    {
+        // FHV14 (#249 follow-up): a form WITHOUT any parameter binding is
+        // not wiring — listing it made every "added a 3D body" edit fire
+        // DEF. Only bound forms (like the fixture one) stay.
+        var snapshot = CreateBaseSnapshot() with
+        {
+            Definitions = CreateDefinitions() with
+            {
+                Forms =
+                [
+                    CreateDefinitions().Forms[0],   // bound (ShowBody/BodyMaterial/StartOff)
+                    new FormDefinitionSnapshot(
+                        "Extrusion", true, null, null, null, null, null, 0.0, 0.5),   // plain cube
+                ],
+            },
+        };
+
+        var canonical = FamilyContentHasher.BuildLoadableCanonicalString(snapshot);
+        Assert.Contains("DEF|1|", canonical);           // only the bound form
+        Assert.Contains("ShowBody", canonical);
+    }
+
+    [Fact]
+    public void Geom2dSection_IsPure2dGraphics()
+    {
+        // FHV14: reference-plane and dimension counts left GEOM2D (DEF owns
+        // the wiring) — the section is pure 2D graphics now.
+        var snapshot = CreateBaseSnapshot() with
+        {
+            Geometry = new GeometryMetrics(0, [],
+                SymbolicCurveCount: 1, DetailCurveCount: 2, ModelCurveCount: 3,
+                TextNoteCount: 4, ReferencePlaneCount: 55, DimensionCount: 66),
+        };
+
+        var canonical = FamilyContentHasher.BuildLoadableCanonicalString(snapshot);
+        Assert.Contains("GEOM2D|1|2|3|4|", canonical);
+        Assert.DoesNotContain("55", canonical);
+        Assert.DoesNotContain("66", canonical);
     }
 
     [Fact]

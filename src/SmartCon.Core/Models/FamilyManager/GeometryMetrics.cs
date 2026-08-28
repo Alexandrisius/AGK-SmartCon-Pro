@@ -22,11 +22,14 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// (text labels in annotation/title-block families). 0 for 3D-only
 /// families.</param>
 /// <param name="ReferencePlaneCount">Number of <c>ReferencePlane</c>
-/// elements. 0 for families without reference planes.</param>
+/// elements. 0 for families without reference planes. Not hashed since
+/// FHV14 — reference planes are definition wiring (DEF/PLANES).</param>
 /// <param name="DimensionCount">Number of LABELED <c>Dimension</c> elements
 /// not owned by a form sketch (FHV13). Unlabeled dimensions — including
 /// Revit's automatic sketch dimensions — are not parameter wiring and are
-/// not counted; 0 for families without labeled dimensions.</param>
+/// not counted; 0 for families without labeled dimensions. Not hashed
+/// since FHV14 — labeled dimensions are definition wiring
+/// (DEF/DIMS).</param>
 /// <param name="TotalSymbolicCurveLength">Summed curve length of all
 /// symbolic curves, internal units (feet). Catches 2D edits that keep
 /// the element count constant (ADR-056).</param>

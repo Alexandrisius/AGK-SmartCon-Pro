@@ -171,6 +171,19 @@ public sealed record FamilyContentHash(
     ///     not parameter wiring). Per-type hashes (TYPES substrings) and
     ///     the VIEW3D preview hash are NOT affected. Critical task
     ///     <c>hash-v13</c> recomputes every row that is not current.
+    /// 14 — section autonomy (Issue #249, manual-test round 2; never
+    ///     shipped separately from 13): DEF/FORMS now lists only forms
+    ///     with at least one parameter BINDING (every plain form used to
+    ///     fire DEF on any 3D add — form existence and offsets are GEOM's
+    ///     domain); GEOM2D drops the reference-plane and dimension counts
+    ///     (DEF owns the wiring: PLANES list + labeled DIMS) and is pure
+    ///     2D graphics now; the sketch-curve exclusion matches curves
+    ///     DEPENDENT on a form (<c>GetDependentElements</c>, Revit 2018+)
+    ///     instead of every sketch (probe: Revit wraps FREE model/symbolic
+    ///     lines in sketches of their own, and the unfiltered FHV13
+    ///     exclusion swallowed every free 2D line).
+    ///     Critical task <c>hash-v14</c> recomputes every row that is
+    ///     not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -186,7 +199,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

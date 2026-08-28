@@ -789,12 +789,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 .Cast<GenericForm>()
                 .ToList();
 
-            // FHV13 (#249 follow-up): elements owned by form sketches are
-            // the parametric skeleton of 3D forms — already measured by the
-            // GEOM metrics — so GEOM2D counts only FREE 2D content. Without
-            // the exclusion, every "added a 3D body" edit fired the 2D
-            // section (sketch curves + Revit's automatic sketch dimensions).
-            var sketchOwnedIds = CollectSketchOwnedElementIds(familyDoc);
+            // FHV13/14 (#249 follow-up): curves dependent on a form (its
+            // sketch content) are the parametric skeleton of 3D forms —
+            // already measured by the GEOM metrics — so GEOM2D counts only
+            // FREE 2D content. Without the exclusion, every "added a 3D
+            // body" edit fired the 2D section (sketch curves + Revit's
+            // automatic sketch dimensions).
+            var sketchOwnedIds = CollectFormOwnedCurveIds(forms);
 
             var (symbolicCount, symbolicLength) = CountAndMeasureCurves(familyDoc,
                 new CurveElementFilter(CurveElementType.SymbolicCurve), sketchOwnedIds);
@@ -1114,45 +1115,40 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     }
 
     /// <summary>
-    /// FHV13 (#249 follow-up): element ids of the model curves owned by
-    /// form sketches — matched via <c>Curve.Reference.ElementId</c> of the
-    /// <c>Sketch.Profile</c> geometry (the documented mapping; works on
-    /// every supported Revit version, unlike <c>Sketch.GetAllElements</c>
-    /// which is 2024+). Best-effort: an unreadable sketch keeps its curves
-    /// counted (fail-open, pre-FHV13 behaviour).
+    /// FHV14 (#249 follow-up): element ids of curve elements DEPENDENT on a
+    /// form — i.e. its sketch's model curves — via
+    /// <c>Element.GetDependentElements</c> (Revit 2018+, every supported
+    /// version; <c>Sketch.OwnerId</c>/<c>GetAllElements</c> are 2024+ and
+    /// failed the net48 build). Dependent = "deleted together with the
+    /// form", so free model/symbolic lines — which probe 2026-08-28 showed
+    /// wrapped in their OWN sketches with no form owner — are never
+    /// matched and stay counted. Best-effort per form: an unreadable form
+    /// keeps its curves counted (fail-open, pre-FHV13 behaviour).
     /// </summary>
-    private static HashSet<ElementId> CollectSketchOwnedElementIds(Document doc)
+    private static HashSet<ElementId> CollectFormOwnedCurveIds(IReadOnlyList<GenericForm> forms)
     {
         var ids = new HashSet<ElementId>();
         try
         {
-            foreach (var sketch in new FilteredElementCollector(doc)
-                .OfClass(typeof(Sketch))
-                .Cast<Sketch>())
+            var classFilter = new ElementClassFilter(typeof(CurveElement));
+            foreach (var form in forms)
             {
                 try
                 {
-                    foreach (CurveArray curveArray in sketch.Profile)
+                    foreach (var id in form.GetDependentElements(classFilter))
                     {
-                        foreach (Curve curve in curveArray)
-                        {
-                            var id = curve.Reference?.ElementId;
-                            if (id is not null && id != ElementId.InvalidElementId)
-                            {
-                                ids.Add(id);
-                            }
-                        }
+                        ids.Add(id);
                     }
                 }
                 catch
                 {
-                    // single sketch unreadable — its elements stay counted
+                    // single form unreadable — its curves stay counted
                 }
             }
         }
         catch
         {
-            // sketch collection unsupported — fall back to counting everything
+            // dependency query unsupported — fall back to counting everything
         }
         return ids;
     }

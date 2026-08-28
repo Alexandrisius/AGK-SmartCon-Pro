@@ -15,7 +15,7 @@ public sealed partial class FamilyContentHasher
 {
     /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV13|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
+    /// Format: FHV14|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
@@ -100,7 +100,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildLoadableMetaSection(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV13|LOADABLE|");
+        sb.Append("FHV14|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -205,10 +205,18 @@ public sealed partial class FamilyContentHasher
         var sb = new StringBuilder(128);
         sb.Append("DEF|");
         var def = snapshot.Definitions;
-        sb.Append(def?.Forms.Count ?? 0).Append('|');
         if (def is not null)
         {
-            var sortedForms = def.Forms
+            // FHV14 (#249 follow-up): only forms with at least one parameter
+            // BINDING — a binding IS the wiring this section exists to
+            // catch. Listing every form (with its offsets) made every "added
+            // a 3D body" edit fire DEF; form existence/offsets are measured
+            // by the GEOM metrics.
+            var boundForms = def.Forms
+                .Where(f => f.VisibilityParameterName is not null
+                    || f.MaterialParameterName is not null
+                    || f.ExtrusionStartParameterName is not null
+                    || f.ExtrusionEndParameterName is not null)
                 .OrderBy(f => f.FormKind, StringComparer.Ordinal)
                 .ThenBy(f => f.IsSolid)
                 .ThenBy(f => f.SubcategoryName, StringComparer.Ordinal)
@@ -217,8 +225,10 @@ public sealed partial class FamilyContentHasher
                 .ThenBy(f => f.ExtrusionStartParameterName, StringComparer.Ordinal)
                 .ThenBy(f => f.ExtrusionEndParameterName, StringComparer.Ordinal)
                 .ThenBy(f => f.ExtrusionStartOffset)
-                .ThenBy(f => f.ExtrusionEndOffset);
-            foreach (var f in sortedForms)
+                .ThenBy(f => f.ExtrusionEndOffset)
+                .ToList();
+            sb.Append(boundForms.Count).Append('|');
+            foreach (var f in boundForms)
             {
                 sb.Append(f.FormKind).Append('|');
                 sb.Append(f.IsSolid ? 'S' : 'V').Append('|');
@@ -266,7 +276,7 @@ public sealed partial class FamilyContentHasher
         }
         else
         {
-            sb.Append("DIMS|PLANES|");
+            sb.Append("0|DIMS|PLANES|");
         }
         return sb.ToString();
     }
@@ -444,14 +454,15 @@ public sealed partial class FamilyContentHasher
 
     private static string BuildGeom2dSection(FamilySnapshot snapshot)
     {
+        // FHV14 (#249 follow-up): pure 2D GRAPHICS only — reference planes
+        // and dimensions moved out (DEF owns the wiring: PLANES list and
+        // labeled DIMS); their counts here only duplicated that signal.
         var sb = new StringBuilder(96);
         sb.Append("GEOM2D|");
         sb.Append(snapshot.Geometry.SymbolicCurveCount).Append('|');
         sb.Append(snapshot.Geometry.DetailCurveCount).Append('|');
         sb.Append(snapshot.Geometry.ModelCurveCount).Append('|');
         sb.Append(snapshot.Geometry.TextNoteCount).Append('|');
-        sb.Append(snapshot.Geometry.ReferencePlaneCount).Append('|');
-        sb.Append(snapshot.Geometry.DimensionCount).Append('|');
         sb.Append(snapshot.Geometry.TotalSymbolicCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
         sb.Append(snapshot.Geometry.TotalDetailCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
         sb.Append(snapshot.Geometry.TotalModelCurveLength.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');

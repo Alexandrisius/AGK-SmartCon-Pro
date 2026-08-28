@@ -9,8 +9,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v13</c>): recalculates stale
-/// (format v1..v12 / NULL) content hashes to the FHV13 format
+/// CRITICAL actualization task (Id=<c>hash-v14</c>): recalculates stale
+/// (format v1..v13 / NULL) content hashes to the FHV14 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -29,7 +29,10 @@ namespace SmartCon.FamilyManager.Services.Actualization;
     /// FHV13 — sketch-content isolation: GEOM2D counts only free 2D
     /// elements (sketch-owned curves/dimensions are 3D-form wiring,
     /// covered by GEOM), DEF/DIMS lists only labeled dimensions, Issue
-    /// #249 manual-test follow-up).
+    /// #249 manual-test follow-up; FHV14 — section autonomy: DEF/FORMS
+    /// lists only bound forms, GEOM2D drops plane/dimension counts, the
+    /// sketch-curve exclusion is restricted to GenericForm-owned sketches
+    /// (free 2D lines stay counted), Issue #249 manual-test round 2).
 /// Owns the <c>hash_format_version</c> marker
 /// semantics: NULL/1..11 pending, 12 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
@@ -78,7 +81,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v13";
+    public override string Id => "hash-v14";
     public override int Order => 12;
     public override bool IsCritical => true;
 
@@ -120,7 +123,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         }
 
         // Sections ride along in the same UPDATE (#249 follow-up): without
-        // this, section-hashes-v1 could only DETECT the group after hash-v13
+        // this, section-hashes-v1 could only DETECT the group after hash-v14
         // had stamped hash_format_version=12 — i.e. on a SECOND «Обновить
         // базу» run. Null sections (computation failed) leave the columns
         // NULL and the backstop task picks the group up on the next run.

@@ -39,7 +39,9 @@ public static class DbCompatibility
     /// FHV13 note (2026-08-28, Issue #249): FHV12 never shipped in any
     /// release build (latest tag: v2.0.1-beta.9), so FHV13 ships in the
     /// SAME beta.10 and the floor stays unchanged — any released plugin
-    /// writing v13-format rows must be ≥ beta.10 either way.
+    /// writing v13-format rows must be ≥ beta.10 either way. FHV14 (same
+    /// day, manual-test round 2) inherits the same reasoning: neither 12
+    /// nor 13 ever shipped — only FHV14 will.
     /// </summary>
     public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

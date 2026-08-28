@@ -1420,7 +1420,7 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_Fhv13GoldenCanon_IsStable()
+    public void ComputeForLoadable_Fhv14GoldenCanon_IsStable()
     {
         // Golden: a FIXED loadable snapshot must always produce this exact
         // hash — any drift in the FHV13 loadable canon (escaping, culture,
@@ -1454,7 +1454,7 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("B6BB42C37EAE3455FB9CD7D31BEA1A522200D6D6CDC39442CCB6DC30543A15AF", hash.HexString);
+        Assert.Equal("73F9966BFB5486AA5E55A23546E7D2E5024FA502141C893D6C5BE4EF91436D5D", hash.HexString);
     }
 
     [Fact]

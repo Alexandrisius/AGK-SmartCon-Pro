@@ -375,6 +375,37 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
         await Assert.That(embeddedHash).IsEqualTo(rawHash);
     }
 
+    [Test]
+    public async Task Extract_Geom2d_FreeLinesCounted_FormSketchExcluded()
+    {
+        // FHV14 contract (probe-proven 2026-08-28): Revit wraps FREE
+        // model/symbolic lines in their own sketches with an INVALID
+        // OwnerId, while a form's sketch has OwnerId = the GenericForm.
+        // The sketch-curve exclusion must eat ONLY form-sketch curves —
+        // free 2D lines stay counted in GEOM2D.
+        var doc = Application.NewFamilyDocument(_template!);
+        _openDocs!.Add(doc);
+        using (var tx = new Transaction(doc, "seed free curves"))
+        {
+            tx.Start();
+            CreateBox(doc, 100 * MmToFt);
+            var plane = Plane.CreateByNormalAndOrigin(XYZ.BasisZ, XYZ.Zero);
+            var sketchPlane = SketchPlane.Create(doc, plane);
+            doc.FamilyCreate.NewModelCurve(
+                Line.CreateBound(new XYZ(0, 2, 0), new XYZ(1, 2, 0)), sketchPlane);
+            doc.FamilyCreate.NewSymbolicCurve(
+                Line.CreateBound(new XYZ(0, 3, 0), new XYZ(1, 3, 0)), sketchPlane);
+            tx.Commit();
+        }
+
+        var snapshot = new RevitFamilySnapshotExtractor().ExtractFromFamilyDocument(doc);
+        SmartConLogger.Info(
+            $"GEOM2D free-vs-sketch: model={snapshot.Geometry.ModelCurveCount} symbolic={snapshot.Geometry.SymbolicCurveCount}");
+        // The box's 4 sketch curves are excluded; the FREE lines are counted.
+        await Assert.That(snapshot.Geometry.ModelCurveCount).IsEqualTo(1);
+        await Assert.That(snapshot.Geometry.SymbolicCurveCount).IsEqualTo(1);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private Document OpenChild()
