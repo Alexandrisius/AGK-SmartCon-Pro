@@ -398,10 +398,12 @@ internal sealed class CountingSnapshotExtractor : IFamilySnapshotExtractor
 
     public int FamilyDocumentExtractions { get; private set; }
 
-    public FamilySnapshot ExtractFromFamilyDocument(Document familyDoc)
+    public FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null)
     {
         FamilyDocumentExtractions++;
-        return _inner.ExtractFromFamilyDocument(familyDoc);
+        return _inner.ExtractFromFamilyDocument(familyDoc, preferredTypeNames);
     }
 
     public SystemFamilySnapshot ExtractFromProject(

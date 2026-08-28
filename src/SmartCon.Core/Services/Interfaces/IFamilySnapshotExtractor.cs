@@ -18,11 +18,24 @@ public interface IFamilySnapshotExtractor
     /// Call <c>Document.Regenerate()</c> before calling this method if the
     /// document was just modified (e.g. after bake-in) so geometry and
     /// formula values are up to date.
+    /// FHV15 (#249): the type-DEPENDENT sections (GEOM metrics, DEF
+    /// offsets, CONN positions) are measured at a deterministic reference
+    /// type — the first (Ordinal) name of <paramref name="preferredTypeNames"/>
+    /// intersected with the document's named types, or the document's
+    /// first named type by default — inside a rolled-back transaction, so
+    /// the user's current-type choice never shifts the content hash.
     /// </summary>
     /// <param name="familyDoc">Open family document (from
     /// <c>OpenDocumentFile</c> or <c>EditFamily</c> or the active family
     /// editor document).</param>
-    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    /// <param name="preferredTypeNames">Optional preferred reference-type
+    /// names (the verifier's type-set rule: a partially loaded embedded
+    /// copy compares against a restricted file snapshot — pass the
+    /// restriction set so both sides measure at the same intersection
+    /// type). <c>null</c> = the document's first named type.</param>
+    FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null);
 
     /// <summary>
     /// Extract a <see cref="SystemFamilySnapshot"/> (category + types +

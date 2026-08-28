@@ -41,7 +41,8 @@ public static class DbCompatibility
     /// SAME beta.10 and the floor stays unchanged — any released plugin
     /// writing v13-format rows must be ≥ beta.10 either way. FHV14 (same
     /// day, manual-test round 2) inherits the same reasoning: neither 12
-    /// nor 13 ever shipped — only FHV14 will.
+    /// nor 13 ever shipped — only FHV14 will. FHV15 (manual-test round 3,
+    /// deterministic reference type) — same: only FHV15 ships.
     /// </summary>
     public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

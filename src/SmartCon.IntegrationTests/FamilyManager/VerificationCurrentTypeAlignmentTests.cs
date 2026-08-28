@@ -12,23 +12,26 @@ using TUnit.Core.Executors;
 namespace SmartCon.IntegrationTests.FamilyManager;
 
 /// <summary>
-/// Current-type alignment regression (owner manual test 2026-08-23): the
-/// GEOM/CONN snapshot sections are evaluated at the family document's
-/// CURRENT type, so a multi-type family whose project-side current type
-/// differed from the resolved file's saved active type produced a false
-/// POST-RELOAD VERIFICATION FAILED (ADSK channel fan: project at Ф250 vs
-/// file saved at Ф100 — VERIFY-DIFF showed GEOM-only diffs; the
-/// single-type household fan passed). The verifier now aligns both sides
-/// to a deterministic common type before extraction. Pins:
-///  0. the fixture's geometry really is current-type-dependent (the file
-///     hash differs between active types) — the test cannot be vacuous;
+/// Current-type independence regression (owner manual test 2026-08-23 for
+/// the #240 verification-side alignment; FHV15, #249 round 3, moved the
+/// mechanism INTO the extractor): the GEOM/CONN snapshot sections were
+/// evaluated at the family document's CURRENT type, so a multi-type family
+/// whose project-side current type differed from the resolved file's saved
+/// active type produced a false POST-RELOAD VERIFICATION FAILED (ADSK
+/// channel fan: project at Ф250 vs file saved at Ф100 — VERIFY-DIFF showed
+/// GEOM-only diffs; the single-type household fan passed). Since FHV15 the
+/// extractor measures the evaluated sections at the deterministic reference
+/// type (first-Ordinal named type, rolled-back switch), so BOTH the catalog
+/// hash and the verification proofs are current-type-independent. Pins:
+///  0. the raw file hash is identical for different active types (the
+///     FHV15 reference-type contract);
 ///  1. same content, file re-saved with a different active type →
 ///     <see cref="EmbeddedContentVerifier.VerifyEmbeddedAgainstFile"/> ==
 ///     true;
 ///  2. genuinely changed content (geometry-driving parameter) → false —
-///     alignment must not make the verification vacuous;
+///     the reference type must not make the verification vacuous;
 ///  3. the ORCHESTRATED family-document update path (single-open
-///     ComputeFullFileHash in StaleFamilyUpdater) is aligned too: a host
+///     ComputeFullFileHash in StaleFamilyUpdater) works too: a host
 ///     family document updating a nested shared child whose file was
 ///     re-saved with a different active type updates successfully and
 ///     writes the marker.
@@ -115,9 +118,11 @@ public sealed class VerificationCurrentTypeAlignmentTests : RevitApiTest
         {
             await Assert.That(hashActiveA).IsNotNull();
             await Assert.That(hashActiveB).IsNotNull();
-            await Assert.That(string.Equals(hashActiveA, hashActiveB, StringComparison.OrdinalIgnoreCase))
-                .IsFalse()
-                .Because("the fixture geometry must be current-type-dependent — otherwise this test is vacuous");
+            // FHV15: the hash is measured at the deterministic reference
+            // type — the current-type choice must NOT move it (the pre-FHV15
+            // premise of this test was the exact opposite).
+            await Assert.That(hashActiveA).IsEqualTo(hashActiveB)
+                .Because("FHV15: the catalog hash is measured at the reference type — the active-type choice must not move it");
             await Assert.That(verdict).IsTrue()
                 .Because("same content re-saved with a different active type must verify once both sides are aligned");
         }

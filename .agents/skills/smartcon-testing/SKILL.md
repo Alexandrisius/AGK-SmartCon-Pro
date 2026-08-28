@@ -100,7 +100,7 @@ src/SmartCon.IntegrationTests/      # Тесты ВНУТРИ реального
 
 **Новый интеграционный тест пишется по образцу соседнего класса модуля.**
 Перед написанием прочитай [integration-testing.md](references/integration-testing.md) —
-9 жёстких правил (lazy-поля, NotInParallel, запрет RevitAPIUI, skip-гарды).
+9 жёстких правил (lazy-поля, NotInParallel, запрет RevitAPIUI, skip-гарды) и ранбук итераций (точечный прогон → ОДИН полный; имена упавших — из того же запуска, НЕ перезапуском; treenode-filter: класс `/*/*/*ClassName*/*`).
 
 ## Test seam patterns
 

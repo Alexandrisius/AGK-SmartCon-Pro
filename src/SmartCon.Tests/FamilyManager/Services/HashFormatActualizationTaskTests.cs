@@ -170,7 +170,7 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
     [Fact]
     public async Task Apply_LoadableGroup_WritesSectionAnalyticsInline()
     {
-        // #249 follow-up: hash-v13 writes section_hashes/section_strings in
+        // #249 follow-up: hash-v15 writes section_hashes/section_strings in
         // the same pass — the migration completes in ONE «Обновить базу»
         // run instead of leaving section-hashes-v1 for a second one.
         var (itemId, v2025, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA", revitVersion: 2025);

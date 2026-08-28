@@ -184,6 +184,22 @@ public sealed record FamilyContentHash(
     ///     exclusion swallowed every free 2D line).
     ///     Critical task <c>hash-v14</c> recomputes every row that is
     ///     not current.
+    /// 15 — deterministic reference type (Issue #249, manual-test round 3;
+    ///     12/13/14 never shipped): the type-DEPENDENT extraction (GEOM
+    ///     solid metrics + visibility flags + nested placements, DEF
+    ///     extrusion offsets, CONN positions) is measured at the first
+    ///     (Ordinal) NAMED type of the document — not at whatever type
+    ///     happened to be current. Switching the current type in the
+    ///     family editor (which editing another type's value implies) is
+    ///     not a content change, yet it used to fire every evaluated
+    ///     section, flip the global hash on a single-type value edit and
+    ///     mark every loaded type stale. The switch runs in a rolled-back
+    ///     transaction (I-03b), so the document state and IsModified are
+    ///     untouched. The verifier's type-set rule rides the same
+    ///     mechanism (the restriction set is the reference preference) —
+    ///     the committed AlignCurrentTypeForVerification is gone.
+    ///     Critical task <c>hash-v15</c> recomputes every row that is
+    ///     not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -199,7 +215,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 14;
+    public const int CurrentVersion = 15;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

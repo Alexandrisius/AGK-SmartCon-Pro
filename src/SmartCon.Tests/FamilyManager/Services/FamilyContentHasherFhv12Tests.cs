@@ -195,10 +195,10 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv14()
+    public void MetaSection_IsFhv15()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV14|LOADABLE|", canonical);
+        Assert.StartsWith("FHV15|LOADABLE|", canonical);
     }
 
     [Fact]

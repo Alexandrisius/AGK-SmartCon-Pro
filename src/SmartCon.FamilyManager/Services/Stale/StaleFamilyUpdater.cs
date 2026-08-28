@@ -613,11 +613,8 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
                 try
                 {
                     copy = doc.EditFamily(nested);
-                    // #240: same alignment as the verification itself —
-                    // otherwise an honest mismatch is reported together
-                    // with phantom GEOM diffs from the current-type skew.
-                    EmbeddedContentVerifier.AlignCurrentTypeForVerification(
-                        copy, preferredTypeNames: null, $"UpdateFamily[{catalogItemId}]");
+                    // FHV15: the extractor measures at the deterministic
+                    // reference type — no committed alignment needed.
                     embeddedCanonical = _contentHasher!
                         .BuildLoadableCanonicalStringForDiagnostics(
                             _snapshotExtractor!.ExtractFromFamilyDocument(copy));
@@ -632,11 +629,11 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
             try
             {
                 fileDoc = doc.Application.OpenDocumentFile(filePath);
-                EmbeddedContentVerifier.AlignCurrentTypeForVerification(
-                    fileDoc,
-                    preferredTypeNames: doc.IsFamilyDocument ? null : typeNames,
-                    $"UpdateFamily[{catalogItemId}]");
-                var fileSnapshot = _snapshotExtractor!.ExtractFromFamilyDocument(fileDoc);
+                // FHV15: the restriction set doubles as the reference-type
+                // preference — the extractor measures both sides at the
+                // same intersection type.
+                var fileSnapshot = _snapshotExtractor!.ExtractFromFamilyDocument(
+                    fileDoc, doc.IsFamilyDocument ? null : typeNames);
                 if (!doc.IsFamilyDocument)
                 {
                     var allowed = new HashSet<string>(typeNames, StringComparer.OrdinalIgnoreCase);
@@ -979,13 +976,10 @@ internal sealed class StaleFamilyUpdater : IStaleFamilyUpdater
         // rule only — see the legacy verify path.
         string? ComputeFullFileHash(Document openFileDoc)
         {
-            // #240: align BEFORE the first extraction — the GEOM/CONN
-            // sections are evaluated at the current type; the embedded
-            // side is aligned by ComputeEmbeddedHash to the same
-            // deterministic target (first Ordinal own type — family-doc
-            // comparisons are full-vs-full, so the type sets are equal).
-            EmbeddedContentVerifier.AlignCurrentTypeForVerification(
-                openFileDoc, preferredTypeNames: null, $"UpdateFamily[{catalogItemId}]");
+            // FHV15: the extractor measures at the deterministic reference
+            // type (first Ordinal own type) — the embedded side uses the
+            // same default rule, and family-doc comparisons are
+            // full-vs-full, so the type sets are equal.
             var snap = _snapshotExtractor!.ExtractFromFamilyDocument(openFileDoc);
             return _contentHasher!.ComputeForLoadable(snap)?.HexString;
         }

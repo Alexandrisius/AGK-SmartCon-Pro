@@ -406,6 +406,58 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
         await Assert.That(snapshot.Geometry.SymbolicCurveCount).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task Extract_ReferenceType_HashIsCurrentTypeIndependent()
+    {
+        // FHV15 contract (manual-test round 3): a single-type value edit
+        // implies switching the current type in the editor — the measured
+        // hash must NOT move. The family has two types with DIFFERENT
+        // geometry-driving L, so a naive current-type measurement would
+        // flip the GEOM section; measured at the deterministic reference
+        // (first-Ordinal named type), both extractions agree.
+        var doc = Application.NewFamilyDocument(_template!);
+        _openDocs!.Add(doc);
+        using (var tx = new Transaction(doc, "seed two types"))
+        {
+            tx.Start();
+#if REVIT2022_OR_GREATER
+            var l = doc.FamilyManager.AddParameter("L", GroupTypeId.General, SpecTypeId.Length, false);
+#else
+            var l = doc.FamilyManager.AddParameter("L", BuiltInParameterGroup.PG_GENERAL, ParameterType.Length, false);
+#endif
+            var extrusion = CreateBox(doc, 100 * MmToFt);
+            doc.FamilyManager.AssociateElementParameterToFamilyParameter(
+                extrusion.get_Parameter(BuiltInParameter.EXTRUSION_END_PARAM), l);
+            doc.FamilyManager.NewType("A");
+            doc.FamilyManager.Set(l, 100 * MmToFt);
+            doc.FamilyManager.NewType("B");
+            doc.FamilyManager.Set(l, 250 * MmToFt);
+            tx.Commit();
+        }
+
+        var extractor = new RevitFamilySnapshotExtractor();
+        var hasher = new FamilyContentHasher();
+
+        // current = B (the last created type).
+        var hashAtB = hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString;
+
+        FamilyType? typeA = null;
+        foreach (FamilyType t in doc.FamilyManager.Types)
+        {
+            if (t.Name == "A") typeA = t;
+        }
+        using (var tx2 = new Transaction(doc, "switch current to A"))
+        {
+            tx2.Start();
+            doc.FamilyManager.CurrentType = typeA!;
+            tx2.Commit();
+        }
+        var hashAtA = hasher.ComputeForLoadable(extractor.ExtractFromFamilyDocument(doc))!.HexString;
+
+        SmartConLogger.Info($"FHV15 reference-type: hashAtB={hashAtB} hashAtA={hashAtA}");
+        await Assert.That(hashAtA).IsEqualTo(hashAtB);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private Document OpenChild()

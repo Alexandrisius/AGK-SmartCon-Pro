@@ -19,7 +19,9 @@ namespace SmartCon.Revit.FamilyManager;
 /// </summary>
 public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 {
-    public FamilySnapshot ExtractFromFamilyDocument(Document familyDoc)
+    public FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(familyDoc);
@@ -50,11 +52,16 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         var parameters = ExtractParameters(fm);
         var types = ExtractTypes(fm, familyDoc);
         var phantomValues = ExtractPhantomTypeValues(fm, familyDoc);
-        var geometry = ExtractGeometry(familyDoc);
-        var definitions = ExtractDefinitions(familyDoc);
+
+        // FHV15 (#249, manual-test round 3): the type-DEPENDENT sections
+        // (GEOM metrics, DEF offsets, CONN positions) are measured at a
+        // deterministic reference type — the user's current-type choice in
+        // the family editor is not a content change, and measuring at it
+        // fired every evaluated section on a single-type value edit.
+        var (geometry, definitions, connectors, behaviorFlags) =
+            ExtractEvaluatedAtReferenceType(familyDoc, fm, preferredTypeNames);
+
         var (sharedNested, nonSharedNested) = ExtractNestedNames(familyDoc);
-        var connectors = ExtractConnectors(familyDoc);
-        var behaviorFlags = ExtractBehaviorFlags(familyDoc);
         var lookupTables = ExtractLookupTables(familyDoc);
 
         SmartConLogger.Info(
@@ -80,6 +87,110 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             PhantomTypeValues: phantomValues is { Count: > 0 } ? phantomValues : null,
             LookupTables: lookupTables,
             Definitions: definitions);
+    }
+
+    /// <summary>
+    /// FHV15 (#249, manual-test round 3): evaluates the type-DEPENDENT
+    /// extraction steps (GEOM solid metrics + visibility flags + nested
+    /// placements, DEF extrusion offsets, CONN positions, behavior flags)
+    /// at a DETERMINISTIC reference type: the first (Ordinal) name of
+    /// <paramref name="preferredTypeNames"/> intersected with the
+    /// document's named types (the verifier's type-set rule — a partially
+    /// loaded embedded copy compares against a restricted file snapshot),
+    /// or the document's first named type by default. The switch runs in
+    /// a transaction that is ROLLED BACK (I-03b precedent: Geo3DPerType) —
+    /// the document keeps its state and IsModified flag; a SubTransaction
+    /// is used when the caller already holds a transaction. Best-effort:
+    /// a failed switch is logged and extraction proceeds at the current
+    /// type (an honest mismatch beats a broken flow).
+    /// </summary>
+    private static (GeometryMetrics, DefinitionMetrics, List<ConnectorSnapshot>, FamilyBehaviorFlags?)
+        ExtractEvaluatedAtReferenceType(
+            Document familyDoc,
+            Autodesk.Revit.DB.FamilyManager fm,
+            IReadOnlyCollection<string>? preferredTypeNames)
+    {
+        (GeometryMetrics, DefinitionMetrics, List<ConnectorSnapshot>, FamilyBehaviorFlags?) Extract()
+            => (ExtractGeometry(familyDoc), ExtractDefinitions(familyDoc),
+                ExtractConnectors(familyDoc), ExtractBehaviorFlags(familyDoc));
+
+        var referenceType = ResolveReferenceType(fm, preferredTypeNames);
+        if (referenceType is null
+            || string.Equals(fm.CurrentType?.Name, referenceType.Name, StringComparison.Ordinal))
+        {
+            return Extract();
+        }
+
+        try
+        {
+            if (familyDoc.IsModifiable)
+            {
+                using var st = new SubTransaction(familyDoc);
+                st.Start();
+                try
+                {
+                    fm.CurrentType = referenceType;
+                    return Extract();
+                }
+                finally
+                {
+                    st.RollBack();
+                }
+            }
+
+            using var tx = new Transaction(familyDoc, "SmartCon_HashReferenceType");
+            tx.Start();
+            try
+            {
+                fm.CurrentType = referenceType;
+                return Extract();
+            }
+            finally
+            {
+                tx.RollBack();
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Reference-type switch to '{referenceType.Name}' failed: {ex.Message} " +
+                "[Action: снимок извлекается при текущем типе — хэш может ложно не совпасть; сообщите разработчикам]");
+            return Extract();
+        }
+    }
+
+    /// <summary>
+    /// The deterministic reference type for evaluated extraction
+    /// (FHV15): the first (Ordinal) name of <paramref name="preferredTypeNames"/>
+    /// present in the document's named types, or the document's first
+    /// named type. <c>null</c> for typeless families (no named types) —
+    /// no switch happens then.
+    /// </summary>
+    private static FamilyType? ResolveReferenceType(
+        Autodesk.Revit.DB.FamilyManager fm,
+        IReadOnlyCollection<string>? preferredTypeNames)
+    {
+        var byName = new Dictionary<string, FamilyType>(StringComparer.Ordinal);
+        foreach (FamilyType t in fm.Types)
+        {
+            if (!string.IsNullOrWhiteSpace(t.Name) && !byName.ContainsKey(t.Name))
+            {
+                byName[t.Name] = t;
+            }
+        }
+        if (byName.Count == 0)
+        {
+            return null;
+        }
+
+        var targetName = preferredTypeNames is not null
+            ? preferredTypeNames
+                .Where(byName.ContainsKey)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .FirstOrDefault()
+            : null;
+        targetName ??= byName.Keys.OrderBy(n => n, StringComparer.Ordinal).First();
+        return byName[targetName];
     }
 
     /// <summary>
