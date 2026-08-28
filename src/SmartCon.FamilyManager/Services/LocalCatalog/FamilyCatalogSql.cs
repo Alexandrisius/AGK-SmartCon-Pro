@@ -595,6 +595,18 @@ internal static class FamilyCatalogSql
         """;
 
     /// <summary>
+    /// V35 (#254, ADR-072 Phase 2b): per-version tracking column of the
+    /// routing backfill/slimming actualization — 0 = pending, 1 = done,
+    /// -1 = unreadable (terminal), -2 = missing file (terminal). Detection
+    /// keys off THIS column, never off the absence of rows in
+    /// <c>family_routing_rules</c> (a legitimately routing-less type has
+    /// none — validator amendment).
+    /// </summary>
+    public const string MigrateV35AddRoutingBackfilled = """
+        ALTER TABLE catalog_versions ADD COLUMN routing_backfilled INTEGER NOT NULL DEFAULT 0
+        """;
+
+    /// <summary>
     /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
     /// catalog DATA — the mini-project no longer carries fittings, so the
     /// routing of a version lives here instead of the staged .rvt.

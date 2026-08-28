@@ -296,6 +296,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.MiniProjectMarkerActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.TypeHashesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SectionHashesActualizationTask>();
+        // ADR-072 Phase 2b (#254): routing backfill (file-free from section
+        // strings / pre-slim mini extraction) + mini slimming.
+        services.AddSingleton<IMiniProjectRoutingSlimmingService, SmartCon.Revit.FamilyManager.RevitMiniProjectRoutingSlimmingService>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RoutingBackfillActualizationTask>();
         services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 

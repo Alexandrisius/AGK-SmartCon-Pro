@@ -91,6 +91,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 32, MigrateV32Async, ct);
         await RunMigrationAsync(connection, 33, MigrateV33Async, ct);
         await RunMigrationAsync(connection, 34, MigrateV34Async, ct);
+        await RunMigrationAsync(connection, 35, MigrateV35Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1561,6 +1562,46 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             SmartConLogger.Info(created
                 ? "Migration v34: added family_routing_rules + family_routing_type_settings — routing as catalog data (#254, ADR-072)"
                 : "Migration v34: routing tables already present (fresh schema) — version bumped to 34");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V35 (#254, ADR-072 Phase 2b): adds
+    /// <c>catalog_versions.routing_backfilled</c> — the tracking column of
+    /// the routing backfill/slimming actualization (0 = pending).
+    /// </summary>
+    private static async Task MigrateV35Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 35) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnAdded = false;
+            if (!await ColumnExistsAsync(connection, "catalog_versions", "routing_backfilled", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV35AddRoutingBackfilled;
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '35' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info(columnAdded
+                ? "Migration v35: catalog_versions +routing_backfilled (routing backfill/slimming tracking, #254)"
+                : "Migration v35: routing_backfilled already present — version bumped to 35");
         }
         catch
         {
