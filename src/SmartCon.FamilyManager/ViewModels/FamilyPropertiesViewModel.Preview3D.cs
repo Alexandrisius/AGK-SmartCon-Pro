@@ -462,7 +462,7 @@ public sealed partial class FamilyPropertiesViewModel
                 resolved.VersionId ?? Guid.NewGuid().ToString("N"),
                 VersionLabel!,
                 Name,
-                ct).ConfigureAwait(true);
+                ct: ct).ConfigureAwait(true);
 
             SmartConLogger.Info(
                 "TryExtract3DPreviewOnDemandAsync: pipeline completed, reloading assets and preview");

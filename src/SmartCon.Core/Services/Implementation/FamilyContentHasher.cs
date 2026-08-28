@@ -271,6 +271,36 @@ public sealed partial class FamilyContentHasher : IFamilyContentHasher
         return formatted == "-0" ? "0" : formatted;
     }
 
+    /// <summary>
+    /// FHV18 (#251): appends the resolved per-face color histogram of a
+    /// form — buckets sorted by RGBA, each <c>R,G,B,A:count</c>,
+    /// comma-joined; <c>-</c> when the form produced no colored faces.
+    /// Internal: shared with <c>FamilyPreviewHasher</c> (VIEW3D) so GEOM
+    /// and the preview hash bucket identically.
+    /// </summary>
+    internal static void AppendFaceColors(StringBuilder sb, IReadOnlyList<FaceColorCount>? faceColors)
+    {
+        if (faceColors is not { Count: > 0 })
+        {
+            sb.Append('-');
+            return;
+        }
+        var first = true;
+        foreach (var bucket in faceColors
+            .OrderBy(b => b.Color.R)
+            .ThenBy(b => b.Color.G)
+            .ThenBy(b => b.Color.B)
+            .ThenBy(b => b.Color.A))
+        {
+            if (!first) sb.Append(',');
+            sb.Append(bucket.Color.R).Append(',');
+            sb.Append(bucket.Color.G).Append(',');
+            sb.Append(bucket.Color.B).Append(',');
+            sb.Append(bucket.Color.A).Append(':').Append(bucket.Count);
+            first = false;
+        }
+    }
+
     private static bool ContainsOrdinalIgnoreCase(string haystack, string needle)
     {
 #if NET8_0_OR_GREATER

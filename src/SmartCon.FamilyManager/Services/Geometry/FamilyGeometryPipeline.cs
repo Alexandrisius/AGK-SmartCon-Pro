@@ -74,6 +74,7 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
         string versionId,
         string versionLabel,
         string familyName,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
         CancellationToken ct = default)
     {
         using var _scope = SmartConLogger.BeginScope("Geo3DPipeline",
@@ -87,6 +88,25 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             $"Geometry pipeline start: family='{familyName}', v='{versionLabel}', " +
             $"hasPreextractedGeometry={geometryPerType is not null && geometryPerType.Count > 0}, " +
             $"managedRfaPath='{Path.GetFileName(managedRfaPath ?? "")}'");
+
+        // 0a. #252 (overwrite baseline): OverwriteCurrent rewrites the
+        //     version row BEFORE this hook runs, so the tier-1 check below
+        //     can only compare against OTHER versions — for an overwrite
+        //     that baseline (v3 for v4) almost always differs and the
+        //     re-link never fires. The import service therefore captured
+        //     the PRE-OVERWRITE sections of the same version: when the new
+        //     content still matches them on the preview-relevant keys, the
+        //     existing pooled previews are already correct — keep them
+        //     untouched and skip the deletion AND the extraction entirely.
+        if (overwriteBaselineSectionHashes is not null
+            && await CurrentSectionsMatchBaselineAsync(
+                catalogItemId, versionLabel, overwriteBaselineSectionHashes, ct).ConfigureAwait(false))
+        {
+            SmartConLogger.Info(
+                $"Preview reuse (overwrite): DEF/GEOM/TYPES/NESTED* sections match the pre-overwrite " +
+                $"content of {versionLabel} — existing pooled previews kept, extraction and GLB writes skipped");
+            return;
+        }
 
         // 0. #249 (Phase 5): delete any previous auto-extracted Preview
         //    assets for this (catalog_item_id, version_label) FIRST —
@@ -272,6 +292,62 @@ public sealed class FamilyGeometryPipeline : IFamilyGeometryPipeline
             // GLB write failures are NOT marked: those are transient and
             // must stay pending for a retry.
             await WriteGlbStateAsync(catalogItemId, versionLabel, -1, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// #252: the CURRENT version's stored section hashes (already rewritten
+    /// by the overwrite) match the captured pre-overwrite baseline on every
+    /// preview-relevant key — the same key set tier 1 uses
+    /// (<see cref="TryReuseFromPreviousVersionAsync"/>). False when the
+    /// current analytics are missing (legacy path / cleared columns) — the
+    /// pipeline then takes the normal delete + extract route.
+    /// </summary>
+    private async Task<bool> CurrentSectionsMatchBaselineAsync(
+        string catalogItemId,
+        string versionLabel,
+        IReadOnlyDictionary<string, string> baseline,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var connection = _database.CreateConnection();
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            string? currentJson;
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = """
+                    SELECT section_hashes FROM catalog_versions
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                    LIMIT 1
+                    """;
+                cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                cmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                currentJson = Convert.ToString(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false));
+            }
+            var current = ContentSectionJsonSerializer.Deserialize(currentJson);
+            if (current is null)
+            {
+                return false;
+            }
+
+            foreach (var key in new[] { "DEF", "GEOM", "TYPES", "NESTED", "NONSHARED", "NESTEDHASH" })
+            {
+                if (!current.TryGetValue(key, out var currentHash)
+                    || !baseline.TryGetValue(key, out var baselineHash)
+                    || !string.Equals(currentHash, baselineHash, StringComparison.Ordinal))
+                {
+                    SmartConLogger.Debug(
+                        $"Preview reuse (overwrite): section '{key}' differs from the pre-overwrite content — full pipeline");
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SmartConLogger.Debug($"CurrentSectionsMatchBaselineAsync skipped: {ex.Message}");
+            return false;
         }
     }
 

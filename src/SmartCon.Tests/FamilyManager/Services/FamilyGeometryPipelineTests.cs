@@ -408,6 +408,134 @@ public sealed class FamilyGeometryPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_OverwriteBaseline_MatchingSections_KeepsAssetsAndSkipsExtraction()
+    {
+        // #252: OverwriteCurrent of v1 whose NEW sections (already stored in
+        // the row) still match the captured PRE-OVERWRITE baseline — the
+        // preview content did not change, so the pipeline must keep the
+        // version's existing pooled rows untouched and skip the deletion
+        // AND the extraction entirely (a text-only overwrite costs zero
+        // Revit work).
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", versionLabel: "v1", currentLabel: "v1");
+
+        const string hash = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+        var poolRel = SmartCon.FamilyManager.Services.LocalCatalog.StoragePathResolver.GetSharedPreviewRelativePath(hash);
+        var poolAbs = Path.Combine(_fixture.GetDatabaseRoot(), poolRel);
+        Directory.CreateDirectory(Path.GetDirectoryName(poolAbs)!);
+        File.WriteAllText(poolAbs, "GLB-BYTES");
+
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE catalog_versions SET section_hashes = @h WHERE catalog_item_id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@h", sectionsJson));
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            await cmd.ExecuteNonQueryAsync();
+
+            using var assetCmd = conn.CreateCommand();
+            assetCmd.CommandText = """
+                INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc)
+                VALUES (@aid, @itemId, 'v1', 'Model3D', @fileName, @relPath, 9, 'auto-extracted-preview:FamA::T1', @t)
+                """;
+            assetCmd.Parameters.Add(new SqliteParameter("@aid", Guid.NewGuid().ToString()));
+            assetCmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+            assetCmd.Parameters.Add(new SqliteParameter("@fileName", Path.GetFileName(poolRel)));
+            assetCmd.Parameters.Add(new SqliteParameter("@relPath", poolRel));
+            assetCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+            await assetCmd.ExecuteNonQueryAsync();
+        }
+
+        var baseline = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["DEF"] = "D1", ["GEOM"] = "G1", ["TYPES"] = "T1",
+            ["NESTED"] = "N1", ["NONSHARED"] = "NS1", ["NESTEDHASH"] = "NH1",
+        };
+
+        await _sut.RunAsync(null, "files/x/FamA.rfa", itemId, "ver1", "v1", "FamA",
+            overwriteBaselineSectionHashes: baseline);
+
+        // No extraction, no GLB write, no deletion — the v1 row survives.
+        _extractor.Verify(
+            x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _glbWriter.Verify(
+            x => x.WriteAsync(It.IsAny<FamilyGeometryPreview>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _assetService.Verify(
+            x => x.RegisterPooledAssetAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<FamilyAssetType>(),
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT relative_path FROM family_assets WHERE catalog_item_id = @id AND version_label = 'v1' AND asset_type = 'Model3D'";
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            Assert.Equal(poolRel, Convert.ToString(await cmd.ExecuteScalarAsync()));
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_OverwriteBaseline_DifferentSections_FullPipelineRuns()
+    {
+        // #252: the overwrite DID change a preview-relevant section (GEOM)
+        // — the baseline refuses reuse and the normal delete + extract
+        // route runs.
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", versionLabel: "v1", currentLabel: "v1");
+
+        var sectionsJson = "{\"DEF\":\"D1\",\"GEOM\":\"G1\",\"TYPES\":\"T1\",\"NESTED\":\"N1\",\"NONSHARED\":\"NS1\",\"NESTEDHASH\":\"NH1\"}";
+        using (var conn = _fixture.GetDatabase().CreateConnection())
+        {
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE catalog_versions SET section_hashes = @h WHERE catalog_item_id = @id";
+            cmd.Parameters.Add(new SqliteParameter("@h", sectionsJson));
+            cmd.Parameters.Add(new SqliteParameter("@id", itemId));
+            await cmd.ExecuteNonQueryAsync();
+
+            using var assetCmd = conn.CreateCommand();
+            assetCmd.CommandText = """
+                INSERT INTO family_assets (id, catalog_item_id, version_label, asset_type, file_name, relative_path, size_bytes, description, created_at_utc)
+                VALUES (@aid, @itemId, 'v1', 'Model3D', 'old.glb', @relPath, 9, 'auto-extracted-preview:FamA::T1', @t)
+                """;
+            assetCmd.Parameters.Add(new SqliteParameter("@aid", Guid.NewGuid().ToString()));
+            assetCmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+            assetCmd.Parameters.Add(new SqliteParameter("@relPath", $"files/{itemId}/v1/models/old.glb"));
+            assetCmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+            await assetCmd.ExecuteNonQueryAsync();
+        }
+
+        IReadOnlyList<FamilyGeometryPerType> geometry =
+            [new FamilyGeometryPerType("T1", "FamA", [OneTriangleMesh()], Preview("T1"))];
+        _extractor
+            .Setup(x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(geometry);
+        SetupWriterCreatingFile();
+        SetupPooledRegistration();
+
+        var baseline = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["DEF"] = "D1", ["GEOM"] = "G-OLD", ["TYPES"] = "T1",
+            ["NESTED"] = "N1", ["NONSHARED"] = "NS1", ["NESTEDHASH"] = "NH1",
+        };
+
+        await _sut.RunAsync(null, "files/x/FamA.rfa", itemId, "ver1", "v1", "FamA",
+            overwriteBaselineSectionHashes: baseline);
+
+        _extractor.Verify(
+            x => x.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _assetService.Verify(
+            x => x.RegisterPooledAssetAsync(itemId, "v1", FamilyAssetType.Model3D,
+                It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task RunAsync_Level1Reuse_PreviousTerminalMarker_CarriedOver()
     {
         // The previous version was a terminal no-geometry family

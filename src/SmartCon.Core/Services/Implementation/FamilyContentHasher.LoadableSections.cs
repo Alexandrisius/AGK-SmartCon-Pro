@@ -15,7 +15,7 @@ public sealed partial class FamilyContentHasher
 {
     /// <summary>
     /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV17|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
+    /// Format: FHV18|LOADABLE|{catOrdinal}|PARAMS|...|TYPES|...|PHANTOM|...|DEF|...|GEOM|...|GEOM2D|...|NESTED|...|NONSHARED|...|NESTEDHASH|...|FACTS|...|FLAGS|...|CONN|...|LOOKUP|...
     /// The family name is intentionally NOT part of the hash (v2,
     /// Issue #126): content identity is rename-invariant. The category
     /// is the locale-independent ordinal (v3, Issue #159); the display
@@ -100,7 +100,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildLoadableMetaSection(FamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV17|LOADABLE|");
+        sb.Append("FHV18|LOADABLE|");
         if (snapshot.CategoryId.HasValue)
             sb.Append(snapshot.CategoryId.Value.ToString(CultureInfo.InvariantCulture));
         else
@@ -383,6 +383,12 @@ public sealed partial class FamilyContentHasher
         {
             sb.Append('-').Append(',').Append('-');
         }
+        sb.Append('|');
+        // FHV18 (#251): resolved per-face color histogram — painting ONE
+        // face changes the GLB bytes (#108); pre-FHV18 both CAS tiers and
+        // this section carried only the single form-level color and reused
+        // the stale preview silently.
+        AppendFaceColors(sb, f.FaceColors);
         sb.Append('|');
         return sb.ToString();
     }

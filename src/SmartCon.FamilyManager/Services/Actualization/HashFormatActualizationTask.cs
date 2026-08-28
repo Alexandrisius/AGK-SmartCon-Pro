@@ -9,8 +9,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v17</c>): recalculates stale
-/// (format v1..v16 / NULL) content hashes to the FHV17 format
+/// CRITICAL actualization task (Id=<c>hash-v18</c>): recalculates stale
+/// (format v1..v17 / NULL) content hashes to the FHV18 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -40,9 +40,11 @@ namespace SmartCon.FamilyManager.Services.Actualization;
     /// FHV17 — canonical-order determinism: multi-entry segments sort by
     /// their emitted canonical strings instead of raw doubles that carried
     /// sub-quantization regen noise into the entry order (phantom GEOM
-    /// diffs on non-geometric edits), Issue #249 manual-test round 5).
+    /// diffs on non-geometric edits), Issue #249 manual-test round 5;
+    /// FHV18 - per-face color histogram in GEOM forms and the VIEW3D hash
+    /// (a single-face paint was invisible to both CAS tiers), Issue #251).
 /// Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1..16 pending, 17 current, -1/-2 terminal (unreadable /
+/// semantics: NULL/1..17 pending, 18 current, -1/-2 terminal (unreadable /
 /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -89,7 +91,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v17";
+    public override string Id => "hash-v18";
     public override int Order => 12;
     public override bool IsCritical => true;
 

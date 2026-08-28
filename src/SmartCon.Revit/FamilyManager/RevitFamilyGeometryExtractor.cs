@@ -447,7 +447,12 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                                 transform.BasisX.X, transform.BasisX.Y, transform.BasisX.Z,
                                 transform.BasisY.X, transform.BasisY.Y, transform.BasisY.Z,
                                 transform.BasisZ.X, transform.BasisZ.Y, transform.BasisZ.Z,
-                                instVisibleParam));
+                                instVisibleParam,
+                                // #250: the nested child's own content
+                                // fingerprint — a geometry/material edit
+                                // inside the child must re-key the pool
+                                // even when the placement is untouched.
+                                RevitFamilySnapshotExtractor.ComputeNestedContentMetrics(familyDoc, inst, options)));
                         }
                     }
                     catch (Exception nestedEx)

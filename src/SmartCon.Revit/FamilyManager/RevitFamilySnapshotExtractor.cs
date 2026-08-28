@@ -1388,6 +1388,14 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         string? subcategoryName = null;
         BoundingBoxSnapshot? bounds = null;
 
+        // FHV18 (#251): per-face resolved-color histogram inputs — the
+        // form-level fallback color resolved ONCE (the same chain the GLB
+        // side uses), plus a per-material color cache so a 1000-face form
+        // costs one lookup per material, not per face.
+        var formColor = ResolveFormMaterialColor(form, familyDoc);
+        var faceColors = new Dictionary<MaterialColorSnapshot, int>();
+        var faceColorCache = new Dictionary<ElementId, MaterialColorSnapshot?>();
+
         try
         {
             var geomElem = form.get_Geometry(options);
@@ -1398,7 +1406,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     if (geomObj is Solid solid && solid.Volume > 0)
                     {
                         AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
-                            ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes);
+                            ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes,
+                            familyDoc, formColor, faceColors, faceColorCache);
                     }
                     else if (geomObj is GeometryInstance geomInst)
                     {
@@ -1410,7 +1419,8 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                                 if (innerObj is Solid innerSolid && innerSolid.Volume > 0)
                                 {
                                     AccumulateSolid(innerSolid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
-                                        ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes);
+                                        ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes,
+                                        familyDoc, formColor, faceColors, faceColorCache);
                                 }
                             }
                         }
@@ -1469,8 +1479,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 ? faceTypes.Select(kv => new FaceTypeCount(kv.Key, kv.Value)).ToList()
                 : null,
             TotalEdgeLength: totalEdgeLength,
-            MaterialColor: ResolveFormMaterialColor(form, familyDoc),
-            Visibility: ExtractFormVisibility(form));
+            MaterialColor: formColor,
+            Visibility: ExtractFormVisibility(form),
+            FaceColors: faceColors.Count > 0
+                ? faceColors.Select(kv => new FaceColorCount(kv.Key, kv.Value)).ToList()
+                : null);
     }
 
     /// <summary>
@@ -1576,11 +1589,100 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         return new FormVisibilitySnapshot(isVisibleParam, isShownInFine);
     }
 
+    /// <summary>
+    /// #250: aggregate CONTENT metrics of a nested <see cref="FamilyInstance"/>'s
+    /// SYMBOL geometry (placement-invariant — read from
+    /// <c>GetSymbolGeometry()</c>) for the VIEW3D hash: a nested child's
+    /// geometry/material edit must re-key the per-type CAS pool even when
+    /// the placement (name + transform) is untouched. Best-effort:
+    /// <c>null</c> on any read failure (the hasher emits a deterministic
+    /// marker then). Face colors use the face material only — the nested
+    /// child has no form-level fallback chain in the host context.
+    /// </summary>
+    internal static FormMetrics? ComputeNestedContentMetrics(
+        Document familyDoc, FamilyInstance inst, Options options)
+    {
+        try
+        {
+            var geomElem = inst.get_Geometry(options);
+            if (geomElem is null)
+            {
+                return null;
+            }
+
+            double volume = 0, surfaceArea = 0, totalEdgeLength = 0;
+            double centroidX = 0, centroidY = 0, centroidZ = 0;
+            int faceCount = 0, edgeCount = 0;
+            var faceTypes = new Dictionary<string, int>(StringComparer.Ordinal);
+            var faceColors = new Dictionary<MaterialColorSnapshot, int>();
+            var faceColorCache = new Dictionary<ElementId, MaterialColorSnapshot?>();
+
+            foreach (var geomObj in geomElem)
+            {
+                if (geomObj is GeometryInstance geomInst)
+                {
+                    var symbolGeom = geomInst.GetSymbolGeometry();
+                    if (symbolGeom is null)
+                    {
+                        continue;
+                    }
+                    foreach (var innerObj in symbolGeom)
+                    {
+                        if (innerObj is Solid solid && solid.Volume > 0)
+                        {
+                            AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
+                                ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes,
+                                familyDoc, null, faceColors, faceColorCache);
+                        }
+                    }
+                }
+                else if (geomObj is Solid solid && solid.Volume > 0)
+                {
+                    AccumulateSolid(solid, ref volume, ref surfaceArea, ref faceCount, ref edgeCount,
+                        ref totalEdgeLength, ref centroidX, ref centroidY, ref centroidZ, faceTypes,
+                        familyDoc, null, faceColors, faceColorCache);
+                }
+            }
+
+            return new FormMetrics(
+                FormKind: "NestedContent",
+                IsSolid: true,
+                Volume: volume,
+                FaceCount: faceCount,
+                EdgeCount: edgeCount,
+                SubcategoryName: null,
+                SurfaceArea: surfaceArea,
+                Bounds: null,
+                Centroid: volume > 0
+                    ? new PointSnapshot(centroidX / volume, centroidY / volume, centroidZ / volume)
+                    : null,
+                FaceTypes: faceTypes.Count > 0
+                    ? faceTypes.Select(kv => new FaceTypeCount(kv.Key, kv.Value)).ToList()
+                    : null,
+                TotalEdgeLength: totalEdgeLength,
+                MaterialColor: null,
+                Visibility: null,
+                FaceColors: faceColors.Count > 0
+                    ? faceColors.Select(kv => new FaceColorCount(kv.Key, kv.Value)).ToList()
+                    : null);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"Nested content metrics failed for '{inst.Symbol?.Family?.Name}/{inst.Symbol?.Name}': {ex.Message}");
+            return null;
+        }
+    }
+
     private static void AccumulateSolid(
         Solid solid, ref double volume, ref double surfaceArea, ref int faceCount, ref int edgeCount,
         ref double totalEdgeLength,
         ref double centroidX, ref double centroidY, ref double centroidZ,
-        Dictionary<string, int> faceTypes)
+        Dictionary<string, int> faceTypes,
+        Document familyDoc,
+        MaterialColorSnapshot? formColor,
+        Dictionary<MaterialColorSnapshot, int> faceColors,
+        Dictionary<ElementId, MaterialColorSnapshot?> faceColorCache)
     {
         volume += solid.Volume;
         faceCount += solid.Faces.Size;
@@ -1595,6 +1697,32 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 var kind = face.GetType().Name;
                 faceTypes.TryGetValue(kind, out var count);
                 faceTypes[kind] = count + 1;
+
+                // FHV18 (#251): per-face resolved color — the face's own
+                // material wins (a face PAINT overrides the form color in
+                // the GLB too, #108); an own material without a resolvable
+                // color and a face without any material land in the
+                // form-level bucket. Faces with no color anywhere are not
+                // counted (a deterministic state — FaceCount covers them).
+                var bucket = formColor;
+                var faceMaterialId = face.MaterialElementId;
+                if (faceMaterialId is not null && faceMaterialId != ElementId.InvalidElementId)
+                {
+                    if (!faceColorCache.TryGetValue(faceMaterialId, out var faceColor))
+                    {
+                        faceColor = TryGetMaterialColorById(familyDoc, faceMaterialId);
+                        faceColorCache[faceMaterialId] = faceColor;
+                    }
+                    if (faceColor is not null)
+                    {
+                        bucket = faceColor;
+                    }
+                }
+                if (bucket is not null)
+                {
+                    faceColors.TryGetValue(bucket, out var colorCount);
+                    faceColors[bucket] = colorCount + 1;
+                }
             }
         }
         catch (Exception ex)

@@ -44,8 +44,8 @@ public static class DbCompatibility
     /// nor 13 ever shipped — only FHV14 will. FHV15 (manual-test round 3,
     /// deterministic reference type) and FHV16 (round 4, negative-zero
     /// canonicalization) — same: only FHV16 ships. FHV17 (round 5,
-    /// canonical-order determinism: emitted-string sort keys) — same:
-    /// only FHV17 ships.
+    /// canonical-order determinism: emitted-string sort keys) and FHV18
+    /// (#251, per-face color histogram) — same: only FHV18 ships.
     /// </summary>
     public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

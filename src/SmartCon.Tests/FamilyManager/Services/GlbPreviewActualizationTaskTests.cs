@@ -44,6 +44,7 @@ public sealed class GlbPreviewActualizationTaskTests : IDisposable
             string versionId,
             string versionLabel,
             string familyName,
+            IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
             CancellationToken ct = default)
         {
             Calls.Add(new PipelineCall(geometryPerType, managedRfaPath, catalogItemId, versionId, versionLabel, familyName));

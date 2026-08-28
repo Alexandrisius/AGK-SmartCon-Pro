@@ -481,6 +481,23 @@ internal sealed partial class LocalFamilyImportService
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
 
+        // #252: capture the PRE-OVERWRITE section hashes of this version —
+        // the geometry pipeline hook (H3) uses them as the reuse baseline;
+        // after the UPDATE below the row carries the NEW sections and the
+        // honest "did the preview content actually change?" answer would be
+        // lost (the tier-1 check can only see OTHER versions, which almost
+        // always differ and forced a full mesh extraction on every
+        // text-only overwrite).
+        string? preOverwriteSectionsJson;
+        using (var sectionsCmd = connection.CreateCommand())
+        {
+            sectionsCmd.Transaction = tx;
+            sectionsCmd.CommandText = "SELECT section_hashes FROM catalog_versions WHERE id = @versionId";
+            sectionsCmd.Parameters.Add(new SqliteParameter("@versionId", currentVersion.Id));
+            preOverwriteSectionsJson = Convert.ToString(await sectionsCmd.ExecuteScalarAsync(ct));
+        }
+        var preOverwriteSections = ContentSectionJsonSerializer.Deserialize(preOverwriteSectionsJson);
+
         // Get current file path
         using var pathCmd = connection.CreateCommand();
         pathCmd.CommandText = "SELECT relative_path FROM family_files WHERE id = @fileId";
@@ -644,7 +661,7 @@ internal sealed partial class LocalFamilyImportService
             null,
             absolutePath,
             item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel,
-            StripFamilyExtension(item.FileName), ct).ConfigureAwait(false);
+            StripFamilyExtension(item.FileName), ct, preOverwriteSections).ConfigureAwait(false);
 
         return new FamilyImportResult(
             Success: true,

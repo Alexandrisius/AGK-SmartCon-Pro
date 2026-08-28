@@ -55,6 +55,6 @@ internal sealed class GlbPreviewActualizationTask : SqlDetectionActualizationTas
             context.OpenedVariant.VersionId,
             context.Group.VersionLabel,
             context.Snapshot.FamilyName,
-            ct).ConfigureAwait(false);
+            ct: ct).ConfigureAwait(false);
     }
 }

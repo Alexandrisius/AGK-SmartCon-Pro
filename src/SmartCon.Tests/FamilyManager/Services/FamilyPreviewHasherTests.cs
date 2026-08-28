@@ -105,12 +105,103 @@ public sealed class FamilyPreviewHasherTests
     }
 
     [Fact]
+    public void Hash_FaceColorHistogramChange_DifferentHash()
+    {
+        // #251: painting ONE face moves it into another resolved-color
+        // bucket — the histogram changes while the single form-level color
+        // stays identical (the pre-FHV18 blind spot).
+        var unpainted = Box() with
+        {
+            FaceColors = [new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 6)],
+        };
+        var oneFacePainted = Box() with
+        {
+            FaceColors =
+            [
+                new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 5),
+                new FaceColorCount(new MaterialColorSnapshot(0, 0, 255, 255), 1),
+            ],
+        };
+
+        Assert.NotEqual(
+            FamilyPreviewHasher.ComputeForType(new PreviewTypeSnapshot("T", [unpainted], [])),
+            FamilyPreviewHasher.ComputeForType(new PreviewTypeSnapshot("T", [oneFacePainted], [])));
+    }
+
+    [Fact]
+    public void Hash_FaceColorHistogram_BucketOrderIrrelevant()
+    {
+        var a = Box() with
+        {
+            FaceColors =
+            [
+                new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 5),
+                new FaceColorCount(new MaterialColorSnapshot(0, 0, 255, 255), 1),
+            ],
+        };
+        var b = Box() with
+        {
+            FaceColors =
+            [
+                new FaceColorCount(new MaterialColorSnapshot(0, 0, 255, 255), 1),
+                new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 5),
+            ],
+        };
+
+        Assert.Equal(
+            FamilyPreviewHasher.ComputeForType(new PreviewTypeSnapshot("T", [a], [])),
+            FamilyPreviewHasher.ComputeForType(new PreviewTypeSnapshot("T", [b], [])));
+    }
+
+    [Fact]
+    public void Hash_NestedContentMetricsChange_DifferentHash()
+    {
+        // #250: a geometry/material edit INSIDE the nested child — the
+        // placement (identity + transform) is byte-identical, but the
+        // child's own content fingerprint re-keys the pool (the pre-fix
+        // blind spot: the parent's VIEW3D hash never moved).
+        var contentA = new FormMetrics("NestedContent", true, 0.5, 6, 9, null, 2.5,
+            Centroid: new PointSnapshot(0.5, 0.5, 0.5), TotalEdgeLength: 12.0,
+            FaceColors: [new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 6)]);
+        var contentB = contentA with { Volume = 0.75 }; // deeper child box
+        var contentC = contentA with
+        {
+            FaceColors =
+            [
+                new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 5),
+                new FaceColorCount(new MaterialColorSnapshot(0, 0, 255, 255), 1),
+            ],
+        };
+
+        var a = new PreviewTypeSnapshot("T", [], [Nested() with { ContentMetrics = contentA }]);
+        var b = new PreviewTypeSnapshot("T", [], [Nested() with { ContentMetrics = contentB }]);
+        var c = new PreviewTypeSnapshot("T", [], [Nested() with { ContentMetrics = contentC }]);
+
+        Assert.NotEqual(FamilyPreviewHasher.ComputeForType(a), FamilyPreviewHasher.ComputeForType(b));
+        Assert.NotEqual(FamilyPreviewHasher.ComputeForType(a), FamilyPreviewHasher.ComputeForType(c));
+    }
+
+    [Fact]
+    public void Hash_NestedContentMetricsNull_Deterministic()
+    {
+        // GEOM-context snapshots carry no content metrics — the hasher
+        // emits a deterministic marker and never crashes.
+        var a = new PreviewTypeSnapshot("T", [], [Nested()]);
+        var b = new PreviewTypeSnapshot("T", [], [Nested()]);
+
+        Assert.Equal(
+            FamilyPreviewHasher.ComputeForType(a),
+            FamilyPreviewHasher.ComputeForType(b));
+        Assert.NotNull(FamilyPreviewHasher.ComputeForType(a));
+    }
+
+    [Fact]
     public void CanonicalString_NoElementIds_NoNames()
     {
         var canonical = FamilyPreviewHasher.BuildCanonicalString(
             new PreviewTypeSnapshot("Тип|X", [Box()], [Nested()]));
 
-        Assert.StartsWith("VIEW3D|1|FORMS|", canonical);
+        Assert.StartsWith("VIEW3D|2|FORMS|", canonical);
         Assert.Contains("NESTED|", canonical);
         Assert.DoesNotContain("Тип|X", canonical);       // type name excluded
         Assert.Contains("Вложенное", canonical);          // nested symbol IS content

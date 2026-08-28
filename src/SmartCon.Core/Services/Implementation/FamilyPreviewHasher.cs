@@ -35,16 +35,17 @@ public static class FamilyPreviewHasher
     }
 
     /// <summary>
-    /// The canonical input string: <c>VIEW3D|1|FORMS|…|NESTED|…|</c>.
+    /// The canonical input string: <c>VIEW3D|2|FORMS|…|NESTED|…|</c>.
     /// Form entries use the FHV12 GEOM field layout and formatting
-    /// (invariant culture, 1e-4 ft coordinates, "0.######" metrics);
-    /// entries are sorted by their FULL content so the extraction order
-    /// can never leak (validator H1).
+    /// (invariant culture, 1e-4 ft coordinates, "0.######" metrics) plus
+    /// the FHV18 per-face color histogram (#251); entries are sorted by
+    /// their FULL content so the extraction order can never leak
+    /// (validator H1). Format marker 2 = FHV18 (face-color histogram).
     /// </summary>
     internal static string BuildCanonicalString(PreviewTypeSnapshot preview)
     {
         var sb = new StringBuilder(256);
-        sb.Append("VIEW3D|1|FORMS|");
+        sb.Append("VIEW3D|2|FORMS|");
         foreach (var entry in preview.Forms
             .Select(BuildFormEntry)
             .OrderBy(e => e, StringComparer.Ordinal))
@@ -134,6 +135,10 @@ public static class FamilyPreviewHasher
             sb.Append('-').Append(',').Append('-');
         }
         sb.Append('|');
+        // FHV18 (#251): resolved per-face color histogram — a single-face
+        // paint changes the GLB bytes (#108) and must re-key the pool.
+        FamilyContentHasher.AppendFaceColors(sb, f.FaceColors);
+        sb.Append('|');
         return sb.ToString();
     }
 
@@ -155,6 +160,39 @@ public static class FamilyPreviewHasher
         sb.Append(FamilyContentHasher.FormatCoord(n.BasisZy)).Append(',');
         sb.Append(FamilyContentHasher.FormatCoord(n.BasisZz)).Append('|');
         sb.Append(n.IsVisibleParamValue?.ToString(CultureInfo.InvariantCulture) ?? "-").Append('|');
+        // #250: the nested child's own content fingerprint (aggregate
+        // symbol-geometry metrics + per-face colors) — a geometry or
+        // material edit INSIDE the nested child re-keys the pool even when
+        // the placement is untouched. '-' when not computed (a pre-#250 /
+        // GEOM-context snapshot — deterministic, never crashes).
+        AppendNestedContentMetrics(sb, n.ContentMetrics);
+        sb.Append('|');
         return sb.ToString();
+    }
+
+    private static void AppendNestedContentMetrics(StringBuilder sb, FormMetrics? m)
+    {
+        if (m is null)
+        {
+            sb.Append('-');
+            return;
+        }
+        sb.Append(m.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append(',');
+        sb.Append(m.SurfaceArea.ToString("0.######", CultureInfo.InvariantCulture)).Append(',');
+        sb.Append(m.FaceCount).Append(',');
+        sb.Append(m.EdgeCount).Append(',');
+        sb.Append(m.TotalEdgeLength.ToString("0.######", CultureInfo.InvariantCulture)).Append(',');
+        if (m.Centroid is not null)
+        {
+            sb.Append(FamilyContentHasher.FormatCoord(m.Centroid.X)).Append(',');
+            sb.Append(FamilyContentHasher.FormatCoord(m.Centroid.Y)).Append(',');
+            sb.Append(FamilyContentHasher.FormatCoord(m.Centroid.Z));
+        }
+        else
+        {
+            sb.Append('-');
+        }
+        sb.Append(';');
+        FamilyContentHasher.AppendFaceColors(sb, m.FaceColors);
     }
 }

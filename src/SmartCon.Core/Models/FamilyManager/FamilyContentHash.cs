@@ -220,8 +220,16 @@ public sealed record FamilyContentHash(
     ///     parameter edit — could reorder identical emitted entries and
     ///     flip the GEOM hash, marking every loaded type stale. Sorting by
     ///     the emitted string makes the canonical order identical to the
-    ///     canonical content by construction. Critical task
-    ///     <c>hash-v17</c> recomputes every row that is not current.
+    ///     canonical content by construction. (12..17 never shipped — the
+    ///     recalculation ships as <c>hash-v18</c>, see 18.)
+    /// 18 — per-face color histogram (Issue #251; 12..17 never shipped):
+    ///     GEOM forms and the VIEW3D preview hash (format marker 2) now
+    ///     carry the resolved per-face color histogram — the GLB writes
+    ///     per-face-material meshes (#108), but the hash inputs held only
+    ///     ONE form-level color, so painting a single face changed the
+    ///     preview bytes invisibly to both CAS tiers and the GEOM section
+    ///     (stale preview color with a fresh hash). Critical task
+    ///     <c>hash-v18</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -237,7 +245,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

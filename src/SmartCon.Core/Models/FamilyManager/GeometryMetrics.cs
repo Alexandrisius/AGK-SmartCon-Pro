@@ -127,7 +127,21 @@ public sealed record FormMetrics(
     /// <c>GenericForm.GetVisibility()</c>. A binding flip shifts the hash
     /// even when every metric stays identical.
     /// </summary>
-    FormVisibilitySnapshot? Visibility = null);
+    FormVisibilitySnapshot? Visibility = null,
+    /// <summary>
+    /// FHV18 (#251): histogram of the form's RESOLVED per-face display
+    /// colors (face material → form-level fallback chain), sorted by RGBA.
+    /// The GLB writes per-face-material meshes (#108), but pre-FHV18 the
+    /// hash carried only ONE form-level color — painting a single face
+    /// changed the preview bytes invisibly to both CAS tiers and the GEOM
+    /// section. A face without an own material lands in the form-level
+    /// bucket; faces with no resolvable color anywhere are not counted
+    /// (FaceCount still covers the total).
+    /// </summary>
+    IReadOnlyList<FaceColorCount>? FaceColors = null);
+
+/// <summary>One resolved-color bucket of a <see cref="FormMetrics"/> face-color histogram (FHV18, #251).</summary>
+public sealed record FaceColorCount(MaterialColorSnapshot Color, int Count);
 
 /// <summary>A 3D point in internal units (feet), hashed with 1e-4 ft rounding.</summary>
 public sealed record PointSnapshot(double X, double Y, double Z);
@@ -168,7 +182,19 @@ public sealed record NestedInstanceSnapshot(
     double BasisZx,
     double BasisZy,
     double BasisZz,
-    int? IsVisibleParamValue);
+    int? IsVisibleParamValue,
+    /// <summary>
+    /// #250: aggregate CONTENT metrics of the nested symbol's own geometry
+    /// (placement-invariant: read from <c>GetSymbolGeometry()</c>) — filled
+    /// ONLY by the GLB preview extraction and emitted ONLY by the VIEW3D
+    /// hash. The GEOM section's NESTEDINST list deliberately does not carry
+    /// it (the shared-nested content answer there belongs to NESTEDHASH's
+    /// composite hashes, and reading every nested child's geometry on each
+    /// content-hash pass would be prohibitively slow). <c>null</c> = not
+    /// computed (GEOM extraction / read failure) — the hasher emits a
+    /// deterministic marker then.
+    /// </summary>
+    FormMetrics? ContentMetrics = null);
 
 /// <summary>
 /// Axis-aligned bounding box in internal units (feet). Hashed with

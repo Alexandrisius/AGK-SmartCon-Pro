@@ -195,10 +195,52 @@ public sealed class FamilyContentHasherFhv12Tests
     }
 
     [Fact]
-    public void MetaSection_IsFhv17()
+    public void MetaSection_IsFhv18()
     {
         var canonical = FamilyContentHasher.BuildLoadableCanonicalString(CreateBaseSnapshot());
-        Assert.StartsWith("FHV17|LOADABLE|", canonical);
+        Assert.StartsWith("FHV18|LOADABLE|", canonical);
+    }
+
+    [Fact]
+    public void GeomSection_FaceColorHistogram_ShiftsHash()
+    {
+        // #251: a single-face paint moves one face into another color
+        // bucket — the GEOM hash must shift although the form-level color
+        // and every metric stay identical.
+        var unpainted = CreateBaseSnapshot() with
+        {
+            Geometry = CreateRichGeometry() with
+            {
+                Forms =
+                [
+                    CreateRichGeometry().Forms[0] with
+                    {
+                        FaceColors = [new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 6)],
+                    },
+                ],
+            },
+        };
+        var oneFacePainted = CreateBaseSnapshot() with
+        {
+            Geometry = CreateRichGeometry() with
+            {
+                Forms =
+                [
+                    CreateRichGeometry().Forms[0] with
+                    {
+                        FaceColors =
+                        [
+                            new FaceColorCount(new MaterialColorSnapshot(255, 128, 0, 255), 5),
+                            new FaceColorCount(new MaterialColorSnapshot(0, 0, 255, 255), 1),
+                        ],
+                    },
+                ],
+            },
+        };
+
+        Assert.NotEqual(
+            _hasher.ComputeForLoadable(unpainted)!.HexString,
+            _hasher.ComputeForLoadable(oneFacePainted)!.HexString);
     }
 
     [Fact]

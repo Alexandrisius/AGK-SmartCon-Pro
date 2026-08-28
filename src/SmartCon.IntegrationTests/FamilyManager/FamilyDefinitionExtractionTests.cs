@@ -459,6 +459,77 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
     }
 
     [Test]
+    public async Task Extract_FaceColorHistogram_PaintedFaceCaptured()
+    {
+        // #251 (FHV18): paint ONE face of the fixture box — the resolved
+        // per-face color histogram must split into two buckets although the
+        // form-level color and every metric stay identical (the pre-FHV18
+        // blind spot: the GLB bytes changed, the hash did not).
+        var doc = Application.NewFamilyDocument(_template!);
+        _openDocs!.Add(doc);
+        Material? paintMaterial = null;
+        using (var tx = new Transaction(doc, "seed box + material"))
+        {
+            tx.Start();
+            CreateBox(doc, 100 * MmToFt);
+            paintMaterial = (Material)doc.GetElement(Material.Create(doc, "SmartConPaintTest"));
+            paintMaterial.Color = new Color(10, 200, 30);
+            tx.Commit();
+        }
+
+        var extractor = new RevitFamilySnapshotExtractor();
+        var before = extractor.ExtractFromFamilyDocument(doc).Geometry.Forms
+            .First(f => f.FormKind == "Extrusion");
+
+        // Paint one +X side face.
+        Face? target = null;
+        var geoOptions = new Options { ComputeReferences = true, DetailLevel = ViewDetailLevel.Fine };
+        var extrusion = new FilteredElementCollector(doc).OfClass(typeof(Extrusion)).Cast<Extrusion>().First();
+        foreach (var obj in extrusion.get_Geometry(geoOptions)!)
+        {
+            if (obj is Solid solid)
+            {
+                foreach (Face face in solid.Faces)
+                {
+                    if (face is PlanarFace pf && pf.FaceNormal.IsAlmostEqualTo(XYZ.BasisX))
+                    {
+                        target = face;
+                        break;
+                    }
+                }
+            }
+        }
+        if (target is null)
+        {
+            throw new InvalidOperationException("No +X planar face found on the fixture box");
+        }
+        using (var tx2 = new Transaction(doc, "paint one face"))
+        {
+            tx2.Start();
+            doc.Paint(extrusion.Id, target, paintMaterial!.Id);
+            tx2.Commit();
+        }
+
+        var after = extractor.ExtractFromFamilyDocument(doc).Geometry.Forms
+            .First(f => f.FormKind == "Extrusion");
+
+        SmartConLogger.Info(
+            $"Face colors: before=[{(before.FaceColors is null ? "<null>" : string.Join(";", before.FaceColors.Select(b => $"{b.Color.R},{b.Color.G},{b.Color.B}x{b.Count}")))}], " +
+            $"after=[{(after.FaceColors is null ? "<null>" : string.Join(";", after.FaceColors.Select(b => $"{b.Color.R},{b.Color.G},{b.Color.B}x{b.Count}")))}]");
+
+        await Assert.That(after.FaceColors).IsNotNull();
+        var painted = after.FaceColors!.FirstOrDefault(b => b.Color.R == 10 && b.Color.G == 200 && b.Color.B == 30);
+        await Assert.That(painted).IsNotNull();
+        await Assert.That(painted!.Count).IsEqualTo(1);
+        // If the fixture had a form/category-level color, exactly one face
+        // left its bucket (the totals relation proves the histogram tracks
+        // the paint, not a re-extraction artifact).
+        var beforeSum = before.FaceColors?.Sum(b => b.Count) ?? 0;
+        var afterSum = after.FaceColors.Sum(b => b.Count);
+        await Assert.That(afterSum).IsEqualTo(beforeSum + (beforeSum > 0 ? 0 : 1));
+    }
+
+    [Test]
     public async Task Extract_GeomSection_StableAcrossNonGeometricEdit()
     {
         // FHV17 contract (#249, manual-test round 5 — the production "text
@@ -533,6 +604,97 @@ public sealed class FamilyDefinitionExtractionTests : RevitApiTest
         await Assert.That(after).IsNotNull();
         await Assert.That(after!.CanonicalString).IsEqualTo(before!.CanonicalString);
         await Assert.That(after.HashHex).IsEqualTo(before.HashHex);
+    }
+
+    [Test]
+    public async Task PreviewHash_NestedContentEdit_RekeysView3d()
+    {
+        // #250: edit the nested CHILD's own content (deeper box) while its
+        // placement (identity + transform) stays byte-identical — the
+        // per-type VIEW3D hash must move, otherwise the CAS pool keeps
+        // serving the parent's GLB with the stale nested geometry.
+        var host = Application.NewFamilyDocument(_template!);
+        _openDocs!.Add(host);
+        using (var tx = new Transaction(host, "load nested"))
+        {
+            tx.Start();
+            if (!host.LoadFamily(_childPath!, out _))
+            {
+                throw new InvalidOperationException("LoadFamily(child) returned false");
+            }
+            var symbol = new FilteredElementCollector(host)
+                .OfClass(typeof(FamilySymbol)).Cast<FamilySymbol>()
+                .First(s => string.Equals(s.Family?.Name, "SmartConDefChild", StringComparison.OrdinalIgnoreCase));
+            if (!symbol.IsActive)
+            {
+                symbol.Activate();
+            }
+            if (host.FamilyCreate.NewFamilyInstance(
+                    new XYZ(2, 3, 0), symbol, Autodesk.Revit.DB.Structure.StructuralType.NonStructural) is null)
+            {
+                throw new InvalidOperationException("NewFamilyInstance(child) returned null");
+            }
+            tx.Commit();
+        }
+
+        var extractor = new RevitFamilySnapshotExtractor();
+        string? PreviewHash()
+        {
+            var perType = extractor.ExtractGeometryPerType(host);
+            return FamilyPreviewHasher.ComputeForType(perType.Count > 0 ? perType[0].Preview : null);
+        }
+
+        var before = PreviewHash();
+        await Assert.That(before).IsNotNull();
+
+        // Deepen the child's box INSIDE the host (EditFamily → push back) —
+        // the placement is untouched, only the child's content changes.
+        var nested = new FilteredElementCollector(host)
+            .OfClass(typeof(Family)).Cast<Family>()
+            .First(f => string.Equals(f.Name, "SmartConDefChild", StringComparison.OrdinalIgnoreCase));
+        var copy = host.EditFamily(nested);
+        try
+        {
+            using (var tx2 = new Transaction(copy, "deepen child box"))
+            {
+                tx2.Start();
+                var l = copy.FamilyManager.GetParameters()
+                    .First(p => string.Equals(p.Definition?.Name, "L", StringComparison.Ordinal));
+                copy.FamilyManager.Set(l, 250 * MmToFt);
+                tx2.Commit();
+            }
+            var pushed = copy.LoadFamily(host, new OverwriteLoadOptions());
+            if (pushed is null)
+            {
+                throw new InvalidOperationException("LoadFamily(edited child back into host) returned null");
+            }
+        }
+        finally
+        {
+            copy.Close(false);
+        }
+
+        var after = PreviewHash();
+        SmartConLogger.Info($"#250 nested content key: before={before?[..12]}… after={after?[..12]}…");
+        await Assert.That(after).IsNotNull();
+        await Assert.That(after).IsNotEqualTo(before);
+    }
+
+    private sealed class OverwriteLoadOptions : IFamilyLoadOptions
+    {
+        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
+        {
+            overwriteParameterValues = true;
+            return true;
+        }
+
+        public bool OnSharedFamilyFound(
+            Family sharedFamily, bool familyInUse, out FamilySource source, out bool overwriteParameterValues)
+        {
+            source = FamilySource.Family;
+            overwriteParameterValues = true;
+            return true;
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
