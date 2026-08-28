@@ -1,7 +1,7 @@
 # ADR-072: Ручной staging мини-проектов MEPCurve + routing как данные каталога (Issue #254)
 
 **Date:** 2026-08-28
-**Status:** proposed (после утверждения плана владельцем → accepted)
+**Status:** accepted (владелец 2026-08-29: «реализовать»; Фаза 0 завершена — §2.7)
 **Related:** Issue #254, ADR-061 (system family sync), ADR-062 (mini-project marker), ADR-064 (family key), ADR-065 (FHV4), ADR-066 (dependencies model), ADR-067 (dependency guard), ADR-055 (family facts / part_type), ADR-054 (actualization engine), ADR-071 (content hash hierarchy), #104, #178, #183, #188, #190
 
 > **Назначение документа:** полный самодостаточный контекст расследования #254 и план
@@ -165,9 +165,11 @@ Staging строит мини-проект вручную, переисполь�
 - При первичном импорте из живого проекта routing-снапшот читается из живого
   менеджера (read-only) и пишется в таблицу; part-токены мапятся на catalog items
   по normalized family name (несуществующие → флаг missing для редактора).
-- **ROUTING-секция хэша:** формат НЕ меняется (те же `'Family:Type'`,
-  PrimarySizeCriterion, порядок) → FHV-бамп не нужен. Источник секции:
-  живой менеджер при импорте из проекта; БД — для мини-проекта/каталога.
+- **ROUTING-секция хэша:** для manager-based категорий (pipe/duct) формат не
+  меняется. ~~FHV-бамп не нужен~~ **ОТМЕНЕНО §2.7 (2026-08-29): FHV19 обязателен**
+  — routing-driving VISIBLE-параметры flex/conduit/tray переносятся из VALUES в
+  ROUTING (п.2a плана). Источник секции:
+  живой менеджер/параметры при импорте из проекта; БД — для мини-проекта/каталога.
   Семантика дедупа: редактор не тронут → реимпорт из проекта = Duplicate;
   редактор изменил правила → реимпорт из проекта = легитимный Existing (каталог
   осознанно расходится с проектом).
@@ -220,6 +222,14 @@ BP_A0301_KAN-therm_Inox'`), не просто семейство. Фильтр �
 | flex pipe/duct | сегментов нет; routing **почти полный** (скрины владельца 2026-08-28: PreferredJunctionType, Тройник, Врезка, Переходный, 3 мульти-форма перехода, Соединение и т.д. — без Segments) | Тривиальный manual + routing-из-БД |
 
 **Flex-уточнение (2026-08-28, владелец по скринам + Autodesk REVIT-76496):**
+> ⚠ **ОТМЕНЕНО §2.7 (2026-08-29, probe `RoutingStorageReality`):** у flex/conduit/
+> tray `RoutingPreferenceManager == null` — менеджера нет вовсе; выбор фитингов
+> хранится в VISIBLE built-in параметрах `RBS_CURVETYPE_*` (матрица §2.7) и
+> extractor сегодня возвращает `Routing=null`
+> (`RevitFamilySnapshotExtractor.cs:2259-2261`). REVIT-76496 («параметры не
+> используются с 2013») валиден ТОЛЬКО для pipe/duct. Текст ниже оставлен как
+> история расследования — опираться на §2.7.
+
 `FlexPipeType`/`FlexDuctType` — `MEPCurveType`, routing-менеджер наследуют.
 **Набор групп у flex ПОЧТИ ПОЛНЫЙ** (скрины свойств типа владельца:
 Предпочтительный тип соединения = PreferredJunctionType; Тройник = Junctions;
@@ -255,13 +265,85 @@ Non-MEP (стены/полы/крыши/потолки/лестницы/огра
 наблюдался) — отдельная оценка в Фазе 4 (включая insulation/lining — у них тот
 же класс риска материал-параметра, конверсия тривиальна).
 
+### 2.7 Уточнение по итогам Фазы 0 (2026-08-29, всё probe-verified)
+
+**Два механизма хранения трассировки — единая модель «routing как данные»
+распространяется на оба:**
+
+| Класс типа | RoutingPreferenceManager | Хранилище выбора фитингов |
+|---|---|---|
+| `PipeType`, `DuctType` | **alive** | Только менеджер; ВСЕ routing-bip'ы `RBS_CURVETYPE_*` **hidden** (нет в `.Parameters` → не в хэше, не в WriteParameters) |
+| `FlexPipeType` | **null** | VISIBLE-параметры: `DEFAULT_TEE` (Тройник), `DEFAULT_TAKEOFF` (Врезка), `DEFAULT_TRANSITION` (Переходный), `DEFAULT_UNION` (Соединение), `PREFERRED_BRANCH` (int) |
+| `FlexDuctType` | **null** | Те же + `MULTISHAPE_TRANSITION` (прямоуг→кругл), `MULTISHAPE_TRANSITION_RECTOVAL` (прямоуг→овал), `MULTISHAPE_TRANSITION_OVALROUND` (овал→кругл) |
+| `ConduitType` | **null** | `DEFAULT_BEND` (Изгиб), `DEFAULT_TEE`, `DEFAULT_CROSS`, `DEFAULT_TRANSITION`, `DEFAULT_UNION` |
+| `CableTrayType` | **null** | `DEFAULT_HORIZONTAL_BEND` (Изгиб гориз.), `DEFAULT_ELBOWUP` (Верт. наружный), `DEFAULT_ELBOWDOWN` (Верт. внутренний), `DEFAULT_TEE`*, `DEFAULT_CROSS`*, `DEFAULT_TRANSITION`, `DEFAULT_UNION` (* — только «with Fittings») |
+
+Совпадение со скринами владельца 2026-08-29 — **строка в строку** (все значения
+шаблона = «Нет»/`E:<none>`; `PREFERRED_BRANCH` = int 1/0). Подтверждено Exa:
+REVIT-76496 («параметры не используются с 2013») — в контексте pipe/duct, где
+есть менеджер; MEP-forum 2020: «fitting size is selected based on the fittings
+families specified in the Values parameter of the Conduit Types > Fittings
+category» — для conduit/tray/flex эти параметры **живые**.
+
+**Следствия для дизайна (приняты как часть решения):**
+
+1. **FHV19 (подтверждён риск R1 → бамп обязателен):** VISIBLE routing-параметры
+   flex/conduit/tray сегодня hash-included (writable, в `.Parameters`) с
+   ElementId-токенами `Family:Type` → тот же фантом-класс при ручном staging.
+   Extractor **переносит routing-driving параметры из VALUES в ROUTING**
+   (синтетические группы `Param:<BIP-name>`; `PREFERRED_BRANCH` — как int-поле
+   рядом с PreferredJunctionType). VALUES теряет эти токены на всех документах
+   (live и мини — единообразно) → **FHV19 + critical actualization**
+   (движок ADR-054). Pipe/duct не затронуты (их bip'ы hidden).
+2. **Sync param-based категорий:** правила из `family_routing_rules` пишутся
+   `param.Set(symbolId | InvalidElementId)` (резолв символа — тот же
+   `EnsureFitting` + поиск по имени; «Нет» = InvalidElementId — легально).
+3. **Staging:** `WriteParameters` пропускает routing-driving bip'ы (в мини они
+   остаются «Нет»); ROUTING мини = all-None, подмена из БД (п.4 Ф1+2)
+   единообразна для manager- и param-based категорий.
+4. **Фильтры редактора (владелец, 2026-08-29 — «всё строго как в Revit»):**
+   выбор детали фильтруется **по категории** (duct-фитинги для воздуховодов и
+   т.д.) И **по part_type группы**; per-category набор групп = таблица выше
+   (duct multi-shape переходы — только FlexDuct; вертикальные изгибы — только
+   CableTray; и т.д.). `param.Set` с неподходящим символом Revit отклоняет —
+   фильтр обязателен, а не опционален.
+5. **Бонус:** сегодня автосбор зависимостей НЕ видит фитинги flex/conduit/tray
+   (collector читает только ROUTING manager-правил) — после переноса
+   param-routing в ROUTING-секцию они собираются единообразно.
+6. **Insulation/lining (P0.3):** в дефолтном шаблоне прототипов НЕТ
+   (`OST_PipeInsulations/OST_DuctInsulations/OST_DuctLinings` = EMPTY) →
+   ручной staging невозможен не из-за guard, а конструктивно → **fallback:
+   CopyElements для prototype-less семейств** (insulation/lining; routing у
+   них нет → класс материал-сплита для routing-deps неприменим; риск
+   material-параметров оценивается в Ф4). Guard `FamilyNotFound → skip+Warn`
+   остаётся для sync.
+
+**Вердикты probe'ов:**
+- **P0.1 PASS** — ручной staging KAN: `MATCHECK exact=1 suffixed=0` (дубль не
+  рождается), `VALUES converged=15 mismatch=0` (8 missing = 7 shared/project
+  GUID'ов + 1 проектный name-identity параметр, отсутствующие в шаблоне —
+  presence-ось #191, pre-existing),
+  мини-тип = Segments×1 + no-part Junctions×1 (целевое slim-состояние).
+- **P0.2 PASS** — mismatch=0 на пересечении; deprecated-параметры pipe/duct
+  hidden → вне хэша; VISIBLE-матрица выше → FHV19.
+- **P0.3 PASS-с-оговоркой** — прототипы всех MEPCurve-семейств есть (вкл.
+  Oval Duct); insulation/lining пусты → fallback п.6.
+- **P0.4 PASS** — SaveAs/reopen: SEGMENTS-паритет и Segments-правило
+  сохраняются; наследование routing при Duplicate подтверждено (Junctions
+  унаследован от прототипа и перезаписан sync'ом).
+- **P0.5 PASS** — `SEGMENTS live=1 mini=1 equal=True` (имя/материал/специф/
+  roughness/sizes токен-в-токен) до и после SaveAs.
+
 ## 3. План по фазам
 
 ### Фаза 0 — probe-валидация (integration, disposable; ~0.5-1 день)
 
 - **P0.1** Ручной staging KAN-трубы end-to-end: секции мини vs live токен-в-токен
   (VALUES/TYPES/SEGMENTS паритет); ровно один материал на имя; сегмент читает чистое
-  имя. Сиды — на базе временного `MiniProjectMaterialProbeTests.cs` (удалить после Ф0).
+  имя. Сиды — на базе временного `MiniProjectMaterialProbeTests.cs` (**удалить
+  после Ф1+2** — сиды переиспользуются в перманентных тестах Ф1+2; hardcoded
+  пути live/mini в перманентные тесты НЕ переносить — только собственные
+  fixture-сиды, валидатор minor-5).
 - **P0.2** Аудит hash-included типовых параметров по ТРЁМ осям (валидатор):
   (а) writability — included-but-unwritable с контекстно-зависимым значением =
   блокер Ф1; (б) **presence** — project/shared-параметры, прибинденные к
@@ -312,6 +394,26 @@ Non-MEP (стены/полы/крыши/потолки/лестницы/огра
 2. Таблица `family_routing_rules` (миграция V34+, additive → min_plugin_version
    НЕ бампать, прецедент V29) + репозиторий (образец
    `LocalFamilyDependencyRepository`); запись при импорте из живого проекта.
+2a. **FHV19 (из Ф0, §2.7):** extractor переносит routing-driving VISIBLE-
+   параметры flex/conduit/tray из VALUES в ROUTING; `WriteParameters`/VALUES их
+   исключают; critical actualization на пересчёт. Routing-driving bip-матрица —
+   по §2.7, per класс типа; различия внутри класса (CableTray with Fittings:
+   CROSS **и TEE** VISIBLE; without Fittings — оба hidden) — опираться на
+   membership в `.Parameters`, не на хардкод.
+   **Ключ группы (решение, валидатор M3):** группа идентифицируется
+   **строковым ключом** — имя enum для manager-групп (`"Segments"`, `"Elbows"`,
+   …) и `"Param:<BIP-name>"` для param-групп (`"Param:RBS_CURVETYPE_DEFAULT_TEE_PARAM"`).
+   `RoutingRuleSnapshot.GroupType` (int) сохраняется для manager-групп;
+   param-группы несут `GroupType = -1` + строковый ключ; колонка БД
+   `group_key TEXT`. Формат ROUTING-секции: для param-групп в токене — строковый
+   ключ вместо int.
+2b. **Sync-dispatch (валидатор M2 — без него краш):** `SystemTypeSyncService`
+   после FHV19 получит не-null `Routing` у manager-less типов → диспетчеризация
+   по `target.RoutingPreferenceManager is null`: manager-based — существующая
+   `SyncRoutingPreferences`; param-based — новая `SyncRoutingParamsFromDb`
+   (`param.Set(symbolId)` / `param.Set(InvalidElementId)` для «Нет»; резолв
+   символа — `EnsureFitting` + поиск по имени). Guard на null-manager
+   обязателен: `manager.GetNumberOfRules` вне try = краш транзакции.
 3. Sync читает routing-снапшот **из БД** — точка переключения одна
    (`template.Routing`, `SystemTypeSyncService.cs:133`); **legacy-fallback
    (обязателен): нет строк routing для активной версии → читать из мини
@@ -453,4 +555,4 @@ routing редактируем централизованно и версион�
   :291 rail, :319 — чтение имён материалов), ADR-071 (секции/FHV).
 - PartType: `FamilyFactRuleSet` (:51-91), `PartTypeLabelMap`.
 - Маркер мини-проекта: `RevitMiniProjectMarker` (#188, ADR-062).
-- Временный probe (удалить после Ф0): `src/SmartCon.IntegrationTests/FamilyManager/MiniProjectMaterialProbeTests.cs`.
+- Временный probe (удалить после Ф1+2): `src/SmartCon.IntegrationTests/FamilyManager/MiniProjectMaterialProbeTests.cs`.

@@ -4,7 +4,13 @@ using Autodesk.Revit.DB.Mechanical;
 using Autodesk.Revit.DB.Plumbing;
 using Nice3point.TUnit.Revit;
 using Nice3point.TUnit.Revit.Executors;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.FamilyManager;
+using SmartCon.Revit.Transactions;
 using TUnit.Core.Executors;
+using Electrical = Autodesk.Revit.DB.Electrical;
 
 namespace SmartCon.IntegrationTests.FamilyManager;
 
@@ -19,6 +25,8 @@ public sealed class MiniProjectMaterialProbeTests : RevitApiTest
 {
     private const string ReportPath = @"C:\Users\klim9\AppData\Local\Temp\opencode\probe\mini-inv.txt";
     private const string V1MiniPath = @"D:\Project\dotNET\00_Архив\Библиотеки семейств\Тест\files\4711a7ef881a439dab56ab5a2f9c09d7\v1\Трубы.rvt";
+    private const string LiveProjectPath = @"C:\Users\klim9\Yandex.Disk\02_Work\#Projects\02_dotNet\01-Рабочая\00-Файлы\SmartCon\ТестовыйПример_SmartCom_2025.rvt";
+    private const string KanTypeName = "BP_Нержавеющая сталь";
 
     [Test]
     [HookExecutor<RevitThreadExecutor>]
@@ -28,8 +36,8 @@ public sealed class MiniProjectMaterialProbeTests : RevitApiTest
         var doc = Application.NewProjectDocument(UnitSystem.Metric);
         try
         {
-            DumpFlexType<FlexPipeType>(sb, doc, "FlexPipe");
-            DumpFlexType<FlexDuctType>(sb, doc, "FlexDuct");
+            DumpFlexType(sb, doc, "FlexPipe", typeof(FlexPipeType));
+            DumpFlexType(sb, doc, "FlexDuct", typeof(FlexDuctType));
         }
         finally
         {
@@ -39,9 +47,9 @@ public sealed class MiniProjectMaterialProbeTests : RevitApiTest
         await Assert.That(File.Exists(ReportPath3)).IsTrue();
     }
 
-    private static void DumpFlexType<T>(StringBuilder sb, Document doc, string label) where T : MEPCurveType
+    private static void DumpFlexType(StringBuilder sb, Document doc, string label, Type classType)
     {
-        var t = new FilteredElementCollector(doc).OfClass(typeof(T)).Cast<T>().FirstOrDefault();
+        var t = new FilteredElementCollector(doc).OfClass(classType).Cast<MEPCurveType>().FirstOrDefault();
         sb.AppendLine($"{label}|{(t is null ? "<none-in-template>" : t.Name)}");
         if (t is null) return;
         try
@@ -569,6 +577,460 @@ public sealed class MiniProjectMaterialProbeTests : RevitApiTest
         finally
         {
             doc.Close(false);
+        }
+    }
+
+    // ── Phase 0 probes (ADR-072) — P0.1/P0.4/P0.5, P0.2, P0.3 ────────────
+
+    /// <summary>
+    /// P0.1 + P0.4 + P0.5: manual staging parity. Runs the PRODUCTION sync
+    /// machinery live→fresh-mini (Duplicate prototype + WriteParameters +
+    /// segment sync, fittings skipped via NullFittingDependencyResolver) —
+    /// this is exactly the target manual-staging sequence of ADR-072 §2.1.
+    /// Verifies: (a) no duplicate materials are born (the #254 bug class is
+    /// structurally absent without CopyElements); (b) SEGMENTS extraction
+    /// from the manual mini equals live (P0.5); (c) VALUES parity on the
+    /// locale-invariant intersection (matched by BuiltInParameter id / GUID);
+    /// (d) routing survives SaveAs/reopen (P0.4).
+    /// </summary>
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task ManualStagingParity()
+    {
+        var sb = new StringBuilder();
+        var live = Application.OpenDocumentFile(LiveProjectPath);
+        Document? mini = null;
+        var savePath = Path.Combine(Path.GetDirectoryName(ReportPath)!, "manual-mini.rvt");
+        try
+        {
+            var extractor = new RevitFamilySnapshotExtractor();
+            var liveType = new FilteredElementCollector(live).OfClass(typeof(PipeType)).Cast<PipeType>()
+                .First(t => t.Name == KanTypeName);
+            var liveSnapshot = extractor.ExtractSingleSystemType(live, liveType.Id);
+            sb.AppendLine($"LIVE|type={liveType.Name}|values={liveSnapshot.Values.Count}|segments={liveSnapshot.Segments?.Count ?? -1}|routingRules={liveSnapshot.Routing?.Rules.Count ?? -1}");
+
+            mini = Application.NewProjectDocument(UnitSystem.Metric);
+            var tx = new RevitTransactionService(new StubRevitContext(mini));
+            var materialSync = new RevitMaterialSyncService();
+            var sync = new SystemTypeSyncService(
+                tx, extractor, new RevitSystemTypeFinder(), new SystemClock(),
+                materialSync, new RevitSegmentSyncService(materialSync), new ProbeNullFittingResolver(),
+                new RevitCompoundStructureSyncService(materialSync));
+
+            var result = sync.SyncTypeFromSource(
+                live, mini, KanTypeName, "probe-item", "v1", int.Parse(Application.VersionNumber));
+            sb.AppendLine($"SYNC|status={result.Status}|written={result.ParametersWritten}|skipped={result.ParametersSkipped}|notConverged={result.NotConvergedCount}");
+
+            // (a) duplicate-material check — the core #254 assertion
+            var kanMats = new FilteredElementCollector(mini).OfClass(typeof(Material)).Cast<Material>()
+                .Where(m => m.Name.Contains("Inox") || m.Name.Contains("KAN")).OrderBy(m => m.Id.Value).ToList();
+            foreach (var m in kanMats) sb.AppendLine($"  MAT|id={m.Id}|{m.Name}");
+            var exactName = kanMats.Count(m => m.Name == "KAN-therm - Inox");
+            var suffixed = kanMats.Count(m => m.Name != "KAN-therm - Inox");
+            sb.AppendLine($"MATCHECK|exact={exactName}|suffixed={suffixed}");
+
+            // (b) + (c) snapshot parity
+            var miniType = new FilteredElementCollector(mini).OfClass(typeof(PipeType)).Cast<PipeType>()
+                .First(t => t.Name == KanTypeName);
+            var miniSnapshot = extractor.ExtractSingleSystemType(mini, miniType.Id);
+            CompareSegments(sb, liveSnapshot, miniSnapshot);
+            CompareValuesByIdentity(sb, live, liveType, mini, miniType);
+
+            // slim-mini routing state: Segments=1, fitting groups empty
+            using (var mgr = miniType.RoutingPreferenceManager)
+            {
+                foreach (RoutingPreferenceRuleGroupType g in Enum.GetValues(typeof(RoutingPreferenceRuleGroupType)))
+                {
+                    int n;
+                    try { n = mgr.GetNumberOfRules(g); } catch { continue; }
+                    if (n > 0) sb.AppendLine($"  MINI GROUP|{g}|rules={n}");
+                }
+            }
+
+            // (d) SaveAs/reopen stability (P0.4)
+            mini.SaveAs(savePath, new SaveAsOptions { OverwriteExistingFile = true });
+            mini.Close(false);
+            mini = Application.OpenDocumentFile(savePath);
+            var reopenedType = new FilteredElementCollector(mini).OfClass(typeof(PipeType)).Cast<PipeType>()
+                .First(t => t.Name == KanTypeName);
+            var reopenedSnapshot = extractor.ExtractSingleSystemType(mini, reopenedType.Id);
+            sb.AppendLine("AFTER SAVEAS/REOPEN:");
+            CompareSegments(sb, liveSnapshot, reopenedSnapshot);
+            using (var mgr = reopenedType.RoutingPreferenceManager)
+            {
+                var segRules = mgr.GetNumberOfRules(RoutingPreferenceRuleGroupType.Segments);
+                sb.AppendLine($"  REOPENED Segments rules={segRules}");
+                await Assert.That(segRules).IsEqualTo(1);
+            }
+
+            await Assert.That(result.IsSuccess).IsTrue();
+            await Assert.That(exactName).IsEqualTo(1);
+            await Assert.That(suffixed).IsEqualTo(0);
+        }
+        finally
+        {
+            live.Close(false);
+            if (mini is not null) mini.Close(false);
+        }
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(ReportPath)!, "manual-parity.txt"), sb.ToString());
+        await Assert.That(File.Exists(Path.Combine(Path.GetDirectoryName(ReportPath)!, "manual-parity.txt"))).IsTrue();
+    }
+
+    private static void CompareSegments(StringBuilder sb, SystemTypeSnapshot live, SystemTypeSnapshot mini)
+    {
+        var liveTokens = (live.Segments ?? Array.Empty<SegmentSnapshot>()).Select(SegmentToken).OrderBy(t => t).ToList();
+        var miniTokens = (mini.Segments ?? Array.Empty<SegmentSnapshot>()).Select(SegmentToken).OrderBy(t => t).ToList();
+        sb.AppendLine($"SEGMENTS|live={liveTokens.Count}|mini={miniTokens.Count}|equal={liveTokens.SequenceEqual(miniTokens)}");
+        foreach (var t in liveTokens.Except(miniTokens)) sb.AppendLine($"  LIVE-ONLY|{t}");
+        foreach (var t in miniTokens.Except(liveTokens)) sb.AppendLine($"  MINI-ONLY|{t}");
+    }
+
+    private static string SegmentToken(SegmentSnapshot s)
+        => $"{s.Name}|{s.MaterialName}|{s.ScheduleName}|{s.Roughness:R}|" +
+           string.Join(",", s.Sizes.Select(z => $"{z.NominalDiameter:R}/{z.InnerDiameter:R}/{z.OuterDiameter:R}/{z.UsedInSizeLists}/{z.UsedInSizing}"));
+
+    /// <summary>
+    /// Locale-invariant VALUES parity: parameters matched by BuiltInParameter
+    /// id (internal), shared GUID, or name fallback. Cross-locale host (RU live
+    /// project vs EN template) makes name-based matching useless for built-ins.
+    /// </summary>
+    private static void CompareValuesByIdentity(StringBuilder sb, Document liveDoc, ElementType liveType, Document miniDoc, ElementType miniType)
+    {
+        var miniParams = new Dictionary<string, Parameter>(StringComparer.Ordinal);
+        foreach (Parameter p in miniType.Parameters)
+        {
+            miniParams[ParamIdentity(p)] = p;
+        }
+        var converged = 0; var readOnlySkipped = 0; var missing = 0; var mismatch = 0;
+        foreach (Parameter lp in liveType.Parameters)
+        {
+            var key = ParamIdentity(lp);
+            if (!miniParams.TryGetValue(key, out var mp))
+            {
+                missing++;
+                sb.AppendLine($"  VAL-MISSING|{lp.Definition.Name}|{key}");
+                continue;
+            }
+            if (lp.IsReadOnly || mp.IsReadOnly)
+            {
+                readOnlySkipped++;
+                continue;
+            }
+            var lt = ValueToken(liveDoc, lp);
+            var mt = ValueToken(miniDoc, mp);
+            if (lt == mt)
+            {
+                converged++;
+            }
+            else
+            {
+                mismatch++;
+                sb.AppendLine($"  VAL-MISMATCH|{lp.Definition.Name}|live={lt}|mini={mt}");
+            }
+        }
+        sb.AppendLine($"VALUES|converged={converged}|readOnly={readOnlySkipped}|missingInMini={missing}|mismatch={mismatch}");
+    }
+
+    private static string ParamIdentity(Parameter p)
+    {
+        if (p.IsShared)
+        {
+            try { return "guid:" + p.GUID; } catch { /* fall through */ }
+        }
+        if (p.Definition is InternalDefinition id && id.BuiltInParameter != BuiltInParameter.INVALID)
+        {
+            return "bip:" + (long)id.BuiltInParameter;
+        }
+        return "name:" + p.Definition.Name;
+    }
+
+    private static string ValueToken(Document doc, Parameter p)
+    {
+        if (!p.HasValue) return "<novalue>";
+        switch (p.StorageType)
+        {
+            case StorageType.Double: return "D:" + p.AsDouble().ToString("R");
+            case StorageType.Integer: return "I:" + p.AsInteger();
+            case StorageType.String: return "S:" + (p.AsString() ?? string.Empty);
+            case StorageType.ElementId:
+                var el = p.AsElementId();
+                if (el == ElementId.InvalidElementId) return "E:<none>";
+                return "E:" + (doc.GetElement(el)?.Name ?? "<unresolved:" + el + ">");
+            default: return "?";
+        }
+    }
+
+    /// <summary>
+    /// P0.2: parameter audit on three axes (writability, presence, ElementId
+    /// resolvability) for the live KAN pipe type + deprecated routing-parameter
+    /// scan (RBS_CURVETYPE_DEFAULT_*, REVIT-76496) + conduit/tray/flex storage
+    /// check (owner screenshots 2026-08-29: conduit/tray fitting rows live in
+    /// the type properties — params or manager?).
+    /// </summary>
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task ParamAuditReality()
+    {
+        var sb = new StringBuilder();
+        var live = Application.OpenDocumentFile(LiveProjectPath);
+        var template = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            // 1) full parameter dump of the live KAN pipe type
+            var liveType = new FilteredElementCollector(live).OfClass(typeof(PipeType)).Cast<PipeType>()
+                .First(t => t.Name == KanTypeName);
+            var snapshot = new RevitFamilySnapshotExtractor().ExtractSingleSystemType(live, liveType.Id);
+            var included = snapshot.Values.Select(v => v.ParameterName).ToHashSet(StringComparer.Ordinal);
+            sb.AppendLine($"=== LIVE TYPE PARAMS ({KanTypeName}), hash-included marked with *");
+            foreach (Parameter p in liveType.Parameters)
+            {
+                var mark = included.Contains(p.Definition.Name) ? "*" : " ";
+                var bip = p.Definition is InternalDefinition id && id.BuiltInParameter != BuiltInParameter.INVALID
+                    ? ((long)id.BuiltInParameter).ToString() : "-";
+                var guid = p.IsShared ? p.GUID.ToString() : "-";
+                var targetClass = string.Empty;
+                if (p.StorageType == StorageType.ElementId && p.HasValue && p.AsElementId() != ElementId.InvalidElementId)
+                {
+                    var target = live.GetElement(p.AsElementId());
+                    targetClass = target is null ? "<unresolved>" : target.GetType().Name + ":" + target.Name;
+                }
+                sb.AppendLine($"  {mark}|{p.Definition.Name}|bip={bip}|guid={guid}|{p.StorageType}|ro={p.IsReadOnly}|has={p.HasValue}|{targetClass}");
+            }
+
+            // 2) presence axis: template PipeType param identities vs live
+            var templatePipe = new FilteredElementCollector(template).OfClass(typeof(PipeType)).Cast<PipeType>().First();
+            var templateKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Parameter p in templatePipe.Parameters) templateKeys.Add(ParamIdentity(p));
+            var liveOnly = 0;
+            foreach (Parameter p in liveType.Parameters)
+            {
+                if (!templateKeys.Contains(ParamIdentity(p)))
+                {
+                    liveOnly++;
+                    sb.AppendLine($"  PRESENCE-LIVE-ONLY|{p.Definition.Name}|{ParamIdentity(p)}|has={p.HasValue}");
+                }
+            }
+            sb.AppendLine($"PRESENCE|liveOnly={liveOnly}");
+
+            // 3) deprecated routing-parameter scan (REVIT-76496: unused since 2013)
+            sb.AppendLine("=== DEPRECATED RBS_*_DEFAULT_* SCAN");
+            var deprecatedBips = Enum.GetValues(typeof(BuiltInParameter)).Cast<BuiltInParameter>()
+                .Where(b =>
+                {
+                    var n = b.ToString();
+                    return n.Contains("CURVETYPE_DEFAULT") || n.Contains("DEFAULT_TEE") || n.Contains("DEFAULT_CROSS")
+                        || n.Contains("DEFAULT_ELBOW") || n.Contains("DEFAULT_TRANSITION") || n.Contains("DEFAULT_UNION")
+                        || n.Contains("DEFAULT_CAP") || n.Contains("DEFAULT_FLANGE") || n.Contains("DEFAULT_MECHANICAL_JOINT")
+                        || n.Contains("DEFAULT_TAP");
+                })
+                .ToList();
+            sb.AppendLine($"enum members found: {deprecatedBips.Count}");
+            var probeTypes = new List<ElementType> { liveType, templatePipe };
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(FlexPipeType)).Cast<ElementType>().Take(1)) probeTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(FlexDuctType)).Cast<ElementType>().Take(1)) probeTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(DuctType)).Cast<ElementType>().Take(1)) probeTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(Electrical.ConduitType)).Cast<ElementType>().Take(1)) probeTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(Electrical.CableTrayType)).Cast<ElementType>().Take(1)) probeTypes.Add(t);
+            foreach (var pt in probeTypes)
+            {
+                var doc = pt.Document;
+                sb.AppendLine($"  TYPE|{pt.GetType().Name}|{pt.Name}");
+                foreach (var bip in deprecatedBips)
+                {
+                    try
+                    {
+                        var p = pt.get_Parameter(bip);
+                        if (p is null) continue;
+                        var token = ValueToken(doc, p);
+                        sb.AppendLine($"    DEPR|{bip}|ro={p.IsReadOnly}|has={p.HasValue}|{token}");
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine($"    DEPR|{bip}|<{ex.GetType().Name}>");
+                    }
+                }
+            }
+
+            // 4) conduit/tray manager groups (screenshots: fitting rows in type props)
+            sb.AppendLine("=== CONDUIT/TRAY/FLEX MANAGER GROUPS (template)");
+            var mgrTypes = new List<MEPCurveType>();
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(Electrical.ConduitType)).Cast<MEPCurveType>().Take(2)) mgrTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(Electrical.CableTrayType)).Cast<MEPCurveType>().Take(2)) mgrTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(FlexPipeType)).Cast<MEPCurveType>().Take(1)) mgrTypes.Add(t);
+            foreach (var t in new FilteredElementCollector(template).OfClass(typeof(FlexDuctType)).Cast<MEPCurveType>().Take(1)) mgrTypes.Add(t);
+            foreach (var mt in mgrTypes)
+            {
+                sb.AppendLine($"  MGR|{mt.GetType().Name}|{mt.Name}");
+                try
+                {
+                    using var mgr = mt.RoutingPreferenceManager;
+                    if (mgr is null) { sb.AppendLine("    manager=null"); continue; }
+                    foreach (RoutingPreferenceRuleGroupType g in Enum.GetValues(typeof(RoutingPreferenceRuleGroupType)))
+                    {
+                        int n;
+                        try { n = mgr.GetNumberOfRules(g); } catch (Exception ex) { sb.AppendLine($"    GROUP|{g}|<{ex.GetType().Name}>"); continue; }
+                        if (n == 0) continue;
+                        sb.AppendLine($"    GROUP|{g}|rules={n}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"    manager threw: {ex.GetType().Name}");
+                }
+            }
+        }
+        finally
+        {
+            live.Close(false);
+            template.Close(false);
+        }
+        var path = Path.Combine(Path.GetDirectoryName(ReportPath)!, "param-audit.txt");
+        File.WriteAllText(path, sb.ToString());
+        await Assert.That(File.Exists(path)).IsTrue();
+    }
+
+    /// <summary>
+    /// P0.3: prototype availability in the DEFAULT template — every system
+    /// family class that manual staging must support needs at least one
+    /// template type to Duplicate from (D5: the last type is undeletable).
+    /// Covers pipe/duct(Round/Rect/Oval)/flex/conduit/tray/wire/insulation/
+    /// lining.
+    /// </summary>
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task PrototypeAvailability()
+    {
+        var sb = new StringBuilder();
+        var doc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var categories = new[]
+            {
+                BuiltInCategory.OST_PipeCurves, BuiltInCategory.OST_DuctCurves,
+                BuiltInCategory.OST_FlexPipeCurves, BuiltInCategory.OST_FlexDuctCurves,
+                BuiltInCategory.OST_Conduit, BuiltInCategory.OST_CableTray,
+                BuiltInCategory.OST_Wire, BuiltInCategory.OST_PipeInsulations,
+                BuiltInCategory.OST_DuctInsulations, BuiltInCategory.OST_DuctLinings,
+            };
+            foreach (var cat in categories)
+            {
+                sb.AppendLine($"=== {cat}");
+                var types = new FilteredElementCollector(doc)
+                    .OfClass(typeof(ElementType))
+                    .OfCategory(cat)
+                    .Cast<ElementType>()
+                    .ToList();
+                var byFamily = types.GroupBy(t => t.GetType().Name + "|" + t.FamilyName).OrderBy(g => g.Key);
+                foreach (var g in byFamily)
+                {
+                    sb.AppendLine($"  {g.Key}|count={g.Count()}|first={g.First().Name}");
+                }
+                if (types.Count == 0) sb.AppendLine("  <EMPTY>");
+            }
+        }
+        finally
+        {
+            doc.Close(false);
+        }
+        var path = Path.Combine(Path.GetDirectoryName(ReportPath)!, "prototypes.txt");
+        File.WriteAllText(path, sb.ToString());
+        await Assert.That(File.Exists(path)).IsTrue();
+    }
+
+    private sealed class ProbeNullFittingResolver : IFittingDependencyResolver
+    {
+        public ElementId? EnsureFitting(
+            Document activeDoc, string familyName, string typeName, int targetRevitVersion, string? parentCatalogItemId = null) => null;
+    }
+
+    /// <summary>
+    /// Phase-0 follow-up (ADR-072, owner screenshots 2026-08-29): the definitive
+    /// storage map for fitting-selection settings across ALL MEPCurve type
+    /// classes. For pipe/duct the RoutingPreferenceManager is the store
+    /// (params stale, REVIT-76496); for flex/conduit/tray the manager is NULL
+    /// (probe-proven) and the type-properties rows are the store. This probe
+    /// answers, per type class: which routing-ish built-in parameters exist
+    /// via get_Parameter, which are VISIBLE in the .Parameters collection
+    /// (→ hash-inclusion today), and their writability/value.
+    /// </summary>
+    [Test]
+    [HookExecutor<RevitThreadExecutor>]
+    public async Task RoutingStorageReality()
+    {
+        var sb = new StringBuilder();
+        var doc = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var tokens = new[]
+            {
+                "BEND", "TEE", "CROSS", "ELBOW", "UNION", "TRANSITION", "TAKEOFF",
+                "FLANGE", "CAP", "MECHJOINT", "JUNCTION", "PREFERRED", "MULTISHAPE", "OVAL",
+            };
+            var candidates = Enum.GetValues(typeof(BuiltInParameter)).Cast<BuiltInParameter>()
+                .Where(b =>
+                {
+                    var n = b.ToString();
+                    return n.StartsWith("RBS_", StringComparison.Ordinal)
+                        && tokens.Any(t => n.Contains(t, StringComparison.Ordinal));
+                })
+                .OrderBy(b => b.ToString())
+                .ToList();
+            sb.AppendLine($"candidate bips: {candidates.Count}");
+
+            var types = new List<ElementType>();
+            CollectInto(types, doc, typeof(PipeType));
+            CollectInto(types, doc, typeof(DuctType));
+            CollectInto(types, doc, typeof(FlexPipeType));
+            CollectInto(types, doc, typeof(FlexDuctType));
+            CollectInto(types, doc, typeof(Electrical.ConduitType));
+            CollectInto(types, doc, typeof(Electrical.CableTrayType));
+
+            foreach (var t in types)
+            {
+                var visibleKeys = new HashSet<long>();
+                foreach (Parameter p in t.Parameters)
+                {
+                    if (p.Definition is InternalDefinition id && id.BuiltInParameter != BuiltInParameter.INVALID)
+                    {
+                        visibleKeys.Add((long)id.BuiltInParameter);
+                    }
+                }
+                string managerState;
+                try
+                {
+                    using var mgr = ((MEPCurveType)t).RoutingPreferenceManager;
+                    managerState = mgr is null ? "null" : "alive";
+                }
+                catch (Exception ex)
+                {
+                    managerState = "threw:" + ex.GetType().Name;
+                }
+                sb.AppendLine($"=== {t.GetType().Name}|{t.FamilyName}|{t.Name}|manager={managerState}");
+                foreach (var bip in candidates)
+                {
+                    Parameter? p;
+                    try { p = t.get_Parameter(bip); }
+                    catch (Exception ex) { sb.AppendLine($"  {bip}|<threw {ex.GetType().Name}>"); continue; }
+                    if (p is null) continue;
+                    var visible = visibleKeys.Contains((long)bip) ? "VISIBLE" : "hidden";
+                    sb.AppendLine($"  {bip}|{visible}|ro={p.IsReadOnly}|has={p.HasValue}|{ValueToken(doc, p)}");
+                }
+            }
+        }
+        finally
+        {
+            doc.Close(false);
+        }
+        var path = Path.Combine(Path.GetDirectoryName(ReportPath)!, "routing-storage.txt");
+        File.WriteAllText(path, sb.ToString());
+        await Assert.That(File.Exists(path)).IsTrue();
+    }
+
+    private static void CollectInto(List<ElementType> target, Document doc, Type classType)
+    {
+        foreach (var t in new FilteredElementCollector(doc).OfClass(classType).Cast<ElementType>())
+        {
+            target.Add(t);
         }
     }
 }
