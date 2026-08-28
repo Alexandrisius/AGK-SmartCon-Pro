@@ -140,8 +140,8 @@ Confirm-диалог перед «Обновить» — только для Con
   транзакции, `ActualizationSectionComposer`), backstop `section-hashes-v1`,
   `type-hashes-v1` (optional, Order 70/80).
 - Закрытые этой веткой ограничения: #250 (nested content в VIEW3D), #251
-  (per-face материалы), #252 (overwrite baseline). Остаётся: #179 (system
-  per-type stale — фундамент хранения заложен).
+  (per-face материалы), #252 (overwrite baseline). Остаётся: #253 (system
+  per-type content-hash stale — фундамент хранения заложен).
 - Тестирование: 20+ новых интеграционных контрактов (reference-тип, sketch-
   исключение, per-type карты, shared-section эскалация, CAS reuse, paint
   грани, nested content); runbook итераций в smartcon-testing.
