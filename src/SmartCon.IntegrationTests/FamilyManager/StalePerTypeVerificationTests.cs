@@ -251,6 +251,68 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
         await Assert.That(map["TypeB"]).IsTrue();
     }
 
+    [Test]
+    public async Task Check_VersionMismatch_SharedSectionChange_MarksEveryTypeStale()
+    {
+        // Round-5 contract: per-type hashes track per-type VALUES only — a
+        // change in a SHARED section (GEOM here) affects EVERY type. v1 and
+        // v2 have IDENTICAL per-type hashes but different GEOM section
+        // hashes → every type is stale (the values-only map showed 0).
+        var projectDoc = SeedProjectWithChild();
+        var context = new StubRevitContext(projectDoc);
+        var store = new RevitFamilyVersionStore(new RevitTransactionService(context));
+        WriteCurrentMarker(projectDoc, store);   // marker v1
+
+        var analytics = new StubContentHashAnalytics
+        {
+            ["v1"] =
+            [
+                FamilyTypeHashEntry.ForLoadableType("TypeA", new string('A', 64)),
+                FamilyTypeHashEntry.ForLoadableType("TypeB", new string('B', 64)),
+            ],
+            ["v2"] =
+            [
+                FamilyTypeHashEntry.ForLoadableType("TypeA", new string('A', 64)),
+                FamilyTypeHashEntry.ForLoadableType("TypeB", new string('B', 64)),
+            ],
+        };
+        analytics.Sections["v1"] = new Dictionary<string, string>
+        {
+            ["GEOM"] = new string('1', 64), ["TYPES"] = new string('9', 64),
+        };
+        analytics.Sections["v2"] = new Dictionary<string, string>
+        {
+            ["GEOM"] = new string('2', 64), ["TYPES"] = new string('9', 64),
+        };
+
+        var detector = new StaleDetector(
+            store,
+            new StubCatalogProvider(new[] { CreateItem() with { CurrentVersionLabel = "v2" } }),
+            new InlineAwaitableEvent(),
+            context,
+            new StubClock(),
+            new NullSystemTypeFinder(),
+            new NullSystemTypeVersionStore(),
+            new NullFamilyTypeRepository(),
+            fileResolver: new StubFileResolver(_childPath!, "v2"),
+            snapshotExtractor: new RevitFamilySnapshotExtractor(),
+            contentHasher: new FamilyContentHasher(),
+            versionWriter: null,
+            contentHashAnalytics: analytics);
+
+        var results = await detector.CheckCategoryAsync(null, projectDoc, CancellationToken.None);
+
+        var verdict = results.First(r => string.Equals(r.FamilyName, ChildName, StringComparison.OrdinalIgnoreCase));
+        var map = detector.GetLoadableTypeStaleMap(CatalogItemId);
+        SmartConLogger.Info(
+            $"Shared-section map: IsStale={verdict.IsStale} Reason={verdict.Reason} " +
+            $"map=[{(map is null ? "<null>" : string.Join(",", map.Select(kv => $"{kv.Key}={kv.Value}")))}]");
+        await Assert.That(verdict.IsStale).IsTrue();
+        await Assert.That(map).IsNotNull();
+        await Assert.That(map!["TypeA"]).IsTrue();
+        await Assert.That(map["TypeB"]).IsTrue();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────
 
     private int CurrentRevitMajor => int.Parse(Application.VersionNumber);
@@ -407,9 +469,12 @@ public sealed class StalePerTypeVerificationTests : RevitApiTest
     private sealed class StubContentHashAnalytics
         : Dictionary<string, IReadOnlyList<FamilyTypeHashEntry>>, SmartCon.Core.Services.Interfaces.IContentHashAnalyticsRepository
     {
+        public Dictionary<string, IReadOnlyDictionary<string, string>> Sections { get; } = new(StringComparer.Ordinal);
+
         public Task<IReadOnlyDictionary<string, string>?> GetSectionHashesAsync(
             string catalogItemId, string versionLabel, CancellationToken ct)
-            => Task.FromResult<IReadOnlyDictionary<string, string>?>(null);
+            => Task.FromResult<IReadOnlyDictionary<string, string>?>(
+                Sections.TryGetValue(versionLabel, out var sections) ? sections : null);
 
         public Task<IReadOnlyDictionary<string, string>?> GetSectionStringsAsync(
             string catalogItemId, string versionLabel, CancellationToken ct)

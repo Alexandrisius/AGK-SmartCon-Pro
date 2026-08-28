@@ -641,6 +641,14 @@ internal sealed class StaleDetector : IStaleDetector
     /// are not (the project cannot have them). <c>null</c> when either
     /// version's analytics are pending — the tree then keeps the pre-fix
     /// leaf-scoped fallback.
+    /// <para>
+    /// Round-5 fix: per-type hashes track per-type VALUES only — a change in
+    /// a SHARED section (GEOM, DEF, CONN, …) affects EVERY type, and a
+    /// values-only map showed "0 stale" while the family genuinely needed a
+    /// reload (geometry dots vanished). The section hashes of the two
+    /// versions are compared too: any changed section outside the per-type
+    /// ones (<c>TYPES</c>/<c>VALUES</c>) marks every loaded type stale.
+    /// </para>
     /// </summary>
     private async Task<IReadOnlyDictionary<string, bool>?> ComputeDbPerTypeStaleAsync(
         string catalogItemId,
@@ -662,6 +670,11 @@ internal sealed class StaleDetector : IStaleDetector
                 return null;
             }
 
+            // Shared-section rule (round 5): a change outside the per-type
+            // sections makes EVERY loaded type stale.
+            var sharedChangedSections = await ComputeChangedSharedSectionsAsync(
+                catalogItemId, fromVersionLabel, currentVersionLabel, ct).ConfigureAwait(false);
+
             var toByKey = new Dictionary<string, FamilyTypeHashEntry>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in to)
             {
@@ -671,7 +684,8 @@ internal sealed class StaleDetector : IStaleDetector
             var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in from)
             {
-                map[entry.TypeName] = !toByKey.TryGetValue(entry.TypeIdentityKey, out var other)
+                map[entry.TypeName] = sharedChangedSections.Count > 0
+                    || !toByKey.TryGetValue(entry.TypeIdentityKey, out var other)
                     || !string.Equals(entry.HashHex, other.HashHex, StringComparison.OrdinalIgnoreCase);
             }
             foreach (var entry in to)
@@ -686,7 +700,10 @@ internal sealed class StaleDetector : IStaleDetector
 
             SmartConLogger.Debug(
                 $"CheckEmbedded[{catalogItemId}]: DB per-type drift between {fromVersionLabel} and " +
-                $"{currentVersionLabel}: {map.Count(kv => kv.Value)} stale of {map.Count} type(s)");
+                $"{currentVersionLabel}: {map.Count(kv => kv.Value)} stale of {map.Count} type(s)" +
+                (sharedChangedSections.Count > 0
+                    ? $" (shared sections changed: {string.Join(", ", sharedChangedSections)})"
+                    : string.Empty));
             return map;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -696,6 +713,46 @@ internal sealed class StaleDetector : IStaleDetector
                 "[Action: per-type индикация отключена для этого семейства до следующей «Проверить»; повторите проверку]");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Section names whose hashes differ between two versions of the item,
+    /// excluding the per-type sections (<c>TYPES</c>/<c>VALUES</c> — those
+    /// are answered by the per-type hash comparison). Empty when the
+    /// section analytics are pending for either version (the values-level
+    /// answer then stands alone) or when nothing shared changed.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ComputeChangedSharedSectionsAsync(
+        string catalogItemId,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        CancellationToken ct)
+    {
+        var fromSections = await _contentHashAnalytics!.GetSectionHashesAsync(catalogItemId, fromVersionLabel, ct)
+            .ConfigureAwait(false);
+        var toSections = await _contentHashAnalytics.GetSectionHashesAsync(catalogItemId, currentVersionLabel, ct)
+            .ConfigureAwait(false);
+        if (fromSections is null || toSections is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var changed = new List<string>();
+        foreach (var key in fromSections.Keys.Concat(toSections.Keys).Distinct(StringComparer.Ordinal))
+        {
+            if (string.Equals(key, FamilyContentSectionNames.Types, StringComparison.Ordinal)
+                || string.Equals(key, FamilyContentSectionNames.Values, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (!fromSections.TryGetValue(key, out var a)
+                || !toSections.TryGetValue(key, out var b)
+                || !string.Equals(a, b, StringComparison.Ordinal))
+            {
+                changed.Add(key);
+            }
+        }
+        return changed;
     }
 
     private void ClearLoadableTypeStaleMap(string catalogItemId)

@@ -198,12 +198,20 @@ public sealed partial class FamilyManagerMainViewModel
 
     /// <summary>
     /// #249 (Phase 2): pre-update confirmation naming the DRIFTED types
-    /// whose local edits the catalog content will replace. Silent (true)
-    /// when no per-type proof exists (the pre-#249 behaviour) or when
-    /// every compared type matches the catalog.
+    /// whose local edits the catalog content will replace. Fires ONLY for
+    /// <see cref="StaleReason.ContentDrift"/> (manual-test round 5): a
+    /// VersionMismatch family is simply OLDER — its types are not local
+    /// edits, and an update is the expected action with no data-loss
+    /// warning needed. Silent (true) when no per-type proof exists (the
+    /// pre-#249 behaviour) or when every compared type matches the catalog.
     /// </summary>
     private bool ConfirmDriftedTypesReplacement(string catalogItemId)
     {
+        if (!IsContentDrift(catalogItemId))
+        {
+            return true;
+        }
+
         var map = _staleDetector.GetLoadableTypeStaleMap(catalogItemId);
         if (map is null)
         {
@@ -229,6 +237,13 @@ public sealed partial class FamilyManagerMainViewModel
             map.Count - drifted.Count);
         return _dialogService.ShowConfirmation(title, message);
     }
+
+    /// <summary>The item's current snapshot verdict is a LOCAL content
+    /// drift (the user edited the embedded copy after loading) — the only
+    /// case where an update destroys user work and deserves a warning.</summary>
+    private bool IsContentDrift(string catalogItemId)
+        => _staleDetector.GetCachedSnapshot()?.Results.TryGetValue(catalogItemId, out var result) == true
+            && result.Reason == StaleReason.ContentDrift;
 
     /// <summary>
     /// #222: success message of a single stale update. When the content was
