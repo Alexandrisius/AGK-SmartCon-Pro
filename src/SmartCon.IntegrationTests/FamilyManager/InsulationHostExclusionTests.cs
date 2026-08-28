@@ -169,6 +169,7 @@ public sealed class InsulationHostExclusionTests : RevitApiTest
             null!,
             txService,
             new LoadableFamilyScanner(),
-            new RevitMiniProjectMarker(txService, new SystemClock()));
+            new RevitMiniProjectMarker(txService, new SystemClock()),
+            TestSystemTypeSyncServiceFactory.Create(doc));
     }
 }

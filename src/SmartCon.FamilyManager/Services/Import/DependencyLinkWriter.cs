@@ -54,10 +54,11 @@ internal static class DependencyLinkWriter
                     $"Link '{childName}' → '{parentSourcePath}' not written: parent was skipped or failed");
             }
 
-            linksByParent = new Dictionary<string, List<FamilyDependencyInfo>>(
-                plan.LinksByParent.Select(pair =>
-                    new KeyValuePair<string, List<FamilyDependencyInfo>>(pair.Key, new List<FamilyDependencyInfo>(pair.Value))),
-                StringComparer.Ordinal);
+            linksByParent = new Dictionary<string, List<FamilyDependencyInfo>>(StringComparer.Ordinal);
+            foreach (var pair in plan.LinksByParent)
+            {
+                linksByParent[pair.Key] = new List<FamilyDependencyInfo>(pair.Value);
+            }
         }
 
         // ADR-072 (plan item 5): reimport from a slim mini-project collects
@@ -119,18 +120,20 @@ internal static class DependencyLinkWriter
             .GroupBy(i => i.FilePath, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
-        foreach (var (sourcePath, parentId) in importedParentItemIds)
+        foreach (var pair in importedParentItemIds)
         {
             ct.ThrowIfCancellationRequested();
-            if (!systemItemsByPath.ContainsKey(sourcePath))
+            var parentId = pair.Value;
+            if (!systemItemsByPath.ContainsKey(pair.Key))
                 continue;
 
             IReadOnlyList<FamilyRoutingRuleInfo> rules;
             try
             {
-                (rules, _) = await routingRuleRepository
+                var read = await routingRuleRepository
                     .ReadForCurrentVersionAsync(parentId, ct)
                     .ConfigureAwait(false);
+                rules = read.Rules;
             }
             catch (Exception ex)
             {

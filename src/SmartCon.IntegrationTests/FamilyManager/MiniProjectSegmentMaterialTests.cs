@@ -89,7 +89,8 @@ public sealed class MiniProjectSegmentMaterialTests : RevitApiTest
 
         var ops = new SystemFamilyRevitOperations(
             null!, tx, new LoadableFamilyScanner(),
-            new RevitMiniProjectMarker(tx, new SmartCon.Core.Services.Interfaces.SystemClock()));
+            new RevitMiniProjectMarker(tx, new SmartCon.Core.Services.Interfaces.SystemClock()),
+            TestSystemTypeSyncServiceFactory.Create(SourceDoc));
         var staged = ops.CreateCleanProjectWithTypesAndInstances(
             SourceDoc,
             new[] { probeTypeUniqueId },

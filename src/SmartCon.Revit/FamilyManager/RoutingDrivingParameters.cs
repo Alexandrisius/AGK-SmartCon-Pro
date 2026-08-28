@@ -16,7 +16,7 @@ namespace SmartCon.Revit.FamilyManager;
 /// same built-ins are hidden (manager-backed), so the filter is a no-op
 /// there.
 /// </summary>
-internal static class RoutingDrivingParameters
+public static class RoutingDrivingParameters
 {
     /// <summary>
     /// ElementId routing parameters (fitting references). Extracted as
