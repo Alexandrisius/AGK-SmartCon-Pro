@@ -74,3 +74,62 @@ Failed), pre-slim снапшот (источник backfill; null для Already
 защита DB rules), счётчики (инстансы/семейства/орфаны/ренеймы/бэкапы).
 
 **Файл:** `SmartCon.Core/Services/Interfaces/IMiniProjectRoutingSlimmingService.cs`
+
+## RoutingGroupCatalog / RoutingGroupDescriptor / RoutingManagerGroup
+
+Per-category модель редактора трассировки (Ф3): какие группы показывает
+категория (pipe/duct — manager, multi-rule + критерии; flex/conduit/tray —
+param-строки по одному значению; conduit/tray without Fittings прячут
+TEE/CROSS по family_key), фильтры пикера детали (категория фитинга +
+ordinals `part_type`), read-only Segments, preferred junction (pipe/duct/
+flex). Ordinals категорий и PartType — замороженные API-константы
+(revitapidocs + PartTypeLabelMap), Core не ссылается на Revit enum (I-09).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/RoutingGroupCatalog.cs`
+
+## RoutingEditorData / RoutingEditorTypeSave / RoutingSaveResult / RoutingPartCandidate
+
+Вход/выход движка редактора (Ф3): типы итема (с дискриминацией
+WithFittings по family_key), правила/настройки, presence-флаги
+(MissingPartFamilies), маркер legacy-версии (нет section_strings →
+read-only + подсказка актуализации). Save — только затронутые типы;
+результат — новая версия + ArchivedLockedParts (детали, убранные из
+routing, но залоченные архивными версиями — UX-подсказка ADR-067).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/RoutingEditorData.cs`
+
+## RecomposedSystemSections / RecomposeTypeIdentity
+
+Результат `FamilyContentHasher.RebuildSystemSectionsWithRouting` (Ф3):
+пересчёт content hash + per-type hashes + канонических секций системной
+версии после правки routing В БД (без Revit) — ROUTING-секции затронутых
+типов переформатируются из новых правил, остальные секции конкатенируются
+из section_strings в каноническом порядке; byte-exactness со snapshot-хэшером
+покрыта юнит-тестами. `FormatSystemRoutingSection` — канонический
+ROUTING-токен снапшота.
+
+**Файл:** `SmartCon.Core/Services/Implementation/FamilyContentHasher.RoutingEditor.cs`
+
+## FamilyContentHasher.RoutingEditor
+
+Partial-файл хэшера с API редактора трассировки (Ф3):
+`FormatSystemRoutingSection` (каноническая ROUTING-секция снапшота) и
+`RebuildSystemSectionsWithRouting` (пересборка полного набора секций
+версии из section_strings с подменой ROUTING затронутых типов +
+пересчёт content hash и per-type hashes). Byte-exactness с
+snapshot-путём — гарантия, покрытая `FamilyContentHasherRoutingEditorTests`.
+
+**Файл:** `SmartCon.Core/Services/Implementation/FamilyContentHasher.RoutingEditor.cs`
+
+## SegmentSizeRecord
+
+Строка таблицы размеров сегмента версии каталога (V36, Ф3): имя сегмента +
+диаметры (internal units) + флаги использования. Источник dropdown'ов
+мин./макс. размера редактора трассировки — строго NominalDiameter, как в
+диалоге трассировки Revit. Пишется при импорте (`SegmentSizeWriter`),
+копируется вербатим при сохранении правки трассировки (новая версия),
+дозаполняется для legacy-версий задачей `segment-sizes-v1` (детект:
+системные трубы без строк размеров; extraction из мини).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/SegmentSizeRecord.cs`
+

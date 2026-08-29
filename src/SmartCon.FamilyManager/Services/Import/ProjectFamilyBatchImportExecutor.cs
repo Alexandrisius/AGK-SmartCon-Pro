@@ -16,6 +16,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
     private readonly IFamilyCatalogProvider _catalog;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentSizeRepository? _segmentSizeRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
     private readonly int _revitVersion;
 
@@ -31,7 +32,8 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         IFamilyCatalogProvider catalog,
         IFamilyDependencyRepository familyDependencyRepository,
         int revitVersion,
-        IFamilyRoutingRuleRepository? routingRuleRepository = null)
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentSizeRepository? segmentSizeRepository = null)
     {
         _staging = staging;
         _systemFamilyImportOrchestrator = systemFamilyImportOrchestrator;
@@ -42,6 +44,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         _catalog = catalog;
         _familyDependencyRepository = familyDependencyRepository;
         _routingRuleRepository = routingRuleRepository;
+        _segmentSizeRepository = segmentSizeRepository;
         _revitVersion = revitVersion;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
@@ -188,6 +191,12 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                 {
                     await RoutingRuleWriter.WriteAsync(
                             items, importedParentItemIds, _routingRuleRepository, ct)
+                        .ConfigureAwait(false);
+                }
+                if (_segmentSizeRepository is not null)
+                {
+                    await SegmentSizeWriter.WriteAsync(
+                            items, importedParentItemIds, _segmentSizeRepository, ct)
                         .ConfigureAwait(false);
                 }
                 await DependencyLinkWriter.WriteAsync(

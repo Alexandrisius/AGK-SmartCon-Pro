@@ -11,6 +11,7 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
     private readonly IFamilyImportService _importService;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentSizeRepository? _segmentSizeRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
 
     public FileFamilyBatchImportExecutor(
@@ -20,12 +21,14 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
         IFamilyDataImportService dataImportService,
         ISharedNestedFamilyRepository sharedNestedRepository,
         int revitVersion,
-        IFamilyRoutingRuleRepository? routingRuleRepository = null)
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentSizeRepository? segmentSizeRepository = null)
     {
         _staging = staging;
         _importService = importService;
         _familyDependencyRepository = familyDependencyRepository;
         _routingRuleRepository = routingRuleRepository;
+        _segmentSizeRepository = segmentSizeRepository;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
     }
@@ -175,6 +178,12 @@ public sealed class FileFamilyBatchImportExecutor : IFamilyBatchImportExecutor
                 {
                     await RoutingRuleWriter.WriteAsync(
                             items, importedParentItemIds, _routingRuleRepository, ct)
+                        .ConfigureAwait(false);
+                }
+                if (_segmentSizeRepository is not null)
+                {
+                    await SegmentSizeWriter.WriteAsync(
+                            items, importedParentItemIds, _segmentSizeRepository, ct)
                         .ConfigureAwait(false);
                 }
                 await DependencyLinkWriter.WriteAsync(

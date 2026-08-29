@@ -183,7 +183,8 @@ public sealed partial class FamilyManagerMainViewModel
                 _dataImportService,
                 _sharedNestedRepository,
                 CurrentRevitVersion,
-                _routingRuleRepository);
+                _routingRuleRepository,
+                _segmentSizeRepository);
             using var vm = new FamilyBatchImportViewModel(
                 items,
                 _dialogService,

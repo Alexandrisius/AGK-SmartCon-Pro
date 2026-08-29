@@ -233,6 +233,9 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    /// <inheritdoc/>
+    public bool? ShowRoutingPartPicker(object viewModel) => _presenter.ShowDialog(viewModel);
+
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request)
     {
         var vm = ViewModels.SharedFamiliesLoadModeDialogViewModel.Create(request);

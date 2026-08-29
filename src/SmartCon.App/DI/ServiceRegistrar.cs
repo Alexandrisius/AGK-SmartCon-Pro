@@ -165,6 +165,7 @@ public static class ServiceRegistrar
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
             presenter.Register<FmAllowedValuesViewModel>(vm => new FmAllowedValuesView(vm));
+            presenter.Register<RoutingPartPickerViewModel>(vm => new RoutingPartPickerView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -243,6 +244,14 @@ public static class ServiceRegistrar
         // data (V34) — sync/editor read routing from DB, not from the mini.
         services.AddSingleton<LocalFamilyRoutingRuleRepository>();
         services.AddSingleton<IFamilyRoutingRuleRepository>(sp => sp.GetRequiredService<LocalFamilyRoutingRuleRepository>());
+        // ADR-072 Phase 3: segment size tables (V36) — the routing editor's
+        // nominal-diameter dropdowns (as in the Revit routing dialog).
+        services.AddSingleton<LocalSegmentSizeRepository>();
+        services.AddSingleton<ISegmentSizeRepository>(sp => sp.GetRequiredService<LocalSegmentSizeRepository>());
+        // ADR-072 Phase 3: routing editor engine — saves routing edits as a
+        // new catalog version with recomputed hashes/sections/links (no Revit).
+        services.AddSingleton<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>();
+        services.AddSingleton<IRoutingEditorService>(sp => sp.GetRequiredService<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>());
         services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
@@ -295,6 +304,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.FamilyFactsActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.MiniProjectMarkerActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.TypeHashesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SegmentSizesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SectionHashesActualizationTask>();
         // ADR-072 Phase 2b (#254): routing backfill (file-free from section
         // strings / pre-slim mini extraction) + mini slimming.

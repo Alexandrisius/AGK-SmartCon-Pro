@@ -197,13 +197,16 @@ public sealed partial class FamilyContentHasher
     }
 
     private static string BuildRoutingSubstring(SystemTypeSnapshot t)
+        => BuildRoutingSubstring(t.Routing);
+
+    private static string BuildRoutingSubstring(RoutingPreferencesSnapshot? routing)
     {
         var sb = new StringBuilder(64);
         sb.Append("ROUTING|");
-        if (t.Routing is not null)
+        if (routing is not null)
         {
-            sb.Append(t.Routing.PreferredJunctionType).Append('|');
-            foreach (var rule in t.Routing.Rules)
+            sb.Append(routing.PreferredJunctionType).Append('|');
+            foreach (var rule in routing.Rules)
             {
                 // FHV19 (ADR-072): parameter-based groups (flex/conduit/
                 // cable-tray — no RoutingPreferenceManager) carry a string

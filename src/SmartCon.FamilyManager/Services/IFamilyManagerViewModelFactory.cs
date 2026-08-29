@@ -15,7 +15,18 @@ public interface IFamilyManagerViewModelFactory
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
         string? revitCategory = null,
-        bool isReadOnly = false);
+        bool isReadOnly = false,
+        string? familySource = null,
+        int? revitCategoryId = null);
+
+    /// <summary>
+    /// Routing part picker (ADR-072, Phase 3): family + type selection for
+    /// one routing rule, filtered by the group's fitting Revit category and
+    /// part_type ordinals. <paramref name="currentPartName"/> preselects the
+    /// currently assigned part.
+    /// </summary>
+    RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();

@@ -92,6 +92,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 33, MigrateV33Async, ct);
         await RunMigrationAsync(connection, 34, MigrateV34Async, ct);
         await RunMigrationAsync(connection, 35, MigrateV35Async, ct);
+        await RunMigrationAsync(connection, 36, MigrateV36Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1602,6 +1603,53 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             SmartConLogger.Info(columnAdded
                 ? "Migration v35: catalog_versions +routing_backfilled (routing backfill/slimming tracking, #254)"
                 : "Migration v35: routing_backfilled already present — version bumped to 35");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V36 (ADR-072, Phase 3): per-version segment size tables — the routing
+    /// editor's min/max dropdown source (nominal diameters, as in the Revit
+    /// routing dialog). Additive analytics-style table: legacy versions are
+    /// backfilled by the optional segment-sizes-v1 actualization, import
+    /// writes it for new versions.
+    /// </summary>
+    private static async Task MigrateV36Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 36) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var tableAdded = false;
+            using (var check = connection.CreateCommand())
+            {
+                check.Transaction = tx;
+                check.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'family_segment_sizes'";
+                tableAdded = await check.ExecuteScalarAsync(ct).ConfigureAwait(false) is null;
+            }
+            if (tableAdded)
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV36AddSegmentSizes;
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '36' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            tx.Commit();
+            SmartConLogger.Info(tableAdded
+                ? "Migration v36: family_segment_sizes table (routing editor size dropdowns, ADR-072 Phase 3)"
+                : "Migration v36: family_segment_sizes already present — version bumped to 36");
         }
         catch
         {

@@ -50,6 +50,10 @@ public sealed partial class FamilyManagerMainViewModel
         FamilyPropertiesViewModel vm;
         try
         {
+            // ADR-072 Phase 3: the routing tab needs the item's Revit
+            // category ordinal — the row model doesn't carry it, one cheap
+            // single-row read here.
+            var catalogItem = await _catalogProvider.GetItemAsync(itemId);
             vm = _viewModelFactory.CreatePropertiesViewModel(
                 SelectedItem.Id,
                 SelectedItem.Name,
@@ -62,7 +66,9 @@ public sealed partial class FamilyManagerMainViewModel
                 null,
                 updatedAt,
                 SelectedItem.RevitCategory,
-                isReadOnly: !CanEdit);
+                isReadOnly: !CanEdit,
+                familySource: SelectedItem.FamilySource,
+                revitCategoryId: catalogItem?.RevitCategoryId);
             SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
 
             // ADR-047 rev 2 / #131: refresh the tree node's tooltip the moment the
@@ -828,7 +834,8 @@ public sealed partial class FamilyManagerMainViewModel
             _dataImportService,
             _sharedNestedRepository,
             CurrentRevitVersion,
-            _routingRuleRepository);
+            _routingRuleRepository,
+            _segmentSizeRepository);
         var result = await executor.ExecuteAsync(
                 childImports, categoryId: null, progress: null, pauseGate: null,
                 CancellationToken.None, externalParentItemIds)
@@ -1148,7 +1155,8 @@ public sealed partial class FamilyManagerMainViewModel
             _catalogProvider,
             _familyDependencyRepository,
             CurrentRevitVersion,
-            _routingRuleRepository);
+            _routingRuleRepository,
+            _segmentSizeRepository);
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems,

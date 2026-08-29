@@ -153,6 +153,14 @@ public interface IFamilyManagerDialogService
     bool? ShowAvatarCropper(object viewModel);
 
     /// <summary>
+    /// Show the routing part picker (ADR-072, Phase 3): family + type
+    /// selection from the catalog for one routing rule. The viewModel must
+    /// be a RoutingPartPickerViewModel; returns true when the user confirmed
+    /// — read Result from the viewModel in that case.
+    /// </summary>
+    bool? ShowRoutingPartPicker(object viewModel);
+
+    /// <summary>
     /// Show dialog asking the user how to load a single shared nested family
     /// that conflicts with an existing one in the project.
     /// MUST be called from Revit main thread (blocks until user decides).

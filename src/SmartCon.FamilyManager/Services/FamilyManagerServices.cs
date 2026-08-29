@@ -183,4 +183,5 @@ public sealed record FamilyManagerServices(
     /// after import (<c>RoutingRuleWriter</c>) and to regenerate
     /// dependency links from stored rules (plan items 2/5).
     /// </summary>
-    IFamilyRoutingRuleRepository FamilyRoutingRuleRepository);
+    IFamilyRoutingRuleRepository FamilyRoutingRuleRepository,
+    ISegmentSizeRepository SegmentSizeRepository);

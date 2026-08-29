@@ -607,6 +607,28 @@ internal static class FamilyCatalogSql
         """;
 
     /// <summary>
+    /// V36 (ADR-072, Phase 3): per-version segment size tables — the
+    /// routing editor's min/max dropdown source (segment nominal
+    /// diameters, mirroring the Revit routing dialog). Diameters in
+    /// internal units (feet); cascade-deleted with the version.
+    /// </summary>
+    public const string MigrateV36AddSegmentSizes = """
+        CREATE TABLE IF NOT EXISTS family_segment_sizes (
+            catalog_version_id TEXT NOT NULL,
+            segment_name TEXT NOT NULL,
+            nominal_diameter REAL NOT NULL,
+            inner_diameter REAL NOT NULL,
+            outer_diameter REAL NOT NULL,
+            used_in_size_lists INTEGER NOT NULL DEFAULT 0,
+            used_in_sizing INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_version_id, segment_name, nominal_diameter),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_family_segment_sizes_version ON family_segment_sizes (catalog_version_id);
+        """;
+
+    /// <summary>
     /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
     /// catalog DATA — the mini-project no longer carries fittings, so the
     /// routing of a version lives here instead of the staged .rvt.

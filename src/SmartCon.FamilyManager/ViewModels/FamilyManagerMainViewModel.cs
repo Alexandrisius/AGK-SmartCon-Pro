@@ -65,6 +65,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly IFamilyRoutingRuleRepository _routingRuleRepository;
+    private readonly ISegmentSizeRepository _segmentSizeRepository;
     private readonly IDispatcher _dispatcher;
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
@@ -240,6 +241,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _sharedNestedRepository = services.SharedNestedRepository;
         _familyDependencyRepository = services.FamilyDependencyRepository;
         _routingRuleRepository = services.FamilyRoutingRuleRepository;
+        _segmentSizeRepository = services.SegmentSizeRepository;
 
         // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
         // Application.Current?.Dispatcher. The latter is null in net48 Revit
@@ -527,6 +529,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
                 RevitCategory = leaf.RevitCategory,
+                FamilySource = leaf.FamilySource,
                 ActiveRevitMajorVersion = leaf.ActiveRevitMajorVersion,
                 MinRevitMajorVersion = leaf.MinRevitMajorVersion,
             };
@@ -549,6 +552,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                     RevitCategory = parentLeaf.RevitCategory,
+                    FamilySource = parentLeaf.FamilySource,
                     ActiveRevitMajorVersion = parentLeaf.ActiveRevitMajorVersion,
                     MinRevitMajorVersion = parentLeaf.MinRevitMajorVersion,
                 };

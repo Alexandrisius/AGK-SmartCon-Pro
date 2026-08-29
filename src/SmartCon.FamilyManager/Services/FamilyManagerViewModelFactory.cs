@@ -36,6 +36,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly ICategoryChangeGateService _categoryChangeGate;
     private readonly IAssignmentRuleRepository _assignmentRuleRepository;
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
+    private readonly IRoutingEditorService _routingEditorService;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -66,7 +67,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IValidationRuleRepository ruleRepository,
         ICategoryChangeGateService categoryChangeGate,
         IAssignmentRuleRepository assignmentRuleRepository,
-        IRevitCategoryLabelService revitCategoryLabels)
+        IRevitCategoryLabelService revitCategoryLabels,
+        IRoutingEditorService routingEditorService)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -97,6 +99,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _categoryChangeGate = categoryChangeGate;
         _assignmentRuleRepository = assignmentRuleRepository;
         _revitCategoryLabels = revitCategoryLabels;
+        _routingEditorService = routingEditorService;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -105,7 +108,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
         string? revitCategory = null,
-        bool isReadOnly = false)
+        bool isReadOnly = false,
+        string? familySource = null,
+        int? revitCategoryId = null)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
@@ -113,9 +118,18 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
-            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate)
+            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate,
+            familySource, revitCategoryId, _routingEditorService)
         { IsReadOnly = isReadOnly };
     }
+
+    /// <summary>
+    /// Routing part picker (ADR-072, Phase 3): family + type selection for
+    /// one routing rule, filtered by fitting category + part_type ordinals.
+    /// </summary>
+    public RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName)
+        => new(_routingEditorService, fittingCategoryId, partTypeOrdinals, currentPartName);
 
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {

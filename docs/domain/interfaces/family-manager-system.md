@@ -298,8 +298,51 @@ public interface IFamilyRoutingRuleRepository
 
 ---
 
-## IMiniProjectRoutingSlimmingService
+## IRoutingEditorService
 
+Движок редактора трассировки (ADR-072, Фаза 3): загрузка правил системного MEPCurve-итема для редактирования и сохранение правок КАК НОВОЙ ВЕРСИИ каталога — одной транзакцией: клон версии (тот же mini-файл), копии family_types, строки routing (V34), пересчитанные content/per-type хэши и канонические секции (`FamilyContentHasher.RebuildSystemSectionsWithRouting`, byte-exact со snapshot-хэшером), перенос указателя current версии и регенерация `family_dependencies` (shared_nested переносятся, routing-links пересобираются из новых правил как в DependencyLinkWriter). Legacy-версии без section_strings отклоняются (хэши неверифицируемы — подсказка актуализации). Убранные детали, залоченные архивными версиями (ADR-067), возвращаются для UX-подсказки. `GetPartCandidatesAsync` — источник пикера «семейство+тип»: loadable-итемы категории фитинга с фактом part_type из набора группы (строго как фильтр Revit). Без Revit — чистые данные каталога.
+
+**Файл:** `IRoutingEditorService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Routing/CatalogRoutingEditorService.cs`
+
+```csharp
+public interface IRoutingEditorService
+{
+    Task<RoutingEditorData?> LoadAsync(string catalogItemId, CancellationToken ct = default);
+    Task<RoutingSaveResult> SaveAsync(
+        string catalogItemId, RoutingEditorSave save, CancellationToken ct = default);
+    Task<IReadOnlyList<RoutingPartCandidate>> GetPartCandidatesAsync(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, CancellationToken ct = default);
+}
+```
+
+---
+
+## ISegmentSizeRepository
+
+Таблицы размеров сегментов версий каталога (V36, Ф3): per-version строки
+`family_segment_sizes` (каскадное удаление с версией). `ReadDistinctNominalsAsync`
+— источник dropdown'ов мин./макс. размера редактора трассировки (strictly
+NominalDiameter, как в диалоге Revit). `ReplaceForCurrentVersionAsync` —
+import-путь (`SegmentSizeWriter`); задача `segment-sizes-v1` пишет через
+`ReplaceForVersionAsync` для всех вариантов группы.
+
+**Файл:** `ISegmentSizeRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalSegmentSizeRepository.cs`
+
+```csharp
+public interface ISegmentSizeRepository
+{
+    Task ReplaceForVersionAsync(string catalogVersionId, IReadOnlyList<SegmentSizeRecord> sizes, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId, IReadOnlyList<SegmentSizeRecord> sizes, CancellationToken ct = default);
+    Task<IReadOnlyList<SegmentSizeRecord>> ReadForVersionAsync(string catalogVersionId, CancellationToken ct = default);
+    Task<IReadOnlyList<double>> ReadDistinctNominalsAsync(string catalogVersionId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IMiniProjectRoutingSlimmingService
 Лечение legacy мини-проектов в managed-хранилище (ADR-072, Ф2b): pre-slim экстракция полного routing (источник backfill для версий без section_strings) → slim: fitting-группы очищены (Segments сохранены), routing-параметры в «Нет», протащенные фитинги (инстансы+семейства) удалены, orphan-материалы (включая #254-дубли и каскадные после удаления семейств) удалены, суффиксные рабочие копии collision-пар переименованы в чистое имя → save in place → удаление `name.NNNN.rvt` → восстановление read-only (I-16 exception). `AlreadySlim` возвращает snapshot=null — stored DB rules защищены от перезаписи slim-состоянием. Маршаллинг на Revit UI thread через awaitable event (I-01).
 
 **Файл:** `IMiniProjectRoutingSlimmingService.cs`
