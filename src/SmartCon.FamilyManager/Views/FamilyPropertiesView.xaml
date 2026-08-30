@@ -22,6 +22,7 @@
     <Window.Resources>
         <ui:SingletonResources>
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+            <converters:InvertBoolConverter x:Key="InvertBool"/>
             <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
             <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
             <!-- ADR-041 rev #5: ElementStyle for short columns (Revit version,
@@ -1027,8 +1028,24 @@
 
                     <!-- Table header: always visible, prominent, aligned with rows
                          (same fixed column widths; the part column stretches). -->
-                    <Border Grid.Row="1" Background="{DynamicResource ZoneSurfaceBrush}"
-                            BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1">
+                    <!-- The fixed header reads as the table's own chrome, not a
+                         group bar: dark rule under the column titles only
+                         (owner UI review 2026-08-30). -->
+                    <Border Grid.Row="1" BorderBrush="{DynamicResource TextPrimaryBrush}" BorderThickness="0,0,0,1.5">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource ZoneSurfaceBrush}"/>
+                                <!-- The rules scroller's vertical scrollbar shrinks the row
+                                     grid by the scrollbar width on the right; mirror that
+                                     inset here so the fixed header's columns stay exactly
+                                     above the rows (owner UI review 2026-08-30). -->
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ComputedVerticalScrollBarVisibility, ElementName=RoutingRulesScroller}" Value="Visible">
+                                        <Setter Property="Margin" Value="0,0,17,0"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <Grid Height="28">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -1058,7 +1075,7 @@
                     </Border>
 
                     <!-- Groups + rule rows. -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+                    <ScrollViewer Grid.Row="2" x:Name="RoutingRulesScroller" VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding RoutingGroups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
@@ -1108,6 +1125,17 @@
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <Grid MinHeight="30">
+                                                            <Grid.Style>
+                                                                <!-- Greyed-out junctions rule (non-preferred
+                                                                     part type): Revit shows it but blocks it. -->
+                                                                <Style TargetType="Grid">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsInactive}" Value="True">
+                                                                            <Setter Property="Opacity" Value="0.45"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Grid.Style>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="20"/>
@@ -1124,8 +1152,18 @@
                                                                        VerticalAlignment="Center" FontSize="12"
                                                                        Margin="8,0,4,0"
                                                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       ToolTip="{Binding PartDisplay}"/>
+                                                                       TextTrimming="CharacterEllipsis">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="ToolTip" Value="{Binding PartDisplay}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsInactive}" Value="True">
+                                                                                <Setter Property="ToolTip" Value="{Binding InactiveTooltip}"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
 
                                                             <!-- Presence flag: part family missing in catalog. -->
                                                             <Viewbox Grid.Column="1" Width="13" Height="13" Stretch="Uniform"
@@ -1142,7 +1180,7 @@
                                                                     ToolTip="{loc:Loc FM_Routing_PickPart}"
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
-                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    IsEnabled="{Binding CanEditRule}"
                                                                     Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
                                                                 <Viewbox Width="13" Height="13" Stretch="Uniform">
                                                                     <iconPacks:PackIconMaterial Kind="DotsHorizontal" Width="24" Height="24"
@@ -1158,12 +1196,12 @@
                                                                       Style="{DynamicResource CompactComboBox}" Height="24"
                                                                       Margin="4,0,2,0"
                                                                       Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
-                                                                      IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                                      IsEnabled="{Binding CanEditRule}"/>
                                                             <TextBox Grid.Column="3" Text="{Binding MinSizeText, UpdateSourceTrigger=PropertyChanged}"
                                                                      Style="{DynamicResource CompactTextBox}" Height="24"
                                                                      Margin="4,0,2,0"
                                                                      Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
-                                                                     IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                                     IsEnabled="{Binding CanEditRule}"/>
                                                             <TextBlock Grid.Column="3" Text="{Binding MinSizeText}"
                                                                        VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0"
                                                                        Foreground="{DynamicResource TextSecondaryBrush}"
@@ -1173,12 +1211,12 @@
                                                                       Style="{DynamicResource CompactComboBox}" Height="24"
                                                                       Margin="2,0,2,0"
                                                                       Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
-                                                                      IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                                      IsEnabled="{Binding CanEditRule}"/>
                                                             <TextBox Grid.Column="4" Text="{Binding MaxSizeText, UpdateSourceTrigger=PropertyChanged}"
                                                                      Style="{DynamicResource CompactTextBox}" Height="24"
                                                                      Margin="2,0,2,0"
                                                                      Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
-                                                                     IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                                     IsEnabled="{Binding CanEditRule}"/>
                                                             <TextBlock Grid.Column="4" Text="{Binding MaxSizeText}"
                                                                        VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0"
                                                                        Foreground="{DynamicResource TextSecondaryBrush}"

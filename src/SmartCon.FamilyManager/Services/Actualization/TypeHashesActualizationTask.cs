@@ -11,12 +11,17 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// Phase 2): backfills <c>family_type_hashes</c> for catalog versions
 /// imported before the per-type hash engine existed (or imported through
 /// legacy paths that carry no Prepare-time hashes, e.g. folder import).
-/// Detection: the version has rows in <c>family_types</c> (types exist)
-/// but none in <c>family_type_hashes</c>. Typeless loadable families
-/// legitimately have zero rows — they never match the detection because
-/// they have no <c>family_types</c> rows either. Versions whose content
-/// hash carries a terminal sentinel (-1/-2: missing/unreadable file) are
-/// excluded — re-opening them is known to fail (ADR-050 §2).
+/// Detection: the version has a NAMED row in <c>family_types</c> (a real
+/// type exists) but none in <c>family_type_hashes</c>. Typeless loadable
+/// families legitimately have zero per-type hashes: modern imports write
+/// no <c>family_types</c> rows for them, and pre-FHV8 imports left a
+/// phantom <c>&lt;default&gt;</c> row which the hash engine ignores
+/// (FHV8/#209 — the unnamed default type is never hashed) — detection
+/// excludes versions whose <c>family_types</c> rows are all such
+/// phantoms, otherwise the group would be re-detected on every run
+/// forever (owner repro 2026-08-30). Versions whose content hash carries
+/// a terminal sentinel (-1/-2: missing/unreadable file) are excluded —
+/// re-opening them is known to fail (ADR-050 §2).
 /// <para>
 /// The per-type hashes of a group are written for ALL its Revit variants
 /// in one transaction (the content is identical across variants — same
@@ -43,11 +48,14 @@ internal sealed class TypeHashesActualizationTask : SqlDetectionActualizationTas
     public override int Order => 70;
     public override bool IsCritical => false;
 
-    protected override string DetectionSql => """
+    protected override string DetectionSql => $"""
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
         WHERE COALESCE(cv.hash_format_version, 0) NOT IN (-1, -2)
-          AND EXISTS(SELECT 1 FROM family_types ft WHERE ft.version_id = cv.id)
+          AND EXISTS(SELECT 1 FROM family_types ft
+                     WHERE ft.version_id = cv.id
+                       AND ft.type_name <> '{FamilyTypeSnapshot.DefaultTypeName}'
+                       AND ft.type_name <> '')
           AND NOT EXISTS(SELECT 1 FROM family_type_hashes fth WHERE fth.catalog_version_id = cv.id)
         """;
 
@@ -78,14 +86,26 @@ internal sealed class TypeHashesActualizationTask : SqlDetectionActualizationTas
             return;
         }
 
-        // An EMPTY set with family_types rows present is data drift (the
-        // catalog stores types the extraction no longer sees): invalidate
-        // the stale rows (DELETE) so nothing serves wrong hashes, log a
-        // Warn instead of a success Info — the group is re-detected on
-        // the next run and the drift stays visible.
+        // An EMPTY set with family_types rows present is either a legacy
+        // typeless family (phantom '<default>' rows only — the extractor
+        // skips the unnamed default type, FHV8/#209) or genuine data
+        // drift (named rows the extraction no longer sees). Detection
+        // already excludes the phantom-only shape; the defensive check
+        // below keeps ApplyAsync self-consistent. Genuine drift:
+        // invalidate the stale rows (DELETE) so nothing serves wrong
+        // hashes, log a Warn instead of a success Info — the group is
+        // re-detected on the next run and the drift stays visible.
         var isDriftedEmptySet = entries.Count == 0;
         if (isDriftedEmptySet)
         {
+            if (await AreFamilyTypesPhantomOnlyAsync(context, ct).ConfigureAwait(false))
+            {
+                SmartConLogger.Info(
+                    $"type-hashes-v1: '{context.Group.ItemName}' is a typeless legacy family " +
+                    $"(phantom '{FamilyTypeSnapshot.DefaultTypeName}' rows only) — nothing to backfill");
+                return;
+            }
+
             SmartConLogger.Warn(
                 $"Per-type hash computation returned an empty set for '{context.OpenedVariant.FileName}' " +
                 $"(item '{context.Group.ItemName}') while family_types rows exist — invalidating stale rows. " +
@@ -141,5 +161,26 @@ internal sealed class TypeHashesActualizationTask : SqlDetectionActualizationTas
             tx.Rollback();
             throw;
         }
+    }
+
+    private async Task<bool> AreFamilyTypesPhantomOnlyAsync(FamilyActualizationContext context, CancellationToken ct)
+    {
+        using var connection = Database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        foreach (var variant in context.Group.Variants)
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"""
+                SELECT COUNT(*) FROM family_types
+                WHERE version_id = @versionId
+                  AND type_name <> '{FamilyTypeSnapshot.DefaultTypeName}'
+                  AND type_name <> ''
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@versionId", variant.VersionId));
+            var namedCount = (long)(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
+            if (namedCount > 0) return false;
+        }
+
+        return true;
     }
 }

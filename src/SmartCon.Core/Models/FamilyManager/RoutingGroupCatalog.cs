@@ -115,6 +115,21 @@ public static class RoutingGroupCatalog
         => revitCategoryId is PipeCurvesCategoryId or FlexPipeCurvesCategoryId
             or DuctCurvesCategoryId or FlexDuctCurvesCategoryId;
 
+    /// <summary>The junctions manager group (tee/tap-dependent, Revit's
+    /// abstract «Соединение» block — the editor labels it dynamically by
+    /// the preferred junction type, owner review 2026-08-30).</summary>
+    public static bool IsJunctionsManagerGroup(int? managerGroupType)
+        => managerGroupType == (int)RoutingManagerGroup.Junctions;
+
+    /// <summary>
+    /// Revit routing dialog behavior: the junctions group holds BOTH tee and
+    /// tap rules, but the rules of the non-preferred junction type are shown
+    /// greyed out and unused. <c>preferredJunctionType</c>: 0 = tee, 1 = tap.
+    /// </summary>
+    public static bool IsInactiveJunctionPart(int? partTypeOrdinal, int preferredJunctionType)
+        => partTypeOrdinal is { } part
+            && (preferredJunctionType == 1 ? TeeParts : TakeoffParts).Contains(part);
+
     /// <summary>
     /// The Revit category id of the fitting families compatible with the
     /// given MEPCurve host category (picker category filter).
@@ -147,7 +162,7 @@ public static class RoutingGroupCatalog
                 ManagerGroup(RoutingManagerGroup.Crosses, "FM_Routing_Group_Crosses", PipeFittingCategoryId, CrossParts),
                 ManagerGroup(RoutingManagerGroup.Transitions, "FM_Routing_Group_Transitions", PipeFittingCategoryId, TransitionParts),
                 ManagerGroup(RoutingManagerGroup.Unions, "FM_Routing_Group_Unions", PipeFittingCategoryId, UnionParts),
-                ManagerGroup(RoutingManagerGroup.MechanicalJoints, "FM_Routing_Group_MechanicalJoints", PipeFittingCategoryId, MechanicalJointParts),
+                ManagerGroup(RoutingManagerGroup.MechanicalJoints, "FM_Routing_Group_Flanges", PipeFittingCategoryId, MechanicalJointParts),
                 ManagerGroup(RoutingManagerGroup.Caps, "FM_Routing_Group_Caps", PipeFittingCategoryId, CapParts),
             ],
             DuctCurvesCategoryId =>
@@ -178,9 +193,9 @@ public static class RoutingGroupCatalog
                 ParamGroup("RBS_CURVETYPE_DEFAULT_TEE_PARAM", "FM_Routing_Group_Junctions", DuctFittingCategoryId, TeeParts),
                 ParamGroup("RBS_CURVETYPE_DEFAULT_TAKEOFF_PARAM", "FM_Routing_Group_Takeoff", DuctFittingCategoryId, TakeoffParts),
                 ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_PARAM", "FM_Routing_Group_TransitionRectToRound", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_RECTOVAL_PARAM", "FM_Routing_Group_TransitionRectToOval", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_OVALROUND_PARAM", "FM_Routing_Group_TransitionOvalToRound", DuctFittingCategoryId, TransitionParts),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_PARAM", "FM_Routing_Param_RectToRound", DuctFittingCategoryId, TransitionParts),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_RECTOVAL_PARAM", "FM_Routing_Param_RectToOval", DuctFittingCategoryId, TransitionParts),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_OVALROUND_PARAM", "FM_Routing_Param_OvalToRound", DuctFittingCategoryId, TransitionParts),
                 ParamGroup("RBS_CURVETYPE_DEFAULT_UNION_PARAM", "FM_Routing_Group_Unions", DuctFittingCategoryId, UnionParts),
             ],
             ConduitCategoryId => BuildConduitGroups(withFittings),
@@ -196,7 +211,7 @@ public static class RoutingGroupCatalog
         };
         if (withFittings)
         {
-            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_Crosses", ConduitFittingCategoryId, CrossParts));
+            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_CrossesElectrical", ConduitFittingCategoryId, CrossParts));
             groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TEE_PARAM", "FM_Routing_Group_Junctions", ConduitFittingCategoryId, TeeParts));
         }
         groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", ConduitFittingCategoryId, TransitionParts));
@@ -215,7 +230,7 @@ public static class RoutingGroupCatalog
         if (withFittings)
         {
             groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TEE_PARAM", "FM_Routing_Group_Junctions", CableTrayFittingCategoryId, TrayTeeParts));
-            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_Crosses", CableTrayFittingCategoryId, TrayCrossParts));
+            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_CrossesElectrical", CableTrayFittingCategoryId, TrayCrossParts));
         }
         groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", CableTrayFittingCategoryId, TrayTransitionParts));
         groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_UNION_PARAM", "FM_Routing_Group_Unions", CableTrayFittingCategoryId, TrayUnionParts));

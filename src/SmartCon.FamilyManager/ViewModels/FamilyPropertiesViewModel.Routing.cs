@@ -111,6 +111,11 @@ public sealed partial class FamilyPropertiesViewModel
             state.PreferredJunctionType = value.Value;
             NotifyRoutingChanged();
         }
+
+        // The junctions group relabels (Тройники/Врезки) and re-greys its
+        // rules of the non-preferred part type (Revit routing dialog).
+        foreach (var group in RoutingGroups)
+            group.RefreshJunctionState(value.Value);
     }
 
     private void InitializeRoutingTab(string? familySource, int? revitCategoryId)
@@ -197,6 +202,7 @@ public sealed partial class FamilyPropertiesViewModel
             foreach (var rule in storedRules)
             {
                 var row = RoutingRuleEditState.FromStored(rule, missing);
+                row.PartTypeOrdinal = PartTypeOrdinalOf(rule.PartName);
                 // The read-only Segments row shows the segment's own
                 // configured size span (as the Revit routing dialog does).
                 if (descriptor.IsReadOnly
@@ -241,7 +247,7 @@ public sealed partial class FamilyPropertiesViewModel
         }
         var state = GetRoutingEditState(SelectedRoutingType);
         RoutingGroups = new ObservableCollection<RoutingGroupRowViewModel>(
-            state.Groups.Select(g => new RoutingGroupRowViewModel(this, g, _routingSizeOptions)));
+            state.Groups.Select(g => new RoutingGroupRowViewModel(this, g, _routingSizeOptions, state.PreferredJunctionType)));
         SelectedPreferredJunction = PreferredJunctionOptions
             .FirstOrDefault(o => o.Value == state.PreferredJunctionType);
     }
@@ -306,6 +312,7 @@ public sealed partial class FamilyPropertiesViewModel
             {
                 row.State.PartName = partName;
                 row.State.HasPresenceIssue = false;
+                row.State.PartTypeOrdinal = PartTypeOrdinalOf(partName);
                 row.Refresh();
                 NotifyRoutingChanged();
                 SmartConLogger.Info($"Part picked: '{partName}'");
@@ -327,8 +334,23 @@ public sealed partial class FamilyPropertiesViewModel
             return;
         row.State.PartName = null;
         row.State.HasPresenceIssue = false;
+        row.State.PartTypeOrdinal = null;
         row.Refresh();
         NotifyRoutingChanged();
+    }
+
+    /// <summary>Part-type ordinal of a rule part family («family:type» prefix),
+    /// or null when the catalog carries no part_type fact for it.</summary>
+    private int? PartTypeOrdinalOf(string? partName)
+    {
+        if (partName is null)
+            return null;
+        var separator = partName.IndexOf(':');
+        var family = separator > 0 ? partName.Substring(0, separator) : partName;
+        return _routingData?.PartTypesByFamily is { } map
+            && map.TryGetValue(family, out var ordinal)
+            ? ordinal
+            : null;
     }
 
     internal void NotifyRoutingRuleEdited() => NotifyRoutingChanged();

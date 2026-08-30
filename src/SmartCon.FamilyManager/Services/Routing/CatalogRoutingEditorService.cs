@@ -58,6 +58,7 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
             : await _routingRuleRepository.ReadForCurrentVersionAsync(catalogItemId, ct).ConfigureAwait(false);
 
         var missingFamilies = new List<string>();
+        var childIdByFamily = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var family in PartFamiliesOf(rules))
         {
             var child = await _catalog
@@ -65,7 +66,11 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
                 .ConfigureAwait(false);
             if (child is null)
                 missingFamilies.Add(family);
+            else
+                childIdByFamily[family] = child.Id;
         }
+
+        var partTypesByFamily = await ReadPartTypesAsync(childIdByFamily, ct).ConfigureAwait(false);
 
         // Size data exists for PIPES only (owner decision 2026-08-30):
         // duct/flex/conduit/cable-tray routing has no size conditions —
@@ -93,7 +98,53 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
             settings,
             missingFamilies,
             sizeNominals,
-            segmentBounds);
+            segmentBounds,
+            partTypesByFamily);
+    }
+
+    /// <summary>Part-type ordinal per rule-part family (junctions grey-out).</summary>
+    private async Task<IReadOnlyDictionary<string, int>> ReadPartTypesAsync(
+        Dictionary<string, string> childIdByFamily, CancellationToken ct)
+    {
+        var result = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (childIdByFamily.Count == 0)
+            return result;
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        var parameters = childIdByFamily.Values
+            .Select((id, index) => (id, Name: "@p" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .ToList();
+        cmd.CommandText = $"""
+            SELECT catalog_item_id, value_key
+            FROM family_facts
+            WHERE fact_key = 'part_type'
+              AND catalog_item_id IN ({string.Join(", ", parameters.Select(p => p.Name))})
+            """;
+        foreach (var p in parameters)
+            cmd.Parameters.Add(new SqliteParameter(p.Name, p.id));
+        var valueByChild = new Dictionary<string, string>(StringComparer.Ordinal);
+        using (var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (!reader.IsDBNull(1))
+                    valueByChild[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        foreach (var pair in childIdByFamily)
+        {
+            if (valueByChild.TryGetValue(pair.Value, out var valueKey)
+                && int.TryParse(valueKey, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var ordinal))
+            {
+                result[pair.Key] = ordinal;
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

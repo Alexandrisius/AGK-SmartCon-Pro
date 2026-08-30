@@ -251,22 +251,35 @@ public static partial class LocalizationService
         ru["FM_Routing_Junction_Tap"] = "Врезка"; en["FM_Routing_Junction_Tap"] = "Tap";
         ru["FM_Routing_Group_SegmentsPipe"] = "Сегмент трубы"; en["FM_Routing_Group_SegmentsPipe"] = "Pipe segment";
         ru["FM_Routing_Group_SegmentsDuct"] = "Сегмент воздуховода"; en["FM_Routing_Group_SegmentsDuct"] = "Duct segment";
-        ru["FM_Routing_Group_Elbows"] = "Отвод"; en["FM_Routing_Group_Elbows"] = "Elbow";
+        ru["FM_Routing_Group_Elbows"] = "Отвод"; en["FM_Routing_Group_Elbows"] = "Elbows";
         ru["FM_Routing_Group_Junctions"] = "Тройник"; en["FM_Routing_Group_Junctions"] = "Tee";
-        ru["FM_Routing_Group_Crosses"] = "Крестовина"; en["FM_Routing_Group_Crosses"] = "Cross";
-        ru["FM_Routing_Group_Transitions"] = "Переход"; en["FM_Routing_Group_Transitions"] = "Transition";
-        ru["FM_Routing_Group_TransitionSingle"] = "Переходный"; en["FM_Routing_Group_TransitionSingle"] = "Transition";
-        ru["FM_Routing_Group_Unions"] = "Соединение"; en["FM_Routing_Group_Unions"] = "Union";
-        ru["FM_Routing_Group_MechanicalJoints"] = "Механическое соединение"; en["FM_Routing_Group_MechanicalJoints"] = "Mechanical joint";
-        ru["FM_Routing_Group_Caps"] = "Заглушка"; en["FM_Routing_Group_Caps"] = "Cap";
-        ru["FM_Routing_Group_TransitionRectToRound"] = "Переход: прямоугольный → круглый"; en["FM_Routing_Group_TransitionRectToRound"] = "Transition: rectangular → round";
-        ru["FM_Routing_Group_TransitionRectToOval"] = "Переход: прямоугольный → овальный"; en["FM_Routing_Group_TransitionRectToOval"] = "Transition: rectangular → oval";
-        ru["FM_Routing_Group_TransitionOvalToRound"] = "Переход: овальный → круглый"; en["FM_Routing_Group_TransitionOvalToRound"] = "Transition: oval → round";
+        // The manager junctions group is labeled dynamically by the preferred
+        // junction type (Revit's abstract «Соединение» block, owner review
+        // 2026-08-30): tee preferred → «Тройники», tap preferred → «Врезки».
+        ru["FM_Routing_Group_JunctionsTees"] = "Тройники"; en["FM_Routing_Group_JunctionsTees"] = "Tees";
+        ru["FM_Routing_Group_JunctionsTaps"] = "Врезки"; en["FM_Routing_Group_JunctionsTaps"] = "Taps";
+        ru["FM_Routing_InactiveJunction"] = "Деталь не используется: предпочтён другой тип соединения"; en["FM_Routing_InactiveJunction"] = "Part is not used: another junction type is preferred";
+        ru["FM_Routing_Group_Crosses"] = "Крестовина"; en["FM_Routing_Group_Crosses"] = "Crosses";
+        ru["FM_Routing_Group_Transitions"] = "Переход"; en["FM_Routing_Group_Transitions"] = "Transitions";
+        ru["FM_Routing_Group_TransitionSingle"] = "Переход"; en["FM_Routing_Group_TransitionSingle"] = "Transition";
+        ru["FM_Routing_Group_Unions"] = "Соединение"; en["FM_Routing_Group_Unions"] = "Unions";
+        ru["FM_Routing_Group_Flanges"] = "Фланец"; en["FM_Routing_Group_Flanges"] = "Flanges";
+        ru["FM_Routing_Group_Caps"] = "Заглушка"; en["FM_Routing_Group_Caps"] = "Caps";
+        // Revit duct routing dialog labels (owner screenshots 2026-08-30).
+        ru["FM_Routing_Group_TransitionRectToRound"] = "Переходник переменной формы с прямоугольного на круглое сечение"; en["FM_Routing_Group_TransitionRectToRound"] = "Transitions Rectangular to Round";
+        ru["FM_Routing_Group_TransitionRectToOval"] = "Переходник переменной формы с прямоугольного на овальное сечение"; en["FM_Routing_Group_TransitionRectToOval"] = "Transitions Rectangular to Oval";
+        ru["FM_Routing_Group_TransitionOvalToRound"] = "Переходник переменной формы с овального на круглое сечение"; en["FM_Routing_Group_TransitionOvalToRound"] = "Transitions Oval to Round";
         ru["FM_Routing_Group_Bend"] = "Изгиб"; en["FM_Routing_Group_Bend"] = "Bend";
-        ru["FM_Routing_Group_HorizontalBend"] = "Изгиб гориз."; en["FM_Routing_Group_HorizontalBend"] = "Horizontal bend";
-        ru["FM_Routing_Group_VerticalBendOuter"] = "Вертикальный изгиб наружный"; en["FM_Routing_Group_VerticalBendOuter"] = "Vertical bend outside";
-        ru["FM_Routing_Group_VerticalBendInner"] = "Вертикальный изгиб внутренний"; en["FM_Routing_Group_VerticalBendInner"] = "Vertical bend inside";
+        ru["FM_Routing_Group_HorizontalBend"] = "Изгиб в горизонтальной плоскости"; en["FM_Routing_Group_HorizontalBend"] = "Horizontal Bend";
+        ru["FM_Routing_Group_VerticalBendOuter"] = "Вертикальный наружный изгиб"; en["FM_Routing_Group_VerticalBendOuter"] = "Vertical Outside Bend";
+        ru["FM_Routing_Group_VerticalBendInner"] = "Вертикальный внутренний изгиб"; en["FM_Routing_Group_VerticalBendInner"] = "Vertical Inside Bend";
         ru["FM_Routing_Group_Takeoff"] = "Врезка"; en["FM_Routing_Group_Takeoff"] = "Tap";
+        // Revit type-properties parameter labels (flex duct multi-shape,
+        // electrical cross) — owner screenshots 2026-08-30.
+        ru["FM_Routing_Param_RectToRound"] = "Переход переменного сечения: с прямоугольного на круглое"; en["FM_Routing_Param_RectToRound"] = "Transition Rectangular to Round";
+        ru["FM_Routing_Param_RectToOval"] = "Переход переменного сечения: с прямоугольного на овальное"; en["FM_Routing_Param_RectToOval"] = "Transition Rectangular to Oval";
+        ru["FM_Routing_Param_OvalToRound"] = "Переход переменного сечения: с овального на круглое"; en["FM_Routing_Param_OvalToRound"] = "Transition Oval to Round";
+        ru["FM_Routing_Group_CrossesElectrical"] = "Пересечение"; en["FM_Routing_Group_CrossesElectrical"] = "Cross";
         ru["FM_Routing_Col_Part"] = "Деталь"; en["FM_Routing_Col_Part"] = "Part";
         ru["FM_Routing_Col_MinSize"] = "Мин. размер"; en["FM_Routing_Col_MinSize"] = "Min size";
         ru["FM_Routing_Col_MaxSize"] = "Макс. размер"; en["FM_Routing_Col_MaxSize"] = "Max size";

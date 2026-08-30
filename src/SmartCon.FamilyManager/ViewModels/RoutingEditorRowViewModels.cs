@@ -116,11 +116,15 @@ public sealed class RoutingTypeEditState
     private static string AllSizesLabel =>
         LanguageManager.GetString(StringLocalization.Keys.FM_Routing_AllSizes) ?? "All";
 
-    /// <summary>feet storage → display text (unbounded = «Все»).</summary>
+    internal static string AllSizesDisplay => AllSizesLabel;
+
+    /// <summary>feet storage → display text (unbounded = «Все» in BOTH
+    /// columns: an unrestricted bound reads as «all sizes», owner UI
+    /// review 2026-08-30 — an empty min next to «Все» looked broken).</summary>
     internal static string FormatSize(double feet, bool isMax)
     {
         if (feet <= 0)
-            return isMax ? AllSizesLabel : string.Empty;
+            return AllSizesLabel;
         if (isMax && feet >= AllSizesThresholdFeet)
             return AllSizesLabel;
         return (feet * 304.8).ToString("0.##", CultureInfo.InvariantCulture);
@@ -174,6 +178,10 @@ public sealed class RoutingRuleEditState
     public List<RoutingCriterionSnapshot> OtherCriteria { get; } = [];
     public bool HasPresenceIssue { get; set; }
 
+    /// <summary>Part-type ordinal of the picked part family (display-only
+    /// metadata for the junctions grey-out; not part of the fingerprint).</summary>
+    public int? PartTypeOrdinal { get; set; }
+
     public bool IsEmpty
         => PartName is null
             && Description.Trim().Length == 0
@@ -186,6 +194,7 @@ public sealed class RoutingRuleEditState
     /// </summary>
     public static RoutingRuleEditState Empty() => new()
     {
+        MinSizeText = RoutingTypeEditState.FormatSize(0, isMax: false),
         MaxSizeText = RoutingTypeEditState.FormatSize(0, isMax: true),
     };
 
@@ -215,22 +224,40 @@ public sealed class RoutingRuleEditState
 public sealed partial class RoutingGroupRowViewModel : ObservableObject
 {
     private readonly FamilyPropertiesViewModel _owner;
+    private int _preferredJunctionType;
 
     public RoutingGroupRowViewModel(
-        FamilyPropertiesViewModel owner, RoutingGroupEditState state, IReadOnlyList<string> sizeOptions)
+        FamilyPropertiesViewModel owner, RoutingGroupEditState state,
+        IReadOnlyList<string> sizeOptions, int preferredJunctionType)
     {
         _owner = owner;
         State = state;
         SizeOptions = sizeOptions;
-        Label = LanguageManager.GetString(state.Descriptor.LabelKey) ?? state.Descriptor.GroupKey;
+        _preferredJunctionType = preferredJunctionType;
+        _label = ComputeLabel();
         RefreshRules();
     }
 
     public RoutingGroupEditState State { get; }
-    public string Label { get; }
 
-    /// <summary>Nominal-diameter dropdown source («Все» + segment sizes, mm).</summary>
+    [ObservableProperty] private string _label;
+
+    /// <summary>The tee/tap-dependent manager group: its label follows the
+    /// preferred junction type and its rules of the non-preferred part type
+    /// render greyed out (Revit routing dialog behavior).</summary>
+    public bool IsJunctionsGroup => RoutingGroupCatalog.IsJunctionsManagerGroup(State.Descriptor.ManagerGroupType);
+
+    /// <summary>Current preferred junction type of the edited type (0 = tee, 1 = tap).</summary>
+    public int PreferredJunctionType => _preferredJunctionType;
+
+    /// <summary>Nominal-diameter dropdown source («Все» + segment sizes, mm, ascending).</summary>
     public IReadOnlyList<string> SizeOptions { get; }
+
+    /// <summary>Smallest nominal size option (index 1 — index 0 is «Все»), or null without sizes.</summary>
+    public string? SmallestSizeOption => SizeOptions.Count > 1 ? SizeOptions[1] : null;
+
+    /// <summary>Largest nominal size option, or null without sizes.</summary>
+    public string? LargestSizeOption => SizeOptions.Count > 1 ? SizeOptions[SizeOptions.Count - 1] : null;
 
     public bool IsReadOnly => State.Descriptor.IsReadOnly;
     public bool AllowMultipleRules => State.Descriptor.AllowMultipleRules;
@@ -240,10 +267,30 @@ public sealed partial class RoutingGroupRowViewModel : ObservableObject
 
     [ObservableProperty] private ObservableCollection<RoutingRuleRowViewModel> _rules = [];
 
+    /// <summary>Preferred junction changed: relabel the junctions group and
+    /// re-grey its rules (preferred tee greys taps, preferred tap greys tees).</summary>
+    public void RefreshJunctionState(int preferredJunctionType)
+    {
+        _preferredJunctionType = preferredJunctionType;
+        Label = ComputeLabel();
+        foreach (var rule in Rules)
+            rule.RefreshInactive(this, preferredJunctionType);
+    }
+
+    private string ComputeLabel()
+        => IsJunctionsGroup
+            ? (LanguageManager.GetString(_preferredJunctionType == 1
+                ? StringLocalization.Keys.FM_Routing_Group_JunctionsTaps
+                : StringLocalization.Keys.FM_Routing_Group_JunctionsTees)
+               ?? State.Descriptor.GroupKey)
+            : LanguageManager.GetString(State.Descriptor.LabelKey) ?? State.Descriptor.GroupKey;
+
     public void RefreshRules()
     {
         Rules = new ObservableCollection<RoutingRuleRowViewModel>(
             State.Rules.Select(r => new RoutingRuleRowViewModel(_owner, this, r)));
+        foreach (var rule in Rules)
+            rule.RefreshInactive(this, _preferredJunctionType);
     }
 }
 
@@ -261,8 +308,26 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
         _partDisplay = state.PartName
             ?? LanguageManager.GetString(StringLocalization.Keys.FM_Routing_NoPart) ?? "None";
         _description = state.Description;
-        _minSizeText = state.MinSizeText;
-        _maxSizeText = state.MaxSizeText;
+        // Stored rules may carry one unbounded side next to a concrete
+        // bound (0..150); the editor forbids that mix — the unbounded side
+        // reads as the extreme available size instead of «Все». Normalize
+        // BEFORE exposing the properties so no change-notification fires.
+        var minText = state.MinSizeText;
+        var maxText = state.MaxSizeText;
+        if (IsAllSizes(minText) && !IsAllSizes(maxText) && group.SmallestSizeOption is { } minOption)
+        {
+            minText = minOption;
+            state.MinSizeText = minOption;
+        }
+
+        if (IsAllSizes(maxText) && !IsAllSizes(minText) && group.LargestSizeOption is { } maxOption)
+        {
+            maxText = maxOption;
+            state.MaxSizeText = maxOption;
+        }
+
+        _minSizeText = minText;
+        _maxSizeText = maxText;
         _hasPresenceIssue = state.HasPresenceIssue;
     }
 
@@ -285,6 +350,24 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
     /// </summary>
     public bool ShowClearPart => Group.IsParamGroup && State.PartName is not null;
 
+    /// <summary>
+    /// Junctions group rule of the non-preferred part type (tee rule while
+    /// the preferred junction is a tap, and vice versa) — shown greyed out
+    /// and blocked from editing, exactly like the Revit routing dialog.
+    /// </summary>
+    [ObservableProperty] private bool _isInactive;
+
+    /// <summary>Editing is allowed: dialog editable AND the rule is not greyed out.</summary>
+    public bool CanEditRule => _owner.CanEditRouting && !IsInactive;
+
+    public string InactiveTooltip =>
+        LanguageManager.GetString(StringLocalization.Keys.FM_Routing_InactiveJunction) ?? string.Empty;
+
+    partial void OnIsInactiveChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanEditRule));
+    }
+
     [ObservableProperty] private string _partDisplay;
     [ObservableProperty] private string _description;
     [ObservableProperty] private string _minSizeText;
@@ -306,14 +389,32 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
     partial void OnMinSizeTextChanged(string value)
     {
         State.MinSizeText = value;
+        // «Все» is an all-or-nothing bound: picking it in either column
+        // applies it to both; picking a concrete value in one column
+        // replaces «Все» on the other with the extreme available size
+        // (max for MAX, min for MIN) — owner UI review 2026-08-30.
+        // Equal-value sets are no-ops in ObservableProperty, so the
+        // cross-set cannot recurse.
+        if (IsAllSizes(value))
+            MaxSizeText = RoutingTypeEditState.AllSizesDisplay;
+        else if (IsAllSizes(MaxSizeText) && Group.LargestSizeOption is { } maxOption)
+            MaxSizeText = maxOption;
         _owner.NotifyRoutingRuleEdited();
     }
 
     partial void OnMaxSizeTextChanged(string value)
     {
         State.MaxSizeText = value;
+        if (IsAllSizes(value))
+            MinSizeText = RoutingTypeEditState.AllSizesDisplay;
+        else if (IsAllSizes(MinSizeText) && Group.SmallestSizeOption is { } minOption)
+            MinSizeText = minOption;
         _owner.NotifyRoutingRuleEdited();
     }
+
+    private static bool IsAllSizes(string value) =>
+        string.Equals((value ?? string.Empty).Trim(), RoutingTypeEditState.AllSizesDisplay,
+            StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Re-read the display fields after a part pick/clear.</summary>
     public void Refresh()
@@ -322,5 +423,14 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
             ?? LanguageManager.GetString(StringLocalization.Keys.FM_Routing_NoPart) ?? "None";
         HasPresenceIssue = State.HasPresenceIssue;
         OnPropertyChanged(nameof(ShowClearPart));
+        RefreshInactive(Group, Group.PreferredJunctionType);
+    }
+
+    /// <summary>Recompute the junctions grey-out for the current preference.</summary>
+    public void RefreshInactive(RoutingGroupRowViewModel group, int preferredJunctionType)
+    {
+        IsInactive = group.IsJunctionsGroup
+            && State.PartName is not null
+            && RoutingGroupCatalog.IsInactiveJunctionPart(State.PartTypeOrdinal, preferredJunctionType);
     }
 }

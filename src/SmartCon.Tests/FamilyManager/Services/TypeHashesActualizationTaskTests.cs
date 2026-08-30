@@ -80,6 +80,67 @@ public sealed class TypeHashesActualizationTaskTests : IDisposable
     }
 
     [Fact]
+    public async Task Detection_TypelessLegacyDefaultRow_NotPending()
+    {
+        // Pre-FHV8 imports wrote a phantom '<default>' family_types row
+        // for typeless families. The hash engine has nothing to backfill
+        // for them — they must not be re-detected on every run forever
+        // (owner repro 2026-08-30: the optional task kept "updating" the
+        // same family, banner never cleared).
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamD");
+        await SeedFamilyTypeRowAsync(itemId, versionId, fileId, FamilyTypeSnapshot.DefaultTypeName);
+
+        Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task Apply_TypelessLegacyDefaultRow_ConvergedNoWrite()
+    {
+        // Defensive: even if ApplyAsync reaches a phantom-only family,
+        // the empty hash set is the CONVERGED state — no warn-drift, no
+        // rows written, family_types rows untouched.
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamD2");
+        await SeedFamilyTypeRowAsync(itemId, versionId, fileId, FamilyTypeSnapshot.DefaultTypeName);
+
+        var ctx = new FamilyActualizationContext(
+            new ActualizationGroup(itemId, "FamD2", "v1", true,
+                new[] { new ActualizationVariant(versionId, fileId, 2025, "x", "FamD2.rfa") }),
+            new ActualizationVariant(versionId, fileId, 2025, "x", "FamD2.rfa"),
+            "C:\\root\\x",
+            CreateTypelessSnapshot(),
+            null);
+
+        await _sut.ApplyAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(0, await CountHashRowsAsync(versionId));
+        Assert.Equal(1, await CountFamilyTypeRowsAsync(versionId));
+        Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task Apply_EmptySetWithNamedRows_GenuineDriftStaysPending()
+    {
+        // Named family_types rows + empty extraction = genuine drift:
+        // nothing written, the group stays detected so the drift remains
+        // visible until the family is re-imported.
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamG");
+        await CatalogSeedHelper.SeedDataExtractedAsync(_fixture, itemId, versionId, fileId);
+
+        var ctx = new FamilyActualizationContext(
+            new ActualizationGroup(itemId, "FamG", "v1", true,
+                new[] { new ActualizationVariant(versionId, fileId, 2025, "x", "FamG.rfa") }),
+            new ActualizationVariant(versionId, fileId, 2025, "x", "FamG.rfa"),
+            "C:\\root\\x",
+            CreateTypelessSnapshot(),
+            null);
+
+        await _sut.ApplyAsync(ctx, CancellationToken.None);
+
+        Assert.Equal(0, await CountHashRowsAsync(versionId));
+        Assert.Equal(1, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
     public async Task Detection_TerminalHashSentinel_NotPending()
     {
         // -1/-2 (missing/unreadable file) — re-opening is known to fail
@@ -201,5 +262,43 @@ public sealed class TypeHashesActualizationTaskTests : IDisposable
         cmd.Parameters.Add(new SqliteParameter("@hash", hash));
         cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task SeedFamilyTypeRowAsync(string itemId, string versionId, string fileId, string typeName)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+            VALUES (@id, @itemId, @typeName, 0, @versionId, @fileId)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString()));
+        cmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+        cmd.Parameters.Add(new SqliteParameter("@typeName", typeName));
+        cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        cmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<int> CountFamilyTypeRowsAsync(string versionId)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM family_types WHERE version_id = @id";
+        cmd.Parameters.Add(new SqliteParameter("@id", versionId));
+        return (int)(long)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    private static FamilySnapshot CreateTypelessSnapshot()
+    {
+        return new FamilySnapshot(
+            FamilyName: "FamTypeless",
+            Category: "Pipe Fittings",
+            Parameters: [],
+            Types: [],
+            Geometry: new GeometryMetrics(0, []),
+            SharedNestedFamilyNames: []);
     }
 }

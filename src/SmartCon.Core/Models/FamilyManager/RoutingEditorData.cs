@@ -14,7 +14,12 @@ public sealed record RoutingEditorData(
     IReadOnlyList<FamilyRoutingTypeSettings> Settings,
     IReadOnlyList<string> MissingPartFamilies,
     IReadOnlyList<double> SizeNominalsFeet,
-    IReadOnlyList<SegmentSizeBounds> SegmentBounds);
+    IReadOnlyList<SegmentSizeBounds> SegmentBounds,
+    /// <summary>Part-type ordinal (<c>family_facts.part_type</c>) per rule-part
+    /// family name — the junctions group greys out tee rules when the
+    /// preferred junction is a tap and vice versa (Revit routing dialog
+    /// behavior, owner review 2026-08-30). <c>null</c> when unknown.</summary>
+    IReadOnlyDictionary<string, int>? PartTypesByFamily = null);
 
 /// <summary>
 /// The segment's own configured size span (min/max nominal diameter of its

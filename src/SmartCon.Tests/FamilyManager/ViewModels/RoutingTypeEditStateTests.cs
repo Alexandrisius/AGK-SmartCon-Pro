@@ -101,9 +101,12 @@ public class RoutingTypeEditStateTests
             [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0, 10000)]);
         var edit = RoutingRuleEditState.FromStored(stored, new HashSet<string>());
 
-        Assert.Equal("", edit.MinSizeText);
+        Assert.Equal(RoutingTypeEditState.FormatSize(0, isMax: false), edit.MinSizeText);
         Assert.Equal(RoutingTypeEditState.FormatSize(0, isMax: true), edit.MaxSizeText);
         Assert.NotEqual("", edit.MaxSizeText);
+        // Owner UI review 2026-08-30: an unrestricted rule reads «Все» in
+        // BOTH columns — an empty min next to «Все» looked broken.
+        Assert.Equal(edit.MaxSizeText, edit.MinSizeText);
     }
 
     [Fact]
