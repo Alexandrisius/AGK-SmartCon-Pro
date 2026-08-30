@@ -2,25 +2,29 @@ namespace SmartCon.Core.Models.FamilyManager;
 
 /// <summary>
 /// Routing editor input of one system MEPCurve catalog item (ADR-072,
-/// Phase 3). <see cref="IsLegacyVersion"/> marks versions without stored
-/// canonical sections (pre-V33) — the editor shows them read-only with the
-/// actualization hint because hashes cannot be recomputed verifiably.
-/// <see cref="HasTypeNameCollisions"/> marks items whose section storage
-/// cannot be recomposed verifiably: same-named types of different system
-/// families in one item (documented reality — duct has Round/Rect/Oval
-/// families, conduit With/WithoutFittings) collide on the name-keyed
-/// section keys of V33 — the editor refuses saves for them (byte-exactness
-/// guarantee of <c>RebuildSystemSectionsWithRouting</c>).
+/// World B): routing links live at the ITEM level (V37 tables) — editor
+/// edits never create versions and never touch the content hash. Legacy
+/// items (no item-level rows yet) fall back to the current version's V34
+/// rows so the editor still shows the imported state before backfill.
 /// </summary>
 public sealed record RoutingEditorData(
     int HostCategoryId,
-    bool IsLegacyVersion,
-    bool HasTypeNameCollisions,
     IReadOnlyList<RoutingEditorTypeData> Types,
     IReadOnlyList<FamilyRoutingRuleInfo> Rules,
     IReadOnlyList<FamilyRoutingTypeSettings> Settings,
     IReadOnlyList<string> MissingPartFamilies,
-    IReadOnlyList<double> SizeNominalsFeet);
+    IReadOnlyList<double> SizeNominalsFeet,
+    IReadOnlyList<SegmentSizeBounds> SegmentBounds);
+
+/// <summary>
+/// The segment's own configured size span (min/max nominal diameter of its
+/// size table, feet) — the read-only Segments row shows it exactly like the
+/// Revit routing dialog shows the segment's allowed size range.
+/// </summary>
+public sealed record SegmentSizeBounds(
+    string SegmentName,
+    double MinNominalFeet,
+    double MaxNominalFeet);
 
 /// <summary>One editable type of the item.</summary>
 /// <param name="WithFittings">
@@ -53,7 +57,6 @@ public sealed record RoutingEditorSave(IReadOnlyList<RoutingEditorTypeSave> Edit
 /// </summary>
 public sealed record RoutingSaveResult(
     bool Success,
-    string? NewVersionLabel,
     IReadOnlyList<string> ArchivedLockedParts,
     string? ErrorMessage);
 

@@ -79,6 +79,14 @@ public interface IFamilySnapshotExtractor
     SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId);
 
     /// <summary>
+    /// Lightweight routing-only read of one system type (ADR-072 World B):
+    /// the routing drift probe (stale check / placement dialog) needs just
+    /// the routing preferences — manager- or parameter-based — without the
+    /// full parameter/structure extraction. <c>null</c> for non-MEP types.
+    /// </summary>
+    RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId);
+
+    /// <summary>
     /// Extracts 3D tessellated geometry for EACH family type by iterating
     /// <c>FamilyManager.CurrentType</c> inside a Transaction+RollBack
     /// (I-03b). Type-dependent extrusions that return empty

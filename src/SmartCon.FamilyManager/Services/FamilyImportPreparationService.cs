@@ -1303,35 +1303,38 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     }
 
     /// <summary>
-    /// ADR-072 (plan item 4): reimport from a slim mini-project — replaces
-    /// each type's extracted (slim) routing with the routing stored in the
-    /// catalog DB for the item's CURRENT version. Fallbacks mirror the sync
-    /// side: pre-V34 version (no stored rows — the legacy mini still
-    /// carries full routing), routing-less type (no settings row — keep
-    /// the mini routing), DB failure (keep the mini routing + Warn).
+    /// ADR-072 World B: reimport from a slim mini-project — replaces each
+    /// type's extracted (slim) routing with the catalog's item-level routing
+    /// links (V37), falling back to the current version's V34 rows for pre-
+    /// World-B versions. Fallbacks mirror the sync side: no stored rows at
+    /// all (the legacy mini still carries full routing), routing-less type
+    /// (no settings row — keep the mini routing), DB failure (keep the mini
+    /// routing + Warn).
     /// </summary>
     private async Task<SystemFamilySnapshot> SubstituteRoutingFromDbAsync(
         SystemFamilySnapshot snapshot, string catalogItemId, CancellationToken ct)
     {
         try
         {
-            if (!await _routingRuleRepository!.HasRulesForCurrentVersionAsync(catalogItemId, ct)
-                    .ConfigureAwait(false))
+            var (rules, settings) = await _routingRuleRepository!
+                .HasAnyForItemAsync(catalogItemId, ct).ConfigureAwait(false)
+                ? await _routingRuleRepository!.ReadForItemAsync(catalogItemId, ct).ConfigureAwait(false)
+                : !await _routingRuleRepository!.HasRulesForCurrentVersionAsync(catalogItemId, ct)
+                        .ConfigureAwait(false)
+                    ? default
+                    : await _routingRuleRepository!.ReadForCurrentVersionAsync(catalogItemId, ct).ConfigureAwait(false);
+            if (rules is null)
             {
                 SmartConLogger.Debug(
                     "Reimport from mini-project: no stored routing rows (pre-V34 version) — " +
                     "the mini-project routing is used as-is");
                 return snapshot;
             }
-
-            var (rules, settings) = await _routingRuleRepository
-                .ReadForCurrentVersionAsync(catalogItemId, ct)
-                .ConfigureAwait(false);
             var substituted = 0;
             var types = snapshot.Types.Select(t =>
             {
                 var dbRouting = RoutingRuleRecordMapper.ToSnapshot(
-                    t.Name, t.FamilyKey ?? string.Empty, rules, settings);
+                    t.Name, t.FamilyKey ?? string.Empty, rules, settings!);
                 if (dbRouting is null)
                     return t;
                 substituted++;
@@ -1346,7 +1349,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         {
             SmartConLogger.Warn(
                 $"Routing substitution from the catalog DB failed: {ex.Message} " +
-                "[Action: хэш версии посчитан по трассировке мини-проекта; проверьте базу каталога и повторите импорт]");
+                "[Action: трассировка реимпорта взята из мини-проекта; проверьте базу каталога и повторите импорт]");
             return snapshot;
         }
     }

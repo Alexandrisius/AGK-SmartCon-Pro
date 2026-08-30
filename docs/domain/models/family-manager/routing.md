@@ -87,39 +87,30 @@ flex). Ordinals категорий и PartType — замороженные API-
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/RoutingGroupCatalog.cs`
 
-## RoutingEditorData / RoutingEditorTypeSave / RoutingSaveResult / RoutingPartCandidate
+## RoutingEditorData / RoutingEditorTypeSave / RoutingSaveResult / RoutingPartCandidate / SegmentSizeBounds
 
-Вход/выход движка редактора (Ф3): типы итема (с дискриминацией
-WithFittings по family_key), правила/настройки, presence-флаги
-(MissingPartFamilies), маркер legacy-версии (нет section_strings →
-read-only + подсказка актуализации). Save — только затронутые типы;
-результат — новая версия + ArchivedLockedParts (детали, убранные из
-routing, но залоченные архивными версиями — UX-подсказка ADR-067).
+Вход/выход движка редактора (Ф3, World B): типы итема (с дискриминацией
+WithFittings по family_key), правила/настройки (item-таблицы V37, fallback
+V34 текущей версии для legacy), presence-флаги (MissingPartFamilies),
+dropdown-номиналы размеров (SizeNominalsFeet) и собственные диапазоны
+сегментов (SegmentSizeBounds — min/max nominal по таблице размеров: строка
+сегмента показывает их read-only, как диалог Revit). Save — только
+затронутые типы; результат — успех + ArchivedLockedParts (детали, убранные
+из routing, но залоченные архивными версиями — UX-подсказка ADR-067).
+Версия не создаётся, хэш не трогается.
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/RoutingEditorData.cs`
 
-## RecomposedSystemSections / RecomposeTypeIdentity
+## RoutingFingerprint
 
-Результат `FamilyContentHasher.RebuildSystemSectionsWithRouting` (Ф3):
-пересчёт content hash + per-type hashes + канонических секций системной
-версии после правки routing В БД (без Revit) — ROUTING-секции затронутых
-типов переформатируются из новых правил, остальные секции конкатенируются
-из section_strings в каноническом порядке; byte-exactness со snapshot-хэшером
-покрыта юнит-тестами. `FormatSystemRoutingSection` — канонический
-ROUTING-токен снапшота.
+Каноническая сериализация правил трассировки + SHA-256 (ADR-072 World B,
+FHV20): трассировка вышла из content-хэша (это связь семейств каталога, не
+состояние трубы), поэтому равенство трассировок сравнивается отдельным
+отпечатком — sync/stale (`StaleReason.RoutingDrift`)/диалог размещения.
+Строка байт-идентична дореформенной ROUTING-секции. `null` = тип без
+трассировки (отсутствие — своё состояние).
 
-**Файл:** `SmartCon.Core/Services/Implementation/FamilyContentHasher.RoutingEditor.cs`
-
-## FamilyContentHasher.RoutingEditor
-
-Partial-файл хэшера с API редактора трассировки (Ф3):
-`FormatSystemRoutingSection` (каноническая ROUTING-секция снапшота) и
-`RebuildSystemSectionsWithRouting` (пересборка полного набора секций
-версии из section_strings с подменой ROUTING затронутых типов +
-пересчёт content hash и per-type hashes). Byte-exactness с
-snapshot-путём — гарантия, покрытая `FamilyContentHasherRoutingEditorTests`.
-
-**Файл:** `SmartCon.Core/Services/Implementation/FamilyContentHasher.RoutingEditor.cs`
+**Файл:** `SmartCon.Core/Services/Implementation/RoutingFingerprint.cs`
 
 ## SegmentSizeRecord
 
@@ -127,9 +118,9 @@ snapshot-путём — гарантия, покрытая `FamilyContentHasherR
 диаметры (internal units) + флаги использования. Источник dropdown'ов
 мин./макс. размера редактора трассировки — строго NominalDiameter, как в
 диалоге трассировки Revit. Пишется при импорте (`SegmentSizeWriter`),
-копируется вербатим при сохранении правки трассировки (новая версия),
 дозаполняется для legacy-версий задачей `segment-sizes-v1` (детект:
-системные трубы без строк размеров; extraction из мини).
+системные трубы без строк размеров; extraction из мини). Save редактора
+размеры не трогает (это содержимое файла, не связи).
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/SegmentSizeRecord.cs`
 

@@ -26,7 +26,8 @@ public interface IFamilyManagerViewModelFactory
     /// currently assigned part.
     /// </summary>
     RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
-        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName);
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName,
+        string? contextLabel = null);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();

@@ -93,6 +93,14 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                     dragData.SystemFamilyName,
                     dragData.SystemFamilyKey);
 
+                // ADR-072 World B: the user declined the routing overwrite —
+                // silent cancel: no stale clear, no success/error status.
+                if (result == Core.Models.FamilyManager.SystemPlacementResult.Cancelled)
+                {
+                    _onCompleted?.Invoke();
+                    return;
+                }
+
                 if (result != Core.Models.FamilyManager.SystemPlacementResult.Failed)
                 {
                     // Issue #104 + audit fix: the just-synced type carries a

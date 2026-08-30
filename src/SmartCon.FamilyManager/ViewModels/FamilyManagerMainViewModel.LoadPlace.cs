@@ -902,6 +902,9 @@ public sealed partial class FamilyManagerMainViewModel
                         LocalizationService.GetString("FM_PlaceSystemTypeManual")
                             ?? "Тип \"{0}\" загружен в проект. Разместите его вручную — например, изоляция применяется к существующей трубе или воздуховоду",
                         typeName),
+                    // ADR-072 World B: the user declined the routing
+                    // overwrite — silent cancel, not an error.
+                    SystemPlacementResult.Cancelled => string.Empty,
                     _ => string.Format(
                         LocalizationService.GetString("FM_LoadError") ?? "Load error: {0}",
                         typeName),
@@ -922,7 +925,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }).ConfigureAwait(true);
 
-        if (result != SystemPlacementResult.Failed)
+        if (result != SystemPlacementResult.Failed && result != SystemPlacementResult.Cancelled)
         {
             // Audit fix (was MarkUpdated): clear ONLY the synced type's
             // verdict and re-evaluate the item badge — sibling types of a

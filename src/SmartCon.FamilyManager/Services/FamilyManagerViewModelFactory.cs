@@ -128,8 +128,9 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     /// one routing rule, filtered by fitting category + part_type ordinals.
     /// </summary>
     public RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
-        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName)
-        => new(_routingEditorService, fittingCategoryId, partTypeOrdinals, currentPartName);
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName,
+        string? contextLabel = null)
+        => new(_routingEditorService, fittingCategoryId, partTypeOrdinals, currentPartName, contextLabel);
 
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {

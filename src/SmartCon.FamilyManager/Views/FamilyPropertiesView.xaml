@@ -981,8 +981,10 @@
                 </Grid>
             </TabItem>
 
-            <!-- ==================== ROUTING TAB (ADR-072, Phase 3) ====================
-                 System MEPCurve items only: per-type routing rules as catalog data. -->
+            <!-- ==================== ROUTING TAB (ADR-072, World B) ====================
+                 System MEPCurve items only: per-type routing links as catalog data.
+                 Revit-style table: fixed prominent header, stretchy part column,
+                 group bars, per-row add/remove/reorder/pick commands. -->
             <TabItem Style="{DynamicResource FlatTabItem}"
                      Visibility="{Binding IsRoutingTabVisible, Converter={StaticResource BoolToVisibility}}">
                 <TabItem.Header>
@@ -990,6 +992,7 @@
                 </TabItem.Header>
                 <Grid Margin="8">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
@@ -1022,71 +1025,75 @@
                                   Visibility="{Binding ShowPreferredJunction, Converter={StaticResource BoolToVisibility}}"/>
                     </Grid>
 
-                    <!-- Locked-state hint (legacy format / type-name collision). -->
-                    <TextBlock Grid.Row="1" Text="{Binding RoutingLockHint}"
-                               Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
-                               HorizontalAlignment="Center" Margin="24" MaxWidth="520"
-                               TextWrapping="Wrap" TextAlignment="Center"
-                               Visibility="{Binding IsRoutingLegacy, Converter={StaticResource BoolToVisibility}}"/>
+                    <!-- Table header: always visible, prominent, aligned with rows
+                         (same fixed column widths; the part column stretches). -->
+                    <Border Grid.Row="1" Background="{DynamicResource ZoneSurfaceBrush}"
+                            BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1">
+                        <Grid Height="28">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="28"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="26"/>
+                                <ColumnDefinition Width="26"/>
+                                <ColumnDefinition Width="26"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{loc:Loc FM_Routing_Col_Part}"
+                                       FontWeight="SemiBold" FontSize="12" Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <TextBlock Grid.Column="3" Text="{loc:Loc FM_Routing_Col_MinSize}"
+                                       FontWeight="SemiBold" FontSize="12" Margin="6,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       Visibility="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToVisibility}}"/>
+                            <TextBlock Grid.Column="4" Text="{loc:Loc FM_Routing_Col_MaxSize}"
+                                       FontWeight="SemiBold" FontSize="12" Margin="6,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       Visibility="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToVisibility}}"/>
+                        </Grid>
+                    </Border>
 
-                    <!-- Groups. -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                                  Padding="0,0,4,0"
-                                  Visibility="{Binding ShowRoutingEditor, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel>
-                            <!-- Column headers (same fixed widths as every rule row). -->
-                            <Grid Margin="11,0,11,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="300"/>
-                                    <ColumnDefinition Width="20"/>
-                                    <ColumnDefinition Width="28"/>
-                                    <ColumnDefinition Width="28"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="100"/>
-                                    <ColumnDefinition Width="170"/>
-                                    <ColumnDefinition Width="26"/>
-                                    <ColumnDefinition Width="26"/>
-                                    <ColumnDefinition Width="26"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{loc:Loc FM_Routing_Col_Part}"
-                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11"/>
-                                <TextBlock Grid.Column="4" Text="{loc:Loc FM_Routing_Col_MinSize}"
-                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
-                                <TextBlock Grid.Column="5" Text="{loc:Loc FM_Routing_Col_MaxSize}"
-                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
-                                <TextBlock Grid.Column="6" Text="{loc:Loc FM_Routing_Col_Description}"
-                                           Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
-                            </Grid>
+                    <!-- Groups + rule rows. -->
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+                        <ItemsControl ItemsSource="{Binding RoutingGroups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                                            Background="{DynamicResource SurfaceBrush}"
+                                            Margin="0,2,0,8">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
 
-                            <ItemsControl ItemsSource="{Binding RoutingGroups}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
-                                                CornerRadius="6" Background="{DynamicResource SurfaceBrush}"
-                                                Padding="10,8" Margin="0,0,0,10">
-                                            <Grid>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-
-                                                <!-- Group header: label + rule count + add-rule. -->
-                                                <Grid Margin="1,0,1,6">
+                                            <!-- Group bar (Revit-style): label + add-rule.
+                                                 Same surface as the table header so the bar
+                                                 reads as the group's own header; the card
+                                                 border makes the add-button ownership clear. -->
+                                            <Border Background="{DynamicResource ZoneSurfaceBrush}"
+                                                    BorderBrush="{DynamicResource BorderAltBrush}"
+                                                    BorderThickness="0,0,0,1"
+                                                    Padding="8,5">
+                                                <Grid>
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="12"
                                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                                VerticalAlignment="Center"/>
-                                                    <Button Grid.Column="2"
-                                                            Command="{Binding DataContext.AddRoutingRuleCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding DataContext.AddRoutingRuleCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
                                                             CommandParameter="{Binding}"
                                                             ToolTip="{loc:Loc FM_Routing_AddRule}"
                                                             Style="{DynamicResource FlatIconButton}"
                                                             Width="24" Height="24"
-                                                            IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
+                                                            IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
                                                             Visibility="{Binding AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
                                                         <Viewbox Width="12" Height="12" Stretch="Uniform">
                                                             <iconPacks:PackIconMaterial Kind="Plus" Width="24" Height="24"
@@ -1094,156 +1101,157 @@
                                                         </Viewbox>
                                                     </Button>
                                                 </Grid>
+                                            </Border>
 
-                                                <!-- Rule rows. -->
-                                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Rules}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Grid Margin="0,2" MinHeight="28">
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="300"/>
-                                                                    <ColumnDefinition Width="20"/>
-                                                                    <ColumnDefinition Width="28"/>
-                                                                    <ColumnDefinition Width="28"/>
-                                                                    <ColumnDefinition Width="100"/>
-                                                                    <ColumnDefinition Width="100"/>
-                                                                    <ColumnDefinition Width="170"/>
-                                                                    <ColumnDefinition Width="26"/>
-                                                                    <ColumnDefinition Width="26"/>
-                                                                    <ColumnDefinition Width="26"/>
-                                                                </Grid.ColumnDefinitions>
+                                            <!-- Rule rows. -->
+                                            <ItemsControl Grid.Row="1" ItemsSource="{Binding Rules}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid MinHeight="30">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="20"/>
+                                                                <ColumnDefinition Width="28"/>
+                                                                <ColumnDefinition Width="100"/>
+                                                                <ColumnDefinition Width="100"/>
+                                                                <ColumnDefinition Width="26"/>
+                                                                <ColumnDefinition Width="26"/>
+                                                                <ColumnDefinition Width="26"/>
+                                                            </Grid.ColumnDefinitions>
 
-                                                                <!-- Part: family:type (or «Нет»). -->
-                                                                <TextBlock Grid.Column="0" Text="{Binding PartDisplay}"
-                                                                           VerticalAlignment="Center" FontSize="12"
-                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                           TextTrimming="CharacterEllipsis"
-                                                                           ToolTip="{Binding PartDisplay}"/>
+                                                            <!-- Part: family:type (or «Нет»); the stretchy main column. -->
+                                                            <TextBlock Grid.Column="0" Text="{Binding PartDisplay}"
+                                                                       VerticalAlignment="Center" FontSize="12"
+                                                                       Margin="8,0,4,0"
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding PartDisplay}"/>
 
-                                                                <!-- Presence flag: part family missing in catalog. -->
-                                                                <Viewbox Grid.Column="1" Width="13" Height="13" Stretch="Uniform"
-                                                                         ToolTip="{Binding PresenceIssueTooltip}"
-                                                                         Visibility="{Binding HasPresenceIssue, Converter={StaticResource BoolToVisibility}}">
-                                                                    <iconPacks:PackIconMaterial Kind="AlertOutline" Width="24" Height="24"
-                                                                        Foreground="{DynamicResource WarningBrush}"/>
+                                                            <!-- Presence flag: part family missing in catalog. -->
+                                                            <Viewbox Grid.Column="1" Width="13" Height="13" Stretch="Uniform"
+                                                                     ToolTip="{Binding PresenceIssueTooltip}"
+                                                                     Visibility="{Binding HasPresenceIssue, Converter={StaticResource BoolToVisibility}}">
+                                                                <iconPacks:PackIconMaterial Kind="AlertOutline" Width="24" Height="24"
+                                                                    Foreground="{DynamicResource WarningBrush}"/>
+                                                            </Viewbox>
+
+                                                            <!-- Pick part (family + type from the whole catalog). -->
+                                                            <Button Grid.Column="2"
+                                                                    Command="{Binding DataContext.PickRoutingPartCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip="{loc:Loc FM_Routing_PickPart}"
+                                                                    Style="{DynamicResource FlatIconButton}"
+                                                                    Width="24" Height="24"
+                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                                                                <Viewbox Width="13" Height="13" Stretch="Uniform">
+                                                                    <iconPacks:PackIconMaterial Kind="DotsHorizontal" Width="24" Height="24"
+                                                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
                                                                 </Viewbox>
+                                                            </Button>
 
-                                                                <!-- Pick part (family + type from the whole catalog). -->
-                                                                <Button Grid.Column="2"
-                                                                        Command="{Binding DataContext.PickRoutingPartCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        ToolTip="{loc:Loc FM_Routing_PickPart}"
-                                                                        Style="{DynamicResource FlatIconButton}"
-                                                                        Width="24" Height="24"
-                                                                        IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
-                                                                    <Viewbox Width="13" Height="13" Stretch="Uniform">
-                                                                        <iconPacks:PackIconMaterial Kind="DotsHorizontal" Width="24" Height="24"
-                                                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                                    </Viewbox>
-                                                                </Button>
+                                                            <!-- Min/max: nominal-diameter dropdowns (segment sizes, as in
+                                                                 Revit); free-text fallback without stored sizes; plain
+                                                                 text for the read-only segment row (its own bounds). -->
+                                                            <ComboBox Grid.Column="3" ItemsSource="{Binding SizeOptions}"
+                                                                      SelectedItem="{Binding MinSizeText, Mode=TwoWay}"
+                                                                      Style="{DynamicResource CompactComboBox}" Height="24"
+                                                                      Margin="4,0,2,0"
+                                                                      Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
+                                                                      IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                            <TextBox Grid.Column="3" Text="{Binding MinSizeText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{DynamicResource CompactTextBox}" Height="24"
+                                                                     Margin="4,0,2,0"
+                                                                     Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
+                                                                     IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                            <TextBlock Grid.Column="3" Text="{Binding MinSizeText}"
+                                                                       VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}}"/>
+                                                            <ComboBox Grid.Column="4" ItemsSource="{Binding SizeOptions}"
+                                                                      SelectedItem="{Binding MaxSizeText, Mode=TwoWay}"
+                                                                      Style="{DynamicResource CompactComboBox}" Height="24"
+                                                                      Margin="2,0,2,0"
+                                                                      Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
+                                                                      IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                            <TextBox Grid.Column="4" Text="{Binding MaxSizeText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{DynamicResource CompactTextBox}" Height="24"
+                                                                     Margin="2,0,2,0"
+                                                                     Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
+                                                                     IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"/>
+                                                            <TextBlock Grid.Column="4" Text="{Binding MaxSizeText}"
+                                                                       VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}}"/>
 
-                                                                <!-- Clear to «Нет» (legal no-part routing value). -->
-                                                                <Button Grid.Column="3"
-                                                                        Command="{Binding DataContext.ClearRoutingPartCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        ToolTip="{loc:Loc FM_Routing_ClearPart}"
-                                                                        Style="{DynamicResource FlatIconButton}"
-                                                                        Width="24" Height="24"
-                                                                        IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
-                                                                    <Viewbox Width="12" Height="12" Stretch="Uniform">
-                                                                        <iconPacks:PackIconMaterial Kind="Close" Width="24" Height="24"
-                                                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                                                                    </Viewbox>
-                                                                </Button>
-
-                                                                <!-- Min/max: nominal-diameter dropdowns (segment sizes, as in Revit);
-                                                                     free-text fallback when the version has no stored sizes. -->
-                                                                <ComboBox Grid.Column="4" ItemsSource="{Binding SizeOptions}"
-                                                                          SelectedItem="{Binding MinSizeText, Mode=TwoWay}"
-                                                                          Style="{DynamicResource CompactComboBox}" Height="24"
-                                                                          Margin="4,0,2,0"
-                                                                          Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
-                                                                          IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
-                                                                <TextBox Grid.Column="4" Text="{Binding MinSizeText, UpdateSourceTrigger=PropertyChanged}"
-                                                                         Style="{DynamicResource CompactTextBox}" Height="24"
-                                                                         Margin="4,0,2,0"
-                                                                         Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
-                                                                         IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
-                                                                <ComboBox Grid.Column="5" ItemsSource="{Binding SizeOptions}"
-                                                                          SelectedItem="{Binding MaxSizeText, Mode=TwoWay}"
-                                                                          Style="{DynamicResource CompactComboBox}" Height="24"
-                                                                          Margin="2,0,2,0"
-                                                                          Visibility="{Binding HasSizeOptions, Converter={StaticResource BoolToVisibility}}"
-                                                                          IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
-                                                                <TextBox Grid.Column="5" Text="{Binding MaxSizeText, UpdateSourceTrigger=PropertyChanged}"
-                                                                         Style="{DynamicResource CompactTextBox}" Height="24"
-                                                                         Margin="2,0,2,0"
-                                                                         Visibility="{Binding ShowFreeTextSizes, Converter={StaticResource BoolToVisibility}}"
-                                                                         IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
-
-                                                                <!-- Description. -->
-                                                                <TextBox Grid.Column="6" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
-                                                                         Style="{DynamicResource CompactTextBox}" Height="24"
-                                                                         Margin="4,0,0,0"
-                                                                         Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}"
-                                                                         IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"/>
-
-                                                                <!-- Reorder / remove (multi-rule groups only). -->
-                                                                <Button Grid.Column="7"
-                                                                        Command="{Binding DataContext.MoveRoutingRuleUpCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        ToolTip="{loc:Loc FM_Routing_MoveUp_Tip}"
-                                                                        Style="{DynamicResource FlatIconButton}"
-                                                                        Width="24" Height="24"
-                                                                        IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
-                                                                    <Viewbox Width="12" Height="12" Stretch="Uniform">
-                                                                        <iconPacks:PackIconMaterial Kind="ArrowUp" Width="24" Height="24"
-                                                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                                    </Viewbox>
-                                                                </Button>
-                                                                <Button Grid.Column="8"
-                                                                        Command="{Binding DataContext.MoveRoutingRuleDownCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        ToolTip="{loc:Loc FM_Routing_MoveDown_Tip}"
-                                                                        Style="{DynamicResource FlatIconButton}"
-                                                                        Width="24" Height="24"
-                                                                        IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
-                                                                    <Viewbox Width="12" Height="12" Stretch="Uniform">
-                                                                        <iconPacks:PackIconMaterial Kind="ArrowDown" Width="24" Height="24"
-                                                                            Foreground="{DynamicResource TextSecondaryBrush}"/>
-                                                                    </Viewbox>
-                                                                </Button>
-                                                                <Button Grid.Column="9"
-                                                                        Command="{Binding DataContext.RemoveRoutingRuleCommand, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        CommandParameter="{Binding}"
-                                                                        ToolTip="{loc:Loc FM_Routing_RemoveRule_Tip}"
-                                                                        Style="{DynamicResource FlatIconButton}"
-                                                                        Width="24" Height="24"
-                                                                        IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                                                        Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
-                                                                    <Viewbox Width="12" Height="12" Stretch="Uniform">
-                                                                        <iconPacks:PackIconMaterial Kind="DeleteOutline" Width="24" Height="24"
-                                                                            Foreground="{DynamicResource TextMutedBrush}"/>
-                                                                    </Viewbox>
-                                                                </Button>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
+                                                            <!-- Reorder / remove (multi-rule groups only). -->
+                                                            <Button Grid.Column="5"
+                                                                    Command="{Binding DataContext.MoveRoutingRuleUpCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip="{loc:Loc FM_Routing_MoveUp_Tip}"
+                                                                    Style="{DynamicResource FlatIconButton}"
+                                                                    Width="24" Height="24"
+                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
+                                                                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                                                                    <iconPacks:PackIconMaterial Kind="ArrowUp" Width="24" Height="24"
+                                                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                                </Viewbox>
+                                                            </Button>
+                                                            <Button Grid.Column="6"
+                                                                    Command="{Binding DataContext.MoveRoutingRuleDownCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip="{loc:Loc FM_Routing_MoveDown_Tip}"
+                                                                    Style="{DynamicResource FlatIconButton}"
+                                                                    Width="24" Height="24"
+                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
+                                                                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                                                                    <iconPacks:PackIconMaterial Kind="ArrowDown" Width="24" Height="24"
+                                                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                                </Viewbox>
+                                                            </Button>
+                                                            <Button Grid.Column="7"
+                                                                    Command="{Binding DataContext.RemoveRoutingRuleCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip="{loc:Loc FM_Routing_RemoveRule_Tip}"
+                                                                    Style="{DynamicResource FlatIconButton}"
+                                                                    Width="24" Height="24"
+                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
+                                                                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                                                                    <iconPacks:PackIconMaterial Kind="DeleteOutline" Width="24" Height="24"
+                                                                        Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                </Viewbox>
+                                                            </Button>
+                                                            <!-- Param groups keep exactly one row: clear the pick
+                                                                 back to «Нет» instead of deleting the row. -->
+                                                            <Button Grid.Column="7"
+                                                                    Command="{Binding DataContext.ClearRoutingPartCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    CommandParameter="{Binding}"
+                                                                    ToolTip="{loc:Loc FM_Routing_ClearPart}"
+                                                                    Style="{DynamicResource FlatIconButton}"
+                                                                    Width="24" Height="24"
+                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    Visibility="{Binding ShowClearPart, Converter={StaticResource BoolToVisibility}}">
+                                                                <Viewbox Width="12" Height="12" Stretch="Uniform">
+                                                                    <iconPacks:PackIconMaterial Kind="CloseOutline" Width="24" Height="24"
+                                                                        Foreground="{DynamicResource TextMutedBrush}"/>
+                                                                </Viewbox>
+                                                            </Button>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </ScrollViewer>
 
                     <!-- Status line (save result / archived-lock hints). -->
-                    <TextBlock Grid.Row="2" Text="{Binding RoutingStatusMessage}"
+                    <TextBlock Grid.Row="3" Text="{Binding RoutingStatusMessage}"
                                Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11"
                                TextWrapping="Wrap" Margin="0,6,0,0"
                                Visibility="{Binding HasRoutingStatusMessage, Converter={StaticResource BoolToVisibility}}"/>

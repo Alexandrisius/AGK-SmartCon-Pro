@@ -18,4 +18,11 @@ public enum SystemPlacementResult
 
     /// <summary>Синхронизация или активация размещения не удалась.</summary>
     Failed,
+
+    /// <summary>
+    /// ADR-072 World B: the placement would overwrite the project type's
+    /// routing with the catalog links and the user declined the prompt —
+    /// nothing was synced or placed (silent outcome, no error status).
+    /// </summary>
+    Cancelled,
 }

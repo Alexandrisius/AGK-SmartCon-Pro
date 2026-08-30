@@ -202,5 +202,20 @@ public sealed class SyncRoutingParamsFromDbTests : RevitApiTest
 
         public Task<bool> HasRulesForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default)
             => Task.FromResult(HasRules);
+
+        public Task<bool> HasAnyForItemAsync(string catalogItemId, CancellationToken ct = default)
+            => Task.FromResult(HasRules);
+
+        public Task<(IReadOnlyList<FamilyRoutingRuleInfo>, IReadOnlyList<FamilyRoutingTypeSettings>)> ReadForItemAsync(
+            string catalogItemId, CancellationToken ct = default)
+            => ReadForCurrentVersionAsync(catalogItemId, ct);
+
+        public Task ReplaceForItemAsync(string catalogItemId,
+            IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings,
+            CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task MarkCurrentVersionRoutingBackfilledAsync(string catalogItemId, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 }

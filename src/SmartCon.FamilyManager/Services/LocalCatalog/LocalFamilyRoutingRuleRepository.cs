@@ -244,6 +244,171 @@ internal sealed class LocalFamilyRoutingRuleRepository : IFamilyRoutingRuleRepos
         return (await cmd.ExecuteScalarAsync(ct)) as string;
     }
 
+    public async Task<bool> HasAnyForItemAsync(
+        string catalogItemId,
+        CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT EXISTS(
+                SELECT 1 FROM item_routing_type_settings WHERE catalog_item_id = @itemId
+                UNION ALL
+                SELECT 1 FROM item_routing_rules WHERE catalog_item_id = @itemId
+                LIMIT 1)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is long value && value != 0;
+    }
+
+    public async Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)>
+        ReadForItemAsync(
+            string catalogItemId,
+            CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+
+        var rules = new List<FamilyRoutingRuleInfo>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT family_key, type_name, group_key, rule_order, part_name, description, criteria_json
+                FROM item_routing_rules
+                WHERE catalog_item_id = @itemId
+                ORDER BY type_name, group_key, rule_order
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                rules.Add(new FamilyRoutingRuleInfo(
+                    reader.GetString(1),
+                    reader.GetString(0),
+                    reader.GetString(2),
+                    reader.GetInt32(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4),
+                    reader.GetString(5),
+                    DeserializeCriteria(reader.GetString(6))));
+            }
+        }
+
+        var settings = new List<FamilyRoutingTypeSettings>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT family_key, type_name, preferred_junction_type
+                FROM item_routing_type_settings
+                WHERE catalog_item_id = @itemId
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                settings.Add(new FamilyRoutingTypeSettings(
+                    reader.GetString(1), reader.GetString(0), reader.GetInt32(2)));
+            }
+        }
+
+        return (rules, settings);
+    }
+
+    public async Task ReplaceForItemAsync(
+        string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules,
+        IReadOnlyList<FamilyRoutingTypeSettings> settings,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(catalogItemId))
+            throw new ArgumentException("catalogItemId is required", nameof(catalogItemId));
+
+        using var _scope = SmartConLogger.BeginScope("RoutingRuleRepo",
+            ("Method", nameof(ReplaceForItemAsync)),
+            ("CatalogItemId", catalogItemId),
+            ("Count", rules.Count));
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using (var del = connection.CreateCommand())
+            {
+                del.Transaction = tx;
+                del.CommandText = "DELETE FROM item_routing_rules WHERE catalog_item_id = @itemId";
+                del.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                await del.ExecuteNonQueryAsync(ct);
+                del.CommandText = "DELETE FROM item_routing_type_settings WHERE catalog_item_id = @itemId";
+                await del.ExecuteNonQueryAsync(ct);
+            }
+
+            foreach (var rule in rules)
+            {
+                ct.ThrowIfCancellationRequested();
+                using var ins = connection.CreateCommand();
+                ins.Transaction = tx;
+                ins.CommandText = """
+                    INSERT INTO item_routing_rules
+                        (catalog_item_id, family_key, type_name, group_key, rule_order,
+                         part_name, description, criteria_json)
+                    VALUES (@item, @famKey, @type, @group, @order, @part, @descr, @criteria)
+                    """;
+                ins.Parameters.Add(new SqliteParameter("@item", catalogItemId));
+                ins.Parameters.Add(new SqliteParameter("@famKey", rule.FamilyKey));
+                ins.Parameters.Add(new SqliteParameter("@type", rule.TypeName));
+                ins.Parameters.Add(new SqliteParameter("@group", rule.GroupKey));
+                ins.Parameters.Add(new SqliteParameter("@order", rule.RuleOrder));
+                ins.Parameters.Add(new SqliteParameter("@part", (object?)rule.PartName ?? DBNull.Value));
+                ins.Parameters.Add(new SqliteParameter("@descr", rule.Description));
+                ins.Parameters.Add(new SqliteParameter("@criteria", JsonSerializer.Serialize(rule.Criteria)));
+                await ins.ExecuteNonQueryAsync(ct);
+            }
+
+            foreach (var setting in settings)
+            {
+                ct.ThrowIfCancellationRequested();
+                using var ins = connection.CreateCommand();
+                ins.Transaction = tx;
+                ins.CommandText = """
+                    INSERT INTO item_routing_type_settings
+                        (catalog_item_id, family_key, type_name, preferred_junction_type)
+                    VALUES (@item, @famKey, @type, @preferred)
+                    """;
+                ins.Parameters.Add(new SqliteParameter("@item", catalogItemId));
+                ins.Parameters.Add(new SqliteParameter("@famKey", setting.FamilyKey));
+                ins.Parameters.Add(new SqliteParameter("@type", setting.TypeName));
+                ins.Parameters.Add(new SqliteParameter("@preferred", setting.PreferredJunctionType));
+                await ins.ExecuteNonQueryAsync(ct);
+            }
+
+            tx.Commit();
+            SmartConLogger.Info(
+                $"Persisted {rules.Count} item routing rules + {settings.Count} type settings (in place, no version)");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public async Task MarkCurrentVersionRoutingBackfilledAsync(
+        string catalogItemId,
+        CancellationToken ct = default)
+    {
+        var versionId = await ResolveCurrentVersionIdAsync(catalogItemId, ct);
+        if (versionId is null)
+            return;
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE catalog_versions SET routing_backfilled = 1 WHERE id = @vid AND routing_backfilled = 0";
+        cmd.Parameters.Add(new SqliteParameter("@vid", versionId));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static IReadOnlyList<RoutingCriterionSnapshot> DeserializeCriteria(string json)
     {
         try
@@ -254,7 +419,7 @@ internal sealed class LocalFamilyRoutingRuleRepository : IFamilyRoutingRuleRepos
         catch (JsonException ex)
         {
             SmartConLogger.Warn(
-                $"Corrupt criteria_json in family_routing_rules: {ex.Message} " +
+                $"Corrupt criteria_json in routing rules storage: {ex.Message} " +
                 "[Action: правило прочитано без критериев размера; переимпортируйте системную категорию для восстановления]");
             return Array.Empty<RoutingCriterionSnapshot>();
         }

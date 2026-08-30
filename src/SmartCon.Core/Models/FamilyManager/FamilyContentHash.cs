@@ -243,6 +243,16 @@ public sealed record FamilyContentHash(
     ///     tokens are byte-identical (their routing bips are hidden).
     ///     Critical task <c>hash-v19</c> recomputes every row that is not
     ///     current.
+    /// 20 — routing leaves the content hash (owner decision 2026-08-29,
+    ///     ADR-072 World B): the ROUTING section is dropped from the
+    ///     system canonical string — routing preferences are links
+    ///     between catalog families, not file content. Editor edits no
+    ///     longer version-bump, re-imports no longer overwrite curated
+    ///     links; routing equality is served by the separate
+    ///     <c>RoutingFingerprint</c> (sync / stale / placement). The
+    ///     parameter-based BIPs do NOT return to VALUES (phantom-diff
+    ///     class). System META prefix FHV9→FHV10. Critical task
+    ///     <c>hash-v20</c> recomputes every row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -258,7 +268,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

@@ -54,4 +54,19 @@ public static class SystemFamilyKeys
     /// <summary>Unknown/future <c>ConnectorProfileType</c> (incl. Invalid) —
     /// mirrors <see cref="StairsUnknown"/>.</summary>
     public const string DuctUnknown = "Duct.Unknown";
+
+    /// <summary>
+    /// OST_FlexDuctCurves has TWO system families (круглого / прямоугольного
+    /// сечения), resolved from <c>MEPCurveType.Shape</c>. Same collision class
+    /// as #215 ducts (owner stress test 2026-08-30): with
+    /// <see cref="SingleFamily"/> the staging prototype search took the first
+    /// template flex-duct type — a rectangular one — and duplicated the round
+    /// reference type into the WRONG family; the mini-project then carried a
+    /// different Имя семейства and every unchanged reimport produced a
+    /// phantom version.
+    /// </summary>
+    public const string FlexDuctRound = "FlexDuct.Round";
+    public const string FlexDuctRectangular = "FlexDuct.Rectangular";
+    /// <summary>Unknown/future <c>ConnectorProfileType</c> for flex ducts.</summary>
+    public const string FlexDuctUnknown = "FlexDuct.Unknown";
 }

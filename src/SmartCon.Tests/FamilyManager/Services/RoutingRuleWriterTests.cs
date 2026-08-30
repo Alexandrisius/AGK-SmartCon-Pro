@@ -47,6 +47,26 @@ public sealed class RoutingRuleWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_ItemAlreadyHasLinks_ReimportKeepsCuratedLinks()
+    {
+        var (repo, calls) = CreateCapturingRepo();
+        repo.HasItemRows = true;
+        var item = MakeSystemItem(
+        [
+            new SystemTypeSnapshot("Pipe A", [], Routing: new RoutingPreferencesSnapshot(0,
+            [
+                new RoutingRuleSnapshot(1, "Отвод:Стандарт", "elbow", []),
+            ]), FamilyKey: "Pipe.Types"),
+        ]);
+
+        await RoutingRuleWriter.WriteAsync(
+            [item], new Dictionary<string, string> { [ParentPath] = ParentItemId }, repo, CancellationToken.None);
+
+        // World B: curated item-level links survive re-imports.
+        Assert.Empty(calls);
+    }
+
+    [Fact]
     public async Task WriteAsync_NoSystemItemsOrNotImported_WritesNothing()
     {
         var (repo, calls) = CreateCapturingRepo();
@@ -200,6 +220,7 @@ public sealed class RoutingRuleWriterTests
     {
         public List<(string, IReadOnlyList<FamilyRoutingRuleInfo>, IReadOnlyList<FamilyRoutingTypeSettings>)> ReplaceCalls = [];
         public IReadOnlyList<FamilyRoutingRuleInfo> ReadRules = [];
+        public bool HasItemRows = false;
 
         public Task ReplaceForVersionAsync(string catalogItemId, string catalogVersionId,
             IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings,
@@ -228,6 +249,25 @@ public sealed class RoutingRuleWriterTests
 
         public Task<bool> HasRulesForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default)
             => Task.FromResult(ReadRules.Count > 0);
+
+        public Task<bool> HasAnyForItemAsync(string catalogItemId, CancellationToken ct = default)
+            => Task.FromResult(HasItemRows);
+
+        public Task<(IReadOnlyList<FamilyRoutingRuleInfo>, IReadOnlyList<FamilyRoutingTypeSettings>)> ReadForItemAsync(
+            string catalogItemId, CancellationToken ct = default)
+            => Task.FromResult<(IReadOnlyList<FamilyRoutingRuleInfo>, IReadOnlyList<FamilyRoutingTypeSettings>)>(
+                (ReadRules, []));
+
+        public Task ReplaceForItemAsync(string catalogItemId,
+            IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings,
+            CancellationToken ct = default)
+        {
+            ReplaceCalls.Add((catalogItemId, rules, settings));
+            return Task.CompletedTask;
+        }
+
+        public Task MarkCurrentVersionRoutingBackfilledAsync(string catalogItemId, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     private sealed class CapturingDependencyRepository : IFamilyDependencyRepository

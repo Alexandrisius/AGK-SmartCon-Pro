@@ -163,6 +163,9 @@ public static partial class LocalizationService
         ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
         ru["FM_StaleTooltipNotInCatalog"] = "Семейство не найдено в каталоге FM"; en["FM_StaleTooltipNotInCatalog"] = "Family not found in FM catalog";
         ru["FM_StaleTooltipContentDrift"] = "Содержимое изменено локально: маркер актуален, но контент отличается от каталога. «Обновить» восстановит каталог (локальные правки будут потеряны)"; en["FM_StaleTooltipContentDrift"] = "Content edited locally: the marker is current, but the content differs from the catalog. Update restores the catalog content (local edits are lost)";
+        ru["FM_StaleTooltipRoutingDrift"] = "Настройки трассировки в проекте отличаются от каталога. «Обновить» применит каталожную трассировку к типам проекта"; en["FM_StaleTooltipRoutingDrift"] = "The project's routing settings differ from the catalog. Update applies the catalog routing to the project types";
+        ru["FM_RoutingDriftTitle"] = "Настройки трассировки"; en["FM_RoutingDriftTitle"] = "Routing settings";
+        ru["FM_RoutingDriftBody"] = "Настройки трассировки типа «{0}» в проекте отличаются от каталога. Применить каталожные настройки? «Нет» отменит размещение."; en["FM_RoutingDriftBody"] = "The project routing settings of type \"{0}\" differ from the catalog. Apply the catalog settings? \"No\" cancels the placement.";
         ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
         ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
@@ -282,9 +285,7 @@ public static partial class LocalizationService
         ru["FM_Routing_Picker_Family"] = "Семейство"; en["FM_Routing_Picker_Family"] = "Family";
         ru["FM_Routing_Picker_Type"] = "Тип"; en["FM_Routing_Picker_Type"] = "Type";
         ru["FM_Routing_Picker_Search"] = "Поиск"; en["FM_Routing_Picker_Search"] = "Search";
-        ru["FM_Routing_LegacyVersion"] = "Трассировка этой версии хранится в старом формате. Выполните «Обновить базу» или переимпортируйте категорию — после этого редактирование станет доступно."; en["FM_Routing_LegacyVersion"] = "This version stores routing in the legacy format. Run \"Update database\" or reimport the category — editing will become available afterwards.";
-        ru["FM_Routing_DuplicateTypes"] = "В этой категории есть типы с одинаковыми именами в разных семействах — их хранилище секций не позволяет пересчитать трассировку байт-в-байт. Переимпортируйте системную категорию для обновления хранилища."; en["FM_Routing_DuplicateTypes"] = "This category has types with identical names in different families — their section storage cannot be recomposed byte-exactly. Reimport the system category to update the storage.";
-        ru["FM_Routing_Saved"] = "Трассировка сохранена как версия {0}"; en["FM_Routing_Saved"] = "Routing saved as version {0}";
+        ru["FM_Routing_Saved"] = "Настройки трассировки сохранены. Загруженные в проект семейства этого каталога помечены изменёнными."; en["FM_Routing_Saved"] = "Routing settings saved. Loaded project families of this catalog are marked as changed.";
         ru["FM_Routing_ArchivedLockHint"] = "Деталь «{0}» убрана из трассировки, но остаётся привязанной: её используют архивные версии. Связь исчезнет после удаления этих версий."; en["FM_Routing_ArchivedLockHint"] = "Part \"{0}\" was removed from routing but stays linked: archived versions still use it. The link clears after those versions are deleted.";
         ru["FM_Routing_SaveFailed"] = "Не удалось сохранить трассировку: {0}"; en["FM_Routing_SaveFailed"] = "Failed to save routing: {0}";
         ru["FM_Routing_InvalidSize"] = "Некорректный размер в группе «{0}» типа «{1}». Введите число в мм или оставьте пустым («Все»)."; en["FM_Routing_InvalidSize"] = "Invalid size in group \"{0}\" of type \"{1}\". Enter a number in mm or leave empty (\"All\").";

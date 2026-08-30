@@ -277,8 +277,9 @@ public sealed class FamilyContentHasherSectionTests
         var sections = _hasher.ComputeSectionsForSystem(snapshot);
 
         Assert.NotNull(sections);
-        // 1 META + 2 types × 8 per-type entries.
-        Assert.Equal(1 + 2 * 8, sections!.Count);
+        // 1 META + 2 types × 7 per-type entries (ROUTING left the hash at
+        // FHV20 — ADR-072 World B).
+        Assert.Equal(1 + 2 * 7, sections!.Count);
         Assert.Equal("META", sections[0].SectionName);
         Assert.Null(sections[0].TypeName);
 
@@ -288,16 +289,16 @@ public sealed class FamilyContentHasherSectionTests
 
         var expectedCycle = new[]
         {
-            "VALUES", "FAMKEY", "STRUCT", "ROUTING", "SEGMENTS", "SUBTYPES", "RAILING", "WIRE",
+            "VALUES", "FAMKEY", "STRUCT", "SEGMENTS", "SUBTYPES", "RAILING", "WIRE",
         };
         for (var i = 0; i < perType.Length; i++)
         {
-            Assert.Equal(expectedCycle[i % 8], perType[i].SectionName);
+            Assert.Equal(expectedCycle[i % 7], perType[i].SectionName);
         }
 
         // Types are canonical-sorted: «Стандартный» < «Тонкая» (Ordinal).
         Assert.Equal("Стандартный", perType[0].TypeName);
-        Assert.Equal("Тонкая", perType[8].TypeName);
+        Assert.Equal("Тонкая", perType[7].TypeName);
     }
 
     [Fact]

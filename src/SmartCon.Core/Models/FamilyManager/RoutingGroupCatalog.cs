@@ -88,11 +88,22 @@ public static class RoutingGroupCatalog
 
     /// <summary>
     /// <c>true</c> for pipe/duct (RoutingPreferenceManager-backed groups:
-    /// multi-rule + size criteria). Param-based categories (flex/conduit/
-    /// cable tray) store one part per group parameter.
+    /// multi-rule). Param-based categories (flex/conduit/cable tray) store
+    /// one part per group parameter.
     /// </summary>
     public static bool IsManagerBased(int revitCategoryId)
         => revitCategoryId is PipeCurvesCategoryId or DuctCurvesCategoryId;
+
+    /// <summary>
+    /// <c>true</c> only for pipes — the ONLY category whose routing rules
+    /// carry size-range criteria (DN spans) and a segment size table
+    /// (owner decision 2026-08-30). Duct size availability is configured
+    /// elsewhere; flex/conduit/cable-tray routing is a plain part choice
+    /// without conditions — their groups expose no size UI and no segment
+    /// row, and project-settings size analysis must not apply to them.
+    /// </summary>
+    public static bool HasSizeCriteria(int? revitCategoryId)
+        => revitCategoryId is PipeCurvesCategoryId;
 
     /// <summary>
     /// <c>true</c> when the category exposes the preferred-junction setting
@@ -141,16 +152,19 @@ public static class RoutingGroupCatalog
             ],
             DuctCurvesCategoryId =>
             [
-                ManagerGroup(RoutingManagerGroup.Segments, "FM_Routing_Group_SegmentsDuct", isReadOnly: true),
-                ManagerGroup(RoutingManagerGroup.Elbows, "FM_Routing_Group_Elbows", DuctFittingCategoryId, ElbowParts),
-                ManagerGroup(RoutingManagerGroup.Junctions, "FM_Routing_Group_Junctions", DuctFittingCategoryId, JunctionParts),
-                ManagerGroup(RoutingManagerGroup.Crosses, "FM_Routing_Group_Crosses", DuctFittingCategoryId, CrossParts),
-                ManagerGroup(RoutingManagerGroup.Transitions, "FM_Routing_Group_Transitions", DuctFittingCategoryId, TransitionParts),
-                ManagerGroup(RoutingManagerGroup.Unions, "FM_Routing_Group_Unions", DuctFittingCategoryId, UnionParts),
-                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToRound, "FM_Routing_Group_TransitionRectToRound", DuctFittingCategoryId, TransitionParts),
-                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToOval, "FM_Routing_Group_TransitionRectToOval", DuctFittingCategoryId, TransitionParts),
-                ManagerGroup(RoutingManagerGroup.TransitionsOvalToRound, "FM_Routing_Group_TransitionOvalToRound", DuctFittingCategoryId, TransitionParts),
-                ManagerGroup(RoutingManagerGroup.Caps, "FM_Routing_Group_Caps", DuctFittingCategoryId, CapParts),
+                // No Segments row and no size criteria: duct size
+                // availability is configured outside routing, and Revit's
+                // duct routing UI rows are a plain part choice (owner
+                // decision 2026-08-30).
+                ManagerGroup(RoutingManagerGroup.Elbows, "FM_Routing_Group_Elbows", DuctFittingCategoryId, ElbowParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Junctions, "FM_Routing_Group_Junctions", DuctFittingCategoryId, JunctionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Crosses, "FM_Routing_Group_Crosses", DuctFittingCategoryId, CrossParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Transitions, "FM_Routing_Group_Transitions", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Unions, "FM_Routing_Group_Unions", DuctFittingCategoryId, UnionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToRound, "FM_Routing_Group_TransitionRectToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToOval, "FM_Routing_Group_TransitionRectToOval", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.TransitionsOvalToRound, "FM_Routing_Group_TransitionOvalToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Caps, "FM_Routing_Group_Caps", DuctFittingCategoryId, CapParts, hasCriteria: false),
             ],
             FlexPipeCurvesCategoryId =>
             [
@@ -213,14 +227,15 @@ public static class RoutingGroupCatalog
         string labelKey,
         int fittingCategoryId = 0,
         IReadOnlyList<int>? partTypes = null,
-        bool isReadOnly = false)
+        bool isReadOnly = false,
+        bool hasCriteria = true)
         => new(
             RoutingGroupKeys.ForManagerGroup((int)group),
             (int)group,
             labelKey,
             isReadOnly,
             AllowMultipleRules: !isReadOnly,
-            HasCriteria: !isReadOnly,
+            HasCriteria: hasCriteria && !isReadOnly,
             fittingCategoryId,
             partTypes ?? []);
 

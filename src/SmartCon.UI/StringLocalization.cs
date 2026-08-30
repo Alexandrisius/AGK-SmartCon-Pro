@@ -678,6 +678,9 @@ public static class StringLocalization
         public const string FM_StaleTooltipRevitVer = "FM_StaleTooltipRevitVer";
         public const string FM_StaleTooltipNotInCatalog = "FM_StaleTooltipNotInCatalog";
         public const string FM_StaleTooltipContentDrift = "FM_StaleTooltipContentDrift";
+        public const string FM_StaleTooltipRoutingDrift = "FM_StaleTooltipRoutingDrift";
+        public const string FM_RoutingDriftTitle = "FM_RoutingDriftTitle";
+        public const string FM_RoutingDriftBody = "FM_RoutingDriftBody";
         public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
         public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
@@ -791,8 +794,6 @@ public static class StringLocalization
         public const string FM_Routing_Picker_Family = "FM_Routing_Picker_Family";
         public const string FM_Routing_Picker_Type = "FM_Routing_Picker_Type";
         public const string FM_Routing_Picker_Search = "FM_Routing_Picker_Search";
-        public const string FM_Routing_LegacyVersion = "FM_Routing_LegacyVersion";
-        public const string FM_Routing_DuplicateTypes = "FM_Routing_DuplicateTypes";
         public const string FM_Routing_Saved = "FM_Routing_Saved";
         public const string FM_Routing_ArchivedLockHint = "FM_Routing_ArchivedLockHint";
         public const string FM_Routing_SaveFailed = "FM_Routing_SaveFailed";

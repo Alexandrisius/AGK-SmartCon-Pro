@@ -25,12 +25,16 @@ public interface IFamilySnapshotExtractor
     SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
         Document stagedDoc,
         BuiltInCategory builtInCategory);
+    SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId);
+    RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId);
 }
 ```
 
 - `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`). **FHV15 (#249):** type-dependent sections (GEOM metrics, DEF offsets, CONN positions) are measured at a deterministic reference type — the first-Ordinal name of `preferredTypeNames` ∩ document's named types (the verifier's type-set rule), or the document's first named type by default — inside a rolled-back transaction (`SmartCon_HashReferenceType`, I-03b), so the user's current-type choice never shifts the hash and the document/IsModified stay untouched.
 - `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
 - `ExtractSystemCategoryFromStagedProject` (ADR-056) — extracts a `SystemFamilySnapshot` from a staged mini-project (.rvt) during database actualization. Type discovery: placed instances first (domain truth); when nothing is placed (Phase-2 categories) ALL types of the category are collected — the caller trims them to the catalog's authoritative type list (`family_types`).
+- `ExtractSingleSystemType` — one `SystemTypeSnapshot` (parameters, structure, routing) of a project type; the system-type synchronizer reads reference data with it.
+- `ExtractSystemTypeRouting` (ADR-072 World B) — lightweight routing-only read (manager- or parameter-based) for the drift probe (stale/placement); `null` for non-MEP types.
 
 **Caller contract:** the active document may be the source project or a managed-storage mini-rvt (after `EditFamily` + `SaveAs`). The extracted hash is stable across both because it is based on in-memory content, not file bytes.
 

@@ -629,6 +629,53 @@ internal static class FamilyCatalogSql
         """;
 
     /// <summary>
+    /// V37 (ADR-072 World B, owner decision 2026-08-29): ITEM-level routing
+    /// link tables — routing left the content hash and the version model
+    /// (it is a link between catalog families, not file content). The
+    /// migration copies the current version's V34 rows so curated links
+    /// survive the upgrade; items whose current version carries no V34 rows
+    /// stay empty and get seeded by import/backfill on first sight.
+    /// </summary>
+    public const string MigrateV37AddItemRoutingTables = """
+        CREATE TABLE IF NOT EXISTS item_routing_rules (
+            catalog_item_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            group_key TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            part_name TEXT,
+            description TEXT NOT NULL DEFAULT '',
+            criteria_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (catalog_item_id, family_key, type_name, group_key, rule_order),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS item_routing_type_settings (
+            catalog_item_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            preferred_junction_type INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_item_id, family_key, type_name),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO item_routing_rules
+            (catalog_item_id, family_key, type_name, group_key, rule_order,
+             part_name, description, criteria_json)
+        SELECT r.catalog_item_id, r.family_key, r.type_name, r.group_key, r.rule_order,
+             r.part_name, r.description, r.criteria_json
+        FROM family_routing_rules r
+        INNER JOIN catalog_versions cv ON cv.id = r.catalog_version_id
+        INNER JOIN catalog_items ci
+            ON ci.id = r.catalog_item_id AND ci.current_version_label = cv.version_label;
+        INSERT OR IGNORE INTO item_routing_type_settings
+            (catalog_item_id, family_key, type_name, preferred_junction_type)
+        SELECT cv.catalog_item_id, s.family_key, s.type_name, s.preferred_junction_type
+        FROM family_routing_type_settings s
+        INNER JOIN catalog_versions cv ON cv.id = s.catalog_version_id
+        INNER JOIN catalog_items ci
+            ON ci.id = cv.catalog_item_id AND ci.current_version_label = cv.version_label;
+        """;
+
+    /// <summary>
     /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
     /// catalog DATA — the mini-project no longer carries fittings, so the
     /// routing of a version lives here instead of the staged .rvt.

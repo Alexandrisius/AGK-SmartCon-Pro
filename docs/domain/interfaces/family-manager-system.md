@@ -275,7 +275,17 @@ public interface ISystemTypeSyncService
 
 ## IFamilyRoutingRuleRepository
 
-Хранилище правил трассировки системных MEPCurve-типов как данных каталога (ADR-072, таблицы V34 `family_routing_rules` + `family_routing_type_settings`). Правила версионируются с итемом (scope: версия + family_key + type_name + group_key). Запись — при импорте (RoutingRuleWriter, из финального снапшота) и file-free/mini backfill (Ф2b); чтение — sync (только CURRENT версия), reimport-from-mini подмена, будущий редактор (Ф3). `HasRulesForVersionAsync` — дискриминатор legacy-fallback: отсутствие строк = pre-V34 версия (легитимно пустой routing хранит settings-строку, поэтому отсутствие строк ≠ «нет правил»).
+Хранилище правил трассировки системных MEPCurve-типов как данных каталога
+(ADR-072). Два уровня: **версионный** (V34 `family_routing_rules` +
+`family_routing_type_settings`, заморожен после World B: история + legacy-
+fallback sync) и **item-уровень** (V37 `item_routing_rules` +
+`item_routing_type_settings` — живые связи семейств каталога; редактор
+правит на месте, импорт сеет только при отсутствии, реимпорт curated-ссылки
+не затирает). `HasRulesForVersionAsync` — дискриминатор legacy-fallback:
+отсутствие строк = pre-V34 версия (легитимно пустой routing хранит
+settings-строку, поэтому отсутствие строк ≠ «нет правил»).
+`MarkCurrentVersionRoutingBackfilledAsync` — импорт/backfill пометили
+item-ссылки засеянными, optional-задача не переоткрывает файл.
 
 **Файл:** `IFamilyRoutingRuleRepository.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyRoutingRuleRepository.cs`
@@ -293,6 +303,12 @@ public interface IFamilyRoutingRuleRepository
         string catalogItemId, CancellationToken ct = default);
     Task<bool> HasRulesForVersionAsync(string catalogItemId, string catalogVersionId, CancellationToken ct = default);
     Task<bool> HasRulesForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default);
+    Task<bool> HasAnyForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForItemAsync(
+        string catalogItemId, CancellationToken ct = default);
+    Task ReplaceForItemAsync(string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task MarkCurrentVersionRoutingBackfilledAsync(string catalogItemId, CancellationToken ct = default);
 }
 ```
 
@@ -300,7 +316,19 @@ public interface IFamilyRoutingRuleRepository
 
 ## IRoutingEditorService
 
-Движок редактора трассировки (ADR-072, Фаза 3): загрузка правил системного MEPCurve-итема для редактирования и сохранение правок КАК НОВОЙ ВЕРСИИ каталога — одной транзакцией: клон версии (тот же mini-файл), копии family_types, строки routing (V34), пересчитанные content/per-type хэши и канонические секции (`FamilyContentHasher.RebuildSystemSectionsWithRouting`, byte-exact со snapshot-хэшером), перенос указателя current версии и регенерация `family_dependencies` (shared_nested переносятся, routing-links пересобираются из новых правил как в DependencyLinkWriter). Legacy-версии без section_strings отклоняются (хэши неверифицируемы — подсказка актуализации). Убранные детали, залоченные архивными версиями (ADR-067), возвращаются для UX-подсказки. `GetPartCandidatesAsync` — источник пикера «семейство+тип»: loadable-итемы категории фитинга с фактом part_type из набора группы (строго как фильтр Revit). Без Revit — чистые данные каталога.
+Движок редактора трассировки (ADR-072, World B): загрузка правил системного
+MEPCurve-итема для редактирования и сохранение правок НА МЕСТЕ — одной
+транзакцией: DELETE+INSERT item-таблиц (`item_routing_rules` /
+`item_routing_type_settings`, V37) + регенерация `family_dependencies`
+текущей версии (shared_nested переносятся, routing-links удаляются и
+пересобираются из новых правил как в DependencyLinkWriter). Версия НЕ
+создаётся, хэш/секции НЕ пересчитываются (трассировка — связь семейств
+каталога, не содержимое файла). Load: item-таблицы, fallback — V34 текущей
+версии (legacy до backfill). Убранные детали, залоченные архивными версиями
+(ADR-067), возвращаются для UX-подсказки. `GetPartCandidatesAsync` —
+источник пикера «семейство+тип»: loadable-итемы категории фитинга с фактом
+part_type из набора группы (строго как фильтр Revit). Без Revit — чистые
+данные каталога.
 
 **Файл:** `IRoutingEditorService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/Routing/CatalogRoutingEditorService.cs`
@@ -337,6 +365,25 @@ public interface ISegmentSizeRepository
     Task ReplaceForCurrentVersionAsync(string catalogItemId, IReadOnlyList<SegmentSizeRecord> sizes, CancellationToken ct = default);
     Task<IReadOnlyList<SegmentSizeRecord>> ReadForVersionAsync(string catalogVersionId, CancellationToken ct = default);
     Task<IReadOnlyList<double>> ReadDistinctNominalsAsync(string catalogVersionId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IRoutingDriftPrompt
+
+Диалог подтверждения перезаписи трассировки при размещении системного типа
+(ADR-072 World B): если live-трассировка типа проекта отличается от
+item-ссылок каталога, размещение спрашивает «применить каталожные настройки?»
+— «нет» отменяет размещение целиком (`SystemPlacementResult.Cancelled`).
+
+**Файл:** `IRoutingDriftPrompt.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/RoutingDriftPrompt.cs`
+
+```csharp
+public interface IRoutingDriftPrompt
+{
+    bool ConfirmRoutingOverwrite(string typeName);
 }
 ```
 

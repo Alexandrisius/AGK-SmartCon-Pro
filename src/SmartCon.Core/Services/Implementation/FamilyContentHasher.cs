@@ -37,7 +37,7 @@ public sealed partial class FamilyContentHasher : IFamilyContentHasher
     private const string NullBuiltInMarker = "NOBUILTIN";
     private const string NullSubcatMarker = "NOSUBCAT";
     private const string NullMaterialMarker = "NOMATERIAL";
-    private const string NullPartMarker = "NOPART";
+    internal const string NullPartMarker = "NOPART";
     private const string AbsentMarker = "-";
 
     public FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot)

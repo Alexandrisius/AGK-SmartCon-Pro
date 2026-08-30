@@ -76,4 +76,43 @@ public interface IFamilyRoutingRuleRepository
     Task<bool> HasRulesForCurrentVersionAsync(
         string catalogItemId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// ITEM-level routing links (ADR-072 World B, V37 tables
+    /// <c>item_routing_rules</c> + <c>item_routing_type_settings</c>):
+    /// routing is a catalog-family link, not version content — the editor
+    /// edits it in place without version bumps, re-imports never overwrite
+    /// it. <c>true</c> when the item carries at least one routing row
+    /// (rules or settings); import/backfill seed the tables ONLY while
+    /// this is <c>false</c>.
+    /// </summary>
+    Task<bool> HasAnyForItemAsync(
+        string catalogItemId,
+        CancellationToken ct = default);
+
+    /// <summary>All item-level routing rules and per-type settings.</summary>
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)>
+        ReadForItemAsync(
+            string catalogItemId,
+            CancellationToken ct = default);
+
+    /// <summary>
+    /// DELETE+INSERT the item-level routing links inside a single
+    /// transaction (the routing editor save path — no version is created).
+    /// </summary>
+    Task ReplaceForItemAsync(
+        string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules,
+        IReadOnlyList<FamilyRoutingTypeSettings> settings,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Stamps the item's CURRENT version <c>routing_backfilled = 1</c>
+    /// (import/backfill seeded the item-level links, or the item is
+    /// legitimately routing-less) so the optional backfill task never
+    /// re-opens its file. No-op when the item has no current version.
+    /// </summary>
+    Task MarkCurrentVersionRoutingBackfilledAsync(
+        string catalogItemId,
+        CancellationToken ct = default);
 }

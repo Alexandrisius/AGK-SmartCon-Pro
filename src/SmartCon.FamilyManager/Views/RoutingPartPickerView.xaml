@@ -5,8 +5,8 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
-        Title="{loc:Loc FM_Routing_Picker_Title}"
-        Width="560" Height="480" MinWidth="420" MinHeight="320"
+        Title="{Binding PickerTitle}"
+        Width="720" Height="480" MinWidth="560" MinHeight="320"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         ShowInTaskbar="False"
@@ -42,9 +42,9 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="5*"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="4*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Panel headers. -->
@@ -64,20 +64,15 @@
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Text="{Binding FamilyName}"
-                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding FamilyName}"/>
-                                <TextBlock Grid.Row="1" Text="{Binding PartTypeLabel, TargetNullValue='—'}"
-                                           Foreground="{DynamicResource TextMutedBrush}"
-                                           FontSize="10"
-                                           TextTrimming="CharacterEllipsis"/>
-                            </Grid>
+                            <!-- Family name only: the part class is the
+                                 dialog context and lives in the window
+                                 title (owner decision 2026-08-30) — a
+                                 second line made the selection highlight
+                                 visibly thicker than the type column's. -->
+                            <TextBlock Text="{Binding FamilyName}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding FamilyName}"/>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

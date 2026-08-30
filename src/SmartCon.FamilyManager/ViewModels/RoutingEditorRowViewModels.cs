@@ -278,6 +278,13 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
     /// <summary>Free-text fallback: criteria group but the version has no stored sizes.</summary>
     public bool ShowFreeTextSizes => Group.HasCriteria && !Group.HasSizeOptions;
 
+    /// <summary>
+    /// Param groups (flex/conduit/cable-tray) hold exactly one value — the
+    /// picked part can only be CLEARED back to «Нет», not row-deleted
+    /// (owner stress test 2026-08-30: the row had no way to drop the pick).
+    /// </summary>
+    public bool ShowClearPart => Group.IsParamGroup && State.PartName is not null;
+
     [ObservableProperty] private string _partDisplay;
     [ObservableProperty] private string _description;
     [ObservableProperty] private string _minSizeText;
@@ -314,5 +321,6 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
         PartDisplay = State.PartName
             ?? LanguageManager.GetString(StringLocalization.Keys.FM_Routing_NoPart) ?? "None";
         HasPresenceIssue = State.HasPresenceIssue;
+        OnPropertyChanged(nameof(ShowClearPart));
     }
 }

@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.Stale;
@@ -28,6 +29,7 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilyContentHasher? _contentHasher;
     private readonly IFamilyVersionWriter? _versionWriter;
     private readonly IContentHashAnalyticsRepository? _contentHashAnalytics;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
     /// <summary>#187: per-type stale verdicts for system items —
@@ -54,7 +56,8 @@ internal sealed class StaleDetector : IStaleDetector
         IFamilySnapshotExtractor? snapshotExtractor = null,
         IFamilyContentHasher? contentHasher = null,
         IFamilyVersionWriter? versionWriter = null,
-        IContentHashAnalyticsRepository? contentHashAnalytics = null)
+        IContentHashAnalyticsRepository? contentHashAnalytics = null,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(store);
@@ -88,6 +91,7 @@ internal sealed class StaleDetector : IStaleDetector
         _contentHasher = contentHasher;
         _versionWriter = versionWriter;
         _contentHashAnalytics = contentHashAnalytics;
+        _routingRuleRepository = routingRuleRepository;
     }
 
     public async Task<StaleCheckResult> CheckFamilyAsync(
@@ -827,6 +831,97 @@ internal sealed class StaleDetector : IStaleDetector
     }
 
     /// <summary>
+    /// ADR-072 World B routing drift probe: compares the LIVE routing
+    /// preferences of the project's loaded types against the catalog's
+    /// item-level routing links via <see cref="RoutingFingerprint"/>
+    /// (routing left the content hash, so marker checks are blind to it).
+    /// Returns <c>null</c> when the catalog has no opinion (non-MEP
+    /// category, no item-level links, missing seams) — the caller keeps
+    /// the marker-based verdict; otherwise a per-type drift map keyed by
+    /// <see cref="BuildSystemTypeKey"/>.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, bool>?> ComputeRoutingDriftAsync(
+        Document doc,
+        FamilyCatalogItem item,
+        IReadOnlyList<(FamilyTypeDescriptor Descriptor, ElementId TypeId)> pairs,
+        CancellationToken ct)
+    {
+        if (_routingRuleRepository is null || _snapshotExtractor is null)
+            return null;
+        if (!RoutingGroupCatalog.IsMepCurveCategory(item.RevitCategoryId))
+            return null;
+        if (!await _routingRuleRepository.HasAnyForItemAsync(item.Id, ct).ConfigureAwait(false))
+            return null;
+
+        try
+        {
+            var (rules, settings) = await _routingRuleRepository
+                .ReadForItemAsync(item.Id, ct).ConfigureAwait(false);
+
+            // Only pipes carry size ranges in routing (owner decision
+            // 2026-08-30). Legacy item rows may still hold the criterion
+            // for ducts — normalize both sides so the probe compares like
+            // with like (see RoutingFingerprint.WithoutSizeCriteria).
+            var includeSizeCriteria = RoutingGroupCatalog.HasSizeCriteria(item.RevitCategoryId);
+            RoutingPreferencesSnapshot? NormalizeRouting(RoutingPreferencesSnapshot? snapshot)
+                => RoutingFingerprint.WithCanonicalTransitionGroups(
+                    includeSizeCriteria ? snapshot : RoutingFingerprint.WithoutSizeCriteria(snapshot));
+
+            var catalogFingerprints = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var setting in settings)
+            {
+                catalogFingerprints[BuildSystemTypeKey(setting.FamilyKey, null, setting.TypeName)] =
+                    RoutingFingerprint.Compute(NormalizeRouting(RoutingRuleRecordMapper.ToSnapshot(
+                        setting.TypeName, setting.FamilyKey, rules, settings)));
+            }
+            if (catalogFingerprints.Count == 0)
+                return null;
+
+            var extractor = _snapshotExtractor;
+            var live = await _awaitable.RaiseAsync(_ =>
+            {
+                var map = new Dictionary<string, string?>(StringComparer.Ordinal);
+                foreach (var (descriptor, typeId) in pairs)
+                {
+                    map[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] =
+                        RoutingFingerprint.Compute(NormalizeRouting(extractor.ExtractSystemTypeRouting(doc, typeId)));
+                }
+                return map;
+            }, ct).ConfigureAwait(true);
+
+            var drift = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var (descriptor, _) in pairs)
+            {
+                var key = BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name);
+                if (!catalogFingerprints.TryGetValue(key, out var catalogFingerprint))
+                {
+                    drift[key] = false;
+                    continue;
+                }
+                live.TryGetValue(key, out var liveFingerprint);
+                drift[key] = !string.Equals(catalogFingerprint, liveFingerprint, StringComparison.Ordinal);
+            }
+
+            if (drift.Values.Any(v => v))
+            {
+                SmartConLogger.Info(
+                    $"RoutingDrift[{item.Id}]: live routing of {drift.Count(v => v.Value)} type(s) " +
+                    "differs from the catalog links");
+            }
+            return drift;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Same degradation rule as the content refinement: a transient
+            // failure keeps the marker-based verdict, never aborts the check.
+            SmartConLogger.Warn(
+                $"RoutingDrift[{item.Id}]: probe failed: {ex.Message} " +
+                "[Action: routing-дрейф не проверен для этого семейства; повторите «Проверить»]");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// System-family branch of <see cref="CheckCategoryAsync"/> (Issue #104):
     /// matches each system catalog item's types (from <c>family_types</c>)
     /// against project <c>ElementType</c> elements by (type name, category
@@ -962,6 +1057,21 @@ internal sealed class StaleDetector : IStaleDetector
             _ => _systemTypeStore.ReadManyFromTypes(doc, allIds),
             ct).ConfigureAwait(true);
 
+        // ADR-072 World B: routing fingerprint probe per matched MEP item —
+        // the marker can be current while the catalog links drifted.
+        var driftByItem = new Dictionary<string, IReadOnlyDictionary<string, bool>>(StringComparer.Ordinal);
+        foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+        {
+            var drift = await ComputeRoutingDriftAsync(
+                    doc,
+                    group.First().Item,
+                    group.Select(m => (m.Descriptor, m.TypeId)).ToList(),
+                    ct)
+                .ConfigureAwait(false);
+            if (drift is not null)
+                driftByItem[group.Key] = drift;
+        }
+
         var results = new List<StaleCheckResult>(matched.Count);
         foreach (var (item, typeIds) in matched)
         {
@@ -969,6 +1079,13 @@ internal sealed class StaleDetector : IStaleDetector
                 .Select(id => markers.TryGetValue(id, out var m) ? m : null)
                 .ToList();
             var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(item, itemMarkers, targetRevit);
+            if (!isStale
+                && driftByItem.TryGetValue(item.Id, out var itemDrift)
+                && itemDrift.Values.Any(v => v))
+            {
+                isStale = true;
+                reason = StaleReason.RoutingDrift;
+            }
             results.Add(new StaleCheckResult(
                 item.Id,
                 item.Name,
@@ -1015,7 +1132,15 @@ internal sealed class StaleDetector : IStaleDetector
                         isTypeStale = refined.Value;
                     }
                 }
-                typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = isTypeStale;
+                var typeKey = BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name);
+                if (!isTypeStale
+                    && driftByItem.TryGetValue(item.Id, out var typeDrift)
+                    && typeDrift.TryGetValue(typeKey, out var drifted)
+                    && drifted)
+                {
+                    isTypeStale = true;
+                }
+                typeMap[typeKey] = isTypeStale;
             }
             refinedTypeMaps[group.Key] = typeMap;
         }
@@ -1119,7 +1244,9 @@ internal sealed class StaleDetector : IStaleDetector
             .Select(id => markers.TryGetValue(id, out var m) ? m : null)
             .ToList();
         var targetRevit = ResolveTargetRevit();
-        var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+        var (isStaleAgg, reasonAgg, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+        var isStale = isStaleAgg;
+        var reason = reasonAgg;
 
         // #187: per-type stale map (orange presence dot per exact type).
         // #253: VersionMismatch dots refined from the catalog DB (same
@@ -1150,6 +1277,26 @@ internal sealed class StaleDetector : IStaleDetector
             }
             typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = isTypeStale;
         }
+
+        // ADR-072 World B: the marker can be perfectly current while the
+        // routing links drifted (editor save / manual project edit) — the
+        // fingerprint probe upgrades the verdict to RoutingDrift.
+        if (!isStale)
+        {
+            var drift = await ComputeRoutingDriftAsync(doc, catalogItem, foundPairs, ct)
+                .ConfigureAwait(false);
+            if (drift is not null)
+            {
+                foreach (var pair in drift)
+                {
+                    if (!pair.Value) continue;
+                    typeMap[pair.Key] = true;
+                    isStale = true;
+                    reason = StaleReason.RoutingDrift;
+                }
+            }
+        }
+
         lock (_cacheLock)
         {
             _systemTypeStaleByType[catalogItemId] = typeMap;
@@ -1326,7 +1473,10 @@ internal sealed class StaleDetector : IStaleDetector
     /// node is built from the same descriptor.
     /// </summary>
     internal static string BuildSystemTypeKey(string? familyKey, string? familyName, string typeName)
-        => SystemTypeIdentityKey.Build(familyKey, familyName, typeName);
+        => SystemTypeIdentityKey.Build(
+            string.IsNullOrEmpty(familyKey) ? null : familyKey,
+            string.IsNullOrEmpty(familyName) ? null : familyName,
+            typeName);
 
     private int ResolveTargetRevit()
     {

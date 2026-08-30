@@ -9,14 +9,13 @@ using SmartCon.UI;
 namespace SmartCon.FamilyManager.ViewModels;
 
 /// <summary>
-/// Routing editor tab (ADR-072, Phase 3): per-type editing of the routing
-/// rules stored as catalog data (V34). Visible only for system MEPCurve
-/// items (pipe/duct/flex/conduit/cable tray). The group matrix and the part
-/// filters mirror the Revit routing dialog (<see cref="RoutingGroupCatalog"/>);
-/// the save goes through <see cref="IRoutingEditorService"/> and produces a
-/// NEW catalog version with recomputed hashes, sections and dependency
-/// links. Rule edits are kept per type, so switching types in the selector
-/// never loses pending changes; a save persists every touched type at once.
+/// Routing editor tab (ADR-072, World B): per-type editing of the item-level
+/// routing links (V37 tables). Visible only for system MEPCurve items
+/// (pipe/duct/flex/conduit/cable tray). Routing is a catalog-family link,
+/// NOT file content: the save goes through <see cref="IRoutingEditorService"/>
+/// and edits the links IN PLACE — no version is created, no hash is touched.
+/// Rule edits are kept per type, so switching types in the selector never
+/// loses pending changes; a save persists every touched type at once.
 /// </summary>
 public sealed partial class FamilyPropertiesViewModel
 {
@@ -32,7 +31,6 @@ public sealed partial class FamilyPropertiesViewModel
     private IReadOnlyList<string> _routingSizeOptions = [];
 
     [ObservableProperty] private bool _isRoutingTabVisible;
-    [ObservableProperty] private bool _isRoutingLegacy;
     [ObservableProperty] private bool _isRoutingBusy;
     [ObservableProperty] private string? _routingStatusMessage;
     [ObservableProperty] private ObservableCollection<RoutingTypeItem> _routingTypes = [];
@@ -40,6 +38,19 @@ public sealed partial class FamilyPropertiesViewModel
     [ObservableProperty] private ObservableCollection<RoutingGroupRowViewModel> _routingGroups = [];
     [ObservableProperty] private bool _showPreferredJunction;
     [ObservableProperty] private RoutingJunctionOption? _selectedPreferredJunction;
+
+    /// <summary>
+    /// Only PIPES carry size ranges in routing (owner decision 2026-08-30) —
+    /// the fixed Min/Max column headers hide for every other category.
+    /// </summary>
+    [ObservableProperty] private bool _routingHasSizeCriteria;
+
+    /// <summary>
+    /// Set when a routing save actually persisted — the main view model runs
+    /// an immediate stale re-check of the family after the dialog closes
+    /// (the catalog links changed, so loaded project types drift right away).
+    /// </summary>
+    public bool RoutingLinksChanged { get; private set; }
 
     public IReadOnlyList<RoutingJunctionOption> PreferredJunctionOptions { get; } =
     [
@@ -49,11 +60,8 @@ public sealed partial class FamilyPropertiesViewModel
             LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Junction_Tap) ?? "Tap"),
     ];
 
-    /// <summary>Editor area visibility (hidden for legacy versions — only the hint shows).</summary>
-    public bool ShowRoutingEditor => IsRoutingTabVisible && !IsRoutingLegacy;
-
-    /// <summary>Routing editing is enabled (not read-only, not legacy).</summary>
-    public bool CanEditRouting => !IsReadOnly && !IsRoutingLegacy;
+    /// <summary>Routing editing is enabled (the host dialog is not read-only).</summary>
+    public bool CanEditRouting => !IsReadOnly;
 
     /// <summary>Status line visibility.</summary>
     public bool HasRoutingStatusMessage => !string.IsNullOrEmpty(RoutingStatusMessage);
@@ -63,22 +71,12 @@ public sealed partial class FamilyPropertiesViewModel
         OnPropertyChanged(nameof(HasRoutingStatusMessage));
     }
 
-    /// <summary>
-    /// Central hint of the locked editor state: the legacy-format message,
-    /// or the type-name-collision message (both refuse saves for their own
-    /// reason — actualization cures only the first).
-    /// </summary>
-    public string RoutingLockHint =>
-        _routingData?.HasTypeNameCollisions == true
-            ? LanguageManager.GetString(StringLocalization.Keys.FM_Routing_DuplicateTypes) ?? string.Empty
-            : LanguageManager.GetString(StringLocalization.Keys.FM_Routing_LegacyVersion) ?? string.Empty;
-
     /// <summary>Any type's current edit state differs from the stored rules.</summary>
     public bool HasRoutingChanges
     {
         get
         {
-            if (!IsRoutingTabVisible || IsRoutingLegacy)
+            if (!IsRoutingTabVisible)
                 return false;
             foreach (var pair in _routingEdits)
             {
@@ -145,20 +143,7 @@ public sealed partial class FamilyPropertiesViewModel
                 return;
             }
 
-            IsRoutingLegacy = _routingData.IsLegacyVersion;
-            OnPropertyChanged(nameof(ShowRoutingEditor));
-            OnPropertyChanged(nameof(CanEditRouting));
-            OnPropertyChanged(nameof(RoutingLockHint));
-            if (_routingData.HasTypeNameCollisions && !IsRoutingLegacy)
-            {
-                // Same-named types of different system families (duct
-                // Round/Rect/Oval) cannot be recomposed byte-exactly from
-                // the name-keyed V33 section storage — show read-only with
-                // the hint, saves are refused by the service too.
-                IsRoutingLegacy = true;
-                OnPropertyChanged(nameof(ShowRoutingEditor));
-                OnPropertyChanged(nameof(CanEditRouting));
-            }
+            RoutingHasSizeCriteria = RoutingGroupCatalog.HasSizeCriteria(_routingHostCategoryId);
 
             _routingEdits.Clear();
             _routingOriginals.Clear();
@@ -193,6 +178,9 @@ public sealed partial class FamilyPropertiesViewModel
     {
         var descriptors = RoutingGroupCatalog.GetGroups(_routingHostCategoryId, type.WithFittings);
         var missing = new HashSet<string>(_routingData!.MissingPartFamilies, StringComparer.Ordinal);
+        var boundsBySegment = new Dictionary<string, SegmentSizeBounds>(StringComparer.Ordinal);
+        foreach (var bound in _routingData.SegmentBounds)
+            boundsBySegment[bound.SegmentName] = bound;
         var state = new RoutingTypeEditState(
             _routingData.Settings
                 .FirstOrDefault(s => s.TypeName == type.TypeName && s.FamilyKey == type.FamilyKey)
@@ -208,7 +196,17 @@ public sealed partial class FamilyPropertiesViewModel
                 .OrderBy(r => r.RuleOrder);
             foreach (var rule in storedRules)
             {
-                group.Rules.Add(RoutingRuleEditState.FromStored(rule, missing));
+                var row = RoutingRuleEditState.FromStored(rule, missing);
+                // The read-only Segments row shows the segment's own
+                // configured size span (as the Revit routing dialog does).
+                if (descriptor.IsReadOnly
+                    && rule.PartName is not null
+                    && boundsBySegment.TryGetValue(rule.PartName, out var bound))
+                {
+                    row.MinSizeText = RoutingTypeEditState.FormatSize(bound.MinNominalFeet, isMax: false);
+                    row.MaxSizeText = RoutingTypeEditState.FormatSize(bound.MaxNominalFeet, isMax: false);
+                }
+                group.Rules.Add(row);
             }
             // Param groups hold exactly one value row («Нет» when unset).
             if (!descriptor.AllowMultipleRules && !descriptor.IsReadOnly && group.Rules.Count == 0)
@@ -301,7 +299,8 @@ public sealed partial class FamilyPropertiesViewModel
         try
         {
             var pickerVm = _viewModelFactory.CreateRoutingPartPickerViewModel(
-                descriptor.FittingCategoryId, descriptor.PartTypeOrdinals, row.State.PartName);
+                descriptor.FittingCategoryId, descriptor.PartTypeOrdinals, row.State.PartName,
+                row.Group.Label);
             await pickerVm.InitializeAsync();
             if (_dialogService.ShowRoutingPartPicker(pickerVm) == true && pickerVm.Result is { } partName)
             {
@@ -334,12 +333,13 @@ public sealed partial class FamilyPropertiesViewModel
 
     internal void NotifyRoutingRuleEdited() => NotifyRoutingChanged();
 
-    private bool IsRoutingReadOnly => IsReadOnly || IsRoutingLegacy;
+    private bool IsRoutingReadOnly => IsReadOnly;
 
     /// <summary>
-    /// Saves the routing edits of every touched type as a new catalog
-    /// version. Called from the main <c>SaveAsync</c> BEFORE the metadata
-    /// save; a failure aborts the whole save (the error is already shown).
+    /// Saves the routing edits of every touched type in place (item-level
+    /// links, no version is created). Called from the main <c>SaveAsync</c>
+    /// BEFORE the metadata save; a failure aborts the whole save (the error
+    /// is already shown).
     /// </summary>
     private async Task<bool> SaveRoutingAsync()
     {
@@ -374,27 +374,17 @@ public sealed partial class FamilyPropertiesViewModel
             .ConfigureAwait(true);
         if (!result.Success)
         {
-            var message = result.ErrorMessage switch
-            {
-                "LegacyVersion" => LanguageManager.GetString(
-                    StringLocalization.Keys.FM_Routing_LegacyVersion) ?? result.ErrorMessage,
-                "TypeNameCollisions" => LanguageManager.GetString(
-                    StringLocalization.Keys.FM_Routing_DuplicateTypes) ?? result.ErrorMessage,
-                _ => string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_Routing_SaveFailed) ?? "{0}",
-                    result.ErrorMessage),
-            };
             _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_Tab_Routing) ?? "Routing", message);
+                LanguageManager.GetString(StringLocalization.Keys.FM_Tab_Routing) ?? "Routing",
+                string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Routing_SaveFailed) ?? "{0}",
+                    result.ErrorMessage));
             return false;
         }
 
-        VersionsChanged = true;
-        VersionLabel = result.NewVersionLabel;
+        RoutingLinksChanged = true;
 
-        var status = string.Format(
-            LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Saved) ?? "{0}",
-            result.NewVersionLabel);
+        var status = LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Saved) ?? "Saved";
         if (result.ArchivedLockedParts.Count > 0)
         {
             status += Environment.NewLine + string.Join(
@@ -405,10 +395,9 @@ public sealed partial class FamilyPropertiesViewModel
         }
         RoutingStatusMessage = status;
 
-        // Reload from the DB so the editor state matches the new version
-        // (and the dirty baseline resets to what was actually persisted).
+        // Reload from the DB so the editor state matches what was persisted
+        // (and the dirty baseline resets).
         await LoadRoutingAsync(default).ConfigureAwait(true);
-        await LoadVersionsAsync(default).ConfigureAwait(true);
         return true;
     }
 }

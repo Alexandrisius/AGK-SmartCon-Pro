@@ -261,6 +261,9 @@ public static class ServiceRegistrar
         services.AddSingleton<ILoadableFamilyImportOrchestrator, SmartCon.FamilyManager.Services.LoadableFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
+        // ADR-072 World B: routing drift probe + placement overwrite prompt.
+        services.AddSingleton<RoutingDriftProbe>();
+        services.AddSingleton<IRoutingDriftPrompt, RoutingDriftPrompt>();
         // Issue #188: mini-project marker — ES-based flag on staged system
         // family .rvt files; consumed by the staging writer, the active-doc
         // notifier (auto-DB-switch guard) and the post-import close (#186).

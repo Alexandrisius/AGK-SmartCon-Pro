@@ -1057,142 +1057,41 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_RoutingRulePartChange_ShiftsHash()
+    public void ComputeForSystem_RoutingChange_DoesNotShiftHash()
     {
-        var elbowA = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
-                    new RoutingRuleSnapshot(1, "ElbowA:Standard", "", []),
-                ])),
-        ]);
-        var elbowB = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
-                    new RoutingRuleSnapshot(1, "ElbowB:Standard", "", []),
-                ])),
-        ]);
-
-        var hashA = _hasher.ComputeForSystem(elbowA);
-        var hashB = _hasher.ComputeForSystem(elbowB);
-
-        Assert.NotNull(hashA);
-        Assert.NotNull(hashB);
-        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
-    }
-
-    [Fact]
-    public void ComputeForSystem_RoutingRuleOrderChange_ShiftsHash()
-    {
-        // First matching rule wins — order is content, never sorted.
-        var first = CreateSystemSnapshot(types:
+        // ADR-072 World B (FHV20, owner decision 2026-08-29): routing is a
+        // catalog-family link, NOT file content — part picks, rule order,
+        // criteria, preferred junction and no-part rules all leave the
+        // content hash untouched (routing equality lives in
+        // RoutingFingerprint instead).
+        var baseline = CreateSystemSnapshot(types:
         [
             new SystemTypeSnapshot("Pipe", [],
                 Routing: new RoutingPreferencesSnapshot(0,
                 [
                     new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
-                    new RoutingRuleSnapshot(0, "SegB:Standard", "", []),
-                ])),
-        ]);
-        var swapped = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
-                    new RoutingRuleSnapshot(0, "SegB:Standard", "", []),
-                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
-                ])),
-        ]);
-
-        var hashFirst = _hasher.ComputeForSystem(first);
-        var hashSwapped = _hasher.ComputeForSystem(swapped);
-
-        Assert.NotNull(hashFirst);
-        Assert.NotNull(hashSwapped);
-        Assert.NotEqual(hashFirst!.HexString, hashSwapped!.HexString);
-    }
-
-    [Fact]
-    public void ComputeForSystem_RoutingCriterionChange_ShiftsHash()
-    {
-        var small = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
-                    new RoutingRuleSnapshot(1, "Elbow:Std", "",
+                    new RoutingRuleSnapshot(1, "ElbowA:Standard", "отвод",
                         [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.1)]),
                 ])),
         ]);
-        var large = CreateSystemSnapshot(types:
+        var edited = CreateSystemSnapshot(types:
         [
             new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
+                Routing: new RoutingPreferencesSnapshot(1,
                 [
-                    new RoutingRuleSnapshot(1, "Elbow:Std", "",
+                    new RoutingRuleSnapshot(1, "ElbowB:Other", "",
                         [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.2)]),
-                ])),
-        ]);
-
-        var hashSmall = _hasher.ComputeForSystem(small);
-        var hashLarge = _hasher.ComputeForSystem(large);
-
-        Assert.NotNull(hashSmall);
-        Assert.NotNull(hashLarge);
-        Assert.NotEqual(hashSmall!.HexString, hashLarge!.HexString);
-    }
-
-    [Fact]
-    public void ComputeForSystem_PreferredJunctionTypeChange_ShiftsHash()
-    {
-        var tee = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [], Routing: new RoutingPreferencesSnapshot(0, [])),
-        ]);
-        var tap = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [], Routing: new RoutingPreferencesSnapshot(1, [])),
-        ]);
-
-        var hashTee = _hasher.ComputeForSystem(tee);
-        var hashTap = _hasher.ComputeForSystem(tap);
-
-        Assert.NotNull(hashTee);
-        Assert.NotNull(hashTap);
-        Assert.NotEqual(hashTee!.HexString, hashTap!.HexString);
-    }
-
-    [Fact]
-    public void ComputeForSystem_NullPartRule_DiffersFromNamedRule()
-    {
-        // InvalidElementId ("no part allowed") is real content — distinct
-        // from any named part.
-        var noPart = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
+                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
                     new RoutingRuleSnapshot(1, null, "", []),
                 ])),
         ]);
-        var named = CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Pipe", [],
-                Routing: new RoutingPreferencesSnapshot(0,
-                [
-                    new RoutingRuleSnapshot(1, "Elbow:Std", "", []),
-                ])),
-        ]);
 
-        var hashNoPart = _hasher.ComputeForSystem(noPart);
-        var hashNamed = _hasher.ComputeForSystem(named);
+        var hashBaseline = _hasher.ComputeForSystem(baseline);
+        var hashEdited = _hasher.ComputeForSystem(edited);
 
-        Assert.NotNull(hashNoPart);
-        Assert.NotNull(hashNamed);
-        Assert.NotEqual(hashNoPart!.HexString, hashNamed!.HexString);
+        Assert.NotNull(hashBaseline);
+        Assert.NotNull(hashEdited);
+        Assert.Equal(hashBaseline!.HexString, hashEdited!.HexString);
     }
 
     [Fact]
@@ -1398,13 +1297,14 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_Fhv9GoldenCanon_IsStable()
+    public void ComputeForSystem_Fhv10GoldenCanon_IsStable()
     {
         // Golden: a FIXED snapshot must always produce this exact hash — any
-        // drift in the FHV9 canon (escaping, culture, ordering, section
-        // layout, WIRE fields, duct FAMKEY, param-routing group keys) fails
-        // loudly here instead of silently re-flagging every field catalog.
-        // When the canon changes ON PURPOSE, bump
+        // drift in the FHV10 canon (escaping, culture, ordering, section
+        // layout, WIRE fields, duct FAMKEY) fails loudly here instead of
+        // silently re-flagging every field catalog. FHV10 (ADR-072 World B):
+        // the ROUTING section left the canon — routing is a catalog-family
+        // link, not file content. When the canon changes ON PURPOSE, bump
         // FamilyContentHashFormat.CurrentVersion and update the golden in
         // the same commit.
         var snapshot = CreateSystemSnapshot(types:
@@ -1417,37 +1317,28 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("94AB88EAA6E7E45BFA09259A1F56D207D9B702477B8CD67E9534146B9C0BB531", hash.HexString);
+        Assert.Equal("0C19209B8CB6FF3C2A34B1C34FF8CD39A760CAEB86DEBB3AA4CF40FD08336775", hash.HexString);
     }
 
     [Fact]
-    public void ComputeSectionsForSystem_ParamRoutingRule_StringGroupKeyInCanon()
+    public void ComputeSectionsForSystem_RoutingLeftTheHash_NoRoutingSection()
     {
-        // FHV19 (ADR-072): a parameter-based routing rule (flex/conduit/
-        // cable-tray — no RoutingPreferenceManager) serializes its string
-        // group key into the ROUTING section; a manager rule of the same
-        // part keeps the int token.
+        // ADR-072 World B (FHV20): routing is a catalog-family link, not
+        // file content — the sections carry no ROUTING entry anymore
+        // (manager- and parameter-based rules alike); routing equality
+        // lives in RoutingFingerprint instead.
         var paramRule = new RoutingRuleSnapshot(
             RoutingGroupKeys.ParamGroupType, "FlexTee:Standard", string.Empty,
             Array.Empty<RoutingCriterionSnapshot>(),
             GroupKey: RoutingGroupKeys.ForParam("RBS_CURVETYPE_DEFAULT_TEE_PARAM"));
-        var managerRule = new RoutingRuleSnapshot(
-            2, "FlexTee:Standard", string.Empty, Array.Empty<RoutingCriterionSnapshot>());
 
-        var paramSections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
+        var sections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
         [
             new SystemTypeSnapshot("Flex", [], Routing: new RoutingPreferencesSnapshot(1, [paramRule])),
         ]));
-        var managerSections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
-        [
-            new SystemTypeSnapshot("Flex", [], Routing: new RoutingPreferencesSnapshot(1, [managerRule])),
-        ]));
 
-        var paramRouting = paramSections!.Single(s => s.SectionName == FamilyContentSectionNames.Routing);
-        var managerRouting = managerSections!.Single(s => s.SectionName == FamilyContentSectionNames.Routing);
-        Assert.Contains("Param:RBS_CURVETYPE_DEFAULT_TEE_PARAM", paramRouting.CanonicalString);
-        Assert.Contains("|2|FlexTee:Standard|", managerRouting.CanonicalString);
-        Assert.NotEqual(paramRouting.HashHex, managerRouting.HashHex);
+        Assert.NotNull(sections);
+        Assert.DoesNotContain(sections!, s => s.SectionName == FamilyContentSectionNames.Routing);
     }
 
     [Fact]

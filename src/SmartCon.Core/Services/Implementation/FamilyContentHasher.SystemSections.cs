@@ -50,6 +50,16 @@ public sealed partial class FamilyContentHasher
     /// with string group keys ("Param:<BIP>"). Pipe/duct tokens are
     /// byte-identical (their routing bips are hidden from
     /// Element.Parameters).
+    /// FHV10 (owner decision 2026-08-29, ADR-072 World B): the ROUTING
+    /// section leaves the content hash entirely — routing preferences
+    /// are links between catalog families, not file content: editor
+    /// edits must not version-bump, and a re-import must not overwrite
+    /// curated catalog links. The parameter-based BIPs stay OUT of
+    /// VALUES (their ElementId tokens reference project fittings — the
+    /// #254 phantom-diff class); routing equality moves to the separate
+    /// <see cref="RoutingFingerprint"/> used by sync/stale/placement.
+    /// System META prefix FHV9→FHV10. Critical task <c>hash-v20</c>
+    /// recomputes every row that is not current.
     /// </summary>
     internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
     {
@@ -87,7 +97,6 @@ public sealed partial class FamilyContentHasher
             Add(sections, FamilyContentSectionNames.Values, BuildSystemTypeValuesSubstring(t), t.Name);
             Add(sections, FamilyContentSectionNames.FamKey, BuildFamKeySubstring(t), t.Name);
             Add(sections, FamilyContentSectionNames.Struct, BuildStructSubstring(t), t.Name);
-            Add(sections, FamilyContentSectionNames.Routing, BuildRoutingSubstring(t), t.Name);
             Add(sections, FamilyContentSectionNames.Segments, BuildSegmentsSubstring(t), t.Name);
             Add(sections, FamilyContentSectionNames.Subtypes, BuildSubtypesSubstring(t), t.Name);
             Add(sections, FamilyContentSectionNames.Railing, BuildRailingSubstring(t), t.Name);
@@ -112,7 +121,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildSystemMetaSection(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV9|SYSTEM|");
+        sb.Append("FHV10|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
         sb.Append("TYPES|");
         return sb.ToString();
@@ -129,7 +138,6 @@ public sealed partial class FamilyContentHasher
         sb.Append(BuildSystemTypeValuesSubstring(t));
         sb.Append(BuildFamKeySubstring(t));
         sb.Append(BuildStructSubstring(t));
-        sb.Append(BuildRoutingSubstring(t));
         sb.Append(BuildSegmentsSubstring(t));
         sb.Append(BuildSubtypesSubstring(t));
         sb.Append(BuildRailingSubstring(t));
@@ -187,43 +195,6 @@ public sealed partial class FamilyContentHasher
                 sb.Append(layer.IsVariable ? 'V' : 'N').Append('|');
                 sb.Append(layer.LayerCapFlag ? 'C' : 'N').Append('|');
                 sb.Append(layer.ParticipatesInWrapping ? 'W' : 'N').Append('|');
-            }
-        }
-        else
-        {
-            sb.Append('-').Append('|');
-        }
-        return sb.ToString();
-    }
-
-    private static string BuildRoutingSubstring(SystemTypeSnapshot t)
-        => BuildRoutingSubstring(t.Routing);
-
-    private static string BuildRoutingSubstring(RoutingPreferencesSnapshot? routing)
-    {
-        var sb = new StringBuilder(64);
-        sb.Append("ROUTING|");
-        if (routing is not null)
-        {
-            sb.Append(routing.PreferredJunctionType).Append('|');
-            foreach (var rule in routing.Rules)
-            {
-                // FHV19 (ADR-072): parameter-based groups (flex/conduit/
-                // cable-tray — no RoutingPreferenceManager) carry a string
-                // group key; manager-based groups keep the pre-FHV19 int
-                // token byte-for-byte.
-                if (rule.GroupType == RoutingGroupKeys.ParamGroupType)
-                    sb.Append(Escape(rule.GroupKey ?? RoutingGroupKeys.ParamPrefix)).Append('|');
-                else
-                    sb.Append(rule.GroupType).Append('|');
-                sb.Append(Escape(rule.PartName ?? NullPartMarker)).Append('|');
-                sb.Append(Escape(rule.Description)).Append('|');
-                foreach (var criterion in rule.Criteria)
-                {
-                    sb.Append(Escape(criterion.CriterionType)).Append('|');
-                    sb.Append(criterion.MinimumSize.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-                    sb.Append(criterion.MaximumSize.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-                }
             }
         }
         else

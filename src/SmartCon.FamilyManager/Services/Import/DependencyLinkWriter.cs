@@ -130,10 +130,18 @@ internal static class DependencyLinkWriter
             IReadOnlyList<FamilyRoutingRuleInfo> rules;
             try
             {
-                var read = await routingRuleRepository
-                    .ReadForCurrentVersionAsync(parentId, ct)
-                    .ConfigureAwait(false);
-                rules = read.Rules;
+                // World B (ADR-072): routing links are item-level — read the
+                // item tables first; the frozen V34 rows of the current
+                // version are only the legacy fallback for items the item
+                // tables never seeded (pre-V37 history).
+                if (await routingRuleRepository.HasAnyForItemAsync(parentId, ct).ConfigureAwait(false))
+                {
+                    rules = (await routingRuleRepository.ReadForItemAsync(parentId, ct).ConfigureAwait(false)).Rules;
+                }
+                else
+                {
+                    rules = (await routingRuleRepository.ReadForCurrentVersionAsync(parentId, ct).ConfigureAwait(false)).Rules;
+                }
             }
             catch (Exception ex)
             {

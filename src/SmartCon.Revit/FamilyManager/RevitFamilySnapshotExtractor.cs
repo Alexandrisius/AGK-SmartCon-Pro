@@ -2006,6 +2006,27 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         return ExtractSystemType(elementType, projectDoc);
     }
 
+    /// <summary>
+    /// Lightweight routing-only read of one system type (ADR-072 World B):
+    /// the routing drift probe (stale check / placement dialog) needs just
+    /// the routing preferences — manager- or parameter-based — without the
+    /// full parameter/structure extraction. <c>null</c> for non-MEP types.
+    /// </summary>
+    public RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId)
+    {
+#if NET8_0_OR_GREATER
+        ArgumentNullException.ThrowIfNull(projectDoc);
+        ArgumentNullException.ThrowIfNull(typeId);
+#else
+        if (projectDoc is null) throw new ArgumentNullException(nameof(projectDoc));
+        if (typeId is null) throw new ArgumentNullException(nameof(typeId));
+#endif
+
+        return projectDoc.GetElement(typeId) is ElementType elementType
+            ? ExtractRoutingPreferences(elementType, projectDoc)
+            : null;
+    }
+
     private static SystemTypeSnapshot ExtractSystemType(
         ElementType elementType, Document projectDoc)
     {
@@ -2029,6 +2050,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 routingDrivingCount++;
                 continue;
             }
+            // Same-name duplicate definitions (a shared parameter plus an
+            // invisible clone with a different GUID — owner stress test
+            // 2026-08-30): Element.Parameters enumerates BOTH. Keep the one
+            // with a value so the snapshot/hash sees the real data, not the
+            // empty clone (enumeration order is not contractually stable).
+            if (paramDict.TryGetValue(pname!, out var existing) && existing.HasValue && !param.HasValue)
+                continue;
             paramDict[pname!] = param;
         }
 
@@ -2281,6 +2309,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
             }
 
             var rules = new List<RoutingRuleSnapshot>();
+            // Only PIPES define size ranges in their routing rules (owner
+            // decision 2026-08-30): duct manager rules still report a
+            // default PrimarySizeCriterion, but duct size availability is
+            // configured elsewhere — the criterion must not become routing
+            // content (phantom size UI + drift against the editor, which
+            // keeps no size conditions for non-pipes).
+            var includeSizeCriteria = elementType is PipeType;
             foreach (RoutingPreferenceRuleGroupType group in Enum.GetValues(typeof(RoutingPreferenceRuleGroupType)))
             {
                 if (group == RoutingPreferenceRuleGroupType.Undefined)
@@ -2301,7 +2336,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                         continue;
                     }
 
-                    rules.Add(ConvertRoutingRule(rule, group, doc));
+                    rules.Add(ConvertRoutingRule(rule, group, doc, includeSizeCriteria));
                 }
             }
 
@@ -2403,7 +2438,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     }
 
     private static RoutingRuleSnapshot ConvertRoutingRule(
-        RoutingPreferenceRule rule, RoutingPreferenceRuleGroupType group, Document doc)
+        RoutingPreferenceRule rule, RoutingPreferenceRuleGroupType group, Document doc, bool includeSizeCriteria)
     {
         string? partName = null;
         try
@@ -2432,11 +2467,13 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 var criterion = rule.GetCriterion(i);
                 switch (criterion)
                 {
-                    case PrimarySizeCriterion sizeCriterion:
+                    case PrimarySizeCriterion sizeCriterion when includeSizeCriteria:
                         criteria.Add(new RoutingCriterionSnapshot(
                             nameof(PrimarySizeCriterion),
                             sizeCriterion.MinimumSize,
                             sizeCriterion.MaximumSize));
+                        break;
+                    case PrimarySizeCriterion:
                         break;
                     case not null:
                         criteria.Add(new RoutingCriterionSnapshot(

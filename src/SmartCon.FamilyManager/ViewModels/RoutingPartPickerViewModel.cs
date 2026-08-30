@@ -28,13 +28,24 @@ public sealed partial class RoutingPartPickerViewModel : ObservableObject, IObse
         IRoutingEditorService routingEditorService,
         int fittingCategoryId,
         IReadOnlyCollection<int> partTypeOrdinals,
-        string? initialPartName)
+        string? initialPartName,
+        string? contextLabel = null)
     {
         _routingEditorService = routingEditorService;
         _fittingCategoryId = fittingCategoryId;
         _partTypeOrdinals = partTypeOrdinals;
         _initialPartName = initialPartName;
+
+        // The part class is the dialog context (owner decision 2026-08-30):
+        // it belongs in the window title, not in every family row.
+        var baseTitle = LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Picker_Title) ?? "Select part";
+        PickerTitle = string.IsNullOrEmpty(contextLabel)
+            ? baseTitle
+            : $"{baseTitle} — {contextLabel}";
     }
+
+    /// <summary>Window title: picker purpose + the routing group (part class).</summary>
+    public string PickerTitle { get; }
 
     [ObservableProperty] private ObservableCollection<RoutingPartCandidate> _candidates = [];
     [ObservableProperty] private RoutingPartCandidate? _selectedCandidate;

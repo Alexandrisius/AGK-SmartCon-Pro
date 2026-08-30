@@ -10,15 +10,15 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
 /// OPTIONAL actualization task (Id=<c>routing-backfill-v1</c>, Issue #254,
-/// ADR-072 Phase 2b): heals pre-refactor catalog versions —
+/// ADR-072; World B rework 2026-08-29): heals pre-refactor catalog items —
 /// <list type="number">
-///   <item>BACKFILL: writes <c>family_routing_rules</c> /
-///   <c>family_routing_type_settings</c> (V34) for legacy versions. The
-///   primary source is file-free: the ROUTING/FAMKEY canonical sections in
-///   <c>catalog_versions.section_strings</c> (V33,
-///   <see cref="RoutingSectionParser"/>); the fallback for versions
-///   without section strings is the pre-slim extraction of the opened
-///   mini-project (its legacy full routing).</item>
+///   <item>SEED: writes the ITEM-level routing link tables (V37) while the
+///   item carries none. Primary source: the pre-slim extraction of the
+///   opened mini-project (Pass B). The file-free Pass A (ROUTING sections
+///   of <c>catalog_versions.section_strings</c>) only works for sections
+///   written BEFORE <c>hash-v20</c> — the critical hash task (Order 12)
+///   rewrites section strings WITHOUT the ROUTING section in the same
+///   «Обновить базу» run, ahead of this task (Order 65).</item>
 ///   <item>SLIMMING: the staged mini is healed to the new reference shape
 ///   via <see cref="IMiniProjectRoutingSlimmingService"/> (fitting rules
 ///   removed, fitting instances/families deleted, orphan materials —
@@ -30,7 +30,7 @@ namespace SmartCon.FamilyManager.Services.Actualization;
 /// 1 = done, -1 = unreadable, -2 = missing — NEVER off the absence of
 /// routing rows (a legitimately routing-less type has none).
 /// Optional because sync has a non-destructive legacy fallback (reads
-/// routing from the mini) until the version is healed.
+/// routing from the mini) until the item is healed.
 /// </summary>
 internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizationTaskBase
 {
@@ -72,6 +72,11 @@ internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizati
             ("Variants", context.Group.Variants.Count));
 
         var dbRoot = Database.GetDatabaseRoot();
+        // World B: item-level links are seeded ONCE per item (the first
+        // variant with a routing source wins); re-imports and later variants
+        // never overwrite curated links.
+        var seedNeeded = !await _routingRuleRepository
+            .HasAnyForItemAsync(context.Group.CatalogItemId, ct).ConfigureAwait(false);
         foreach (var variant in context.Group.Variants)
         {
             ct.ThrowIfCancellationRequested();
@@ -94,10 +99,15 @@ internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizati
                 continue;
             }
 
-            // Pass A (file-free): section strings carry the full pre-FHV19
-            // routing — backfill without opening the file.
-            var backfilled = await TryBackfillFromSectionStringsAsync(variant, context.Group.CatalogItemId, ct)
+            // Pass A (file-free, legacy-only): pre-FHV20 section strings still
+            // carry the ROUTING sections — seed without opening the file.
+            // hash-v20 (Order 12) strips ROUTING from sections in the same
+            // run, so on a healed DB this pass finds nothing and Pass B (or
+            // the V37 migration / import seed) is the real source.
+            var backfilled = seedNeeded && await TryBackfillFromSectionStringsAsync(variant, context.Group.CatalogItemId, ct)
                 .ConfigureAwait(false);
+            if (backfilled)
+                seedNeeded = false;
 
             // Pass B (Revit): slimming always needs the file; when the
             // file-free pass found no section strings, the pre-slim
@@ -106,11 +116,12 @@ internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizati
                 .SlimManagedFileAsync(absolutePath, ct)
                 .ConfigureAwait(false);
 
-            if (!backfilled && outcome.PreSlimSnapshot is not null)
+            if (!backfilled && seedNeeded && outcome.PreSlimSnapshot is not null)
             {
                 await BackfillFromSnapshotAsync(outcome.PreSlimSnapshot, variant, context, ct)
                     .ConfigureAwait(false);
                 backfilled = true;
+                seedNeeded = false;
             }
 
             if (!backfilled)
@@ -186,10 +197,10 @@ internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizati
         }
 
         await _routingRuleRepository
-            .ReplaceForVersionAsync(catalogItemId, variant.VersionId, rules, settings, ct)
+            .ReplaceForItemAsync(catalogItemId, rules, settings, ct)
             .ConfigureAwait(false);
         SmartConLogger.Info(
-            $"routing-backfill-v1: variant '{variant.VersionId}' backfilled file-free from section strings " +
+            $"routing-backfill-v1: item '{catalogItemId}' seeded file-free from section strings " +
             $"({rules.Count} rules, {settings.Count} settings)");
         return true;
     }
@@ -218,10 +229,10 @@ internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizati
         }
 
         await _routingRuleRepository
-            .ReplaceForVersionAsync(context.Group.CatalogItemId, variant.VersionId, rules, settings, ct)
+            .ReplaceForItemAsync(context.Group.CatalogItemId, rules, settings, ct)
             .ConfigureAwait(false);
         SmartConLogger.Info(
-            $"routing-backfill-v1: variant '{variant.VersionId}' backfilled from the pre-slim mini extraction " +
+            $"routing-backfill-v1: item '{context.Group.CatalogItemId}' seeded from the pre-slim mini extraction " +
             $"({rules.Count} rules, {settings.Count} settings)");
     }
 

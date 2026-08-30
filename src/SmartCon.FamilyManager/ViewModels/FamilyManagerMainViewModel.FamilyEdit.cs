@@ -99,12 +99,31 @@ public sealed partial class FamilyManagerMainViewModel
             var result = _dialogService.ShowProperties(vm);
             SmartConLogger.Info($"OpenProperties: ShowProperties returned result={result}");
 
+            // ADR-072 World B: routing edits make the loaded project types
+            // drift RIGHT AWAY — refresh the stale snapshot before the tree
+            // rebuild so the badges repaint without a manual «Проверить».
+            if (vm.RoutingLinksChanged)
+            {
+                try
+                {
+                    var doc = _revitContext.GetDocument();
+                    await _staleDetector.CheckSystemFamilyAsync(
+                        itemId, SelectedItem.Name, doc, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"Post-save routing stale refresh failed: {ex.Message} " +
+                        "[Action: выполните «Проверить» для семейства вручную]");
+                }
+            }
+
             // MakeActive on the Versions tab commits to the DB immediately —
             // even a Cancelled dialog may have changed the active version's
             // Revit major version, which drives the tree's availability badge.
             // E5 (#213): a deleted parent version frees dependency links —
             // the tree must rebuild to clear the freed child's paperclip.
-            if (result != true && !vm.ActiveVersionChanged && !vm.VersionsChanged) return;
+            if (result != true && !vm.ActiveVersionChanged && !vm.VersionsChanged && !vm.RoutingLinksChanged) return;
 
             await LoadTreeAsync();
             ExpandAndSelectItem(itemId);
@@ -1264,8 +1283,9 @@ public sealed partial class FamilyManagerMainViewModel
 
         // E5 (#213, ADR-067): an item referenced by ANY version of ANY
         // parent cannot be deleted — every stored parent version must stay
-        // self-sufficient. Release path: delete the referencing parent
-        // versions (properties dialog) or the parents themselves.
+        // self-sufficient (unified rule for routing and shared_nested
+        // links). Release path: delete the referencing parent versions
+        // (properties dialog) or the parents themselves.
         IReadOnlyList<FamilyDependencyReference> dependencyReferences;
         try
         {

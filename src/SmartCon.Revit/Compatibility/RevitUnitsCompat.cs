@@ -354,6 +354,17 @@ public static class RevitUnitsCompat
         => FormatDisplayValueLegacy(SafeGetDisplayUnitType(param), internalValue);
 #endif
 
+#if REVIT2021_OR_GREATER
+    /// <summary>
+    /// Data type параметра как ForgeTypeId (R21+; кросс-версионно через
+    /// рефлексию для R21-R23, см. #153). <c>null</c> при ошибке.
+    /// </summary>
+    public static ForgeTypeId? GetDataType(Definition? def)
+    {
+        return GetSpecTypeId(def);
+    }
+#endif
+
     /// <summary>
     /// Spec параметра как строка (Forge TypeId на R21+, ParameterType enum name
     /// на R19-R20) для диагностики и персистентности. <c>null</c> при ошибке.

@@ -226,6 +226,9 @@ internal sealed class LocalFamilyDependencyRepository : IFamilyDependencyReposit
         }
         // DISTINCT collapses multiple links of the same parent version
         // (different kinds / part names) into one guard reference.
+        // Owner rule (unified for routing and shared_nested): a reference
+        // from ANY parent version blocks the child — every stored parent
+        // version must stay self-sufficient.
         cmd.CommandText = $"""
             SELECT DISTINCT fd.child_catalog_item_id, ci.id, ci.name, cv.version_label,
                    CASE WHEN ci.current_version_label = cv.version_label THEN 1 ELSE 0 END

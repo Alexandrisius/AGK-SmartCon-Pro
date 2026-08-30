@@ -298,6 +298,7 @@ internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogServi
     public bool? ShowBatchImportDialog(object viewModel) => null;
     public bool? ShowValidationReport(object viewModel) => null;
     public bool? ShowStatusDetails(object viewModel) => null;
+    public bool? ShowRoutingPartPicker(object viewModel) => null;
     public bool? ShowValidationRulesEditor(object viewModel) => null;
     public bool? ShowAssignmentRulesEditor(object viewModel) => null;
     public void ShowModelessBatchImportDialog(object viewModel) { }
@@ -415,6 +416,9 @@ internal sealed class CountingSnapshotExtractor : IFamilySnapshotExtractor
 
     public SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId)
         => _inner.ExtractSingleSystemType(projectDoc, typeId);
+
+    public RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId)
+        => _inner.ExtractSystemTypeRouting(projectDoc, typeId);
 
     public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(Document familyDoc, CancellationToken ct = default)
         => _inner.ExtractGeometryPerType(familyDoc, ct);

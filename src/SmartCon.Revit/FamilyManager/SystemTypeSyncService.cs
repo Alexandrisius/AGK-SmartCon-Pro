@@ -226,7 +226,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             }
 
             var elementIdCache = new Dictionary<string, ElementId?>(StringComparer.Ordinal);
-            var (written, skipped) = WriteParameters(sourceDoc, doc, target, template, elementIdCache);
+            var portedGuids = EnsureMissingSharedParameters(sourceDoc, doc, sourceType, target, template);
+            var (written, skipped) = WriteParameters(sourceDoc, doc, target, template, elementIdCache, portedGuids);
 
             var notConverged = 0;
             if (template.Routing is not null && target is MEPCurveType mepCurveType)
@@ -341,12 +342,14 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     }
 
     /// <summary>
-    /// ADR-072 (plan item 3): replaces the routing of the extracted
-    /// template with the catalog-DB routing of the item's CURRENT version.
-    /// Fallbacks (all non-destructive — never erase target rules on
-    /// missing data): no repository (tests/legacy wiring), no stored rows
-    /// (pre-V34 version), no rows for THIS type (routing-less or added
-    /// later), DB read failure — the mini-project routing is kept.
+    /// ADR-072 World B: replaces the routing of the extracted template with
+    /// the catalog's item-level routing links (V37 — routing is a catalog-
+    /// family link, not version content). Legacy fallbacks (all non-
+    /// destructive — never erase target rules on missing data): no
+    /// repository (tests/legacy wiring), no item-level rows yet (pre-World-B
+    /// version — the current version's V34 rows), no rows for THIS type
+    /// (routing-less or added later), DB read failure — the mini-project
+    /// routing is kept.
     /// </summary>
     private SystemTypeSnapshot SubstituteRoutingFromDb(SystemTypeSnapshot template, string catalogItemId)
     {
@@ -357,17 +360,18 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         {
             return Core.Threading.AsyncBridge.RunSync(async () =>
             {
-                if (!await _routingRuleRepository.HasRulesForCurrentVersionAsync(catalogItemId)
-                        .ConfigureAwait(false))
-                {
-                    return template;
-                }
-
                 var (rules, settings) = await _routingRuleRepository
-                    .ReadForCurrentVersionAsync(catalogItemId)
-                    .ConfigureAwait(false);
+                    .HasAnyForItemAsync(catalogItemId).ConfigureAwait(false)
+                    ? await _routingRuleRepository.ReadForItemAsync(catalogItemId).ConfigureAwait(false)
+                    : !await _routingRuleRepository.HasRulesForCurrentVersionAsync(catalogItemId)
+                            .ConfigureAwait(false)
+                        ? default
+                        : await _routingRuleRepository.ReadForCurrentVersionAsync(catalogItemId).ConfigureAwait(false);
+                if (rules is null)
+                    return template;
+
                 var dbRouting = RoutingRuleRecordMapper.ToSnapshot(
-                    template.Name, template.FamilyKey ?? string.Empty, rules, settings);
+                    template.Name, template.FamilyKey ?? string.Empty, rules, settings!);
                 return dbRouting is null ? template : template with { Routing = dbRouting };
             });
         }
@@ -562,6 +566,10 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
 
         var referenceGroups = new HashSet<int>(routing.Rules.Select(r => r.GroupType));
+        // Groups that receive a rule via the Transitions retry below — they
+        // carry reference intent too, so the step-3 cleanup must not wipe
+        // them right after the retry wrote into them.
+        var retryWrittenGroups = new HashSet<int>();
 
         // 2) Rebuild every group present in the reference, in reference order.
         foreach (var group in referenceGroups.OrderBy(g => g))
@@ -621,13 +629,42 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                     var rule = new RoutingPreferenceRule(partId, ruleSnapshot.Description ?? string.Empty);
                     foreach (var criterion in ruleSnapshot.Criteria)
                     {
-                        if (criterion.CriterionType == nameof(PrimarySizeCriterion))
+                        // Only pipes carry size ranges in routing (owner
+                        // decision 2026-08-30) — legacy duct criteria are
+                        // dropped on write, mirroring the extraction.
+                        if (criterion.CriterionType == nameof(PrimarySizeCriterion)
+                            && target is Autodesk.Revit.DB.Plumbing.PipeType)
                         {
                             rule.AddCriterion(new PrimarySizeCriterion(
                                 criterion.MinimumSize, criterion.MaximumSize));
                         }
                     }
-                    manager.AddRule(groupType, rule);
+                    try
+                    {
+                        manager.AddRule(groupType, rule);
+                    }
+                    catch (ArgumentException) when (groupType == RoutingPreferenceRuleGroupType.Transitions)
+                    {
+                        // Revit rejects multi-shape transition fittings in
+                        // the plain Transitions group ("The rule cannot be
+                        // added to the groupType") — projects may still
+                        // carry such rules there. Retry the shape-specific
+                        // transition group so the catalog routing applies
+                        // (validator 2026-08-30: drop a same-part rule
+                        // first — a re-sync must not stack duplicates).
+                        var retryGroup = RoutingPreferenceRuleGroupType.TransitionsRectangularToRound;
+                        for (var i = manager.GetNumberOfRules(retryGroup) - 1; i >= 0; i--)
+                        {
+                            try
+                            {
+                                if (manager.GetRule(retryGroup, i).MEPPartId == partId)
+                                    manager.RemoveRule(retryGroup, i);
+                            }
+                            catch { /* best effort — AddRule below still reports */ }
+                        }
+                        manager.AddRule(retryGroup, rule);
+                        retryWrittenGroups.Add((int)retryGroup);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -644,6 +681,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             if (groupType == RoutingPreferenceRuleGroupType.Undefined) continue;
             if (groupType == RoutingPreferenceRuleGroupType.Segments) continue;
             if (referenceGroups.Contains((int)groupType)) continue;
+            if (retryWrittenGroups.Contains((int)groupType)) continue;
 
             for (var i = manager.GetNumberOfRules(groupType) - 1; i >= 0; i--)
             {
@@ -750,7 +788,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         Document doc,
         ElementType target,
         SystemTypeSnapshot template,
-        Dictionary<string, ElementId?> elementIdCache)
+        Dictionary<string, ElementId?> elementIdCache,
+        IReadOnlyDictionary<string, Guid>? portedGuids = null)
     {
         var written = 0;
         var skipped = 0;
@@ -762,8 +801,19 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         foreach (var value in template.Values)
         {
             Parameter? param = null;
-            try { param = target.LookupParameter(value.ParameterName); }
-            catch { /* duplicate-name definitions — treated as missing */ }
+            // Just-ported shared parameters are addressed by GUID —
+            // LookupParameter is ambiguous when same-name definitions exist
+            // and was observed to miss freshly bound parameters entirely.
+            if (portedGuids is not null
+                && portedGuids.TryGetValue(value.ParameterName, out var portedGuid))
+            {
+                try { param = target.get_Parameter(portedGuid); } catch { /* fall through */ }
+            }
+            if (param is null)
+            {
+                try { param = target.LookupParameter(value.ParameterName); }
+                catch { /* duplicate-name definitions — treated as missing */ }
+            }
 
             if (param is null || param.IsReadOnly)
             {
@@ -846,6 +896,195 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         }
 
         return (written, skipped);
+    }
+
+    /// <summary>
+    /// The clean/staging project template carries no shared project
+    /// parameters of the source (ADSK_*/BP_* etc.) — without porting their
+    /// definitions the staged type loses them, and any reimport from the
+    /// mini-project then sees a phantom VALUES diff against the version
+    /// imported from the live project. Port every missing shared definition
+    /// (same GUID, same data type, type-bound to the target category) so the
+    /// staged file is a parameter-complete copy of the source type.
+    /// </summary>
+    private Dictionary<string, Guid> EnsureMissingSharedParameters(
+        Document sourceDoc,
+        Document doc,
+        ElementType? sourceType,
+        ElementType target,
+        SystemTypeSnapshot template)
+    {
+        var portedGuids = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        if (sourceType is null) return portedGuids;
+
+        // Presence is checked via Element.Parameters — LookupParameter is
+        // unreliable when same-name definitions exist (it may throw or pick
+        // a ghost clone).
+        var targetNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Parameter p in target.Parameters)
+        {
+            var n = p.Definition?.Name;
+            if (!string.IsNullOrEmpty(n)) targetNames.Add(n!);
+        }
+
+        var missingSet = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in template.Values)
+        {
+            if (!targetNames.Contains(value.ParameterName))
+                missingSet.Add(value.ParameterName);
+        }
+        if (missingSet.Count == 0) return portedGuids;
+
+        // Resolve the EXACT definition each missing parameter is bound to in
+        // the source (InternalDefinition.Id → ParameterElement). A name
+        // search is NOT safe: a project can carry several definitions with
+        // the same name (different GUIDs — e.g. a visible parameter plus an
+        // invisible clone, BOTH enumerated by Element.Parameters). Prefer
+        // the definition that carries a value; porting the empty clone
+        // produces a phantom VALUES diff on mini-project reimport.
+        // SHARED parameters keep their GUID. Non-shared PROJECT parameters
+        // cannot be recreated as such (no public API) — they are ported as
+        // shared definitions with a fresh GUID: the canonical VALUES string
+        // carries name/storage/value only (no GUID), so the staged file
+        // stays hash-identical to the source (owner stress test 2026-08-30:
+        // the «Тип трубопровода» project parameter was lost in staging and
+        // every reimport produced a phantom version).
+        var chosen = new Dictionary<string, Parameter>(StringComparer.Ordinal);
+        foreach (Parameter sp in sourceType.Parameters)
+        {
+            var n = sp.Definition?.Name;
+            if (string.IsNullOrEmpty(n) || !missingSet.Contains(n!)) continue;
+            if (sp.Definition is not InternalDefinition internalDef
+                || internalDef.BuiltInParameter != BuiltInParameter.INVALID)
+                continue; // built-ins already exist on the target
+            if (!chosen.TryGetValue(n!, out var current) || (!current.HasValue && sp.HasValue))
+                chosen[n!] = sp;
+        }
+
+        var portPlan = new List<(string Name, Guid Guid, Parameter SourceParam)>();
+        foreach (var missingName in missingSet)
+        {
+            if (!chosen.TryGetValue(missingName, out var sourceParam)) continue;
+
+            Guid portGuid;
+            if (sourceParam.IsShared
+                && sourceParam.Definition is InternalDefinition sharedDef
+                && sourceDoc.GetElement(sharedDef.Id) is SharedParameterElement sharedElement)
+            {
+                portGuid = sharedElement.GuidValue;
+            }
+            else
+            {
+                portGuid = Guid.NewGuid();
+            }
+
+            portPlan.Add((missingName, portGuid, sourceParam));
+        }
+        if (portPlan.Count == 0)
+        {
+            SmartConLogger.Debug(
+                $"Staged type '{target.Name}': {missingSet.Count} parameter(s) missing in the target " +
+                "but none is a portable custom parameter of the source — nothing to port");
+            return portedGuids;
+        }
+
+        var app = doc.Application;
+        var originalFile = app.SharedParametersFilename;
+        var tempFile = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), $"smartcon-shared-{Guid.NewGuid():N}.txt");
+        var created = 0;
+        var failed = new List<string>();
+        try
+        {
+            System.IO.File.WriteAllText(tempFile, string.Empty);
+            app.SharedParametersFilename = tempFile;
+            var definitionFile = app.OpenSharedParameterFile();
+            if (definitionFile is null)
+            {
+                SmartConLogger.Warn(
+                    "Shared parameter port: OpenSharedParameterFile returned null for the temp file. " +
+                    "[Action: staged types stay parameter-incomplete; reimport will show a VALUES diff]");
+                return portedGuids;
+            }
+
+            var group = definitionFile.Groups.Create("SmartCon");
+            foreach (var (name, portGuid, sourceParam) in portPlan)
+            {
+                var options = CreatePortedDefinitionOptions(name, sourceParam);
+                if (options is null)
+                {
+                    failed.Add(name);
+                    continue;
+                }
+                options.GUID = portGuid;
+                // The source parameter reached the snapshot via
+                // Element.Parameters, i.e. it is visible there — the ported
+                // definition must stay visible or the extraction on reimport
+                // would skip it.
+                options.Visible = true;
+
+                var definition = group.Definitions.Create(options);
+                if (definition is null)
+                {
+                    failed.Add(name);
+                    continue;
+                }
+
+                var categories = app.Create.NewCategorySet();
+                categories.Insert(target.Category);
+                var binding = app.Create.NewTypeBinding(categories);
+                if (doc.ParameterBindings.Insert(definition, binding))
+                {
+                    created++;
+                    portedGuids[name] = portGuid;
+                }
+                else failed.Add(name);
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Shared parameter port to the staged project failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: staged types stay parameter-incomplete; reimport will show a VALUES diff]");
+        }
+        finally
+        {
+            try { app.SharedParametersFilename = originalFile; } catch { /* app-level state, best effort */ }
+            try { System.IO.File.Delete(tempFile); } catch { /* temp residue is harmless */ }
+        }
+
+        if (created > 0)
+        {
+            SmartConLogger.Info(
+                $"Staged type '{target.Name}': ported {created} shared parameter definition(s) from the source project");
+        }
+        if (failed.Count > 0)
+        {
+            SmartConLogger.Debug(
+                $"Staged type '{target.Name}': shared parameter port failed for [{string.Join(", ", failed)}]");
+        }
+        return portedGuids;
+    }
+
+    private static ExternalDefinitionCreationOptions? CreatePortedDefinitionOptions(
+        string name, Parameter sourceParam)
+    {
+#if REVIT2022_OR_GREATER
+        var dataType = Compatibility.RevitUnitsCompat.GetDataType(sourceParam.Definition);
+        if (dataType is null) return null;
+        return new ExternalDefinitionCreationOptions(name, dataType);
+#else
+        try
+        {
+#pragma warning disable CS0618
+            return new ExternalDefinitionCreationOptions(name, sourceParam.Definition.ParameterType);
+#pragma warning restore CS0618
+        }
+        catch
+        {
+            return null;
+        }
+#endif
     }
 
     private bool TrySetElementId(
