@@ -424,7 +424,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         BuiltInCategory category,
         string displayName)
     {
-        var stagedNames = new List<string>();
+        var stagedTypes = new List<(string Name, string? FamilyKey)>();
         var fallbackIds = new List<ElementId>();
 
         foreach (var id in sourceTypeIds)
@@ -432,13 +432,14 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
             if (sourceDoc.GetElement(id) is not ElementType sourceType)
                 continue;
 
+            var familyKey = SystemFamilyKeyResolver.Resolve(sourceType);
             var result = _systemTypeSyncService.StageTypeFromSource(
                 sourceDoc, newDoc, sourceType.Name, (int)category,
-                sourceType.FamilyName, SystemFamilyKeyResolver.Resolve(sourceType));
+                sourceType.FamilyName, familyKey);
 
             if (result.IsSuccess)
             {
-                stagedNames.Add(sourceType.Name);
+                stagedTypes.Add((sourceType.Name, familyKey));
                 continue;
             }
 
@@ -450,15 +451,22 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         }
 
         var stagedIds = new List<ElementId>();
-        if (stagedNames.Count > 0)
+        if (stagedTypes.Count > 0)
         {
-            var nameSet = new HashSet<string>(stagedNames, StringComparer.Ordinal);
+            // Match by (family key, name), not by name alone (audit L22): a
+            // template type whose rename failed in TemplateCollisionResolver
+            // shares the name and would otherwise be collected as staged —
+            // a stray type + instance in the mini.
+            var stagedKeys = new HashSet<string>(
+                stagedTypes.Select(s => (s.FamilyKey ?? string.Empty) + "|" + s.Name),
+                StringComparer.Ordinal);
             foreach (var t in new FilteredElementCollector(newDoc)
                 .OfClass(typeof(ElementType))
                 .OfCategory(category)
                 .Cast<ElementType>())
             {
-                if (nameSet.Contains(t.Name))
+                var key = (SystemFamilyKeyResolver.Resolve(t) ?? string.Empty) + "|" + t.Name;
+                if (stagedKeys.Contains(key))
                     stagedIds.Add(t.Id);
             }
         }
@@ -485,7 +493,7 @@ public sealed class SystemFamilyRevitOperations : ISystemFamilyRevitOperations
         }
 
         SmartConLogger.Info(
-            $"'{displayName}': manual staging — staged={stagedNames.Count}, copy-fallback={fallbackIds.Count}");
+            $"'{displayName}': manual staging — staged={stagedTypes.Count}, copy-fallback={fallbackIds.Count}");
         return stagedIds;
     }
 

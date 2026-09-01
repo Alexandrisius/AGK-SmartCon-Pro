@@ -184,4 +184,10 @@ public sealed record FamilyManagerServices(
     /// dependency links from stored rules (plan items 2/5).
     /// </summary>
     IFamilyRoutingRuleRepository FamilyRoutingRuleRepository,
-    ISegmentSizeRepository SegmentSizeRepository);
+    ISegmentSizeRepository SegmentSizeRepository,
+    /// <summary>
+    /// FHV21 (owner decision 2026-09-01): per-version segment routing rules
+    /// — the import executors persist them from the mini extraction
+    /// (<c>SegmentRuleWriter</c>).
+    /// </summary>
+    ISegmentRuleRepository SegmentRuleRepository);

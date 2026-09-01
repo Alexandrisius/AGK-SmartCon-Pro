@@ -102,20 +102,16 @@ public sealed partial class FamilyManagerMainViewModel
             // ADR-072 World B: routing edits make the loaded project types
             // drift RIGHT AWAY — refresh the stale snapshot before the tree
             // rebuild so the badges repaint without a manual «Проверить».
-            if (vm.RoutingLinksChanged)
+            // Owner stress test 2026-09-01 (баг 4): MakeActive on the
+            // Versions tab has the same effect (catalog active moved, the
+            // project markers did not) — recheck through the same
+            // post-import path (both system and loadable, presence-aware).
+            if (vm.RoutingLinksChanged || vm.ActiveVersionChanged)
             {
-                try
+                await RunPostImportStaleCheckAsync(new[]
                 {
-                    var doc = _revitContext.GetDocument();
-                    await _staleDetector.CheckSystemFamilyAsync(
-                        itemId, SelectedItem.Name, doc, CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"Post-save routing stale refresh failed: {ex.Message} " +
-                        "[Action: выполните «Проверить» для семейства вручную]");
-                }
+                    new ImportedCatalogItem(itemId, SelectedItem.Name, SelectedItem.FamilySource),
+                });
             }
 
             // MakeActive on the Versions tab commits to the DB immediately —
@@ -407,7 +403,8 @@ public sealed partial class FamilyManagerMainViewModel
             ExistingCategoryPath: existingCategoryName,
             HealthReport: prepared.HealthReport,
             PerTypeHashes: prepared.PerTypeHashes,
-            Sections: prepared.Sections)
+            Sections: prepared.Sections,
+            UnsubstitutedMiniRouting: prepared.UnsubstitutedMiniRouting)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -854,7 +851,8 @@ public sealed partial class FamilyManagerMainViewModel
             _sharedNestedRepository,
             CurrentRevitVersion,
             _routingRuleRepository,
-            _segmentSizeRepository);
+            _segmentSizeRepository,
+            _segmentRuleRepository);
         var result = await executor.ExecuteAsync(
                 childImports, categoryId: null, progress: null, pauseGate: null,
                 CancellationToken.None, externalParentItemIds)
@@ -1175,7 +1173,8 @@ public sealed partial class FamilyManagerMainViewModel
             _familyDependencyRepository,
             CurrentRevitVersion,
             _routingRuleRepository,
-            _segmentSizeRepository);
+            _segmentSizeRepository,
+            _segmentRuleRepository);
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems,
@@ -1214,11 +1213,17 @@ public sealed partial class FamilyManagerMainViewModel
 
         // #185/#186: collect the catalog items this run touched so callers can
         // run post-import actions (safe mini-project close, stale check).
-        var importedItems = batchItems
-            .Where(i => i.Action != FamilyBatchImportAction.Skip)
-            .Select(i => new { Id = i.PrecomputedCatalogItemId ?? i.ExistingCatalogItemId, Item = i })
+        // Owner stress test 2026-09-01 (баг 4): read the FINAL row state, not
+        // the stale DTOs — a Duplicate row defaults to Action=Skip on the DTO,
+        // so the user's «Новая версия» (row-level IncrementVersion) was
+        // filtered out here and the post-import stale check silently never
+        // ran (the orange VersionMismatch badge appeared only on a manual
+        // properties open).
+        var importedItems = vm.Items
+            .Where(r => r.Action != FamilyBatchImportAction.Skip)
+            .Select(r => new { Id = r.PrecomputedCatalogItemId ?? r.ExistingCatalogItemId, Row = r })
             .Where(x => !string.IsNullOrEmpty(x.Id))
-            .Select(x => new ImportedCatalogItem(x.Id!, x.Item.FileName, x.Item.FamilySource))
+            .Select(x => new ImportedCatalogItem(x.Id!, x.Row.FileName, x.Row.FamilySource))
             .ToList();
         return new ProjectImportOutcome(true, vm.ImportSuccessCount, importedItems);
         }

@@ -24,14 +24,14 @@ public sealed class LocalCatalogV17MigrationTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
-    public async Task Migrate_FreshDb_SetsSchemaVersion37()
+    public async Task Migrate_FreshDb_SetsSchemaVersion38()
     {
         using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key = 'schema_version'";
         var result = await cmd.ExecuteScalarAsync();
-        Assert.Equal("37", result?.ToString());
+        Assert.Equal("38", result?.ToString());
     }
 
     [Fact]
@@ -435,6 +435,31 @@ public sealed class DeleteVersionAsyncTests : IDisposable
         var result = await provider.DeleteVersionAsync(itemId, "v99");
         Assert.True(result.Success);
         Assert.Equal(0, result.VersionsDeleted);
+    }
+
+    [Fact]
+    public async Task DeleteVersion_CascadesRoutingRulesAndSegmentSizes()
+    {
+        // ADR-072 tables (V34 family_routing_*, V36 family_segment_sizes)
+        // must die with their version via FK CASCADE — an orphan row would
+        // resurrect stale routing for a re-created version label.
+        var (itemId, _, v2Id) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+        var routingRepo = new LocalFamilyRoutingRuleRepository(_fixture.GetDatabase());
+        var sizeRepo = new LocalSegmentSizeRepository(_fixture.GetDatabase());
+        await routingRepo.ReplaceForVersionAsync(itemId, v2Id,
+            [new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "A:B", "", [])],
+            [new FamilyRoutingTypeSettings("Type A", "Single", 0)]);
+        await sizeRepo.ReplaceForVersionAsync(v2Id,
+            [new SegmentSizeRecord("Seg", 0.1, 0.09, 0.11, true, true, 0)]);
+
+        var result = await provider.DeleteVersionAsync(itemId, "v2");
+        Assert.True(result.Success);
+
+        var (rules, settings) = await routingRepo.ReadForVersionAsync(itemId, v2Id);
+        Assert.Empty(rules);
+        Assert.Empty(settings);
+        Assert.Empty(await sizeRepo.ReadForVersionAsync(v2Id));
     }
 
     [Fact]

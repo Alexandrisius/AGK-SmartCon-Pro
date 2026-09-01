@@ -207,6 +207,25 @@ public sealed partial class FamilyManagerMainViewModel
     /// </summary>
     private bool ConfirmDriftedTypesReplacement(string catalogItemId)
     {
+        // ADR-072 World B (audit L11): a routing-drift update also destroys
+        // user configuration (live routing is replaced by the catalog
+        // links) — confirm it exactly like a content drift.
+        if (IsRoutingDrift(catalogItemId))
+        {
+            var systemMap = _staleDetector.GetSystemTypeStaleMap(catalogItemId);
+            var driftedTypes = systemMap is null
+                ? []
+                : systemMap.Where(kv => kv.Value).Select(kv => kv.Key)
+                    .OrderBy(n => n, StringComparer.Ordinal).ToList();
+            var routingTitle = LanguageManager.GetString(StringLocalization.Keys.FM_UpdateReplaceTypesTitle)
+                ?? "Family update";
+            var routingMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_UpdateRoutingDriftConfirm)
+                    ?? "The project routing differs from the catalog: {0}.\n\nThe update will replace the routing settings with the catalog ones.\n\nContinue?",
+                driftedTypes.Count > 0 ? string.Join(", ", driftedTypes) : "—");
+            return _dialogService.ShowConfirmation(routingTitle, routingMessage);
+        }
+
         if (!IsContentDrift(catalogItemId))
         {
             return true;
@@ -244,6 +263,13 @@ public sealed partial class FamilyManagerMainViewModel
     private bool IsContentDrift(string catalogItemId)
         => _staleDetector.GetCachedSnapshot()?.Results.TryGetValue(catalogItemId, out var result) == true
             && result.Reason == StaleReason.ContentDrift;
+
+    /// <summary>The item's current snapshot verdict is a ROUTING drift
+    /// (ADR-072 World B) — an update replaces the live routing with the
+    /// catalog links.</summary>
+    private bool IsRoutingDrift(string catalogItemId)
+        => _staleDetector.GetCachedSnapshot()?.Results.TryGetValue(catalogItemId, out var result) == true
+            && result.Reason == StaleReason.RoutingDrift;
 
     /// <summary>
     /// #222: success message of a single stale update. When the content was
@@ -650,7 +676,8 @@ public sealed partial class FamilyManagerMainViewModel
                     _revitContext.GetDocument(),
                     leaf.CatalogItemId,
                     types,
-                    CurrentRevitVersion);
+                    CurrentRevitVersion,
+                    confirmRoutingOverwrite: true);
             }
             catch (Exception ex)
             {
@@ -661,6 +688,16 @@ public sealed partial class FamilyManagerMainViewModel
         }).ConfigureAwait(true);
 
         if (result is null) return;
+
+        // ADR-072 World B (audit M8): the user declined the routing
+        // overwrite confirmation — a quiet cancel, not an error.
+        if (result.TypeResults.Count > 0
+            && result.TypeResults.All(r => r.Status == SystemTypeSyncStatus.Cancelled))
+        {
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_RoutingOverwriteCancelled)
+                ?? "Load cancelled — the project routing will not be changed";
+            return;
+        }
 
         StatusMessage = result.FailedCount == 0
             ? string.Format(
@@ -679,6 +716,10 @@ public sealed partial class FamilyManagerMainViewModel
                     ?? "; not converged to reference: {0} (see the log)",
                 result.TotalNotConverged);
         }
+
+        // Audit M6: custom parameters ported into the project are surfaced —
+        // never a silent side effect (owner decision 2026-08-31).
+        AppendPortedParametersMessage(result.TypeResults);
 
         if (result.AllSucceeded)
         {
@@ -706,9 +747,18 @@ public sealed partial class FamilyManagerMainViewModel
                     _revitContext.GetDocument(),
                     leaf.CatalogItemId,
                     new[] { new SystemTypeRef(typeNode.TypeName, typeNode.FamilyName, typeNode.FamilyKey) },
-                    CurrentRevitVersion);
+                    CurrentRevitVersion,
+                    confirmRoutingOverwrite: true);
 
                 var typeResult = result.TypeResults.Count > 0 ? result.TypeResults[0] : null;
+                // ADR-072 World B (audit M8): the user declined the routing
+                // overwrite confirmation — a quiet cancel, not an error.
+                if (typeResult?.Status == SystemTypeSyncStatus.Cancelled)
+                {
+                    StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_RoutingOverwriteCancelled)
+                        ?? "Load cancelled — the project routing will not be changed";
+                    return;
+                }
                 syncSucceeded = typeResult is not null && typeResult.IsSuccess;
                 StatusMessage = syncSucceeded
                     ? string.Format(
@@ -718,6 +768,7 @@ public sealed partial class FamilyManagerMainViewModel
                     : string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_LoadError) ?? "Load error: {0}",
                         typeResult?.ErrorMessage ?? typeNode.TypeName);
+                AppendPortedParametersMessage(result.TypeResults);
 
                 // #187 (review M1): the just-synced type carries a fresh ES
                 // marker — clear its per-type stale verdict so the orange dot
@@ -880,6 +931,30 @@ public sealed partial class FamilyManagerMainViewModel
                 ?? "Загрузка \"{0}\" заблокирована: устаревшие вложенные семейства",
             displayName);
         return true;
+    }
+
+    /// <summary>
+    /// Audit M6: appends the names of custom parameter definitions the sync
+    /// ported into the project (up to 5, then "+N") to
+    /// <see cref="StatusMessage"/> — porting stays unconditional, but it is
+    /// always visible (owner decision 2026-08-31).
+    /// </summary>
+    private void AppendPortedParametersMessage(IReadOnlyList<SystemTypeSyncResult> typeResults)
+    {
+        var portedNames = typeResults
+            .Where(r => r.PortedParameterNames is not null)
+            .SelectMany(r => r.PortedParameterNames!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (portedNames.Count == 0)
+            return;
+        var display = portedNames.Count <= 5
+            ? string.Join(", ", portedNames)
+            : string.Join(", ", portedNames.Take(5)) + $" (+{portedNames.Count - 5})";
+        StatusMessage += string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_ParametersPorted)
+                ?? "; added parameters: {0}",
+            display);
     }
 
     private async Task PlaceSystemTypeAsync(

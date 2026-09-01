@@ -19,7 +19,7 @@ public sealed class RoutingRuleWriterTests
     private const string ParentItemId = "parent-1";
 
     [Fact]
-    public async Task WriteAsync_SystemItemWithRouting_PersistsRecordsForCurrentVersion()
+    public async Task WriteAsync_SystemItemWithRouting_SeedsItemRoutingLinks()
     {
         var (repo, calls) = CreateCapturingRepo();
         var item = MakeSystemItem(
@@ -37,10 +37,12 @@ public sealed class RoutingRuleWriterTests
 
         var (itemId, rules, settings) = Assert.Single(calls);
         Assert.Equal(ParentItemId, itemId);
-        Assert.Equal(2, rules.Count);
-        Assert.Equal("Segments", rules[0].GroupKey);
-        Assert.Equal("Elbows", rules[1].GroupKey);
-        Assert.Equal("Отвод:Стандарт", rules[1].PartName);
+        // FHV21: segment rules are PER-VERSION content — they never enter
+        // the item-level link tables (SegmentRuleWriter persists them per
+        // version); only the fitting groups are seeded here.
+        var rule = Assert.Single(rules);
+        Assert.Equal("Elbows", rule.GroupKey);
+        Assert.Equal("Отвод:Стандарт", rule.PartName);
         var setting = Assert.Single(settings);
         Assert.Equal("Pipe A", setting.TypeName);
         Assert.Equal(1, setting.PreferredJunctionType);

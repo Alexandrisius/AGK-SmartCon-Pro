@@ -1555,7 +1555,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             ExistingCategoryPath: r.ExistingCategoryPath,
             DependencyLinks: r.DependencyLinks,
             PerTypeHashes: r.PerTypeHashes,
-            Sections: r.Sections)
+            Sections: r.Sections,
+            UnsubstitutedMiniRouting: r.UnsubstitutedMiniRouting)
         {
             Action = r.Action
         }).ToList();

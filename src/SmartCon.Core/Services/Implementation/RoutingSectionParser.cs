@@ -17,6 +17,9 @@ public static class RoutingSectionParser
 {
     private const string RoutingSectionPrefix = "ROUTING|";
     private const string FamKeySectionPrefix = "FAMKEY|";
+    // Marker collision (accepted, same class as INVALID/READERROR in VALUES,
+    // ADR-056): a segment/fitting literally named "NOPART" parses back as a
+    // no-part rule. vanishingly rare; documented, not handled.
     private const string NoPartMarker = "NOPART";
 
     /// <summary>

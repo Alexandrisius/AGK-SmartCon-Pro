@@ -30,6 +30,7 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilyVersionWriter? _versionWriter;
     private readonly IContentHashAnalyticsRepository? _contentHashAnalytics;
     private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentRuleRepository? _segmentRuleRepository;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
     /// <summary>#187: per-type stale verdicts for system items —
@@ -57,7 +58,8 @@ internal sealed class StaleDetector : IStaleDetector
         IFamilyContentHasher? contentHasher = null,
         IFamilyVersionWriter? versionWriter = null,
         IContentHashAnalyticsRepository? contentHashAnalytics = null,
-        IFamilyRoutingRuleRepository? routingRuleRepository = null)
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentRuleRepository? segmentRuleRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(store);
@@ -92,6 +94,7 @@ internal sealed class StaleDetector : IStaleDetector
         _versionWriter = versionWriter;
         _contentHashAnalytics = contentHashAnalytics;
         _routingRuleRepository = routingRuleRepository;
+        _segmentRuleRepository = segmentRuleRepository;
     }
 
     public async Task<StaleCheckResult> CheckFamilyAsync(
@@ -850,13 +853,31 @@ internal sealed class StaleDetector : IStaleDetector
             return null;
         if (!RoutingGroupCatalog.IsMepCurveCategory(item.RevitCategoryId))
             return null;
-        if (!await _routingRuleRepository.HasAnyForItemAsync(item.Id, ct).ConfigureAwait(false))
-            return null;
 
         try
         {
+            // Same source chain as sync (audit M9): item-level V37 first,
+            // the current version's V34 rows as the legacy fallback —
+            // otherwise an unhealed legacy window leaves the probe blind
+            // while sync still applies the V34 routing.
             var (rules, settings) = await _routingRuleRepository
-                .ReadForItemAsync(item.Id, ct).ConfigureAwait(false);
+                .HasAnyForItemAsync(item.Id, ct).ConfigureAwait(false)
+                ? await _routingRuleRepository.ReadForItemAsync(item.Id, ct).ConfigureAwait(false)
+                : !await _routingRuleRepository.HasRulesForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false)
+                    ? default
+                    : await _routingRuleRepository.ReadForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false);
+            if (rules is null)
+                return null;
+
+            // FHV21: segment rules compose from the per-version store of the
+            // CURRENT version — the drift fingerprint matches exactly what
+            // sync would apply (fittings item-level, segments versioned).
+            if (_segmentRuleRepository is not null)
+            {
+                var perVersionSegments = await _segmentRuleRepository
+                    .ReadForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false);
+                rules = SegmentRuleComposition.Compose(rules, perVersionSegments);
+            }
 
             // Only pipes carry size ranges in routing (owner decision
             // 2026-08-30). Legacy item rows may still hold the criterion
@@ -870,7 +891,19 @@ internal sealed class StaleDetector : IStaleDetector
             var catalogFingerprints = new Dictionary<string, string?>(StringComparer.Ordinal);
             foreach (var setting in settings)
             {
-                catalogFingerprints[BuildSystemTypeKey(setting.FamilyKey, null, setting.TypeName)] =
+                // Audit L10: legacy rows may carry an EMPTY FamilyKey — the
+                // catalog key would degrade to "|NAME" and never match the
+                // live "SINGLE|NAME" (silent drift blindness). Resolve the
+                // identity from the item's type descriptors — the same
+                // source the live side of the comparison uses.
+                var descriptor = pairs
+                    .FirstOrDefault(p => string.Equals(
+                        p.Descriptor?.Name, setting.TypeName, StringComparison.Ordinal))
+                    .Descriptor;
+                var effectiveKey = !string.IsNullOrEmpty(setting.FamilyKey)
+                    ? setting.FamilyKey
+                    : descriptor?.FamilyKey;
+                catalogFingerprints[BuildSystemTypeKey(effectiveKey, descriptor?.FamilyName, setting.TypeName)] =
                     RoutingFingerprint.Compute(NormalizeRouting(RoutingRuleRecordMapper.ToSnapshot(
                         setting.TypeName, setting.FamilyKey, rules, settings)));
             }
@@ -899,6 +932,21 @@ internal sealed class StaleDetector : IStaleDetector
                     continue;
                 }
                 live.TryGetValue(key, out var liveFingerprint);
+                // Live-null on an MEP type means the routing READ failed
+                // (a manager-based type always yields a snapshot; a
+                // manager-less MEP type always exposes routing params) —
+                // it is never proof of drift (audit L9: a transient read
+                // failure must not mark the family RoutingDrift and let
+                // "Обновить" overwrite a healthy routing).
+                if (catalogFingerprint is not null && liveFingerprint is null)
+                {
+                    SmartConLogger.Warn(
+                        $"RoutingDrift[{item.Id}]: live routing of '{descriptor.Name}' could not be read — " +
+                        "drift not evaluated for this type. [Action: повторите «Проверить»; " +
+                        "при повторении ищите причину в Debug-логе экстрактора]");
+                    drift[key] = false;
+                    continue;
+                }
                 drift[key] = !string.Equals(catalogFingerprint, liveFingerprint, StringComparison.Ordinal);
             }
 
@@ -1280,17 +1328,21 @@ internal sealed class StaleDetector : IStaleDetector
 
         // ADR-072 World B: the marker can be perfectly current while the
         // routing links drifted (editor save / manual project edit) — the
-        // fingerprint probe upgrades the verdict to RoutingDrift.
-        if (!isStale)
+        // fingerprint probe upgrades the verdict to RoutingDrift. Audit M7:
+        // the probe runs even when the family is ALREADY stale by content
+        // (batch-path parity) — the per-type map must show the drifted type
+        // right after an editor save; the item-level reason, though, upgrades
+        // to RoutingDrift only when no stronger content reason exists.
+        var routingDrift = await ComputeRoutingDriftAsync(doc, catalogItem, foundPairs, ct)
+            .ConfigureAwait(false);
+        if (routingDrift is not null)
         {
-            var drift = await ComputeRoutingDriftAsync(doc, catalogItem, foundPairs, ct)
-                .ConfigureAwait(false);
-            if (drift is not null)
+            foreach (var pair in routingDrift)
             {
-                foreach (var pair in drift)
+                if (!pair.Value) continue;
+                typeMap[pair.Key] = true;
+                if (!isStale)
                 {
-                    if (!pair.Value) continue;
-                    typeMap[pair.Key] = true;
                     isStale = true;
                     reason = StaleReason.RoutingDrift;
                 }

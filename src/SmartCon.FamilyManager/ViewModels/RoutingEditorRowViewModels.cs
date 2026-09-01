@@ -54,9 +54,11 @@ public sealed class RoutingTypeEditState
     }
 
     /// <summary>
-    /// Edit state → storage records of one type. The read-only Segments
-    /// group's rows ride through unchanged (they mirror the item's physical
-    /// segments — dropping them would corrupt the routing and the hash).
+    /// Edit state → storage records of one type. READ-ONLY groups (the pipe
+    /// Segments row, FHV21) are SKIPPED — they are display-only views of
+    /// per-version mini content and never persist through the editor (the
+    /// service preserves any legacy stored rows verbatim instead; the old
+    /// read-only path silently DROPPED the stored PrimarySizeCriterion).
     /// Synthesized empty rows of param groups persist as explicit no-part
     /// rules — semantically identical to «Нет» in Revit.
     /// </summary>
@@ -69,14 +71,27 @@ public sealed class RoutingTypeEditState
         validationError = null;
         foreach (var group in Groups)
         {
+            if (group.Descriptor.IsReadOnly)
+                continue;
             var order = 0;
             foreach (var rule in group.Rules)
             {
-                // Param groups keep exactly one row — even a «Нет» one.
-                if (group.Descriptor.AllowMultipleRules && rule.IsEmpty)
+                // Param groups keep exactly one row — even a «Нет» one;
+                // multi-rule groups skip blank rows and unpicked fresh rows.
+                if (group.Descriptor.AllowMultipleRules
+                    && (rule.IsEmpty || rule is { IsFresh: true, PartName: null }))
                     continue;
                 if (!TryParseSize(rule.MinSizeText, isMax: false, out var min)
                     || !TryParseSize(rule.MaxSizeText, isMax: true, out var max))
+                {
+                    records = [];
+                    validationError = group.Descriptor.GroupKey;
+                    return false;
+                }
+                // A parsed min above max is never a valid criterion
+                // (free-text input without segment sizes) — reject instead
+                // of writing a never-matching rule (audit L18).
+                if (group.Descriptor.HasCriteria && min > max)
                 {
                     records = [];
                     validationError = group.Descriptor.GroupKey;
@@ -96,7 +111,10 @@ public sealed class RoutingTypeEditState
                     group.Descriptor.GroupKey,
                     order++,
                     rule.PartName,
-                    rule.Description.Trim(),
+                    // Stored as-is (extraction never trims) — trimming here
+                    // would shift the catalog fingerprint and surface a
+                    // phantom RoutingDrift after any save (audit L19).
+                    rule.Description,
                     criteria));
             }
         }
@@ -189,11 +207,21 @@ public sealed class RoutingRuleEditState
             && MaxSizeText.Trim().Length == 0;
 
     /// <summary>
+    /// A row added via «+» that the user has not picked a part for — skipped
+    /// on save (audit M15: a default «Все» size pair made <see cref="IsEmpty"/>
+    /// false, so an unpicked fresh row persisted as a ghost no-part rule in a
+    /// multi-rule group — a state the Revit UI never produces). Stored no-part
+    /// rules (FromStored) are NOT fresh and round-trip as before.
+    /// </summary>
+    public bool IsFresh { get; init; }
+
+    /// <summary>
     /// A fresh rule row: no part («Нет»), max = «Все» (the Revit default of
     /// an unrestricted PrimarySizeCriterion), min unbounded.
     /// </summary>
-    public static RoutingRuleEditState Empty() => new()
+    public static RoutingRuleEditState Empty(bool isFresh = false) => new()
     {
+        IsFresh = isFresh,
         MinSizeText = RoutingTypeEditState.FormatSize(0, isMax: false),
         MaxSizeText = RoutingTypeEditState.FormatSize(0, isMax: true),
     };
@@ -262,8 +290,18 @@ public sealed partial class RoutingGroupRowViewModel : ObservableObject
     public bool IsReadOnly => State.Descriptor.IsReadOnly;
     public bool AllowMultipleRules => State.Descriptor.AllowMultipleRules;
     public bool HasCriteria => State.Descriptor.HasCriteria;
-    public bool IsParamGroup => !State.Descriptor.AllowMultipleRules && !State.Descriptor.IsReadOnly;
+    /// <summary>Param-driven groups (flex/conduit/cable-tray) — the
+    /// discriminator is the null manager type, not the rule-count flags:
+    /// the pipe Segments row is also single-rule but is a MANAGER group
+    /// (owner stress test 2026-09-01 — it was misclassified as param and
+    /// gained a synthetic «Нет» row + clear-part button).</summary>
+    public bool IsParamGroup => State.Descriptor.ManagerGroupType is null;
     public bool HasSizeOptions => State.Descriptor.HasCriteria && SizeOptions.Count > 1;
+
+    /// <summary>Part picker is offered only for groups whose part set the
+    /// editor owns — hidden on read-only rows and on the Segments row (the
+    /// segment set is mini-project content, owner stress test 2026-09-01).</summary>
+    public bool CanPickPart => !State.Descriptor.IsReadOnly && !State.Descriptor.IsSegmentRow;
 
     [ObservableProperty] private ObservableCollection<RoutingRuleRowViewModel> _rules = [];
 
@@ -351,6 +389,15 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
     public bool ShowClearPart => Group.IsParamGroup && State.PartName is not null;
 
     /// <summary>
+    /// The trailing action column (row-delete for multi-rule groups,
+    /// clear-part for param rows) has content — when nothing is selected
+    /// and the group is single-rule the column collapses so the picker
+    /// does not float with an empty gap to its right (owner stress test
+    /// 2026-09-01).
+    /// </summary>
+    public bool ShowTrailingAction => Group.AllowMultipleRules || ShowClearPart;
+
+    /// <summary>
     /// Junctions group rule of the non-preferred part type (tee rule while
     /// the preferred junction is a tap, and vice versa) — shown greyed out
     /// and blocked from editing, exactly like the Revit routing dialog.
@@ -394,8 +441,9 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
         // replaces «Все» on the other with the extreme available size
         // (max for MAX, min for MIN) — owner UI review 2026-08-30.
         // Equal-value sets are no-ops in ObservableProperty, so the
-        // cross-set cannot recurse.
-        if (IsAllSizes(value))
+        // cross-set cannot recurse. An EMPTY free-text field counts as
+        // unbounded («Все») — TryParseSize reads it as the sentinel too.
+        if (IsAllSizes(value) || string.IsNullOrWhiteSpace(value))
             MaxSizeText = RoutingTypeEditState.AllSizesDisplay;
         else if (IsAllSizes(MaxSizeText) && Group.LargestSizeOption is { } maxOption)
             MaxSizeText = maxOption;
@@ -405,7 +453,7 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
     partial void OnMaxSizeTextChanged(string value)
     {
         State.MaxSizeText = value;
-        if (IsAllSizes(value))
+        if (IsAllSizes(value) || string.IsNullOrWhiteSpace(value))
             MinSizeText = RoutingTypeEditState.AllSizesDisplay;
         else if (IsAllSizes(MinSizeText) && Group.SmallestSizeOption is { } minOption)
             MinSizeText = minOption;
@@ -423,6 +471,7 @@ public sealed partial class RoutingRuleRowViewModel : ObservableObject
             ?? LanguageManager.GetString(StringLocalization.Keys.FM_Routing_NoPart) ?? "None";
         HasPresenceIssue = State.HasPresenceIssue;
         OnPropertyChanged(nameof(ShowClearPart));
+        OnPropertyChanged(nameof(ShowTrailingAction));
         RefreshInactive(Group, Group.PreferredJunctionType);
     }
 

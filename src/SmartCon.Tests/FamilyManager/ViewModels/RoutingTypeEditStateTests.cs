@@ -122,7 +122,7 @@ public class RoutingTypeEditStateTests
     }
 
     [Fact]
-    public void TryToRecords_SkipsEmptyRows_ButKeepsSegmentsAndParamRows()
+    public void TryToRecords_SkipsEmptyRows_AndReadOnlyGroups_ButKeepsParamRows()
     {
         var state = new RoutingTypeEditState(0);
         var segments = new RoutingGroupEditState(SegmentsGroup());
@@ -138,14 +138,16 @@ public class RoutingTypeEditStateTests
 
         Assert.True(state.TryToRecords(Type, out var records, out _));
 
-        Assert.Equal(3, records.Count);
-        Assert.Equal("Segments", records[0].GroupKey);
-        Assert.Equal("Seg A", records[0].PartName);
-        Assert.Equal("Elbows", records[1].GroupKey);
-        Assert.Equal("A:B", records[1].PartName);
-        Assert.Equal(ParamGroup().GroupKey, records[2].GroupKey);
-        Assert.Null(records[2].PartName);
-        Assert.Empty(records[2].Criteria);
+        // FHV21: READ-ONLY groups (the Segments row) never persist through
+        // the editor — they are display-only views of per-version content
+        // (the service preserves any legacy stored rows verbatim instead).
+        Assert.Equal(2, records.Count);
+        Assert.Equal("Elbows", records[0].GroupKey);
+        Assert.Equal("A:B", records[0].PartName);
+        Assert.Equal(ParamGroup().GroupKey, records[1].GroupKey);
+        Assert.Null(records[1].PartName);
+        Assert.Empty(records[1].Criteria);
+        Assert.DoesNotContain(records, r => r.GroupKey == "Segments");
     }
 
     [Fact]
@@ -163,6 +165,72 @@ public class RoutingTypeEditStateTests
         Assert.Equal("PrimarySizeCriterion", records[0].Criteria[0].CriterionType);
         Assert.Equal("SecondarySizeCriterion", records[0].Criteria[1].CriterionType);
         Assert.Equal(0.2, records[0].Criteria[1].MaximumSize);
+    }
+
+    [Fact]
+    public void TryToRecords_FreshUnpickedRow_Skipped_StoredNoPartKept()
+    {
+        // Audit M15: a «+» row the user never picked a part for must NOT
+        // persist as a ghost no-part rule (its default «Все» sizes made the
+        // old IsEmpty check blind). A STORED no-part rule (from extraction)
+        // is legitimate content and round-trips.
+        var state = new RoutingTypeEditState(0);
+        var group = new RoutingGroupEditState(ManagerGroup());
+        group.Rules.Add(RoutingRuleEditState.Empty(isFresh: true)); // «+» without a pick
+        group.Rules.Add(new RoutingRuleEditState { PartName = null, Description = "Нет" }); // stored «Нет»
+        group.Rules.Add(new RoutingRuleEditState { PartName = "A:B" });
+        state.Groups.Add(group);
+
+        Assert.True(state.TryToRecords(Type, out var records, out _));
+
+        Assert.Equal(2, records.Count);
+        Assert.Null(records[0].PartName);
+        Assert.Equal("Нет", records[0].Description);
+        Assert.Equal("A:B", records[1].PartName);
+    }
+
+    [Fact]
+    public void TryToRecords_FreshRowWithPickedPart_Persists()
+    {
+        var state = new RoutingTypeEditState(0);
+        var group = new RoutingGroupEditState(ManagerGroup());
+        var fresh = RoutingRuleEditState.Empty(isFresh: true);
+        fresh.PartName = "Picked:DN50";
+        group.Rules.Add(fresh);
+        state.Groups.Add(group);
+
+        Assert.True(state.TryToRecords(Type, out var records, out _));
+        var record = Assert.Single(records);
+        Assert.Equal("Picked:DN50", record.PartName);
+    }
+
+    [Fact]
+    public void TryToRecords_MinAboveMax_FailsValidation()
+    {
+        // Audit L18: a free-text min above max must be rejected, not written
+        // as a never-matching criterion.
+        var state = new RoutingTypeEditState(0);
+        var group = new RoutingGroupEditState(ManagerGroup());
+        group.Rules.Add(new RoutingRuleEditState { PartName = "A:B", MinSizeText = "100", MaxSizeText = "50" });
+        state.Groups.Add(group);
+
+        Assert.False(state.TryToRecords(Type, out _, out var error));
+        Assert.Equal("Elbows", error);
+    }
+
+    [Fact]
+    public void TryToRecords_DescriptionWhitespace_PreservedVerbatim()
+    {
+        // Audit L19: extraction stores descriptions as-is — the editor must
+        // not trim them (a trim shifts the catalog fingerprint and surfaces
+        // a phantom RoutingDrift after any save).
+        var state = new RoutingTypeEditState(0);
+        var group = new RoutingGroupEditState(ManagerGroup());
+        group.Rules.Add(new RoutingRuleEditState { PartName = "A:B", Description = "  spaced  " });
+        state.Groups.Add(group);
+
+        Assert.True(state.TryToRecords(Type, out var records, out _));
+        Assert.Equal("  spaced  ", records[0].Description);
     }
 
     [Fact]

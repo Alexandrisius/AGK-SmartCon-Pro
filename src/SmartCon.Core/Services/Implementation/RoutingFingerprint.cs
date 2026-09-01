@@ -77,25 +77,31 @@ public static class RoutingFingerprint
     /// sits in Transitions — Revit accepts the fitting in either, so the
     /// drift probe must see them as equal; without this the stale marker
     /// could never clear. Storage and the editor keep the original tokens.
+    /// The mapping can move a rule across a group boundary, which would
+    /// otherwise diverge the serialized order from a snapshot whose rule
+    /// was stored in Transitions all along (live enum order …,5,7 vs
+    /// catalog …,4,5) — an eternal drift «Обновить» can never clear.
+    /// Cross-group order is a serialization convention, not content (the
+    /// groups are independent), so the rules are then re-sorted STABLY by
+    /// group token (param groups last — the stored canonical order); rule
+    /// order WITHIN a group is untouched (rule order IS routing content).
     /// </summary>
     public static RoutingPreferencesSnapshot? WithCanonicalTransitionGroups(RoutingPreferencesSnapshot? routing)
     {
         if (routing is null) return null;
-        var changed = false;
         var rules = new List<RoutingRuleSnapshot>(routing.Rules.Count);
         foreach (var rule in routing.Rules)
         {
-            if (rule.GroupType is 7 or 8 or 9)
-            {
-                changed = true;
-                rules.Add(rule with { GroupType = TransitionsGroupToken });
-            }
-            else
-            {
-                rules.Add(rule);
-            }
+            rules.Add(rule.GroupType is 7 or 8 or 9
+                ? rule with { GroupType = TransitionsGroupToken }
+                : rule);
         }
-        return changed ? routing with { Rules = rules } : routing;
+        return routing with
+        {
+            Rules = rules
+                .OrderBy(r => r.GroupType == RoutingGroupKeys.ParamGroupType ? int.MaxValue : r.GroupType)
+                .ToList(),
+        };
     }
 
     /// <summary>

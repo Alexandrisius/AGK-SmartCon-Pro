@@ -63,11 +63,22 @@ public sealed record RoutingEditorSave(IReadOnlyList<RoutingEditorTypeSave> Edit
 public sealed record RoutingSaveResult(
     bool Success,
     IReadOnlyList<string> ArchivedLockedParts,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    /// <summary><c>false</c> when the edit produced no effective change
+    /// (e.g. only phantom rows without a picked part — they are dropped at
+    /// record build): the DB write is skipped and the caller must NOT
+    /// trigger a stale re-check (owner stress test 2026-09-01 — a no-op
+    /// save surfacing a stale badge read as «the empty rule broke
+    /// something»).</summary>
+    bool Changed = true);
 
 /// <summary>One part-picker row: a candidate family with its current-version types.</summary>
+/// <param name="PartTypeOrdinal">Raw <c>family_facts.part_type</c> ordinal —
+/// the junctions picker filters tee/tap candidates by the type's preferred
+/// junction (owner stress test 2026-09-01). <c>null</c> when unknown.</param>
 public sealed record RoutingPartCandidate(
     string CatalogItemId,
     string FamilyName,
     string? PartTypeLabel,
-    IReadOnlyList<string> TypeNames);
+    IReadOnlyList<string> TypeNames,
+    int? PartTypeOrdinal = null);

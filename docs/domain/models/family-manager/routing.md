@@ -3,7 +3,7 @@ module: FamilyManager
 topic: Routing as catalog data (ADR-072, V34/V35)
 ---
 
-# Routing как данные каталога (#254, ADR-072)
+# Routing как данные каталога (#254, ADR-072; FHV21 — ADR-073)
 
 Правила трассировки системных MEPCurve-типов версионируются в БД каталога,
 а не в Revit-форме мини-проекта (slim мини не несёт фитингов). Два механизма
@@ -11,6 +11,13 @@ topic: Routing as catalog data (ADR-072, V34/V35)
 `RoutingPreferenceRuleGroupType`) и param-группы (flex/conduit/cable tray —
 менеджера нет, выбор фитингов живёт в VISIBLE built-in параметрах
 `RBS_CURVETYPE_*`, FHV19).
+
+**Разделение владения (FHV21, ADR-073, решение владельца 2026-09-01):**
+фитинги + их критерии + preferred junction — item-level связи каталога
+(V37, вне хэша, World B, редактируются вкладкой «Трассировка»); сегментная
+конфигурация трубы (набор сегментов + диапазоны правил + порядок) —
+версионный контент мини-проекта (входит в хэш, per-version таблица V38
+`family_segment_rules`; вкладка показывает её read-only).
 
 ## RoutingGroupKeys
 
@@ -84,6 +91,13 @@ TEE/CROSS по family_key), фильтры пикера детали (катег
 ordinals `part_type`), read-only Segments, preferred junction (pipe/duct/
 flex). Ordinals категорий и PartType — замороженные API-константы
 (revitapidocs + PartTypeLabelMap), Core не ссылается на Revit enum (I-09).
+FHV21 (ADR-073): константы форм коннекторов `ShapeRound/ShapeRectangular/
+ShapeOval` (битмаска факта `connector_shape`); дескриптор несёт
+`IsSegmentRow` (read-only view per-version конфигурации мини),
+`RequiredConnectorShapeMask` (строки переходов переменной формы требуют
+ВСЕ биты — круг↔прямоуг. = 3, прямоуг.↔овал = 6, овал↔круг = 5) и
+`ExcludeMultiShapeParts` (обычная строка «Переходы» — только одноформенные
+детали, мультиформенные живут в своих строках).
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/RoutingGroupCatalog.cs`
 
@@ -123,4 +137,42 @@ FHV20): трассировка вышла из content-хэша (это связ
 размеры не трогает (это содержимое файла, не связи).
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/SegmentSizeRecord.cs`
+
+## SegmentRuleRecord
+
+Строка per-version сегментного правила (V38, FHV21, ADR-073): сегментная
+конфигурация типа трубы — набор сегментов, их диапазоны Мин/Макс
+(NULL = unrestricted) и порядок правил — версионный контент мини-проекта,
+входит в хэш (SEGMENTS-секция, META FHV11). Таблица `family_segment_rules`
+(каскадное удаление с версией) — откат версии восстанавливает СВОЮ
+конфигурацию. Писатели: `SegmentRuleWriter` (импорт),
+`RoutingBackfillActualizationTask` (все варианты, включая архивные),
+задача `segment-rules-v1` (backfill из мини для legacy).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/SegmentRuleRecord.cs`
+
+## SegmentRuleComposition
+
+Единая композиция читателей трассировки (FHV21, ADR-073): фитинг-группы —
+из item-канала (World B), сегментная группа — из per-version таблицы
+активной версии; legacy-fallback на stored Segments-строки, пока версия не
+backfill'нута. `Compose` (читатели: редактор, sync, обе drift-пробы),
+`ToRuleInfo`, `FromSnapshot` (писатели: `SegmentRuleWriter` — порядок
+`order++` per type). Известный осознанный edge: «легитимно пустая» сегментная
+конфигурация неотличима от «не backfill'нут» → fallback на legacy-строки
+(практически недостижимо: Revit требует ≥1 сегментное правило на тип трубы).
+
+**Файл:** `SmartCon.Core/Services/Implementation/SegmentRuleComposition.cs`
+
+## ConnectorShapeLabelMap
+
+Локализованные подписи факта `connector_shape` (ADR-055, ADR-073): битмаска
+`FamilyFact.ValueKey` (Round=1, Rectangular=2, Oval=4) → RU/EN строка по
+текущему языку («Круглый и Прямоугольный», никаких «Round+Rectangular»).
+Маска 0 (семейство без коннекторов — факт вычислен, коннекторов нет) —
+`NoConnectorsLabel` («Нет коннекторов»), детектор `IsZeroMask`. null для
+неизвестных масок → fallback на extraction-time `ValueDisplay` (контракт
+как у PartTypeLabelMap).
+
+**Файл:** `SmartCon.Core/Models/FamilyManager/ConnectorShapeLabelMap.cs`
 

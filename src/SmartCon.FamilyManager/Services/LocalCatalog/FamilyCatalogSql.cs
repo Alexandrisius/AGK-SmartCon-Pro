@@ -676,6 +676,32 @@ internal static class FamilyCatalogSql
         """;
 
     /// <summary>
+    /// V38 (FHV21, owner decision 2026-09-01, stress test баг 3): PER-VERSION
+    /// segment routing rules — the mini-project owns the whole segment
+    /// configuration (set + order + size-range criterion), so it is
+    /// versioned content like <c>family_segment_sizes</c>, unlike fitting
+    /// rules which stay item-level catalog links (<c>item_routing_rules</c>,
+    /// World B). Readers follow <c>current_version_label</c>, so a rollback
+    /// restores the activated version's own ranges. NULL min/max =
+    /// unrestricted criterion.
+    /// </summary>
+    public const string MigrateV38AddSegmentRules = """
+        CREATE TABLE IF NOT EXISTS family_segment_rules (
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            segment_name TEXT NOT NULL,
+            min_size_feet REAL,
+            max_size_feet REAL,
+            description TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (catalog_version_id, family_key, type_name, rule_order),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_family_segment_rules_version ON family_segment_rules (catalog_version_id);
+        """;
+
+    /// <summary>
     /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
     /// catalog DATA — the mini-project no longer carries fittings, so the
     /// routing of a version lives here instead of the staged .rvt.
@@ -795,7 +821,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id);
-        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes + ";" + CreateFamilyTypeHashesIndexes;
+        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes + ";" + CreateFamilyTypeHashesIndexes + ";" + CreateFamilyRoutingRulesIndexes;
 
     /// <summary>
     /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+

@@ -10,14 +10,19 @@ namespace SmartCon.Tests.FamilyManager.Models;
 public sealed class FamilyFactRuleSetTests
 {
     [Fact]
-    public void GetRulesForCategory_PipeFitting_ReturnsPartTypeRule()
+    public void GetRulesForCategory_PipeFitting_ReturnsPartTypeAndConnectorShapeRules()
     {
         var rules = FamilyFactRuleSet.GetRulesForCategory(-2008049); // OST_PipeFitting
 
-        var rule = Assert.Single(rules);
-        Assert.Equal(FamilyFactRuleSet.PartTypeFactKey, rule.FactKey);
-        Assert.Equal(FamilyFactRuleSet.PartTypeLabelKey, rule.LabelKey);
-        Assert.Equal(-1114206, rule.ParameterId); // FAMILY_CONTENT_PART_TYPE
+        Assert.Equal(2, rules.Count);
+        var partType = Assert.Single(rules, r => r.FactKey == FamilyFactRuleSet.PartTypeFactKey);
+        Assert.Equal(FamilyFactRuleSet.PartTypeLabelKey, partType.LabelKey);
+        Assert.Equal(-1114206, partType.ParameterId); // FAMILY_CONTENT_PART_TYPE
+        // Owner stress test 2026-09-01 (баг 8): the connector-shape fact is
+        // computed from the family's connectors, not read from a parameter.
+        var shape = Assert.Single(rules, r => r.FactKey == FamilyFactRuleSet.ConnectorShapeFactKey);
+        Assert.Equal(FamilyFactRuleSet.ConnectorShapeLabelKey, shape.LabelKey);
+        Assert.Equal(FamilyFactRuleSet.ComputedFactParameterId, shape.ParameterId);
     }
 
     [Theory]

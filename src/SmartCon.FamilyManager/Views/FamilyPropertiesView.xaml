@@ -22,6 +22,7 @@
     <Window.Resources>
         <ui:SingletonResources>
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+            <converters:BoolToGridLengthConverter x:Key="BoolToGridLength"/>
             <converters:InvertBoolConverter x:Key="InvertBool"/>
             <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
             <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
@@ -203,29 +204,36 @@
                         </WrapPanel>
                     </Border>
 
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11">
+                <!-- Header meta line: version + Revit category + facts.
+                     WrapPanel (owner stress test 2026-09-01): with several
+                     facts the line overflows the fixed dialog width — the
+                     overflow wraps to a second row instead of truncating.
+                     Separators are IN-TEXT bullets (not margins), so a
+                     wrapped row starts flush at the left edge — no ragged
+                     indentation. -->
+                <WrapPanel>
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,2,0,2">
                         <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
                     </TextBlock>
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
-                        <Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="8,2,0,2">
+                        <Run Text="• "/><Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
                     </TextBlock>
                     <ItemsControl ItemsSource="{Binding FactRows, Mode=OneWay}"
                                   Visibility="{Binding HasFactRows, Converter={StaticResource BoolToVisibility}}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
+                                <WrapPanel/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="16,0,0,0">
-                                    <Run Text="{Binding Label, Mode=OneWay}"/>: <Run Text="{Binding Value, Mode=OneWay}"/>
+                                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="8,2,0,2">
+                                    <Run Text="• "/><Run Text="{Binding Label, Mode=OneWay}"/>: <Run Text="{Binding Value, Mode=OneWay}"/>
                                 </TextBlock>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </StackPanel>
+                </WrapPanel>
             </StackPanel>
         </Grid>
 
@@ -1051,11 +1059,11 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="20"/>
                                 <ColumnDefinition Width="28"/>
-                                <ColumnDefinition Width="100"/>
-                                <ColumnDefinition Width="100"/>
-                                <ColumnDefinition Width="26"/>
-                                <ColumnDefinition Width="26"/>
-                                <ColumnDefinition Width="26"/>
+                                <ColumnDefinition Width="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=100}"/>
+                                <ColumnDefinition Width="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=100}"/>
+                                <ColumnDefinition Width="{Binding DataContext.RoutingHasRuleActions, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
+                                <ColumnDefinition Width="{Binding DataContext.RoutingHasRuleActions, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
+                                <ColumnDefinition Width="{Binding DataContext.RoutingHasRuleActions, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{loc:Loc FM_Routing_Col_Part}"
                                        FontWeight="SemiBold" FontSize="12" Margin="8,0,0,0"
@@ -1140,11 +1148,11 @@
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="20"/>
                                                                 <ColumnDefinition Width="28"/>
-                                                                <ColumnDefinition Width="100"/>
-                                                                <ColumnDefinition Width="100"/>
-                                                                <ColumnDefinition Width="26"/>
-                                                                <ColumnDefinition Width="26"/>
-                                                                <ColumnDefinition Width="26"/>
+                                                                <ColumnDefinition Width="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=100}"/>
+                                                                <ColumnDefinition Width="{Binding DataContext.RoutingHasSizeCriteria, RelativeSource={RelativeSource AncestorType=TabControl}, Converter={StaticResource BoolToGridLength}, ConverterParameter=100}"/>
+                                                                <ColumnDefinition Width="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
+                                                                <ColumnDefinition Width="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
+                                                                <ColumnDefinition Width="{Binding ShowTrailingAction, Converter={StaticResource BoolToGridLength}, ConverterParameter=26}"/>
                                                             </Grid.ColumnDefinitions>
 
                                                             <!-- Part: family:type (or «Нет»); the stretchy main column. -->
@@ -1181,7 +1189,7 @@
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
                                                                     IsEnabled="{Binding CanEditRule}"
-                                                                    Visibility="{Binding Group.IsReadOnly, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}">
+                                                                    Visibility="{Binding Group.CanPickPart, Converter={StaticResource BoolToVisibility}}">
                                                                 <Viewbox Width="13" Height="13" Stretch="Uniform">
                                                                     <iconPacks:PackIconMaterial Kind="DotsHorizontal" Width="24" Height="24"
                                                                         Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -1229,7 +1237,7 @@
                                                                     ToolTip="{loc:Loc FM_Routing_MoveUp_Tip}"
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
-                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    IsEnabled="{Binding CanEditRule}"
                                                                     Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
                                                                 <Viewbox Width="12" Height="12" Stretch="Uniform">
                                                                     <iconPacks:PackIconMaterial Kind="ArrowUp" Width="24" Height="24"
@@ -1242,7 +1250,7 @@
                                                                     ToolTip="{loc:Loc FM_Routing_MoveDown_Tip}"
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
-                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    IsEnabled="{Binding CanEditRule}"
                                                                     Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
                                                                 <Viewbox Width="12" Height="12" Stretch="Uniform">
                                                                     <iconPacks:PackIconMaterial Kind="ArrowDown" Width="24" Height="24"
@@ -1255,7 +1263,7 @@
                                                                     ToolTip="{loc:Loc FM_Routing_RemoveRule_Tip}"
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
-                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    IsEnabled="{Binding CanEditRule}"
                                                                     Visibility="{Binding Group.AllowMultipleRules, Converter={StaticResource BoolToVisibility}}">
                                                                 <Viewbox Width="12" Height="12" Stretch="Uniform">
                                                                     <iconPacks:PackIconMaterial Kind="DeleteOutline" Width="24" Height="24"
@@ -1263,17 +1271,19 @@
                                                                 </Viewbox>
                                                             </Button>
                                                             <!-- Param groups keep exactly one row: clear the pick
-                                                                 back to «Нет» instead of deleting the row. -->
+                                                                 back to «Нет» instead of deleting the row. Same
+                                                                 DeleteOutline glyph as row-delete (owner 2026-09-01:
+                                                                 a unified delete visual across all categories). -->
                                                             <Button Grid.Column="7"
                                                                     Command="{Binding DataContext.ClearRoutingPartCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
                                                                     CommandParameter="{Binding}"
                                                                     ToolTip="{loc:Loc FM_Routing_ClearPart}"
                                                                     Style="{DynamicResource FlatIconButton}"
                                                                     Width="24" Height="24"
-                                                                    IsEnabled="{Binding DataContext.CanEditRouting, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                                                    IsEnabled="{Binding CanEditRule}"
                                                                     Visibility="{Binding ShowClearPart, Converter={StaticResource BoolToVisibility}}">
                                                                 <Viewbox Width="12" Height="12" Stretch="Uniform">
-                                                                    <iconPacks:PackIconMaterial Kind="CloseOutline" Width="24" Height="24"
+                                                                    <iconPacks:PackIconMaterial Kind="DeleteOutline" Width="24" Height="24"
                                                                         Foreground="{DynamicResource TextMutedBrush}"/>
                                                                 </Viewbox>
                                                             </Button>

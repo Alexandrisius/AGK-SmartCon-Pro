@@ -25,11 +25,11 @@ internal sealed class SegmentSizesActualizationTask : SqlDetectionActualizationT
     public override int Order => 75;
     public override bool IsCritical => false;
 
-    protected override string DetectionSql => """
+    protected override string DetectionSql => $"""
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
         WHERE ci.family_source = 'system'
-          AND ci.revit_category_id = -2008044
+          AND ci.revit_category_id = {RoutingGroupCatalog.PipeCurvesCategoryId}
           AND COALESCE(cv.hash_format_version, 0) NOT IN (-1, -2)
           AND EXISTS(SELECT 1 FROM family_types ft WHERE ft.version_id = cv.id)
           AND NOT EXISTS(SELECT 1 FROM family_segment_sizes fss WHERE fss.catalog_version_id = cv.id)

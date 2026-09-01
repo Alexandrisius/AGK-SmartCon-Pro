@@ -626,6 +626,7 @@ public static class StringLocalization
         public const string FM_UpdateNoTypeChanges = "FM_UpdateNoTypeChanges";
         public const string FM_UpdateBatchAllStale = "FM_UpdateBatchAllStale";
         public const string FM_UpdateReplaceTypesTitle = "FM_UpdateReplaceTypesTitle";
+        public const string FM_UpdateRoutingDriftConfirm = "FM_UpdateRoutingDriftConfirm";
         public const string FM_UpdateReplaceTypesConfirm = "FM_UpdateReplaceTypesConfirm";
         // #249 (Phase 4): "what changed" diff window in the batch dialog.
         public const string FM_Diff_BadgeTooltip = "FM_Diff_BadgeTooltip";
@@ -681,6 +682,8 @@ public static class StringLocalization
         public const string FM_StaleTooltipRoutingDrift = "FM_StaleTooltipRoutingDrift";
         public const string FM_RoutingDriftTitle = "FM_RoutingDriftTitle";
         public const string FM_RoutingDriftBody = "FM_RoutingDriftBody";
+        public const string FM_RoutingOverwriteCancelled = "FM_RoutingOverwriteCancelled";
+        public const string FM_ParametersPorted = "FM_ParametersPorted";
         public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
         public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
@@ -759,7 +762,6 @@ public static class StringLocalization
         public const string FM_Routing_Junction_Tee = "FM_Routing_Junction_Tee";
         public const string FM_Routing_Junction_Tap = "FM_Routing_Junction_Tap";
         public const string FM_Routing_Group_SegmentsPipe = "FM_Routing_Group_SegmentsPipe";
-        public const string FM_Routing_Group_SegmentsDuct = "FM_Routing_Group_SegmentsDuct";
         public const string FM_Routing_Group_Elbows = "FM_Routing_Group_Elbows";
         public const string FM_Routing_Group_Junctions = "FM_Routing_Group_Junctions";
         public const string FM_Routing_Group_JunctionsTees = "FM_Routing_Group_JunctionsTees";
@@ -786,7 +788,6 @@ public static class StringLocalization
         public const string FM_Routing_Col_Part = "FM_Routing_Col_Part";
         public const string FM_Routing_Col_MinSize = "FM_Routing_Col_MinSize";
         public const string FM_Routing_Col_MaxSize = "FM_Routing_Col_MaxSize";
-        public const string FM_Routing_Col_Description = "FM_Routing_Col_Description";
         public const string FM_Routing_AllSizes = "FM_Routing_AllSizes";
         public const string FM_Routing_NoPart = "FM_Routing_NoPart";
         public const string FM_Routing_AddRule = "FM_Routing_AddRule";
@@ -828,6 +829,7 @@ public static class StringLocalization
         public const string FM_Props_Version = "FM_Props_Version";
         public const string FM_Props_RevitCategory = "FM_Props_RevitCategory";
         public const string FM_Fact_PartType = "FM_Fact_PartType";
+        public const string FM_Fact_ConnectorShape = "FM_Fact_ConnectorShape";
         public const string FM_Props_Created = "FM_Props_Created";
         public const string FM_Props_Updated = "FM_Props_Updated";
         public const string FM_Props_NoAvatar = "FM_Props_NoAvatar";

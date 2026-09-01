@@ -14,12 +14,21 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// segments; <c>null</c> for duct segments.</param>
 /// <param name="Roughness">Segment roughness (internal units).</param>
 /// <param name="Sizes">Size table in segment order.</param>
+/// <param name="RuleMinSizeFeet">FHV21 (owner decision 2026-09-01): the
+/// size-range criterion of the routing RULE that references this segment
+/// (Мин in Revit's routing dialog, feet). <c>null</c> = unrestricted or
+/// the snapshot was built outside a rule context (segment sync reads the
+/// segment entity only — the range is rule data, not segment data).</param>
+/// <param name="RuleMaxSizeFeet">Макс of the rule's criterion (feet);
+/// <c>null</c> = unrestricted.</param>
 public sealed record SegmentSnapshot(
     string Name,
     string? MaterialName,
     string? ScheduleName,
     double Roughness,
-    IReadOnlyList<SegmentSizeSnapshot> Sizes);
+    IReadOnlyList<SegmentSizeSnapshot> Sizes,
+    double? RuleMinSizeFeet = null,
+    double? RuleMaxSizeFeet = null);
 
 /// <summary>
 /// One size row of a segment's size table. All diameters are in internal

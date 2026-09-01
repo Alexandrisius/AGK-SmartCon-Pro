@@ -121,7 +121,7 @@ public sealed partial class FamilyContentHasher
     private static string BuildSystemMetaSection(SystemFamilySnapshot snapshot)
     {
         var sb = new StringBuilder(32);
-        sb.Append("FHV10|SYSTEM|");
+        sb.Append("FHV11|SYSTEM|");
         sb.Append(snapshot.CategoryId).Append('|');
         sb.Append("TYPES|");
         return sb.ToString();
@@ -216,6 +216,12 @@ public sealed partial class FamilyContentHasher
                 sb.Append(Escape(segment.MaterialName ?? NullMaterialMarker)).Append('|');
                 sb.Append(Escape(segment.ScheduleName ?? NullPartMarker)).Append('|');
                 sb.Append(segment.Roughness.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
+                // FHV21 (owner decision 2026-09-01): the routing rule's
+                // size-range criterion is mini-owned segment configuration —
+                // editing Мин/Макс in the mini changes the hash and forks a
+                // new version. '-' = unrestricted (no criterion on the rule).
+                sb.Append(segment.RuleMinSizeFeet?.ToString("0.######", CultureInfo.InvariantCulture) ?? "-").Append('|');
+                sb.Append(segment.RuleMaxSizeFeet?.ToString("0.######", CultureInfo.InvariantCulture) ?? "-").Append('|');
                 foreach (var size in segment.Sizes)
                 {
                     sb.Append(size.NominalDiameter.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');

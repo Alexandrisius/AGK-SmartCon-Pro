@@ -109,14 +109,18 @@ public sealed class SyncRoutingParamsFromDbTests : RevitApiTest
     }
 
     [Test]
-    public async Task Sync_FlexPipe_EmptyDb_LegacyFallbackKeepsMiniRouting()
+    public async Task Sync_FlexPipe_EmptyDb_SlimMini_TypeCreated_RoutingNotApplied()
     {
         var sourceFlex = FindSourceFlexPipe();
         if (sourceFlex is null) { Skip.Test("В шаблоне нет FlexPipeType"); return; }
 
-        // Pre-V34 version: the repository answers "no stored rows" — the
-        // sync must fall back to the mini-project routing (preferred = 1),
-        // never erase it with an empty DB snapshot.
+        // Pre-V34 version: the repository answers "no stored rows". Audit
+        // M11 replaced the old "mini routing applies" fallback for the SLIM
+        // mini: it is an ambiguous "catalog knows nothing" state, so the
+        // routing write is skipped and the type keeps its prototype values
+        // (template: all-«Нет», preferred=1). The protection of MODIFIED
+        // live routing is covered by
+        // Sync_FlexPipe_EmptyDb_SlimMini_LiveRoutingLeftUntouched.
         var repo = new FakeRoutingRuleRepository { HasRules = false };
 
         var sync = CreateSyncService(repo);
@@ -129,8 +133,59 @@ public sealed class SyncRoutingParamsFromDbTests : RevitApiTest
         await Assert.That(result.IsSuccess).IsTrue();
 
         var target = FindTargetFlexPipe(sourceFlex.Name);
-        var (_, preferred) = ReadFlexRoutingState(target);
+        var (routingParamsNone, preferred) = ReadFlexRoutingState(target);
+        await Assert.That(routingParamsNone).IsTrue();
         await Assert.That(preferred).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Sync_FlexPipe_EmptyDb_SlimMini_LiveRoutingLeftUntouched()
+    {
+        var sourceFlex = FindSourceFlexPipe();
+        if (sourceFlex is null) { Skip.Test("В шаблоне нет FlexPipeType"); return; }
+
+        // Audit M11: an EMPTY catalog (no stored rows anywhere) + a slim
+        // mini = "catalog knows nothing" — sync must NOT apply the slim
+        // routing over the live project settings.
+        var repo = new FakeRoutingRuleRepository { HasRules = false };
+        var sync = CreateSyncService(repo);
+
+        // Bring the type into the project first.
+        var first = sync.SyncTypeFromSource(
+            SourceDoc, TargetDoc, sourceFlex.Name, "item-flex", "v1",
+            int.Parse(Application.VersionNumber),
+            sourceFlex.FamilyName, SystemFamilyKeyResolver.Resolve(sourceFlex),
+            (int)BuiltInCategory.OST_FlexPipeCurves);
+        await Assert.That(first.IsSuccess).IsTrue();
+
+        // The user flips the live preferred junction (0=Tap, template=1).
+        var target = FindTargetFlexPipe(sourceFlex.Name);
+        var flipped = false;
+        var committed = _targetTx!.RunInTransaction(TargetDoc, "flip preferred junction", d =>
+        {
+            foreach (Parameter p in target.Parameters)
+            {
+                if (RoutingDrivingParameters.IsPreferredBranch(p) && !p.IsReadOnly)
+                {
+                    p.Set(0);
+                    flipped = true;
+                    break;
+                }
+            }
+        });
+        await Assert.That(committed && flipped).IsTrue();
+
+        // Re-sync with the same empty catalog: the live flip must survive —
+        // the legacy fallback must not apply the slim mini routing.
+        var second = sync.SyncTypeFromSource(
+            SourceDoc, TargetDoc, sourceFlex.Name, "item-flex", "v1",
+            int.Parse(Application.VersionNumber),
+            sourceFlex.FamilyName, SystemFamilyKeyResolver.Resolve(sourceFlex),
+            (int)BuiltInCategory.OST_FlexPipeCurves);
+        await Assert.That(second.IsSuccess).IsTrue();
+
+        var (_, preferred) = ReadFlexRoutingState(FindTargetFlexPipe(sourceFlex.Name));
+        await Assert.That(preferred).IsEqualTo(0);
     }
 
     private FlexPipeType? FindSourceFlexPipe()

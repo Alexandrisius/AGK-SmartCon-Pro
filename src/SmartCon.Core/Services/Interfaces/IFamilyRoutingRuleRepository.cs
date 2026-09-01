@@ -3,19 +3,25 @@ using SmartCon.Core.Models.FamilyManager;
 namespace SmartCon.Core.Services.Interfaces;
 
 /// <summary>
-/// Storage of the catalog-version routing rules of system MEPCurve types
-/// (ADR-072, V34 tables <c>family_routing_rules</c> +
-/// <c>family_routing_type_settings</c>). Written at import from the live
-/// project's routing (manager- or parameter-based); read by sync (the
-/// mini-project carries no fittings, so routing syncs from DB data) and
-/// by the routing editor (Phase 3).
+/// Storage of the routing rules of system MEPCurve types (ADR-072). Two
+/// levels: the FROZEN version-level V34 tables (<c>family_routing_rules</c>
+/// + <c>family_routing_type_settings</c> — history of pre-World-B imports
+/// and the legacy-fallback read source for sync) and the live ITEM-level
+/// V37 tables (<c>item_routing_rules</c> + <c>item_routing_type_settings</c>
+/// — routing is a catalog-family link, not version content: seeded by
+/// import/backfill only while empty, edited in place by the routing
+/// editor, read first by sync/stale/placement).
 /// </summary>
 public interface IFamilyRoutingRuleRepository
 {
     /// <summary>
     /// DELETE+INSERT the routing rules and per-type settings of one
     /// catalog version inside a single transaction (mirrors the
-    /// dependency-repository pattern).
+    /// dependency-repository pattern). LEGACY/test-only after World B:
+    /// the V34 tables are frozen (history + the legacy-fallback source for
+    /// pre-World-B versions) — production code never writes them anymore;
+    /// import seeds the item-level V37 tables instead
+    /// (<see cref="ReplaceForItemAsync"/>).
     /// </summary>
     Task ReplaceForVersionAsync(
         string catalogItemId,
@@ -49,9 +55,9 @@ public interface IFamilyRoutingRuleRepository
 
     /// <summary>
     /// Same as <see cref="ReplaceForVersionAsync"/> but resolves the item's
-    /// CURRENT version (join by <c>current_version_label</c>) — the import
-    /// writes the routing of the version it just made active. No-op when
-    /// the item has no current version.
+    /// CURRENT version (join by <c>current_version_label</c>). LEGACY/
+    /// test-only after World B (see <see cref="ReplaceForVersionAsync"/>).
+    /// No-op when the item has no current version.
     /// </summary>
     Task ReplaceForCurrentVersionAsync(
         string catalogItemId,

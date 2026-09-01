@@ -48,9 +48,9 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 33)
+        if (initialVersion < 37)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v33");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v37");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -94,6 +94,7 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 35, MigrateV35Async, ct);
         await RunMigrationAsync(connection, 36, MigrateV36Async, ct);
         await RunMigrationAsync(connection, 37, MigrateV37Async, ct);
+        await RunMigrationAsync(connection, 38, MigrateV38Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try
@@ -1604,6 +1605,50 @@ public sealed class LocalCatalogMigrator : ILocalCatalogMigrator
             SmartConLogger.Info(columnAdded
                 ? "Migration v35: catalog_versions +routing_backfilled (routing backfill/slimming tracking, #254)"
                 : "Migration v35: routing_backfilled already present — version bumped to 35");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V38 (FHV21): per-version segment routing rules — the segment
+    /// configuration leaves the item-level routing channel and becomes
+    /// versioned mini-project content. Additive table; legacy versions are
+    /// backfilled by the segment-rules-v1 actualization from their minis.
+    /// </summary>
+    private static async Task MigrateV38Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 38) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var tableAdded = false;
+            using (var check = connection.CreateCommand())
+            {
+                check.Transaction = tx;
+                check.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'family_segment_rules'";
+                tableAdded = await check.ExecuteScalarAsync(ct).ConfigureAwait(false) is null;
+            }
+
+            using var cmd = connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = FamilyCatalogSql.MigrateV38AddSegmentRules;
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '38' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+
+            tx.Commit();
+            SmartConLogger.Info(tableAdded
+                ? "Migration v38: family_segment_rules (FHV21 per-version segment configuration)"
+                : "Migration v38: segment rules table already present — version bumped to 38");
         }
         catch
         {

@@ -27,6 +27,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     private readonly IFittingDependencyResolver _fittingResolver;
     private readonly ICompoundStructureSyncService _structureSync;
     private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentRuleRepository? _segmentRuleRepository;
 
     public SystemTypeSyncService(
         ITransactionService tx,
@@ -37,7 +38,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         ISegmentSyncService segmentSync,
         IFittingDependencyResolver fittingResolver,
         ICompoundStructureSyncService structureSync,
-        IFamilyRoutingRuleRepository? routingRuleRepository = null)
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentRuleRepository? segmentRuleRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(tx);
@@ -67,6 +69,7 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         _fittingResolver = fittingResolver;
         _structureSync = structureSync;
         _routingRuleRepository = routingRuleRepository;
+        _segmentRuleRepository = segmentRuleRepository;
     }
 
     public SystemTypeSyncResult SyncTypeFromSource(
@@ -178,7 +181,29 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             // legacy fallback (pre-V34 versions without stored routing) keeps
             // reading the mini — an empty DB snapshot would otherwise erase the
             // target's fitting rules.
+            var miniRouting = template.Routing;
             template = SubstituteRoutingFromDb(template, catalogItemId);
+            // Audit M11 (second line of defense): the catalog held no stored
+            // routing rows at all, so the SLIM mini routing would be applied
+            // verbatim — erasing the project type's fitting rules as
+            // "target-only". An ambiguous "catalog knows nothing" state must
+            // never converge projects: leave the live routing untouched.
+            // (A legitimately routing-less type has marker settings rows in
+            // the DB — the substitution then returns a fresh empty routing
+            // and this guard does not engage. A NULL repository means "no
+            // catalog in play" — tests/legacy wiring where the source
+            // document IS the truth — the guard must not engage either.)
+            if (miniRouting is not null
+                && _routingRuleRepository is not null
+                && ReferenceEquals(template.Routing, miniRouting)
+                && HasNoFittingParts(miniRouting))
+            {
+                SmartConLogger.Warn(
+                    $"Type '{typeName}': the catalog holds no stored routing rows and the mini-project is slim — " +
+                    "the live routing is left untouched (catalog has no opinion). " +
+                    "[Action: импортируйте эталон из живого проекта или настройте трассировку во вкладке «Трассировка», затем повторите sync]");
+                template = template with { Routing = null };
+            }
         }
 
         // Phase A — fitting dependencies. LoadFamily throws when the target
@@ -288,7 +313,13 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             }
 
             result = new SystemTypeSyncResult(
-                typeName, status, written, skipped, NotConvergedCount: notConverged);
+                typeName, status, written, skipped, NotConvergedCount: notConverged,
+                // Owner decision 2026-08-31 (audit M6): the parameter port
+                // into a LIVE project must be visible to the user, never a
+                // silent side effect (staging ports are internal mechanics).
+                PortedParameterNames: !stagingMode && portedGuids.Count > 0
+                    ? portedGuids.Keys.ToList()
+                    : null);
         });
 
         if (!committed || result is null)
@@ -342,6 +373,18 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     }
 
     /// <summary>
+    /// Slim-mini signature (audit M11): the routing carries no fitting part
+    /// at all — every rule is either a no-part rule or belongs to the
+    /// Segments group (a segment is not a fitting). A full legacy mini
+    /// always has fitting parts; a legitimately routing-less type is
+    /// excluded by the caller (its marker settings rows make the DB
+    /// substitution return a fresh empty routing instead of the mini one).
+    /// </summary>
+    private static bool HasNoFittingParts(RoutingPreferencesSnapshot routing)
+        => routing.Rules.All(r =>
+            r.PartName is null || r.GroupType == (int)RoutingManagerGroup.Segments);
+
+    /// <summary>
     /// ADR-072 World B: replaces the routing of the extracted template with
     /// the catalog's item-level routing links (V37 — routing is a catalog-
     /// family link, not version content). Legacy fallbacks (all non-
@@ -369,6 +412,16 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                         : await _routingRuleRepository.ReadForCurrentVersionAsync(catalogItemId).ConfigureAwait(false);
                 if (rules is null)
                     return template;
+
+                // FHV21: segment rules compose from the per-version store of
+                // the CURRENT version (fittings stay item-level). Null repo
+                // (tests, legacy wiring) = stored Segments rows as before.
+                if (_segmentRuleRepository is not null)
+                {
+                    var perVersionSegments = await _segmentRuleRepository
+                        .ReadForCurrentVersionAsync(catalogItemId).ConfigureAwait(false);
+                    rules = SegmentRuleComposition.Compose(rules, perVersionSegments);
+                }
 
                 var dbRouting = RoutingRuleRecordMapper.ToSnapshot(
                     template.Name, template.FamilyKey ?? string.Empty, rules, settings!);
@@ -570,6 +623,12 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         // carry reference intent too, so the step-3 cleanup must not wipe
         // them right after the retry wrote into them.
         var retryWrittenGroups = new HashSet<int>();
+        // Deferred multi-shape transition retries (audit M4): applied AFTER
+        // the group rebuild loop — writing into group 7/8/9 DURING the
+        // Transitions(4) rebuild would be wiped by the subsequent rebuild of
+        // that very group whenever the reference also carries rules there
+        // (groups are processed in ascending ordinal order, 4 before 7).
+        var deferredRetries = new List<(RoutingPreferenceRule Rule, ElementId PartId, string? PartName)>();
 
         // 2) Rebuild every group present in the reference, in reference order.
         foreach (var group in referenceGroups.OrderBy(g => g))
@@ -648,22 +707,10 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                         // Revit rejects multi-shape transition fittings in
                         // the plain Transitions group ("The rule cannot be
                         // added to the groupType") — projects may still
-                        // carry such rules there. Retry the shape-specific
-                        // transition group so the catalog routing applies
-                        // (validator 2026-08-30: drop a same-part rule
-                        // first — a re-sync must not stack duplicates).
-                        var retryGroup = RoutingPreferenceRuleGroupType.TransitionsRectangularToRound;
-                        for (var i = manager.GetNumberOfRules(retryGroup) - 1; i >= 0; i--)
-                        {
-                            try
-                            {
-                                if (manager.GetRule(retryGroup, i).MEPPartId == partId)
-                                    manager.RemoveRule(retryGroup, i);
-                            }
-                            catch { /* best effort — AddRule below still reports */ }
-                        }
-                        manager.AddRule(retryGroup, rule);
-                        retryWrittenGroups.Add((int)retryGroup);
+                        // carry such rules there. Defer the retry into the
+                        // shape-specific transition groups until after the
+                        // rebuild loop (audit M4).
+                        deferredRetries.Add((rule, partId, ruleSnapshot.PartName));
                     }
                 }
                 catch (Exception ex)
@@ -672,6 +719,53 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                     SmartConLogger.Debug(
                         $"AddRule({groupType}, '{ruleSnapshot.PartName}') failed: {ex.Message}");
                 }
+            }
+        }
+
+        // Deferred multi-shape transition retries (audit M4/L20): try the
+        // shape-specific groups in turn — the fitting's connector profiles
+        // decide which one accepts it (validator 2026-08-30: drop a same-part
+        // rule first — a re-sync must not stack duplicates).
+        foreach (var (retryRule, retryPartId, retryPartName) in deferredRetries)
+        {
+            var applied = false;
+            foreach (var retryGroup in new[]
+            {
+                RoutingPreferenceRuleGroupType.TransitionsRectangularToRound,
+                RoutingPreferenceRuleGroupType.TransitionsRectangularToOval,
+                RoutingPreferenceRuleGroupType.TransitionsOvalToRound,
+            })
+            {
+                try
+                {
+                    for (var i = manager.GetNumberOfRules(retryGroup) - 1; i >= 0; i--)
+                    {
+                        try
+                        {
+                            using var existing = manager.GetRule(retryGroup, i);
+                            if (existing.MEPPartId == retryPartId)
+                                manager.RemoveRule(retryGroup, i);
+                        }
+                        catch { /* best effort — AddRule below still reports */ }
+                    }
+                    manager.AddRule(retryGroup, retryRule);
+                    retryWrittenGroups.Add((int)retryGroup);
+                    applied = true;
+                    break;
+                }
+                catch (ArgumentException)
+                {
+                    // The fitting's profile does not match this shape
+                    // group — try the next one.
+                }
+            }
+            if (!applied)
+            {
+                notConverged++;
+                SmartConLogger.Warn(
+                    $"Routing rule '{retryPartName ?? "<none>"}' (multi-shape transition) could not be added " +
+                    "to any transition group. [Action: правило пропущено; проверьте семейство перехода — " +
+                    "его коннекторы должны быть мульти-форменными]");
             }
         }
 
@@ -973,6 +1067,14 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             {
                 portGuid = sharedElement.GuidValue;
             }
+            else if (TryFindPortedDefinition(doc, missingName, null, out var earlierGuid))
+            {
+                // Audit L23: an earlier type of this batch already ported a
+                // NON-shared parameter under the same name — reuse its GUID
+                // (and extend its binding below) instead of creating a
+                // same-name duplicate definition.
+                portGuid = earlierGuid;
+            }
             else
             {
                 portGuid = Guid.NewGuid();
@@ -1038,6 +1140,15 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                     created++;
                     portedGuids[name] = portGuid;
                 }
+                // Audit L23: a binding for this parameter already exists
+                // (shared GUID ported for another category of this batch,
+                // or the same non-shared name ported earlier) — extend it
+                // with this type's category instead of failing.
+                else if (TryExtendPortedBinding(doc, name, portGuid, target.Category))
+                {
+                    created++;
+                    portedGuids[name] = portGuid;
+                }
                 else failed.Add(name);
             }
         }
@@ -1056,7 +1167,8 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         if (created > 0)
         {
             SmartConLogger.Info(
-                $"Staged type '{target.Name}': ported {created} shared parameter definition(s) from the source project");
+                $"Staged type '{target.Name}': ported {created} shared parameter definition(s) " +
+                $"from the source project: [{string.Join(", ", portedGuids.Keys)}]");
         }
         if (failed.Count > 0)
         {
@@ -1064,6 +1176,55 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
                 $"Staged type '{target.Name}': shared parameter port failed for [{string.Join(", ", failed)}]");
         }
         return portedGuids;
+    }
+
+    /// <summary>
+    /// Finds a shared parameter definition already ported into the document
+    /// by name (and optionally by GUID). Used by the batch port (audit L23).
+    /// </summary>
+    private static bool TryFindPortedDefinition(Document doc, string name, Guid? guid, out Guid foundGuid)
+    {
+        var iterator = doc.ParameterBindings.ForwardIterator();
+        while (iterator.MoveNext())
+        {
+            if (iterator.Key is not InternalDefinition internalDef
+                || !string.Equals(internalDef.Name, name, StringComparison.Ordinal))
+                continue;
+            if (doc.GetElement(internalDef.Id) is not SharedParameterElement sharedElement)
+                continue;
+            if (guid is not null && sharedElement.GuidValue != guid.Value)
+                continue;
+            foundGuid = sharedElement.GuidValue;
+            return true;
+        }
+        foundGuid = Guid.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Adds the category to the existing ported binding of the same
+    /// name/GUID (audit L23) — <c>ParameterBindings.Insert</c> rejects a
+    /// second binding of an already-bound definition.
+    /// </summary>
+    private static bool TryExtendPortedBinding(Document doc, string name, Guid guid, Category category)
+    {
+        var map = doc.ParameterBindings;
+        var iterator = map.ForwardIterator();
+        while (iterator.MoveNext())
+        {
+            if (iterator.Key is not InternalDefinition internalDef
+                || !string.Equals(internalDef.Name, name, StringComparison.Ordinal))
+                continue;
+            if (doc.GetElement(internalDef.Id) is not SharedParameterElement sharedElement
+                || sharedElement.GuidValue != guid)
+                continue;
+            if (iterator.Current is not ElementBinding existingBinding
+                || existingBinding.Categories.Contains(category))
+                return true; // already bound for this category — nothing to do
+            existingBinding.Categories.Insert(category);
+            return map.ReInsert(internalDef, existingBinding);
+        }
+        return false;
     }
 
     private static ExternalDefinitionCreationOptions? CreatePortedDefinitionOptions(

@@ -248,8 +248,11 @@ public static class ServiceRegistrar
         // nominal-diameter dropdowns (as in the Revit routing dialog).
         services.AddSingleton<LocalSegmentSizeRepository>();
         services.AddSingleton<ISegmentSizeRepository>(sp => sp.GetRequiredService<LocalSegmentSizeRepository>());
-        // ADR-072 Phase 3: routing editor engine — saves routing edits as a
-        // new catalog version with recomputed hashes/sections/links (no Revit).
+        services.AddSingleton<LocalSegmentRuleRepository>();
+        services.AddSingleton<ISegmentRuleRepository>(sp => sp.GetRequiredService<LocalSegmentRuleRepository>());
+        // ADR-072 Phase 3 (World B): routing editor engine — saves routing
+        // edits IN PLACE (item-level link tables + regenerated dependency
+        // links of the current version; no version, no hash, no Revit).
         services.AddSingleton<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>();
         services.AddSingleton<IRoutingEditorService>(sp => sp.GetRequiredService<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>());
         services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
@@ -308,6 +311,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.MiniProjectMarkerActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.TypeHashesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SegmentSizesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SegmentRulesActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SectionHashesActualizationTask>();
         // ADR-072 Phase 2b (#254): routing backfill (file-free from section
         // strings / pre-slim mini extraction) + mini slimming.
@@ -349,7 +353,8 @@ public static class ServiceRegistrar
             sp.GetRequiredService<ISegmentSyncService>(),
             sp.GetRequiredService<IFittingDependencyResolver>(),
             sp.GetRequiredService<ICompoundStructureSyncService>(),
-            sp.GetRequiredService<IFamilyRoutingRuleRepository>()));
+            sp.GetRequiredService<IFamilyRoutingRuleRepository>(),
+            sp.GetRequiredService<ISegmentRuleRepository>()));
         services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();

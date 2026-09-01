@@ -58,13 +58,25 @@ public static class RoutingGroupCatalog
     private const int PartEndCap = 53;
     private const int PartMechanicalCoupling = 60;
 
+    // Connector-profile bits (frozen ConnectorProfileType semantics — the
+    // same bitmask the connector_shape fact stores, owner stress test
+    // 2026-09-01): a multi-shape transition carries BOTH bits.
+    public const int ShapeRound = 1;
+    public const int ShapeRectangular = 2;
+    public const int ShapeOval = 4;
+
     private static readonly int[] ElbowParts = [PartElbow];
-    private static readonly int[] JunctionParts = [PartTee, PartTapPerpendicular, PartTapAdjustable, PartFlange];
+    private static readonly int[] JunctionParts = [PartTee, PartTapPerpendicular, PartTapAdjustable];
     private static readonly int[] TeeParts = [PartTee];
     private static readonly int[] CrossParts = [PartCross];
     private static readonly int[] TransitionParts = [PartTransition];
     private static readonly int[] UnionParts = [PartUnion];
-    private static readonly int[] MechanicalJointParts = [PartMechanicalCoupling];
+    // The Revit routing dialog's single «Фланец» row (API group
+    // MechanicalJoints: "joints that connect fitting to fitting, segment to
+    // fitting, or segment to segment") accepts BOTH pipe flanges and
+    // mechanical couplings — there is no other row for either (Autodesk
+    // help "Add Flanges Automatically" / MEP forums on part-type visibility).
+    private static readonly int[] MechanicalJointParts = [PartFlange, PartMechanicalCoupling];
     private static readonly int[] CapParts = [PartCap, PartEndCap];
     private static readonly int[] TakeoffParts =
         [PartTapPerpendicular, PartTapAdjustable, PartSpudPerpendicular, PartSpudAdjustable];
@@ -156,7 +168,12 @@ public static class RoutingGroupCatalog
         {
             PipeCurvesCategoryId =>
             [
-                ManagerGroup(RoutingManagerGroup.Segments, "FM_Routing_Group_SegmentsPipe", isReadOnly: true),
+                // FHV21 (owner decision 2026-09-01): the Segments row is a
+                // READ-ONLY view of the active version's per-version segment
+                // configuration (mini-project content — set, ranges, order).
+                // It shows each rule's REAL criterion and explains the
+                // fitting dropdown sizes; editing happens in the mini only.
+                SegmentRow(RoutingManagerGroup.Segments, "FM_Routing_Group_SegmentsPipe"),
                 ManagerGroup(RoutingManagerGroup.Elbows, "FM_Routing_Group_Elbows", PipeFittingCategoryId, ElbowParts),
                 ManagerGroup(RoutingManagerGroup.Junctions, "FM_Routing_Group_Junctions", PipeFittingCategoryId, JunctionParts),
                 ManagerGroup(RoutingManagerGroup.Crosses, "FM_Routing_Group_Crosses", PipeFittingCategoryId, CrossParts),
@@ -174,11 +191,11 @@ public static class RoutingGroupCatalog
                 ManagerGroup(RoutingManagerGroup.Elbows, "FM_Routing_Group_Elbows", DuctFittingCategoryId, ElbowParts, hasCriteria: false),
                 ManagerGroup(RoutingManagerGroup.Junctions, "FM_Routing_Group_Junctions", DuctFittingCategoryId, JunctionParts, hasCriteria: false),
                 ManagerGroup(RoutingManagerGroup.Crosses, "FM_Routing_Group_Crosses", DuctFittingCategoryId, CrossParts, hasCriteria: false),
-                ManagerGroup(RoutingManagerGroup.Transitions, "FM_Routing_Group_Transitions", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.Transitions, "FM_Routing_Group_Transitions", DuctFittingCategoryId, TransitionParts, hasCriteria: false, excludeMultiShapeParts: true),
                 ManagerGroup(RoutingManagerGroup.Unions, "FM_Routing_Group_Unions", DuctFittingCategoryId, UnionParts, hasCriteria: false),
-                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToRound, "FM_Routing_Group_TransitionRectToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
-                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToOval, "FM_Routing_Group_TransitionRectToOval", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
-                ManagerGroup(RoutingManagerGroup.TransitionsOvalToRound, "FM_Routing_Group_TransitionOvalToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false),
+                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToRound, "FM_Routing_Group_TransitionRectToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false, requiredShapeMask: ShapeRectangular | ShapeRound),
+                ManagerGroup(RoutingManagerGroup.TransitionsRectangularToOval, "FM_Routing_Group_TransitionRectToOval", DuctFittingCategoryId, TransitionParts, hasCriteria: false, requiredShapeMask: ShapeRectangular | ShapeOval),
+                ManagerGroup(RoutingManagerGroup.TransitionsOvalToRound, "FM_Routing_Group_TransitionOvalToRound", DuctFittingCategoryId, TransitionParts, hasCriteria: false, requiredShapeMask: ShapeOval | ShapeRound),
                 ManagerGroup(RoutingManagerGroup.Caps, "FM_Routing_Group_Caps", DuctFittingCategoryId, CapParts, hasCriteria: false),
             ],
             FlexPipeCurvesCategoryId =>
@@ -192,10 +209,10 @@ public static class RoutingGroupCatalog
             [
                 ParamGroup("RBS_CURVETYPE_DEFAULT_TEE_PARAM", "FM_Routing_Group_Junctions", DuctFittingCategoryId, TeeParts),
                 ParamGroup("RBS_CURVETYPE_DEFAULT_TAKEOFF_PARAM", "FM_Routing_Group_Takeoff", DuctFittingCategoryId, TakeoffParts),
-                ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_PARAM", "FM_Routing_Param_RectToRound", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_RECTOVAL_PARAM", "FM_Routing_Param_RectToOval", DuctFittingCategoryId, TransitionParts),
-                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_OVALROUND_PARAM", "FM_Routing_Param_OvalToRound", DuctFittingCategoryId, TransitionParts),
+                ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", DuctFittingCategoryId, TransitionParts, excludeMultiShapeParts: true),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_PARAM", "FM_Routing_Param_RectToRound", DuctFittingCategoryId, TransitionParts, requiredShapeMask: ShapeRectangular | ShapeRound),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_RECTOVAL_PARAM", "FM_Routing_Param_RectToOval", DuctFittingCategoryId, TransitionParts, requiredShapeMask: ShapeRectangular | ShapeOval),
+                ParamGroup("RBS_CURVETYPE_MULTISHAPE_TRANSITION_OVALROUND_PARAM", "FM_Routing_Param_OvalToRound", DuctFittingCategoryId, TransitionParts, requiredShapeMask: ShapeOval | ShapeRound),
                 ParamGroup("RBS_CURVETYPE_DEFAULT_UNION_PARAM", "FM_Routing_Group_Unions", DuctFittingCategoryId, UnionParts),
             ],
             ConduitCategoryId => BuildConduitGroups(withFittings),
@@ -211,8 +228,8 @@ public static class RoutingGroupCatalog
         };
         if (withFittings)
         {
-            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_CrossesElectrical", ConduitFittingCategoryId, CrossParts));
             groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TEE_PARAM", "FM_Routing_Group_Junctions", ConduitFittingCategoryId, TeeParts));
+            groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_CROSS_PARAM", "FM_Routing_Group_CrossesElectrical", ConduitFittingCategoryId, CrossParts));
         }
         groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_TRANSITION_PARAM", "FM_Routing_Group_TransitionSingle", ConduitFittingCategoryId, TransitionParts));
         groups.Add(ParamGroup("RBS_CURVETYPE_DEFAULT_UNION_PARAM", "FM_Routing_Group_Unions", ConduitFittingCategoryId, UnionParts));
@@ -243,7 +260,9 @@ public static class RoutingGroupCatalog
         int fittingCategoryId = 0,
         IReadOnlyList<int>? partTypes = null,
         bool isReadOnly = false,
-        bool hasCriteria = true)
+        bool hasCriteria = true,
+        int requiredShapeMask = 0,
+        bool excludeMultiShapeParts = false)
         => new(
             RoutingGroupKeys.ForManagerGroup((int)group),
             (int)group,
@@ -252,13 +271,17 @@ public static class RoutingGroupCatalog
             AllowMultipleRules: !isReadOnly,
             HasCriteria: hasCriteria && !isReadOnly,
             fittingCategoryId,
-            partTypes ?? []);
+            partTypes ?? [],
+            RequiredConnectorShapeMask: requiredShapeMask,
+            ExcludeMultiShapeParts: excludeMultiShapeParts);
 
     private static RoutingGroupDescriptor ParamGroup(
         string builtInParameterName,
         string labelKey,
         int fittingCategoryId,
-        IReadOnlyList<int> partTypes)
+        IReadOnlyList<int> partTypes,
+        int requiredShapeMask = 0,
+        bool excludeMultiShapeParts = false)
         => new(
             RoutingGroupKeys.ForParam(builtInParameterName),
             null,
@@ -267,7 +290,23 @@ public static class RoutingGroupCatalog
             AllowMultipleRules: false,
             HasCriteria: false,
             fittingCategoryId,
-            partTypes);
+            partTypes,
+            RequiredConnectorShapeMask: requiredShapeMask,
+            ExcludeMultiShapeParts: excludeMultiShapeParts);
+
+    /// <summary>The pipe Segments row: display-only view of the active
+    /// version's per-version segment configuration (FHV21).</summary>
+    private static RoutingGroupDescriptor SegmentRow(RoutingManagerGroup group, string labelKey)
+        => new(
+            RoutingGroupKeys.ForManagerGroup((int)group),
+            (int)group,
+            labelKey,
+            IsReadOnly: true,
+            AllowMultipleRules: false,
+            HasCriteria: false,
+            FittingCategoryId: 0,
+            PartTypeOrdinals: [],
+            IsSegmentRow: true);
 }
 
 /// <summary>
@@ -293,11 +332,25 @@ public enum RoutingManagerGroup
 /// <param name="GroupKey">Storage group key (<see cref="RoutingGroupKeys"/>).</param>
 /// <param name="ManagerGroupType">Manager ordinal or <c>null</c> for param groups.</param>
 /// <param name="LabelKey">Localization key of the group label.</param>
-/// <param name="IsReadOnly">Segments row — display only (ADR-072 §2.4).</param>
+/// <param name="IsReadOnly">Display-only row (no editable cells at all).</param>
 /// <param name="AllowMultipleRules">Manager fitting groups; param groups hold exactly one value.</param>
 /// <param name="HasCriteria">Manager fitting groups carry min/max size criteria.</param>
 /// <param name="FittingCategoryId">Revit category of the part candidates (0 = no picker).</param>
 /// <param name="PartTypeOrdinals"><c>part_type</c> filter of the candidates (empty = no filter).</param>
+    /// <param name="IsSegmentRow">The pipe Segments row (FHV21, owner
+    /// decision 2026-09-01): a READ-ONLY view of the active version's
+    /// per-version segment configuration — the mini-project owns the
+    /// segment set, ranges and order (versioned content). The marker lets
+    /// readers source this group's data from the per-version store instead
+    /// of the item-level routing channel.</param>
+    /// <param name="RequiredConnectorShapeMask">Multi-shape transition
+    /// groups (owner stress test 2026-09-01): a candidate must carry ALL
+    /// these <c>connector_shape</c> bits (a rect-to-round row never offers
+    /// a purely rectangular transition). 0 = no requirement.</param>
+    /// <param name="ExcludeMultiShapeParts">The plain Transitions rows
+    /// (owner stress test 2026-09-01): multi-shape transitions live in
+    /// their OWN rows, so the plain row offers single-shape parts only
+    /// (a round-to-rect transition never appears under «Переход»).</param>
 public sealed record RoutingGroupDescriptor(
     string GroupKey,
     int? ManagerGroupType,
@@ -306,4 +359,7 @@ public sealed record RoutingGroupDescriptor(
     bool AllowMultipleRules,
     bool HasCriteria,
     int FittingCategoryId,
-    IReadOnlyList<int> PartTypeOrdinals);
+    IReadOnlyList<int> PartTypeOrdinals,
+    bool IsSegmentRow = false,
+    int RequiredConnectorShapeMask = 0,
+    bool ExcludeMultiShapeParts = false);

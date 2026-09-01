@@ -35,6 +35,7 @@ internal static class RoutingRuleWriter
 
         using var _scope = SmartConLogger.BeginScope("BatchImport",
             ("Method", nameof(WriteAsync)),
+            ("Writer", nameof(RoutingRuleWriter)),
             ("Count", systemItems.Count));
 
         foreach (var item in systemItems)
@@ -49,6 +50,20 @@ internal static class RoutingRuleWriter
                         $"Item {parentId} already carries item-level routing links — " +
                         "reimport keeps the curated links (World B)");
                 }
+                else if (item.UnsubstitutedMiniRouting)
+                {
+                    // Audit M11: the snapshot routing is the slim mini state
+                    // (reimport from mini + no stored rows to substitute) —
+                    // seeding it would enshrine Segments-only/no-part rules
+                    // as catalog truth and the next sync would converge user
+                    // projects to the slim state. The item stays unseeded
+                    // (sync's legacy fallback treats it as "no opinion").
+                    SmartConLogger.Warn(
+                        $"Item {parentId}: routing NOT seeded — the reimport comes from a slim mini-project " +
+                        "and the catalog holds no stored routing rows to restore. " +
+                        "[Action: реимпортируйте эталон из живого проекта (трассировка засеется полной) " +
+                        "или настройте её во вкладке «Трассировка»]");
+                }
                 else
                 {
                     var rules = new List<FamilyRoutingRuleInfo>();
@@ -57,6 +72,13 @@ internal static class RoutingRuleWriter
                     {
                         RoutingRuleRecordMapper.ToRecords(type, rules, settings);
                     }
+
+                    // FHV21: segment rules are PER-VERSION content — they
+                    // never enter the item-level link tables (the parallel
+                    // SegmentRuleWriter persists them per version).
+                    rules = rules
+                        .Where(r => !SegmentRuleComposition.IsSegmentsGroup(r.GroupKey))
+                        .ToList();
 
                     await repository
                         .ReplaceForItemAsync(parentId, rules, settings, ct)
@@ -70,7 +92,7 @@ internal static class RoutingRuleWriter
                     .MarkCurrentVersionRoutingBackfilledAsync(parentId, ct)
                     .ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 SmartConLogger.Warn(
                     $"Routing rule write failed for parent {parentId}: {ex.GetType().Name}: {ex.Message}. " +

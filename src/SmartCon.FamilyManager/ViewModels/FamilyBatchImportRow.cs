@@ -224,6 +224,11 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// </summary>
     public SystemFamilySnapshot? SystemSnapshot { get; }
 
+    /// <summary>ADR-072 World B (audit M11): the snapshot routing is the
+    /// UNsubstituted slim mini state — the import must not seed it as
+    /// item-level catalog truth.</summary>
+    public bool UnsubstitutedMiniRouting { get; }
+
     /// <summary>
     /// Display-ready type names for the Types-column tooltip, resolved from
     /// the same Prepare payloads that feed <see cref="TypeCount"/>
@@ -837,6 +842,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         SourceTypes = item.SourceTypes;
         LoadableSnapshot = item.LoadableSnapshot;
         SystemSnapshot = item.SystemSnapshot;
+        UnsubstitutedMiniRouting = item.UnsubstitutedMiniRouting;
         HealthReport = item.HealthReport;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;

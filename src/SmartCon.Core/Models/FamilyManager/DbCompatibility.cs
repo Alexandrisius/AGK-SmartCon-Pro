@@ -45,7 +45,12 @@ public static class DbCompatibility
     /// deterministic reference type) and FHV16 (round 4, negative-zero
     /// canonicalization) — same: only FHV16 ships. FHV17 (round 5,
     /// canonical-order determinism: emitted-string sort keys) and FHV18
-    /// (#251, per-face color histogram) — same: only FHV18 ships.
+    /// (#251, per-face color histogram) — same: only FHV18 ships. FHV19
+    /// (#254, param-based routing leaves VALUES) and FHV20 (World B, the
+    /// ROUTING section leaves the system hash) — same: both shipped in the
+    /// same feature branch before the next tag, so only FHV20 ships and the
+    /// floor stays beta.10 (any released plugin writing v20-format rows is
+    /// ≥ the tag that carries FHV12..20).
     /// </summary>
     public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

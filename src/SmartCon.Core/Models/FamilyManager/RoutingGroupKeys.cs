@@ -62,6 +62,10 @@ public static class RoutingGroupKeys
     /// <summary>
     /// The <c>RoutingPreferenceRuleGroupType</c> ordinal of a manager-based
     /// storage key (<c>null</c> for parameter-based keys and unknown names).
+    /// The forward-compatible <c>"Group{n}"</c> fallback written by
+    /// <see cref="ForManagerGroup"/> for ordinals unknown to this build (a
+    /// future Revit group) round-trips the raw ordinal instead of degrading
+    /// to Segments(0) (audit M3).
     /// </summary>
     public static int? ManagerGroupTypeOf(string? groupKey)
     {
@@ -71,6 +75,17 @@ public static class RoutingGroupKeys
         {
             if (string.Equals(pair.Value, groupKey, StringComparison.Ordinal))
                 return pair.Key;
+        }
+        if (groupKey.StartsWith("Group", StringComparison.Ordinal)
+#pragma warning disable CA1846 // Substring over AsSpan — net48 lacks the span-based int.TryParse overload
+            && int.TryParse(
+                groupKey.Substring("Group".Length),
+#pragma warning restore CA1846
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var ordinal))
+        {
+            return ordinal;
         }
         return null;
     }

@@ -17,6 +17,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
     private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
     private readonly ISegmentSizeRepository? _segmentSizeRepository;
+    private readonly ISegmentRuleRepository? _segmentRuleRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
     private readonly int _revitVersion;
 
@@ -33,7 +34,8 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         IFamilyDependencyRepository familyDependencyRepository,
         int revitVersion,
         IFamilyRoutingRuleRepository? routingRuleRepository = null,
-        ISegmentSizeRepository? segmentSizeRepository = null)
+        ISegmentSizeRepository? segmentSizeRepository = null,
+        ISegmentRuleRepository? segmentRuleRepository = null)
     {
         _staging = staging;
         _systemFamilyImportOrchestrator = systemFamilyImportOrchestrator;
@@ -45,6 +47,7 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         _familyDependencyRepository = familyDependencyRepository;
         _routingRuleRepository = routingRuleRepository;
         _segmentSizeRepository = segmentSizeRepository;
+        _segmentRuleRepository = segmentRuleRepository;
         _revitVersion = revitVersion;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
@@ -197,6 +200,13 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                 {
                     await SegmentSizeWriter.WriteAsync(
                             items, importedParentItemIds, _segmentSizeRepository, ct)
+                        .ConfigureAwait(false);
+                }
+                // FHV21: per-version segment rules ride the same batch pass.
+                if (_segmentRuleRepository is not null)
+                {
+                    await SegmentRuleWriter.WriteAsync(
+                            items, importedParentItemIds, _segmentRuleRepository, ct)
                         .ConfigureAwait(false);
                 }
                 await DependencyLinkWriter.WriteAsync(

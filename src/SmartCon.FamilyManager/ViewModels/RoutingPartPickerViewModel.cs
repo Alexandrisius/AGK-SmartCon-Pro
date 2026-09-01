@@ -21,20 +21,48 @@ public sealed partial class RoutingPartPickerViewModel : ObservableObject, IObse
     private readonly int _fittingCategoryId;
     private readonly IReadOnlyCollection<int> _partTypeOrdinals;
     private readonly string? _initialPartName;
+    private readonly int _preferredJunctionType;
+    private readonly int _connectorShapeBits;
+    private readonly int _requiredShapeMask;
+    private readonly bool _excludeMultiShape;
 
     private List<RoutingPartCandidate> _allCandidates = [];
 
+    /// <param name="preferredJunctionType">Junctions-group filter (owner
+    /// stress test 2026-09-01): 0 = tee, 1 = tap — candidates of the
+    /// NON-preferred junction part type are hidden, exactly like the Revit
+    /// routing dialog never applies them. -1 = no junction filter (all
+    /// non-junctions groups; param groups already split tee/tap by their
+    /// part_type ordinals).</param>
+    /// <param name="connectorShapeBits">Host connector-profile bitmask
+    /// (Round=1, Rectangular=2, Oval=4; 0 = no filter, owner stress test
+    /// 2026-09-01 баг 8): a round flex duct never offers rectangular-only
+    /// fittings — Revit silently rejects them at sync.</param>
+    /// <param name="requiredShapeMask">Multi-shape transition rows (owner
+    /// stress test 2026-09-01): the candidate must carry ALL these bits —
+    /// a rect-to-round row never offers a purely rectangular transition.</param>
+    /// <param name="excludeMultiShape">Plain Transitions rows (owner stress
+    /// test 2026-09-01): single-shape parts only — multi-shape transitions
+    /// live in their own dedicated rows.</param>
     public RoutingPartPickerViewModel(
         IRoutingEditorService routingEditorService,
         int fittingCategoryId,
         IReadOnlyCollection<int> partTypeOrdinals,
         string? initialPartName,
-        string? contextLabel = null)
+        string? contextLabel = null,
+        int preferredJunctionType = -1,
+        int connectorShapeBits = 0,
+        int requiredShapeMask = 0,
+        bool excludeMultiShape = false)
     {
         _routingEditorService = routingEditorService;
         _fittingCategoryId = fittingCategoryId;
         _partTypeOrdinals = partTypeOrdinals;
         _initialPartName = initialPartName;
+        _preferredJunctionType = preferredJunctionType;
+        _connectorShapeBits = connectorShapeBits;
+        _requiredShapeMask = requiredShapeMask;
+        _excludeMultiShape = excludeMultiShape;
 
         // The part class is the dialog context (owner decision 2026-08-30):
         // it belongs in the window title, not in every family row.
@@ -75,8 +103,18 @@ public sealed partial class RoutingPartPickerViewModel : ObservableObject, IObse
         try
         {
             _allCandidates = (await _routingEditorService
-                .GetPartCandidatesAsync(_fittingCategoryId, _partTypeOrdinals, ct)
+                .GetPartCandidatesAsync(_fittingCategoryId, _partTypeOrdinals, _connectorShapeBits, _requiredShapeMask, _excludeMultiShape, ct)
                 .ConfigureAwait(true)).ToList();
+            // Junctions filter: the group holds both tee and tap part types,
+            // but only the preferred junction kind is applicable — offering
+            // the other kind guarantees a sync-time rejection by Revit.
+            if (_preferredJunctionType >= 0)
+            {
+                _allCandidates = _allCandidates
+                    .Where(c => !RoutingGroupCatalog.IsInactiveJunctionPart(
+                        c.PartTypeOrdinal, _preferredJunctionType))
+                    .ToList();
+            }
             HasNoCandidates = _allCandidates.Count == 0;
             ApplyFilter();
 

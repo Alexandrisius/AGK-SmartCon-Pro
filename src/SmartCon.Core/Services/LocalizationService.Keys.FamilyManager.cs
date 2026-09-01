@@ -110,6 +110,7 @@ public static partial class LocalizationService
         ru["FM_UpdateNoTypeChanges"] = "; значения типов не изменились"; en["FM_UpdateNoTypeChanges"] = "; type values unchanged";
         // #249 (Phase 2): pre-update per-type replacement confirmation.
         ru["FM_UpdateReplaceTypesTitle"] = "Обновление семейства"; en["FM_UpdateReplaceTypesTitle"] = "Family update";
+        ru["FM_UpdateRoutingDriftConfirm"] = "Трассировка типов в проекте отличается от каталога: {0}.\n\nОбновление заменит настройки трассировки проекта настройками из каталога.\n\nПродолжить?"; en["FM_UpdateRoutingDriftConfirm"] = "The project routing differs from the catalog: {0}.\n\nThe update will replace the project routing settings with the catalog settings.\n\nContinue?";
         ru["FM_UpdateReplaceTypesConfirm"] = "В проекте изменены типы: {0}.\n\nОбновление заменит ваши локальные правки этих типов содержимым каталога (остальные типы: {1} — совпадают с каталогом).\n\nПродолжить?"; en["FM_UpdateReplaceTypesConfirm"] = "Types modified in the project: {0}.\n\nThe update will replace your local edits of these types with the catalog content (the other types: {1} — match the catalog).\n\nContinue?";
         // #249 (Phase 4): "what changed" diff window in the batch dialog.
         ru["FM_Diff_BadgeTooltip"] = "Что изменилось относительно активной версии"; en["FM_Diff_BadgeTooltip"] = "What changed vs the active version";
@@ -163,9 +164,11 @@ public static partial class LocalizationService
         ru["FM_StaleTooltipRevitVer"] = "Загружено в другой версии Revit"; en["FM_StaleTooltipRevitVer"] = "Loaded in a different Revit version";
         ru["FM_StaleTooltipNotInCatalog"] = "Семейство не найдено в каталоге FM"; en["FM_StaleTooltipNotInCatalog"] = "Family not found in FM catalog";
         ru["FM_StaleTooltipContentDrift"] = "Содержимое изменено локально: маркер актуален, но контент отличается от каталога. «Обновить» восстановит каталог (локальные правки будут потеряны)"; en["FM_StaleTooltipContentDrift"] = "Content edited locally: the marker is current, but the content differs from the catalog. Update restores the catalog content (local edits are lost)";
-        ru["FM_StaleTooltipRoutingDrift"] = "Настройки трассировки в проекте отличаются от каталога. «Обновить» применит каталожную трассировку к типам проекта"; en["FM_StaleTooltipRoutingDrift"] = "The project's routing settings differ from the catalog. Update applies the catalog routing to the project types";
+        ru["FM_StaleTooltipRoutingDrift"] = "Настройки трассировки в проекте отличаются от каталога. «Обновить» применит к типам проекта трассировку, заданную в каталоге"; en["FM_StaleTooltipRoutingDrift"] = "The project's routing settings differ from the catalog. Update applies the catalog routing to the project types";
         ru["FM_RoutingDriftTitle"] = "Настройки трассировки"; en["FM_RoutingDriftTitle"] = "Routing settings";
-        ru["FM_RoutingDriftBody"] = "Настройки трассировки типа «{0}» в проекте отличаются от каталога. Применить каталожные настройки? «Нет» отменит размещение."; en["FM_RoutingDriftBody"] = "The project routing settings of type \"{0}\" differ from the catalog. Apply the catalog settings? \"No\" cancels the placement.";
+        ru["FM_RoutingDriftBody"] = "Настройки трассировки типа «{0}» в проекте отличаются от каталога. Применить настройки из каталога? «Нет» отменит операцию."; en["FM_RoutingDriftBody"] = "The project routing settings of type \"{0}\" differ from the catalog. Apply the catalog settings? \"No\" cancels the operation.";
+        ru["FM_RoutingOverwriteCancelled"] = "Загрузка отменена — трассировка проекта не будет изменена"; en["FM_RoutingOverwriteCancelled"] = "Load cancelled — the project routing will not be changed";
+        ru["FM_ParametersPorted"] = "; добавлены параметры: {0}"; en["FM_ParametersPorted"] = "; added parameters: {0}";
         ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
         ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
@@ -250,8 +253,7 @@ public static partial class LocalizationService
         ru["FM_Routing_Junction_Tee"] = "Тройник"; en["FM_Routing_Junction_Tee"] = "Tee";
         ru["FM_Routing_Junction_Tap"] = "Врезка"; en["FM_Routing_Junction_Tap"] = "Tap";
         ru["FM_Routing_Group_SegmentsPipe"] = "Сегмент трубы"; en["FM_Routing_Group_SegmentsPipe"] = "Pipe segment";
-        ru["FM_Routing_Group_SegmentsDuct"] = "Сегмент воздуховода"; en["FM_Routing_Group_SegmentsDuct"] = "Duct segment";
-        ru["FM_Routing_Group_Elbows"] = "Отвод"; en["FM_Routing_Group_Elbows"] = "Elbows";
+        ru["FM_Routing_Group_Elbows"] = "Отвод"; en["FM_Routing_Group_Elbows"] = "Elbow";
         ru["FM_Routing_Group_Junctions"] = "Тройник"; en["FM_Routing_Group_Junctions"] = "Tee";
         // The manager junctions group is labeled dynamically by the preferred
         // junction type (Revit's abstract «Соединение» block, owner review
@@ -259,12 +261,12 @@ public static partial class LocalizationService
         ru["FM_Routing_Group_JunctionsTees"] = "Тройники"; en["FM_Routing_Group_JunctionsTees"] = "Tees";
         ru["FM_Routing_Group_JunctionsTaps"] = "Врезки"; en["FM_Routing_Group_JunctionsTaps"] = "Taps";
         ru["FM_Routing_InactiveJunction"] = "Деталь не используется: предпочтён другой тип соединения"; en["FM_Routing_InactiveJunction"] = "Part is not used: another junction type is preferred";
-        ru["FM_Routing_Group_Crosses"] = "Крестовина"; en["FM_Routing_Group_Crosses"] = "Crosses";
-        ru["FM_Routing_Group_Transitions"] = "Переход"; en["FM_Routing_Group_Transitions"] = "Transitions";
+        ru["FM_Routing_Group_Crosses"] = "Крестовина"; en["FM_Routing_Group_Crosses"] = "Cross";
+        ru["FM_Routing_Group_Transitions"] = "Переход"; en["FM_Routing_Group_Transitions"] = "Transition";
         ru["FM_Routing_Group_TransitionSingle"] = "Переход"; en["FM_Routing_Group_TransitionSingle"] = "Transition";
-        ru["FM_Routing_Group_Unions"] = "Соединение"; en["FM_Routing_Group_Unions"] = "Unions";
-        ru["FM_Routing_Group_Flanges"] = "Фланец"; en["FM_Routing_Group_Flanges"] = "Flanges";
-        ru["FM_Routing_Group_Caps"] = "Заглушка"; en["FM_Routing_Group_Caps"] = "Caps";
+        ru["FM_Routing_Group_Unions"] = "Соединение"; en["FM_Routing_Group_Unions"] = "Union";
+        ru["FM_Routing_Group_Flanges"] = "Фланец"; en["FM_Routing_Group_Flanges"] = "Flange";
+        ru["FM_Routing_Group_Caps"] = "Заглушка"; en["FM_Routing_Group_Caps"] = "Cap";
         // Revit duct routing dialog labels (owner screenshots 2026-08-30).
         ru["FM_Routing_Group_TransitionRectToRound"] = "Переходник переменной формы с прямоугольного на круглое сечение"; en["FM_Routing_Group_TransitionRectToRound"] = "Transitions Rectangular to Round";
         ru["FM_Routing_Group_TransitionRectToOval"] = "Переходник переменной формы с прямоугольного на овальное сечение"; en["FM_Routing_Group_TransitionRectToOval"] = "Transitions Rectangular to Oval";
@@ -283,12 +285,11 @@ public static partial class LocalizationService
         ru["FM_Routing_Col_Part"] = "Деталь"; en["FM_Routing_Col_Part"] = "Part";
         ru["FM_Routing_Col_MinSize"] = "Мин. размер"; en["FM_Routing_Col_MinSize"] = "Min size";
         ru["FM_Routing_Col_MaxSize"] = "Макс. размер"; en["FM_Routing_Col_MaxSize"] = "Max size";
-        ru["FM_Routing_Col_Description"] = "Описание"; en["FM_Routing_Col_Description"] = "Description";
         ru["FM_Routing_AllSizes"] = "Все"; en["FM_Routing_AllSizes"] = "All";
         ru["FM_Routing_NoPart"] = "Нет"; en["FM_Routing_NoPart"] = "None";
         ru["FM_Routing_AddRule"] = "Добавить правило"; en["FM_Routing_AddRule"] = "Add rule";
         ru["FM_Routing_PickPart"] = "Выбрать…"; en["FM_Routing_PickPart"] = "Browse…";
-        ru["FM_Routing_ClearPart"] = "Нет"; en["FM_Routing_ClearPart"] = "None";
+        ru["FM_Routing_ClearPart"] = "Сбросить деталь (установить «Нет»)"; en["FM_Routing_ClearPart"] = "Clear the part (set to None)";
         ru["FM_Routing_MoveUp_Tip"] = "Переместить правило вверх"; en["FM_Routing_MoveUp_Tip"] = "Move rule up";
         ru["FM_Routing_MoveDown_Tip"] = "Переместить правило вниз"; en["FM_Routing_MoveDown_Tip"] = "Move rule down";
         ru["FM_Routing_RemoveRule_Tip"] = "Удалить правило"; en["FM_Routing_RemoveRule_Tip"] = "Remove rule";
@@ -325,6 +326,7 @@ public static partial class LocalizationService
         ru["FM_Props_Version"] = "Версия"; en["FM_Props_Version"] = "Version";
         ru["FM_Props_RevitCategory"] = "Категория Revit"; en["FM_Props_RevitCategory"] = "Revit Category";
         ru["FM_Fact_PartType"] = "Тип детали"; en["FM_Fact_PartType"] = "Part Type";
+        ru["FM_Fact_ConnectorShape"] = "Форма коннекторов"; en["FM_Fact_ConnectorShape"] = "Connector shapes";
         ru["FM_Props_Created"] = "Создано"; en["FM_Props_Created"] = "Created";
         ru["FM_Props_Updated"] = "Обновлено"; en["FM_Props_Updated"] = "Updated";
         ru["FM_Props_NoAvatar"] = "Нет изображения"; en["FM_Props_NoAvatar"] = "No image";

@@ -1297,14 +1297,42 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForSystem_Fhv10GoldenCanon_IsStable()
+    public void ComputeForSystem_SegmentRuleRange_ChangesHash_Fhv21()
+    {
+        // FHV21 (owner decision 2026-09-01): the segment rule's size-range
+        // criterion is mini-owned versioned content — editing Мин/Макс in
+        // the mini must change the hash (no more «Дубликат» on reimport).
+        static SystemTypeSnapshot PipeType(double? min, double? max) => new(
+            "DN50",
+            [new SystemParameterValue("Diameter", "Double", true, "50", 50.0, null)],
+            Segments:
+            [
+                new SegmentSnapshot("Steel", "Сталь", "SCH40", 0.00015,
+                    [new SegmentSizeSnapshot(0.05, 0.045, 0.055, true, true)],
+                    RuleMinSizeFeet: min, RuleMaxSizeFeet: max),
+            ]);
+
+        var unrestricted = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(null, null)]));
+        var ranged = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(0.05, 0.15)]));
+        var rangedWider = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(0.05, 0.20)]));
+
+        Assert.NotNull(unrestricted);
+        Assert.NotNull(ranged);
+        Assert.NotNull(rangedWider);
+        Assert.NotEqual(unrestricted!.HexString, ranged!.HexString);
+        Assert.NotEqual(ranged.HexString, rangedWider!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_Fhv11GoldenCanon_IsStable()
     {
         // Golden: a FIXED snapshot must always produce this exact hash — any
-        // drift in the FHV10 canon (escaping, culture, ordering, section
-        // layout, WIRE fields, duct FAMKEY) fails loudly here instead of
-        // silently re-flagging every field catalog. FHV10 (ADR-072 World B):
-        // the ROUTING section left the canon — routing is a catalog-family
-        // link, not file content. When the canon changes ON PURPOSE, bump
+        // drift in the FHV11 canon (escaping, culture, ordering, section
+        // layout, WIRE fields, duct FAMKEY, segment rule ranges) fails
+        // loudly here instead of silently re-flagging every field catalog.
+        // FHV11 (owner decision 2026-09-01): the SEGMENTS section carries
+        // the rule's size-range criterion — mini-owned segment configuration
+        // is versioned content. When the canon changes ON PURPOSE, bump
         // FamilyContentHashFormat.CurrentVersion and update the golden in
         // the same commit.
         var snapshot = CreateSystemSnapshot(types:
@@ -1317,7 +1345,7 @@ public class FamilyContentHasherTests
 
         Assert.NotNull(hash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
-        Assert.Equal("0C19209B8CB6FF3C2A34B1C34FF8CD39A760CAEB86DEBB3AA4CF40FD08336775", hash.HexString);
+        Assert.Equal("729B8398BEDECEE66A7EDEB9C4E7D521DD7531BF28929F50A319D417C73EB7DE", hash.HexString);
     }
 
     [Fact]

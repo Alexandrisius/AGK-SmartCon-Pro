@@ -324,11 +324,17 @@ MEPCurve-итема для редактирования и сохранение 
 пересобираются из новых правил как в DependencyLinkWriter). Версия НЕ
 создаётся, хэш/секции НЕ пересчитываются (трассировка — связь семейств
 каталога, не содержимое файла). Load: item-таблицы, fallback — V34 текущей
-версии (legacy до backfill). Убранные детали, залоченные архивными версиями
-(ADR-067), возвращаются для UX-подсказки. `GetPartCandidatesAsync` —
-источник пикера «семейство+тип»: loadable-итемы категории фитинга с фактом
-part_type из набора группы (строго как фильтр Revit). Без Revit — чистые
-данные каталога.
+версии (legacy до backfill); FHV21 (ADR-073): сегментная группа компонуется
+из per-version таблицы активной версии через `SegmentRuleComposition`
+(read-only view, save её не пишет — legacy Segments-строки сохраняются
+verbatim). Убранные детали, залоченные архивными версиями (ADR-067),
+возвращаются для UX-подсказки. `GetPartCandidatesAsync` — источник пикера
+«семейство+тип»: loadable-итемы категории фитинга с фактом part_type из
+набора группы (строго как фильтр Revit) + фильтры по `connector_shape`
+(ADR-073): host-биты (either-end), `requiredShapeMask` (строки переходов
+переменной формы требуют ВСЕ биты), `excludeMultiShape` (обычная строка
+«Переходы» — только одноформенные); кандидаты без факта проходят (legacy-
+деградация). Без Revit — чистые данные каталога.
 
 **Файл:** `IRoutingEditorService.cs`
 **Реализация:** `SmartCon.FamilyManager/Services/Routing/CatalogRoutingEditorService.cs`
@@ -340,7 +346,36 @@ public interface IRoutingEditorService
     Task<RoutingSaveResult> SaveAsync(
         string catalogItemId, RoutingEditorSave save, CancellationToken ct = default);
     Task<IReadOnlyList<RoutingPartCandidate>> GetPartCandidatesAsync(
-        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, CancellationToken ct = default);
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals,
+        int connectorShapeBits = 0, int requiredShapeMask = 0,
+        bool excludeMultiShape = false, CancellationToken ct = default);
+}
+```
+
+---
+
+## ISegmentRuleRepository
+
+Per-version сегментные правила типов труб (V38, FHV21, ADR-073): таблица
+`family_segment_rules` — набор сегментов, диапазоны Мин/Макс (NULL =
+unrestricted) и порядок правил как версионный контент мини-проекта
+(каскадное удаление с версией; откат читает СВОЮ версию).
+`ReplaceForCurrentVersionAsync` — import-путь (`SegmentRuleWriter`);
+`ReplaceForVersionAsync` — backfill-задачи (`segment-rules-v1`,
+routing-backfill) для всех вариантов, включая архивные. Читатели идут
+через `SegmentRuleComposition` (legacy-fallback, когда у версии ещё нет
+строк).
+
+**Файл:** `ISegmentRuleRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalSegmentRuleRepository.cs`
+
+```csharp
+public interface ISegmentRuleRepository
+{
+    Task<IReadOnlyList<SegmentRuleRecord>> ReadForVersionAsync(string catalogVersionId, CancellationToken ct = default);
+    Task<IReadOnlyList<SegmentRuleRecord>> ReadForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default);
+    Task ReplaceForVersionAsync(string catalogVersionId, IReadOnlyList<SegmentRuleRecord> rules, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId, IReadOnlyList<SegmentRuleRecord> rules, CancellationToken ct = default);
 }
 ```
 

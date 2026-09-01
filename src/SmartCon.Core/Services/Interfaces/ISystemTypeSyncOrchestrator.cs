@@ -43,10 +43,18 @@ public interface ISystemTypeSyncOrchestrator
     /// type) and receives the ES version marker on success. A failing type
     /// does not abort the batch — its result carries the error.
     /// Types are addressed by full identity (family, name) — Issue #183.
+    /// <paramref name="confirmRoutingOverwrite"/> (ADR-072 World B, audit
+    /// M8): when <c>true</c>, types whose LIVE routing differs from the
+    /// catalog links are probed first and the user confirms the overwrite
+    /// once per batch (the same dialog placement shows); a decline returns
+    /// every type as <see cref="SystemTypeSyncStatus.Cancelled"/> with
+    /// nothing synced. The stale updater ("Обновить") keeps
+    /// <c>false</c> — «catalog is always right» is its contract.
     /// </summary>
     SystemFamilySyncResult SyncTypes(
         Document activeDoc,
         string catalogItemId,
         IReadOnlyList<SystemTypeRef> types,
-        int targetRevitVersion);
+        int targetRevitVersion,
+        bool confirmRoutingOverwrite = false);
 }

@@ -1212,6 +1212,7 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
 
         IReadOnlyList<FamilyDependencyDescriptor>? routingDependencies = null;
         string? miniCatalogItemId = null;
+        var unsubstitutedMiniRouting = false;
         var snapshot = await _awaitableEvent
             .RaiseAsync(app =>
             {
@@ -1234,15 +1235,22 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             }, ct)
             .ConfigureAwait(false);
 
-        // ADR-072 (plan item 4): reimport from a slim mini-project — the
-        // mini's routing holds no fitting rules by construction, so the
-        // version's ROUTING identity comes from the catalog DB (V34).
-        // Without this the reimport would produce an eternal "Существующее"
-        // (stored v1 routing = full rules vs mini routing = segments-only).
+        // ADR-072 (plan item 4, World B): reimport from a slim mini-project.
+        // FHV20 dropped ROUTING from the hash, so the substitution no longer
+        // affects dedup/sections — its remaining purpose is the SEED source
+        // of the item-level routing tables (RoutingRuleWriter reads the
+        // final snapshot): legacy items whose full routing lives in the
+        // frozen V34 rows get it restored here; when nothing is stored the
+        // slim mini state must NOT be seeded (flagged below, audit M11).
         if (miniCatalogItemId is not null && _routingRuleRepository is not null)
         {
-            snapshot = await SubstituteRoutingFromDbAsync(snapshot, miniCatalogItemId, ct)
+            var (substituted, substitutedSnapshot) = await SubstituteRoutingFromDbAsync(snapshot, miniCatalogItemId, ct)
                 .ConfigureAwait(false);
+            snapshot = substitutedSnapshot;
+            // Audit M11: a mini reimport whose routing could NOT be
+            // substituted (no stored rows anywhere) carries the slim mini
+            // state — flag it so the import never seeds it as catalog truth.
+            unsubstitutedMiniRouting = !substituted;
         }
 
         var hash = _contentHasher.ComputeForSystem(snapshot);
@@ -1299,19 +1307,22 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
             RoutingDependencies: routingDependencies,
             PerTypeHashes: perTypeHashes,
-            Sections: systemSections);
+            Sections: systemSections,
+            UnsubstitutedMiniRouting: unsubstitutedMiniRouting);
     }
 
     /// <summary>
     /// ADR-072 World B: reimport from a slim mini-project — replaces each
     /// type's extracted (slim) routing with the catalog's item-level routing
     /// links (V37), falling back to the current version's V34 rows for pre-
-    /// World-B versions. Fallbacks mirror the sync side: no stored rows at
-    /// all (the legacy mini still carries full routing), routing-less type
-    /// (no settings row — keep the mini routing), DB failure (keep the mini
-    /// routing + Warn).
+    /// World-B versions. Post-FHV20 this no longer drives dedup (ROUTING
+    /// left the hash) — it feeds the item-table SEED and the
+    /// <c>UnsubstitutedMiniRouting</c> guard: <c>Substituted=false</c> when
+    /// no stored rows exist, no type matched (routing-less type / data
+    /// drift), or the DB read failed — the slim mini routing then stays in
+    /// the snapshot and must never become catalog truth (audit M11).
     /// </summary>
-    private async Task<SystemFamilySnapshot> SubstituteRoutingFromDbAsync(
+    private async Task<(bool Substituted, SystemFamilySnapshot Snapshot)> SubstituteRoutingFromDbAsync(
         SystemFamilySnapshot snapshot, string catalogItemId, CancellationToken ct)
     {
         try
@@ -1328,8 +1339,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 SmartConLogger.Debug(
                     "Reimport from mini-project: no stored routing rows (pre-V34 version) — " +
                     "the mini-project routing is used as-is");
-                return snapshot;
+                return (false, snapshot);
             }
+
             var substituted = 0;
             var types = snapshot.Types.Select(t =>
             {
@@ -1338,19 +1350,32 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 if (dbRouting is null)
                     return t;
                 substituted++;
-                return t with { Routing = dbRouting };
+                // FHV21 (owner decision 2026-09-01): SEGMENT rules stay with
+                // the MINI — they are versioned mini content entering the
+                // SEGMENTS hash section and the per-version store. Only the
+                // FITTING groups substitute from the catalog (slim minis
+                // lost them by design). The DB's stored Segments rows are
+                // legacy and must not shadow the mini's own.
+                var miniSegmentRules = t.Routing?.Rules
+                    .Where(r => r.GroupType == (int)RoutingManagerGroup.Segments)
+                    .ToList() ?? [];
+                var mergedRules = dbRouting.Rules
+                    .Where(r => r.GroupType != (int)RoutingManagerGroup.Segments)
+                    .Concat(miniSegmentRules)
+                    .ToList();
+                return t with { Routing = dbRouting with { Rules = mergedRules } };
             }).ToList();
 
             SmartConLogger.Info(
                 $"Reimport from mini-project: routing substituted from the catalog DB for {substituted} type(s)");
-            return snapshot with { Types = types };
+            return (substituted > 0, snapshot with { Types = types });
         }
         catch (Exception ex)
         {
             SmartConLogger.Warn(
                 $"Routing substitution from the catalog DB failed: {ex.Message} " +
                 "[Action: трассировка реимпорта взята из мини-проекта; проверьте базу каталога и повторите импорт]");
-            return snapshot;
+            return (false, snapshot);
         }
     }
 

@@ -30,7 +30,8 @@ internal static class DependencyLinkWriter
         CancellationToken ct)
     {
         using var _scope = SmartConLogger.BeginScope("BatchImport",
-            ("Method", nameof(WriteAsync)));
+            ("Method", nameof(WriteAsync)),
+            ("Writer", nameof(DependencyLinkWriter)));
 
         var linksByParent = new Dictionary<string, List<FamilyDependencyInfo>>(StringComparer.Ordinal);
         var children = items.Where(i => i.DependencyLinks is { Count: > 0 }).ToList();
@@ -89,7 +90,7 @@ internal static class DependencyLinkWriter
                 SmartConLogger.Info(
                     $"Dependency links written: {written} (parent CatalogItemId={parentId})");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 SmartConLogger.Warn(
                     $"Dependency link write failed for parent {parentId}: {ex.GetType().Name}: {ex.Message}. " +
@@ -143,7 +144,7 @@ internal static class DependencyLinkWriter
                     rules = (await routingRuleRepository.ReadForCurrentVersionAsync(parentId, ct).ConfigureAwait(false)).Rules;
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 SmartConLogger.Debug($"Routing-rule link augmentation read failed for {parentId}: {ex.Message}");
                 continue;

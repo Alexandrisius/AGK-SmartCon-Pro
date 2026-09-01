@@ -153,7 +153,8 @@ public sealed partial class FamilyManagerMainViewModel
                     DependencyLinks: p.DependencyLinks,
                     IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
                     PerTypeHashes: p.PerTypeHashes,
-                    Sections: p.Sections)
+                    Sections: p.Sections,
+                    UnsubstitutedMiniRouting: p.UnsubstitutedMiniRouting)
                 {
                     // ADR-066: dependency rows exist to guarantee PRESENCE in
                     // the catalog. Duplicates default to Skip (dedup-link).
@@ -184,7 +185,8 @@ public sealed partial class FamilyManagerMainViewModel
                 _sharedNestedRepository,
                 CurrentRevitVersion,
                 _routingRuleRepository,
-                _segmentSizeRepository);
+                _segmentSizeRepository,
+                _segmentRuleRepository);
             using var vm = new FamilyBatchImportViewModel(
                 items,
                 _dialogService,
@@ -610,7 +612,8 @@ public sealed partial class FamilyManagerMainViewModel
                 DependencyLinks: p.DependencyLinks,
                 IsMarkerResolvedVersion: p.IsMarkerResolvedVersion,
                 PerTypeHashes: p.PerTypeHashes,
-                Sections: p.Sections)
+                Sections: p.Sections,
+                UnsubstitutedMiniRouting: p.UnsubstitutedMiniRouting)
             {
                 // ADR-066: dependency rows (routing fittings, shared nested)
                 // exist to guarantee PRESENCE in the catalog. Duplicates

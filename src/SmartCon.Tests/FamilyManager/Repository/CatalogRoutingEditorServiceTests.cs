@@ -105,8 +105,13 @@ public sealed class CatalogRoutingEditorServiceTests
         return (itemId, versionId);
     }
 
-    private static async Task<string> SeedLoadableFittingAsync(
+    private static Task<string> SeedLoadableFittingAsync(
         TempCatalogFixture fixture, string name, int revitCategoryId, int? partType, params string[] typeNames)
+        => SeedLoadableFittingWithShapeAsync(fixture, name, revitCategoryId, partType, null, typeNames);
+
+    private static async Task<string> SeedLoadableFittingWithShapeAsync(
+        TempCatalogFixture fixture, string name, int revitCategoryId, int? partType, int? connectorShape,
+        params string[] typeNames)
     {
         var itemId = Guid.NewGuid().ToString();
         var versionId = Guid.NewGuid().ToString();
@@ -138,6 +143,15 @@ public sealed class CatalogRoutingEditorServiceTests
                 ("@id", itemId),
                 ("@key", ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
+        if (connectorShape is int shapeMask)
+        {
+            await ExecAsync(connection, """
+                INSERT INTO family_facts (catalog_item_id, fact_key, value_key, value_display)
+                VALUES (@id, 'connector_shape', @key, 'Round')
+                """,
+                ("@id", itemId),
+                ("@key", shapeMask.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
         var sort = 0;
         foreach (var typeName in typeNames)
         {
@@ -167,7 +181,8 @@ public sealed class CatalogRoutingEditorServiceTests
         => new(fixture.GetDatabase(),
             new LocalFamilyRoutingRuleRepository(fixture.GetDatabase()),
             fixture.GetProvider(),
-            new LocalSegmentSizeRepository(fixture.GetDatabase()));
+            new LocalSegmentSizeRepository(fixture.GetDatabase()),
+            new LocalSegmentRuleRepository(fixture.GetDatabase()));
 
     [Fact]
     public async Task Save_EditsInPlace_NoVersionCreated_LinksRegenerated()
@@ -241,6 +256,8 @@ public sealed class CatalogRoutingEditorServiceTests
         using var fixture = new TempCatalogFixture();
         // Archived v1 uses ElbowOld; current v2 also uses it; the edit removes it.
         var (itemId, v1Id) = await SeedSystemItemAsync(fixture, "pipes-3", "v1", TypeARouting("ElbowOld:DN50"));
+        var oldFittingId = await SeedLoadableFittingAsync(
+            fixture, "ElbowOld", RoutingGroupCatalog.PipeFittingCategoryId, 5, "DN50", "DN32");
         using (var connection = fixture.GetDatabase().CreateConnection())
         {
             await connection.OpenAsync();
@@ -259,6 +276,15 @@ public sealed class CatalogRoutingEditorServiceTests
                 SELECT lower(hex(randomblob(16))), catalog_item_id, type_name, sort_order, 'v2-id', family_name, family_key
                 FROM family_types WHERE catalog_item_id = @id AND version_id != 'v2-id'
                 """, ("@id", itemId));
+            // The real deletion lock (ADR-067): the ARCHIVED version's routing
+            // dependency row (audit M10 — post-World-B versions never populate
+            // the frozen V34 tables, the lock lives in family_dependencies).
+            await ExecAsync(connection, """
+                INSERT INTO family_dependencies
+                    (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind, part_name, ordinal, child_version_label)
+                VALUES (@p, @v, @c, 'routing', 'ElbowOld:DN50', 0, 'v1')
+                """,
+                ("@p", itemId), ("@v", v1Id), ("@c", oldFittingId));
             var repo = new LocalFamilyRoutingRuleRepository(fixture.GetDatabase());
             var (rules, settings) = await repo.ReadForVersionAsync(itemId, v1Id);
             // The current version's Type B must NOT use ElbowOld — otherwise
@@ -284,6 +310,66 @@ public sealed class CatalogRoutingEditorServiceTests
 
         Assert.True(result.Success, result.ErrorMessage);
         Assert.Equal(["ElbowOld"], result.ArchivedLockedParts);
+    }
+
+    [Fact]
+    public async Task Save_HiddenGroupRules_CarryOverVerbatim()
+    {
+        // Audit M1: stored rules of groups the editor does NOT show for the
+        // category (duct Segments / MechanicalJoints — captured by live
+        // extraction but hidden by the owner-decision matrix) must survive an
+        // unrelated edit, otherwise the next sync would "converge" them out
+        // of user projects.
+        using var fixture = new TempCatalogFixture();
+        var itemId = "duct-1";
+        var versionId = "duct-v1";
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            await ExecAsync(connection, """
+                INSERT INTO catalog_items (id, name, normalized_name, content_status, current_version_label,
+                    family_source, revit_category, revit_category_id, created_at_utc, updated_at_utc)
+                VALUES (@id, 'Ducts', 'ducts', 'Active', 'v1', 'system', 'Ducts', @cat,
+                    '2026-08-31T00:00:00Z', '2026-08-31T00:00:00Z')
+                """, ("@id", itemId), ("@cat", RoutingGroupCatalog.DuctCurvesCategoryId));
+            await ExecAsync(connection, """
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES ('duct-f1', 'files/x.rvt', 'x.rvt', 2025, '2026-08-31T00:00:00Z')
+                """);
+            await ExecAsync(connection, """
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version,
+                    es_marker_version, routing_backfilled, published_at_utc)
+                VALUES (@vid, @id, 'duct-f1', 'v1', 2025, 1, 1, '2026-08-31T00:00:00Z')
+                """, ("@vid", versionId), ("@id", itemId));
+            await ExecAsync(connection, """
+                INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, family_name, family_key)
+                VALUES ('duct-t1', @id, 'Type A', 0, @vid, 'Duct Types', 'Single')
+                """, ("@id", itemId), ("@vid", versionId));
+        }
+        var repo = new LocalFamilyRoutingRuleRepository(fixture.GetDatabase());
+        await repo.ReplaceForItemAsync(itemId,
+        [
+            new FamilyRoutingRuleInfo("Type A", "Single", "Segments", 0, "DuctSeg", "", []),
+            new FamilyRoutingRuleInfo("Type A", "Single", "MechanicalJoints", 0, "Coupling:100", "", []),
+            new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "ElbowOld:100", "", []),
+        ],
+        [new FamilyRoutingTypeSettings("Type A", "Single", 0)]);
+
+        var sut = CreateSut(fixture);
+        var result = await sut.SaveAsync(itemId, new RoutingEditorSave(
+        [
+            new RoutingEditorTypeSave("Type A", "Single", 0,
+            [
+                new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "ElbowNew:100", "", []),
+            ]),
+        ]));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var (rules, _) = await repo.ReadForItemAsync(itemId);
+        Assert.Contains(rules, r => r.GroupKey == "Segments" && r.PartName == "DuctSeg");
+        Assert.Contains(rules, r => r.GroupKey == "MechanicalJoints" && r.PartName == "Coupling:100");
+        Assert.Contains(rules, r => r.GroupKey == "Elbows" && r.PartName == "ElbowNew:100");
+        Assert.DoesNotContain(rules, r => r.PartName == "ElbowOld:100");
     }
 
     [Fact]
@@ -366,6 +452,148 @@ public sealed class CatalogRoutingEditorServiceTests
 
         var sut = CreateSut(fixture);
         Assert.Null(await sut.LoadAsync(loadableId!));
+    }
+
+    [Fact]
+    public async Task Save_NoEffectiveChanges_SkipsWrite_AndReportsNotChanged()
+    {
+        // Баг 6 (owner stress test 2026-09-01): an edit whose records are
+        // identical to the stored ones (phantom row without a picked part
+        // was dropped at record build) must not rewrite the tables and must
+        // report Changed=false so the caller skips the stale re-check.
+        using var fixture = new TempCatalogFixture();
+        var (itemId, _) = await SeedSystemItemAsync(fixture, "pipes-noop", "v1", TypeARouting("ElbowOld:DN50"));
+
+        var sut = CreateSut(fixture);
+        var identicalRules = new List<FamilyRoutingRuleInfo>();
+        var identicalSettings = new List<FamilyRoutingTypeSettings>();
+        RoutingRuleRecordMapper.ToRecords(
+            BuildSnapshot(TypeARouting("ElbowOld:DN50")).Types[0], identicalRules, identicalSettings);
+        var result = await sut.SaveAsync(itemId, new RoutingEditorSave(
+        [
+            new RoutingEditorTypeSave("Type A", "Single", 0, identicalRules),
+        ]));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.False(result.Changed);
+        Assert.Empty(result.ArchivedLockedParts);
+    }
+
+    [Fact]
+    public async Task Save_RealChange_ReportsChanged()
+    {
+        using var fixture = new TempCatalogFixture();
+        var (itemId, _) = await SeedSystemItemAsync(fixture, "pipes-changed", "v1", TypeARouting("ElbowOld:DN50"));
+        await SeedLoadableFittingAsync(fixture, "ElbowNew", RoutingGroupCatalog.PipeFittingCategoryId, 5, "DN50");
+
+        var sut = CreateSut(fixture);
+        var editedRules = new List<FamilyRoutingRuleInfo>();
+        var editedSettings = new List<FamilyRoutingTypeSettings>();
+        RoutingRuleRecordMapper.ToRecords(
+            BuildSnapshot(TypeARouting("ElbowNew:DN50")).Types[0], editedRules, editedSettings);
+        var result = await sut.SaveAsync(itemId, new RoutingEditorSave(
+        [
+            new RoutingEditorTypeSave("Type A", "Single", 0, editedRules),
+        ]));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.True(result.Changed);
+    }
+
+    [Fact]
+    public async Task GetPartCandidates_ConnectorShapeFilter_MatchesOnEitherEnd()
+    {
+        // Баг 8 (owner stress test 2026-09-01): a round flex duct must never
+        // offer rectangular-only fittings — Revit would silently reject them
+        // at sync. Multi-shape transitions (round+rect) match on either end;
+        // pre-actualization items without the fact pass unfiltered.
+        using var fixture = new TempCatalogFixture();
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundElbow", RoutingGroupCatalog.DuctFittingCategoryId, 5, 1, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RectElbow", RoutingGroupCatalog.DuctFittingCategoryId, 5, 2, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundRectTransition", RoutingGroupCatalog.DuctFittingCategoryId, 23, 3, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "LegacyNoShapeFact", RoutingGroupCatalog.DuctFittingCategoryId, 5, null, "100");
+
+        var sut = CreateSut(fixture);
+        var roundHost = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [], connectorShapeBits: 1);
+
+        Assert.Contains(roundHost, c => c.FamilyName == "RoundElbow");
+        Assert.Contains(roundHost, c => c.FamilyName == "RoundRectTransition");
+        Assert.Contains(roundHost, c => c.FamilyName == "LegacyNoShapeFact");
+        Assert.DoesNotContain(roundHost, c => c.FamilyName == "RectElbow");
+
+        var rectHost = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [], connectorShapeBits: 2);
+        Assert.Contains(rectHost, c => c.FamilyName == "RectElbow");
+        Assert.Contains(rectHost, c => c.FamilyName == "RoundRectTransition");
+        Assert.DoesNotContain(rectHost, c => c.FamilyName == "RoundElbow");
+
+        // No filter (0) keeps the legacy behavior — everything is offered.
+        var unfiltered = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [], connectorShapeBits: 0);
+        Assert.Equal(4, unfiltered.Count);
+    }
+
+    [Fact]
+    public async Task GetPartCandidates_RequiredShapeMask_MultiShapeTransitionOnly()
+    {
+        // Owner stress test 2026-09-01: the rect-to-round transition row must
+        // offer ONLY fittings carrying BOTH connector profiles — a purely
+        // rectangular transition passes the host-shape filter on a rect host
+        // but Revit rejects it for the multi-shape row.
+        using var fixture = new TempCatalogFixture();
+        await SeedLoadableFittingWithShapeAsync(fixture, "RectTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 2, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 1, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundRectTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 3, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "LegacyNoShapeFact", RoutingGroupCatalog.DuctFittingCategoryId, 7, null, "100");
+
+        var sut = CreateSut(fixture);
+        var rectToRound = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [],
+            connectorShapeBits: 2, requiredShapeMask: 3);
+
+        Assert.Contains(rectToRound, c => c.FamilyName == "RoundRectTransition");
+        Assert.Contains(rectToRound, c => c.FamilyName == "LegacyNoShapeFact");
+        Assert.DoesNotContain(rectToRound, c => c.FamilyName == "RectTransition");
+        Assert.DoesNotContain(rectToRound, c => c.FamilyName == "RoundTransition");
+
+        // Mask 0 = no requirement — identical to the plain host filter.
+        var noRequirement = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [],
+            connectorShapeBits: 2, requiredShapeMask: 0);
+        Assert.Contains(noRequirement, c => c.FamilyName == "RectTransition");
+    }
+
+    [Fact]
+    public async Task GetPartCandidates_ExcludeMultiShape_PlainTransitionsSingleShapeOnly()
+    {
+        // Owner stress test 2026-09-01: the plain Transitions row offers
+        // single-shape parts only — multi-shape transitions live in their
+        // own dedicated rows (rect-to-round etc.).
+        using var fixture = new TempCatalogFixture();
+        await SeedLoadableFittingWithShapeAsync(fixture, "RectTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 2, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 1, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "RoundRectTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 3, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "OvalTransition", RoutingGroupCatalog.DuctFittingCategoryId, 7, 4, "100");
+        await SeedLoadableFittingWithShapeAsync(fixture, "LegacyNoShapeFact", RoutingGroupCatalog.DuctFittingCategoryId, 7, null, "100");
+
+        var sut = CreateSut(fixture);
+        var plainRectHost = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [],
+            connectorShapeBits: 2, excludeMultiShape: true);
+
+        Assert.Contains(plainRectHost, c => c.FamilyName == "RectTransition");
+        Assert.Contains(plainRectHost, c => c.FamilyName == "LegacyNoShapeFact");
+        Assert.DoesNotContain(plainRectHost, c => c.FamilyName == "RoundRectTransition");
+        Assert.DoesNotContain(plainRectHost, c => c.FamilyName == "RoundTransition");
+        Assert.DoesNotContain(plainRectHost, c => c.FamilyName == "OvalTransition");
+
+        // Without the flag the multi-shape transition still matches on the
+        // rect end (баг 8 either-end semantics).
+        var legacy = await sut.GetPartCandidatesAsync(
+            RoutingGroupCatalog.DuctFittingCategoryId, [],
+            connectorShapeBits: 2, excludeMultiShape: false);
+        Assert.Contains(legacy, c => c.FamilyName == "RoundRectTransition");
     }
 
     [Fact]

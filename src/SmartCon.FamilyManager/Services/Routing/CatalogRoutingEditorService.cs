@@ -1,8 +1,10 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
@@ -25,17 +27,20 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
     private readonly IFamilyRoutingRuleRepository _routingRuleRepository;
     private readonly IFamilyCatalogProvider _catalog;
     private readonly ISegmentSizeRepository _segmentSizes;
+    private readonly ISegmentRuleRepository _segmentRules;
 
     public CatalogRoutingEditorService(
         LocalCatalogDatabase database,
         IFamilyRoutingRuleRepository routingRuleRepository,
         IFamilyCatalogProvider catalog,
-        ISegmentSizeRepository segmentSizes)
+        ISegmentSizeRepository segmentSizes,
+        ISegmentRuleRepository segmentRules)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
         _routingRuleRepository = routingRuleRepository ?? throw new ArgumentNullException(nameof(routingRuleRepository));
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _segmentSizes = segmentSizes ?? throw new ArgumentNullException(nameof(segmentSizes));
+        _segmentRules = segmentRules ?? throw new ArgumentNullException(nameof(segmentRules));
     }
 
     public async Task<RoutingEditorData?> LoadAsync(string catalogItemId, CancellationToken ct = default)
@@ -50,12 +55,17 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
 
         var types = await ReadTypesAsync(ctx.Value.VersionId, ct).ConfigureAwait(false);
 
-        // Item-level links are the truth; the current version's V34 rows are
-        // the legacy fallback until import/backfill seeds the item tables.
-        var (rules, settings) = await _routingRuleRepository.HasAnyForItemAsync(catalogItemId, ct)
+        // Item-level links are the truth for FITTINGS; the current version's
+        // V34 rows are the legacy fallback. Segment rules compose from the
+        // PER-VERSION store (FHV21): the version pointer decides whose
+        // ranges the tab shows — a rollback displays the activated version.
+        var (storedRules, settings) = await _routingRuleRepository.HasAnyForItemAsync(catalogItemId, ct)
             .ConfigureAwait(false)
             ? await _routingRuleRepository.ReadForItemAsync(catalogItemId, ct).ConfigureAwait(false)
             : await _routingRuleRepository.ReadForCurrentVersionAsync(catalogItemId, ct).ConfigureAwait(false);
+        var perVersionSegments = await _segmentRules
+            .ReadForVersionAsync(ctx.Value.VersionId, ct).ConfigureAwait(false);
+        var rules = SegmentRuleComposition.Compose(storedRules, perVersionSegments);
 
         var missingFamilies = new List<string>();
         var childIdByFamily = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -178,6 +188,9 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
     public async Task<IReadOnlyList<RoutingPartCandidate>> GetPartCandidatesAsync(
         int fittingCategoryId,
         IReadOnlyCollection<int> partTypeOrdinals,
+        int connectorShapeBits = 0,
+        int requiredShapeMask = 0,
+        bool excludeMultiShape = false,
         CancellationToken ct = default)
     {
         var candidates = new List<(string Id, string Name, string? ValueKey, string? ValueDisplay)>();
@@ -185,17 +198,45 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
         {
             await connection.OpenAsync(ct).ConfigureAwait(false);
             using var cmd = connection.CreateCommand();
+            // Connector-shape filter (owner stress test 2026-09-01, баг 8):
+            // a flex round duct must never offer rectangular-only fittings —
+            // Revit would silently reject them at sync. A candidate matches
+            // when its connector_shape bitmask shares any host bit; items
+            // without the fact (pre-actualization DB) pass unfiltered.
+            // requiredShapeMask (multi-shape transition rows): the candidate
+            // must carry ALL the listed bits — a purely rectangular
+            // transition never serves a rect-to-round row. excludeMultiShape
+            // (plain Transitions rows): multi-shape transitions live in
+            // their own rows — m & (m-1) = 0 keeps single-shape masks only.
             cmd.CommandText = """
                 SELECT ci.id, ci.name, ff.value_key, ff.value_display
                 FROM catalog_items ci
                 LEFT JOIN family_facts ff
                     ON ff.catalog_item_id = ci.id AND ff.fact_key = 'part_type'
+                LEFT JOIN family_facts ff_shape
+                    ON ff_shape.catalog_item_id = ci.id AND ff_shape.fact_key = 'connector_shape'
                 WHERE ci.family_source = 'loadable'
                   AND ci.revit_category_id = @cat
                   AND ci.content_status = 'Active'
+                  AND (@shapeBits = 0
+                       OR ff_shape.value_key IS NULL
+                       OR (ff_shape.value_key <> ''
+                           AND (CAST(ff_shape.value_key AS INTEGER) & @shapeBits) <> 0))
+                  AND (@requiredMask = 0
+                       OR ff_shape.value_key IS NULL
+                       OR (ff_shape.value_key <> ''
+                           AND (CAST(ff_shape.value_key AS INTEGER) & @requiredMask) = @requiredMask))
+                  AND (@excludeMulti = 0
+                       OR ff_shape.value_key IS NULL
+                       OR (ff_shape.value_key <> ''
+                           AND (CAST(ff_shape.value_key AS INTEGER)
+                                & (CAST(ff_shape.value_key AS INTEGER) - 1)) = 0))
                 ORDER BY ci.name
                 """;
             cmd.Parameters.Add(new SqliteParameter("@cat", fittingCategoryId));
+            cmd.Parameters.Add(new SqliteParameter("@shapeBits", connectorShapeBits));
+            cmd.Parameters.Add(new SqliteParameter("@requiredMask", requiredShapeMask));
+            cmd.Parameters.Add(new SqliteParameter("@excludeMulti", excludeMultiShape ? 1 : 0));
             using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
@@ -231,7 +272,12 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
                 c.ValueKey is not null
                     ? PartTypeLabelMap.TryGetLabel(c.ValueKey) ?? c.ValueDisplay
                     : null,
-                TypesOrVirtualFallback(c, typesByItem)))
+                TypesOrVirtualFallback(c, typesByItem),
+                c.ValueKey is not null
+                && int.TryParse(c.ValueKey, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var partOrdinal)
+                    ? partOrdinal
+                    : null))
             .ToList();
     }
 
@@ -269,10 +315,20 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
                 "Item is not a system MEPCurve catalog item");
         }
 
-        var (currentRules, currentSettings) = await _routingRuleRepository
+        var (currentRulesRaw, currentSettings) = await _routingRuleRepository
             .HasAnyForItemAsync(catalogItemId, ct).ConfigureAwait(false)
             ? await _routingRuleRepository.ReadForItemAsync(catalogItemId, ct).ConfigureAwait(false)
             : await _routingRuleRepository.ReadForCurrentVersionAsync(catalogItemId, ct).ConfigureAwait(false);
+
+        // FHV21: the Segments group left the item-level channel (it is
+        // per-version mini content now) — the editor NEVER writes it. Any
+        // legacy Segments rows still in the item tables ride through the
+        // replace verbatim so pre-FHV21 items keep their display/sync until
+        // the backfill moves the data to the per-version store.
+        var legacySegmentRows = currentRulesRaw
+            .Where(r => SegmentRuleComposition.IsSegmentsGroup(r.GroupKey)).ToList();
+        var currentRules = currentRulesRaw
+            .Where(r => !SegmentRuleComposition.IsSegmentsGroup(r.GroupKey)).ToList();
 
         // Merge: untouched types keep their stored rules/settings verbatim;
         // edited types are replaced by the editor input.
@@ -287,10 +343,46 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
             .ToList();
         foreach (var edited in save.EditedTypes)
         {
+            // Carry-over (audit M1): stored rules of groups the editor does
+            // NOT show for this category (e.g. duct Segments/MechanicalJoints
+            // captured by live extraction, or future param groups) are not
+            // part of the editor input — dropping them would silently erase
+            // routing that the next sync would then "converge" out of user
+            // projects. Keep the stored rows of non-descriptor groups
+            // verbatim (same protection the read-only Segments row gets).
+            var visibleKeys = new HashSet<string>(
+                RoutingGroupCatalog
+                    .GetGroups(ctx.Value.HostCategoryId, WithFittingsOf(edited.FamilyKey))
+                    .Select(d => d.GroupKey),
+                StringComparer.Ordinal);
+            var editedIdentity = TypeIdentity(edited);
+            newRules.AddRange(currentRules.Where(r =>
+                TypeIdentity(r.TypeName, r.FamilyKey) == editedIdentity
+                && !visibleKeys.Contains(r.GroupKey)));
             newRules.AddRange(edited.Rules);
             newSettings.Add(new FamilyRoutingTypeSettings(
                 edited.TypeName, edited.FamilyKey, edited.PreferredJunctionType));
         }
+
+        // FHV21: a caller passing Segments rows in the editor input is
+        // legacy — the editor does not own that group; drop them from the
+        // merge so they neither corrupt the no-op compare nor get written.
+        newRules = newRules
+            .Where(r => !SegmentRuleComposition.IsSegmentsGroup(r.GroupKey))
+            .ToList();
+
+        // No-op guard (owner stress test 2026-09-01): an edit whose records
+        // are identical to the stored ones (phantom row without a picked
+        // part, criteria re-entered unchanged) must not rewrite the tables
+        // and must not surface a stale re-check downstream.
+        if (RulesEqual(currentRules, newRules) && SettingsEqual(currentSettings, newSettings))
+        {
+            SmartConLogger.Info("Routing save: no effective changes — write skipped");
+            return new RoutingSaveResult(true, [], null, Changed: false);
+        }
+
+        // Legacy Segments rows rejoin the write set verbatim (see above).
+        newRules.AddRange(legacySegmentRows);
 
         var archivedLocked = await FindArchivedLockedPartsAsync(
             catalogItemId, ctx.Value.VersionId, currentRules, newRules, ct).ConfigureAwait(false);
@@ -324,6 +416,61 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
     private static string TypeIdentity(RoutingEditorTypeSave t) => TypeIdentity(t.TypeName, t.FamilyKey);
     private static string TypeIdentity(string typeName, string familyKey)
         => familyKey + "|" + typeName;
+
+    /// <summary>
+    /// Semantic equality of two rule sets (multiset of canonical strings —
+    /// rule order inside a group IS content, reordering must compare
+    /// unequal). Avoid interpolated format specifiers here — this assembly
+    /// references HelixToolkit/SharpDX transitively (CS1739 on net48, #97).
+    /// </summary>
+    private static bool RulesEqual(
+        IReadOnlyList<FamilyRoutingRuleInfo> a, IReadOnlyList<FamilyRoutingRuleInfo> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+        return Canonicalize(a.Select(CanonicalRule))
+            .SequenceEqual(Canonicalize(b.Select(CanonicalRule)));
+    }
+
+    private static bool SettingsEqual(
+        IReadOnlyList<FamilyRoutingTypeSettings> a, IReadOnlyList<FamilyRoutingTypeSettings> b)
+    {
+        if (a.Count != b.Count)
+            return false;
+        return Canonicalize(a.Select(s =>
+                s.TypeName + "" + s.FamilyKey + "" + s.PreferredJunctionType
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            .SequenceEqual(Canonicalize(b.Select(s =>
+                s.TypeName + "" + s.FamilyKey + "" + s.PreferredJunctionType
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
+    private static string CanonicalRule(FamilyRoutingRuleInfo r)
+    {
+        var sb = new StringBuilder(96);
+        sb.Append(r.TypeName).Append('');
+        sb.Append(r.FamilyKey).Append('');
+        sb.Append(r.GroupKey).Append('');
+        sb.Append(r.RuleOrder.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append('');
+        sb.Append(r.PartName ?? string.Empty).Append('');
+        sb.Append(r.Description ?? string.Empty);
+        foreach (var c in r.Criteria)
+        {
+            sb.Append('').Append(c.CriterionType).Append(':');
+            sb.Append(c.MinimumSize.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(':');
+            sb.Append(c.MaximumSize.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
+    }
+
+    private static List<string> Canonicalize(IEnumerable<string> values)
+        => values.OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+    /// <summary>Conduit/cable-tray "without Fittings" classes hide TEE/CROSS
+    /// (ADR-072 §2.7) — the discriminator is the family key suffix.</summary>
+    private static bool WithFittingsOf(string familyKey)
+        => !familyKey.EndsWith(".WithoutFittings", StringComparison.Ordinal);
 
     private static IEnumerable<string> PartFamiliesOf(IReadOnlyList<FamilyRoutingRuleInfo> rules)
         => rules
@@ -361,13 +508,18 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
         await connection.OpenAsync(ct).ConfigureAwait(false);
         foreach (var family in removed)
         {
+            // The actual deletion lock (ADR-067) lives in family_dependencies
+            // of the ARCHIVED versions — those rows are written at every
+            // import and survive (unlike the frozen V34 routing tables,
+            // which post-World-B versions never populate — audit M10).
             using var cmd = connection.CreateCommand();
             cmd.CommandText = """
                 SELECT EXISTS(
-                    SELECT 1 FROM family_routing_rules r
-                    WHERE r.catalog_item_id = @item
-                      AND r.catalog_version_id <> @currentVid
-                      AND substr(r.part_name, 1, length(@fam) + 1) = @fam || ':'
+                    SELECT 1 FROM family_dependencies d
+                    WHERE d.parent_catalog_item_id = @item
+                      AND d.parent_version_id <> @currentVid
+                      AND d.dependency_kind = 'routing'
+                      AND substr(d.part_name, 1, length(@fam) + 1) = @fam || ':'
                     LIMIT 1)
                 """;
             cmd.Parameters.Add(new SqliteParameter("@item", catalogItemId));
@@ -488,7 +640,7 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
                 reader.GetString(0),
                 familyKey,
                 reader.GetString(2),
-                !familyKey.EndsWith(".WithoutFittings", StringComparison.Ordinal)));
+                WithFittingsOf(familyKey)));
         }
         return types;
     }
@@ -529,99 +681,14 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
     /// rebuilt from the new rules with the same resolution
     /// DependencyLinkWriter applies at import (part family → loadable
     /// catalog item by normalized name; unresolved parts are legitimate
-    /// presence flags, not warnings).
+    /// presence flags, not warnings). Shared implementation:
+    /// <see cref="RoutingDependencyLinkRebuilder"/>.
     /// </summary>
     private async Task<int> RebuildDependencyLinksAsync(
         SqliteConnection connection, SqliteTransaction tx,
         string catalogItemId, string currentVersionId,
         IReadOnlyList<FamilyRoutingRuleInfo> newRules, CancellationToken ct)
-    {
-        var carryOver = new List<(string ChildId, string Kind, string? PartName, string? ChildVersionLabel)>();
-        using (var cmd = connection.CreateCommand())
-        {
-            cmd.Transaction = tx;
-            cmd.CommandText = """
-                SELECT child_catalog_item_id, dependency_kind, part_name, child_version_label
-                FROM family_dependencies
-                WHERE parent_version_id = @sourceVid
-                ORDER BY ordinal
-                """;
-            cmd.Parameters.Add(new SqliteParameter("@sourceVid", currentVersionId));
-            using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            while (await reader.ReadAsync(ct).ConfigureAwait(false))
-            {
-                var kind = reader.GetString(1);
-                if (string.Equals(kind, FamilyDependencyKind.Routing, StringComparison.Ordinal))
-                    continue;
-                carryOver.Add((
-                    reader.GetString(0),
-                    kind,
-                    reader.IsDBNull(2) ? null : reader.GetString(2),
-                    reader.IsDBNull(3) ? null : reader.GetString(3)));
-            }
-        }
-
-        using (var delRouting = connection.CreateCommand())
-        {
-            delRouting.Transaction = tx;
-            delRouting.CommandText = """
-                DELETE FROM family_dependencies
-                WHERE parent_version_id = @version AND dependency_kind = 'routing'
-                """;
-            delRouting.Parameters.Add(new SqliteParameter("@version", currentVersionId));
-            await delRouting.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-
-        var links = new List<FamilyDependencyInfo>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var carried in carryOver)
-        {
-            if (!seen.Add(carried.ChildId + "|" + carried.Kind))
-                continue;
-            links.Add(new FamilyDependencyInfo(
-                carried.ChildId, carried.Kind, carried.PartName, links.Count, carried.ChildVersionLabel));
-        }
-
-        var partNames = newRules
-            .Where(r => r.PartName is not null && r.GroupKey != RoutingGroupKeys.ForManagerGroup(0))
-            .Select(r => r.PartName!)
-            .Distinct(StringComparer.Ordinal);
-        foreach (var partName in partNames)
-        {
-            ct.ThrowIfCancellationRequested();
-            var separator = partName.IndexOf(':');
-            if (separator <= 0)
-                continue;
-            var familyName = partName.Substring(0, separator);
-            var child = await _catalog
-                .FindByNormalizedNameAsync(FamilyNameNormalizer.Normalize(familyName), "loadable", ct)
-                .ConfigureAwait(false);
-            if (child is null || !seen.Add(child.Id + "|" + FamilyDependencyKind.Routing))
-                continue;
-            links.Add(new FamilyDependencyInfo(
-                child.Id, FamilyDependencyKind.Routing, partName, links.Count, child.CurrentVersionLabel));
-        }
-
-        foreach (var link in links)
-        {
-            using var ins = connection.CreateCommand();
-            ins.Transaction = tx;
-            ins.CommandText = """
-                INSERT OR REPLACE INTO family_dependencies
-                    (parent_catalog_item_id, parent_version_id, child_catalog_item_id,
-                     dependency_kind, part_name, ordinal, child_version_label)
-                VALUES (@parent, @version, @child, @kind, @part, @ordinal, @childLabel)
-                """;
-            ins.Parameters.Add(new SqliteParameter("@parent", catalogItemId));
-            ins.Parameters.Add(new SqliteParameter("@version", currentVersionId));
-            ins.Parameters.Add(new SqliteParameter("@child", link.ChildCatalogItemId));
-            ins.Parameters.Add(new SqliteParameter("@kind", link.Kind));
-            ins.Parameters.Add(new SqliteParameter("@part", (object?)link.PartName ?? DBNull.Value));
-            ins.Parameters.Add(new SqliteParameter("@ordinal", link.Ordinal));
-            ins.Parameters.Add(new SqliteParameter("@childLabel",
-                (object?)link.ChildVersionLabel ?? DBNull.Value));
-            await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-        return links.Count;
-    }
+        => await RoutingDependencyLinkRebuilder
+            .RebuildAsync(connection, tx, _catalog, catalogItemId, currentVersionId, newRules, ct)
+            .ConfigureAwait(false);
 }

@@ -108,4 +108,14 @@ namespace SmartCon.Core.Models.FamilyManager;
     /// persisted to <c>catalog_versions.section_hashes/section_strings</c>
     /// at import. <c>null</c> when preparation failed before hashing.
     /// </summary>
-    IReadOnlyList<ContentSectionHash>? Sections = null);
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// ADR-072 World B (audit M11): <c>true</c> when this is a reimport FROM
+    /// a mini-project AND the catalog DB carried no stored routing rows to
+    /// substitute — the <see cref="SystemSnapshot"/> routing is then the slim
+    /// mini state (Segments + no-part rules), NOT catalog truth. The import
+    /// must not seed the item-level routing tables from it (sync would
+    /// converge user projects to the slim state); it stays unseeded until a
+    /// live import / backfill / editor edit provides real routing.
+    /// </summary>
+    bool UnsubstitutedMiniRouting = false);

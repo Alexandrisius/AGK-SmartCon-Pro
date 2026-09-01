@@ -142,7 +142,14 @@ public sealed record FamilyBatchImportItem(
     /// by the import transaction. <c>null</c> for legacy paths —
     /// backfilled by the <c>section-hashes-v1</c> task.
     /// </summary>
-    IReadOnlyList<ContentSectionHash>? Sections = null)
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// ADR-072 World B (audit M11): <c>true</c> when the
+    /// <see cref="SystemSnapshot"/> routing is the UNsubstituted slim mini
+    /// state (reimport from mini + no stored routing rows in the DB) — the
+    /// item-level routing tables must NOT be seeded from it.
+    /// </summary>
+    bool UnsubstitutedMiniRouting = false)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

@@ -79,15 +79,29 @@ public static class RoutingRuleRecordMapper
             .Select(r =>
             {
                 var isParam = RoutingGroupKeys.IsParamGroup(r.GroupKey);
+                int? groupType = isParam
+                    ? RoutingGroupKeys.ParamGroupType
+                    : RoutingGroupKeys.ManagerGroupTypeOf(r.GroupKey);
+                if (groupType is null)
+                {
+                    // Unknown group key (not a known name, not the
+                    // "Group{n}" fallback) — skipping beats silently
+                    // degrading the rule into Segments(0) (audit M3).
+                    Logging.SmartConLogger.Warn(
+                        $"Routing group key '{r.GroupKey}' is not recognized — rule " +
+                        $"'{r.PartName ?? "<none>"}' skipped on snapshot rebuild. " +
+                        "[Action: реимпортируйте эталон текущим плагином, чтобы пересоздать ключи групп]");
+                    return null;
+                }
                 return new RoutingRuleSnapshot(
-                    isParam
-                        ? RoutingGroupKeys.ParamGroupType
-                        : RoutingGroupKeys.ManagerGroupTypeOf(r.GroupKey) ?? 0,
+                    groupType.Value,
                     r.PartName,
                     r.Description,
                     r.Criteria,
                     GroupKey: isParam ? r.GroupKey : null);
             })
+            .Where(r => r is not null)
+            .Select(r => r!)
             .ToList();
 
         return new RoutingPreferencesSnapshot(typeSettings.PreferredJunctionType, typeRules);

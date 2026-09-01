@@ -27,7 +27,8 @@ public interface IFamilyManagerViewModelFactory
     /// </summary>
     RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
         int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName,
-        string? contextLabel = null);
+        string? contextLabel = null, int preferredJunctionType = -1, int connectorShapeBits = 0,
+        int requiredShapeMask = 0, bool excludeMultiShape = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();

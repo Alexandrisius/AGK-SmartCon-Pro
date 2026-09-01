@@ -160,7 +160,7 @@ public sealed class RevitMiniProjectRoutingSlimmingService : IMiniProjectRouting
             var familiesDeleted = 0;
             var materialsDeleted = 0;
             var materialsRenamed = 0;
-            _transactionService.RunInTransaction(doc, "SmartCon: Slim mini-project routing", d =>
+            var committed = _transactionService.RunInTransaction(doc, "SmartCon: Slim mini-project routing", d =>
             {
                 foreach (var type in mepTypes)
                 {
@@ -238,6 +238,19 @@ public sealed class RevitMiniProjectRoutingSlimmingService : IMiniProjectRouting
                 }
                 materialsRenamed += ApplyPendingRenames(d, pendingRenames);
             });
+
+            // Audit M5: a rolled-back slim transaction means the file is
+            // unchanged — saving it and returning Slimmed would mark the
+            // still-dirty mini as processed forever (the task maps Slimmed
+            // to the terminal marker 1). The pre-slim snapshot was already
+            // captured, so the backfill data stays valid either way.
+            if (!committed)
+            {
+                SmartConLogger.Warn(
+                    $"Slim transaction rolled back for '{Path.GetFileName(absolutePath)}' — the file is unchanged. " +
+                    "[Action: версия помечена терминальным маркером пропуска (-1); проверьте, что файл не открыт в другом Revit и доступен на запись]");
+                return Empty(MiniProjectSlimmingStatus.Failed, "slim transaction rolled back");
+            }
 
             doc.Save();
             var backupsDeleted = DeleteRevitBackups(absolutePath);

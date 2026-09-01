@@ -241,8 +241,8 @@ public sealed record FamilyContentHash(
     ///     ("Param:&lt;BIP&gt;"); PREFERRED_BRANCH maps to
     ///     PreferredJunctionType. System META prefix FHV8→FHV9. Pipe/duct
     ///     tokens are byte-identical (their routing bips are hidden).
-    ///     Critical task <c>hash-v19</c> recomputes every row that is not
-    ///     current.
+    ///     Recomputed by <c>hash-v20</c> (FHV19 and FHV20 shipped as one
+    ///     release unit — no <c>hash-v19</c> task ever shipped).
     /// 20 — routing leaves the content hash (owner decision 2026-08-29,
     ///     ADR-072 World B): the ROUTING section is dropped from the
     ///     system canonical string — routing preferences are links
@@ -253,6 +253,17 @@ public sealed record FamilyContentHash(
     ///     parameter-based BIPs do NOT return to VALUES (phantom-diff
     ///     class). System META prefix FHV9→FHV10. Critical task
     ///     <c>hash-v20</c> recomputes every row that is not current.
+    /// 21 — the segment size-range criterion JOINS the SEGMENTS section
+    ///     (owner decision 2026-09-01, stress test баг 3): the mini-project
+    ///     owns the whole segment configuration — the segment set AND each
+    ///     rule's PrimarySizeCriterion (Мин/Макс in Revit's routing
+    ///     dialog). Editing a range in the mini now changes the hash and
+    ///     produces a new version on reimport («Дубликат» is gone), and
+    ///     per-version storage makes rollback restore the version's own
+    ///     ranges. Fitting rules/criteria stay OUT of the hash (World B —
+    ///     they are tab-edited catalog links). System META prefix
+    ///     FHV10→FHV11. Critical task <c>hash-v21</c> recomputes every
+    ///     row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -268,7 +279,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

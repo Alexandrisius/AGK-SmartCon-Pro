@@ -9,8 +9,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v20</c>): recalculates stale
-/// (format v1..v17 / NULL) content hashes to the FHV18 format
+/// CRITICAL actualization task (Id=<c>hash-v21</c>): recalculates stale
+/// (format v1..v20 / NULL) content hashes to the FHV21 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -48,9 +48,16 @@ namespace SmartCon.FamilyManager.Services.Actualization;
     /// rules with string group keys, Issue #254 ADR-072;
     /// FHV20 — the ROUTING section leaves the content hash entirely
     /// (routing = catalog-family links, not file content; owner decision
-    /// 2026-08-29, ADR-072 World B), system META prefix FHV9→FHV10).
+    /// 2026-08-29, ADR-072 World B), system META prefix FHV9→FHV10;
+    /// FHV21 — the segment rule size-range criterion JOINS the SEGMENTS
+    /// section: the mini-project owns the whole segment configuration
+    /// (set + ranges + order) as VERSIONED content — a range edit in the
+    /// mini changes the hash and forks a new version («Дубликат» gone);
+    /// per-version store <c>family_segment_rules</c> (V38) makes rollback
+    /// restore the version's own ranges; fitting rules stay out (World B),
+    /// system META prefix FHV10→FHV11, owner decision 2026-09-01).
     /// Owns the <c>hash_format_version</c> marker
-    /// semantics: NULL/1..19 pending, 20 current, -1/-2 terminal (unreadable /
+    /// semantics: NULL/1..20 pending, 21 current, -1/-2 terminal (unreadable /
     /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -97,7 +104,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v20";
+    public override string Id => "hash-v21";
     public override int Order => 12;
     public override bool IsCritical => true;
 

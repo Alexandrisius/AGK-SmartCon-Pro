@@ -32,6 +32,7 @@ internal static class SegmentSizeWriter
 
         using var _scope = SmartConLogger.BeginScope("BatchImport",
             ("Method", nameof(WriteAsync)),
+            ("Writer", nameof(SegmentSizeWriter)),
             ("Count", systemItems.Count));
 
         foreach (var item in systemItems)
@@ -71,7 +72,7 @@ internal static class SegmentSizeWriter
                 SmartConLogger.Info(
                     $"Segment sizes written: {sizes.Count} (parent CatalogItemId={parentId})");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 SmartConLogger.Warn(
                     $"Segment size write failed for parent {parentId}: {ex.GetType().Name}: {ex.Message}. " +

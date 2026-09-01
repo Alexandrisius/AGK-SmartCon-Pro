@@ -608,13 +608,31 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
 
         foreach (var rule in rules)
         {
-            result.Add(ReadFact(familyDoc, rule));
+            // A null fact = the computed value is unavailable this run —
+            // OMIT it so the actualization detection stays pending and
+            // self-heals (a sentinel would permanently clear the detection).
+            var fact = ReadFact(familyDoc, rule);
+            if (fact is not null)
+            {
+                result.Add(fact);
+            }
         }
         return result;
     }
 
     private static FamilyFact ReadFact(Document familyDoc, FamilyFactRule rule)
     {
+        // Computed facts (no backing parameter) have their own source —
+        // the connector-shape mask comes from the family's ConnectorElements
+        // (owner stress test 2026-09-01, баг 8: the routing picker filters
+        // flex-duct candidates by connector profile).
+        if (rule.ParameterId == FamilyFactRuleSet.ComputedFactParameterId)
+        {
+            return string.Equals(rule.FactKey, FamilyFactRuleSet.ConnectorShapeFactKey, StringComparison.Ordinal)
+                ? ReadConnectorShapeFact(familyDoc, rule)
+                : new FamilyFact(rule.FactKey, string.Empty, string.Empty);
+        }
+
         // Sentinel: the fact was evaluated but the source parameter is
         // absent/unset in this family — detection clears, UI hides.
         var sentinel = new FamilyFact(rule.FactKey, string.Empty, string.Empty);
@@ -660,6 +678,56 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"ExtractFacts: read of '{rule.FactKey}' failed in '{familyDoc.Title}': {ex.Message}");
             return sentinel;
         }
+    }
+
+    /// <summary>
+    /// Connector-shape bitmask of the family (Round=1, Rectangular=2,
+    /// Oval=4 — a multi-shape transition like oval-round reports BOTH bits,
+    /// so the picker matches it on either end). A family genuinely without
+    /// connectors reports mask 0 (never matches a shape-filtered picker —
+    /// correct: it cannot serve routing); a collector failure OMITS the
+    /// fact entirely so the actualization detection stays pending and
+    /// self-heals instead of permanently hiding the family from pickers.
+    /// </summary>
+    private static FamilyFact ReadConnectorShapeFact(Document familyDoc, FamilyFactRule rule)
+    {
+        var mask = 0;
+        var names = new List<string>();
+        try
+        {
+            var connectors = new FilteredElementCollector(familyDoc)
+                .OfClass(typeof(ConnectorElement))
+                .Cast<ConnectorElement>();
+            foreach (var connector in connectors)
+            {
+                switch (connector.Shape)
+                {
+                    case ConnectorProfileType.Round:
+                        mask |= 1;
+                        if (!names.Contains("Round")) names.Add("Round");
+                        break;
+                    case ConnectorProfileType.Rectangular:
+                        mask |= 2;
+                        if (!names.Contains("Rectangular")) names.Add("Rectangular");
+                        break;
+                    case ConnectorProfileType.Oval:
+                        mask |= 4;
+                        if (!names.Contains("Oval")) names.Add("Oval");
+                        break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Debug(
+                $"ExtractFacts: connector-shape read failed in '{familyDoc.Title}': {ex.Message} — fact omitted (detection stays pending)");
+            return null!;
+        }
+
+        return new FamilyFact(
+            rule.FactKey,
+            mask.ToString(CultureInfo.InvariantCulture),
+            names.Count > 0 ? string.Join("+", names) : string.Empty);
     }
 
     private static List<FamilyParameterInfo> ExtractParameters(
@@ -2359,6 +2427,11 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     /// <c>"Param:&lt;BIP&gt;"</c> group (deterministic key order);
     /// <c>RBS_CURVETYPE_PREFERRED_BRANCH_PARAM</c> maps to
     /// <see cref="RoutingPreferencesSnapshot.PreferredJunctionType"/>.
+    /// NOTE: the parameter's int convention is INVERTED against the
+    /// <c>PreferredJunctionType</c> enum (param: 0=Tap, 1=Tee — Autodesk
+    /// DevBlog; enum: Tee=0, Tap=1 — revitapidocs). The RAW value is stored
+    /// so extract→DB→sync round-trips stably; the routing editor translates
+    /// it per category for display (audit H3).
     /// <c>null</c> when the type exposes no routing-driving parameters at
     /// all (canonical "not routed" state).
     /// </summary>
@@ -2401,6 +2474,17 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                     if (partId is not null && partId != ElementId.InvalidElementId)
                     {
                         var element = doc.GetElement(partId);
+                        // Audit L21: a non-invalid id resolving to NOTHING is
+                        // a stale reference (deleted fitting), not a
+                        // deliberate «Нет» — mask it and the catalog loses
+                        // the distinction (and the presence flag) silently.
+                        if (element is null)
+                        {
+                            SmartConLogger.Warn(
+                                $"Param routing rule ({bip}) of type '{elementType.Name}' holds a stale " +
+                                $"ElementId {partId} — recorded as «Нет». [Action: переназначьте деталь " +
+                                "в свойствах типа в Revit или во вкладке «Трассировка»]");
+                        }
                         partName = element switch
                         {
                             FamilySymbol symbol => $"{symbol.Family?.Name}:{symbol.Name}",
@@ -2546,7 +2630,35 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 if (!seen.Add(segment.Name))
                     continue;
 
-                segments.Add(BuildSegmentSnapshot(segment, doc));
+                // FHV21 (owner decision 2026-09-01): the rule's size-range
+                // criterion (Мин/Макс in the routing dialog) is part of the
+                // segment configuration — it enters the SEGMENTS hash
+                // section and the per-version segment-rule store.
+                double? ruleMin = null;
+                double? ruleMax = null;
+                try
+                {
+                    for (var c = 0; c < rule.NumberOfCriteria; c++)
+                    {
+                        if (rule.GetCriterion(c) is PrimarySizeCriterion sizeCriterion)
+                        {
+                            ruleMin = sizeCriterion.MinimumSize;
+                            ruleMax = sizeCriterion.MaximumSize;
+                            break;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Debug(
+                        $"Segment rule criterion read failed for '{segment.Name}': {ex.Message}");
+                }
+
+                segments.Add(BuildSegmentSnapshot(segment, doc) with
+                {
+                    RuleMinSizeFeet = ruleMin,
+                    RuleMaxSizeFeet = ruleMax,
+                });
             }
 
             return segments.Count == 0 ? null : segments;
