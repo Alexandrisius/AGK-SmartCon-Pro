@@ -34,7 +34,8 @@ public sealed class AnalyzeActiveProjectNamingTests : RevitApiTest
                 null!,
                 txService,
                 new LoadableFamilyScanner(),
-                new RevitMiniProjectMarker(txService, new SystemClock()));
+                new RevitMiniProjectMarker(txService, new SystemClock()),
+                TestSystemTypeSyncServiceFactory.Create(doc));
             var analyses = ops.AnalyzeActiveProject(doc);
 
             var insulation = analyses.FirstOrDefault(

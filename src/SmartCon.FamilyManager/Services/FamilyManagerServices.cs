@@ -170,4 +170,24 @@ public sealed record FamilyManagerServices(
     /// items (<c>family_dependencies</c>, V29). Consumed by the batch-import
     /// executor to persist routing-fitting links after import (E1).
     /// </summary>
-    IFamilyDependencyRepository FamilyDependencyRepository);
+    IFamilyDependencyRepository FamilyDependencyRepository,
+    /// <summary>
+    /// Issue #249 (Phase 4): read access to the stored content analytics
+    /// of catalog versions (section hashes + per-type hashes) — the batch
+    /// dialog's "what changed" diff against the active version.
+    /// </summary>
+    IContentHashAnalyticsRepository ContentHashAnalytics,
+    /// <summary>
+    /// ADR-072 (#254): routing rules of system MEPCurve types as catalog
+    /// data (V34) — consumed by the batch executors to persist routing
+    /// after import (<c>RoutingRuleWriter</c>) and to regenerate
+    /// dependency links from stored rules (plan items 2/5).
+    /// </summary>
+    IFamilyRoutingRuleRepository FamilyRoutingRuleRepository,
+    ISegmentSizeRepository SegmentSizeRepository,
+    /// <summary>
+    /// FHV21 (owner decision 2026-09-01): per-version segment routing rules
+    /// — the import executors persist them from the mini extraction
+    /// (<c>SegmentRuleWriter</c>).
+    /// </summary>
+    ISegmentRuleRepository SegmentRuleRepository);

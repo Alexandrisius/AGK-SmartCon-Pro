@@ -21,6 +21,7 @@ public static class StatusTooltipText
             StaleReason.RevitVersionMismatch => StringLocalization.Keys.FM_StaleTooltipRevitVer,
             StaleReason.NotInCatalog => StringLocalization.Keys.FM_StaleTooltipNotInCatalog,
             StaleReason.ContentDrift => StringLocalization.Keys.FM_StaleTooltipContentDrift,
+            StaleReason.RoutingDrift => StringLocalization.Keys.FM_StaleTooltipRoutingDrift,
             _ => StringLocalization.Keys.FM_StaleTooltipNone,
         };
         return LanguageManager.GetString(key);

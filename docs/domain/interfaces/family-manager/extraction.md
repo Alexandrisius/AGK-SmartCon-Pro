@@ -15,7 +15,9 @@ Extracts structured snapshots from open Revit documents for content-hash computa
 ```csharp
 public interface IFamilySnapshotExtractor
 {
-    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null);
     SystemFamilySnapshot ExtractFromProject(
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,
@@ -23,12 +25,16 @@ public interface IFamilySnapshotExtractor
     SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
         Document stagedDoc,
         BuiltInCategory builtInCategory);
+    SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId);
+    RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId);
 }
 ```
 
-- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`).
+- `ExtractFromFamilyDocument` — extracts a `FamilySnapshot` (parameters, types, values, geometry, shared nested names) from an open family document. The document must be a family document (`IsFamilyDocument == true`). **FHV15 (#249):** type-dependent sections (GEOM metrics, DEF offsets, CONN positions) are measured at a deterministic reference type — the first-Ordinal name of `preferredTypeNames` ∩ document's named types (the verifier's type-set rule), or the document's first named type by default — inside a rolled-back transaction (`SmartCon_HashReferenceType`, I-03b), so the user's current-type choice never shifts the hash and the document/IsModified stay untouched.
 - `ExtractFromProject` — extracts a `SystemFamilySnapshot` (category + types + parameter values) from an open project document.
 - `ExtractSystemCategoryFromStagedProject` (ADR-056) — extracts a `SystemFamilySnapshot` from a staged mini-project (.rvt) during database actualization. Type discovery: placed instances first (domain truth); when nothing is placed (Phase-2 categories) ALL types of the category are collected — the caller trims them to the catalog's authoritative type list (`family_types`).
+- `ExtractSingleSystemType` — one `SystemTypeSnapshot` (parameters, structure, routing) of a project type; the system-type synchronizer reads reference data with it.
+- `ExtractSystemTypeRouting` (ADR-072 World B) — lightweight routing-only read (manager- or parameter-based) for the drift probe (stale/placement); `null` for non-MEP types.
 
 **Caller contract:** the active document may be the source project or a managed-storage mini-rvt (after `EditFamily` + `SaveAs`). The extracted hash is stable across both because it is based on in-memory content, not file bytes.
 
@@ -148,11 +154,13 @@ Coordinates the end-to-end 3D geometry preview pipeline triggered from `LocalFam
 public interface IFamilyGeometryPipeline
 {
     Task RunAsync(
-        string managedRfaPath,
+        IReadOnlyList<FamilyGeometryPerType>? geometryPerType,
+        string? managedRfaPath,
         string catalogItemId,
         string versionId,
         string versionLabel,
         string familyName,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
         CancellationToken ct = default);
 }
 ```
@@ -160,3 +168,4 @@ public interface IFamilyGeometryPipeline
 **Контракт:**
 - Safe to invoke from any thread — internally marshals Revit API calls to the UI thread via `IFamilyManagerAwaitableEvent`.
 - Implementations MUST swallow all exceptions and log a Warn with an `[Action: ...]` suggestion (skill smartcon-logging L9) — geometry preview is a nice-to-have and MUST NOT break the import transaction that already committed before the hook was reached.
+- `overwriteBaselineSectionHashes` (#252): pre-overwrite section hashes той же версии, захваченные `OverwriteCurrentAsync` ДО перезаписи строки каталога. Когда новые секции совпадают с baseline по DEF/GEOM/TYPES/NESTED*, preview-контент не менялся — пайплайн консервирует существующие pooled-ассеты версии и пропускает и удаление stale-ассетов, и mesh-extraction (текстовый overwrite = ноль Revit-работы). `null` на путях новой версии (H1/H2).

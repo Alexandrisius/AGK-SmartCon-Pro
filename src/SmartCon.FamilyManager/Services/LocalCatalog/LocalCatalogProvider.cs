@@ -118,6 +118,29 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
 
+        // #249 (Phase 5): capture the item's CAS pool paths BEFORE the
+        // CASCADE delete — each pooled file is deleted only when no other
+        // catalog item references it anymore (refcount, Plan v3).
+        var capturedPoolPaths = new List<string>();
+        using (var poolCmd = connection.CreateCommand())
+        {
+            poolCmd.CommandText = """
+                SELECT relative_path FROM family_assets
+                WHERE catalog_item_id = @id AND relative_path LIKE @poolPrefix
+                """;
+            poolCmd.Parameters.Add(new SqliteParameter("@id", id));
+            poolCmd.Parameters.Add(new SqliteParameter("@poolPrefix",
+                StoragePathResolver.SharedPreviewPoolRelativePrefix + "%"));
+            using var poolReader = await poolCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await poolReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (!poolReader.IsDBNull(0))
+                {
+                    capturedPoolPaths.Add(poolReader.GetString(0));
+                }
+            }
+        }
+
         int rowsAffected;
         using var tx = connection.BeginTransaction();
         try
@@ -132,6 +155,14 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         {
             tx.Rollback();
             throw;
+        }
+
+        // #249 (Phase 5): refcount cleanup of the captured pool paths —
+        // after the commit, never on the rollback path.
+        foreach (var poolPath in capturedPoolPaths)
+        {
+            await SharedPreviewPoolCleanup.DeletePoolFileIfOrphanedAsync(_database, poolPath, ct)
+                .ConfigureAwait(false);
         }
 
         return rowsAffected > 0;

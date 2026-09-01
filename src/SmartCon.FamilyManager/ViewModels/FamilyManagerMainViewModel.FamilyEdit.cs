@@ -50,6 +50,16 @@ public sealed partial class FamilyManagerMainViewModel
         FamilyPropertiesViewModel vm;
         try
         {
+            // ADR-072 Phase 3: the routing tab needs the item's Revit
+            // category ordinal — the row model doesn't carry it, one cheap
+            // single-row read here.
+            var catalogItem = await _catalogProvider.GetItemAsync(itemId);
+            // «Создано» (owner stress test 2026-09-01): the field was ALWAYS
+            // empty — a hardcoded null was passed here while the DB column
+            // holds the real timestamp; source it from the loaded item.
+            var createdAt = catalogItem is not null && catalogItem.CreatedAtUtc != default
+                ? catalogItem.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : null;
             vm = _viewModelFactory.CreatePropertiesViewModel(
                 SelectedItem.Id,
                 SelectedItem.Name,
@@ -59,10 +69,12 @@ public sealed partial class FamilyManagerMainViewModel
                 SelectedItem.Tags,
                 SelectedItem.ContentStatus,
                 SelectedItem.VersionLabel,
-                null,
+                createdAt,
                 updatedAt,
                 SelectedItem.RevitCategory,
-                isReadOnly: !CanEdit);
+                isReadOnly: !CanEdit,
+                familySource: SelectedItem.FamilySource,
+                revitCategoryId: catalogItem?.RevitCategoryId);
             SmartConLogger.Info("OpenProperties: VM created, calling InitializeCommand...");
 
             // ADR-047 rev 2 / #131: refresh the tree node's tooltip the moment the
@@ -93,12 +105,27 @@ public sealed partial class FamilyManagerMainViewModel
             var result = _dialogService.ShowProperties(vm);
             SmartConLogger.Info($"OpenProperties: ShowProperties returned result={result}");
 
+            // ADR-072 World B: routing edits make the loaded project types
+            // drift RIGHT AWAY — refresh the stale snapshot before the tree
+            // rebuild so the badges repaint without a manual «Проверить».
+            // Owner stress test 2026-09-01 (баг 4): MakeActive on the
+            // Versions tab has the same effect (catalog active moved, the
+            // project markers did not) — recheck through the same
+            // post-import path (both system and loadable, presence-aware).
+            if (vm.RoutingLinksChanged || vm.ActiveVersionChanged)
+            {
+                await RunPostImportStaleCheckAsync(new[]
+                {
+                    new ImportedCatalogItem(itemId, SelectedItem.Name, SelectedItem.FamilySource),
+                });
+            }
+
             // MakeActive on the Versions tab commits to the DB immediately —
             // even a Cancelled dialog may have changed the active version's
             // Revit major version, which drives the tree's availability badge.
             // E5 (#213): a deleted parent version frees dependency links —
             // the tree must rebuild to clear the freed child's paperclip.
-            if (result != true && !vm.ActiveVersionChanged && !vm.VersionsChanged) return;
+            if (result != true && !vm.ActiveVersionChanged && !vm.VersionsChanged && !vm.RoutingLinksChanged) return;
 
             await LoadTreeAsync();
             ExpandAndSelectItem(itemId);
@@ -159,7 +186,7 @@ public sealed partial class FamilyManagerMainViewModel
             {
                 case ActiveDocumentKind.None:
                     _dialogService.ShowError(
-                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
+                        LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error",
                         LanguageManager.GetString(StringLocalization.Keys.FM_ActiveDocNotProject)
                             ?? "Активный документ не является проектом. Откройте проект Revit.");
                     return;
@@ -281,7 +308,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             SmartConLogger.Error($"FAILED: {ex}");
             _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error",
+                LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error",
                 ex.Message);
         }
         finally
@@ -380,7 +407,10 @@ public sealed partial class FamilyManagerMainViewModel
             MatchedItemName: prepared.MatchedItemName,
             ExistingCategoryId: existingCategoryId,
             ExistingCategoryPath: existingCategoryName,
-            HealthReport: prepared.HealthReport)
+            HealthReport: prepared.HealthReport,
+            PerTypeHashes: prepared.PerTypeHashes,
+            Sections: prepared.Sections,
+            UnsubstitutedMiniRouting: prepared.UnsubstitutedMiniRouting)
         {
             Action = status == FamilyBatchImportStatus.Duplicate
                 ? FamilyBatchImportAction.Skip
@@ -408,7 +438,8 @@ public sealed partial class FamilyManagerMainViewModel
             dedupService: _dedupService,
             dispatcher: _dispatcher,
             validationService: _validationService,
-            autoAssignService: _autoAssignService);
+            autoAssignService: _autoAssignService,
+            analyticsRepository: _contentHashAnalytics);
         if (_dialogService.ShowBatchImportDialog(vm) != true)
         {
             await _preparationService.CloseAllPreparedDocumentsAsync(CancellationToken.None);
@@ -520,7 +551,7 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (!isMakeActive && string.IsNullOrEmpty(resolvedManagedPath))
         {
-            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+            StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Import error";
             return;
         }
 
@@ -556,7 +587,7 @@ public sealed partial class FamilyManagerMainViewModel
 
             if (string.IsNullOrEmpty(saveAsPath))
             {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Import error";
                 return;
             }
         }
@@ -610,7 +641,9 @@ public sealed partial class FamilyManagerMainViewModel
                 HashFormatVersion: importItem.HashFormatVersion,
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
-                SystemSnapshot: null)
+                SystemSnapshot: null,
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.MakeActive,
                 PublishedByUser = _revitContext.GetUsername()
@@ -653,7 +686,9 @@ public sealed partial class FamilyManagerMainViewModel
                 HashFormatVersion: importItem.HashFormatVersion,
                 MatchedVersionLabel: importItem.MatchedVersionLabel,
                 LoadableSnapshot: importItem.LoadableSnapshot,
-                SystemSnapshot: null)
+                SystemSnapshot: null,
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.OverwriteCurrent,
                 PublishedByUser = _revitContext.GetUsername()
@@ -693,7 +728,9 @@ public sealed partial class FamilyManagerMainViewModel
                 PublishedBy: _revitContext.GetUsername(),
                 PreextractedGeometry: importItem.GeometryPerType,
                 RevitCategoryId: importItem.LoadableSnapshot?.CategoryId ?? importItem.SystemSnapshot?.CategoryId,
-                Facts: importItem.LoadableSnapshot?.Facts);
+                Facts: importItem.LoadableSnapshot?.Facts,
+                PerTypeHashes: importItem.PerTypeHashes,
+                Sections: importItem.Sections);
 
             importResult = await _importService.ImportFileAsync(request, CancellationToken.None);
         }
@@ -818,7 +855,10 @@ public sealed partial class FamilyManagerMainViewModel
             _familyDependencyRepository,
             _dataImportService,
             _sharedNestedRepository,
-            CurrentRevitVersion);
+            CurrentRevitVersion,
+            _routingRuleRepository,
+            _segmentSizeRepository,
+            _segmentRuleRepository);
         var result = await executor.ExecuteAsync(
                 childImports, categoryId: null, progress: null, pauseGate: null,
                 CancellationToken.None, externalParentItemIds)
@@ -1137,7 +1177,10 @@ public sealed partial class FamilyManagerMainViewModel
             _staleDetector,
             _catalogProvider,
             _familyDependencyRepository,
-            CurrentRevitVersion);
+            CurrentRevitVersion,
+            _routingRuleRepository,
+            _segmentSizeRepository,
+            _segmentRuleRepository);
 
         using var vm = new FamilyBatchImportViewModel(
             batchItems,
@@ -1152,7 +1195,8 @@ public sealed partial class FamilyManagerMainViewModel
             publishedByUser: _revitContext.GetUsername(),
             dispatcher: _dispatcher,
             validationService: _validationService,
-            autoAssignService: _autoAssignService);
+            autoAssignService: _autoAssignService,
+            analyticsRepository: _contentHashAnalytics);
 
         _dialogService.ShowModelessBatchImportDialog(vm);
         await vm.DialogCompletion;
@@ -1175,11 +1219,17 @@ public sealed partial class FamilyManagerMainViewModel
 
         // #185/#186: collect the catalog items this run touched so callers can
         // run post-import actions (safe mini-project close, stale check).
-        var importedItems = batchItems
-            .Where(i => i.Action != FamilyBatchImportAction.Skip)
-            .Select(i => new { Id = i.PrecomputedCatalogItemId ?? i.ExistingCatalogItemId, Item = i })
+        // Owner stress test 2026-09-01 (баг 4): read the FINAL row state, not
+        // the stale DTOs — a Duplicate row defaults to Action=Skip on the DTO,
+        // so the user's «Новая версия» (row-level IncrementVersion) was
+        // filtered out here and the post-import stale check silently never
+        // ran (the orange VersionMismatch badge appeared only on a manual
+        // properties open).
+        var importedItems = vm.Items
+            .Where(r => r.Action != FamilyBatchImportAction.Skip)
+            .Select(r => new { Id = r.PrecomputedCatalogItemId ?? r.ExistingCatalogItemId, Row = r })
             .Where(x => !string.IsNullOrEmpty(x.Id))
-            .Select(x => new ImportedCatalogItem(x.Id!, x.Item.FileName, x.Item.FamilySource))
+            .Select(x => new ImportedCatalogItem(x.Id!, x.Row.FileName, x.Row.FamilySource))
             .ToList();
         return new ProjectImportOutcome(true, vm.ImportSuccessCount, importedItems);
         }
@@ -1244,8 +1294,9 @@ public sealed partial class FamilyManagerMainViewModel
 
         // E5 (#213, ADR-067): an item referenced by ANY version of ANY
         // parent cannot be deleted — every stored parent version must stay
-        // self-sufficient. Release path: delete the referencing parent
-        // versions (properties dialog) or the parents themselves.
+        // self-sufficient (unified rule for routing and shared_nested
+        // links). Release path: delete the referencing parent versions
+        // (properties dialog) or the parents themselves.
         IReadOnlyList<FamilyDependencyReference> dependencyReferences;
         try
         {

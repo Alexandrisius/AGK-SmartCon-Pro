@@ -31,6 +31,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
     private readonly IFamilyHealthChecker _healthChecker;
     private readonly IFamilyDependencyCollector _dependencyCollector;
     private readonly IFamilyVersionStore _versionStore;
+    private readonly IMiniProjectMarker? _miniProjectMarker;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
 
@@ -49,7 +51,9 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         IFamilyTypeCatalogBaker typeCatalogBaker,
         IFamilyHealthChecker healthChecker,
         IFamilyDependencyCollector dependencyCollector,
-        IFamilyVersionStore versionStore)
+        IFamilyVersionStore versionStore,
+        IMiniProjectMarker? miniProjectMarker = null,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -60,6 +64,10 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
         _dependencyCollector = dependencyCollector ?? throw new ArgumentNullException(nameof(dependencyCollector));
         _versionStore = versionStore ?? throw new ArgumentNullException(nameof(versionStore));
+        // ADR-072: optional so legacy test wirings keep the pre-V34 behavior
+        // (no substitution — routing rides in the mini-project).
+        _miniProjectMarker = miniProjectMarker;
+        _routingRuleRepository = routingRuleRepository;
     }
 
     /// <summary>
@@ -682,7 +690,14 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         }
 
         var composer = new CompositeFamilyHashComposer(_contentHasher);
-        var hashes = composer.Compose(snapshots, flatSubtrees);
+        var detailed = composer.ComposeDetailed(snapshots, flatSubtrees);
+        var hashes = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
+        var sectionsByName = new Dictionary<string, IReadOnlyList<ContentSectionHash>?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in detailed)
+        {
+            hashes[kvp.Key] = kvp.Value.Hash;
+            sectionsByName[kvp.Key] = kvp.Value.Sections;
+        }
 
         foreach (var i in itemIndexes)
         {
@@ -733,6 +748,19 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 // verified marker, not from content identity (#209 follow-up:
                 // "Duplicate (v2)" on v1-group content read as a lie).
                 IsMarkerResolvedVersion = markerOverride is not null,
+                // #249 (Phase 2): per-type content hashes of the baked-in
+                // type values — persisted to family_type_hashes at import.
+                // LoadableSnapshot is non-null here (filtered at the top
+                // of the loop).
+                PerTypeHashes = _contentHasher.ComputePerTypeHashesForLoadable(r.LoadableSnapshot!)
+                    ?.Select(kvp => FamilyTypeHashEntry.ForLoadableType(kvp.Key, kvp.Value))
+                    .ToList(),
+                // #249 (Phase 4): canonical sections of the SAME enriched
+                // snapshot as the identity hash (composite-consistent
+                // NESTEDHASH) — persisted to section_hashes/section_strings.
+                Sections = sectionsByName.TryGetValue(normalized, out var sections)
+                    ? sections
+                    : null,
             };
 
             SmartConLogger.Info(
@@ -1183,6 +1211,8 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
         var builtInCategory = analysis.Category;
 
         IReadOnlyList<FamilyDependencyDescriptor>? routingDependencies = null;
+        string? miniCatalogItemId = null;
+        var unsubstitutedMiniRouting = false;
         var snapshot = await _awaitableEvent
             .RaiseAsync(app =>
             {
@@ -1193,11 +1223,45 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
                 // resolve to live families whose identities (UniqueId) drive
                 // the dependency auto-import below.
                 routingDependencies = _dependencyCollector.CollectRoutingDependencies(activeDoc, extracted);
+                // ADR-072 (plan item 4): same roundtrip — the mini marker
+                // tells whether the extracted routing is the SLIM one
+                // (reimport from a mini-project) and which catalog item owns
+                // the stored routing rules.
+                if (_miniProjectMarker?.IsMiniProject(activeDoc) == true)
+                {
+                    miniCatalogItemId = _miniProjectMarker.ReadCatalogItemId(activeDoc);
+                }
                 return extracted;
             }, ct)
             .ConfigureAwait(false);
 
+        // ADR-072 (plan item 4, World B): reimport from a slim mini-project.
+        // FHV20 dropped ROUTING from the hash, so the substitution no longer
+        // affects dedup/sections — its remaining purpose is the SEED source
+        // of the item-level routing tables (RoutingRuleWriter reads the
+        // final snapshot): legacy items whose full routing lives in the
+        // frozen V34 rows get it restored here; when nothing is stored the
+        // slim mini state must NOT be seeded (flagged below, audit M11).
+        if (miniCatalogItemId is not null && _routingRuleRepository is not null)
+        {
+            var (substituted, substitutedSnapshot) = await SubstituteRoutingFromDbAsync(snapshot, miniCatalogItemId, ct)
+                .ConfigureAwait(false);
+            snapshot = substitutedSnapshot;
+            // Audit M11: a mini reimport whose routing could NOT be
+            // substituted (no stored rows anywhere) carries the slim mini
+            // state — flag it so the import never seeds it as catalog truth.
+            unsubstitutedMiniRouting = !substituted;
+        }
+
         var hash = _contentHasher.ComputeForSystem(snapshot);
+        // #249 (Phase 2): per-type content hashes — the DB writer persists
+        // them to family_type_hashes without re-opening the staged file.
+        var perTypeHashes = _contentHasher.ComputePerTypeHashesForSystem(snapshot)
+            ?.Select(FamilyTypeHashEntry.ForSystemType)
+            .ToList();
+        // #249 (Phase 4): canonical sections — persisted to
+        // section_hashes/section_strings at import.
+        var systemSections = _contentHasher.ComputeSectionsForSystem(snapshot);
         var displayName = analysis.DisplayName;
         var normalizedName = FamilyNameNormalizer.Normalize(displayName);
 
@@ -1241,7 +1305,78 @@ public sealed class FamilyImportPreparationService : IFamilyImportPreparationSer
             MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
             IsCrossNameDuplicate: dedupResult.IsCrossNameDuplicate,
             MatchedItemName: dedupResult.HashMatch?.MatchedItemName,
-            RoutingDependencies: routingDependencies);
+            RoutingDependencies: routingDependencies,
+            PerTypeHashes: perTypeHashes,
+            Sections: systemSections,
+            UnsubstitutedMiniRouting: unsubstitutedMiniRouting);
+    }
+
+    /// <summary>
+    /// ADR-072 World B: reimport from a slim mini-project — replaces each
+    /// type's extracted (slim) routing with the catalog's item-level routing
+    /// links (V37), falling back to the current version's V34 rows for pre-
+    /// World-B versions. Post-FHV20 this no longer drives dedup (ROUTING
+    /// left the hash) — it feeds the item-table SEED and the
+    /// <c>UnsubstitutedMiniRouting</c> guard: <c>Substituted=false</c> when
+    /// no stored rows exist, no type matched (routing-less type / data
+    /// drift), or the DB read failed — the slim mini routing then stays in
+    /// the snapshot and must never become catalog truth (audit M11).
+    /// </summary>
+    private async Task<(bool Substituted, SystemFamilySnapshot Snapshot)> SubstituteRoutingFromDbAsync(
+        SystemFamilySnapshot snapshot, string catalogItemId, CancellationToken ct)
+    {
+        try
+        {
+            var (rules, settings) = await _routingRuleRepository!
+                .HasAnyForItemAsync(catalogItemId, ct).ConfigureAwait(false)
+                ? await _routingRuleRepository!.ReadForItemAsync(catalogItemId, ct).ConfigureAwait(false)
+                : !await _routingRuleRepository!.HasRulesForCurrentVersionAsync(catalogItemId, ct)
+                        .ConfigureAwait(false)
+                    ? default
+                    : await _routingRuleRepository!.ReadForCurrentVersionAsync(catalogItemId, ct).ConfigureAwait(false);
+            if (rules is null)
+            {
+                SmartConLogger.Debug(
+                    "Reimport from mini-project: no stored routing rows (pre-V34 version) — " +
+                    "the mini-project routing is used as-is");
+                return (false, snapshot);
+            }
+
+            var substituted = 0;
+            var types = snapshot.Types.Select(t =>
+            {
+                var dbRouting = RoutingRuleRecordMapper.ToSnapshot(
+                    t.Name, t.FamilyKey ?? string.Empty, rules, settings!);
+                if (dbRouting is null)
+                    return t;
+                substituted++;
+                // FHV21 (owner decision 2026-09-01): SEGMENT rules stay with
+                // the MINI — they are versioned mini content entering the
+                // SEGMENTS hash section and the per-version store. Only the
+                // FITTING groups substitute from the catalog (slim minis
+                // lost them by design). The DB's stored Segments rows are
+                // legacy and must not shadow the mini's own.
+                var miniSegmentRules = t.Routing?.Rules
+                    .Where(r => r.GroupType == (int)RoutingManagerGroup.Segments)
+                    .ToList() ?? [];
+                var mergedRules = dbRouting.Rules
+                    .Where(r => r.GroupType != (int)RoutingManagerGroup.Segments)
+                    .Concat(miniSegmentRules)
+                    .ToList();
+                return t with { Routing = dbRouting with { Rules = mergedRules } };
+            }).ToList();
+
+            SmartConLogger.Info(
+                $"Reimport from mini-project: routing substituted from the catalog DB for {substituted} type(s)");
+            return (substituted > 0, snapshot with { Types = types });
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Routing substitution from the catalog DB failed: {ex.Message} " +
+                "[Action: трассировка реимпорта взята из мини-проекта; проверьте базу каталога и повторите импорт]");
+            return (false, snapshot);
+        }
     }
 
     private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(

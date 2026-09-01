@@ -6,9 +6,11 @@ namespace SmartCon.Revit.Util;
 
 /// <summary>
 /// Diagnostics for the FamilyManager attribute-units investigation:
-/// logs raw internal value vs AsValueString vs spec/unit metadata per
-/// Double parameter, plus the owning document's unit format settings.
-/// Debug-level only — silent in Release builds. Grep key: "UnitDiag".
+/// logs the owning document's unit format settings. Debug-level only —
+/// silent in Release builds. Grep key: "UnitDiag".
+/// (The per-parameter raw/AsValueString logging was removed after the
+/// investigation concluded — it produced thousands of lines per
+/// actualization run, see the #249 log audit.)
 /// </summary>
 public static class ParameterUnitDiagnostics
 {
@@ -33,46 +35,6 @@ public static class ParameterUnitDiagnostics
         catch (Exception ex)
         {
             SmartConLogger.Debug($"UnitDiag [{source}] units context failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    public static void LogFamilyTypeDouble(
-        FamilyType familyType, FamilyParameter param, string parameterName, double? internalValue, string source)
-    {
-        try
-        {
-            string? asValueString;
-            try { asValueString = familyType.AsValueString(param); }
-            catch (Exception ex) { asValueString = "<throw:" + ex.GetType().Name + ">"; }
-
-            SmartConLogger.Debug(
-                $"UnitDiag [{source}] '{parameterName}': " +
-                $"raw={FormatRaw(internalValue)}, " +
-                $"asValueString='{asValueString ?? "<null>"}', " +
-                $"spec={GetSpecId(param.Definition)}, unit={GetUnitId(param)}");
-        }
-        catch
-        {
-        }
-    }
-
-    public static void LogParameterDouble(
-        Parameter param, string parameterName, double? internalValue, string source)
-    {
-        try
-        {
-            string? asValueString;
-            try { asValueString = param.AsValueString(); }
-            catch (Exception ex) { asValueString = "<throw:" + ex.GetType().Name + ">"; }
-
-            SmartConLogger.Debug(
-                $"UnitDiag [{source}] '{parameterName}': " +
-                $"raw={FormatRaw(internalValue)}, " +
-                $"asValueString='{asValueString ?? "<null>"}', " +
-                $"spec={GetSpecId(param.Definition)}, unit={GetUnitId(param)}");
-        }
-        catch
-        {
         }
     }
 
@@ -115,49 +77,4 @@ public static class ParameterUnitDiagnostics
         }
     }
 #endif
-
-    private static string FormatRaw(double? value)
-    {
-        return value.HasValue
-            ? value.Value.ToString("R", CultureInfo.InvariantCulture)
-            : "<null>";
-    }
-
-    private static string GetSpecId(Definition? def)
-    {
-        if (def is null) return "<null>";
-        return Compatibility.RevitUnitsCompat.GetSpecTypeIdString(def) ?? "<null>";
-    }
-
-    private static string GetUnitId(FamilyParameter param)
-    {
-        try
-        {
-#if REVIT2021_OR_GREATER
-            return param.GetUnitTypeId()?.TypeId ?? "<null>";
-#else
-            return param.DisplayUnitType.ToString();
-#endif
-        }
-        catch
-        {
-            return "<err>";
-        }
-    }
-
-    private static string GetUnitId(Parameter param)
-    {
-        try
-        {
-#if REVIT2021_OR_GREATER
-            return param.GetUnitTypeId()?.TypeId ?? "<null>";
-#else
-            return param.DisplayUnitType.ToString();
-#endif
-        }
-        catch
-        {
-            return "<err>";
-        }
-    }
 }

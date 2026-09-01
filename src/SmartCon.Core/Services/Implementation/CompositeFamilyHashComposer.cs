@@ -50,6 +50,17 @@ public sealed class CompositeFamilyHashComposer
     }
 
     /// <summary>
+    /// Composite result of one family: the identity hash AND the
+    /// canonical sections — both computed from the SAME enriched snapshot
+    /// (own content + direct children's composite hashes), so the section
+    /// hashes are always consistent with the identity hash (Issue #249,
+    /// Phase 4).
+    /// </summary>
+    public sealed record CompositeHashResult(
+        FamilyContentHash? Hash,
+        IReadOnlyList<ContentSectionHash>? Sections);
+
+    /// <summary>
     /// Compose composite hashes for every family in
     /// <paramref name="snapshots"/>. Keys are NORMALIZED family names
     /// (<c>FamilyNameNormalizer.Normalize</c>, case-insensitive);
@@ -64,6 +75,26 @@ public sealed class CompositeFamilyHashComposer
     /// the underlying hasher returns <c>null</c>.
     /// </returns>
     public IReadOnlyDictionary<string, FamilyContentHash?> Compose(
+        IReadOnlyDictionary<string, FamilySnapshot> snapshots,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> flatSubtrees)
+    {
+        var detailed = ComposeDetailed(snapshots, flatSubtrees);
+        var result = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in detailed)
+        {
+            result[kvp.Key] = kvp.Value.Hash;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// <see cref="Compose"/> with the canonical sections of the same
+    /// enriched snapshots (Issue #249, Phase 4): the NESTEDHASH section
+    /// of the returned sections contains the children's composite hashes,
+    /// exactly like the identity hash — sections computed from the raw
+    /// snapshots would diverge from the composite identity.
+    /// </summary>
+    public IReadOnlyDictionary<string, CompositeHashResult> ComposeDetailed(
         IReadOnlyDictionary<string, FamilySnapshot> snapshots,
         IReadOnlyDictionary<string, IReadOnlyList<string>> flatSubtrees)
     {
@@ -85,7 +116,7 @@ public sealed class CompositeFamilyHashComposer
             directEdges[name] = DeriveDirectChildren(name, snapshots, flatSubtrees);
         }
 
-        var memo = new Dictionary<string, FamilyContentHash?>(StringComparer.OrdinalIgnoreCase);
+        var memo = new Dictionary<string, CompositeHashResult>(StringComparer.OrdinalIgnoreCase);
         var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in orderedNames)
         {
@@ -139,11 +170,11 @@ public sealed class CompositeFamilyHashComposer
             .ToList();
     }
 
-    private FamilyContentHash? ComputeRecursive(
+    private CompositeHashResult ComputeRecursive(
         string name,
         IReadOnlyDictionary<string, FamilySnapshot> snapshots,
         IReadOnlyDictionary<string, IReadOnlyList<string>> directEdges,
-        Dictionary<string, FamilyContentHash?> memo,
+        Dictionary<string, CompositeHashResult> memo,
         HashSet<string> inProgress)
     {
         if (memo.TryGetValue(name, out var existing))
@@ -159,7 +190,7 @@ public sealed class CompositeFamilyHashComposer
                 $"Composite hash: cyclic shared-nested reference involving '{name}' — " +
                 $"child edge substituted with the {UnreadableChildHash} marker " +
                 "[Action: проверьте семейство в Revit — циклическая вложенность недопустима]");
-            return null;
+            return new CompositeHashResult(null, null);
         }
 
         var snapshot = snapshots[name];
@@ -177,17 +208,21 @@ public sealed class CompositeFamilyHashComposer
             }
             else
             {
-                childHash = ComputeRecursive(child, snapshots, directEdges, memo, inProgress)?.HexString
+                childHash = ComputeRecursive(child, snapshots, directEdges, memo, inProgress).Hash?.HexString
                     ?? UnreadableChildHash;
             }
 
             children.Add(new NestedContentHash(child, childHash));
         }
 
-        var composite = _hasher.ComputeForLoadable(
-            snapshot with { SharedNestedContentHashes = children });
-        memo[name] = composite;
+        // Identity hash AND sections from the SAME enriched snapshot —
+        // the NESTEDHASH section stays consistent with the identity hash.
+        var enriched = snapshot with { SharedNestedContentHashes = children };
+        var composite = _hasher.ComputeForLoadable(enriched);
+        var sections = _hasher.ComputeSectionsForLoadable(enriched);
+        var result = new CompositeHashResult(composite, sections);
+        memo[name] = result;
         inProgress.Remove(name);
-        return composite;
+        return result;
     }
 }

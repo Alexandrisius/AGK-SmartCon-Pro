@@ -31,6 +31,11 @@ public enum SystemTypeSyncStatus
 
     /// <summary>Synchronization failed (transaction or API error).</summary>
     Failed,
+
+    /// <summary>ADR-072 World B (audit M8): the user declined the routing
+    /// overwrite confirmation — the type was NOT synced and its live routing
+    /// is untouched. A quiet cancel, not an error.</summary>
+    Cancelled,
 }
 
 /// <summary>
@@ -56,7 +61,15 @@ public sealed record SystemTypeSyncResult(
     int ParametersWritten,
     int ParametersSkipped,
     string? ErrorMessage = null,
-    int NotConvergedCount = 0)
+    int NotConvergedCount = 0,
+    /// <summary>
+    /// Custom (shared/project) parameter definitions the sync PORTED into
+    /// the project because the reference type carries them and the project
+    /// did not (owner decision 2026-08-31: porting stays unconditional —
+    /// a catalog type must arrive with all its attributes — but it must be
+    /// VISIBLE, never silent). Empty/null when nothing was ported.
+    /// </summary>
+    IReadOnlyList<string>? PortedParameterNames = null)
 {
     public bool IsSuccess =>
         Status is SystemTypeSyncStatus.Created or SystemTypeSyncStatus.Updated;

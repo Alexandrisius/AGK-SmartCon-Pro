@@ -224,6 +224,37 @@ public sealed partial class FamilyPropertiesViewModel
                     SmartConLogger.Warn(
                         $"MakeActive succeeded but Assets reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладки «Содержимое» и «3D Просмотр» для новой активной версии]");
                 }
+
+                // FHV21 (owner stress test 2026-09-01): the routing tab's
+                // Segments row is per-version content — after a rollback it
+                // must show the ACTIVATED version's segment configuration,
+                // not the previously loaded one. Fitting links are
+                // item-level and version-independent, but the type set is
+                // per-version too, so a full reload is the correct move;
+                // pending unsaved routing edits are discarded (same as the
+                // Attributes tab reload above). Restore the type selection
+                // when the type still exists in the new active version.
+                if (IsRoutingTabVisible)
+                {
+                    try
+                    {
+                        var selectedKey = SelectedRoutingType is { } selected
+                            ? RoutingTypeItem.KeyOf(selected.TypeName, selected.FamilyKey)
+                            : null;
+                        await LoadRoutingAsync(ct).ConfigureAwait(true);
+                        if (selectedKey is not null)
+                        {
+                            SelectedRoutingType = RoutingTypes.FirstOrDefault(t =>
+                                RoutingTypeItem.KeyOf(t.TypeName, t.FamilyKey) == selectedKey)
+                                ?? RoutingTypes.FirstOrDefault();
+                        }
+                    }
+                    catch (Exception reloadEx)
+                    {
+                        SmartConLogger.Warn(
+                            $"MakeActive succeeded but Routing reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладку «Трассировка» для новой активной версии]");
+                    }
+                }
             }
             else
             {

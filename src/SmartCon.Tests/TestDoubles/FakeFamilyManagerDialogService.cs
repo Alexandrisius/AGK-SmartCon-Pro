@@ -123,5 +123,6 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     /// automatically on the summary screen.</summary>
     public bool AutoCloseDatabaseUpdateDialog { get; set; } = true;
     public bool? ShowAvatarCropper(object viewModel) => throw new NotImplementedException();
+    public bool? ShowRoutingPartPicker(object viewModel) => throw new NotImplementedException();
     public SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request) => throw new NotImplementedException();
 }

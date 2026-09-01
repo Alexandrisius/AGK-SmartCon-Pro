@@ -269,7 +269,7 @@ public sealed partial class CategoryTreeEditorViewModel
             var package = JsonSerializer.Deserialize<MetadataExportPackage>(json, JsonOptions.Default);
             if (package is null)
             {
-                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Import error: empty file";
+                StatusMessage = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Import error: empty file";
                 return;
             }
 

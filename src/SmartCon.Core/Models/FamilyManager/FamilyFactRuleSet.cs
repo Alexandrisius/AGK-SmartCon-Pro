@@ -53,7 +53,23 @@ public static class FamilyFactRuleSet
     /// <summary>Localization key of the Part Type row label.</summary>
     public const string PartTypeLabelKey = "FM_Fact_PartType";
 
+    /// <summary>Machine key of the connector-shape bitmask fact (owner
+    /// stress test 2026-09-01, баг 8): the routing part picker filters flex
+    /// duct candidates by the host's connector profile — a round flex duct
+    /// must never offer rectangular-only fittings, while multi-shape
+    /// transitions (oval-round, round-rect) stay offered because either end
+    /// matches. The value is a bitmask: Round=1, Rectangular=2, Oval=4.</summary>
+    public const string ConnectorShapeFactKey = "connector_shape";
+
+    /// <summary>Localization key of the connector-shape row label.</summary>
+    public const string ConnectorShapeLabelKey = "FM_Fact_ConnectorShape";
+
     private const int PartTypeParameterId = -1114206; // BuiltInParameter.FAMILY_CONTENT_PART_TYPE
+
+    /// <summary><see cref="FamilyFactRule.ParameterId"/> of a COMPUTED fact
+    /// (no backing built-in parameter — the extractor derives the value
+    /// from the family geometry, e.g. the connector shapes).</summary>
+    public const int ComputedFactParameterId = 0;
 
     /// <summary>All registered rules. Read-only by construction.</summary>
     public static IReadOnlyList<FamilyFactRule> Rules { get; } = new[]
@@ -62,6 +78,10 @@ public static class FamilyFactRuleSet
         PartTypeRule(-2008010), // OST_DuctFitting
         PartTypeRule(-2008126), // OST_CableTrayFitting
         PartTypeRule(-2008128), // OST_ConduitFitting
+        ConnectorShapeRule(-2008049), // OST_PipeFitting
+        ConnectorShapeRule(-2008010), // OST_DuctFitting
+        ConnectorShapeRule(-2008126), // OST_CableTrayFitting
+        ConnectorShapeRule(-2008128), // OST_ConduitFitting
     };
 
     /// <summary>
@@ -89,5 +109,11 @@ public static class FamilyFactRuleSet
         FactKey: PartTypeFactKey,
         LabelKey: PartTypeLabelKey,
         ParameterId: PartTypeParameterId);
+
+    private static FamilyFactRule ConnectorShapeRule(int categoryId) => new(
+        CategoryId: categoryId,
+        FactKey: ConnectorShapeFactKey,
+        LabelKey: ConnectorShapeLabelKey,
+        ParameterId: ComputedFactParameterId);
 }
 

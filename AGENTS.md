@@ -272,7 +272,7 @@ Revit-boundary кода без зелёного интеграционного �
 ```bash
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
-# Подмножество: ... -- --treenode-filter "/*/*ClassName*/*/*"
+# Подмножество: ... -- --treenode-filter "/*/*/*ClassName*/*"  (класс в 3-м сегменте!)
 ```
 
 **Философия версий прогона (важно, не путать!):** суть сьюта — проверка **платформы**, а не конкретного года Revit. Обязательный минимум: **R25 (net8, новейший API)** + **любой net48-прогон (Revit 2021-2024, по наличию на машине)**. Инжектор Nice3point ищет Revit года `$(RevitVersion)` — поэтому на машине без Revit 2021 прогон `-c Debug.R21` падает с `FileNotFoundException: RevitAPI 21.0.0.0`; лечение — явный `-p:RevitVersion=YYYY` (глобальное свойство перекрывает пин из `Directory.Build.props`, год = любой установленный net48-Revit). По остаточному принципу, если установлено несколько версий, полезно гонять разные API (2021 минимальный / 2023-2024 промежуточные / 2025 новейший).
@@ -450,7 +450,8 @@ workaround'ов с указанием Issue, файла, платформы и �
   - **RevitAPIUI-типы в тестах = краш всей сессии** (`FileLoadException` + нативный AVE у последующих тестов). DB-уровень only.
   - Поля с Revit-типами — только ленивые; `= null!`/`static readonly XYZ` ломают инжектор (#78).
   - Параллелизм отключён (`[assembly: NotInParallel]`) — не включать: один процесс Revit = AVE.
-  - Подмножество: `-- --treenode-filter "/*/*ClassName*/*/*"`. Подробно — skill `smartcon-testing`.
+  - Подмножество: класс `-- --treenode-filter "/*/*/*ClassName*/*"`, метод `-- --treenode-filter "/*/*/*/*MethodName*"` (дерево = сборка/ns/класс/метод; имя класса во 2-м сегменте молча даёт «Запущено ноль тестов» — всегда проверяй счётчик `всего: N` > 0). Подробно — skill `smartcon-testing`.
+  - **Итерации (жёстко):** правка → точечный прогон класса (секунды) → ОДИН полный R25 → ОДИН net48. Полный сьют — gate, а не диагностика. **НИКОГДА не перезапускай прогон ради имён упавших** — имена/причины извлекай из того же запуска (консоль: `сбой TestName`, `--report-trx`, или TestResults/*-report.html). Новые скипы относительно baseline = сигнал регрессии наравне с падениями.
 
 ## Инструменты поиска
 

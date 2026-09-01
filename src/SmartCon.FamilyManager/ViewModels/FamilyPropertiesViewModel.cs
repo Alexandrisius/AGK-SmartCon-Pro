@@ -139,7 +139,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         || Description != _originalDescription
         || CategoryId != _originalCategoryId
         || !Tags.SequenceEqual(_originalTags)
-        || ContentStatus != _originalContentStatus);
+        || ContentStatus != _originalContentStatus
+        || HasRoutingChanges);
 
     partial void OnSelectedStatusChanged(StatusOption? value)
     {
@@ -247,7 +248,10 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         IAvatarCropService avatarCropService,
         IDatabaseUpdateStateService updateState,
         IFamilyFactRepository factRepository,
-        ICategoryChangeGateService categoryChangeGate)
+        ICategoryChangeGateService categoryChangeGate,
+        string? familySource = null,
+        int? revitCategoryId = null,
+        IRoutingEditorService? routingEditorService = null)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -270,6 +274,11 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _updateState = updateState;
         _factRepository = factRepository;
         _categoryChangeGate = categoryChangeGate;
+
+        // ADR-072 Phase 3: the routing tab exists only for system MEPCurve
+        // items (decided before Initialize so the tab never flashes).
+        _routingEditorService = routingEditorService;
+        InitializeRoutingTab(familySource, revitCategoryId);
 
         Name = name;
         Description = description;
@@ -308,6 +317,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
             await LoadVersionsAsync(ct);
             await LoadAvailableTagsAsync(ct);
             await LoadFactsAsync(ct);
+            await LoadRoutingAsync(ct);
         }
         finally
         {
@@ -340,9 +350,22 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
                         continue;
 
                     var label = LanguageManager.GetString(rule.LabelKey) ?? rule.FactKey;
-                    var value = rule.FactKey == FamilyFactRuleSet.PartTypeFactKey
-                        ? PartTypeLabelMap.TryGetLabel(fact.ValueKey) ?? fact.ValueDisplay
-                        : fact.ValueDisplay;
+                    var value = rule.FactKey switch
+                    {
+                        FamilyFactRuleSet.PartTypeFactKey =>
+                            PartTypeLabelMap.TryGetLabel(fact.ValueKey) ?? fact.ValueDisplay,
+                        // Connector shapes localize at display time too —
+                        // the stored «Round+Rectangular» fallback must never
+                        // reach the UI (owner stress test 2026-09-01). A
+                        // genuinely connectorless family (evaluated mask 0)
+                        // reads «Нет коннекторов» instead of an empty value.
+                        FamilyFactRuleSet.ConnectorShapeFactKey =>
+                            ConnectorShapeLabelMap.TryGetLabel(fact.ValueKey)
+                            ?? (ConnectorShapeLabelMap.IsZeroMask(fact.ValueKey)
+                                ? ConnectorShapeLabelMap.NoConnectorsLabel
+                                : fact.ValueDisplay),
+                        _ => fact.ValueDisplay,
+                    };
                     FactRows.Add(new FamilyFactDisplayRow(label, value));
                 }
             }
@@ -655,6 +678,12 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
         try
         {
+            // ADR-072 Phase 3 (World B): routing edits save first (in-place
+            // item-level link update — no catalog version is created); a
+            // routing failure aborts the whole save.
+            if (HasRoutingChanges && !await SaveRoutingAsync().ConfigureAwait(true))
+                return;
+
             SmartConLogger.Info($"Saving for {_catalogItemId}, new name='{Name}'");
 
             var tags = Tags.ToList();

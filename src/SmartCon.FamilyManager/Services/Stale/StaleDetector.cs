@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.Stale;
@@ -27,12 +28,21 @@ internal sealed class StaleDetector : IStaleDetector
     private readonly IFamilySnapshotExtractor? _snapshotExtractor;
     private readonly IFamilyContentHasher? _contentHasher;
     private readonly IFamilyVersionWriter? _versionWriter;
+    private readonly IContentHashAnalyticsRepository? _contentHashAnalytics;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentRuleRepository? _segmentRuleRepository;
     private FamilyStaleSnapshot? _cachedSnapshot;
     private readonly object _cacheLock = new();
     /// <summary>#187: per-type stale verdicts for system items —
     /// catalogItemId → (typeKey "FAMILY|NAME" upper → isStale). Feeds the
     /// orange presence dot on the exact outdated type node.</summary>
     private readonly Dictionary<string, Dictionary<string, bool>> _systemTypeStaleByType = new(StringComparer.Ordinal);
+    /// <summary>#249 (Phase 2): per-type stale verdicts for LOADABLE items —
+    /// catalogItemId → (original type name, OrdinalIgnoreCase → isStale).
+    /// Filled only when the content verification produced a per-type proof;
+    /// an absent entry means "no per-type data" and the tree falls back to
+    /// the family-level (leaf-scoped) dot — the pre-#249 behaviour.</summary>
+    private readonly Dictionary<string, Dictionary<string, bool>> _loadableTypeStaleByType = new(StringComparer.Ordinal);
 
     public StaleDetector(
         IFamilyVersionStore store,
@@ -46,7 +56,10 @@ internal sealed class StaleDetector : IStaleDetector
         IFamilyFileResolver? fileResolver = null,
         IFamilySnapshotExtractor? snapshotExtractor = null,
         IFamilyContentHasher? contentHasher = null,
-        IFamilyVersionWriter? versionWriter = null)
+        IFamilyVersionWriter? versionWriter = null,
+        IContentHashAnalyticsRepository? contentHashAnalytics = null,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentRuleRepository? segmentRuleRepository = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(store);
@@ -79,6 +92,9 @@ internal sealed class StaleDetector : IStaleDetector
         _snapshotExtractor = snapshotExtractor;
         _contentHasher = contentHasher;
         _versionWriter = versionWriter;
+        _contentHashAnalytics = contentHashAnalytics;
+        _routingRuleRepository = routingRuleRepository;
+        _segmentRuleRepository = segmentRuleRepository;
     }
 
     public async Task<StaleCheckResult> CheckFamilyAsync(
@@ -125,7 +141,7 @@ internal sealed class StaleDetector : IStaleDetector
             // current / orphaned id) → prove content, heal on match.
             reason = await RefineReasonByContentAsync(
                 catalogItem, familyName, loaded, reason, doc, targetRevit,
-                new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase), ct)
+                new Dictionary<string, EmbeddedContentVerifier.FileProof>(StringComparer.OrdinalIgnoreCase), ct)
                 .ConfigureAwait(true);
 
             result = new StaleCheckResult(
@@ -324,9 +340,10 @@ internal sealed class StaleDetector : IStaleDetector
         // 2026-08-12). A label drift without id mismatch is stale WITHOUT
         // opening any document — «Обновить» reconciles it.
         // One OpenDocumentFile per version FILE per check run — duplicate
-        // catalog items resolving to the same file share the cached hash
-        // (a cached null is a cached "indeterminate").
-        var fileHashCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        // catalog items resolving to the same file share the cached proof
+        // (family hash + per-type hashes; a cached null-field entry is a
+        // cached "indeterminate").
+        var fileProofCache = new Dictionary<string, EmbeddedContentVerifier.FileProof>(StringComparer.OrdinalIgnoreCase);
         foreach (var (item, familyName, id) in matched)
         {
             versions.TryGetValue(id, out var loaded);
@@ -336,7 +353,7 @@ internal sealed class StaleDetector : IStaleDetector
                     loaded, item.Id, item.CurrentVersionLabel, targetRevit);
 
             reason = await RefineReasonByContentAsync(
-                item, familyName, loaded, reason, doc, targetRevit, fileHashCache, ct)
+                item, familyName, loaded, reason, doc, targetRevit, fileProofCache, ct)
                 .ConfigureAwait(true);
 
             results.Add(new StaleCheckResult(
@@ -358,17 +375,20 @@ internal sealed class StaleDetector : IStaleDetector
 
     /// <summary>
     /// FHV10 content proof for an embedded nested family in a family
-    /// document: <c>true</c> — embedded content matches the current catalog
-    /// version file; <c>false</c> — differs; <c>null</c> — indeterminate
-    /// (file unresolvable, guards tripped) and the caller keeps the
-    /// marker-based verdict.
+    /// document or project: <see cref="LoadableVerificationResult.Verdict"/>
+    /// — <c>true</c> embedded content matches the current catalog version
+    /// file, <c>false</c> differs, <c>null</c> indeterminate (file
+    /// unresolvable, guards tripped) and the caller keeps the marker-based
+    /// verdict. <see cref="LoadableVerificationResult.PerTypeStale"/> (#249,
+    /// Phase 2) resolves WHICH loaded types drifted — it feeds the
+    /// per-type orange dot in the tree.
     /// </summary>
-    private async Task<bool?> ContentVerifyEmbeddedAsync(
+    private async Task<LoadableVerificationResult> ContentVerifyEmbeddedAsync(
         FamilyCatalogItem item,
         string familyName,
         Document doc,
         int targetRevit,
-        IDictionary<string, string?> fileHashCache,
+        IDictionary<string, EmbeddedContentVerifier.FileProof> fileProofCache,
         CancellationToken ct)
     {
         FamilyResolvedFile resolved;
@@ -382,17 +402,17 @@ internal sealed class StaleDetector : IStaleDetector
             SmartConLogger.Warn(
                 $"CheckEmbedded[{item.Id}]: failed to resolve the current version file: {ex.GetType().Name}: {ex.Message} " +
                 "[Action: контентная верификация пропущена — проверьте, что файл версии доступен на диске]");
-            return null;
+            return new LoadableVerificationResult(null, null);
         }
         if (string.IsNullOrEmpty(resolved.AbsolutePath))
         {
-            return null;
+            return new LoadableVerificationResult(null, null);
         }
 
         return await _awaitable.RaiseAsync(
-            _ => EmbeddedContentVerifier.VerifyEmbeddedAgainstFile(
+            _ => EmbeddedContentVerifier.VerifyEmbeddedAgainstFileDetailed(
                 doc, familyName, resolved.AbsolutePath,
-                _snapshotExtractor!, _contentHasher!, $"CheckEmbedded[{item.Id}]", fileHashCache),
+                _snapshotExtractor!, _contentHasher!, $"CheckEmbedded[{item.Id}]", fileProofCache),
             ct).ConfigureAwait(true);
     }
 
@@ -458,7 +478,7 @@ internal sealed class StaleDetector : IStaleDetector
         StaleReason reason,
         Document doc,
         int targetRevit,
-        IDictionary<string, string?> fileHashCache,
+        IDictionary<string, EmbeddedContentVerifier.FileProof> fileProofCache,
         CancellationToken ct)
     {
         // #218: orphan-vs-foreign classification of an id mismatch. The
@@ -509,14 +529,43 @@ internal sealed class StaleDetector : IStaleDetector
             || markerOrphaned;
         if (!markerCannotSpeak || !canContentVerify)
         {
+            // #249 (follow-up, manual test): a VersionMismatch marker is a
+            // valid FAMILY-level verdict ("an older version is embedded"),
+            // but it must NOT paint every type stale — the per-type answer
+            // is computable from the catalog alone: per-type hashes of the
+            // marker's version vs the current one. No document opens, no
+            // EditFamily — immune to the open-editor guard that made the
+            // embedded proof (and with it the per-type map) unavailable
+            // right after "Import Active File".
+            if (reason == StaleReason.VersionMismatch
+                && loaded?.VersionLabel is not null
+                && item.CurrentVersionLabel is not null
+                && _contentHashAnalytics is not null)
+            {
+                StoreLoadableTypeStaleMap(item.Id,
+                    await ComputeDbPerTypeStaleAsync(
+                        item.Id, loaded.VersionLabel!, item.CurrentVersionLabel, ct)
+                        .ConfigureAwait(false));
+            }
+            else
+            {
+                // No per-type proof without a content verification — clear any
+                // stale map from a previous check so the tree falls back to the
+                // family-level (leaf-scoped) dot (#249, Phase 2).
+                ClearLoadableTypeStaleMap(item.Id);
+            }
             return reason;
         }
 
-        var verdict = await ContentVerifyEmbeddedAsync(
-            item, familyName, doc, targetRevit, fileHashCache, ct).ConfigureAwait(true);
+        var verification = await ContentVerifyEmbeddedAsync(
+            item, familyName, doc, targetRevit, fileProofCache, ct).ConfigureAwait(true);
+        var verdict = verification.Verdict;
 
         if (verdict == true)
         {
+            // A content match clears the per-type drift too — the tree
+            // falls back to the (now non-stale) leaf verdict.
+            ClearLoadableTypeStaleMap(item.Id);
             if (loaded is null || markerOrphaned)
             {
                 SmartConLogger.Debug(
@@ -535,6 +584,9 @@ internal sealed class StaleDetector : IStaleDetector
 
         if (verdict == false)
         {
+            // #249 (Phase 2): keep the per-type drift map for the tree;
+            // without a proof the entry is cleared (leaf-scoped fallback).
+            StoreLoadableTypeStaleMap(item.Id, verification.PerTypeStale);
             if (loaded is null)
             {
                 SmartConLogger.Debug(
@@ -547,16 +599,374 @@ internal sealed class StaleDetector : IStaleDetector
             // or an orphaned marker whose content is genuinely older than
             // the current version (#218). «Обновить» restores the catalog
             // content in both cases.
+            var changedTypes = verification.PerTypeStale?.Count(kv => kv.Value) ?? 0;
             SmartConLogger.Debug(
                 $"CheckEmbedded: '{familyName}' {(markerOrphaned ? "orphaned marker" : $"marker matches {item.CurrentVersionLabel}")} " +
-                "but the content DIFFERS from the current catalog version — stale (ContentDrift)");
+                $"but the content DIFFERS from the current catalog version — stale (ContentDrift, {changedTypes} changed type(s))");
             return StaleReason.ContentDrift;
         }
 
+        ClearLoadableTypeStaleMap(item.Id);
         SmartConLogger.Debug(
             $"CheckEmbedded: '{familyName}' content verify indeterminate " +
             $"— marker-based verdict stands ({reason})");
         return reason;
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): stores the per-type drift map of a loadable item
+    /// (a null proof clears the entry → the tree falls back to the
+    /// family-level dot). Threading: same discipline as
+    /// <see cref="_systemTypeStaleByType"/> — mutated under
+    /// <see cref="_cacheLock"/>.
+    /// </summary>
+    private void StoreLoadableTypeStaleMap(string catalogItemId, IReadOnlyDictionary<string, bool>? perTypeStale)
+    {
+        lock (_cacheLock)
+        {
+            if (perTypeStale is null)
+            {
+                _loadableTypeStaleByType.Remove(catalogItemId);
+            }
+            else
+            {
+                // net48: Dictionary has no IReadOnlyDictionary ctor —
+                // project via LINQ instead.
+                _loadableTypeStaleByType[catalogItemId] = perTypeStale
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    /// <summary>
+    /// #249 (follow-up, manual test): per-type drift map for a VersionMismatch
+    /// verdict, computed PURELY from the catalog DB — per-type content hashes
+    /// of the embedded (marker) version vs the current version. Types whose
+    /// hashes match are NOT stale (their embedded content equals the current
+    /// version's, the family-level verdict notwithstanding); types removed
+    /// in the current version are stale; types added in the current version
+    /// are not (the project cannot have them). <c>null</c> when either
+    /// version's analytics are pending — the tree then keeps the pre-fix
+    /// leaf-scoped fallback.
+    /// <para>
+    /// Round-5 fix: per-type hashes track per-type VALUES only — a change in
+    /// a SHARED section (GEOM, DEF, CONN, …) affects EVERY type, and a
+    /// values-only map showed "0 stale" while the family genuinely needed a
+    /// reload (geometry dots vanished). The section hashes of the two
+    /// versions are compared too: any changed section outside the per-type
+    /// ones (<c>TYPES</c>/<c>VALUES</c>) marks every loaded type stale.
+    /// </para>
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, bool>?> ComputeDbPerTypeStaleAsync(
+        string catalogItemId,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        CancellationToken ct)
+    {
+        try
+        {
+            var from = await _contentHashAnalytics!.GetTypeHashesAsync(catalogItemId, fromVersionLabel, ct)
+                .ConfigureAwait(false);
+            var to = await _contentHashAnalytics.GetTypeHashesAsync(catalogItemId, currentVersionLabel, ct)
+                .ConfigureAwait(false);
+            if (from is null || to is null)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded[{catalogItemId}]: per-type analytics pending for " +
+                    $"{fromVersionLabel} or {currentVersionLabel} — leaf-scoped stale fallback");
+                return null;
+            }
+
+            // Shared-section rule (round 5): a change outside the per-type
+            // sections makes EVERY loaded type stale.
+            var sharedChangedSections = await ComputeChangedSharedSectionsAsync(
+                catalogItemId, fromVersionLabel, currentVersionLabel, ct).ConfigureAwait(false);
+
+            var toByKey = new Dictionary<string, FamilyTypeHashEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in to)
+            {
+                toByKey[entry.TypeIdentityKey] = entry;
+            }
+
+            var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in from)
+            {
+                map[entry.TypeName] = sharedChangedSections.Count > 0
+                    || !toByKey.TryGetValue(entry.TypeIdentityKey, out var other)
+                    || !string.Equals(entry.HashHex, other.HashHex, StringComparison.OrdinalIgnoreCase);
+            }
+            foreach (var entry in to)
+            {
+                // New in the current version — the project cannot carry it.
+                // (net48: Dictionary has no TryAdd.)
+                if (!map.ContainsKey(entry.TypeName))
+                {
+                    map[entry.TypeName] = false;
+                }
+            }
+
+            SmartConLogger.Debug(
+                $"CheckEmbedded[{catalogItemId}]: DB per-type drift between {fromVersionLabel} and " +
+                $"{currentVersionLabel}: {map.Count(kv => kv.Value)} stale of {map.Count} type(s)" +
+                (sharedChangedSections.Count > 0
+                    ? $" (shared sections changed: {string.Join(", ", sharedChangedSections)})"
+                    : string.Empty));
+            return map;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            SmartConLogger.Warn(
+                $"CheckEmbedded[{catalogItemId}]: DB per-type drift computation failed: {ex.Message} " +
+                "[Action: per-type индикация отключена для этого семейства до следующей «Проверить»; повторите проверку]");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Section names whose hashes differ between two versions of the item,
+    /// excluding the per-type sections (<c>TYPES</c>/<c>VALUES</c> — those
+    /// are answered by the per-type hash comparison). Empty when the
+    /// section analytics are pending for either version (the values-level
+    /// answer then stands alone) or when nothing shared changed.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ComputeChangedSharedSectionsAsync(
+        string catalogItemId,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        CancellationToken ct)
+    {
+        var fromSections = await _contentHashAnalytics!.GetSectionHashesAsync(catalogItemId, fromVersionLabel, ct)
+            .ConfigureAwait(false);
+        var toSections = await _contentHashAnalytics.GetSectionHashesAsync(catalogItemId, currentVersionLabel, ct)
+            .ConfigureAwait(false);
+        if (fromSections is null || toSections is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var changed = new List<string>();
+        foreach (var key in fromSections.Keys.Concat(toSections.Keys).Distinct(StringComparer.Ordinal))
+        {
+            if (string.Equals(key, FamilyContentSectionNames.Types, StringComparison.Ordinal)
+                || string.Equals(key, FamilyContentSectionNames.Values, StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (!fromSections.TryGetValue(key, out var a)
+                || !toSections.TryGetValue(key, out var b)
+                || !string.Equals(a, b, StringComparison.Ordinal))
+            {
+                changed.Add(key);
+            }
+        }
+        return changed;
+    }
+
+    private void ClearLoadableTypeStaleMap(string catalogItemId)
+    {
+        lock (_cacheLock)
+        {
+            _loadableTypeStaleByType.Remove(catalogItemId);
+        }
+    }
+
+    /// <summary>
+    /// #253: refines ONE system type's VersionMismatch dot from the catalog
+    /// DB (per-type content hashes of the marker's version vs the current
+    /// one + the shared-section rule) — zero document opens, the same
+    /// semantics the loadable DB map
+    /// (<see cref="ComputeDbPerTypeStaleAsync"/>) applies. Returns
+    /// <c>null</c> when the analytics cannot prove anything (pending
+    /// backfill / foreign marker label) — the caller keeps the marker-based
+    /// dot. <paramref name="memo"/> caches the (types ×2 + shared sections)
+    /// triple per (item, marker label) across the item's types and across
+    /// items of one check run.
+    /// </summary>
+    private async Task<bool?> RefineSystemTypeStaleAsync(
+        string catalogItemId,
+        FamilyTypeDescriptor descriptor,
+        string fromVersionLabel,
+        string currentVersionLabel,
+        Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>? From, IReadOnlyList<FamilyTypeHashEntry>? To, IReadOnlyList<string> Shared)> memo,
+        CancellationToken ct)
+    {
+        try
+        {
+            var memoKey = catalogItemId + "|" + fromVersionLabel;
+            if (!memo.TryGetValue(memoKey, out var analytics))
+            {
+                var from = await _contentHashAnalytics!.GetTypeHashesAsync(catalogItemId, fromVersionLabel, ct)
+                    .ConfigureAwait(false);
+                var to = await _contentHashAnalytics.GetTypeHashesAsync(catalogItemId, currentVersionLabel, ct)
+                    .ConfigureAwait(false);
+                var shared = await ComputeChangedSharedSectionsAsync(catalogItemId, fromVersionLabel, currentVersionLabel, ct)
+                    .ConfigureAwait(false);
+                analytics = (from, to, shared);
+                memo[memoKey] = analytics;
+            }
+
+            var refined = SystemTypeStaleLogic.RefineVersionMismatchWithContent(
+                analytics.From,
+                analytics.To,
+                analytics.Shared,
+                SystemTypeIdentityKey.Build(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name));
+            if (refined.HasValue)
+            {
+                SmartConLogger.Debug(
+                    $"CheckEmbedded[{catalogItemId}]: system per-type '{descriptor.Name}' " +
+                    $"{fromVersionLabel}→{currentVersionLabel} refined by content hash: stale={refined.Value}" +
+                    (analytics.Shared.Count > 0
+                        ? $" (shared sections changed: {string.Join(", ", analytics.Shared)})"
+                        : string.Empty));
+            }
+            return refined;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Mirror ComputeDbPerTypeStaleAsync: a transient analytics
+            // failure degrades to the marker-based dot — it must never
+            // abort the whole stale check.
+            SmartConLogger.Warn(
+                $"CheckEmbedded[{catalogItemId}]: system per-type content refinement failed: {ex.Message} " +
+                "[Action: per-type уточнение отключено для этого типа до следующей «Проверить»; повторите проверку]");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ADR-072 World B routing drift probe: compares the LIVE routing
+    /// preferences of the project's loaded types against the catalog's
+    /// item-level routing links via <see cref="RoutingFingerprint"/>
+    /// (routing left the content hash, so marker checks are blind to it).
+    /// Returns <c>null</c> when the catalog has no opinion (non-MEP
+    /// category, no item-level links, missing seams) — the caller keeps
+    /// the marker-based verdict; otherwise a per-type drift map keyed by
+    /// <see cref="BuildSystemTypeKey"/>.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, bool>?> ComputeRoutingDriftAsync(
+        Document doc,
+        FamilyCatalogItem item,
+        IReadOnlyList<(FamilyTypeDescriptor Descriptor, ElementId TypeId)> pairs,
+        CancellationToken ct)
+    {
+        if (_routingRuleRepository is null || _snapshotExtractor is null)
+            return null;
+        if (!RoutingGroupCatalog.IsMepCurveCategory(item.RevitCategoryId))
+            return null;
+
+        try
+        {
+            // Same source chain as sync (audit M9): item-level V37 first,
+            // the current version's V34 rows as the legacy fallback —
+            // otherwise an unhealed legacy window leaves the probe blind
+            // while sync still applies the V34 routing.
+            var (rules, settings) = await _routingRuleRepository
+                .HasAnyForItemAsync(item.Id, ct).ConfigureAwait(false)
+                ? await _routingRuleRepository.ReadForItemAsync(item.Id, ct).ConfigureAwait(false)
+                : !await _routingRuleRepository.HasRulesForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false)
+                    ? default
+                    : await _routingRuleRepository.ReadForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false);
+            if (rules is null)
+                return null;
+
+            // FHV21: segment rules compose from the per-version store of the
+            // CURRENT version — the drift fingerprint matches exactly what
+            // sync would apply (fittings item-level, segments versioned).
+            if (_segmentRuleRepository is not null)
+            {
+                var perVersionSegments = await _segmentRuleRepository
+                    .ReadForCurrentVersionAsync(item.Id, ct).ConfigureAwait(false);
+                rules = SegmentRuleComposition.Compose(rules, perVersionSegments);
+            }
+
+            // Only pipes carry size ranges in routing (owner decision
+            // 2026-08-30). Legacy item rows may still hold the criterion
+            // for ducts — normalize both sides so the probe compares like
+            // with like (see RoutingFingerprint.WithoutSizeCriteria).
+            var includeSizeCriteria = RoutingGroupCatalog.HasSizeCriteria(item.RevitCategoryId);
+            RoutingPreferencesSnapshot? NormalizeRouting(RoutingPreferencesSnapshot? snapshot)
+                => RoutingFingerprint.WithCanonicalTransitionGroups(
+                    includeSizeCriteria ? snapshot : RoutingFingerprint.WithoutSizeCriteria(snapshot));
+
+            var catalogFingerprints = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var setting in settings)
+            {
+                // Audit L10: legacy rows may carry an EMPTY FamilyKey — the
+                // catalog key would degrade to "|NAME" and never match the
+                // live "SINGLE|NAME" (silent drift blindness). Resolve the
+                // identity from the item's type descriptors — the same
+                // source the live side of the comparison uses.
+                var descriptor = pairs
+                    .FirstOrDefault(p => string.Equals(
+                        p.Descriptor?.Name, setting.TypeName, StringComparison.Ordinal))
+                    .Descriptor;
+                var effectiveKey = !string.IsNullOrEmpty(setting.FamilyKey)
+                    ? setting.FamilyKey
+                    : descriptor?.FamilyKey;
+                catalogFingerprints[BuildSystemTypeKey(effectiveKey, descriptor?.FamilyName, setting.TypeName)] =
+                    RoutingFingerprint.Compute(NormalizeRouting(RoutingRuleRecordMapper.ToSnapshot(
+                        setting.TypeName, setting.FamilyKey, rules, settings)));
+            }
+            if (catalogFingerprints.Count == 0)
+                return null;
+
+            var extractor = _snapshotExtractor;
+            var live = await _awaitable.RaiseAsync(_ =>
+            {
+                var map = new Dictionary<string, string?>(StringComparer.Ordinal);
+                foreach (var (descriptor, typeId) in pairs)
+                {
+                    map[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] =
+                        RoutingFingerprint.Compute(NormalizeRouting(extractor.ExtractSystemTypeRouting(doc, typeId)));
+                }
+                return map;
+            }, ct).ConfigureAwait(true);
+
+            var drift = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var (descriptor, _) in pairs)
+            {
+                var key = BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name);
+                if (!catalogFingerprints.TryGetValue(key, out var catalogFingerprint))
+                {
+                    drift[key] = false;
+                    continue;
+                }
+                live.TryGetValue(key, out var liveFingerprint);
+                // Live-null on an MEP type means the routing READ failed
+                // (a manager-based type always yields a snapshot; a
+                // manager-less MEP type always exposes routing params) —
+                // it is never proof of drift (audit L9: a transient read
+                // failure must not mark the family RoutingDrift and let
+                // "Обновить" overwrite a healthy routing).
+                if (catalogFingerprint is not null && liveFingerprint is null)
+                {
+                    SmartConLogger.Warn(
+                        $"RoutingDrift[{item.Id}]: live routing of '{descriptor.Name}' could not be read — " +
+                        "drift not evaluated for this type. [Action: повторите «Проверить»; " +
+                        "при повторении ищите причину в Debug-логе экстрактора]");
+                    drift[key] = false;
+                    continue;
+                }
+                drift[key] = !string.Equals(catalogFingerprint, liveFingerprint, StringComparison.Ordinal);
+            }
+
+            if (drift.Values.Any(v => v))
+            {
+                SmartConLogger.Info(
+                    $"RoutingDrift[{item.Id}]: live routing of {drift.Count(v => v.Value)} type(s) " +
+                    "differs from the catalog links");
+            }
+            return drift;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Same degradation rule as the content refinement: a transient
+            // failure keeps the marker-based verdict, never aborts the check.
+            SmartConLogger.Warn(
+                $"RoutingDrift[{item.Id}]: probe failed: {ex.Message} " +
+                "[Action: routing-дрейф не проверен для этого семейства; повторите «Проверить»]");
+            return null;
+        }
     }
 
     /// <summary>
@@ -695,6 +1105,21 @@ internal sealed class StaleDetector : IStaleDetector
             _ => _systemTypeStore.ReadManyFromTypes(doc, allIds),
             ct).ConfigureAwait(true);
 
+        // ADR-072 World B: routing fingerprint probe per matched MEP item —
+        // the marker can be current while the catalog links drifted.
+        var driftByItem = new Dictionary<string, IReadOnlyDictionary<string, bool>>(StringComparer.Ordinal);
+        foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+        {
+            var drift = await ComputeRoutingDriftAsync(
+                    doc,
+                    group.First().Item,
+                    group.Select(m => (m.Descriptor, m.TypeId)).ToList(),
+                    ct)
+                .ConfigureAwait(false);
+            if (drift is not null)
+                driftByItem[group.Key] = drift;
+        }
+
         var results = new List<StaleCheckResult>(matched.Count);
         foreach (var (item, typeIds) in matched)
         {
@@ -702,6 +1127,13 @@ internal sealed class StaleDetector : IStaleDetector
                 .Select(id => markers.TryGetValue(id, out var m) ? m : null)
                 .ToList();
             var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(item, itemMarkers, targetRevit);
+            if (!isStale
+                && driftByItem.TryGetValue(item.Id, out var itemDrift)
+                && itemDrift.Values.Any(v => v))
+            {
+                isStale = true;
+                reason = StaleReason.RoutingDrift;
+            }
             results.Add(new StaleCheckResult(
                 item.Id,
                 item.Name,
@@ -713,27 +1145,58 @@ internal sealed class StaleDetector : IStaleDetector
 
         // #187: per-type stale map — one verdict per (family, name) type so
         // the tree can paint the ORANGE presence dot on the exact outdated
-        // type, not just the leaf roll-up.
+        // type, not just the leaf roll-up. #253: a VersionMismatch dot is
+        // refined from the catalog DB (content hashes + shared sections) —
+        // computed BEFORE the lock because the refinement awaits DB reads.
+        var analyticsMemo = new Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<string>)>(StringComparer.Ordinal);
+        var refinedTypeMaps = new Dictionary<string, Dictionary<string, bool>>(StringComparer.Ordinal);
+        foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+        {
+            var item = group.First().Item;
+            var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
+            foreach (var (_, descriptor, typeId) in group)
+            {
+                markers.TryGetValue(typeId, out var marker);
+                // Stress test 2026-08-05 (semantics change): a missing
+                // marker is NOT stale — template-native types have
+                // unknown provenance, not proven outdatedness. Only a
+                // marker mismatch paints the orange dot.
+                var reason = marker is null
+                    ? StaleReason.None
+                    : SystemTypeStaleLogic.ComputeReason(
+                        marker, item.Id, item.CurrentVersionLabel, targetRevit);
+                var isTypeStale = reason != StaleReason.None;
+                if (isTypeStale
+                    && reason == StaleReason.VersionMismatch
+                    && marker is not null
+                    && item.CurrentVersionLabel is not null
+                    && _contentHashAnalytics is not null)
+                {
+                    var refined = await RefineSystemTypeStaleAsync(
+                        item.Id, descriptor, marker.VersionLabel, item.CurrentVersionLabel, analyticsMemo, ct)
+                        .ConfigureAwait(false);
+                    if (refined.HasValue)
+                    {
+                        isTypeStale = refined.Value;
+                    }
+                }
+                var typeKey = BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name);
+                if (!isTypeStale
+                    && driftByItem.TryGetValue(item.Id, out var typeDrift)
+                    && typeDrift.TryGetValue(typeKey, out var drifted)
+                    && drifted)
+                {
+                    isTypeStale = true;
+                }
+                typeMap[typeKey] = isTypeStale;
+            }
+            refinedTypeMaps[group.Key] = typeMap;
+        }
         lock (_cacheLock)
         {
-            foreach (var group in matchedByDescriptor.GroupBy(m => m.Item.Id))
+            foreach (var kvp in refinedTypeMaps)
             {
-                var item = group.First().Item;
-                var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
-                foreach (var (_, descriptor, typeId) in group)
-                {
-                    markers.TryGetValue(typeId, out var marker);
-                    // Stress test 2026-08-05 (semantics change): a missing
-                    // marker is NOT stale — template-native types have
-                    // unknown provenance, not proven outdatedness. Only a
-                    // marker mismatch paints the orange dot.
-                    var reason = marker is null
-                        ? StaleReason.None
-                        : SystemTypeStaleLogic.ComputeReason(
-                            marker, item.Id, item.CurrentVersionLabel, targetRevit);
-                    typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = reason != StaleReason.None;
-                }
-                _systemTypeStaleByType[group.Key] = typeMap;
+                _systemTypeStaleByType[kvp.Key] = kvp.Value;
             }
         }
 
@@ -829,9 +1292,14 @@ internal sealed class StaleDetector : IStaleDetector
             .Select(id => markers.TryGetValue(id, out var m) ? m : null)
             .ToList();
         var targetRevit = ResolveTargetRevit();
-        var (isStale, reason, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+        var (isStaleAgg, reasonAgg, loadedLabel) = AggregateSystemTypeMarkers(catalogItem, itemMarkers, targetRevit);
+        var isStale = isStaleAgg;
+        var reason = reasonAgg;
 
         // #187: per-type stale map (orange presence dot per exact type).
+        // #253: VersionMismatch dots refined from the catalog DB (same
+        // semantics as the batch path).
+        var analyticsMemo = new Dictionary<string, (IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<FamilyTypeHashEntry>?, IReadOnlyList<string>)>(StringComparer.Ordinal);
         var typeMap = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var (descriptor, typeId) in foundPairs)
         {
@@ -840,8 +1308,47 @@ internal sealed class StaleDetector : IStaleDetector
                 ? StaleReason.None
                 : SystemTypeStaleLogic.ComputeReason(
                     marker, catalogItemId, catalogItem.CurrentVersionLabel, targetRevit);
-            typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = typeReason != StaleReason.None;
+            var isTypeStale = typeReason != StaleReason.None;
+            if (isTypeStale
+                && typeReason == StaleReason.VersionMismatch
+                && marker is not null
+                && catalogItem.CurrentVersionLabel is not null
+                && _contentHashAnalytics is not null)
+            {
+                var refined = await RefineSystemTypeStaleAsync(
+                    catalogItemId, descriptor, marker.VersionLabel, catalogItem.CurrentVersionLabel, analyticsMemo, ct)
+                    .ConfigureAwait(false);
+                if (refined.HasValue)
+                {
+                    isTypeStale = refined.Value;
+                }
+            }
+            typeMap[BuildSystemTypeKey(descriptor.FamilyKey, descriptor.FamilyName, descriptor.Name)] = isTypeStale;
         }
+
+        // ADR-072 World B: the marker can be perfectly current while the
+        // routing links drifted (editor save / manual project edit) — the
+        // fingerprint probe upgrades the verdict to RoutingDrift. Audit M7:
+        // the probe runs even when the family is ALREADY stale by content
+        // (batch-path parity) — the per-type map must show the drifted type
+        // right after an editor save; the item-level reason, though, upgrades
+        // to RoutingDrift only when no stronger content reason exists.
+        var routingDrift = await ComputeRoutingDriftAsync(doc, catalogItem, foundPairs, ct)
+            .ConfigureAwait(false);
+        if (routingDrift is not null)
+        {
+            foreach (var pair in routingDrift)
+            {
+                if (!pair.Value) continue;
+                typeMap[pair.Key] = true;
+                if (!isStale)
+                {
+                    isStale = true;
+                    reason = StaleReason.RoutingDrift;
+                }
+            }
+        }
+
         lock (_cacheLock)
         {
             _systemTypeStaleByType[catalogItemId] = typeMap;
@@ -914,6 +1421,7 @@ internal sealed class StaleDetector : IStaleDetector
             foreach (var id in catalogItemIds)
             {
                 _systemTypeStaleByType.Remove(id);
+                _loadableTypeStaleByType.Remove(id);
             }
             if (_cachedSnapshot is null) return;
             var before = _cachedSnapshot.Results.Count;
@@ -938,6 +1446,7 @@ internal sealed class StaleDetector : IStaleDetector
         {
             _cachedSnapshot = null;
             _systemTypeStaleByType.Clear();
+            _loadableTypeStaleByType.Clear();
         }
     }
 
@@ -949,6 +1458,7 @@ internal sealed class StaleDetector : IStaleDetector
             foreach (var id in catalogItemIds)
             {
                 _systemTypeStaleByType.Remove(id);
+                _loadableTypeStaleByType.Remove(id);
             }
             if (_cachedSnapshot is null) return;
             var before = _cachedSnapshot.Results.Count;
@@ -971,6 +1481,21 @@ internal sealed class StaleDetector : IStaleDetector
         lock (_cacheLock)
         {
             return _systemTypeStaleByType.TryGetValue(catalogItemId, out var map) ? map : null;
+        }
+    }
+
+    /// <summary>
+    /// #249 (Phase 2): per-type stale verdicts of one LOADABLE catalog
+    /// item (typeName upper-invariant → isStale), or null when no
+    /// per-type proof exists (never content-checked, indeterminate
+    /// verification, or a family-level match). The tree falls back to
+    /// the family-level (leaf-scoped) dot on null.
+    /// </summary>
+    public IReadOnlyDictionary<string, bool>? GetLoadableTypeStaleMap(string catalogItemId)
+    {
+        lock (_cacheLock)
+        {
+            return _loadableTypeStaleByType.TryGetValue(catalogItemId, out var map) ? map : null;
         }
     }
 
@@ -1000,7 +1525,10 @@ internal sealed class StaleDetector : IStaleDetector
     /// node is built from the same descriptor.
     /// </summary>
     internal static string BuildSystemTypeKey(string? familyKey, string? familyName, string typeName)
-        => SystemTypeIdentityKey.Build(familyKey, familyName, typeName);
+        => SystemTypeIdentityKey.Build(
+            string.IsNullOrEmpty(familyKey) ? null : familyKey,
+            string.IsNullOrEmpty(familyName) ? null : familyName,
+            typeName);
 
     private int ResolveTargetRevit()
     {

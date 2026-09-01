@@ -95,6 +95,8 @@ internal sealed partial class LocalCatalogProvider
             string? versionContentHash = null;
             int? versionHashFormat = null;
             string? targetFileName = null;
+            string? familySource = null;
+            int? revitCategoryId = null;
 
             using (var readCmd = connection.CreateCommand())
             {
@@ -102,6 +104,8 @@ internal sealed partial class LocalCatalogProvider
                 readCmd.CommandText = """
                     SELECT ci.current_version_label AS prev_label,
                            ci.name AS prev_name,
+                           ci.family_source AS family_source,
+                           ci.revit_category_id AS revit_category_id,
                            cv.content_hash AS target_hash,
                            cv.hash_format_version AS target_hash_fmt,
                            ff.file_name AS target_file_name
@@ -145,6 +149,12 @@ internal sealed partial class LocalCatalogProvider
                 targetFileName = reader.IsDBNull(reader.GetOrdinal("target_file_name"))
                     ? null
                     : reader.GetString(reader.GetOrdinal("target_file_name"));
+                familySource = reader.IsDBNull(reader.GetOrdinal("family_source"))
+                    ? null
+                    : reader.GetString(reader.GetOrdinal("family_source"));
+                revitCategoryId = reader.IsDBNull(reader.GetOrdinal("revit_category_id"))
+                    ? null
+                    : reader.GetInt32(reader.GetOrdinal("revit_category_id"));
             }
 
             // Check that at least one row in catalog_versions matched the label.
@@ -220,6 +230,16 @@ internal sealed partial class LocalCatalogProvider
                 }
             }
 
+            // ADR-072 World B (audit M12): the activated version's routing
+            // dependency links must reflect the item-level routing rules —
+            // links are version-scoped, so a version activated AFTER an
+            // editor save keeps its import-time links otherwise (drift
+            // badge / delete-guard / clip indicator degrade). Rebuild them
+            // in the same transaction for every Revit variant of the label.
+            await RebuildRoutingLinksForActivatedVersionAsync(
+                connection, tx, catalogItemId, versionLabel, familySource, revitCategoryId, ct)
+                .ConfigureAwait(false);
+
             tx.Commit();
             var hashSynced = versionContentHash is not null;
             SmartConLogger.Info(
@@ -239,6 +259,58 @@ internal sealed partial class LocalCatalogProvider
             tx.Rollback();
             throw;
         }
+    }
+
+    /// <summary>
+    /// ADR-072 World B (audit M12): rebuilds the activated version's routing
+    /// dependency links from the item-level routing rules (V37) so they never
+    /// lag behind editor saves. No-op for non-system / non-MEPCurve items and
+    /// for legacy items without item-level routing rows (their links stay as
+    /// imported — the unhealed legacy state has no curated truth to apply).
+    /// </summary>
+    private async Task RebuildRoutingLinksForActivatedVersionAsync(
+        SqliteConnection connection, SqliteTransaction tx,
+        string catalogItemId, string versionLabel,
+        string? familySource, int? revitCategoryId, CancellationToken ct)
+    {
+        if (!string.Equals(familySource, "system", StringComparison.Ordinal)
+            || !RoutingGroupCatalog.IsMepCurveCategory(revitCategoryId))
+        {
+            return;
+        }
+
+        var routingRules = new LocalFamilyRoutingRuleRepository(_database);
+        if (!await routingRules.HasAnyForItemAsync(catalogItemId, ct).ConfigureAwait(false))
+            return;
+        var (rules, _) = await routingRules.ReadForItemAsync(catalogItemId, ct).ConfigureAwait(false);
+
+        var versionIds = new List<string>();
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT id FROM catalog_versions
+                WHERE catalog_item_id = @itemId AND version_label = @label
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+            cmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+            using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                versionIds.Add(reader.GetString(0));
+            }
+        }
+
+        var linksWritten = 0;
+        foreach (var versionId in versionIds)
+        {
+            linksWritten += await RoutingDependencyLinkRebuilder
+                .RebuildAsync(connection, tx, this, catalogItemId, versionId, rules, ct)
+                .ConfigureAwait(false);
+        }
+        SmartConLogger.Info(
+            $"routing links rebuilt for activated version '{versionLabel}' " +
+            $"({versionIds.Count} variant(s), {linksWritten} links)");
     }
 
     public async Task<DeleteVersionResult> DeleteVersionAsync(
@@ -289,10 +361,39 @@ internal sealed partial class LocalCatalogProvider
         int assetsDeleted;
         int dbFilesDeleted = 0;
         int runsCleared;
+        // #249 (Phase 5): CAS pool paths referenced by this label's assets
+        // (captured inside the tx, cleaned after the commit).
+        var capturedPoolPaths = new List<string>();
 
         using var tx = connection.BeginTransaction();
         try
         {
+            // #249 (Phase 5): capture the CAS pool paths referenced by this
+            // label's assets BEFORE the delete — after commit, each pooled
+            // file is deleted only when no other version/family references
+            // it anymore (refcount, Plan v3).
+            using (var poolCmd = connection.CreateCommand())
+            {
+                poolCmd.Transaction = tx;
+                poolCmd.CommandText = """
+                    SELECT relative_path FROM family_assets
+                    WHERE catalog_item_id = @itemId AND version_label = @label
+                      AND relative_path LIKE @poolPrefix
+                    """;
+                poolCmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
+                poolCmd.Parameters.Add(new SqliteParameter("@label", versionLabel));
+                poolCmd.Parameters.Add(new SqliteParameter("@poolPrefix",
+                    StoragePathResolver.SharedPreviewPoolRelativePrefix + "%"));
+                using var poolReader = await poolCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                while (await poolReader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    if (!poolReader.IsDBNull(0))
+                    {
+                        capturedPoolPaths.Add(poolReader.GetString(0));
+                    }
+                }
+            }
+
             // family_assets are bound by (catalog_item_id, version_label) — no FK
             // to catalog_versions; cleanup is explicit.
             using (var assetsCmd = connection.CreateCommand())
@@ -381,6 +482,16 @@ internal sealed partial class LocalCatalogProvider
         SmartConLogger.Info(
             $"deleted DB rows: versions={versionsDeleted} assets={assetsDeleted} " +
             $"files={dbFilesDeleted} importRunsCleared={runsCleared}");
+
+        // #249 (Phase 5): pooled preview files shared with other
+        // versions/families are deleted only when the last reference is
+        // gone — AFTER the DB commit (rollback can never orphan a
+        // reference).
+        foreach (var poolPath in capturedPoolPaths)
+        {
+            await SharedPreviewPoolCleanup.DeletePoolFileIfOrphanedAsync(_database, poolPath, ct)
+                .ConfigureAwait(false);
+        }
 
         // Step 3: Filesystem cleanup — best effort, after DB commit (so we never leave orphan files on rollback).
         var dbRoot = _database.GetDatabaseRoot();

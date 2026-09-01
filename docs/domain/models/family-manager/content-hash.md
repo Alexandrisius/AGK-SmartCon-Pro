@@ -134,7 +134,7 @@ public sealed record FamilyContentHash(
 
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 10;
+    public const int CurrentVersion = 18;
     public const int RecalculationSkipped = -1;
     public const int RecalculationMissing = -2;
 }
@@ -273,3 +273,122 @@ public sealed class CompositeFamilyHashComposer
         IReadOnlyDictionary<string, IReadOnlyList<string>> flatSubtrees);
 }
 ```
+
+---
+
+## ContentSectionHash
+
+Одна секция контент-хэша семейства (#249, FHV12+, ADR-071): ключ секции, её каноническая подстрока и SHA-256. Каноническая строка семейства = конкатенация секций в фиксированном порядке; секции хранятся в `catalog_versions.section_hashes`/`section_strings` (V33) и дают диф «что изменилось» без открытия файла.
+
+**Файл:** `Models/FamilyManager/ContentSectionHash.cs`
+
+```csharp
+public sealed record ContentSectionHash(string SectionName, string CanonicalString, string HashHex)
+{
+    public string Key => TypeName is null ? SectionName : SectionName + "|" + TypeName;
+}
+```
+
+- `Key` — плоский ключ хранения/диффа (`"STRUCT"` или `"SECTION|TypeName"` для per-type секций system-семейств).
+
+---
+
+## FamilyContentSectionNames
+
+Константы имён секций контент-хэша (#249): loadable (META, PARAMS, TYPES, PHANTOM, DEF, GEOM, GEOM2D, NESTED, NONSHARED, NESTEDHASH, FACTS, FLAGS, CONN, LOOKUP, FAMKEY) и system (STRUCT, ROUTING, SEGMENTS, SUBTYPES, RAILING, WIRE, VALUES). Используются билдерами секций, классификатором, сериализатором и маппером отображаемых имён diff-окна.
+
+**Файл:** `Models/FamilyManager/FamilyContentSectionNames.cs`
+
+---
+
+## ContentSectionJsonSerializer
+
+Сериализация секций в/из JSON-колонок `section_hashes` (ключ → хэш) и `section_strings` (ключ → каноническая подстрока) (#249, Phase 4). Детерминированный порядок ключей; `Deserialize` возвращает null для пустого входа (analytics pending).
+
+**Файл:** `Services/Implementation/ContentSectionJsonSerializer.cs`
+
+---
+
+## ContentChangeClass
+
+Класс изменения содержимого между версией кандидата и активной версией (#249, Phase 4): `None` (идентично), `Trivial` (косметика — можно «Перезаписать текущую»), `Minor` (значения типов/параметры/вложения), `Major` (геометрия/привязки/коннекторы — рекомендуется новая версия). Отображается в diff-окне batch-диалога.
+
+**Файл:** `Models/FamilyManager/ContentVersionDiff.cs`
+
+---
+
+## ContentVersionDiff
+
+Результат диффа двух версий: класс изменения (`ContentChangeClass`), список изменённых секций (ключи `FamilyContentSectionNames`) и per-type списки (изменённые/добавленные/удалённые типы). Строится из секционных хэшей и per-type хэшей двух версий без открытия файлов.
+
+**Файл:** `Models/FamilyManager/ContentVersionDiff.cs`
+
+---
+
+## ContentVersionDiffComputer
+
+Чистый вычислитель `ContentVersionDiff` (#249, Phase 4): секции кандидата vs хэши активной версии → изменённые секции; per-type хэши → изменённые/добавленные/удалённые типы; класс через `ContentChangeClassifier`. Вход «нет аналитики активной стороны» обрабатывается вызывающим (пустые входы), чтобы не показывать фейковый Major.
+
+**Файл:** `Services/Implementation/ContentVersionDiffComputer.cs`
+
+---
+
+## ContentChangeClassifier
+
+Правила отображения набора изменённых секций на `ContentChangeClass` (#249): major = DEF/GEOM/CONN/STRUCT/ROUTING; minor = TYPES/VALUES/PHANTOM/NESTED*/LOOKUP/FLAGS/PARAMS; trivial = остальное (GEOM2D, FACTS, META и пр.). Берётся максимум по тяжести.
+
+**Файл:** `Services/Implementation/ContentChangeClassifier.cs`
+
+---
+
+## FamilyTypeHashEntry
+
+Строка per-type хэша для таблицы `family_type_hashes` (V32, #249 Phase 2): `TypeIdentityKey` (UPPER(имя) для loadable; `SystemTypeIdentityKey` для system), отображаемое `TypeName`, `HashHex` — SHA-256 канонической подстроки типа из TYPES. Считается при Prepare и едет через цепочку импорта без повторного открытия файла.
+
+**Файл:** `Models/FamilyManager/FamilyTypeHashEntry.cs`
+
+```csharp
+public sealed record FamilyTypeHashEntry(string TypeIdentityKey, string TypeName, string HashHex);
+```
+
+---
+
+## SystemTypeContentHash
+
+Per-type хэш system-семейства (#249): `IdentityKey` (канонический `SystemTypeIdentityKey.Build` — «TOKEN|NAME», FHV6: одноимённые типы разных system-семейств не пересекаются), `TypeName`, `HashHex`. Используется детектором для per-type уточнения system-точек (#253, `SystemTypeStaleLogic.RefineVersionMismatchWithContent`).
+
+**Файл:** `Models/FamilyManager/SystemTypeContentHash.cs`
+
+---
+
+## DefinitionMetrics
+
+DEF-секция снапшота (#249, FHV12): привязки определения семейства — формы **только с биндингами** (видимость/материал/offset, FHV14), размеры **только с метками** (FHV13), опорные плоскости (имя + DefinesOrigin). Тип-независимая «проводка» семейства.
+
+**Файл:** `Models/FamilyManager/DefinitionMetrics.cs`
+
+Содержит `FormDefinitionSnapshot`, `DimensionDefinitionSnapshot` (label может быть null — unlabeled), `ReferencePlaneDefinitionSnapshot`.
+
+---
+
+## LoadableVerificationResult
+
+Результат контентной верификации loadable-семейства (#249 Phase 2): `Verdict` (true — embedded == файлу текущей версии; false — отличается; null — indeterminate: guard/файл недоступен) и `PerTypeStale` — карта drift по типам (имя → bool) или null при недоступном per-type proof. Используется `StaleDetector` для per-type оранжевых точек.
+
+**Файл:** `Models/FamilyManager/LoadableVerificationResult.cs`
+
+---
+
+## FamilyContentHasher.LoadableSections
+
+Partial-часть `FamilyContentHasher` с билдерами loadable-секций (#249): META (префикс FHVnn|LOADABLE|catOrdinal), PARAMS, TYPES (+per-type подстроки), PHANTOM, DEF (FHV14: bound-only формы, labeled-only размеры), GEOM (FHV12-усиленная), GEOM2D (FHV14: чистая 2D-графика), NESTED*/NESTEDHASH, FACTS, FLAGS, CONN, LOOKUP. `FormatCoord` (общий с VIEW3D) канонизирует `-0` → `0` (FHV16).
+
+**Файл:** `Services/Implementation/FamilyContentHasher.LoadableSections.cs`
+
+---
+
+## FamilyContentHasher.SystemSections
+
+Partial-часть `FamilyContentHasher` с билдерами system-секций (#249): META (FHVn|SYSTEM), FAMKEY, STRUCT, ROUTING, SEGMENTS, SUBTYPES, RAILING, WIRE, VALUES (+per-type подстроки для `family_type_hashes`).
+
+**Файл:** `Services/Implementation/FamilyContentHasher.SystemSections.cs`

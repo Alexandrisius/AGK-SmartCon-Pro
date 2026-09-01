@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
@@ -325,6 +326,23 @@ public sealed class LocalCatalogProviderTests
 
         var item = await fixture.GetProvider().GetItemAsync("del1");
         Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task DeleteItemAsync_CascadesItemRoutingLinks()
+    {
+        // ADR-072 World B (V37 item_routing_*) — the item-level routing
+        // links must die with their item via FK CASCADE.
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "delr", "Routing Owner", "routing owner");
+        var repo = new LocalFamilyRoutingRuleRepository(fixture.GetDatabase());
+        await repo.ReplaceForItemAsync("delr",
+            [new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "A:B", "", [])],
+            [new FamilyRoutingTypeSettings("Type A", "Single", 0)]);
+
+        var deleted = await fixture.GetProvider().DeleteItemAsync("delr");
+        Assert.True(deleted);
+        Assert.False(await repo.HasAnyForItemAsync("delr"));
     }
 
     [Fact]

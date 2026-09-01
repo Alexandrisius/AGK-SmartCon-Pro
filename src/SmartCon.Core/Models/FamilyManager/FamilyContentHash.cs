@@ -141,6 +141,129 @@ public sealed record FamilyContentHash(
     ///     consistent. The section is omitted for table-less families.
     ///     Critical task <c>hash-v11</c> recomputes every row that is not
     ///     current.
+    /// 12 — definition wiring + strengthened geometry (Issue #249,
+    ///     Phase 3): loadable <c>FHV12|LOADABLE|...</c> gains the DEF
+    ///     section (type-independent wiring: form visibility/material/
+    ///     extrusion-offset parameter bindings, dimension labels,
+    ///     reference-plane names + Defines Origin) and the GEOM section
+    ///     is strengthened per form (volume-weighted centroid, face-kind
+    ///     histogram, summed edge lengths, resolved RGBA material color,
+    ///     visibility flags) plus nested FamilyInstance placements
+    ///     (symbol identity + quantized transform + visibility) — moving
+    ///     a nested part or re-binding a dimension label previously
+    ///     passed the hash silently. The snapshot extractor now reads
+    ///     with <c>IncludeNonVisibleObjects = true</c> (conditionally
+    ///     visible forms enter the metrics), aligned with the GLB
+    ///     extractor. System <c>FHV8|SYSTEM|...</c> — prefix bump only
+    ///     (content unchanged; per-type hashes ride along as a side
+    ///     product, #179). The per-type hashes (TYPES substrings) are
+    ///     NOT affected — <c>family_type_hashes</c> rows stay valid.
+    ///     Critical task <c>hash-v12</c> recomputes every row that is
+    ///     not current.
+    /// 13 — sketch-content isolation (Issue #249, manual-test follow-up):
+    ///     GEOM2D no longer counts SKETCH-OWNED model curves (matched via
+    ///     <c>Sketch.Profile</c> + <c>Curve.Reference.ElementId</c>) — they
+    ///     are the parametric skeleton of 3D forms, already measured by the
+    ///     GEOM metrics, so "added a 3D body" stopped firing the 2D
+    ///     section. Both DEF/DIMS and the GEOM2D dimension count now cover
+    ///     only LABELED dimensions (an unlabeled dimension — including the
+    ///     automatic ones Revit leaves even on API-created extrusions — is
+    ///     not parameter wiring). Per-type hashes (TYPES substrings) and
+    ///     the VIEW3D preview hash are NOT affected. Critical task
+    ///     <c>hash-v13</c> recomputes every row that is not current.
+    /// 14 — section autonomy (Issue #249, manual-test round 2; never
+    ///     shipped separately from 13): DEF/FORMS now lists only forms
+    ///     with at least one parameter BINDING (every plain form used to
+    ///     fire DEF on any 3D add — form existence and offsets are GEOM's
+    ///     domain); GEOM2D drops the reference-plane and dimension counts
+    ///     (DEF owns the wiring: PLANES list + labeled DIMS) and is pure
+    ///     2D graphics now; the sketch-curve exclusion matches curves
+    ///     DEPENDENT on a form (<c>GetDependentElements</c>, Revit 2018+)
+    ///     instead of every sketch (probe: Revit wraps FREE model/symbolic
+    ///     lines in sketches of their own, and the unfiltered FHV13
+    ///     exclusion swallowed every free 2D line).
+    ///     Critical task <c>hash-v14</c> recomputes every row that is
+    ///     not current.
+    /// 15 — deterministic reference type (Issue #249, manual-test round 3;
+    ///     12/13/14 never shipped): the type-DEPENDENT extraction (GEOM
+    ///     solid metrics + visibility flags + nested placements, DEF
+    ///     extrusion offsets, CONN positions) is measured at the first
+    ///     (Ordinal) NAMED type of the document — not at whatever type
+    ///     happened to be current. Switching the current type in the
+    ///     family editor (which editing another type's value implies) is
+    ///     not a content change, yet it used to fire every evaluated
+    ///     section, flip the global hash on a single-type value edit and
+    ///     mark every loaded type stale. The switch runs in a rolled-back
+    ///     transaction (I-03b), so the document state and IsModified are
+    ///     untouched. The verifier's type-set rule rides the same
+    ///     mechanism (the restriction set is the reference preference) —
+    ///     the committed AlignCurrentTypeForVerification is gone.
+    ///     Critical task <c>hash-v15</c> recomputes every row that is
+    ///     not current.
+    /// 16 — negative-zero canonicalization (Issue #249, manual-test round 4;
+    ///     none of 12..15 ever shipped): <c>FormatCoord</c> canonicalizes
+    ///     values formatting to "-0" (IEEE -0.0 or small negatives rounding
+    ///     to zero) to "0" — regen noise flipped the sign of a zero
+    ///     coordinate (centroid of symmetric parts) between extractions,
+    ///     producing phantom GEOM diffs on a text-only edit. The shared
+    ///     helper covers bounds/centroid/nested placements/connector
+    ///     origins and the VIEW3D preview hash (affected pooled previews
+    ///     re-render once). Critical task <c>hash-v16</c> recomputes every
+    ///     row that is not current.
+    /// 17 — canonical-order determinism (Issue #249, manual-test round 5;
+    ///     none of 12..16 ever shipped): multi-entry segments (GEOM forms,
+    ///     NESTEDINST placements, DEF bound forms, CONN connectors) now sort
+    ///     by their full EMITTED canonical entry instead of raw doubles.
+    ///     The raw sort keys carried sub-quantization regen noise (the
+    ///     emission rounds to 1e-4 ft / 6 significant digits, the raw key
+    ///     did not), so any regen — including one triggered by a text-only
+    ///     parameter edit — could reorder identical emitted entries and
+    ///     flip the GEOM hash, marking every loaded type stale. Sorting by
+    ///     the emitted string makes the canonical order identical to the
+    ///     canonical content by construction. (12..17 never shipped — the
+    ///     recalculation ships as <c>hash-v18</c>, see 18.)
+    /// 18 — per-face color histogram (Issue #251; 12..17 never shipped):
+    ///     GEOM forms and the VIEW3D preview hash (format marker 2) now
+    ///     carry the resolved per-face color histogram — the GLB writes
+    ///     per-face-material meshes (#108), but the hash inputs held only
+    ///     ONE form-level color, so painting a single face changed the
+    ///     preview bytes invisibly to both CAS tiers and the GEOM section
+    ///     (stale preview color with a fresh hash). Critical task
+    ///     <c>hash-v18</c> recomputes every row that is not current.
+    /// 19 — parameter-based routing (Issue #254, ADR-072): flex pipe/duct,
+    ///     conduit and cable tray types have NO RoutingPreferenceManager
+    ///     (probe-verified 2026-08-29: the property is null) — their
+    ///     fitting selection lives in visible built-in parameters
+    ///     (RBS_CURVETYPE_DEFAULT_*/MULTISHAPE_*/PREFERRED_BRANCH). Those
+    ///     parameters leave the VALUES section (their ElementId tokens
+    ///     referenced project fittings — the same phantom-diff class as
+    ///     #254) and become ROUTING rules with string group keys
+    ///     ("Param:&lt;BIP&gt;"); PREFERRED_BRANCH maps to
+    ///     PreferredJunctionType. System META prefix FHV8→FHV9. Pipe/duct
+    ///     tokens are byte-identical (their routing bips are hidden).
+    ///     Recomputed by <c>hash-v20</c> (FHV19 and FHV20 shipped as one
+    ///     release unit — no <c>hash-v19</c> task ever shipped).
+    /// 20 — routing leaves the content hash (owner decision 2026-08-29,
+    ///     ADR-072 World B): the ROUTING section is dropped from the
+    ///     system canonical string — routing preferences are links
+    ///     between catalog families, not file content. Editor edits no
+    ///     longer version-bump, re-imports no longer overwrite curated
+    ///     links; routing equality is served by the separate
+    ///     <c>RoutingFingerprint</c> (sync / stale / placement). The
+    ///     parameter-based BIPs do NOT return to VALUES (phantom-diff
+    ///     class). System META prefix FHV9→FHV10. Critical task
+    ///     <c>hash-v20</c> recomputes every row that is not current.
+    /// 21 — the segment size-range criterion JOINS the SEGMENTS section
+    ///     (owner decision 2026-09-01, stress test баг 3): the mini-project
+    ///     owns the whole segment configuration — the segment set AND each
+    ///     rule's PrimarySizeCriterion (Мин/Макс in Revit's routing
+    ///     dialog). Editing a range in the mini now changes the hash and
+    ///     produces a new version on reimport («Дубликат» is gone), and
+    ///     per-version storage makes rollback restore the version's own
+    ///     ranges. Fitting rules/criteria stay OUT of the hash (World B —
+    ///     they are tab-edited catalog links). System META prefix
+    ///     FHV10→FHV11. Critical task <c>hash-v21</c> recomputes every
+    ///     row that is not current.
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -156,7 +279,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 11;
+    public const int CurrentVersion = 21;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

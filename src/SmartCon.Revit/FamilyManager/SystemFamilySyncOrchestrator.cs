@@ -19,13 +19,17 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
     private readonly ISystemTypeSyncService _syncService;
     private readonly ISystemTypeFinder _typeFinder;
     private readonly ISystemTypeVersionStore _versionStore;
+    private readonly RoutingDriftProbe? _driftProbe;
+    private readonly IRoutingDriftPrompt? _driftPrompt;
 
     public SystemFamilySyncOrchestrator(
         IFamilyFileResolver fileResolver,
         IFamilyCatalogProvider catalog,
         ISystemTypeSyncService syncService,
         ISystemTypeFinder typeFinder,
-        ISystemTypeVersionStore versionStore)
+        ISystemTypeVersionStore versionStore,
+        RoutingDriftProbe? driftProbe = null,
+        IRoutingDriftPrompt? driftPrompt = null)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(fileResolver);
@@ -45,6 +49,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         _syncService = syncService;
         _typeFinder = typeFinder;
         _versionStore = versionStore;
+        _driftProbe = driftProbe;
+        _driftPrompt = driftPrompt;
     }
 
     public bool IsProjectTypeCurrent(
@@ -83,7 +89,8 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         Document activeDoc,
         string catalogItemId,
         IReadOnlyList<SystemTypeRef> types,
-        int targetRevitVersion)
+        int targetRevitVersion,
+        bool confirmRoutingOverwrite = false)
     {
 #if NET8_0_OR_GREATER
         ArgumentNullException.ThrowIfNull(activeDoc);
@@ -104,6 +111,41 @@ public sealed class SystemFamilySyncOrchestrator : ISystemTypeSyncOrchestrator
         if (types.Count == 0)
         {
             return new SystemFamilySyncResult(catalogItemId, Array.Empty<SystemTypeSyncResult>());
+        }
+
+        // ADR-072 World B (audit M8): «Загрузить в проект» must follow the
+        // same contract as placement — sync applies the catalog routing, so
+        // a type whose live routing differs is confirmed before anything is
+        // written (one aggregated prompt per batch, never per type).
+        if (confirmRoutingOverwrite && _driftProbe is not null)
+        {
+            var drifted = new List<string>();
+            foreach (var type in types)
+            {
+                if (_driftProbe.HasRoutingDrift(
+                        activeDoc, catalogItemId, type.Name, type.FamilyName, type.FamilyKey) == true)
+                {
+                    drifted.Add(type.Name);
+                }
+            }
+            if (drifted.Count > 0)
+            {
+                var display = drifted.Count == 1
+                    ? drifted[0]
+                    : string.Join(", ", drifted.Take(3))
+                        + (drifted.Count > 3 ? $" (+{drifted.Count - 3})" : string.Empty);
+                if (_driftPrompt is null || !_driftPrompt.ConfirmRoutingOverwrite(display))
+                {
+                    SmartConLogger.Info(
+                        $"SyncTypes[{catalogItemId}]: user declined the routing overwrite " +
+                        $"for {drifted.Count} type(s) — cancelled, nothing synced");
+                    return new SystemFamilySyncResult(catalogItemId, types
+                        .Select(t => new SystemTypeSyncResult(
+                            t.Name, SystemTypeSyncStatus.Cancelled, 0, 0,
+                            "Routing overwrite declined by the user"))
+                        .ToList());
+                }
+            }
         }
 
         var resolved = AsyncBridge.RunSync(

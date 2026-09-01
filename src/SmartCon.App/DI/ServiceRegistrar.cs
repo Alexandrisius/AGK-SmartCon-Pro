@@ -165,6 +165,7 @@ public static class ServiceRegistrar
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
             presenter.Register<FmAllowedValuesViewModel>(vm => new FmAllowedValuesView(vm));
+            presenter.Register<RoutingPartPickerViewModel>(vm => new RoutingPartPickerView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());
@@ -195,6 +196,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyTypeRepository>(sp => sp.GetRequiredService<LocalFamilyTypeRepository>());
         services.AddSingleton<LocalFamilyFactRepository>();
         services.AddSingleton<IFamilyFactRepository>(sp => sp.GetRequiredService<LocalFamilyFactRepository>());
+        services.AddSingleton<IContentHashAnalyticsRepository, SmartCon.FamilyManager.Services.LocalCatalog.LocalContentHashAnalyticsRepository>();
         services.AddSingleton<IFamilyImportService, LocalFamilyImportService>();
         // v2.0.0: precomputer allocates the canonical
         // (CatalogItemId, VersionLabel, ManagedPath) triple for a given
@@ -238,6 +240,21 @@ public static class ServiceRegistrar
         services.AddSingleton<ISharedNestedFamilyRepository>(sp => sp.GetRequiredService<LocalSharedNestedFamilyRepository>());
         services.AddSingleton<LocalFamilyDependencyRepository>();
         services.AddSingleton<IFamilyDependencyRepository>(sp => sp.GetRequiredService<LocalFamilyDependencyRepository>());
+        // ADR-072 (#254): routing rules of system MEPCurve types as catalog
+        // data (V34) — sync/editor read routing from DB, not from the mini.
+        services.AddSingleton<LocalFamilyRoutingRuleRepository>();
+        services.AddSingleton<IFamilyRoutingRuleRepository>(sp => sp.GetRequiredService<LocalFamilyRoutingRuleRepository>());
+        // ADR-072 Phase 3: segment size tables (V36) — the routing editor's
+        // nominal-diameter dropdowns (as in the Revit routing dialog).
+        services.AddSingleton<LocalSegmentSizeRepository>();
+        services.AddSingleton<ISegmentSizeRepository>(sp => sp.GetRequiredService<LocalSegmentSizeRepository>());
+        services.AddSingleton<LocalSegmentRuleRepository>();
+        services.AddSingleton<ISegmentRuleRepository>(sp => sp.GetRequiredService<LocalSegmentRuleRepository>());
+        // ADR-072 Phase 3 (World B): routing editor engine — saves routing
+        // edits IN PLACE (item-level link tables + regenerated dependency
+        // links of the current version; no version, no hash, no Revit).
+        services.AddSingleton<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>();
+        services.AddSingleton<IRoutingEditorService>(sp => sp.GetRequiredService<SmartCon.FamilyManager.Services.Routing.CatalogRoutingEditorService>());
         services.AddSingleton<IFamilyMetadataExtractionService, FileMetadataExtractionService>();
         services.AddSingleton<IFamilySearchService, RevitFamilySearchService>();
         services.AddSingleton<IFamilyPlacementService, RevitFamilyPlacementService>();
@@ -247,6 +264,9 @@ public static class ServiceRegistrar
         services.AddSingleton<ILoadableFamilyImportOrchestrator, SmartCon.FamilyManager.Services.LoadableFamilyImportOrchestrator>();
         services.AddSingleton<ISystemFamilyRevitOperations, SystemFamilyRevitOperations>();
         services.AddSingleton<ISystemFamilyPlacementService, SystemFamilyPlacementService>();
+        // ADR-072 World B: routing drift probe + placement overwrite prompt.
+        services.AddSingleton<RoutingDriftProbe>();
+        services.AddSingleton<IRoutingDriftPrompt, RoutingDriftPrompt>();
         // Issue #188: mini-project marker — ES-based flag on staged system
         // family .rvt files; consumed by the staging writer, the active-doc
         // notifier (auto-DB-switch guard) and the post-import close (#186).
@@ -289,6 +309,14 @@ public static class ServiceRegistrar
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RevitCategoryActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.FamilyFactsActualizationTask>();
         services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.MiniProjectMarkerActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.TypeHashesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SegmentSizesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SegmentRulesActualizationTask>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.SectionHashesActualizationTask>();
+        // ADR-072 Phase 2b (#254): routing backfill (file-free from section
+        // strings / pre-slim mini extraction) + mini slimming.
+        services.AddSingleton<IMiniProjectRoutingSlimmingService, SmartCon.Revit.FamilyManager.RevitMiniProjectRoutingSlimmingService>();
+        services.AddSingleton<IDatabaseActualizationTask, SmartCon.FamilyManager.Services.Actualization.RoutingBackfillActualizationTask>();
         services.AddSingleton<ICatalogActualizationService, SmartCon.FamilyManager.Services.Actualization.CatalogActualizationService>();
         services.AddSingleton<IDatabaseUpdateStateService, SmartCon.FamilyManager.Services.Migrations.DatabaseUpdateStateService>();
 
@@ -313,7 +341,20 @@ public static class ServiceRegistrar
         services.AddSingleton<ISegmentSyncService, RevitSegmentSyncService>();
         services.AddSingleton<IFittingDependencyResolver, CatalogFittingDependencyResolver>();
         services.AddSingleton<ICompoundStructureSyncService, RevitCompoundStructureSyncService>();
-        services.AddSingleton<ISystemTypeSyncService, SystemTypeSyncService>();
+        // ADR-072 (#254): routing sync reads the catalog DB (V34) — the
+        // ctor's optional routing-rule repository must be wired in
+        // production (tests default to the mini-reading legacy path).
+        services.AddSingleton<ISystemTypeSyncService>(sp => new SystemTypeSyncService(
+            sp.GetRequiredService<ITransactionService>(),
+            sp.GetRequiredService<IFamilySnapshotExtractor>(),
+            sp.GetRequiredService<ISystemTypeFinder>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<IMaterialSyncService>(),
+            sp.GetRequiredService<ISegmentSyncService>(),
+            sp.GetRequiredService<IFittingDependencyResolver>(),
+            sp.GetRequiredService<ICompoundStructureSyncService>(),
+            sp.GetRequiredService<IFamilyRoutingRuleRepository>(),
+            sp.GetRequiredService<ISegmentRuleRepository>()));
         services.AddSingleton<ISystemTypeSyncOrchestrator, SystemFamilySyncOrchestrator>();
 
         services.AddSingleton<FamilyManagerMainViewModel>();

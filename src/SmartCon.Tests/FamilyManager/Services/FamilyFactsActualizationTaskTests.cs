@@ -86,6 +86,7 @@ public sealed class FamilyFactsActualizationTaskTests : IDisposable
         var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
             _fixture, "FamA", revitCategoryId: PipeFittingCategoryId);
         await CatalogSeedHelper.SeedFactAsync(_fixture, itemId, "part_type", "5", "Elbow");
+        await CatalogSeedHelper.SeedFactAsync(_fixture, itemId, "connector_shape", "1", "Round");
 
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
     }
@@ -96,8 +97,21 @@ public sealed class FamilyFactsActualizationTaskTests : IDisposable
         var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
             _fixture, "FamA", revitCategoryId: PipeFittingCategoryId);
         await CatalogSeedHelper.SeedFactAsync(_fixture, itemId, "part_type", "", "");
+        await CatalogSeedHelper.SeedFactAsync(_fixture, itemId, "connector_shape", "1", "Round");
 
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task CountPending_RuleCategoryWithPartTypeOnly_PendingOnMissingConnectorShape()
+    {
+        // Баг 8 (owner stress test 2026-09-01): connector_shape joined the
+        // rule set — a pre-fact catalog row is pending until BOTH exist.
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamA", revitCategoryId: PipeFittingCategoryId);
+        await CatalogSeedHelper.SeedFactAsync(_fixture, itemId, "part_type", "5", "Elbow");
+
+        Assert.Equal(1, await _sut.CountPendingAsync(2025));
     }
 
     [Fact]
@@ -145,14 +159,17 @@ public sealed class FamilyFactsActualizationTaskTests : IDisposable
     {
         var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
         var variant = VariantFor(versionId, fileId);
-        var snapshot = SnapshotWith(PipeFittingCategoryId, new FamilyFact("part_type", "5", "Elbow"));
+        var snapshot = SnapshotWith(PipeFittingCategoryId,
+            new FamilyFact("part_type", "5", "Elbow"),
+            new FamilyFact("connector_shape", "1", "Round"));
 
         await _sut.ApplyAsync(ContextFor(itemId, "v1", snapshot, variant));
 
         var (categoryId, facts) = await CatalogSeedHelper.ReadFactsAsync(_fixture, itemId);
         Assert.Equal(PipeFittingCategoryId, categoryId);
-        Assert.Single(facts);
-        Assert.Equal(("part_type", "5", "Elbow"), facts[0]);
+        Assert.Equal(2, facts.Count);
+        Assert.Contains(("part_type", "5", "Elbow"), facts);
+        Assert.Contains(("connector_shape", "1", "Round"), facts);
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
     }
 
@@ -175,13 +192,16 @@ public sealed class FamilyFactsActualizationTaskTests : IDisposable
         var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
             _fixture, "FamA", revitCategoryId: PipeFittingCategoryId);
         var variant = VariantFor(versionId, fileId);
-        var snapshot = SnapshotWith(PipeFittingCategoryId, new FamilyFact("part_type", "", ""));
+        var snapshot = SnapshotWith(PipeFittingCategoryId,
+            new FamilyFact("part_type", "", ""),
+            new FamilyFact("connector_shape", "1", "Round"));
 
         await _sut.ApplyAsync(ContextFor(itemId, "v1", snapshot, variant));
 
         var (_, facts) = await CatalogSeedHelper.ReadFactsAsync(_fixture, itemId);
-        Assert.Single(facts);
-        Assert.Equal(("part_type", "", ""), facts[0]);
+        Assert.Equal(2, facts.Count);
+        Assert.Contains(("part_type", "", ""), facts);
+        Assert.Contains(("connector_shape", "1", "Round"), facts);
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
     }
 
@@ -193,13 +213,15 @@ public sealed class FamilyFactsActualizationTaskTests : IDisposable
         var variant = VariantFor(versionId, fileId);
         // Detection fired via the missing fact; this run's extraction could
         // not read the category (null → -1 sentinel). The real id must stay.
-        var snapshot = SnapshotWith(null, new FamilyFact("part_type", "6", "Tee"));
+        var snapshot = SnapshotWith(null,
+            new FamilyFact("part_type", "6", "Tee"),
+            new FamilyFact("connector_shape", "1", "Round"));
 
         await _sut.ApplyAsync(ContextFor(itemId, "v1", snapshot, variant));
 
         var (categoryId, facts) = await CatalogSeedHelper.ReadFactsAsync(_fixture, itemId);
         Assert.Equal(PipeFittingCategoryId, categoryId);
-        Assert.Single(facts);
+        Assert.Equal(2, facts.Count);
         Assert.Equal(0, await _sut.CountPendingAsync(2025));
     }
 

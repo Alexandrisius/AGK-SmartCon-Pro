@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Models.FamilyManager;
-using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services.LocalCatalog;
@@ -10,23 +9,56 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v11</c>): recalculates stale
-/// (format v1..v10 / NULL) content hashes to the FHV11 format
+/// CRITICAL actualization task (Id=<c>hash-v21</c>): recalculates stale
+/// (format v1..v20 / NULL) content hashes to the FHV21 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
 /// discriminator in FAMKEY, #215 manual test 2026-08-06; FHV8 —
-/// composite shared-nested content in the loadable hash, #209 ADR-066;
-/// FHV9 — PHANTOM section: parameter values of typeless families,
-/// #209 stress test 2026-08-12; FHV10 — parameter groups leave the
-/// loadable hash: the one content field no merge can transfer, and the
-/// last difference between identity and embedded verification — one
-/// unified hash now, owner decision 2026-08-12; FHV11 — LOOKUP section:
-/// raw CSV content of embedded lookup tables (FamilySizeTable) enters
-/// the loadable hash, Issue #238 ADR-069).
-/// Owns the <c>hash_format_version</c> marker
-/// semantics: NULL/1..10 pending, 11 current, -1/-2 terminal (unreadable /
-/// missing — never retried).
+    /// composite shared-nested content in the loadable hash, #209 ADR-066;
+    /// FHV9 — PHANTOM section: parameter values of typeless families,
+    /// #209 stress test 2026-08-12; FHV10 — parameter groups leave the
+    /// loadable hash: the one content field no merge can transfer, and the
+    /// last difference between identity and embedded verification — one
+    /// unified hash now, owner decision 2026-08-12; FHV11 — LOOKUP section:
+    /// raw CSV content of embedded lookup tables (FamilySizeTable) enters
+    /// the loadable hash, Issue #238 ADR-069; FHV12 — DEF section
+    /// (definition wiring) + strengthened GEOM (centroid, face-kind
+    /// histogram, edge lengths, resolved RGBA, visibility flags, nested
+    /// instance placements), system FHV8 prefix bump, Issue #249 Phase 3;
+    /// FHV13 — sketch-content isolation: GEOM2D counts only free 2D
+    /// elements (sketch-owned curves/dimensions are 3D-form wiring,
+    /// covered by GEOM), DEF/DIMS lists only labeled dimensions, Issue
+    /// #249 manual-test follow-up; FHV14 — section autonomy: DEF/FORMS
+    /// lists only bound forms, GEOM2D drops plane/dimension counts, the
+    /// sketch-curve exclusion is restricted to GenericForm-owned sketches
+    /// (free 2D lines stay counted), Issue #249 manual-test round 2;
+    /// FHV15 — deterministic reference type: evaluated sections are
+    /// measured at the first-Ordinal named type inside a rolled-back
+    /// transaction, not at the saved current type, Issue #249
+    /// manual-test round 3; FHV16 — negative-zero canonicalization in FormatCoord (phantom GEOM diffs on symmetric parts), Issue #249 manual-test round 4;
+    /// FHV17 — canonical-order determinism: multi-entry segments sort by
+    /// their emitted canonical strings instead of raw doubles that carried
+    /// sub-quantization regen noise into the entry order (phantom GEOM
+    /// diffs on non-geometric edits), Issue #249 manual-test round 5;
+    /// FHV18 - per-face color histogram in GEOM forms and the VIEW3D hash
+    /// (a single-face paint was invisible to both CAS tiers), Issue #251;
+    /// FHV19 — parameter-based routing of flex/conduit/cable-tray types
+    /// (no RoutingPreferenceManager) leaves VALUES and becomes ROUTING
+    /// rules with string group keys, Issue #254 ADR-072;
+    /// FHV20 — the ROUTING section leaves the content hash entirely
+    /// (routing = catalog-family links, not file content; owner decision
+    /// 2026-08-29, ADR-072 World B), system META prefix FHV9→FHV10;
+    /// FHV21 — the segment rule size-range criterion JOINS the SEGMENTS
+    /// section: the mini-project owns the whole segment configuration
+    /// (set + ranges + order) as VERSIONED content — a range edit in the
+    /// mini changes the hash and forks a new version («Дубликат» gone);
+    /// per-version store <c>family_segment_rules</c> (V38) makes rollback
+    /// restore the version's own ranges; fitting rules stay out (World B),
+    /// system META prefix FHV10→FHV11, owner decision 2026-09-01).
+    /// Owns the <c>hash_format_version</c> marker
+    /// semantics: NULL/1..20 pending, 21 current, -1/-2 terminal (unreadable /
+    /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
 /// string changed structurally (ordinal category, STRUCT, ROUTING), so
@@ -72,29 +104,35 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v11";
-    public override int Order => 11;
+    public override string Id => "hash-v21";
+    public override int Order => 12;
     public override bool IsCritical => true;
 
-    protected override string DetectionSql => """
+    protected override string DetectionSql => $"""
         FROM catalog_versions cv
         JOIN catalog_items ci ON ci.id = cv.catalog_item_id
-        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN (11, -1, -2))
+        WHERE (cv.hash_format_version IS NULL OR cv.hash_format_version NOT IN ({FamilyContentHashFormat.CurrentVersion}, -1, -2))
         """;
 
     public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
     {
         string? hash;
+        IReadOnlyList<ContentSectionHash>? sections = null;
         SystemFamilySnapshot? trimmedSystem = null;
         if (context.SystemSnapshot is not null)
         {
-            trimmedSystem = await TrimToCatalogTypeNamesAsync(context.SystemSnapshot, context.Group, ct)
+            trimmedSystem = await SystemTypeCatalogTrimHelper.TrimToCatalogTypeNamesAsync(
+                    context.SystemSnapshot, context.Group, Database, ct)
                 .ConfigureAwait(false);
             hash = _contentHasher.ComputeForSystem(trimmedSystem)?.HexString;
+            sections = hash is null ? null : _contentHasher.ComputeSectionsForSystem(trimmedSystem);
         }
         else
         {
-            hash = ComputeLoadableHash(context)?.HexString;
+            var (loadableHash, loadableSections) = ActualizationSectionComposer.ComputeLoadable(
+                context, _contentHasher, _compositeComposer);
+            hash = loadableHash?.HexString;
+            sections = hash is null ? null : loadableSections;
         }
 
         if (hash is null)
@@ -106,6 +144,15 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 .ConfigureAwait(false);
             return;
         }
+
+        // Sections ride along in the same UPDATE (#249 follow-up): without
+        // this, section-hashes-v1 could only DETECT the group after the
+        // hash-format task had stamped hash_format_version — i.e. on a
+        // SECOND «Обновить базу» run. Null sections (computation failed)
+        // leave the columns NULL and the backstop task picks the group up
+        // on the next run.
+        var hashesJson = sections is null ? null : ContentSectionJsonSerializer.SerializeHashes(sections);
+        var stringsJson = sections is null ? null : ContentSectionJsonSerializer.SerializeStrings(sections);
 
         // One UPDATE for ALL Revit variants of the group (the content is
         // identical across variants), plus the item's denormalized hash
@@ -121,10 +168,13 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
                 cmd.Transaction = tx;
                 cmd.CommandText = $"""
                     UPDATE catalog_versions
-                    SET content_hash = @hash, hash_format_version = 11
+                    SET content_hash = @hash, hash_format_version = {FamilyContentHashFormat.CurrentVersion},
+                        section_hashes = @secHashes, section_strings = @secStrings
                     WHERE id IN ({VariantIdParams(cmd, context.Group.Variants)})
                     """;
                 cmd.Parameters.Add(new SqliteParameter("@hash", hash));
+                cmd.Parameters.Add(new SqliteParameter("@secHashes", (object?)hashesJson ?? DBNull.Value));
+                cmd.Parameters.Add(new SqliteParameter("@secStrings", (object?)stringsJson ?? DBNull.Value));
                 await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -132,9 +182,9 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             {
                 using var itemCmd = connection.CreateCommand();
                 itemCmd.Transaction = tx;
-                itemCmd.CommandText = """
+                itemCmd.CommandText = $"""
                     UPDATE catalog_items
-                    SET content_hash = @hash, hash_format_version = 11, updated_at_utc = @now
+                    SET content_hash = @hash, hash_format_version = {FamilyContentHashFormat.CurrentVersion}, updated_at_utc = @now
                     WHERE id = @itemId
                     """;
                 itemCmd.Parameters.Add(new SqliteParameter("@hash", hash));
@@ -202,90 +252,6 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
     }
 
     /// <summary>
-    /// Trim the staged-project type list to the catalog's authoritative
-    /// type names (<c>family_types</c>, written at import from the real
-    /// project). The staged .rvt of a Phase-2 category contains template
-    /// defaults of the default project in addition to the copied types —
-    /// hashing them would diverge from the import-time hash. When the
-    /// catalog stores no type names for the group's versions (legacy
-    /// data), the extractor's result is kept as-is (best effort). When
-    /// names exist but match nothing (data drift), the full list is
-    /// hashed with a warning — a mismatching hash degrades to the safe
-    /// name-based dedup fallback instead of a terminal marker.
-    /// </summary>
-    private async Task<SystemFamilySnapshot> TrimToCatalogTypeNamesAsync(
-        SystemFamilySnapshot snapshot, ActualizationGroup group, CancellationToken ct)
-    {
-        var catalogTypes = await LoadCatalogTypeIdentitiesAsync(group, ct).ConfigureAwait(false);
-        if (catalogTypes.Count == 0)
-        {
-            SmartConLogger.Debug(
-                $"No catalog type names for '{group.ItemName}' ({group.VersionLabel}) — " +
-                "hashing the staged type list as-is");
-            return snapshot;
-        }
-
-        // #190/#191: match by full identity — the name alone collapses
-        // same-named types of different system families. A catalog row
-        // matches a staged type when the name is equal AND the family
-        // tokens agree; legacy rows (no key, no name — pre-V26) match by
-        // name only. FHV7 (#215): a stored "Single" key is a LEGACY token —
-        // for newly discriminated categories (ducts) it must not veto the
-        // match against the staged shape key, otherwise every duct group
-        // falls to the misleading "matches none" Warn and loses the trim.
-        var kept = snapshot.Types
-            .Where(t => catalogTypes.Any(c =>
-                string.Equals(c.Name, t.Name, StringComparison.Ordinal)
-                && (c.FamilyKey is not null && c.FamilyKey != SystemFamilyKeys.SingleFamily
-                    ? string.Equals(c.FamilyKey, t.FamilyKey, StringComparison.OrdinalIgnoreCase)
-                    : c.FamilyName is not null
-                        ? string.Equals(c.FamilyName, t.FamilyName, StringComparison.OrdinalIgnoreCase)
-                        : true)))
-            .ToList();
-
-        if (kept.Count == snapshot.Types.Count)
-            return snapshot;
-
-        if (kept.Count == 0)
-        {
-            SmartConLogger.Warn(
-                $"Staged types of '{group.ItemName}' ({group.VersionLabel}) match none of the " +
-                $"{catalogTypes.Count} catalog type names — hashing the full staged list. " +
-                $"[Action: при расхождении дедупликации переимпортируйте категорию из проекта]");
-            return snapshot;
-        }
-
-        SmartConLogger.Debug(
-            $"Trimmed staged types for '{group.ItemName}' ({group.VersionLabel}): " +
-            $"{snapshot.Types.Count} → {kept.Count} (catalog authoritative list)");
-        return snapshot with { Types = kept };
-    }
-
-    private async Task<List<(string Name, string? FamilyKey, string? FamilyName)>> LoadCatalogTypeIdentitiesAsync(
-        ActualizationGroup group, CancellationToken ct)
-    {
-        var rows = new List<(string Name, string? FamilyKey, string? FamilyName)>();
-        using var connection = Database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"""
-            SELECT DISTINCT type_name, family_key, family_name FROM family_types
-            WHERE catalog_item_id = @itemId
-              AND version_id IN ({VariantIdParams(cmd, group.Variants)})
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@itemId", group.CatalogItemId));
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            if (reader.IsDBNull(0)) continue;
-            var familyKey = reader.IsDBNull(1) || string.IsNullOrEmpty(reader.GetString(1)) ? null : reader.GetString(1);
-            var familyName = reader.IsDBNull(2) || string.IsNullOrEmpty(reader.GetString(2)) ? null : reader.GetString(2);
-            rows.Add((reader.GetString(0), familyKey, familyName));
-        }
-        return rows;
-    }
-
-    /// <summary>
     /// FHV7 (#215): rewrites <c>family_types.family_key</c> of the item's
     /// system rows from the staged snapshot (duct "Single" → shape keys).
     /// A row is matched by (type_name, family_name) — rows whose family_name
@@ -326,42 +292,6 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
             SmartConLogger.Info(
                 $"Healed family_key for {updated} family_types row(s) of '{group.ItemName}' ({group.VersionLabel}) from the staged snapshot (FHV7)");
         }
-    }
-
-    /// <summary>
-    /// FHV8 (#209): composite hash for a loadable row. When the extraction
-    /// carried the shared-nested closure (snapshots + flat subtree scans),
-    /// the hash is composed bottom-up over the direct edges derived by
-    /// subtraction; otherwise the plain own-content hash is computed
-    /// (identical to a family without shared nested children).
-    /// </summary>
-    private FamilyContentHash? ComputeLoadableHash(FamilyActualizationContext context)
-    {
-        if (context.SharedNestedSubtrees is not { Count: > 0 } subtrees)
-        {
-            return _contentHasher.ComputeForLoadable(context.Snapshot);
-        }
-
-        var snapshots = new Dictionary<string, FamilySnapshot>(StringComparer.OrdinalIgnoreCase);
-        var rootName = FamilyNameNormalizer.Normalize(context.Snapshot.FamilyName);
-        snapshots[rootName] = context.Snapshot;
-        foreach (var nested in context.SharedNestedSnapshots ?? (IReadOnlyList<FamilySnapshot>)Array.Empty<FamilySnapshot>())
-        {
-            // Last-wins on a normalized-name collision (same heuristic as
-            // the import-time preparation queue).
-            snapshots[FamilyNameNormalizer.Normalize(nested.FamilyName)] = nested;
-        }
-
-        var flatSubtrees = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subtree in subtrees)
-        {
-            flatSubtrees[subtree.OwnerFamilyName] = subtree.NestedFamilyNames;
-        }
-
-        var composed = _compositeComposer.Compose(snapshots, flatSubtrees);
-        return composed.TryGetValue(rootName, out var hash)
-            ? hash
-            : _contentHasher.ComputeForLoadable(context.Snapshot);
     }
 
     private async Task WriteMarkerAsync(

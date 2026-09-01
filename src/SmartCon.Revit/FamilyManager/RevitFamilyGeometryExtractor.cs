@@ -211,11 +211,16 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         }
     }
 
-    internal static List<MeshData> ExtractMeshesFromFamilyDoc(
+    internal static FamilyMeshExtractionResult ExtractMeshesFromFamilyDoc(
         Document familyDoc,
         CancellationToken ct)
     {
         var result = new List<MeshData>();
+        // #249 (Phase 5): per-type preview INPUT snapshot — collected for
+        // the elements that PASS the GLB visibility filters, in the same
+        // traversal (the VIEW3D hash mirrors the emitted GLB content).
+        var previewForms = new List<FormMetrics>();
+        var previewNestedInstances = new List<NestedInstanceSnapshot>();
 
         var options = new Options
         {
@@ -281,12 +286,25 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         var totalEmpty = 0;
         var totalSkippedNotVisible = 0;
 
+        // #249 (Phase 5): content-pure node names — NO ElementIds, NO
+        // family/type names in the GLB bytes (CAS normalization). The
+        // ordinal is per name-prefix within ONE extraction pass —
+        // deterministic for identical document content, while
+        // "Extrusion_12345" changed on every SaveAs/reload and made
+        // byte-level preview dedup impossible.
+        var nodeNameOrdinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        string NextNodeName(string prefix)
+        {
+            nodeNameOrdinals.TryGetValue(prefix, out var ordinal);
+            nodeNameOrdinals[prefix] = ordinal + 1;
+            return prefix + "_" + ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         foreach (var form in solidForms)
         {
             ct.ThrowIfCancellationRequested();
             var formType = form.GetType().Name;
-            var formId = GetElementIdInt(form.Id);
-            var nodeName = $"{formType}_{formId}";
+            var nodeName = NextNodeName(formType);
 
             bool isVisible;
             try { isVisible = form.Visible; }
@@ -337,12 +355,23 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     result.AddRange(meshes);
                     totalProcessed += meshes.Count;
+                    // #249 (Phase 5): the form produced GLB content — its
+                    // FHV12-strengthened metrics join the preview input
+                    // snapshot (same visibility filters by construction).
+                    try
+                    {
+                        previewForms.Add(
+                            RevitFamilySnapshotExtractor.ExtractFormMetrics(form, options, familyDoc));
+                    }
+                    catch (Exception metricEx)
+                    {
+                        SmartConLogger.Debug($"  · {nodeName}: preview metrics failed: {metricEx.Message}");
+                    }
                     if (scanVerbose)
                     {
                         var verts = meshes.Sum(m => m.VertexCount);
                         var tris = meshes.Sum(m => m.TriangleCount);
-                        SmartConLogger.Debug(
-                            $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                        SmartConLogger.Debug($"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
                     }
                 }
                 else
@@ -365,8 +394,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             ct.ThrowIfCancellationRequested();
             var symbolName = "?";
             try { symbolName = inst.Symbol?.Name ?? "?"; } catch { }
-            var instId = GetElementIdInt(inst.Id);
-            var nodeName = $"Nested[{symbolName}]_{instId}";
+            var nodeName = NextNodeName($"Nested[{symbolName}]");
 
             var instVisibleParam = GetIsVisibleParam(inst);
             if (scanVerbose)
@@ -404,12 +432,38 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 {
                     result.AddRange(meshes);
                     totalProcessed += meshes.Count;
+                    // #249 (Phase 5): the placement joins the preview input
+                    // snapshot (symbol identity + transform + visibility).
+                    try
+                    {
+                        var nestedFamilyName = inst.Symbol?.Family?.Name;
+                        if (!string.IsNullOrEmpty(nestedFamilyName))
+                        {
+                            var transform = inst.GetTransform();
+                            previewNestedInstances.Add(new NestedInstanceSnapshot(
+                                nestedFamilyName!,
+                                inst.Symbol?.Name ?? string.Empty,
+                                transform.Origin.X, transform.Origin.Y, transform.Origin.Z,
+                                transform.BasisX.X, transform.BasisX.Y, transform.BasisX.Z,
+                                transform.BasisY.X, transform.BasisY.Y, transform.BasisY.Z,
+                                transform.BasisZ.X, transform.BasisZ.Y, transform.BasisZ.Z,
+                                instVisibleParam,
+                                // #250: the nested child's own content
+                                // fingerprint — a geometry/material edit
+                                // inside the child must re-key the pool
+                                // even when the placement is untouched.
+                                RevitFamilySnapshotExtractor.ComputeNestedContentMetrics(familyDoc, inst, options)));
+                        }
+                    }
+                    catch (Exception nestedEx)
+                    {
+                        SmartConLogger.Debug($"  · {nodeName}: preview placement failed: {nestedEx.Message}");
+                    }
                     if (scanVerbose)
                     {
                         var verts = meshes.Sum(m => m.VertexCount);
                         var tris = meshes.Sum(m => m.TriangleCount);
-                        SmartConLogger.Debug(
-                            $"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
+                        SmartConLogger.Debug($"  ✔ {nodeName}: {meshes.Count} mesh(es), {verts} verts, {tris} tris");
                     }
                 }
                 else
@@ -427,6 +481,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
             }
         }
 
+
         SmartConLogger.Info(
             $"Geometry extraction summary: {totalProcessed} meshes produced, " +
             $"{totalEmpty} empty, {totalSkipped} failed, " +
@@ -441,8 +496,21 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 "[Action: verify family has visible 3D solids at Fine detail level]");
         }
 
-        return result;
+        return new FamilyMeshExtractionResult(result, previewForms, previewNestedInstances);
     }
+
+    /// <summary>
+    /// Result of one family-document mesh pass: the GLB meshes AND the
+    /// per-type preview INPUT snapshot (Issue #249, Phase 5) — the
+    /// GLB-filtered forms/nested instances with FHV12-strengthened
+    /// metrics, collected in the SAME traversal (one geometry read per
+    /// element, identical visibility filters) so the VIEW3D hash always
+    /// mirrors what the GLB writer emits.
+    /// </summary>
+    internal sealed record FamilyMeshExtractionResult(
+        List<MeshData> Meshes,
+        List<FormMetrics> PreviewForms,
+        List<NestedInstanceSnapshot> PreviewNestedInstances);
 
     /// <summary>
     /// Issue #108 fix: extracts one <see cref="MeshData"/> per distinct
@@ -657,7 +725,7 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                         stats.SkippedEmptySolid++;
                         break;
                     }
-                    AddSolidWithMaterials(solid, groups, verbose);
+                    AddSolidWithMaterials(solid, groups);
                     stats.SolidCount++;
                     break;
 
@@ -729,12 +797,9 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
     /// normals across face boundaries inside the same material.
     /// </remarks>
     private static void AddSolidWithMaterials(
-        Solid solid, Dictionary<int, MaterialMeshGroup> groups, bool verbose)
+        Solid solid, Dictionary<int, MaterialMeshGroup> groups)
     {
         if (solid.Faces is null || solid.Faces.Size == 0) return;
-
-        var faceCount = solid.Faces.Size;
-        var beforeTris = groups.Values.Sum(g => g.Indices.Count / 3);
 
         foreach (Face face in solid.Faces)
         {
@@ -757,11 +822,6 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 SmartConLogger.Debug($"    AddSolidWithMaterials: Face.Triangulate(1.0) failed: {ex.Message}");
             }
         }
-
-        var producedTris = groups.Values.Sum(g => g.Indices.Count / 3) - beforeTris;
-        if (verbose)
-            SmartConLogger.Debug(
-                $"    AddSolidWithMaterials(Face.Triangulate): {faceCount} face(s) → {producedTris} triangles");
     }
 
     /// <summary>

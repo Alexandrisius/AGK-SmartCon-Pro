@@ -30,19 +30,25 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
     private readonly ISystemTypeFinder _typeFinder;
     private readonly IFamilyCatalogProvider _catalog;
     private readonly ITransactionService _transactionService;
+    private readonly RoutingDriftProbe? _driftProbe;
+    private readonly IRoutingDriftPrompt? _driftPrompt;
 
     public SystemFamilyPlacementService(
         IRevitUIContext revitUIContext,
         ISystemTypeSyncOrchestrator syncOrchestrator,
         ISystemTypeFinder typeFinder,
         IFamilyCatalogProvider catalog,
-        ITransactionService transactionService)
+        ITransactionService transactionService,
+        RoutingDriftProbe? driftProbe = null,
+        IRoutingDriftPrompt? driftPrompt = null)
     {
         _revitUIContext = revitUIContext;
         _syncOrchestrator = syncOrchestrator;
         _typeFinder = typeFinder;
         _catalog = catalog;
         _transactionService = transactionService;
+        _driftProbe = driftProbe;
+        _driftPrompt = driftPrompt;
     }
 
     public SystemPlacementResult LoadAndPlaceSystemType(
@@ -59,7 +65,20 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
             return SystemPlacementResult.Failed;
         }
 
-        if (_syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion, familyName, familyKey))
+        // ADR-072 World B: sync applies the catalog routing to the project
+        // type («the catalog is always right») — when the live routing
+        // differs, the user must confirm the overwrite before placement.
+        var routingDrift = _driftProbe?
+            .HasRoutingDrift(activeDoc, catalogItemId, typeName, familyName, familyKey) == true;
+        if (routingDrift && (_driftPrompt is null || !_driftPrompt.ConfirmRoutingOverwrite(typeName)))
+        {
+            SmartConLogger.Info(
+                $"SystemFamilyPlacement: user declined the routing overwrite for '{typeName}' — " +
+                "placement cancelled, nothing synced");
+            return SystemPlacementResult.Cancelled;
+        }
+
+        if (!routingDrift && _syncOrchestrator.IsProjectTypeCurrent(activeDoc, catalogItemId, typeName, targetRevitVersion, familyName, familyKey))
         {
             SmartConLogger.Debug(
                 $"SystemFamilyPlacement: type '{typeName}' is up-to-date (marker match), activating placement.");

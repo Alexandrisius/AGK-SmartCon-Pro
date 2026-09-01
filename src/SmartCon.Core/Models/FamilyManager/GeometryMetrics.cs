@@ -22,9 +22,14 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// (text labels in annotation/title-block families). 0 for 3D-only
 /// families.</param>
 /// <param name="ReferencePlaneCount">Number of <c>ReferencePlane</c>
-/// elements. 0 for families without reference planes.</param>
-/// <param name="DimensionCount">Number of <c>Dimension</c> elements
-/// in the family document. 0 for families without dimensions.</param>
+/// elements. 0 for families without reference planes. Not hashed since
+/// FHV14 — reference planes are definition wiring (DEF/PLANES).</param>
+/// <param name="DimensionCount">Number of LABELED <c>Dimension</c> elements
+/// not owned by a form sketch (FHV13). Unlabeled dimensions — including
+/// Revit's automatic sketch dimensions — are not parameter wiring and are
+/// not counted; 0 for families without labeled dimensions. Not hashed
+/// since FHV14 — labeled dimensions are definition wiring
+/// (DEF/DIMS).</param>
 /// <param name="TotalSymbolicCurveLength">Summed curve length of all
 /// symbolic curves, internal units (feet). Catches 2D edits that keep
 /// the element count constant (ADR-056).</param>
@@ -43,7 +48,15 @@ public sealed record GeometryMetrics(
     int DimensionCount = 0,
     double TotalSymbolicCurveLength = 0,
     double TotalDetailCurveLength = 0,
-    double TotalModelCurveLength = 0);
+    double TotalModelCurveLength = 0,
+    /// <summary>
+    /// FHV12 (#249, Phase 3): nested <c>FamilyInstance</c> placements
+    /// inside the family document — symbol identity + quantized transform
+    /// + visibility. Pre-FHV12 only the nested family NAMES were hashed
+    /// (NESTED section): moving or rotating a nested part inside the
+    /// family passed the content hash silently.
+    /// </summary>
+    IReadOnlyList<NestedInstanceSnapshot>? NestedInstances = null);
 
 /// <summary>
 /// Metrics for a single <c>GenericForm</c> element inside a family
@@ -79,7 +92,109 @@ public sealed record FormMetrics(
     int EdgeCount,
     string? SubcategoryName,
     double SurfaceArea = 0,
-    BoundingBoxSnapshot? Bounds = null);
+    BoundingBoxSnapshot? Bounds = null,
+    /// <summary>
+    /// FHV12 (#249, Phase 3): volume-weighted centroid of the form's
+    /// solids (<c>Solid.ComputeCentroid()</c>), hashed with 1e-4 ft
+    /// rounding like connector origins. Catches translations that keep
+    /// volume, face counts AND the axis-aligned bounds (e.g. a shape
+    /// moved within its own bounding box).
+    /// </summary>
+    PointSnapshot? Centroid = null,
+    /// <summary>
+    /// FHV12: histogram of the form's face kinds (PlanarFace,
+    /// CylindricalFace, ConicalFace, RevolvedFace, …) — face KINDS are
+    /// stable across regenerations, unlike tessellation vertex counts
+    /// (Autodesk forum). Sorted by kind ordinal.
+    /// </summary>
+    IReadOnlyList<FaceTypeCount>? FaceTypes = null,
+    /// <summary>
+    /// FHV12: summed edge lengths of all solids (internal units, feet) —
+    /// stabler than the edge COUNT for shape edits that re-split edges.
+    /// </summary>
+    double TotalEdgeLength = 0,
+    /// <summary>
+    /// FHV12: the form's resolved display color (RGBA 0-255) through the
+    /// same fallback chain the GLB preview uses (face/form material →
+    /// element category → family category → owner). <c>null</c> when no
+    /// level resolved a material — a deterministic state.
+    /// </summary>
+    MaterialColorSnapshot? MaterialColor = null,
+    /// <summary>
+    /// FHV12: the form's visibility flags — the raw
+    /// <c>IS_VISIBLE_PARAM</c> value (the associable "Visible" parameter,
+    /// per-type through its binding) and the Fine detail-level flag from
+    /// <c>GenericForm.GetVisibility()</c>. A binding flip shifts the hash
+    /// even when every metric stays identical.
+    /// </summary>
+    FormVisibilitySnapshot? Visibility = null,
+    /// <summary>
+    /// FHV18 (#251): histogram of the form's RESOLVED per-face display
+    /// colors (face material → form-level fallback chain), sorted by RGBA.
+    /// The GLB writes per-face-material meshes (#108), but pre-FHV18 the
+    /// hash carried only ONE form-level color — painting a single face
+    /// changed the preview bytes invisibly to both CAS tiers and the GEOM
+    /// section. A face without an own material lands in the form-level
+    /// bucket; faces with no resolvable color anywhere are not counted
+    /// (FaceCount still covers the total).
+    /// </summary>
+    IReadOnlyList<FaceColorCount>? FaceColors = null);
+
+/// <summary>One resolved-color bucket of a <see cref="FormMetrics"/> face-color histogram (FHV18, #251).</summary>
+public sealed record FaceColorCount(MaterialColorSnapshot Color, int Count);
+
+/// <summary>A 3D point in internal units (feet), hashed with 1e-4 ft rounding.</summary>
+public sealed record PointSnapshot(double X, double Y, double Z);
+
+/// <summary>One face-kind counter of a <see cref="FormMetrics"/> histogram (FHV12).</summary>
+public sealed record FaceTypeCount(string FaceKind, int Count);
+
+/// <summary>Resolved display color (RGBA, 0-255 per channel) of a form (FHV12).</summary>
+public sealed record MaterialColorSnapshot(int R, int G, int B, int A);
+
+/// <summary>
+/// Visibility flags of a family form (FHV12): the raw
+/// <c>IS_VISIBLE_PARAM</c> value (<c>null</c> when unreadable) and the
+/// Fine detail-level flag (<c>null</c> when the visibility object is
+/// unavailable).
+/// </summary>
+public sealed record FormVisibilitySnapshot(int? IsVisibleParamValue, bool? IsShownInFine);
+
+/// <summary>
+/// One nested <c>FamilyInstance</c> placement inside a family document
+/// (FHV12, #249 Phase 3): the symbol identity (family + symbol name —
+/// user content, locale-stable), the placement transform quantized to
+/// 1e-4 ft (origin + basis vectors), and the raw
+/// <c>IS_VISIBLE_PARAM</c> value.
+/// </summary>
+public sealed record NestedInstanceSnapshot(
+    string FamilyName,
+    string SymbolName,
+    double OriginX,
+    double OriginY,
+    double OriginZ,
+    double BasisXx,
+    double BasisXy,
+    double BasisXz,
+    double BasisYx,
+    double BasisYy,
+    double BasisYz,
+    double BasisZx,
+    double BasisZy,
+    double BasisZz,
+    int? IsVisibleParamValue,
+    /// <summary>
+    /// #250: aggregate CONTENT metrics of the nested symbol's own geometry
+    /// (placement-invariant: read from <c>GetSymbolGeometry()</c>) — filled
+    /// ONLY by the GLB preview extraction and emitted ONLY by the VIEW3D
+    /// hash. The GEOM section's NESTEDINST list deliberately does not carry
+    /// it (the shared-nested content answer there belongs to NESTEDHASH's
+    /// composite hashes, and reading every nested child's geometry on each
+    /// content-hash pass would be prohibitively slow). <c>null</c> = not
+    /// computed (GEOM extraction / read failure) — the hasher emits a
+    /// deterministic marker then.
+    /// </summary>
+    FormMetrics? ContentMetrics = null);
 
 /// <summary>
 /// Axis-aligned bounding box in internal units (feet). Hashed with

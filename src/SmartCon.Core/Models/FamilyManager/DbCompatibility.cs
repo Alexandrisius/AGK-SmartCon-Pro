@@ -31,6 +31,26 @@ public static class DbCompatibility
     /// in any release build; latest tag at the time: v2.0.1-beta.8). A
     /// pre-beta.9 plugin writing v11-format rows would mis-dedup (it does
     /// not know the LOOKUP section).
+    /// FHV12 note (2026-08-27, Issue #249): the floor targets the next beta
+    /// that first SHIPS FHV12 - v2.0.1-beta.10 (FHV11 hashes never shipped
+    /// in any release build; latest tag at the time: v2.0.1-beta.9). A
+    /// pre-beta.10 plugin writing v12-format rows would mis-dedup (it does
+    /// not know the DEF section and the strengthened GEOM metrics).
+    /// FHV13 note (2026-08-28, Issue #249): FHV12 never shipped in any
+    /// release build (latest tag: v2.0.1-beta.9), so FHV13 ships in the
+    /// SAME beta.10 and the floor stays unchanged — any released plugin
+    /// writing v13-format rows must be ≥ beta.10 either way. FHV14 (same
+    /// day, manual-test round 2) inherits the same reasoning: neither 12
+    /// nor 13 ever shipped — only FHV14 will. FHV15 (manual-test round 3,
+    /// deterministic reference type) and FHV16 (round 4, negative-zero
+    /// canonicalization) — same: only FHV16 ships. FHV17 (round 5,
+    /// canonical-order determinism: emitted-string sort keys) and FHV18
+    /// (#251, per-face color histogram) — same: only FHV18 ships. FHV19
+    /// (#254, param-based routing leaves VALUES) and FHV20 (World B, the
+    /// ROUTING section leaves the system hash) — same: both shipped in the
+    /// same feature branch before the next tag, so only FHV20 ships and the
+    /// floor stays beta.10 (any released plugin writing v20-format rows is
+    /// ≥ the tag that carries FHV12..20).
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.9";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.10";
 }

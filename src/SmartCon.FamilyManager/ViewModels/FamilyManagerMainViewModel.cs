@@ -64,6 +64,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly IClock _clock;
     private readonly ISharedNestedFamilyRepository _sharedNestedRepository;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
+    private readonly IFamilyRoutingRuleRepository _routingRuleRepository;
+    private readonly ISegmentSizeRepository _segmentSizeRepository;
+    private readonly ISegmentRuleRepository _segmentRuleRepository;
     private readonly IDispatcher _dispatcher;
     private readonly FamilyImportPreparationService _preparationService;
     private readonly IContentHashDedupService _dedupService;
@@ -79,6 +82,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly ICategoryAutoAssignService _autoAssignService;
     private readonly IMiniProjectMarker _miniProjectMarker;
     private readonly ISystemTypeFinder _systemTypeFinder;
+    /// <summary>#249 (Phase 4): stored content analytics for the batch
+    /// dialog's "what changed" diff.</summary>
+    private readonly IContentHashAnalyticsRepository _contentHashAnalytics;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -235,6 +241,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _clock = services.Clock;
         _sharedNestedRepository = services.SharedNestedRepository;
         _familyDependencyRepository = services.FamilyDependencyRepository;
+        _routingRuleRepository = services.FamilyRoutingRuleRepository;
+        _segmentSizeRepository = services.SegmentSizeRepository;
+        _segmentRuleRepository = services.SegmentRuleRepository;
 
         // v2.0.0 (ADR-036, M-019-003): inject IDispatcher instead of capturing
         // Application.Current?.Dispatcher. The latter is null in net48 Revit
@@ -257,6 +266,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _autoAssignService = services.AutoAssignService;
         _miniProjectMarker = services.MiniProjectMarker;
         _systemTypeFinder = services.SystemTypeFinder;
+        _contentHashAnalytics = services.ContentHashAnalytics;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();
@@ -521,6 +531,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                 Tags = leaf.Tags,
                 Description = leaf.Description,
                 RevitCategory = leaf.RevitCategory,
+                FamilySource = leaf.FamilySource,
                 ActiveRevitMajorVersion = leaf.ActiveRevitMajorVersion,
                 MinRevitMajorVersion = leaf.MinRevitMajorVersion,
             };
@@ -543,6 +554,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
                     Tags = parentLeaf.Tags,
                     Description = parentLeaf.Description,
                     RevitCategory = parentLeaf.RevitCategory,
+                    FamilySource = parentLeaf.FamilySource,
                     ActiveRevitMajorVersion = parentLeaf.ActiveRevitMajorVersion,
                     MinRevitMajorVersion = parentLeaf.MinRevitMajorVersion,
                 };

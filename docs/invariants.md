@@ -73,7 +73,8 @@ _transactionService.RunInTransaction("Name", doc => { ... });
 **Где применяется:**
 - `FittingCtcManager.ApplyFittingCtcToFamily` — запись CTC описаний коннекторов в family.
 - `RevitFamilyConnectorService.SetConnectorTypeCode` — запись описания коннектора в family.
-- `EmbeddedContentVerifier.AlignCurrentTypeForVerification` — выравнивание `FamilyManager.CurrentType` в verification family-документах (EditFamily-копия / фоново открытый .rfa) перед извлечением снапшота (#240).
+- `RevitFamilySnapshotExtractor.ExtractEvaluatedAtReferenceType` — `SmartCon_HashReferenceType`: переключение `FamilyManager.CurrentType` на детерминированный reference-тип перед извлечением evaluated-секций снапшота (#249, FHV15). Транзакция всегда **откатывается** (RollBack) — документ и его IsModified не меняются; при уже открытой транзакции используется `SubTransaction`. Заменило удалённый `EmbeddedContentVerifier.AlignCurrentTypeForVerification` (#240).
+- `RevitFamilySnapshotExtractor.ExtractGeometryPerType` — `SmartCon_GeometryPerType`: перебор типов для per-type превью, Transaction+RollBack (тот же паттерн).
 
 **Правило:** `new Transaction` используется только для family doc. Проектный
 `Document` всегда через `ITransactionService`. После commit/load family doc

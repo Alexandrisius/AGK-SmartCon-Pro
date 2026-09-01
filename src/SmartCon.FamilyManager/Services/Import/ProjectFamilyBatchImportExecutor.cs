@@ -15,6 +15,9 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
     private readonly IStaleDetector _staleDetector;
     private readonly IFamilyCatalogProvider _catalog;
     private readonly IFamilyDependencyRepository _familyDependencyRepository;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
+    private readonly ISegmentSizeRepository? _segmentSizeRepository;
+    private readonly ISegmentRuleRepository? _segmentRuleRepository;
     private readonly LoadableAttributeExtractionHelper _extraction;
     private readonly int _revitVersion;
 
@@ -29,7 +32,10 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         IStaleDetector staleDetector,
         IFamilyCatalogProvider catalog,
         IFamilyDependencyRepository familyDependencyRepository,
-        int revitVersion)
+        int revitVersion,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null,
+        ISegmentSizeRepository? segmentSizeRepository = null,
+        ISegmentRuleRepository? segmentRuleRepository = null)
     {
         _staging = staging;
         _systemFamilyImportOrchestrator = systemFamilyImportOrchestrator;
@@ -39,6 +45,9 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
         _staleDetector = staleDetector;
         _catalog = catalog;
         _familyDependencyRepository = familyDependencyRepository;
+        _routingRuleRepository = routingRuleRepository;
+        _segmentSizeRepository = segmentSizeRepository;
+        _segmentRuleRepository = segmentRuleRepository;
         _revitVersion = revitVersion;
         _extraction = new LoadableAttributeExtractionHelper(
             dataImportService, sharedNestedRepository, revitVersion);
@@ -179,9 +188,30 @@ public sealed class ProjectFamilyBatchImportExecutor : IFamilyBatchImportExecuto
                     importedParentItemIds[pair.Key] = pair.Value;
                 }
 
+                // ADR-072 (item 2): routing rules first — the link writer's
+                // routing-table augmentation (item 5) reads them.
+                if (_routingRuleRepository is not null)
+                {
+                    await RoutingRuleWriter.WriteAsync(
+                            items, importedParentItemIds, _routingRuleRepository, ct)
+                        .ConfigureAwait(false);
+                }
+                if (_segmentSizeRepository is not null)
+                {
+                    await SegmentSizeWriter.WriteAsync(
+                            items, importedParentItemIds, _segmentSizeRepository, ct)
+                        .ConfigureAwait(false);
+                }
+                // FHV21: per-version segment rules ride the same batch pass.
+                if (_segmentRuleRepository is not null)
+                {
+                    await SegmentRuleWriter.WriteAsync(
+                            items, importedParentItemIds, _segmentRuleRepository, ct)
+                        .ConfigureAwait(false);
+                }
                 await DependencyLinkWriter.WriteAsync(
                         items, importedParentItemIds, importedLoadableOriginalPaths,
-                        _familyDependencyRepository, ct)
+                        _familyDependencyRepository, _routingRuleRepository, _catalog, ct)
                     .ConfigureAwait(false);
             }
         }

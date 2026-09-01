@@ -131,6 +131,17 @@ public interface IStaleDetector
     IReadOnlyDictionary<string, bool>? GetSystemTypeStaleMap(string catalogItemId);
 
     /// <summary>
+    /// #249 (Phase 2): per-type stale verdicts of one LOADABLE catalog
+    /// item (original type name, ordinal-ignore-case → isStale), or null
+    /// when no per-type proof exists (never content-checked,
+    /// indeterminate verification, or a family-level match). Feeds the
+    /// orange presence dot on the exact drifted type node; a null map
+    /// falls back to the family-level (leaf-scoped) dot — the pre-#249
+    /// behaviour.
+    /// </summary>
+    IReadOnlyDictionary<string, bool>? GetLoadableTypeStaleMap(string catalogItemId);
+
+    /// <summary>
     /// #187: clears ONE type's stale verdict after its successful sync
     /// (per-type "Обновить") — the type's ES marker was just rewritten to the
     /// current catalog version, so its orange dot must clear immediately

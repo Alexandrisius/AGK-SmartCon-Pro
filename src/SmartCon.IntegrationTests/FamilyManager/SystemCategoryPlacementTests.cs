@@ -381,7 +381,8 @@ public sealed class SystemCategoryPlacementTests : RevitApiTest
 
             var ops = new SystemFamilyRevitOperations(
                 null!, txService, new LoadableFamilyScanner(),
-                new RevitMiniProjectMarker(txService, new SmartCon.Core.Services.Interfaces.SystemClock()));
+                new RevitMiniProjectMarker(txService, new SmartCon.Core.Services.Interfaces.SystemClock()),
+                TestSystemTypeSyncServiceFactory.Create(doc));
             var analyses = ops.AnalyzeActiveProject(doc);
 
             var railingCategory = analyses.FirstOrDefault(

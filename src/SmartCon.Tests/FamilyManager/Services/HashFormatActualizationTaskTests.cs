@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.FamilyManager.Services.Actualization;
@@ -28,6 +29,20 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
     }
 
     public void Dispose() => _fixture.Dispose();
+
+    private async Task<(string? Hashes, string? Strings)> ReadSectionsAsync(string versionId)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT section_hashes, section_strings FROM catalog_versions WHERE id = @id";
+        cmd.Parameters.Add(new SqliteParameter("@id", versionId));
+        using var reader = await cmd.ExecuteReaderAsync();
+        if (!await reader.ReadAsync()) throw new InvalidOperationException("version row must exist");
+        return (
+            reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+    }
 
     private static FamilyActualizationContext ContextFor(
         string itemId, string itemName, string label, bool isActive, params ActualizationVariant[] variants)
@@ -150,6 +165,58 @@ public sealed class HashFormatActualizationTaskTests : IDisposable
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.Equal(expectedHash, item?.ContentHash);
         Assert.Equal(FamilyContentHashFormat.CurrentVersion, item?.HashFormatVersion);
+    }
+
+    [Fact]
+    public async Task Apply_LoadableGroup_WritesSectionAnalyticsInline()
+    {
+        // #249 follow-up: the hash-format task writes section_hashes/section_strings in
+        // the same pass — the migration completes in ONE «Обновить базу»
+        // run instead of leaving section-hashes-v1 for a second one.
+        var (itemId, v2025, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA", revitVersion: 2025);
+
+        var ctx = ContextFor(itemId, "FamA", "v1", isActive: true,
+            new ActualizationVariant(v2025, "f1", 2025, "p", "FamA.rfa"));
+        await _sut.ApplyAsync(ctx, CancellationToken.None);
+
+        var expectedSections = _hasher.ComputeSectionsForLoadable(CatalogSeedHelper.CreateSnapshot())!;
+        var (hashesJson, stringsJson) = await ReadSectionsAsync(v2025);
+        var hashes = ContentSectionJsonSerializer.Deserialize(hashesJson);
+        Assert.NotNull(hashes);
+        Assert.NotNull(stringsJson);
+        Assert.Equal(expectedSections.Count, hashes!.Count);
+        foreach (var section in expectedSections)
+        {
+            Assert.Equal(section.HashHex, hashes[section.Key]);
+        }
+
+        // The backstop task has nothing left to detect for this version.
+        var backstop = new SectionHashesActualizationTask(_fixture.GetDatabase(), _hasher);
+        Assert.Equal(0, await backstop.CountPendingAsync(2025));
+    }
+
+    [Fact]
+    public async Task Apply_SystemGroup_WritesSectionAnalyticsInline()
+    {
+        var (itemId, versionId, fileId, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "Стены", familySource: "system", createFileOnDisk: false);
+        await CatalogSeedHelper.SeedDataExtractedAsync(_fixture, itemId, versionId, fileId);   // seeds type 'DN50'
+
+        var staged = CreateSystemSnapshot("DN50", "Generic - 200mm");
+        var ctx = SystemContextFor(itemId, "Стены", "v1", isActive: true, staged,
+            new ActualizationVariant(versionId, fileId, 2025, "p", "Стены.rvt"));
+        await _sut.ApplyAsync(ctx, CancellationToken.None);
+
+        var expectedSections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot("DN50"))!;
+        var (hashesJson, stringsJson) = await ReadSectionsAsync(versionId);
+        var hashes = ContentSectionJsonSerializer.Deserialize(hashesJson);
+        Assert.NotNull(hashes);
+        Assert.NotNull(stringsJson);
+        Assert.Equal(expectedSections.Count, hashes!.Count);
+        foreach (var section in expectedSections)
+        {
+            Assert.Equal(section.HashHex, hashes[section.Key]);
+        }
     }
 
     [Fact]

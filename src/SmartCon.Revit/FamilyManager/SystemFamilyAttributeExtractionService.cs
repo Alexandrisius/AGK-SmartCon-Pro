@@ -208,7 +208,6 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 valueRaw = FormattableString.Invariant($"{dbl}");
                 valueText = Compatibility.RevitUnitsCompat.FormatDisplayValue(unitsSource, param, dbl)
                     ?? Core.Services.Implementation.UnitSymbolFixup.Correct(param.AsValueString());
-                ParameterUnitDiagnostics.LogParameterDouble(param, param.Definition?.Name ?? "?", dbl, "SystemRvt");
                 break;
             case StorageType.Integer:
                 var intVal = param.AsInteger();

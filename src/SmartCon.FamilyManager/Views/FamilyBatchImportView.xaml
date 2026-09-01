@@ -395,6 +395,18 @@
                                                                     Foreground="#607D8B"
                                                                     Width="11" Height="11"/>
                                     </Button>
+                                    <!-- #249 (Phase 4): "what changed" diff against the active
+                                         version — change class + sections + per-type lists,
+                                         with the «Перезаписать текущую» action for cosmetic
+                                         changes. Existing rows only. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenDiffDetailsCommand}"
+                                            ToolTip="{loc:Loc FM_Diff_BadgeTooltip}"
+                                            Visibility="{Binding ShowDiffBadge, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="SwapHorizontal"
+                                                                    Foreground="{DynamicResource AccentBrush}"
+                                                                    Width="12" Height="12"/>
+                                    </Button>
                                     <!-- Info-only fallback (e.g. a top-level row whose version was
                                          resolved by the verification marker): keeps the explanation
                                          reachable when neither badge above is shown. -->

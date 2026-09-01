@@ -64,3 +64,21 @@ public interface ILoadableFamilyImportOrchestrator
         CancellationToken ct = default);
 }
 ```
+
+---
+
+## IContentHashAnalyticsRepository
+
+Чтение контент-хэш аналитики версий каталога (#249, Phase 4): секционные хэши/строки (`section_hashes`/`section_strings`) и per-type хэши (`family_type_hashes`) по (catalogItemId, versionLabel). `null` = аналитика ещё не вычислена (pending backfill), пустой список = легитимный ответ для бестипового семейства. Питает diff-окно batch-диалога и DB-side per-type stale карту `StaleDetector` (VersionMismatch) — без открытия файлов семейств.
+
+**Файл:** `IContentHashAnalyticsRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalContentHashAnalyticsRepository.cs`
+
+```csharp
+public interface IContentHashAnalyticsRepository
+{
+    Task<IReadOnlyDictionary<string, string>?> GetSectionHashesAsync(string catalogItemId, string versionLabel, CancellationToken ct);
+    Task<IReadOnlyDictionary<string, string>?> GetSectionStringsAsync(string catalogItemId, string versionLabel, CancellationToken ct);
+    Task<IReadOnlyList<FamilyTypeHashEntry>?> GetTypeHashesAsync(string catalogItemId, string versionLabel, CancellationToken ct);
+}
+```

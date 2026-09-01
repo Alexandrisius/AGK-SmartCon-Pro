@@ -43,7 +43,8 @@ internal sealed partial class LocalFamilyImportService
         string versionId,
         string versionLabel,
         string familyName,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null)
     {
         SmartConLogger.Info(
             $"Geometry pipeline hook called: family='{familyName}', v='{versionLabel}', " +
@@ -67,6 +68,7 @@ internal sealed partial class LocalFamilyImportService
                 versionId,
                 versionLabel,
                 familyName,
+                overwriteBaselineSectionHashes,
                 ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

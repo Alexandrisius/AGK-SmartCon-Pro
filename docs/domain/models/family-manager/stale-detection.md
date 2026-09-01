@@ -419,3 +419,20 @@ public static class TypeParameterOverwritePlanner
 ```
 
 **Используется в:** `StaleFamilyUpdater.UpdateFamilyCoreAsync` — план строится из SQLite до вызова reload (ноль дополнительных открытий семейства) и передаётся в `RevitFamilyLoadService` (исполнение — `ApplyOverwriteOperations`).
+
+---
+
+## Per-type stale карта (#249, Phase 2 + follow-ups)
+
+Семантика оранжевых точек по типам loadable-семейства (ADR-071):
+
+- **ContentDrift** (маркер == current, локальная правка): карта из embedded-верификации (EditFamily vs файл текущей версии, per-type hashes из `LoadableVerificationResult.PerTypeStale`) **с той же shared-section эскалацией** (round-6 alignment): proof-записи верификатора несут секционные хэши обеих сторон; изменилась любая секция кроме TYPES/VALUES = все сравниваемые типы stale — иначе одна и та же правка (например, 2D-линии через OverwriteCurrent) давала индикацию, отличную от пути новой версии, а confirm о потере локальной правки геометрии молча пропускался.
+- **VersionMismatch** (маркер старше current): карта **чисто из БД** (`StaleDetector.ComputeDbPerTypeStaleAsync`) — per-type хэши версии маркера vs текущей (`family_type_hashes`) + секционные хэши (`section_hashes`): изменилась любая секция кроме TYPES/VALUES = **все типы stale** (геометрия общая); изменились только значения = точка только на изменённых. Ноль открытий документов, иммунитет к open-editor guard после «Импорт активного файла».
+- Карта `null` (analytics pending / верификация indeterminate) → fallback на семейную точку (pre-#249 поведение).
+- Confirm-диалог перед «Обновить» — только для ContentDrift (единственный случай потери пользовательских правок); для VersionMismatch обновление идёт молча.
+
+---
+
+## System per-type уточнение из каталога (#253)
+
+Per-type карта **системных** семейств уточняется из БД по той же семантике, что loadable VersionMismatch: маркер типа старше текущей версии, но контент типа между версиями не изменился (per-type хэши `family_type_hashes` совпали) → точка НЕ ставится; изменилась shared-секция (STRUCT/ROUTING/SEGMENTS/… ≠ VALUES) → все типы stale. Ядро — чистое `SystemTypeStaleLogic.RefineVersionMismatchWithContent`; проводка — `StaleDetector.RefineSystemTypeStaleAsync` (мемо (item|label), try/catch → fallback на маркерный вердикт). Item-level вердикт остаётся маркерным (`AggregateSystemTypeMarkers`) — уточняются только точки, как и у loadable. Аналитика неполна (pending/legacy/чужой маркер) → маркерный вердикт стоит (ложный not-stale невозможен).

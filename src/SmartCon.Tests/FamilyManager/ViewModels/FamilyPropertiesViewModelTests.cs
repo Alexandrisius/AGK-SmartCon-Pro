@@ -94,6 +94,7 @@ public sealed class FamilyPropertiesViewModelTests
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         assetService.Verify(
@@ -182,6 +183,7 @@ public sealed class FamilyPropertiesViewModelTests
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         assetService.Verify(
@@ -231,6 +233,7 @@ public sealed class FamilyPropertiesViewModelTests
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         assetService.Verify(
@@ -254,6 +257,7 @@ public sealed class FamilyPropertiesViewModelTests
                 It.IsAny<string>(),
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<IReadOnlyDictionary<string, string>?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         assetService.Verify(

@@ -459,7 +459,10 @@ internal static class FamilyCatalogSql
         {CreateDbUsers};
         {CreateFamilyNestedSharedFamilies};
         {CreateFamilyDependencies};
-        {CreateFamilyFacts}
+        {CreateFamilyFacts};
+        {CreateFamilyTypeHashes};
+        {CreateFamilyRoutingRules};
+        {CreateFamilyRoutingTypeSettings}
         """;
 
     public const string MigrateV9AddLoadedVersionLabel = """
@@ -498,6 +501,53 @@ internal static class FamilyCatalogSql
 
     public const string CreateFamilyFactsIndexes = """
         CREATE INDEX IF NOT EXISTS ix_family_facts_key ON family_facts (fact_key, value_key)
+        """;
+
+    /// <summary>
+    /// V33 (Issue #249, Phase 4): analytics columns on
+    /// <c>catalog_versions</c> — the canonical content sections of the
+    /// version as two flat JSON maps (section name → section SHA-256 hex;
+    /// section name → canonical substring), written at import and
+    /// backfilled for legacy versions by the optional
+    /// <c>section-hashes-v1</c> actualization task. Powers the batch
+    /// dialog's "what changed" diff against the active version without
+    /// re-opening the family file. Analytics only — the identity hash
+    /// column is untouched.
+    /// </summary>
+    public const string MigrateV33AddSectionColumns = """
+        ALTER TABLE catalog_versions ADD COLUMN section_hashes TEXT;
+        ALTER TABLE catalog_versions ADD COLUMN section_strings TEXT
+        """;
+
+    /// <summary>
+    /// V32 (Issue #249, Phase 2): per-type content hashes of a catalog
+    /// version — one row per (version, type). <c>type_identity_key</c> is
+    /// computed in C# (<c>typeName.ToUpperInvariant()</c> for loadable,
+    /// <c>SystemTypeIdentityKey.Build</c> "TOKEN|NAME" for system — one
+    /// category can hold same-named types of different system families,
+    /// FHV6), so the key is culture-correct for Cyrillic unlike SQLite's
+    /// NOCASE collation (see the comment in
+    /// <see cref="CreateFamilyNestedSharedFamilies"/>). Populated at import
+    /// from the Prepare-time snapshot hashes and backfilled for legacy
+    /// versions by the optional <c>type-hashes-v1</c> actualization task.
+    /// Typeless loadable families legitimately have ZERO rows — the
+    /// backfill detection keys off <c>family_types</c>, not off this table.
+    /// </summary>
+    public const string CreateFamilyTypeHashes = """
+        CREATE TABLE IF NOT EXISTS family_type_hashes (
+            catalog_version_id TEXT NOT NULL,
+            type_identity_key TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            type_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            PRIMARY KEY (catalog_version_id, type_identity_key),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyTypeHashesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_hash ON family_type_hashes (type_hash);
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_key ON family_type_hashes (type_identity_key)
         """;
 
     public const string MigrateV10AddFamilyTypesNameIndex = """
@@ -542,6 +592,165 @@ internal static class FamilyCatalogSql
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
         )
+        """;
+
+    /// <summary>
+    /// V35 (#254, ADR-072 Phase 2b): per-version tracking column of the
+    /// routing backfill/slimming actualization — 0 = pending, 1 = done,
+    /// -1 = unreadable (terminal), -2 = missing file (terminal). Detection
+    /// keys off THIS column, never off the absence of rows in
+    /// <c>family_routing_rules</c> (a legitimately routing-less type has
+    /// none — validator amendment).
+    /// </summary>
+    public const string MigrateV35AddRoutingBackfilled = """
+        ALTER TABLE catalog_versions ADD COLUMN routing_backfilled INTEGER NOT NULL DEFAULT 0
+        """;
+
+    /// <summary>
+    /// V36 (ADR-072, Phase 3): per-version segment size tables — the
+    /// routing editor's min/max dropdown source (segment nominal
+    /// diameters, mirroring the Revit routing dialog). Diameters in
+    /// internal units (feet); cascade-deleted with the version.
+    /// </summary>
+    public const string MigrateV36AddSegmentSizes = """
+        CREATE TABLE IF NOT EXISTS family_segment_sizes (
+            catalog_version_id TEXT NOT NULL,
+            segment_name TEXT NOT NULL,
+            nominal_diameter REAL NOT NULL,
+            inner_diameter REAL NOT NULL,
+            outer_diameter REAL NOT NULL,
+            used_in_size_lists INTEGER NOT NULL DEFAULT 0,
+            used_in_sizing INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_version_id, segment_name, nominal_diameter),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_family_segment_sizes_version ON family_segment_sizes (catalog_version_id);
+        """;
+
+    /// <summary>
+    /// V37 (ADR-072 World B, owner decision 2026-08-29): ITEM-level routing
+    /// link tables — routing left the content hash and the version model
+    /// (it is a link between catalog families, not file content). The
+    /// migration copies the current version's V34 rows so curated links
+    /// survive the upgrade; items whose current version carries no V34 rows
+    /// stay empty and get seeded by import/backfill on first sight.
+    /// </summary>
+    public const string MigrateV37AddItemRoutingTables = """
+        CREATE TABLE IF NOT EXISTS item_routing_rules (
+            catalog_item_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            group_key TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            part_name TEXT,
+            description TEXT NOT NULL DEFAULT '',
+            criteria_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (catalog_item_id, family_key, type_name, group_key, rule_order),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS item_routing_type_settings (
+            catalog_item_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            preferred_junction_type INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_item_id, family_key, type_name),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO item_routing_rules
+            (catalog_item_id, family_key, type_name, group_key, rule_order,
+             part_name, description, criteria_json)
+        SELECT r.catalog_item_id, r.family_key, r.type_name, r.group_key, r.rule_order,
+             r.part_name, r.description, r.criteria_json
+        FROM family_routing_rules r
+        INNER JOIN catalog_versions cv ON cv.id = r.catalog_version_id
+        INNER JOIN catalog_items ci
+            ON ci.id = r.catalog_item_id AND ci.current_version_label = cv.version_label;
+        INSERT OR IGNORE INTO item_routing_type_settings
+            (catalog_item_id, family_key, type_name, preferred_junction_type)
+        SELECT cv.catalog_item_id, s.family_key, s.type_name, s.preferred_junction_type
+        FROM family_routing_type_settings s
+        INNER JOIN catalog_versions cv ON cv.id = s.catalog_version_id
+        INNER JOIN catalog_items ci
+            ON ci.id = cv.catalog_item_id AND ci.current_version_label = cv.version_label;
+        """;
+
+    /// <summary>
+    /// V38 (FHV21, owner decision 2026-09-01, stress test баг 3): PER-VERSION
+    /// segment routing rules — the mini-project owns the whole segment
+    /// configuration (set + order + size-range criterion), so it is
+    /// versioned content like <c>family_segment_sizes</c>, unlike fitting
+    /// rules which stay item-level catalog links (<c>item_routing_rules</c>,
+    /// World B). Readers follow <c>current_version_label</c>, so a rollback
+    /// restores the activated version's own ranges. NULL min/max =
+    /// unrestricted criterion.
+    /// </summary>
+    public const string MigrateV38AddSegmentRules = """
+        CREATE TABLE IF NOT EXISTS family_segment_rules (
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            segment_name TEXT NOT NULL,
+            min_size_feet REAL,
+            max_size_feet REAL,
+            description TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (catalog_version_id, family_key, type_name, rule_order),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_family_segment_rules_version ON family_segment_rules (catalog_version_id);
+        """;
+
+    /// <summary>
+    /// V34 (#254, ADR-072): routing rules of system MEPCurve types as
+    /// catalog DATA — the mini-project no longer carries fittings, so the
+    /// routing of a version lives here instead of the staged .rvt.
+    /// <c>group_key</c> is the string group identity
+    /// (<see cref="RoutingGroupKeys"/>: manager group name or
+    /// <c>"Param:&lt;BIP&gt;"</c>); <c>part_name</c> NULL = no-part rule
+    /// ("Нет"); <c>criteria_json</c> preserves arbitrary criterion kinds.
+    /// Scoping mirrors <c>family_types</c>: (family_key, type_name) —
+    /// one category item can hold same-named types of different system
+    /// families (FHV6).
+    /// </summary>
+    public const string CreateFamilyRoutingRules = """
+        CREATE TABLE IF NOT EXISTS family_routing_rules (
+            catalog_item_id TEXT NOT NULL,
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            group_key TEXT NOT NULL,
+            rule_order INTEGER NOT NULL,
+            part_name TEXT,
+            description TEXT NOT NULL DEFAULT '',
+            criteria_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY (catalog_version_id, family_key, type_name, group_key, rule_order),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    /// <summary>
+    /// V34 (#254, ADR-072): per-type routing scalars (PreferredJunctionType
+    /// — manager types, or RBS_CURVETYPE_PREFERRED_BRANCH_PARAM — flex).
+    /// Presence of a row doubles as the "this version's routing is stored
+    /// as data" marker for the legacy fallback (a legitimately rule-less
+    /// type keeps its settings row).
+    /// </summary>
+    public const string CreateFamilyRoutingTypeSettings = """
+        CREATE TABLE IF NOT EXISTS family_routing_type_settings (
+            catalog_version_id TEXT NOT NULL,
+            family_key TEXT NOT NULL DEFAULT '',
+            type_name TEXT NOT NULL,
+            preferred_junction_type INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (catalog_version_id, family_key, type_name),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyRoutingRulesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_routing_rules_item ON family_routing_rules (catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_routing_rules_version ON family_routing_rules (catalog_version_id)
         """;
 
     /// <summary>
@@ -612,7 +821,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id);
-        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes;
+        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes + ";" + CreateFamilyTypeHashesIndexes + ";" + CreateFamilyRoutingRulesIndexes;
 
     /// <summary>
     /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+

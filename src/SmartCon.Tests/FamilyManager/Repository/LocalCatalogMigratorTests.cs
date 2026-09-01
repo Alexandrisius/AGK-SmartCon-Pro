@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
@@ -74,7 +75,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
     }
 
     [Fact]
@@ -113,7 +114,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -165,7 +166,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -217,7 +218,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -287,7 +288,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -355,7 +356,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
         }
     }
 
@@ -628,7 +629,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -699,7 +700,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -732,7 +733,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
 
         using var cmd = verify.CreateCommand();
         cmd.CommandText = "PRAGMA table_info(database_meta)";
@@ -795,7 +796,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
     }
 
     [Fact]
@@ -1064,7 +1065,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("31", version);
+        Assert.Equal("38", version);
 
         foreach (var (table, column) in new[]
         {
@@ -1182,7 +1183,7 @@ public sealed class LocalCatalogMigratorTests
 
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-        Assert.Equal("31", (string?)await versionCmd.ExecuteScalarAsync());
+        Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
 
         // Orphans are gone from both rebuilt tables.
         foreach (var (table, ghostId) in new[]
@@ -1246,7 +1247,7 @@ public sealed class LocalCatalogMigratorTests
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
             var version = (string?)await versionCmd.ExecuteScalarAsync();
-            Assert.Equal("31", version);
+            Assert.Equal("38", version);
         }
 
         using (var cmd = verify.CreateCommand())
@@ -1280,7 +1281,7 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = connection.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)(await versionCmd.ExecuteScalarAsync()));
+            Assert.Equal("38", (string?)(await versionCmd.ExecuteScalarAsync()));
         }
 
         using (var checkCmd = connection.CreateCommand())
@@ -1321,13 +1322,104 @@ public sealed class LocalCatalogMigratorTests
         using (var versionCmd = verify.CreateCommand())
         {
             versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
-            Assert.Equal("31", (string?)(await versionCmd.ExecuteScalarAsync()));
+            Assert.Equal("38", (string?)(await versionCmd.ExecuteScalarAsync()));
         }
 
         using (var tableCmd = verify.CreateCommand())
         {
             tableCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('category_assignment_rule_groups','category_assignment_conditions')";
             Assert.Equal(2L, (long)(await tableCmd.ExecuteScalarAsync())!);
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V36_CreatesSegmentSizesTable_WithRepositoryRoundtrip()
+    {
+        using var fixture = new TempCatalogFixture();
+
+        using (var seed = fixture.GetDatabase().CreateConnection())
+        {
+            await seed.OpenAsync();
+            using var itemCmd = seed.CreateCommand();
+            itemCmd.CommandText = """
+                INSERT INTO catalog_items (id, name, normalized_name, content_status, current_version_label, family_source, revit_category_id, created_at_utc, updated_at_utc)
+                VALUES ('item-v36', 'Pipes', 'PIPES', 'Active', 'v1', 'system', -2008044, '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z');
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES ('file-v36', 'files/x.rvt', 'x.rvt', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                VALUES ('ver-v36', 'item-v36', 'file-v36', 'v1', 2025, '2026-08-29T00:00:00Z');
+                """;
+            await itemCmd.ExecuteNonQueryAsync();
+        }
+
+        var repo = new LocalSegmentSizeRepository(fixture.GetDatabase());
+        await repo.ReplaceForVersionAsync("ver-v36",
+        [
+            new SegmentSizeRecord("Seg A", 0.164, 0.1, 0.12, true, true, 0),
+            new SegmentSizeRecord("Seg A", 0.328, 0.2, 0.24, true, false, 1),
+        ]);
+
+        var nominals = await repo.ReadDistinctNominalsAsync("ver-v36");
+        Assert.Equal([0.164, 0.328], nominals);
+
+        var rows = await repo.ReadForVersionAsync("ver-v36");
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Seg A", rows[0].SegmentName);
+        Assert.True(rows[0].UsedInSizeLists);
+        Assert.False(rows[1].UsedInSizing);
+    }
+
+    [Fact]
+    public async Task Migrate_V37_CopiesCurrentVersionRouting_ToItemTables()
+    {
+        using var fixture = new TempCatalogFixture();
+
+        using (var seed = fixture.GetDatabase().CreateConnection())
+        {
+            await seed.OpenAsync();
+            using var cmd = seed.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO catalog_items (id, name, normalized_name, content_status, current_version_label, family_source, revit_category_id, created_at_utc, updated_at_utc)
+                VALUES ('item-v37', 'Pipes', 'PIPES', 'Active', 'v2', 'system', -2008044, '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z');
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES ('file-v37', 'files/x.rvt', 'x.rvt', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                VALUES ('ver-v37-archived', 'item-v37', 'file-v37', 'v1', 2025, '2026-08-28T00:00:00Z'),
+                       ('ver-v37-current', 'item-v37', 'file-v37', 'v2', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO family_routing_rules
+                    (catalog_item_id, catalog_version_id, family_key, type_name, group_key, rule_order, part_name, description, criteria_json)
+                VALUES ('item-v37', 'ver-v37-archived', 'Single', 'Type A', 'Elbows', 0, 'Old:X', '', '[]'),
+                       ('item-v37', 'ver-v37-current', 'Single', 'Type A', 'Elbows', 0, 'New:Y', '', '[]');
+                INSERT INTO family_routing_type_settings (catalog_version_id, family_key, type_name, preferred_junction_type)
+                VALUES ('ver-v37-archived', 'Single', 'Type A', 1),
+                       ('ver-v37-current', 'Single', 'Type A', 0);
+                UPDATE schema_info SET value = '36' WHERE key = 'schema_version';
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using (var ruleCmd = verify.CreateCommand())
+        {
+            ruleCmd.CommandText = "SELECT part_name FROM item_routing_rules WHERE catalog_item_id = 'item-v37'";
+            var part = (string?)(await ruleCmd.ExecuteScalarAsync());
+            Assert.Equal("New:Y", part);
+        }
+
+        using (var countCmd = verify.CreateCommand())
+        {
+            countCmd.CommandText = "SELECT COUNT(*) FROM item_routing_rules WHERE catalog_item_id = 'item-v37'";
+            Assert.Equal(1L, (long)(await countCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var settingCmd = verify.CreateCommand())
+        {
+            settingCmd.CommandText = "SELECT preferred_junction_type FROM item_routing_type_settings WHERE catalog_item_id = 'item-v37'";
+            Assert.Equal(0L, (long)(await settingCmd.ExecuteScalarAsync())!);
         }
     }
 }

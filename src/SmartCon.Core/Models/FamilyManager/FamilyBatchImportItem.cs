@@ -128,7 +128,28 @@ public sealed record FamilyBatchImportItem(
     /// Display-only: the status column annotates the version as
     /// marker-resolved. Never consumed by import logic.
     /// </summary>
-    bool IsMarkerResolvedVersion = false)
+    bool IsMarkerResolvedVersion = false,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes from Prepare,
+    /// written to <c>family_type_hashes</c> by the import transaction.
+    /// <c>null</c> for legacy/folder imports — the optional
+    /// <c>type-hashes-v1</c> actualization task backfills them.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare,
+    /// written to <c>catalog_versions.section_hashes/section_strings</c>
+    /// by the import transaction. <c>null</c> for legacy paths —
+    /// backfilled by the <c>section-hashes-v1</c> task.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// ADR-072 World B (audit M11): <c>true</c> when the
+    /// <see cref="SystemSnapshot"/> routing is the UNsubstituted slim mini
+    /// state (reimport from mini + no stored routing rows in the DB) — the
+    /// item-level routing tables must NOT be seeded from it.
+    /// </summary>
+    bool UnsubstitutedMiniRouting = false)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =

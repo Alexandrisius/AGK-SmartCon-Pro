@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
@@ -322,6 +323,85 @@ internal sealed partial class LocalFamilyImportService
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Issue #249 (Phase 2): replace the per-type content-hash rows of one
+    /// catalog version inside the caller's transaction. Always DELETEs the
+    /// previous rows first (an overwrite invalidates them by definition);
+    /// inserts the new set when <paramref name="entries"/> is non-null.
+    /// A <c>null</c> set therefore means "unknown — pending backfill",
+    /// which is exactly what the <c>type-hashes-v1</c> actualization task
+    /// detects (no rows + <c>family_types</c> present).
+    /// </summary>
+    private static async Task ReplaceTypeHashesAsync(
+        SqliteConnection connection,
+        string versionId,
+        IReadOnlyList<FamilyTypeHashEntry>? entries,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        using (var deleteCmd = connection.CreateCommand())
+        {
+            deleteCmd.CommandText = "DELETE FROM family_type_hashes WHERE catalog_version_id = @versionId";
+            deleteCmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+            await deleteCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        if (entries is null || entries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var entry in entries)
+        {
+            using var insertCmd = connection.CreateCommand();
+            insertCmd.CommandText = """
+                INSERT OR REPLACE INTO family_type_hashes
+                    (catalog_version_id, type_identity_key, type_name, type_hash, created_at_utc)
+                VALUES (@versionId, @identityKey, @typeName, @typeHash, @createdAtUtc)
+                """;
+            insertCmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+            insertCmd.Parameters.Add(new SqliteParameter("@identityKey", entry.TypeIdentityKey));
+            insertCmd.Parameters.Add(new SqliteParameter("@typeName", entry.TypeName));
+            insertCmd.Parameters.Add(new SqliteParameter("@typeHash", entry.HashHex));
+            insertCmd.Parameters.Add(new SqliteParameter("@createdAtUtc", now.ToString("o")));
+            await insertCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Issue #249 (Phase 4): write the canonical content sections of one
+    /// catalog version (JSON maps into <c>section_hashes</c> /
+    /// <c>section_strings</c>) inside the caller's transaction. A
+    /// <c>null</c> set CLEARS the columns — after an overwrite without a
+    /// fresh snapshot the stale analytics must not be served (the
+    /// <c>section-hashes-v1</c> task re-detects the version as pending).
+    /// </summary>
+    private static async Task WriteVersionSectionsAsync(
+        SqliteConnection connection,
+        string versionId,
+        IReadOnlyList<ContentSectionHash>? sections,
+        CancellationToken ct)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE catalog_versions
+            SET section_hashes = @hashes, section_strings = @strings
+            WHERE id = @versionId
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@versionId", versionId));
+        if (sections is null)
+        {
+            cmd.Parameters.Add(new SqliteParameter("@hashes", DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@strings", DBNull.Value));
+        }
+        else
+        {
+            cmd.Parameters.Add(new SqliteParameter("@hashes", ContentSectionJsonSerializer.SerializeHashes(sections)));
+            cmd.Parameters.Add(new SqliteParameter("@strings", ContentSectionJsonSerializer.SerializeStrings(sections)));
+        }
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     private static async Task InsertTagAsync(SqliteConnection connection, string catalogItemId, string tag, CancellationToken ct)
     {
         var normalizedTag = FamilySearchNormalizer.Normalize(tag);
@@ -400,6 +480,23 @@ internal sealed partial class LocalFamilyImportService
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var tx = connection.BeginTransaction();
+
+        // #252: capture the PRE-OVERWRITE section hashes of this version —
+        // the geometry pipeline hook (H3) uses them as the reuse baseline;
+        // after the UPDATE below the row carries the NEW sections and the
+        // honest "did the preview content actually change?" answer would be
+        // lost (the tier-1 check can only see OTHER versions, which almost
+        // always differ and forced a full mesh extraction on every
+        // text-only overwrite).
+        string? preOverwriteSectionsJson;
+        using (var sectionsCmd = connection.CreateCommand())
+        {
+            sectionsCmd.Transaction = tx;
+            sectionsCmd.CommandText = "SELECT section_hashes FROM catalog_versions WHERE id = @versionId";
+            sectionsCmd.Parameters.Add(new SqliteParameter("@versionId", currentVersion.Id));
+            preOverwriteSectionsJson = Convert.ToString(await sectionsCmd.ExecuteScalarAsync(ct));
+        }
+        var preOverwriteSections = ContentSectionJsonSerializer.Deserialize(preOverwriteSectionsJson);
 
         // Get current file path
         using var pathCmd = connection.CreateCommand();
@@ -520,6 +617,19 @@ internal sealed partial class LocalFamilyImportService
             await UpdateVersionAsync(connection, currentVersion.Id, finalMetadata, now,
                 item.ContentHash, item.HashFormatVersion, item.PublishedByUser, ct, item.FamilySource);
 
+            // #249 (Phase 2): the overwrite REPLACED the content, so the
+            // previous per-type hashes are invalid by definition. Replace
+            // them with the freshly computed set; when the dialog lost the
+            // snapshot (legacy path, null) the rows are cleared so the
+            // type-hashes-v1 actualization task re-detects the version as
+            // pending instead of serving stale hashes.
+            await ReplaceTypeHashesAsync(connection, currentVersion.Id, item.PerTypeHashes, now, ct);
+
+            // #249 (Phase 4): same rule for the content sections — the
+            // overwrite invalidated them; a null set clears the columns so
+            // the section-hashes-v1 task re-detects the version.
+            await WriteVersionSectionsAsync(connection, currentVersion.Id, item.Sections, ct);
+
             tx.Commit();
 
             SmartConLogger.Info(
@@ -551,7 +661,7 @@ internal sealed partial class LocalFamilyImportService
             null,
             absolutePath,
             item.ExistingCatalogItemId!, currentVersion.Id, currentVersion.VersionLabel,
-            StripFamilyExtension(item.FileName), ct).ConfigureAwait(false);
+            StripFamilyExtension(item.FileName), ct, preOverwriteSections).ConfigureAwait(false);
 
         return new FamilyImportResult(
             Success: true,

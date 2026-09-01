@@ -241,6 +241,8 @@ Issue #183: `familyName` ограничивает матчинг одной си
 
 Ядро синхронизации системного типа (Issue #104, ADR-061): читает эталон из открытого мини-проекта и записывает в проект БЕЗ копирования элементов. Существующий тип перезаписывается на месте; отсутствующий создаётся `Duplicate()` типа-болванки той же категории. Одна транзакция на тип: создание + параметры (+фолбэк создания материала при ElementId-резолве) + сегменты + структура + правила трассировки + ES-маркер (одна точка отмены). Вызывается на Revit main thread; владельцем sourceDoc является caller (оркестратор переиспользует одно открытие на батч).
 
+ADR-072 (#254): routing читается из каталожной БД (V34) с недеструктивным legacy-fallback (pre-V34 версия / тип без правил / ошибка БД → routing мини-проекта); dispatch по `RoutingPreferenceManager is null` — manager-less типы (flex/conduit/tray) пишут routing как значения параметров (`SyncRoutingParamsFromDb`). `StageTypeFromSource` — staging-режим ручного создания slim мини-проекта (без Phase A, без ES-маркера, slim routing: Segments + no-part правила, param-группы принудительно в «Нет»).
+
 **Файл:** `ISystemTypeSyncService.cs`
 **Реализация:** `SmartCon.Revit/FamilyManager/SystemTypeSyncService.cs`
 
@@ -256,6 +258,182 @@ public interface ISystemTypeSyncService
         int sourceRevitVersion,
         string? familyName = null,
         string? familyKey = null);
+
+    // ADR-072: ручной staging slim мини-проекта (FamilyNotFound →
+    // caller делает CopyElements fallback для этого типа).
+    SystemTypeSyncResult StageTypeFromSource(
+        Document sourceDoc,
+        Document stagingDoc,
+        string typeName,
+        int? categoryOrdinal = null,
+        string? familyName = null,
+        string? familyKey = null);
+}
+```
+
+---
+
+## IFamilyRoutingRuleRepository
+
+Хранилище правил трассировки системных MEPCurve-типов как данных каталога
+(ADR-072). Два уровня: **версионный** (V34 `family_routing_rules` +
+`family_routing_type_settings`, заморожен после World B: история + legacy-
+fallback sync) и **item-уровень** (V37 `item_routing_rules` +
+`item_routing_type_settings` — живые связи семейств каталога; редактор
+правит на месте, импорт сеет только при отсутствии, реимпорт curated-ссылки
+не затирает). `HasRulesForVersionAsync` — дискриминатор legacy-fallback:
+отсутствие строк = pre-V34 версия (легитимно пустой routing хранит
+settings-строку, поэтому отсутствие строк ≠ «нет правил»).
+`MarkCurrentVersionRoutingBackfilledAsync` — импорт/backfill пометили
+item-ссылки засеянными, optional-задача не переоткрывает файл.
+
+**Файл:** `IFamilyRoutingRuleRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalFamilyRoutingRuleRepository.cs`
+
+```csharp
+public interface IFamilyRoutingRuleRepository
+{
+    Task ReplaceForVersionAsync(string catalogItemId, string catalogVersionId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForVersionAsync(
+        string catalogItemId, string catalogVersionId, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForCurrentVersionAsync(
+        string catalogItemId, CancellationToken ct = default);
+    Task<bool> HasRulesForVersionAsync(string catalogItemId, string catalogVersionId, CancellationToken ct = default);
+    Task<bool> HasRulesForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default);
+    Task<bool> HasAnyForItemAsync(string catalogItemId, CancellationToken ct = default);
+    Task<(IReadOnlyList<FamilyRoutingRuleInfo> Rules, IReadOnlyList<FamilyRoutingTypeSettings> Settings)> ReadForItemAsync(
+        string catalogItemId, CancellationToken ct = default);
+    Task ReplaceForItemAsync(string catalogItemId,
+        IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings, CancellationToken ct = default);
+    Task MarkCurrentVersionRoutingBackfilledAsync(string catalogItemId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IRoutingEditorService
+
+Движок редактора трассировки (ADR-072, World B): загрузка правил системного
+MEPCurve-итема для редактирования и сохранение правок НА МЕСТЕ — одной
+транзакцией: DELETE+INSERT item-таблиц (`item_routing_rules` /
+`item_routing_type_settings`, V37) + регенерация `family_dependencies`
+текущей версии (shared_nested переносятся, routing-links удаляются и
+пересобираются из новых правил как в DependencyLinkWriter). Версия НЕ
+создаётся, хэш/секции НЕ пересчитываются (трассировка — связь семейств
+каталога, не содержимое файла). Load: item-таблицы, fallback — V34 текущей
+версии (legacy до backfill); FHV21 (ADR-073): сегментная группа компонуется
+из per-version таблицы активной версии через `SegmentRuleComposition`
+(read-only view, save её не пишет — legacy Segments-строки сохраняются
+verbatim). Убранные детали, залоченные архивными версиями (ADR-067),
+возвращаются для UX-подсказки. `GetPartCandidatesAsync` — источник пикера
+«семейство+тип»: loadable-итемы категории фитинга с фактом part_type из
+набора группы (строго как фильтр Revit) + фильтры по `connector_shape`
+(ADR-073): host-биты (either-end), `requiredShapeMask` (строки переходов
+переменной формы требуют ВСЕ биты), `excludeMultiShape` (обычная строка
+«Переходы» — только одноформенные); кандидаты без факта проходят (legacy-
+деградация). Без Revit — чистые данные каталога.
+
+**Файл:** `IRoutingEditorService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Routing/CatalogRoutingEditorService.cs`
+
+```csharp
+public interface IRoutingEditorService
+{
+    Task<RoutingEditorData?> LoadAsync(string catalogItemId, CancellationToken ct = default);
+    Task<RoutingSaveResult> SaveAsync(
+        string catalogItemId, RoutingEditorSave save, CancellationToken ct = default);
+    Task<IReadOnlyList<RoutingPartCandidate>> GetPartCandidatesAsync(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals,
+        int connectorShapeBits = 0, int requiredShapeMask = 0,
+        bool excludeMultiShape = false, CancellationToken ct = default);
+}
+```
+
+---
+
+## ISegmentRuleRepository
+
+Per-version сегментные правила типов труб (V38, FHV21, ADR-073): таблица
+`family_segment_rules` — набор сегментов, диапазоны Мин/Макс (NULL =
+unrestricted) и порядок правил как версионный контент мини-проекта
+(каскадное удаление с версией; откат читает СВОЮ версию).
+`ReplaceForCurrentVersionAsync` — import-путь (`SegmentRuleWriter`);
+`ReplaceForVersionAsync` — backfill-задачи (`segment-rules-v1`,
+routing-backfill) для всех вариантов, включая архивные. Читатели идут
+через `SegmentRuleComposition` (legacy-fallback, когда у версии ещё нет
+строк).
+
+**Файл:** `ISegmentRuleRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalSegmentRuleRepository.cs`
+
+```csharp
+public interface ISegmentRuleRepository
+{
+    Task<IReadOnlyList<SegmentRuleRecord>> ReadForVersionAsync(string catalogVersionId, CancellationToken ct = default);
+    Task<IReadOnlyList<SegmentRuleRecord>> ReadForCurrentVersionAsync(string catalogItemId, CancellationToken ct = default);
+    Task ReplaceForVersionAsync(string catalogVersionId, IReadOnlyList<SegmentRuleRecord> rules, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId, IReadOnlyList<SegmentRuleRecord> rules, CancellationToken ct = default);
+}
+```
+
+---
+
+## ISegmentSizeRepository
+
+Таблицы размеров сегментов версий каталога (V36, Ф3): per-version строки
+`family_segment_sizes` (каскадное удаление с версией). `ReadDistinctNominalsAsync`
+— источник dropdown'ов мин./макс. размера редактора трассировки (strictly
+NominalDiameter, как в диалоге Revit). `ReplaceForCurrentVersionAsync` —
+import-путь (`SegmentSizeWriter`); задача `segment-sizes-v1` пишет через
+`ReplaceForVersionAsync` для всех вариантов группы.
+
+**Файл:** `ISegmentSizeRepository.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/LocalCatalog/LocalSegmentSizeRepository.cs`
+
+```csharp
+public interface ISegmentSizeRepository
+{
+    Task ReplaceForVersionAsync(string catalogVersionId, IReadOnlyList<SegmentSizeRecord> sizes, CancellationToken ct = default);
+    Task ReplaceForCurrentVersionAsync(string catalogItemId, IReadOnlyList<SegmentSizeRecord> sizes, CancellationToken ct = default);
+    Task<IReadOnlyList<SegmentSizeRecord>> ReadForVersionAsync(string catalogVersionId, CancellationToken ct = default);
+    Task<IReadOnlyList<double>> ReadDistinctNominalsAsync(string catalogVersionId, CancellationToken ct = default);
+}
+```
+
+---
+
+## IRoutingDriftPrompt
+
+Диалог подтверждения перезаписи трассировки при размещении системного типа
+(ADR-072 World B): если live-трассировка типа проекта отличается от
+item-ссылок каталога, размещение спрашивает «применить каталожные настройки?»
+— «нет» отменяет размещение целиком (`SystemPlacementResult.Cancelled`).
+
+**Файл:** `IRoutingDriftPrompt.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/RoutingDriftPrompt.cs`
+
+```csharp
+public interface IRoutingDriftPrompt
+{
+    bool ConfirmRoutingOverwrite(string typeName);
+}
+```
+
+---
+
+## IMiniProjectRoutingSlimmingService
+Лечение legacy мини-проектов в managed-хранилище (ADR-072, Ф2b): pre-slim экстракция полного routing (источник backfill для версий без section_strings) → slim: fitting-группы очищены (Segments сохранены), routing-параметры в «Нет», протащенные фитинги (инстансы+семейства) удалены, orphan-материалы (включая #254-дубли и каскадные после удаления семейств) удалены, суффиксные рабочие копии collision-пар переименованы в чистое имя → save in place → удаление `name.NNNN.rvt` → восстановление read-only (I-16 exception). `AlreadySlim` возвращает snapshot=null — stored DB rules защищены от перезаписи slim-состоянием. Маршаллинг на Revit UI thread через awaitable event (I-01).
+
+**Файл:** `IMiniProjectRoutingSlimmingService.cs`
+**Реализация:** `SmartCon.Revit/FamilyManager/RevitMiniProjectRoutingSlimmingService.cs`
+
+```csharp
+public interface IMiniProjectRoutingSlimmingService
+{
+    Task<MiniProjectSlimmingOutcome> SlimManagedFileAsync(string absolutePath, CancellationToken ct = default);
 }
 ```
 

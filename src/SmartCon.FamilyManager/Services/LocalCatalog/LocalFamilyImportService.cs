@@ -223,6 +223,21 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 await InsertVersionAsync(connection, versionId, catalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
                     request.ContentHash, request.HashFormatVersion, request.PublishedBy, request.FamilySource).ConfigureAwait(false);
 
+                // #249 (Phase 2): per-type content hashes computed at
+                // Prepare. null (legacy/folder import) → rows stay empty,
+                // the type-hashes-v1 actualization task backfills them.
+                if (request.PerTypeHashes is not null)
+                {
+                    await ReplaceTypeHashesAsync(connection, versionId, request.PerTypeHashes, now, ct).ConfigureAwait(false);
+                }
+
+                // #249 (Phase 4): canonical content sections. null → the
+                // section-hashes-v1 actualization task backfills them.
+                if (request.Sections is not null)
+                {
+                    await WriteVersionSectionsAsync(connection, versionId, request.Sections, ct).ConfigureAwait(false);
+                }
+
                 if (existingItem is null && request.Tags is not null)
                 {
                     foreach (var tag in request.Tags)
@@ -488,7 +503,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PublishedBy: item.PublishedByUser,
                         PreextractedGeometry: item.GeometryPerType,
                         RevitCategoryId: item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId,
-                        Facts: item.LoadableSnapshot?.Facts);
+                        Facts: item.LoadableSnapshot?.Facts,
+                        PerTypeHashes: item.PerTypeHashes,
+                        Sections: item.Sections);
                     result = await ImportFileAsync(request, ct);
                 }
                 else
@@ -567,7 +584,9 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                         PreextractedGeometry: item.GeometryPerType,
                         RevitCategory: item.RevitCategory,
                         RevitCategoryId: item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId,
-                        Facts: item.LoadableSnapshot?.Facts);
+                        Facts: item.LoadableSnapshot?.Facts,
+                        PerTypeHashes: item.PerTypeHashes,
+                        Sections: item.Sections);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else
@@ -747,6 +766,18 @@ internal sealed partial class LocalFamilyImportService : IFamilyImportService
                 }
                 await InsertVersionAsync(connection, versionId, request.CatalogItemId, fileRecordId, versionLabel, finalMetadata, revitVersion, now, ct,
                     request.ContentHash, request.HashFormatVersion, request.PublishedBy).ConfigureAwait(false);
+
+                // #249 (Phase 2): per-type content hashes — see ImportFileAsync.
+                if (request.PerTypeHashes is not null)
+                {
+                    await ReplaceTypeHashesAsync(connection, versionId, request.PerTypeHashes, now, ct).ConfigureAwait(false);
+                }
+
+                // #249 (Phase 4): canonical content sections — see ImportFileAsync.
+                if (request.Sections is not null)
+                {
+                    await WriteVersionSectionsAsync(connection, versionId, request.Sections, ct).ConfigureAwait(false);
+                }
 
                 tx.Commit();
             }

@@ -32,6 +32,16 @@ public enum StaleReason
     /// «Обновить» restores the catalog content (local edits are lost).
     /// </summary>
     ContentDrift = 5,
+
+    /// <summary>
+    /// ADR-072 World B: the ES marker matches the catalog, but the LIVE
+    /// routing preferences of the loaded system type differ from the
+    /// catalog's item-level routing links (the editor edited them, or the
+    /// project type was reconfigured manually). Routing left the content
+    /// hash, so the drift probe compares <c>RoutingFingerprint</c>s.
+    /// «Обновить» applies the catalog routing to the project type.
+    /// </summary>
+    RoutingDrift = 6,
 }
 
 /// <summary>

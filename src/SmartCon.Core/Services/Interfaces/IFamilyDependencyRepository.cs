@@ -64,9 +64,10 @@ public interface IFamilyDependencyRepository
     /// Reverse lookup (E5, #213, ADR-067): every (parent item, parent
     /// version) pair that references <paramref name="childCatalogItemId"/>
     /// — across ALL versions, not just current ones (an archived parent
-    /// version blocks the child's deletion exactly like the active one).
-    /// Multiple links of the same parent version (different kinds/parts)
-    /// collapse into one reference. Empty list = the item is free.
+    /// version blocks the child's deletion exactly like the active one;
+    /// unified rule for routing and shared_nested links). Multiple links of
+    /// the same parent version (different kinds/parts) collapse into one
+    /// reference. Empty list = the item is free.
     /// </summary>
     Task<IReadOnlyList<FamilyDependencyReference>> GetReferencingParentsAsync(
         string childCatalogItemId,

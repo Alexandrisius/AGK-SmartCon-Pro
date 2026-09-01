@@ -87,7 +87,14 @@ public sealed record FamilySnapshot(
     IReadOnlyList<string>? NonSharedNestedFamilyNames = null,
     IReadOnlyList<NestedContentHash>? SharedNestedContentHashes = null,
     IReadOnlyList<FamilyParameterValue>? PhantomTypeValues = null,
-    IReadOnlyList<LookupTableSnapshot>? LookupTables = null);
+    IReadOnlyList<LookupTableSnapshot>? LookupTables = null,
+    /// <summary>
+    /// FHV12 (#249, Phase 3): type-independent definition wiring — form
+    /// visibility/material/offset bindings, dimension labels, reference
+    /// planes (DEF section). <c>null</c> only in synthetic/test snapshots;
+    /// the extractor always produces it.
+    /// </summary>
+    DefinitionMetrics? Definitions = null);
 
 /// <summary>
 /// FHV8 (#209): one direct shared-nested child entry of the composite

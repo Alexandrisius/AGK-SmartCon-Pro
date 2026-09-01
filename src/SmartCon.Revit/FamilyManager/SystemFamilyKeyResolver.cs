@@ -21,8 +21,11 @@ namespace SmartCon.Revit.FamilyManager;
 /// <item><c>DuctType</c> → <c>Shape</c> (#215, FHV7 —
 /// <c>MEPCurveType.Shape : ConnectorProfileType</c>; the category has THREE
 /// system families — round/rectangular/oval — not one).</item>
+/// <item><c>FlexDuctType</c> → <c>Shape</c> (owner stress test 2026-08-30 —
+/// the category has TWO system families: круглого / прямоугольного сечения).
+/// </item>
 /// <item>Everything else → <see cref="SystemFamilyKeys.SingleFamily"/> (one
-/// system family per category: pipes, flex curves, floors, roofs, ceilings,
+/// system family per category: pipes, flex pipes, floors, roofs, ceilings,
 /// railings, insulations, wires — foundation slabs live in
 /// OST_StructuralFoundation, not in OST_Floors).</item>
 /// </list>
@@ -61,6 +64,12 @@ public static class SystemFamilyKeyResolver
                 ConnectorProfileType.Rectangular => SystemFamilyKeys.DuctRectangular,
                 ConnectorProfileType.Oval => SystemFamilyKeys.DuctOval,
                 _ => SystemFamilyKeys.DuctUnknown,
+            },
+            Autodesk.Revit.DB.Mechanical.FlexDuctType flexDuct => flexDuct.Shape switch
+            {
+                ConnectorProfileType.Round => SystemFamilyKeys.FlexDuctRound,
+                ConnectorProfileType.Rectangular => SystemFamilyKeys.FlexDuctRectangular,
+                _ => SystemFamilyKeys.FlexDuctUnknown,
             },
             _ => SystemFamilyKeys.SingleFamily,
         };

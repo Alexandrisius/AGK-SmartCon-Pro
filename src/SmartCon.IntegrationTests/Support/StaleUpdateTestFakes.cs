@@ -242,6 +242,26 @@ internal sealed class CorruptEmbeddedVerifyHasher : IFamilyContentHasher
         return _inner.ComputeForSystem(snapshot);
     }
 
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForLoadable(FamilySnapshot snapshot)
+    {
+        return _inner.ComputeSectionsForLoadable(snapshot);
+    }
+
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForSystem(SystemFamilySnapshot snapshot)
+    {
+        return _inner.ComputeSectionsForSystem(snapshot);
+    }
+
+    public IReadOnlyDictionary<string, string>? ComputePerTypeHashesForLoadable(FamilySnapshot snapshot)
+    {
+        return _inner.ComputePerTypeHashesForLoadable(snapshot);
+    }
+
+    public IReadOnlyList<SystemTypeContentHash>? ComputePerTypeHashesForSystem(SystemFamilySnapshot snapshot)
+    {
+        return _inner.ComputePerTypeHashesForSystem(snapshot);
+    }
+
     public string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot)
     {
         return _inner.BuildLoadableCanonicalStringForDiagnostics(snapshot);
@@ -278,6 +298,7 @@ internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogServi
     public bool? ShowBatchImportDialog(object viewModel) => null;
     public bool? ShowValidationReport(object viewModel) => null;
     public bool? ShowStatusDetails(object viewModel) => null;
+    public bool? ShowRoutingPartPicker(object viewModel) => null;
     public bool? ShowValidationRulesEditor(object viewModel) => null;
     public bool? ShowAssignmentRulesEditor(object viewModel) => null;
     public void ShowModelessBatchImportDialog(object viewModel) { }
@@ -378,10 +399,12 @@ internal sealed class CountingSnapshotExtractor : IFamilySnapshotExtractor
 
     public int FamilyDocumentExtractions { get; private set; }
 
-    public FamilySnapshot ExtractFromFamilyDocument(Document familyDoc)
+    public FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null)
     {
         FamilyDocumentExtractions++;
-        return _inner.ExtractFromFamilyDocument(familyDoc);
+        return _inner.ExtractFromFamilyDocument(familyDoc, preferredTypeNames);
     }
 
     public SystemFamilySnapshot ExtractFromProject(
@@ -393,6 +416,9 @@ internal sealed class CountingSnapshotExtractor : IFamilySnapshotExtractor
 
     public SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId)
         => _inner.ExtractSingleSystemType(projectDoc, typeId);
+
+    public RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId)
+        => _inner.ExtractSystemTypeRouting(projectDoc, typeId);
 
     public IReadOnlyList<FamilyGeometryPerType> ExtractGeometryPerType(Document familyDoc, CancellationToken ct = default)
         => _inner.ExtractGeometryPerType(familyDoc, ct);

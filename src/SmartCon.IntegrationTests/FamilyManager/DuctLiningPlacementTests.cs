@@ -92,7 +92,8 @@ public sealed class DuctLiningPlacementTests : RevitApiTest
                 null!,
                 txService,
                 new LoadableFamilyScanner(),
-                new RevitMiniProjectMarker(txService, new SystemClock()));
+                new RevitMiniProjectMarker(txService, new SystemClock()),
+                TestSystemTypeSyncServiceFactory.Create(doc));
             var analyses = ops.AnalyzeActiveProject(doc);
 
             // Lining category detected with the lining type and the
