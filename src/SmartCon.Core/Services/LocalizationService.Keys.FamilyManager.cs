@@ -361,6 +361,7 @@ public static partial class LocalizationService
         ru["FM_3D_InitFailed"] = "Не удалось инициализировать 3D-просмотрщик. Проверьте, что DirectX 11 доступен на этой системе."; en["FM_3D_InitFailed"] = "Failed to initialize 3D viewer. Verify DirectX 11 is available on this system.";
         ru["FM_3D_LoadFailed"] = "Не удалось загрузить 3D-превью. Проверьте лог smartcon.log для деталей."; en["FM_3D_LoadFailed"] = "Failed to load 3D preview. Check smartcon.log for details.";
         ru["FM_Props_FileInfo"] = "Информация о файле"; en["FM_Props_FileInfo"] = "File Information";
+        ru["FM_Props_SystemInfo"] = "Системные данные"; en["FM_Props_SystemInfo"] = "System data";
         ru["FM_Props_Title"] = "Свойства семейства"; en["FM_Props_Title"] = "Family Properties";
         ru["FM_Props_NoAssets"] = "Нет файлов"; en["FM_Props_NoAssets"] = "No files";
         ru["FM_Props_ConfigurePreset"] = "Настроить пресет..."; en["FM_Props_ConfigurePreset"] = "Configure preset...";

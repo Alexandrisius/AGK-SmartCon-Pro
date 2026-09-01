@@ -204,36 +204,10 @@
                         </WrapPanel>
                     </Border>
 
-                <!-- Header meta line: version + Revit category + facts.
-                     WrapPanel (owner stress test 2026-09-01): with several
-                     facts the line overflows the fixed dialog width — the
-                     overflow wraps to a second row instead of truncating.
-                     Separators are IN-TEXT bullets (not margins), so a
-                     wrapped row starts flush at the left edge — no ragged
-                     indentation. -->
-                <WrapPanel>
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="0,2,0,2">
-                        <Run Text="{loc:Loc FM_Props_Version}"/>: <Run Text="{Binding VersionLabel, Mode=OneWay}"/>
-                    </TextBlock>
-                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="8,2,0,2">
-                        <Run Text="• "/><Run Text="{loc:Loc FM_Props_RevitCategory}"/>: <Run Text="{Binding RevitCategoryDisplay, Mode=OneWay}"/>
-                    </TextBlock>
-                    <ItemsControl ItemsSource="{Binding FactRows, Mode=OneWay}"
-                                  Visibility="{Binding HasFactRows, Converter={StaticResource BoolToVisibility}}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="8,2,0,2">
-                                    <Run Text="• "/><Run Text="{Binding Label, Mode=OneWay}"/>: <Run Text="{Binding Value, Mode=OneWay}"/>
-                                </TextBlock>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </WrapPanel>
+                <!-- Header meta line REMOVED (owner decision 2026-09-01):
+                     the system data (version, Revit category, facts, dates)
+                     moved into the «Системные данные» card on the General
+                     tab — attribute-style, no wrapping line here. -->
             </StackPanel>
         </Grid>
 
@@ -246,36 +220,124 @@
                 <TabItem.Header>
                     <TextBlock Text="{loc:Loc FM_Tab_General}"/>
                 </TabItem.Header>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc FM_Description}" FontWeight="SemiBold" Margin="0,0,0,4"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True" TextWrapping="Wrap"
-                                 MinHeight="100" Padding="6,4"
-                                 IsReadOnly="{Binding IsReadOnly}"
-                                 VerticalScrollBarVisibility="Auto"
-                                 Style="{DynamicResource CompactTextBox}" Margin="0,0,0,16"/>
+                <!-- Single-column layout with ADAPTIVE description (owner
+                     decision 2026-09-01): the system-data card leads the
+                     tab; the description editor below is sized TO ITS
+                     CONTENT — small when empty (MinHeight 80), growing as
+                     text is typed, up to the full remaining height, then
+                     scrolling (VerticalAlignment=Top + Height=Auto inside
+                     a star row; the CompactTextBox style's fixed Height=26
+                     is overridden locally). A stretched empty textbox and
+                     the two-column rail experiments were rejected. -->
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*" MinHeight="88"/>
+                    </Grid.RowDefinitions>
 
-                        <TextBlock Text="{loc:Loc FM_Props_FileInfo}" FontWeight="SemiBold" Margin="0,0,0,8"
+                        <!-- System data card (owner decision 2026-09-01):
+                             version + Revit category + family facts +
+                             file dates as SYSTEM ATTRIBUTES — label/value
+                             rows in the Attributes-tab style (shared label
+                             column, secondary/medium label, primary value)
+                             inside the standard card border. -->
+                        <TextBlock Grid.Row="0" Text="{loc:Loc FM_Props_SystemInfo}" FontWeight="SemiBold" Margin="0,0,0,8"
                                    Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc FM_Props_Created}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding CreatedAtText, Mode=OneWay}" Margin="8,2" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="{loc:Loc FM_Props_Updated}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding UpdatedAtText, Mode=OneWay}" Margin="8,2" Foreground="{DynamicResource TextPrimaryBrush}"/>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
+                        <Border Grid.Row="1" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                                CornerRadius="4" Background="{DynamicResource SurfaceBrush}"
+                                Padding="10,6" Grid.IsSharedSizeScope="True">
+                            <StackPanel>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="SysInfoLabel" MinWidth="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Loc FM_Props_Version}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontWeight="Medium" FontSize="11" VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding VersionLabel, Mode=OneWay}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="SysInfoLabel" MinWidth="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Loc FM_Props_RevitCategory}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontWeight="Medium" FontSize="11" VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding RevitCategoryDisplay, Mode=OneWay}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" FontSize="12"
+                                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding FactRows, Mode=OneWay}"
+                                              Visibility="{Binding HasFactRows, Converter={StaticResource BoolToVisibility}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="SysInfoLabel" MinWidth="110"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Label, Mode=OneWay}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontWeight="Medium" FontSize="11" VerticalAlignment="Center"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Value, Mode=OneWay}"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}" FontSize="12"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="SysInfoLabel" MinWidth="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Loc FM_Props_Created}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontWeight="Medium" FontSize="11" VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding CreatedAtText, Mode=OneWay}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="SysInfoLabel" MinWidth="110"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{loc:Loc FM_Props_Updated}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontWeight="Medium" FontSize="11" VerticalAlignment="Center"
+                                               Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding UpdatedAtText, Mode=OneWay}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Adaptive description: content-sized, top-aligned
+                             in the star row — small when empty, grows with
+                             text up to the full free height, then scrolls. -->
+                        <TextBlock Grid.Row="2" Text="{loc:Loc FM_Description}" FontWeight="SemiBold"
+                                   Margin="0,16,0,4"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBox Grid.Row="3" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 Height="Auto" MinHeight="80" Padding="6,4"
+                                 IsReadOnly="{Binding IsReadOnly}"
+                                 VerticalAlignment="Top"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Style="{DynamicResource CompactTextBox}"/>
+                </Grid>
             </TabItem>
 
             <TabItem Style="{DynamicResource FlatTabItem}">

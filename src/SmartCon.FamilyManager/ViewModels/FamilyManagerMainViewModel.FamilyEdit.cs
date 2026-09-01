@@ -54,6 +54,12 @@ public sealed partial class FamilyManagerMainViewModel
             // category ordinal — the row model doesn't carry it, one cheap
             // single-row read here.
             var catalogItem = await _catalogProvider.GetItemAsync(itemId);
+            // «Создано» (owner stress test 2026-09-01): the field was ALWAYS
+            // empty — a hardcoded null was passed here while the DB column
+            // holds the real timestamp; source it from the loaded item.
+            var createdAt = catalogItem is not null && catalogItem.CreatedAtUtc != default
+                ? catalogItem.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                : null;
             vm = _viewModelFactory.CreatePropertiesViewModel(
                 SelectedItem.Id,
                 SelectedItem.Name,
@@ -63,7 +69,7 @@ public sealed partial class FamilyManagerMainViewModel
                 SelectedItem.Tags,
                 SelectedItem.ContentStatus,
                 SelectedItem.VersionLabel,
-                null,
+                createdAt,
                 updatedAt,
                 SelectedItem.RevitCategory,
                 isReadOnly: !CanEdit,

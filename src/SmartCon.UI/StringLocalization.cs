@@ -864,6 +864,7 @@ public static class StringLocalization
         public const string FM_3D_InitFailed = "FM_3D_InitFailed";
         public const string FM_3D_LoadFailed = "FM_3D_LoadFailed";
         public const string FM_Props_FileInfo = "FM_Props_FileInfo";
+        public const string FM_Props_SystemInfo = "FM_Props_SystemInfo";
         public const string FM_Props_Title = "FM_Props_Title";
         public const string FM_Props_NoAssets = "FM_Props_NoAssets";
         public const string FM_Props_ConfigurePreset = "FM_Props_ConfigurePreset";
