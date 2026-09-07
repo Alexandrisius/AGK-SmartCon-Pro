@@ -284,6 +284,45 @@ public sealed class DatabaseUpdateStateServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_DisplayedStateStale_ResyncsFromFreshBreakdown()
+    {
+        // Defense in depth for the "banner survives a database switch" class
+        // of bugs: the displayed state says "update required", but the fresh
+        // breakdown of the CURRENT database is empty — UpdateAsync must
+        // resync instead of returning silently with the stale banner up.
+        var (sut, dialogs, engine, _) = CreateSut(new DatabasePendingBreakdown(2, 0, 0, 0, 0, 0));
+        await sut.RefreshAsync(2025);
+        Assert.True(sut.IsUpdateRequired);
+
+        engine.Breakdown = DatabasePendingBreakdown.Empty;
+
+        await sut.UpdateAsync();
+
+        Assert.False(sut.IsUpdateRequired);
+        Assert.Equal(0, sut.PendingCount);
+        Assert.Equal(0, engine.RunCalls);
+        Assert.Empty(dialogs.ShownDatabaseUpdateDialogs);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_OnlyNewerCriticalPending_ResyncKeepsGate()
+    {
+        // Newer-only criticals are NOT processable in the running Revit —
+        // the early-return resync must KEEP the gate (and the required
+        // version) instead of clearing it.
+        var (sut, _, engine, _) = CreateSut(new DatabasePendingBreakdown(0, 0, 1, 0, 2026, 0));
+        await sut.RefreshAsync(2025);
+        Assert.True(sut.IsUpdateRequired);
+
+        await sut.UpdateAsync();
+
+        Assert.True(sut.IsUpdateRequired);
+        Assert.Equal(1, sut.NewerOnlyCriticalCount);
+        Assert.Equal(2026, sut.NewerOnlyRequiredRevitVersion);
+        Assert.Equal(0, engine.RunCalls);
+    }
+
+    [Fact]
     public async Task UpdateAsync_EmitsRunningTransitionEvents()
     {
         var (sut, _, _, _) = CreateSut(new DatabasePendingBreakdown(1, 0, 0, 0, 0, 0));

@@ -121,7 +121,16 @@ public sealed class DatabaseUpdateStateService : IDatabaseUpdateStateService
         var breakdown = await _actualization
             .CountPendingBreakdownAsync(_currentRevitVersion)
             .ConfigureAwait(true);
-        if (breakdown.TotalProcessable <= 0) return;
+        if (breakdown.TotalProcessable <= 0)
+        {
+            // Nothing runnable in this Revit, but resync the displayed state
+            // with the fresh breakdown: a newer-only critical remainder keeps
+            // the gate, while a clean recount clears a stale verdict (e.g.,
+            // state carried over from another database) — without this the
+            // "Обновить базу" button could never unstick the banner.
+            SetState(breakdown);
+            return;
+        }
 
         IsRunning = true;
         StateChanged?.Invoke(this, EventArgs.Empty);

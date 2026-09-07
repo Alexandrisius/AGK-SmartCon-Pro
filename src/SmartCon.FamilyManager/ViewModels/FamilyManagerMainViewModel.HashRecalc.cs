@@ -224,6 +224,10 @@ public sealed partial class FamilyManagerMainViewModel
         try
         {
             await _updateState.RefreshAsync(CurrentRevitVersion).ConfigureAwait(true);
+            SmartConLogger.Info(
+                $"DbMigration: update state refreshed — required={_updateState.IsUpdateRequired}, " +
+                $"critical={_updateState.PendingCount}, optional={_updateState.OptionalPendingCount}, " +
+                $"newerOnlyCritical={_updateState.NewerOnlyCriticalCount}");
         }
         catch (Exception ex)
         {
