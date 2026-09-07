@@ -2,6 +2,7 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
@@ -98,6 +99,27 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
     }
 
+    /// <summary>
+    /// True when the family's root category never displays in 3D views
+    /// (annotation symbols, tags, title blocks, detail components) — a 3D
+    /// preview is meaningless for such families, while the per-type
+    /// extraction is expensive (type switch + implicit regeneration;
+    /// ~3 s/type on a 4-type title block with 13 nested annotation
+    /// instances, stress test 2026-09-07).
+    /// <see cref="CategoryType.Annotation"/> covers title blocks, generic
+    /// annotations and tags; OST_DetailComponents is API-typed Model but is
+    /// view-dependent 2D content ("visible only in those views", Autodesk
+    /// help), so it is added explicitly.
+    /// </summary>
+    public static bool IsViewSpecificPreviewCategory(Category? category)
+    {
+        if (category is null) return false;
+        if (category.CategoryType == CategoryType.Annotation) return true;
+        // Category.BuiltInCategory was added in Revit 2023 — multi-version
+        // access through CategoryCompat (cast fallback on R19-R22).
+        return CategoryCompat.GetBuiltInCategory(category) == BuiltInCategory.OST_DetailComponents;
+    }
+
     public Task<IReadOnlyList<FamilyGeometryPerType>?> ExtractAsync(
         string managedRfaPath,
         string familyName,
@@ -161,6 +183,16 @@ public sealed class RevitFamilyGeometryExtractor : IFamilyGeometryExtractor
                 SmartConLogger.Warn(
                     $"Document '{rfaFileName}' is not a family document — skipping geometry extraction " +
                     "[Action: 3D preview is only generated for loadable .rfa families]");
+                return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
+            }
+
+            var rootCategory = doc.OwnerFamily?.FamilyCategory;
+            if (IsViewSpecificPreviewCategory(rootCategory))
+            {
+                SmartConLogger.Info(
+                    $"3D preview not applicable: '{rfaFileName}' is a view-specific family " +
+                    $"(category '{rootCategory!.Name}') — annotation/detail content never displays " +
+                    "in 3D views; per-type geometry extraction skipped");
                 return Task.FromResult<IReadOnlyList<FamilyGeometryPerType>?>(null);
             }
 

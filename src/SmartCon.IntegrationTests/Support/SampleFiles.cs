@@ -133,4 +133,76 @@ internal static class SampleFiles
         }
         return templates[0];
     }
+
+    /// <summary>
+    /// Путь к АННОТАЦИОННОМУ family-шаблону (.rft) для NewFamilyDocument —
+    /// Generic Annotation (EN) / «типовая аннотация» (RU) и локализованные
+    /// варианты. В отличие от <see cref="FindFamilyTemplate"/> fallback на
+    /// произвольный шаблон НЕ делается (нужна именно view-specific категория):
+    /// отсутствие → null → вызывающий обязан Skip.Test.
+    /// </summary>
+    public static string? FindAnnotationFamilyTemplate(Application app)
+    {
+        var root = $@"C:\ProgramData\Autodesk\RVT {app.VersionNumber}\Family Templates";
+        if (!Directory.Exists(root))
+        {
+            return null;
+        }
+
+        string[] templates;
+        try
+        {
+            templates = Directory.GetFiles(root, "*.rft", SearchOption.AllDirectories);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (templates.Length == 0)
+        {
+            return null;
+        }
+
+        string[] exactNames =
+        [
+            "Metric Generic Annotation.rft",
+            "Метрическая система, типовая аннотация.rft",
+        ];
+        foreach (var exact in exactNames)
+        {
+            var hit = Array.Find(templates, t =>
+                string.Equals(Path.GetFileName(t), exact, StringComparison.OrdinalIgnoreCase));
+            if (hit is not null)
+            {
+                return hit;
+            }
+        }
+
+        string[] annotationMarkers =
+        [
+            "Generic Annotation",
+            "типовая аннотация",
+            "Allgemeine Beschriftung",
+            "Annotation générique",
+            "Anotación genérica",
+            "Anotacao generica",
+            "Anotação genérica",
+            "Annotazione generica",
+        ];
+        foreach (var marker in annotationMarkers)
+        {
+            var localized = Array.Find(templates, t =>
+#if NET8_0_OR_GREATER
+                t.Contains(marker, StringComparison.OrdinalIgnoreCase));
+#else
+                t.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0);
+#endif
+            if (localized is not null)
+            {
+                return localized;
+            }
+        }
+        return null;
+    }
 }
