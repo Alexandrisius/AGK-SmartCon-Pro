@@ -110,6 +110,15 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [ObservableProperty] private bool _isStaleCheckInProgress;
     [ObservableProperty] private string? _staleCheckMessage;
 
+    // ── Pane bottom progress bar: visual feed of the background mini-tasks
+    // (post-import stale check, manual «Проверить», batch «Обновить») — the
+    // ExternalEvent round-trips become visible instead of looking like a
+    // phantom Revit freeze. The text stays in StaleCheckMessage (existing
+    // binding); the bar only adds the determinate strip above the status line.
+    [ObservableProperty] private double _progressValue;
+    [ObservableProperty] private double _progressMaximum = 1;
+    [ObservableProperty] private bool _isProgressVisible;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSearchNotEmpty))]
     private string _searchText = string.Empty;
@@ -921,6 +930,37 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
             _ = _dispatcher.InvokeAsync(() => StatusMessage = message);
         }
         return true;
+    }
+
+    /// <summary>
+    /// Pane bottom progress bar (background mini-tasks). Marshaled
+    /// defensively like <see cref="SetStatusOnUiThread"/> — an off-UI-thread
+    /// <c>PropertyChanged</c> would freeze the WPF DockablePane.
+    /// </summary>
+    private void BeginProgress() => SetProgressOnUiThread(0, 1, true);
+
+    private void ReportProgress(double completed, double total) =>
+        SetProgressOnUiThread(completed, total <= 0 ? 1 : total, true);
+
+    private void ResetProgress() => SetProgressOnUiThread(0, 1, false);
+
+    private void SetProgressOnUiThread(double value, double maximum, bool visible)
+    {
+        if (_dispatcher.CheckAccess())
+        {
+            ProgressMaximum = maximum;
+            ProgressValue = value;
+            IsProgressVisible = visible;
+        }
+        else
+        {
+            _ = _dispatcher.InvokeAsync(() =>
+            {
+                ProgressMaximum = maximum;
+                ProgressValue = value;
+                IsProgressVisible = visible;
+            });
+        }
     }
 
     private SharedFamiliesLoadChoice OnSharedFamilyDecisionRequested(SharedFamilyDecisionRequest request)

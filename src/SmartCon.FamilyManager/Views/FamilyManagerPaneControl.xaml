@@ -149,6 +149,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Row 0: Toolbar (FindInCatalog | Import | Profile | Settings) -->
@@ -1237,7 +1238,20 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="5" Margin="0,4,0,0">
+        <!-- Row 5: background mini-task progress bar (post-import stale
+             check, manual «Проверить», batch «Обновить») — a thin determinate
+             strip above the status line; the "X из Y — имя" text is rendered
+             by the existing StaleCheckMessage binding below. -->
+        <ProgressBar Grid.Row="5"
+                     Minimum="0"
+                     Maximum="{Binding ProgressMaximum}"
+                     Value="{Binding ProgressValue}"
+                     Height="3"
+                     Margin="0,2,0,0"
+                     Style="{DynamicResource FlatProgressBar}"
+                     Visibility="{Binding IsProgressVisible, Converter={StaticResource BoolToVis}}"/>
+
+        <Grid Grid.Row="6" Margin="0,4,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>

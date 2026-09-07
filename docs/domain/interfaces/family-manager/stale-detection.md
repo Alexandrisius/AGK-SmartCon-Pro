@@ -26,7 +26,7 @@ public interface IFamilyVersionStore
 
 ## IStaleDetector
 
-On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69; системные семейства — Issue #104). Все проверки читают ES-маркер через `IFamilyVersionStore` (in-memory). Сессионный снимок **мержится** при каждой проверке (другие категории сохраняются) и **прунится** при успешном Update (только обновлённые). `InvalidateCache` — полный сброс (D-10: Edit/смена БД); `InvalidateItems` — селективный сброс только импортированных (batch-импорт, иначе бейджи прошлых семейств пропадали). `GetMergedSnapshot` никогда не возвращает `null` (#220): холодный/инвалидированный кэш стартует мерж с пустого снимка — apply-путь бейджей после DnD не превращается в silent no-op. Контентная верификация (#180, #218): когда маркер сам не может свидетельствовать (отсутствует / совпадает с текущей / указывает на сиротский id), доказывается контент по FHV10-хэшу; сиротский id (item удалён и переимпортирован под новым id) лечится перезаписью маркера с правильным id при совпадении контента.
+On-demand проверка актуальности семейств в активном проекте (ADR-030, Issue #69; системные семейства — Issue #104). Все проверки читают ES-маркер через `IFamilyVersionStore` (in-memory). Сессионный снимок **мержится** при каждой проверке (другие категории сохраняются) и **прунится** при успешном Update (только обновлённые). `InvalidateCache` — полный сброс (D-10: Edit/смена БД); `InvalidateItems` — селективный сброс только импортированных (batch-импорт, иначе бейджи прошлых семейств пропадали). `GetMergedSnapshot` никогда не возвращает `null` (#220): холодный/инвалидированный кэш стартует мерж с пустого снимка — apply-путь бейджей после DnD не превращается в silent no-op. Контентная верификация (#180, #218): когда маркер сам не может свидетельствовать (отсутствует / совпадает с текущей / указывает на сиротский id), доказывается контент по FHV10-хэшу; сиротский id (item удалён и переимпортирован под новым id) лечится перезаписью маркера с правильным id при совпадении контента. `CheckCategoryAsync` принимает опциональный `IProgress<StaleCheckProgress>` — один репорт на каждое проверенное семейство (сначала loadable, затем системные); панель рисует его как тонкий прогресс-бар внизу + per-item текст статуса, чтобы фоновая ExternalEvent-работа не выглядела фантомным зависанием Revit.
 
 **Файл:** `IStaleDetector.cs`
 
@@ -38,7 +38,8 @@ public interface IStaleDetector
         ElementId familyId, CancellationToken ct);
 
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
-        IReadOnlyList<string>? categoryIds, Document doc, CancellationToken ct);
+        IReadOnlyList<string>? categoryIds, Document doc, CancellationToken ct,
+        IProgress<StaleCheckProgress>? progress = null);
 
     Task<StaleCheckResult?> CheckSystemFamilyAsync(
         string catalogItemId, string displayName, Document doc, CancellationToken ct);

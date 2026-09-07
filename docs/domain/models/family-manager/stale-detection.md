@@ -93,6 +93,21 @@ public sealed record StaleBatchUpdateProgress(
 
 ---
 
+## StaleCheckProgress
+
+Payload прогресса проверки актуальности (ручная «Проверить» через `IStaleDetector.CheckCategoryAsync` и post-import проверка): один репорт на каждое сверенное с каталогом семейство. Зеркало `StaleBatchUpdateProgress` для check-потоков; dockable-панель рисует его как тонкий прогресс-бар над строкой статуса + текст «Проверка X из Y — имя». `Total` уточняется по ходу matching'а (проверяются только семейства, реально загруженные в проект).
+
+**Файл:** `StaleCheckProgress.cs`
+
+```csharp
+public sealed record StaleCheckProgress(
+    int Completed,
+    int Total,
+    string CurrentFamilyName);
+```
+
+---
+
 ## FamilyStaleSnapshot
 
 Сессионный снимок результатов проверки актуальности (ADR-030, D-06). Заполняется `IStaleDetector` и инвалидируется при Load/Update/Edit и смене БД. Используется VM для обновления индикаторов категорий без повторного чтения ES. `Empty` — sentinel для «снимок ещё не построен».

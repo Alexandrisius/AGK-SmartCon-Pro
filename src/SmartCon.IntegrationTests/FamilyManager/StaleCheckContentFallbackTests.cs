@@ -370,6 +370,48 @@ public sealed class StaleCheckContentFallbackTests : RevitApiTest
         await Assert.That(spy.FamilyDocumentExtractions).IsEqualTo(3);
     }
 
+    [Test]
+    public async Task CheckCategory_WithProgress_ReportsEveryVerifiedFamily()
+    {
+        // Pane progress-bar contract: one report per VERIFIED family,
+        // Completed climbs 1..Total, Total = matched loadable items (+ system
+        // items queued after — none in this seed), name = the family just
+        // verified. Two duplicate rows → two reports (both resolve to the
+        // same file and share the cached proof, but each is a checked item).
+        var (detector, _, _, _) = CreateDetector(
+            currentLabel: "v1",
+            items: new[] { CreateItem(CatalogItemId, "v1"), CreateItem("check-item-dup", "v1") });
+        var reports = new List<StaleCheckProgress>();
+
+        var results = await detector.CheckCategoryAsync(
+            null, _hostDoc!, CancellationToken.None, new SyncProgress(reports.Add));
+
+        SmartConLogger.Info(
+            $"CheckProgress: reports={reports.Count}, results={results.Count}, " +
+            $"last={reports.Count - 1}");
+        await Assert.That(results.Count).IsEqualTo(2);
+        await Assert.That(reports.Count).IsEqualTo(2);
+        await Assert.That(reports[0].Completed).IsEqualTo(1);
+        await Assert.That(reports[1].Completed).IsEqualTo(2);
+        await Assert.That(reports[0].Total).IsEqualTo(2);
+        await Assert.That(reports[1].Total).IsEqualTo(2);
+        await Assert.That(reports.All(r =>
+            string.Equals(r.CurrentFamilyName, ChildName, StringComparison.OrdinalIgnoreCase))).IsTrue();
+    }
+
+    /// <summary>
+    /// <see cref="Progress{T}"/> posts through the synchronization context
+    /// (a race in this host) — the check must collect reports synchronously.
+    /// </summary>
+    private sealed class SyncProgress : IProgress<StaleCheckProgress>
+    {
+        private readonly Action<StaleCheckProgress> _handler;
+
+        public SyncProgress(Action<StaleCheckProgress> handler) => _handler = handler;
+
+        public void Report(StaleCheckProgress value) => _handler(value);
+    }
+
     private int CurrentRevitMajor => int.Parse(Application.VersionNumber);
 
     private static FamilyCatalogItem CreateItem(string id, string currentLabel)

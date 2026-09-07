@@ -43,6 +43,10 @@ public interface IStaleDetector
     /// <param name="ct">Cancellation token. Honoured between every <c>await</c>
     /// boundary AND between major steps (catalog read, Revit collector, ES read).
     /// Cancellation throws <see cref="OperationCanceledException"/>.</param>
+    /// <param name="progress">Optional per-family progress feed (one
+    /// <see cref="StaleCheckProgress"/> report per verified family, loadable
+    /// items first, then system items). The pane renders it as the bottom
+    /// progress bar; <c>null</c> keeps the caller progress-free.</param>
     /// <remarks>
     /// If two families in the project share a <c>Name</c> (rare — duplicate
     /// loadable variants), the first match is used and a <c>Warn</c> is written
@@ -54,7 +58,8 @@ public interface IStaleDetector
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
         IReadOnlyList<string>? categoryIds,
         Document doc,
-        CancellationToken ct);
+        CancellationToken ct,
+        IProgress<StaleCheckProgress>? progress = null);
 
     /// <summary>
     /// Check a single system family (mini-project catalog item) against the
