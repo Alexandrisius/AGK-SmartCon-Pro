@@ -23,7 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_RuleCheckInProgress)
             ?? "Проверка правил…";
-        BeginProgress();
+        var progressRunId = BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -35,7 +35,7 @@ public sealed partial class FamilyManagerMainViewModel
             // covers every nested subcategory and their items.
             var subCategoryIds = ExpandCategorySubtree(category);
 
-            var progress = new Progress<ComplianceCheckProgress>(OnComplianceCheckProgress);
+            var progress = new Progress<ComplianceCheckProgress>(p => OnComplianceCheckProgress(progressRunId, p));
             var results = await _complianceService.CheckCategoriesAsync(
                 subCategoryIds, progress, CancellationToken.None)
                 .ConfigureAwait(true);
@@ -45,13 +45,27 @@ public sealed partial class FamilyManagerMainViewModel
             var failCount = results.Count(r => r.Status == ComplianceStatus.Fail);
             var cannotVerifyCount = results.Count(r => r.Status == ComplianceStatus.CannotVerify);
             StatusMessage = results.Count == 0
-                ? $"«{category.DisplayName}»: в категории нет элементов каталога"
-                : $"«{category.DisplayName}»: проверено правил — {results.Count}, нарушений {failCount}"
-                  + (cannotVerifyCount > 0 ? $", без данных {cannotVerifyCount}" : string.Empty);
+                ? string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleCategoryNoItems)
+                        ?? "«{0}»: в категории нет элементов каталога",
+                    category.DisplayName)
+                : string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleCheckResult)
+                        ?? "«{0}»: проверено правил — {1}, нарушений {2}",
+                    category.DisplayName, results.Count, failCount)
+                  + (cannotVerifyCount > 0
+                      ? string.Format(
+                          LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleNoDataSuffix)
+                              ?? ", без данных {0}",
+                          cannotVerifyCount)
+                      : string.Empty);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{category.DisplayName}»: ошибка проверки правил — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleCheckError)
+                    ?? "«{0}»: ошибка проверки правил — {1}",
+                category.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckCategoryRulesAsync failed: {ex.Message}. [Action: report to user, retry from context menu «Проверить → Правила»]");
         }
@@ -59,7 +73,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
@@ -86,21 +100,39 @@ public sealed partial class FamilyManagerMainViewModel
                 .ConfigureAwait(true);
 
             ApplyComplianceResultsToTree([result]);
+            // Single-item run has no per-item feed — fill the bar explicitly so
+            // the completion hold shows a finished (not empty) strip.
+            ReportProgress(1, 1);
 
             StatusMessage = result.Status switch
             {
                 ComplianceStatus.Fail =>
-                    $"«{family.DisplayName}»: нарушений правил — {result.Violations.Count} (отчёт — по клику на красный щит)",
+                    string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleViolations)
+                            ?? "«{0}»: нарушений правил — {1} (отчёт — по клику на красный щит)",
+                        family.DisplayName, result.Violations.Count),
                 ComplianceStatus.CannotVerify =>
-                    $"«{family.DisplayName}»: нет данных атрибутов — выполните «Обновить базу»",
+                    string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleNoAttributeData)
+                            ?? "«{0}»: нет данных атрибутов — выполните «Обновить базу»",
+                        family.DisplayName),
                 _ => result.RuleCount == 0
-                    ? $"«{family.DisplayName}»: для категории не заданы правила"
-                    : $"«{family.DisplayName}»: правила категории выполнены ({result.RuleCount})",
+                    ? string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleNoneDefined)
+                            ?? "«{0}»: для категории не заданы правила",
+                        family.DisplayName)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_RulesPassed)
+                            ?? "«{0}»: правила категории выполнены ({1})",
+                        family.DisplayName, result.RuleCount),
             };
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{family.DisplayName}»: ошибка проверки правил — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_RuleCheckError)
+                    ?? "«{0}»: ошибка проверки правил — {1}",
+                family.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckFamilyRulesAsync failed: {ex.Message}. [Action: report to user, retry from context menu «Проверить → Правила»]");
         }
@@ -108,7 +140,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
@@ -119,10 +151,20 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// Per-item feed of <see cref="SmartCon.Core.Services.Interfaces.ICatalogComplianceService.CheckCategoriesAsync"/>
     /// — renders the pane progress bar + «Проверка правил X из Y — имя» status
-    /// text. <see cref="Progress{T}"/> marshals the callback to the UI context.
+    /// text. <see cref="Progress{T}"/> POSTS the callback to the dispatcher:
+    /// a millisecond-fast run (SQLite completes synchronously on the UI
+    /// thread) finishes before the posts are processed — the run-id guard
+    /// keeps such "late" reports (they fill the bar during the completion
+    /// hold) and drops only reports of a superseded/already-hidden run.
     /// </summary>
-    private void OnComplianceCheckProgress(ComplianceCheckProgress p)
+    private void OnComplianceCheckProgress(int runId, ComplianceCheckProgress p)
     {
+        if (!IsProgressReportCurrent(runId))
+        {
+            SmartConLogger.Debug(
+                $"OnComplianceCheckProgress: dropped stale report {p.Completed}/{p.Total} of run {runId} (current {_progressRunId})");
+            return;
+        }
         StaleCheckMessage = string.Format(
             LanguageManager.GetString(StringLocalization.Keys.FM_RuleCheck_ProgressFormat)
                 ?? "Проверка правил {0} из {1} — {2}",

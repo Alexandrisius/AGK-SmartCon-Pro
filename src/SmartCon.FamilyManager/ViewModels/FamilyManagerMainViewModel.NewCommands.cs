@@ -23,7 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (category is null) return;
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
-        BeginProgress();
+        var progressRunId = BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -36,7 +36,7 @@ public sealed partial class FamilyManagerMainViewModel
             var subCategoryIds = ExpandCategorySubtree(category);
 
             var doc = _revitContext.GetDocument();
-            var progress = new Progress<StaleCheckProgress>(OnStaleCheckProgress);
+            var progress = new Progress<StaleCheckProgress>(p => OnStaleCheckProgress(progressRunId, p));
             var results = await _staleDetector.CheckCategoryAsync(
                 subCategoryIds, doc, CancellationToken.None, progress)
                 .ConfigureAwait(true);
@@ -49,19 +49,31 @@ public sealed partial class FamilyManagerMainViewModel
             if (totalLoaded == 0)
             {
                 StatusMessage = totalInTree == 0
-                    ? $"«{category.DisplayName}»: в каталоге нет семейств этой категории"
-                    : $"«{category.DisplayName}»: семейства в каталоге есть, но ни одно не загружено в проект";
+                    ? string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryNoFamilies)
+                            ?? "«{0}»: в каталоге нет семейств этой категории",
+                        category.DisplayName)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryNoneLoaded)
+                            ?? "«{0}»: семейства в каталоге есть, но ни одно не загружено в проект",
+                        category.DisplayName);
             }
             else
             {
-                StatusMessage = $"«{category.DisplayName}»: проверено {totalLoaded}, устарело {staleCount}";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryCheckResult)
+                        ?? "«{0}»: проверено {1}, устарело {2}",
+                    category.DisplayName, totalLoaded, staleCount);
             }
             SmartConLogger.Info(
                 $"Check completed: {staleCount} stale of {totalLoaded} families in category '{category.CategoryId}' (subtree={subCategoryIds.Count}).");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{category.DisplayName}»: ошибка проверки — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_CheckError)
+                    ?? "«{0}»: ошибка проверки — {1}",
+                category.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckCategoryAsync failed: {ex.Message}. [Action: report to user, retry from context menu]");
         }
@@ -69,7 +81,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
@@ -77,10 +89,19 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// Per-family feed of <see cref="IStaleDetector.CheckCategoryAsync"/> —
     /// renders the pane progress bar + «Проверка X из Y — имя» status text.
-    /// <see cref="Progress{T}"/> marshals the callback to the UI context.
+    /// <see cref="Progress{T}"/> POSTS the callback: the run-id guard keeps
+    /// reports arriving after a fast run finished (they fill the bar during
+    /// the completion hold) and drops superseded/already-hidden ones —
+    /// see <see cref="OnComplianceCheckProgress"/>.
     /// </summary>
-    private void OnStaleCheckProgress(StaleCheckProgress p)
+    private void OnStaleCheckProgress(int runId, StaleCheckProgress p)
     {
+        if (!IsProgressReportCurrent(runId))
+        {
+            SmartConLogger.Debug(
+                $"OnStaleCheckProgress: dropped stale report {p.Completed}/{p.Total} of run {runId} (current {_progressRunId})");
+            return;
+        }
         StaleCheckMessage = string.Format(
             LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheck_ProgressFormat)
                 ?? "Проверка {0} из {1} — {2}",
@@ -137,15 +158,24 @@ public sealed partial class FamilyManagerMainViewModel
 
                 if (systemResult is null)
                 {
-                    StatusMessage = $"«{family.DisplayName}»: не загружено в проект — сначала загрузите";
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyNotLoaded)
+                            ?? "«{0}»: не загружено в проект — сначала загрузите",
+                        family.DisplayName);
                     return;
                 }
 
                 family.IsStale = systemResult.IsStale;
                 family.StaleReason = systemResult.Reason;
                 StatusMessage = systemResult.IsStale
-                    ? $"«{family.DisplayName}»: устарело — {systemResult.Reason}"
-                    : $"«{family.DisplayName}»: актуально";
+                    ? string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyStaleReason)
+                            ?? "«{0}»: устарело — {1}",
+                        family.DisplayName, systemResult.Reason)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyUpToDate)
+                            ?? "«{0}»: актуально",
+                        family.DisplayName);
                 // The detector already upserted the fresh result (and the
                 // per-type verdicts) into the snapshot — apply the merged
                 // picture so the orange type dots and the category rollup
@@ -161,7 +191,10 @@ public sealed partial class FamilyManagerMainViewModel
 
             if (familyId is null)
             {
-                StatusMessage = $"«{family.DisplayName}»: не загружено в проект — сначала загрузите";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyNotLoaded)
+                        ?? "«{0}»: не загружено в проект — сначала загрузите",
+                    family.DisplayName);
                 SmartConLogger.Info(
                     $"CheckFamily: family '{family.DisplayName}' not loaded in document. " +
                     "[Action: skipped, user can load then re-check]");
@@ -178,8 +211,14 @@ public sealed partial class FamilyManagerMainViewModel
             // no InvalidateCache — other categories' stale markers must stay intact.
 
             StatusMessage = result.IsStale
-                ? $"«{family.DisplayName}»: устарело — {result.Reason}"
-                : $"«{family.DisplayName}»: актуально";
+                ? string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyStaleReason)
+                        ?? "«{0}»: устарело — {1}",
+                    family.DisplayName, result.Reason)
+                : string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyUpToDate)
+                        ?? "«{0}»: актуально",
+                    family.DisplayName);
             SmartConLogger.Info(
                 $"Check completed: '{family.DisplayName}' IsStale={result.IsStale} Reason={result.Reason}.");
             // Same repaint as the system path above: the snapshot holds the
@@ -189,7 +228,10 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{family.DisplayName}»: ошибка проверки — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_CheckError)
+                    ?? "«{0}»: ошибка проверки — {1}",
+                family.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckFamilyAsync failed: {ex.Message}. [Action: report to user, retry from context menu]");
         }
@@ -197,7 +239,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
@@ -235,7 +277,7 @@ public sealed partial class FamilyManagerMainViewModel
             $"UpdateCategoryStaleAsync START: IsStaleCheckInProgress=true (was false). " +
             $"CategoryId={category.CategoryId}, Overwrite={overwriteParameterValues}");
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdateInProgress);
-        BeginProgress();
+        var progressRunId = BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -282,6 +324,13 @@ public sealed partial class FamilyManagerMainViewModel
             var request = new StaleUpdateRequest(staleIdsInSubtree, overwriteParameterValues);
             var progress = new Progress<StaleBatchUpdateProgress>(p =>
             {
+                // Run-id guard — see OnComplianceCheckProgress.
+                if (!IsProgressReportCurrent(progressRunId))
+                {
+                    SmartConLogger.Debug(
+                        $"UpdateCategoryStale progress: dropped stale report {p.Completed}/{p.Total} of run {progressRunId} (current {_progressRunId})");
+                    return;
+                }
                 StaleCheckMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdate_ProgressFormat)
                         ?? "Обновление {0} из {1} — {2}",
@@ -292,14 +341,24 @@ public sealed partial class FamilyManagerMainViewModel
             var result = await _staleUpdater.UpdateBatchAsync(request, progress, CancellationToken.None)
                 .ConfigureAwait(true);
 
-            var modeText = overwriteParameterValues ? "с перезаписью параметров" : "с сохранением параметров";
+            var modeText = overwriteParameterValues
+                ? LanguageManager.GetString(StringLocalization.Keys.FM_Status_ModeOverwriteParams)
+                    ?? "с перезаписью параметров"
+                : LanguageManager.GetString(StringLocalization.Keys.FM_Status_ModeKeepParams)
+                    ?? "с сохранением параметров";
             if (result.FailedCount == 0)
             {
-                StatusMessage = $"«{category.DisplayName}»: обновлено {result.SuccessCount} из {result.TotalRequested} ({modeText})";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryUpdateResult)
+                        ?? "«{0}»: обновлено {1} из {2} ({3})",
+                    category.DisplayName, result.SuccessCount, result.TotalRequested, modeText);
             }
             else
             {
-                StatusMessage = $"«{category.DisplayName}»: обновлено {result.SuccessCount} из {result.TotalRequested}, ошибок: {result.FailedCount}";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryUpdateResultErrors)
+                        ?? "«{0}»: обновлено {1} из {2}, ошибок: {3}",
+                    category.DisplayName, result.SuccessCount, result.TotalRequested, result.FailedCount);
             }
             SmartConLogger.Info(
                 $"Batch update in '{category.CategoryId}': {result.SuccessCount}/{result.TotalRequested} succeeded. " +
@@ -313,7 +372,10 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{category.DisplayName}»: ошибка обновления — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_UpdateError)
+                    ?? "«{0}»: ошибка обновления — {1}",
+                category.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"UpdateCategoryStaleAsync failed: {ex.Message}. " +
                 "[Action: report to user, retry from context menu]");
@@ -322,7 +384,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
@@ -540,7 +602,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
-            ResetProgress();
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }

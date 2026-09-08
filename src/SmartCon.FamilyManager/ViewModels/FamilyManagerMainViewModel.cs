@@ -937,15 +937,71 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         return true;
     }
 
-    /// <summary>
-    /// Pane bottom progress bar (background mini-tasks). Marshaled
-    /// defensively like <see cref="SetStatusOnUiThread"/> — an off-UI-thread
-    /// <c>PropertyChanged</c> would freeze the WPF DockablePane.
-    /// </summary>
-    private void BeginProgress() => SetProgressOnUiThread(0, 1, true);
+    // ── Pane bottom progress bar (background mini-tasks, #256/#259) ─────
+    // Marshaled defensively like SetStatusOnUiThread — an off-UI-thread
+    // PropertyChanged would freeze the WPF DockablePane.
+
+    /// <summary>How long the completed bar stays visible before hiding.</summary>
+    private const int ProgressCompletionHoldMs = 700;
+
+    /// <summary>Generation of the current progress run. Incremented by
+    /// <see cref="BeginProgress"/>; the delayed hide of
+    /// <see cref="CompleteProgress"/> fires only while no newer run owns the bar.</summary>
+    private int _progressRunId;
+
+    /// <summary>Run whose bar was already hidden by the delayed reset —
+    /// reports arriving after that must not re-show it (stuck-at-100% bug).</summary>
+    private int _progressHiddenRunId;
+
+    /// <summary>Shows the empty bar and returns the generation id of this
+    /// run — the token checked by <see cref="IsProgressReportCurrent"/>.</summary>
+    private int BeginProgress()
+    {
+        _progressRunId++;
+        SetProgressOnUiThread(0, 1, true);
+        return _progressRunId;
+    }
 
     private void ReportProgress(double completed, double total) =>
         SetProgressOnUiThread(completed, total <= 0 ? 1 : total, true);
+
+    /// <summary>
+    /// Guard for <see cref="Progress{T}"/> callbacks: the report belongs to
+    /// the CURRENT run and its bar was not hidden yet. Millisecond-fast runs
+    /// (SQLite completes synchronously) finish before the dispatcher
+    /// processes the posted reports — such reports are NOT garbage: they fill
+    /// the bar during the completion hold. Dropped are only truly stale
+    /// reports — from a superseded run or after the bar was hidden.
+    /// </summary>
+    private bool IsProgressReportCurrent(int runId) =>
+        runId == _progressRunId && runId != _progressHiddenRunId;
+
+    /// <summary>
+    /// Ends the current run: the completed bar stays visible for a short hold
+    /// (~0.7 s) and only then hides and resets — an instant hide made fast
+    /// runs look like a flicker and the user never saw the completion. A
+    /// newer <see cref="BeginProgress"/> cancels the pending hide (run-id
+    /// guard), so back-to-back operations never lose their bar.
+    /// </summary>
+    private void CompleteProgress()
+    {
+        var runId = _progressRunId;
+        SmartConLogger.Debug(
+            $"CompleteProgress: run {runId} finished — holding the bar for {ProgressCompletionHoldMs}ms, then hide+reset");
+        FireAndForget(async () =>
+        {
+            await Task.Delay(ProgressCompletionHoldMs);
+            if (_progressRunId != runId)
+            {
+                SmartConLogger.Debug(
+                    $"CompleteProgress: pending hide of run {runId} cancelled — newer run {_progressRunId} owns the bar");
+                return;
+            }
+            ResetProgress();
+            _progressHiddenRunId = runId;
+            SmartConLogger.Debug($"CompleteProgress: run {runId} bar hidden and reset");
+        }, nameof(CompleteProgress));
+    }
 
     private void ResetProgress() => SetProgressOnUiThread(0, 1, false);
 

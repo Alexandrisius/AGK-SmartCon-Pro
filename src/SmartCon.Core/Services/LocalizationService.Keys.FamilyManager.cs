@@ -181,6 +181,27 @@ public static partial class LocalizationService
         ru["FM_StaleUpdate_ProgressFormat"] = "Обновление {0} из {1} — {2}"; en["FM_StaleUpdate_ProgressFormat"] = "Updating {0} of {1} — {2}";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
         ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
+        // Status line messages (FamilyManager pane)
+        ru["FM_Status_CategoryNoFamilies"] = "«{0}»: в каталоге нет семейств этой категории"; en["FM_Status_CategoryNoFamilies"] = "\"{0}\": the catalog has no families of this category";
+        ru["FM_Status_CategoryNoneLoaded"] = "«{0}»: семейства в каталоге есть, но ни одно не загружено в проект"; en["FM_Status_CategoryNoneLoaded"] = "\"{0}\": the catalog has families, but none are loaded in the project";
+        ru["FM_Status_CategoryCheckResult"] = "«{0}»: проверено {1}, устарело {2}"; en["FM_Status_CategoryCheckResult"] = "\"{0}\": checked {1}, stale {2}";
+        ru["FM_Status_CheckError"] = "«{0}»: ошибка проверки — {1}"; en["FM_Status_CheckError"] = "\"{0}\": check failed — {1}";
+        ru["FM_Status_FamilyNotLoaded"] = "«{0}»: не загружено в проект — сначала загрузите"; en["FM_Status_FamilyNotLoaded"] = "\"{0}\": not loaded in the project — load it first";
+        ru["FM_Status_FamilyStaleReason"] = "«{0}»: устарело — {1}"; en["FM_Status_FamilyStaleReason"] = "\"{0}\": stale — {1}";
+        ru["FM_Status_FamilyUpToDate"] = "«{0}»: актуально"; en["FM_Status_FamilyUpToDate"] = "\"{0}\": up to date";
+        ru["FM_Status_ModeOverwriteParams"] = "с перезаписью параметров"; en["FM_Status_ModeOverwriteParams"] = "overwriting parameter values";
+        ru["FM_Status_ModeKeepParams"] = "с сохранением параметров"; en["FM_Status_ModeKeepParams"] = "keeping parameter values";
+        ru["FM_Status_CategoryUpdateResult"] = "«{0}»: обновлено {1} из {2} ({3})"; en["FM_Status_CategoryUpdateResult"] = "\"{0}\": updated {1} of {2} ({3})";
+        ru["FM_Status_CategoryUpdateResultErrors"] = "«{0}»: обновлено {1} из {2}, ошибок: {3}"; en["FM_Status_CategoryUpdateResultErrors"] = "\"{0}\": updated {1} of {2}, errors: {3}";
+        ru["FM_Status_UpdateError"] = "«{0}»: ошибка обновления — {1}"; en["FM_Status_UpdateError"] = "\"{0}\": update failed — {1}";
+        ru["FM_Status_RuleCategoryNoItems"] = "«{0}»: в категории нет элементов каталога"; en["FM_Status_RuleCategoryNoItems"] = "\"{0}\": the category has no catalog items";
+        ru["FM_Status_RuleCheckResult"] = "«{0}»: проверено правил — {1}, нарушений {2}"; en["FM_Status_RuleCheckResult"] = "\"{0}\": rules checked — {1}, violations {2}";
+        ru["FM_Status_RuleNoDataSuffix"] = ", без данных {0}"; en["FM_Status_RuleNoDataSuffix"] = ", no data {0}";
+        ru["FM_Status_RuleCheckError"] = "«{0}»: ошибка проверки правил — {1}"; en["FM_Status_RuleCheckError"] = "\"{0}\": rule check failed — {1}";
+        ru["FM_Status_RuleViolations"] = "«{0}»: нарушений правил — {1} (отчёт — по клику на красный щит)"; en["FM_Status_RuleViolations"] = "\"{0}\": rule violations — {1} (report — click the red shield)";
+        ru["FM_Status_RuleNoAttributeData"] = "«{0}»: нет данных атрибутов — выполните «Обновить базу»"; en["FM_Status_RuleNoAttributeData"] = "\"{0}\": no attribute data — run «Update database»";
+        ru["FM_Status_RuleNoneDefined"] = "«{0}»: для категории не заданы правила"; en["FM_Status_RuleNoneDefined"] = "\"{0}\": no rules defined for the category";
+        ru["FM_Status_RulesPassed"] = "«{0}»: правила категории выполнены ({1})"; en["FM_Status_RulesPassed"] = "\"{0}\": category rules passed ({1})";
         ru["FM_UnavailableTooltipDeprecated"] = "Неактуальное семейство — загрузка в проект запрещена. Вернуть в работу: Свойства → Статус «Актуальное»."; en["FM_UnavailableTooltipDeprecated"] = "Family is deprecated — loading into the project is not allowed. To restore: Properties → Status 'Current'.";
         ru["FM_UnavailableTooltipDeprecatedShort"] = "Неактуальное семейство — загрузка в проект запрещена."; en["FM_UnavailableTooltipDeprecatedShort"] = "Family is deprecated — loading into the project is not allowed.";
         ru["FM_UnavailableTooltipRevitFix"] = "Сохранено в Revit {0} — нельзя загрузить в Revit {1}. Сделайте активной совместимую версию: Свойства → Версии."; en["FM_UnavailableTooltipRevitFix"] = "Saved in Revit {0} — cannot be loaded into Revit {1}. Make a compatible version active: Properties → Versions.";
