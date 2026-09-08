@@ -103,7 +103,7 @@ services.AddSingleton<IDatabaseActualizationTask, MyFeatureActualizationTask>();
 - [ ] Короткие транзакции, соединения через унаследованное `Database` (I-14, без WAL)
 - [ ] Решение critical/optional задокументировано в XML-doc класса (почему)
 - [ ] `Order` — следующее число с шагом 10
-- [ ] Тесты зелёные, сборки R19/R21/R24/R25 0/0
+- [ ] Тесты зелёные, сборки R19/R21/R24/R25/R26/R27 0/0
 - [ ] `docs/architecture/database-migrations.md` — строка в таблице задач
 - [ ] Domain docs (interfaces/models) + `validate-docs.ps1` PASSED
 - [ ] Ручной тест на сломанной БД в Revit (см. gotchas-and-testing.md)

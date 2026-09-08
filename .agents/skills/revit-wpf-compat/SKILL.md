@@ -1,18 +1,18 @@
 ---
 name: revit-wpf-compat
-description: "Net48/net8 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, when the WPF DockablePane freezes after a FireAndForget import (LMB dead, RMB unfreezes), when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48', OR when a dialog silently never opens in net8 / crashes Revit in net48 with XamlParseException 'Resources already set' — see §'SingletonResources in Window.Resources (BUG-010)' for the mandatory MergedDictionaries pattern."
+description: "Net48/net8/net10 WPF compatibility rules for Revit plugins. Use when writing WPF code, creating dialogs, showing windows, using Dispatcher, accessing Application.Current, debugging net48-only crashes in Revit add-ins, when the WPF DockablePane freezes after a FireAndForget import (LMB dead, RMB unfreezes), when a ContextMenu MenuItem is greyed out in net48 but works in net8 — see §'dotnet/wpf#4078 — MenuItem CommandParameter ignored in net48', OR when a dialog silently never opens in net8 / crashes Revit in net48 with XamlParseException 'Resources already set' — see §'SingletonResources in Window.Resources (BUG-010)' for the mandatory MergedDictionaries pattern."
 ---
 
-# Revit WPF net48/net8 Compatibility
+# Revit WPF net48/net8/net10 Compatibility
 
-Rules for writing WPF code that works in both net48 (Revit 2019-2024) and net8.0-windows (Revit 2025-2026).
+Rules for writing WPF code that works in net48 (Revit 2019-2024), net8.0-windows (Revit 2025-2026) and net10.0-windows (Revit 2027). In WPF-compat rules net10 behaves as net8+ — every net8-vs-net48 difference below applies to net10 the same way as to net8.
 
 ## Critical: Application.Current is null in Revit
 
 Revit plugins use `IExternalApplication`, NOT `System.Windows.Application`. Therefore:
 
 - `Application.Current` is **null** in net48 context
-- In net8 it MAY be non-null (runtime auto-creates it), but NEVER rely on this
+- In net8/net10 it MAY be non-null (runtime auto-creates it), but NEVER rely on this
 
 ### Forbidden patterns
 
@@ -60,7 +60,7 @@ _progressView.Dispatcher.Invoke(...)
 
 ## Resource loading: SingletonResources works, but test both targets
 
-`SingletonResources` loads Generic.xaml via embedded resource — does NOT depend on `Application.Current`. WPF styles with `DynamicResource` resolve from window-level resources. Always test on both net48 and net8.
+`SingletonResources` loads Generic.xaml via embedded resource — does NOT depend on `Application.Current`. WPF styles with `DynamicResource` resolve from window-level resources. Always test on both net48 and net8/net10.
 
 ## SingletonResources in Window.Resources (BUG-010)
 
@@ -94,21 +94,22 @@ Allowed: `SingletonResources` as the ONLY child of `<Window.Resources>`, or nest
 
 Details + PowerShell audit recipe: [`references/known-bugs.md`](references/known-bugs.md) BUG-010. Real case: Issue #154 (delete-family dialog, 2026-07-22).
 
-## Build: always build both targets
+## Build: always build all targets
 
 ```bash
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25   # net8.0
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27   # net10.0 (Revit 2027)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25   # net8.0 (Revit 2025; для 2026 — Debug.R26)
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24   # net48
 ```
 
-If it compiles on R25 but crashes on R24 — it's likely one of the patterns above.
+If it compiles on R25/R27 but crashes on R24 — it's likely one of the patterns above.
 
 ## `Application.Current?.Dispatcher` is ALSO null in net48 — capture in ctor
 
 The forbidden patterns above show the **direct** `Application.Current.Dispatcher` form. The **null-conditional** form `Application.Current?.Dispatcher` looks safer but is the same bug:
 
 - In net48, `Application.Current` is null → `Application.Current?.Dispatcher` is null → any `if (dispatcher is { HasShutdownStarted: false })` check is **false** → the `if` body silently never runs.
-- In net8, `Application.Current` is non-null → the same code works → the bug never reproduces there.
+- In net8/net10, `Application.Current` is non-null → the same code works → the bug never reproduces there.
 - This is a **net48-only** silent failure. The user sees a freeze (right-click unfreezes), not an exception.
 
 The fix is to **capture the dispatcher in the VM ctor** (which runs on the UI thread) and use the captured instance everywhere:
@@ -142,12 +143,13 @@ When WPF creates a `MenuItem` inside a freshly-shown `ContextMenu`, it sets the 
 
 `dotnet/wpf` issue **#316** (2008) and **#3452** (2020) and **#4078** (2021) all track this. PR **#4217** (merged 2022-07-21 into .NET Core 3.1+) added a `PropertyChangedCallback` on `MenuItem.CommandParameterProperty` that calls `item.UpdateCanExecute()` when the parameter is set, fixing the symptom by causing a second `CanExecute` evaluation once the binding is resolved.
 
-**The fix is in .NET Core 3.1+ / .NET 5+ / .NET 6+ / .NET 7+ / .NET 8+ — but was NOT backported to .NET Framework 4.x.** So:
+**The fix is in .NET Core 3.1+ / .NET 5+ / .NET 6+ / .NET 7+ / .NET 8+ / .NET 10+ — but was NOT backported to .NET Framework 4.x.** So:
 
 | Revit version | TFM | WPF version | Bug present? |
 |---|---|---|---|
 | 2019-2024 | `net48` | .NET Framework 4.8 | **YES** — button permanently disabled after first click |
 | 2025-2026 | `net8.0-windows` | .NET 8 | No (PR #4217 already applied) |
+| 2027 | `net10.0-windows` | .NET 10 | No (PR #4217 already applied) |
 
 **Why other menu items "work fine" in 2023:** the bug only triggers when a `MenuItem` has BOTH a `Command` AND a `CommandParameter` binding in the same `XAML` declaration. `MenuItem`s with only `Command` (e.g. `LoadToProjectCommand`, `EditFamilyCommand`, `OpenPropertiesCommand`, `DeleteFamilyCommand`) or with a static `CommandParameter="…"` literal are unaffected.
 

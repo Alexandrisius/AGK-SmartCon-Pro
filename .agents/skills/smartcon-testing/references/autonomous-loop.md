@@ -38,8 +38,10 @@ dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8
 
 # Полный гейт (обязателен перед коммитом). RevitVersion = любой УСТАНОВЛЕННЫЙ
 # net48-Revit (2021–2024): суть прогона — платформа net48, а не конкретный год.
+# R27 (net10) — когда установлен Revit 2027; три платформы: net48/net8/net10.
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R27 --framework net10.0-windows
 
 # Лог цикла
 Select-String "$env:APPDATA\AGK\SmartCon\smartcon.log" -Encoding UTF8 -Pattern "\[ERR\]|\[WRN\]"
@@ -79,8 +81,8 @@ Select-String "$env:APPDATA\AGK\SmartCon\smartcon.log" -Encoding UTF8 -Pattern "
 
 ## Финал цикла (обязательная последовательность)
 
-1. Полный сьют R25 (+R21 для Revit-boundary изменений) — зелёный.
-2. Все 4 конфигурации сборки — 0/0.
+1. Полный сьют R25 + net48 (+R27, когда установлен Revit 2027) — зелёный.
+2. Все 6 shipping-конфигураций сборки (R19/R21/R24/R25/R26/R27) — 0/0.
 3. Лог: нет `[ERR]`, необъяснимых `[WRN]`; контрактные строки присутствуют; цепочки `OpId` целые.
 4. Коммит (атомарный, с `Refs #N`).
 5. **Adversarial review**: gate general-субагентом со свежим контекстом (diff + критерии + инварианты) — аналог cross-model review из практик; агент не судит свой код сам.

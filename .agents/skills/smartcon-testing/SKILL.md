@@ -1,6 +1,6 @@
 ---
 name: smartcon-testing
-description: Unit + integration testing patterns for SmartCon Revit plugin. xUnit + Moq, .NET 8 / net48 multi-version. Covers Revit API mocking limitations, test seams, fake implementations, Moq gotchas with async/generic, integration test frameworks, Jeremy Tammik recommendations. Use when writing, updating, or running tests for SmartCon.
+description: Unit + integration testing patterns for SmartCon Revit plugin. xUnit + Moq + TUnit, net48 / .NET 8 / .NET 10 multi-version. Covers Revit API mocking limitations, test seams, fake implementations, Moq gotchas with async/generic, integration test frameworks, Jeremy Tammik recommendations. Use when writing, updating, or running tests for SmartCon.
 ---
 
 # SmartCon Testing
@@ -160,11 +160,15 @@ public class IntegrationTests { }
 | Test passes locally, fails in CI | Test depends on `DateTimeOffset.UtcNow` | Use `TestDoubles/FakeClock` with fixed value |
 | `Assert.Equal` on `StaleBatchUpdateResult` fails despite same data | Record equality compares `IReadOnlyList<T>` by reference | Compare `.TotalRequested`/`.SuccessCount`/`.FailedCount` element-by-element |
 | `xUnit1031` warning on `.GetAwaiter().GetResult()` | xUnit prefers `async Task` | Make test async OR `#pragma warning disable xUnit1031` with justification comment |
+| 91×CS0121 on `IsEqualTo`/`IsNotEqualTo` when building `SmartCon.IntegrationTests` under R27 (net10) | TUnit 1.44 disambiguates the overloads via `[OverloadResolutionPriority]`, honored only by C# 13+ (thomhurst/TUnit#5765/#6282); global `LangVersion=12` on net10 | Keep the `LangVersion=latest` pin for net10.0-windows in `SmartCon.IntegrationTests.csproj` — do NOT remove it; production code stays on C# 12 |
 
 ## Project-specific conventions
 
 - **Multi-version tests**: only `SmartCon.Tests.csproj` targets `net8.0-windows`
-  (Revit 2025). R24/R21/R19 are .NET Framework 4.x and don't run unit tests.
+  (Revit 2025) — the project is pinned there; do NOT build it under R27
+  (net10 → NU1201/NU1202; in the sln its R27 configurations are mapped to R25, and the
+  mapping is honored only in VS). R24/R21/R19 are .NET Framework 4.x and don't run
+  unit tests. Integration tests run on all three platforms (net48 / net8 / net10).
   Build: `dotnet build src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25`.
 - **Run tests**: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
   --filter "FullyQualifiedName~Stale"` (or no filter for all).

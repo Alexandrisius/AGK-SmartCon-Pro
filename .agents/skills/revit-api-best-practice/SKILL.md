@@ -138,6 +138,7 @@ private void OpenDialog()
 |---|---|---|
 | 2019-2024 | net48 | Use `ValueTuple` package |
 | 2025-2026 | net8.0-windows | Native `ValueTuple`, C# 12 |
+| 2027 | net10.0-windows | Native `ValueTuple`, production code stays C# 12. API 2027 removes `ConnectorType.MasterSurface` (deprecated in 2026) — use `MainSurface` under `#if REVIT2027_OR_GREATER` (`MainSurface` does not exist in API 2021, hence 2027+). When building R27, check removed APIs (revitapidocs /2027/news) |
 
 ## Resources
 
@@ -171,7 +172,7 @@ private void OpenDialog()
 
 ### WPF DockablePane Freeze in net48 — `FireAndForget` + null `Application.Current?.Dispatcher`
 
-**Affected:** Revit 2019-2024 (net48) when a `FireAndForget` (`Task.Run + ConfigureAwait(false)`) lambda updates the WPF TreeView after a save. **Does not** affect Revit 2025-2026 (net8.0-windows) because `Application.Current` is non-null there.
+**Affected:** Revit 2019-2024 (net48) when a `FireAndForget` (`Task.Run + ConfigureAwait(false)`) lambda updates the WPF TreeView after a save. **Does not** affect Revit 2025+ (net8.0-windows / net10.0-windows, Revit 2025-2027) because `Application.Current` is non-null there.
 
 **Symptoms:** After triggering an import (or any FireAndForget that updates the tree), the **LMB does not respond** on the tree, drag-select is broken, the freeze **resolves on right-click** until the next operation. In Revit 2025 (net8) the same code works fine.
 

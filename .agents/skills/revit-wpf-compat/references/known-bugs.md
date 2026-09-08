@@ -221,7 +221,7 @@ Before committing WPF-related code, verify:
 - [ ] All sub-dialogs use `SetOwnerWindow(this)` pattern
 - [ ] No `string.Contains(string, StringComparison)` without `#if NETFRAMEWORK` guard
 - [ ] DataGrid ComboBox columns use `DataGridTemplateColumn`, not `DataGridComboBoxColumn`
-- [ ] Build passes on both `Debug.R25` (net8) and `Debug.R24` (net48)
+- [ ] Build passes on `Debug.R27` (net10), `Debug.R25` (net8) and `Debug.R24` (net48)
 - [ ] `OnUserInitiatedClose` does NOT call ViewModel commands (just sets `CustomDialogResult = false`)
 - [ ] All DragDrop event handlers wrapped in try-catch (net48 crash prevention)
 - [ ] `e.OriginalSource as DependencyObject` always null-checked before use
@@ -233,7 +233,7 @@ Before committing WPF-related code, verify:
 
 ## BUG-009: ContextMenu MenuItem greyed out in net48 only (dotnet/wpf#4078)
 
-**Symptom:** A `MenuItem` inside a `ContextMenu` is **permanently greyed out** in Revit 2019-2024 (net48) but works perfectly in Revit 2025-2026 (net8.0-windows). Other `MenuItem`s in the same `ContextMenu` (those without a bound `CommandParameter`, or with a static literal like `CommandParameter="Image"`) are unaffected. First click after a fresh app start may work once, but subsequent right-clicks keep the menu item disabled.
+**Symptom:** A `MenuItem` inside a `ContextMenu` is **permanently greyed out** in Revit 2019-2024 (net48) but works perfectly in Revit 2025+ (net8.0-windows / net10.0-windows). Other `MenuItem`s in the same `ContextMenu` (those without a bound `CommandParameter`, or with a static literal like `CommandParameter="Image"`) are unaffected. First click after a fresh app start may work once, but subsequent right-clicks keep the menu item disabled.
 
 **Diagnostic shape in `smartcon.log`:**
 
@@ -305,7 +305,7 @@ The `OnMenuItemUnloaded` was over-engineering for a non-existent problem: `Depen
 
 ## BUG-010: Dialog silently never opens in net8, crashes Revit in net48 — XamlDuplicateMemberException "Resources already set"
 
-**Symptom:** A WPF dialog simply does not appear when invoked (net8, Revit 2025-2026 — the click "does nothing"), and the same code path **crashes Revit** in net48 (Revit 2019-2024). The command method starts (visible in `smartcon.log` scope `=== START ===`), then dies. On net8 the exception surfaces in `Dispatcher.UnhandledException` (logged, process survives); on net48 the unhandled exception takes down the host process.
+**Symptom:** A WPF dialog simply does not appear when invoked (net8+, Revit 2025 and newer — the click "does nothing"), and the same code path **crashes Revit** in net48 (Revit 2019-2024). The command method starts (visible in `smartcon.log` scope `=== START ===`), then dies. On net8 the exception surfaces in `Dispatcher.UnhandledException` (logged, process survives); on net48 the unhandled exception takes down the host process.
 
 **Diagnostic shape in `smartcon.log`:**
 
