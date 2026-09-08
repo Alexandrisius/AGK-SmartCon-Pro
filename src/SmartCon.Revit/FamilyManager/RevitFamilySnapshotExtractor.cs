@@ -2787,26 +2787,39 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
     /// <summary>
     /// FHV5: wire settings identity summary — the material/temperature
     /// rating/insulation/max-size/conduit references of a <see cref="WireType"/>
-    /// plus the neutral scalars. These are API properties backed by the
-    /// <c>ElectricalSetting</c> object graph, NOT element parameters, so the
-    /// generic pipeline never sees them (manual test 2026-08-04: a material
-    /// change on a wire type did not sync). Revit 2026 replaced this object
-    /// graph with the Conductor* element model (WireType.WireMaterial/
-    /// TemperatureRating/Insulation are ElementId, MaxSize is string) — the
-    /// conductor identity read is not ported yet, so the wire section is
-    /// omitted from the hash on 2026+ (wire types hash without it there).
-    /// Conductor* port: #233.
+    /// plus the neutral scalars. These are API properties, NOT element
+    /// parameters, so the generic pipeline never sees them (manual test
+    /// 2026-08-04: a material change on a wire type did not sync). On
+    /// Revit ≤2025 they are backed by the <c>ElectricalSetting</c> object
+    /// graph (WireMaterialType → TemperatureRatingType → InsulationType/
+    /// WireSize); Revit 2026+ replaced it with the flat Conductor* model —
+    /// WireType.WireMaterial/TemperatureRating/Insulation are ElementIds
+    /// resolved through the Conductor* statics (the objects are NOT
+    /// Element-derived, <c>doc.GetElement</c> does not work for them) and
+    /// MaxSize is the ConductorSize name itself (#233). The snapshot fields
+    /// are names on every version, so the canonical WIRE string is
+    /// byte-identical across R25/R26 (FHV22).
     /// </summary>
     private static WireSettingsSnapshot? ExtractWireSettings(ElementType elementType)
     {
-#if REVIT2026_OR_GREATER
-        return null;
-#else
         if (elementType is not WireType wireType)
             return null;
 
         try
         {
+#if REVIT2026_OR_GREATER
+            var doc = wireType.Document;
+            return new WireSettingsSnapshot(
+                MaterialName: RevitConductorCompat.MaterialName(doc, wireType.WireMaterial),
+                TemperatureRatingName: RevitConductorCompat.TemperatureRatingName(doc, wireType.TemperatureRating),
+                InsulationName: RevitConductorCompat.InsulationName(doc, wireType.Insulation),
+                // An unset MaxSize is an empty string on 2026+ — normalize to
+                // null so the WIRE canon matches the ≤2025 object-null case.
+                MaxSizeName: string.IsNullOrEmpty(wireType.MaxSize) ? null : wireType.MaxSize,
+                ConduitName: wireType.Conduit?.Name,
+                NeutralMultiplier: wireType.NeutralMultiplier,
+                NeutralRequired: wireType.NeutralRequired);
+#else
             return new WireSettingsSnapshot(
                 MaterialName: wireType.WireMaterial?.Name,
                 TemperatureRatingName: wireType.TemperatureRating?.Name,
@@ -2815,6 +2828,7 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 ConduitName: wireType.Conduit?.Name,
                 NeutralMultiplier: wireType.NeutralMultiplier,
                 NeutralRequired: wireType.NeutralRequired);
+#endif
         }
         catch (Exception ex)
         {
@@ -2822,7 +2836,6 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
                 $"Wire settings read failed for type '{elementType.Name}': {ex.Message}");
             return null;
         }
-#endif
     }
 
     /// <summary>

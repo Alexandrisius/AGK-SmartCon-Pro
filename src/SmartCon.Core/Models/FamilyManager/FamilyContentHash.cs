@@ -264,6 +264,25 @@ public sealed record FamilyContentHash(
     ///     they are tab-edited catalog links). System META prefix
     ///     FHV10→FHV11. Critical task <c>hash-v21</c> recomputes every
     ///     row that is not current.
+    /// 22 — wire conductor identity revival on Revit 2026+ (Issue #233):
+    ///     the canonical string is UNCHANGED (system META prefix stays
+    ///     FHV11, WIRE section byte-identical) — on ≤2025 a v22
+    ///     recomputation reproduces the v21 hash exactly. The bump exists
+    ///     because Revit 2026 replaced the ElectricalSetting object graph
+    ///     with the flat Conductor* model (ConductorMaterial /
+    ///     TemperatureRating / InsulationMaterial / ConductorSize, not
+    ///     Element-derived) and the R26 build shipped with the conductor
+    ///     read compile-time disabled: <c>ExtractWireSettings</c> returned
+    ///     null, so wire types hashed as <c>WIRE|-|</c> — wire content was
+    ///     invisible to dedup/stale on R26. The port resolves
+    ///     WireType.WireMaterial/TemperatureRating/Insulation (ElementId)
+    ///     and MaxSize (string) by name through the Conductor* statics, so
+    ///     the WIRE section is alive again on 2026+ and identical content
+    ///     hashes identically on R25 and R26 (document upgrade carries the
+    ///     names 1:1). Critical task <c>hash-v22</c> recomputes every row
+    ///     that is not current (fleet-wide by design: the hash is shared
+    ///     across a group's Revit variants and the extracting host is not
+    ///     stored — only a full recompute guarantees wire-alive v22 rows).
 /// -1 (<see cref="RecalculationSkipped"/>) — sentinel written by the
 ///     hash-recalculation migration for versions whose file is
 ///     permanently unreadable (corrupt, Revit API failure). Skipped
@@ -279,7 +298,7 @@ public sealed record FamilyContentHash(
 /// </remarks>
 public static class FamilyContentHashFormat
 {
-    public const int CurrentVersion = 21;
+    public const int CurrentVersion = 22;
 
     /// <summary>
     /// Sentinel <c>hash_format_version</c> for versions the migration

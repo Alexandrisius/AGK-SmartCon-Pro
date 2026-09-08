@@ -22,7 +22,10 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          # global.json пинит SDK 10.0.1xx (Revit 2027 = net10)
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.37.7

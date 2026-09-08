@@ -84,6 +84,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             ? new HashSet<string>(requestedTypeNames, StringComparer.OrdinalIgnoreCase)
             : null;
 
+        var isPhantom = RevitSystemTypeFinder.CreatePhantomFilter(projectDoc);
         var typeCollector = new FilteredElementCollector(projectDoc)
             .OfClass(typeof(ElementType))
             .Cast<ElementType>()
@@ -91,8 +92,9 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             // Electrical settings-graph types (WireMaterialType/
             // TemperatureRatingType/InsulationType) share name/family/
             // category with the real WireType and are never catalog types
-            // (manual test 2026-08-04).
-            .Where(et => !RevitSystemTypeFinder.IsElectricalSettingsObject(et))
+            // (manual test 2026-08-04); on 2026+ the filter also covers the
+            // Conductor* replacements (#233).
+            .Where(et => !isPhantom(et))
             .ToList();
 
         SmartConLogger.Info($"Project contains {typeCollector.Count} element types. Filter: {requestedSet?.Count.ToString() ?? "none"}");

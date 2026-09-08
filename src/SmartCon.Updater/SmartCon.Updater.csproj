@@ -8,6 +8,10 @@
     <RootNamespace>SmartCon.Updater</RootNamespace>
     <PublishTrimmed>false</PublishTrimmed>
     <SelfContained>false</SelfContained>
+    <!-- Revit 2027 ставит машину на .NET 10 runtime; без RollForward=Major
+         net8-exe апдейтера на такой машине не стартует (дефолт Minor не
+         переходит major-границу). На машинах с .NET 8 поведение прежнее. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
 </Project>

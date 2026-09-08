@@ -6,9 +6,14 @@ echo SmartCon - Build and Deploy (Debug)
 echo ==========================================
 echo.
 
-REM Uses named configurations Debug.R25/.R24/.R21/.R19.
+REM Uses named configurations Debug.R27/.R26/.R25/.R24/.R21/.R19.
 REM Each configuration places its output into a separate folder bin\Debug.R{NN}\,
 REM so builds do not overwrite each other's DLLs.
+REM
+REM Per-version binaries (Issue #233 follow-up): Revit 2026 replaced the wire
+REM settings object graph with the Conductor* model (#if REVIT2026_OR_GREATER),
+REM and Revit 2027 moved to .NET 10 (net10.0-windows) — the R25 binary no longer
+REM covers 2026/2027. Each Revit year 2025/2026/2027 gets its OWN build.
 REM
 REM Restore runs inside each `dotnet build` (no --no-restore) because
 REM Nice3point.Revit.Api.RevitAPI is pulled with VersionOverride depending on
@@ -16,7 +21,7 @@ REM $(RevitVersion). A global `dotnet restore` without RevitVersion context
 REM activates the 2021.* fallback, which breaks net48 builds that use API 2022+
 REM (for example, Definition.GetDataType introduced in Revit 2022).
 
-echo [0/10] Validating documentation...
+echo [0/11] Validating documentation...
 powershell -ExecutionPolicy Bypass -File "tools\validate-docs.ps1"
 if errorlevel 1 (
     echo [WARNING] Documentation validation failed! Run: powershell -ExecutionPolicy Bypass -File tools\validate-docs.ps1
@@ -25,37 +30,49 @@ if errorlevel 1 (
     echo [OK] Documentation validation passed
 )
 
-echo [1/10] Building Revit 2025-2026 (Debug.R25, net8.0-windows)...
+echo [1/11] Building Revit 2025 (Debug.R25, net8.0-windows)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R25 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R25 failed! & pause & exit /b 1 )
 echo [OK] R25 build successful
 
 echo.
-echo [2/10] Building Revit 2024 (Debug.R24, net48)...
+echo [2/11] Building Revit 2026 (Debug.R26, net8.0-windows)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R26 --verbosity quiet
+if errorlevel 1 ( echo [ERROR] Build R26 failed! & pause & exit /b 1 )
+echo [OK] R26 build successful
+
+echo.
+echo [3/11] Building Revit 2027 (Debug.R27, net10.0-windows)...
+dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R27 --verbosity quiet
+if errorlevel 1 ( echo [ERROR] Build R27 failed! & pause & exit /b 1 )
+echo [OK] R27 build successful
+
+echo.
+echo [4/11] Building Revit 2024 (Debug.R24, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R24 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R24 failed! & pause & exit /b 1 )
 echo [OK] R24 build successful
 
 echo.
-echo [3/10] Building Revit 2021-2023 (Debug.R21, net48)...
+echo [5/11] Building Revit 2021-2023 (Debug.R21, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R21 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R21 failed! & pause & exit /b 1 )
 echo [OK] R21 build successful
 
 echo.
-echo [4/10] Building Revit 2019-2020 (Debug.R19, net48)...
+echo [6/11] Building Revit 2019-2020 (Debug.R19, net48)...
 dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R19 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Build R19 failed! & pause & exit /b 1 )
 echo [OK] R19 build successful
 
 echo.
-echo [5/10] Building updater (net8.0)...
+echo [7/11] Building updater (net8.0)...
 dotnet build "src\SmartCon.Updater\SmartCon.Updater.csproj" -c Debug -f net8.0 --verbosity quiet
 if errorlevel 1 ( echo [ERROR] Updater build failed! & pause & exit /b 1 )
 echo [OK] Updater build successful
 
 echo.
-echo [6/10] Deploying to Revit 2025...
+echo [8/11] Deploying to Revit 2025-2027...
 set "ADDIN_R25=%APPDATA%\Autodesk\Revit\Addins\2025"
 set "DLL_R25=%APPDATA%\SmartCon\2025"
 if exist "%ADDIN_R25%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R25%\SmartCon" 2>nul )
@@ -65,14 +82,12 @@ copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\SmartCon.App.deps
 call :WriteAddin "%ADDIN_R25%\SmartCon.addin" "%DLL_R25%\SmartCon.App.dll"
 echo [OK] Revit 2025
 
-echo.
-echo [7/10] Deploying to Revit 2026 (same binary as R25)...
 set "ADDIN_R26=%APPDATA%\Autodesk\Revit\Addins\2026"
 set "DLL_R26=%APPDATA%\SmartCon\2026"
 if exist "%ADDIN_R26%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R26%\SmartCon" 2>nul )
 if not exist "%DLL_R26%" mkdir "%DLL_R26%"
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\*.dll" "%DLL_R26%\" >nul
-copy /Y "src\SmartCon.App\bin\Debug.R25\net8.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
+copy /Y "src\SmartCon.App\bin\Debug.R26\net8.0-windows\win-x64\*.dll" "%DLL_R26%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R26\net8.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R26%\" >nul 2>nul
 if exist "%ADDIN_R26%" (
     call :WriteAddin "%ADDIN_R26%\SmartCon.addin" "%DLL_R26%\SmartCon.App.dll" "isolation"
     echo [OK] Revit 2026
@@ -80,8 +95,21 @@ if exist "%ADDIN_R26%" (
     echo [SKIP] Revit 2026 not installed
 )
 
+set "ADDIN_R27=%APPDATA%\Autodesk\Revit\Addins\2027"
+set "DLL_R27=%APPDATA%\SmartCon\2027"
+if exist "%ADDIN_R27%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R27%\SmartCon" 2>nul )
+if not exist "%DLL_R27%" mkdir "%DLL_R27%"
+copy /Y "src\SmartCon.App\bin\Debug.R27\net10.0-windows\win-x64\*.dll" "%DLL_R27%\" >nul
+copy /Y "src\SmartCon.App\bin\Debug.R27\net10.0-windows\win-x64\SmartCon.App.deps.json" "%DLL_R27%\" >nul 2>nul
+if exist "%ADDIN_R27%" (
+    call :WriteAddin "%ADDIN_R27%\SmartCon.addin" "%DLL_R27%\SmartCon.App.dll" "isolation"
+    echo [OK] Revit 2027
+) else (
+    echo [SKIP] Revit 2027 not installed
+)
+
 echo.
-echo [8/10] Deploying to Revit 2021-2024...
+echo [9/11] Deploying to Revit 2021-2024...
 set "DLL_R24=%APPDATA%\SmartCon\2024"
 if not exist "%DLL_R24%" mkdir "%DLL_R24%"
 call :CleanObsolete "%DLL_R24%"
@@ -129,7 +157,7 @@ if exist "%ADDIN_R21%" (
 )
 
 echo.
-echo [9/10] Deploying to Revit 2019-2020...
+echo [10/11] Deploying to Revit 2019-2020...
 set "DLL_R19=%APPDATA%\SmartCon\2019-2020"
 if not exist "%DLL_R19%" mkdir "%DLL_R19%"
 call :CleanObsolete "%DLL_R19%"
@@ -152,7 +180,7 @@ if exist "%ADDIN_R20%" (
 )
 
 echo.
-echo [10/10] Deploying updater...
+echo [11/11] Deploying updater...
 set "UPDATER_SRC=src\SmartCon.Updater\bin\Debug\net8.0"
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.exe" "%APPDATA%\SmartCon\" >nul 2>nul
 copy /Y "%UPDATER_SRC%\SmartCon.Updater.dll" "%APPDATA%\SmartCon\" >nul 2>nul
@@ -170,6 +198,7 @@ echo  2021-2023: %DLL_R21%
 echo  2024:      %DLL_R24%
 echo  2025:      %DLL_R25%
 echo  2026:      %DLL_R26%
+echo  2027:      %DLL_R27%
 echo.
 pause
 exit /b 0
@@ -196,7 +225,7 @@ goto :eof
 
 :CleanObsolete
 REM Deletes ILRepack-merged third-party dlls (ADR-051, net48 merge) from a net48 deploy folder.
-REM Do NOT run for net8 folders (2025/2026): those names are needed there as loose files.
+REM Do NOT run for net8/net10 folders (2025/2026/2027): those names are needed there as loose files.
 REM %1 = target folder. List source: src\SmartCon.App\Resources\merged-dependencies.txt
 for /f "usebackq tokens=* delims=" %%F in ("src\SmartCon.App\Resources\merged-dependencies.txt") do (
     set "obsoleteLine=%%F"

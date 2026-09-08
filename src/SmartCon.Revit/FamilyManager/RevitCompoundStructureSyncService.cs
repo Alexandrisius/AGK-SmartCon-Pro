@@ -120,7 +120,10 @@ public sealed class RevitCompoundStructureSyncService : ICompoundStructureSyncSe
         {
             // Shell counts move the leading/trailing layers out of the core —
             // must be set AFTER the layer list (CreateSimple puts everything
-            // into the core). There must always be at least one core layer.
+            // into the core). Since API 2026 an empty core is legal
+            // (revitapidocs/2026/news: "Core Layers no longer required");
+            // where the API still disagrees, SetNumberOfShellLayers throws
+            // and the structure is rejected below.
             try
             {
                 compoundStructure.SetNumberOfShellLayers(

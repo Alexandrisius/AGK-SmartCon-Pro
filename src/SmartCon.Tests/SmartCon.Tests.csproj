@@ -4,7 +4,14 @@
     <RootNamespace>SmartCon.Tests</RootNamespace>
     <AssemblyName>SmartCon.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
-    <!-- Tests всегда на net8.0-windows, всегда RevitAPI 2025 — игнорирует -p:RevitVersion -->
+    <!-- Tests всегда на net8.0-windows, всегда RevitAPI 2025. В sln конфигурации
+         *.R27 этого проекта замаплены на *.R25: под R27 весь solution — net10
+         (RevitVersion=2027), ProjectReferences net8-теста несовместимы (NU1201),
+         а wildcard RevitAPI 2027.* — net10-пакет (NU1202). Маппинг honored только
+         Visual Studio (restore по active-config); dotnet CLI sln-restore маппинг
+         игнорирует — но CLI-сборка sln и так запрещена конвенцией проекта
+         (AGENTS: собирать SmartCon.App.csproj, не SmartCon.sln).
+         Команда тестов неизменна: dotnet test -c Debug.R25. -->
     <TargetFrameworks>net8.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>

@@ -36,13 +36,17 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        configuration: [Release.R19, Release.R21, Release.R24, Release.R25, Release.R26]
+        configuration: [Release.R19, Release.R21, Release.R24, Release.R25, Release.R26, Release.R27]
       fail-fast: false
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          # global.json пинит SDK 10.0.1xx (Revit 2027 = net10); SDK 10 собирает
+          # все TFM (net48/net8/net10), 8.0.x оставлен как страховка runtime
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - uses: actions/cache@v5
         with:
@@ -81,7 +85,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          # SDK 10 — из global.json; runtime 8.0 — для запуска net8-тестов
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - uses: actions/cache@v5
         with:
@@ -95,9 +102,13 @@ jobs:
       # Compile-only: интеграционные тесты выполняются внутри реального Revit
       # (Nice3point.TUnit.Revit), на GitHub-hosted runner его нет — только
       # проверяем компиляцию, прогон локальный (см. smartcon-testing skill).
-      # R25 (net8) + R21 (net48): polyfill/STJ-риски сосредоточены на net48.
+      # R25 (net8) + R27 (net10) + R21 (net48): polyfill/STJ-риски на net48,
+      # TUnit-overload-риски (CS0121, #5765) — на net10.
       - name: Build Integration Tests R25 (compile-only, no Revit on runner)
         run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R25
+
+      - name: Build Integration Tests R27 (compile-only, no Revit on runner)
+        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R27
 
       - name: Build Integration Tests R21 (compile-only, no Revit on runner)
         run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R21

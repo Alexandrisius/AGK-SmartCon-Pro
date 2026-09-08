@@ -185,12 +185,17 @@ else {
 # R19  = Revit 2019-2020 (net48, RevitAPI 2020)
 # R21  = Revit 2021-2023 (net48, RevitAPI 2021 baseline, single shared binary)
 # R24  = Revit 2024      (net48, separate binary because of API / ElementId changes)
-# R25  = Revit 2025-2026 (net8.0-windows, single binary for both versions)
+# R25  = Revit 2025      (net8.0-windows, RevitAPI 2025)
+# R26  = Revit 2026      (net8.0-windows, RevitAPI 2026 — Conductor* wire model, #233;
+#                         R25-бинарник на 2026 НЕ работает: wire-свойства WireType сменили типы)
+# R27  = Revit 2027      (net10.0-windows — Revit 2027 перешёл на .NET 10, SDK 10 из global.json)
 $buildConfigs = @(
-    @{ Config = "Release.R19"; Tfm = "net48";           Label = "Revit 2019-2020" }
-    @{ Config = "Release.R21"; Tfm = "net48";           Label = "Revit 2021-2023" }
-    @{ Config = "Release.R24"; Tfm = "net48";           Label = "Revit 2024" }
-    @{ Config = "Release.R25"; Tfm = "net8.0-windows";  Label = "Revit 2025-2026" }
+    @{ Config = "Release.R19"; Tfm = "net48";            Label = "Revit 2019-2020" }
+    @{ Config = "Release.R21"; Tfm = "net48";            Label = "Revit 2021-2023" }
+    @{ Config = "Release.R24"; Tfm = "net48";            Label = "Revit 2024" }
+    @{ Config = "Release.R25"; Tfm = "net8.0-windows";   Label = "Revit 2025" }
+    @{ Config = "Release.R26"; Tfm = "net8.0-windows";   Label = "Revit 2026" }
+    @{ Config = "Release.R27"; Tfm = "net10.0-windows";  Label = "Revit 2027" }
 )
 
 foreach ($bc in $buildConfigs) {

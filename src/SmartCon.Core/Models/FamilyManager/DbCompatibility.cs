@@ -51,6 +51,13 @@ public static class DbCompatibility
     /// same feature branch before the next tag, so only FHV20 ships and the
     /// floor stays beta.10 (any released plugin writing v20-format rows is
     /// ≥ the tag that carries FHV12..20).
+    /// FHV22 note (2026-09-08, Issue #233): FHV21 SHIPPED in v2.0.1-beta.10,
+    /// so the floor moves to the next beta that first ships FHV22 —
+    /// v2.0.1-beta.11. FHV22 does not change the canonical string, but a
+    /// pre-#233 plugin running on Revit 2026 extracts a dead wire section
+    /// (<c>WIRE|-|</c>) and its hash-v21 detection treats v22 rows as
+    /// pending — it would silently DOWNGRADE wire-alive v22 rows to
+    /// wire-dead v21 (dedup misses wire-content changes on R26).
     /// </summary>
-    public const string CurrentMinPluginVersion = "2.0.1-beta.10";
+    public const string CurrentMinPluginVersion = "2.0.1-beta.11";
 }

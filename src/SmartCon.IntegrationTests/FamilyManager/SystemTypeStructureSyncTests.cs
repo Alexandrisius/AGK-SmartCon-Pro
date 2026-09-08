@@ -219,9 +219,13 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
     [Test]
     public async Task Structure_InvalidReference_ExistingStructureKeptAndReported()
     {
-        // Rejection-path: shell-конфигурация несовместима с числом слоёв
-        // (ext + int >= count, нет ни одного core-слоя) — существующая
-        // структура типа не трогается, расхождение репортится.
+        // Rejection-path: shell-конфигурация требует больше слоёв, чем есть
+        // в стеке (3 внешних при 2 слоях) — существующая структура типа
+        // не трогается, расхождение репортится. До API 2026 rejection-конфигом
+        // был и «пустой core» (ext + int >= count, нет ни одного core-слоя),
+        // но с 2026 core-слой опционален (revitapidocs/2026/news: "Core
+        // Layers no longer required") — лимит «shell-слоёв больше числа
+        // слоёв» отвергается на всех поколениях API.
         ElementId typeId = null!;
         double originalWidth = 0;
         _targetTx!.RunInTransaction(TargetDoc, "Seed local wall type", doc =>
@@ -242,7 +246,7 @@ public sealed class SystemTypeStructureSyncTests : RevitApiTest
         });
 
         var invalidReference = new CompoundStructureSnapshot(
-            ExteriorShellLayerCount: 1,
+            ExteriorShellLayerCount: 3,
             InteriorShellLayerCount: 1,
             Layers:
             [
