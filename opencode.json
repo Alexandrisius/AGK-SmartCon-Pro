@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "revit-api-docs": {
+      "type": "local",
+      "command": ["tools/Rvt_Docs_MCP-windows.exe"],
+      "enabled": true
+    }
+  }
+}
