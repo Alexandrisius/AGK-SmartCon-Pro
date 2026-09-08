@@ -248,6 +248,13 @@ public sealed partial class FamilyManagerMainViewModel
             await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
             SmartConLogger.Freeze($"LoadTreeAsync: ApplyStaleResultsToTreeAsync took {stageSw.ElapsedMilliseconds}ms");
 
+            // #259: compliance badges follow the same session-snapshot contract —
+            // a tree rebuild re-applies the cached verdicts instead of wiping them
+            // (and drops verdicts whose category no longer matches the leaf).
+            stageSw.Restart();
+            ApplyComplianceResultsToTree(Array.Empty<ComplianceCheckResult>());
+            SmartConLogger.Freeze($"LoadTreeAsync: ApplyComplianceResultsToTree took {stageSw.ElapsedMilliseconds}ms");
+
             // #187: project-presence badges on system type nodes — one
             // CollectTypes pass over the catalog's system categories, then a
             // (family, name) set lookup per node. Cheap: a single collector

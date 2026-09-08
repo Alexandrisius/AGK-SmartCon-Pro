@@ -86,6 +86,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// dialog's "what changed" diff.</summary>
     private readonly IContentHashAnalyticsRepository _contentHashAnalytics;
 
+    /// <summary>#259: catalog compliance check («Проверить → Правила») —
+    /// session snapshot of rule verdicts, pure DB (no Revit).</summary>
+    private readonly ICatalogComplianceService _complianceService;
+
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
     private ProjectBaseMatch? _activeBaseMatch;
@@ -276,6 +280,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _miniProjectMarker = services.MiniProjectMarker;
         _systemTypeFinder = services.SystemTypeFinder;
         _contentHashAnalytics = services.ContentHashAnalytics;
+        _complianceService = services.ComplianceService;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();

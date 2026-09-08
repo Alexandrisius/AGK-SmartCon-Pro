@@ -28,7 +28,8 @@ internal static class CatalogSeedHelper
         string? currentLabel = null,
         string? revitCategory = null,
         int? revitCategoryId = null,
-        int? glbState = null)
+        int? glbState = null,
+        string? categoryId = null)
     {
         var itemId = Guid.NewGuid().ToString("N");
         var versionId = Guid.NewGuid().ToString();
@@ -68,8 +69,8 @@ internal static class CatalogSeedHelper
             cmd.Transaction = tx;
             cmd.CommandText = """
                 INSERT INTO catalog_items (id, name, normalized_name, current_version_label,
-                                           family_source, revit_category, revit_category_id, hash_format_version, created_at_utc, updated_at_utc)
-                VALUES (@id, @name, @norm, @currentLabel, @source, @revitCategory, @revitCategoryId, @fmt, @t, @t)
+                                           family_source, revit_category, revit_category_id, hash_format_version, category_id, created_at_utc, updated_at_utc)
+                VALUES (@id, @name, @norm, @currentLabel, @source, @revitCategory, @revitCategoryId, @fmt, @categoryId, @t, @t)
                 """;
             cmd.Parameters.Add(new SqliteParameter("@id", itemId));
             cmd.Parameters.Add(new SqliteParameter("@name", name));
@@ -79,6 +80,7 @@ internal static class CatalogSeedHelper
             cmd.Parameters.Add(new SqliteParameter("@revitCategory", (object?)revitCategory ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", (object?)revitCategoryId ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@fmt", (object?)hashFormatVersion ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
             await cmd.ExecuteNonQueryAsync();
         }

@@ -434,6 +434,17 @@ public static class StringLocalization
         public const string FM_Notice_CrossName_Body = "FM_Notice_CrossName_Body";
         public const string FM_Notice_DependencyRef_Guard = "FM_Notice_DependencyRef_Guard";
         public const string FM_Notice_OutdatedDeps_Guidance = "FM_Notice_OutdatedDeps_Guidance";
+        // Catalog compliance (#259, «Проверить → Правила»)
+        public const string FM_StatusDetails_ActionsMenu = "FM_StatusDetails_ActionsMenu";
+        public const string FM_Badge_RulesUnverifiable_Short = "FM_Badge_RulesUnverifiable_Short";
+        public const string FM_RuleViolationsCountOne = "FM_RuleViolationsCountOne";
+        public const string FM_RuleViolationsCountMany = "FM_RuleViolationsCountMany";
+        public const string FM_Notice_RuleViolations_TitleOne = "FM_Notice_RuleViolations_TitleOne";
+        public const string FM_Notice_RuleViolations_TitleMany = "FM_Notice_RuleViolations_TitleMany";
+        public const string FM_Notice_RuleViolations_Guidance = "FM_Notice_RuleViolations_Guidance";
+        public const string FM_Notice_RuleCannotVerify_Title = "FM_Notice_RuleCannotVerify_Title";
+        public const string FM_Notice_RuleCannotVerify_Guidance = "FM_Notice_RuleCannotVerify_Guidance";
+        public const string FM_Notice_CategoryRuleViolations_Title = "FM_Notice_CategoryRuleViolations_Title";
         public const string FM_DependencyDriftBlock_Item = "FM_DependencyDriftBlock_Item";
         public const string FM_DependencyDriftBlock_Status = "FM_DependencyDriftBlock_Status";
         public const string FM_BatchImport_Stale = "FM_BatchImport_Stale";
@@ -669,6 +680,8 @@ public static class StringLocalization
         public const string FM_Diff_Section_WIRE = "FM_Diff_Section_WIRE";
         public const string FM_Diff_Section_VALUES = "FM_Diff_Section_VALUES";
         public const string FM_Check = "FM_Check";
+        public const string FM_Check_Staleness = "FM_Check_Staleness";
+        public const string FM_Check_Rules = "FM_Check_Rules";
         public const string FM_Stale = "FM_Stale";
         public const string FM_StaleTooltipNone = "FM_StaleTooltipNone";
         public const string FM_PresenceTooltipNotInProject = "FM_PresenceTooltipNotInProject";
@@ -690,6 +703,8 @@ public static class StringLocalization
         public const string FM_StaleUpdate_ProgressFormat = "FM_StaleUpdate_ProgressFormat";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
         public const string FM_StaleCategoryTooltipMany = "FM_StaleCategoryTooltipMany";
+        public const string FM_RuleCheckInProgress = "FM_RuleCheckInProgress";
+        public const string FM_RuleCheck_ProgressFormat = "FM_RuleCheck_ProgressFormat";
         public const string FM_UnavailableTooltipDeprecated = "FM_UnavailableTooltipDeprecated";
         public const string FM_UnavailableTooltipDeprecatedShort = "FM_UnavailableTooltipDeprecatedShort";
         public const string FM_UnavailableTooltipRevitFix = "FM_UnavailableTooltipRevitFix";

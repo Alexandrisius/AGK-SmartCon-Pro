@@ -34,9 +34,11 @@ public sealed partial class FamilyManagerMainViewModel
                 .Where(n => n.Severity >= StatusNoticeSeverity.Warning).ToList();
             if (notices.Count == 0) return;
 
-            var actions = BuildStatusDetailsActions(node);
+            var (actions, hasReportAction) = BuildStatusDetailsActions(node);
             // The split button repeats the node's tree context menu: leaf →
             // «Обновить все типы» (FM_UpdateAllTypes), category → «Обновить».
+            // #259: a mixed set (update actions + «Открыть отчёт о проверке»)
+            // gets the neutral «Действия» label — the report is not an update.
             var menuLabelKey = node is FamilyLeafNodeViewModel ? Keys.FM_UpdateAllTypes : Keys.FM_Update;
             var detailsVm = new StatusDetailsViewModel(
                 node.DisplayName,
@@ -44,7 +46,9 @@ public sealed partial class FamilyManagerMainViewModel
                 notices,
                 actions,
                 actionsMenuLabel: actions.Count > 1
-                    ? LanguageManager.GetString(menuLabelKey) ?? "Обновить"
+                    ? hasReportAction
+                        ? LanguageManager.GetString(Keys.FM_StatusDetails_ActionsMenu) ?? "Действия"
+                        : LanguageManager.GetString(menuLabelKey) ?? "Обновить"
                     : null);
             _dialogService.ShowStatusDetails(detailsVm);
         }
@@ -103,19 +107,23 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>
     /// Follow-up actions of the details dialog = the node's UPDATE commands
     /// only (the dialog explains a verdict; re-running the check that
-    /// produced it is pointless). Predicates mirror the commands' CanExecute
-    /// — evaluated here against the specific node (RelayCommand.Execute
-    /// skips CanExecute, so an unguarded action would bypass e.g. the
-    /// banned-user check or the incompatible-Revit guard). Two update
-    /// variants render as a split button («Обновить ▾») whose menu items
-    /// repeat the tree context menu exactly.
+    /// produced it is pointless) PLUS the #259 compliance report («Открыть
+    /// отчёт о проверке») for a leaf with a live Fail verdict. Predicates
+    /// mirror the commands' CanExecute — evaluated here against the specific
+    /// node (RelayCommand.Execute skips CanExecute, so an unguarded action
+    /// would bypass e.g. the banned-user check or the incompatible-Revit
+    /// guard). Two update variants render as a split button («Обновить ▾»)
+    /// whose menu items repeat the tree context menu exactly.
     /// </summary>
-    private List<StatusDetailsAction> BuildStatusDetailsActions(CatalogTreeNodeViewModel node)
+    /// <returns>The action list and whether it contains the compliance-report
+    /// action (drives the neutral split-button label for mixed sets).</returns>
+    private (List<StatusDetailsAction> Actions, bool HasReportAction) BuildStatusDetailsActions(CatalogTreeNodeViewModel node)
     {
         static string Loc(string key, string fallback) =>
             LanguageManager.GetString(key) ?? fallback;
 
         var actions = new List<StatusDetailsAction>();
+        var hasReportAction = false;
         switch (node)
         {
             case FamilyLeafNodeViewModel leaf:
@@ -141,6 +149,15 @@ public sealed partial class FamilyManagerMainViewModel
                             () => { leaf.IsSelected = true; UpdateStaleCommand.Execute(null); }));
                     }
                 }
+                // #259: the rule-violation report — the fix path is edit +
+                // re-import, so no update action is offered for this verdict.
+                if (HasComplianceFailVerdict(leaf))
+                {
+                    hasReportAction = true;
+                    actions.Add(new StatusDetailsAction(
+                        Loc(Keys.FM_StatusDetails_OpenValidationReport, "Открыть отчёт о проверке"),
+                        () => OpenComplianceReport(leaf)));
+                }
                 break;
 
             case CategoryNodeViewModel category:
@@ -158,7 +175,7 @@ public sealed partial class FamilyManagerMainViewModel
                 }
                 break;
         }
-        return actions;
+        return (actions, hasReportAction);
     }
 
     /// <summary>

@@ -345,3 +345,97 @@ public static class DisplayValueParser
     public static double? TryParseNumber(string? displayText);
 }
 ```
+
+---
+
+## ComplianceStatus
+
+Вердикт комплаенс-проверки каталога (#259, ADR-074): один элемент каталога
+против effective-правил его категории. Намеренно отделён от `StaleReason`:
+staleness сравнивает ПРОЕКТ с каталогом (лечится «Обновить»), комплаенс —
+каталог с правилами (лечится правкой семейства и переимпортом). Вердикты
+никогда не смешиваются.
+
+**Файл:** `Models/FamilyManager/ComplianceStatus.cs`
+
+```csharp
+public enum ComplianceStatus
+{
+    NotChecked = 0,
+    Pass,
+    Fail,
+    CannotVerify,
+}
+```
+
+- `NotChecked` — дефолт tree-узла; в снимке не хранится.
+- `Pass` — нарушений нет (включая категории без правил — free pass, как в гейте импорта).
+- `Fail` — минимум одно нарушение правила.
+- `CannotVerify` — нет данных экстракции (нет import run / извлечённых значений);
+  guidance «Обновить базу».
+
+---
+
+## ComplianceCheckResult
+
+Результат комплаенс-проверки ОДНОГО элемента каталога (#259). Pure-DB вердикт
+(без Revit, без открытого документа). `CategoryId` хранится, чтобы смена
+категории (DnD/пикер) самоинвалидировала вердикт при применении к дереву:
+несовпадение категории результата и листа означает «проверено по другим
+правилам» — бэйдж не должен выживать.
+
+**Файл:** `Models/FamilyManager/ComplianceCheckResult.cs`
+
+```csharp
+public sealed record ComplianceCheckResult(
+    string CatalogItemId,
+    string? CategoryId,
+    ComplianceStatus Status,
+    IReadOnlyList<RuleViolation> Violations,
+    int RulesEvaluated,
+    int RuleCount)
+{
+    public static ComplianceCheckResult Pass(string catalogItemId, string? categoryId, int ruleCount);
+    public static ComplianceCheckResult Fail(string catalogItemId, string? categoryId,
+        IReadOnlyList<RuleViolation> violations, int rulesEvaluated, int ruleCount);
+    public static ComplianceCheckResult CannotVerify(string catalogItemId, string? categoryId);
+}
+```
+
+---
+
+## ComplianceCheckProgress
+
+Прогресс прогона комплаенс-проверки (#259, «Проверить → Правила») — зеркало
+`StaleCheckProgress` для rule-check: dockable-панель рендерит его как нижний
+прогресс-бар + текст «Проверка правил X из Y — имя».
+
+**Файл:** `Models/FamilyManager/ComplianceCheckProgress.cs`
+
+```csharp
+public sealed record ComplianceCheckProgress(
+    int Completed,
+    int Total,
+    string CurrentItemName);
+```
+
+---
+
+## CatalogComplianceSnapshot
+
+Сессионный снимок комплаенс-вердиктов (#259, ADR-074) по образцу
+`FamilyStaleSnapshot`: только in-memory, БЕЗ миграции схемы. Инвалидируется
+при правке правил (MetadataChanged), смене БД, «Обновить базу» и реимпорте
+элемента. Value-based equality (словарь-интерфейс не даёт структурного
+равенства record'у — `Equals` переопределён).
+
+**Файл:** `Models/FamilyManager/CatalogComplianceSnapshot.cs`
+
+```csharp
+public sealed record CatalogComplianceSnapshot
+{
+    public IReadOnlyDictionary<string, ComplianceCheckResult> Results { get; }
+    public DateTimeOffset CheckedAtUtc { get; }
+    public static CatalogComplianceSnapshot Empty { get; }
+}
+```

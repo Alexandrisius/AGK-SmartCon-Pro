@@ -35,6 +35,16 @@ public static class StatusTooltipText
             : LocalizationService.Format(StringLocalization.Keys.FM_StaleCategoryTooltipMany, count);
     }
 
+    /// <summary>#259: rule-violation count text for the red shield badge
+    /// tooltip and the category roll-up notice («N нарушений правил»).</summary>
+    public static string? ForRuleViolationCount(int count)
+    {
+        if (count <= 0) return null;
+        return count == 1
+            ? LanguageManager.GetString(StringLocalization.Keys.FM_RuleViolationsCountOne)
+            : LocalizationService.Format(StringLocalization.Keys.FM_RuleViolationsCountMany, count);
+    }
+
     public static string? ForPresenceState(TypePresenceState state)
     {
         var key = state switch

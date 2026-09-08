@@ -87,9 +87,34 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     [NotifyPropertyChangedFor(nameof(StaleBadgeTooltip))]
     private int _staleCount;
 
+    // ── Catalog compliance roll-up (#259) ────────────────────────────────
+
+    /// <summary>Roll-up: number of leaves under this category (recursive) whose
+    /// last «Проверить → Правила» run ended with a Fail verdict.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRuleViolations))]
+    [NotifyPropertyChangedFor(nameof(RuleViolationBadgeTooltip))]
+    private int _ruleViolationCount;
+
+    /// <summary><c>true</c> when the red shield roll-up badge is shown.</summary>
+    public bool HasRuleViolations => RuleViolationCount > 0;
+
+    /// <summary>One-line hint for the red shield (count + click hint).</summary>
+    public string RuleViolationBadgeTooltip
+    {
+        get
+        {
+            var count = SmartCon.UI.Converters.StatusTooltipText.ForRuleViolationCount(RuleViolationCount) ?? string.Empty;
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.IsNullOrEmpty(count) ? hint : count + " — " + hint;
+        }
+    }
+
     // ── Clickable status badge (#210) ──────────────────────────────────
 
-    /// <summary>#210: the category's notices — a single warning while stale leaves exist.</summary>
+    /// <summary>#210: the category's notices — rule-violation roll-up (#259,
+    /// Error) plus a single warning while stale leaves exist.</summary>
     [ObservableProperty]
     private IReadOnlyList<StatusNotice> _statusNotices = Array.Empty<StatusNotice>();
 
@@ -107,24 +132,30 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
 
     private void RebuildStatusNotices()
     {
-        if (!HasStale)
+        var list = new List<StatusNotice>(2);
+        if (HasRuleViolations)
         {
-            StatusNotices = Array.Empty<StatusNotice>();
-            return;
+            // #259: Error, listed first — worst severity drives the dialog header.
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Error,
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRuleViolations_Title)
+                    ?? "В категории есть семейства, нарушающие правила",
+                SmartCon.UI.Converters.StatusTooltipText.ForRuleViolationCount(RuleViolationCount) ?? string.Empty));
         }
-
-        StatusNotices =
-        [
-            new StatusNotice(
+        if (HasStale)
+        {
+            list.Add(new StatusNotice(
                 StatusNoticeSeverity.Warning,
                 SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryStale_Title)
                     ?? "В категории есть устаревшие семейства",
-                SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty),
-        ];
+                SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty));
+        }
+        StatusNotices = list;
     }
 
     partial void OnHasStaleChanged(bool value) => RebuildStatusNotices();
     partial void OnStaleCountChanged(int value) => RebuildStatusNotices();
+    partial void OnRuleViolationCountChanged(int value) => RebuildStatusNotices();
 
     /// <summary>
     /// True if this category or any descendant category is collapsed.

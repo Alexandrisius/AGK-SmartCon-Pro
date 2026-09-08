@@ -84,6 +84,8 @@ public sealed partial class FamilyManagerMainViewModel
         // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
         // into the new tree (different catalog items, different versions).
         _staleDetector.InvalidateCache();
+        // #259: compliance verdicts are per-DB too (other items, other rules).
+        _complianceService.InvalidateCache();
         RecomputeActiveBaseMatch();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();

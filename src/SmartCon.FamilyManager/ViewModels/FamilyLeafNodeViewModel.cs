@@ -101,6 +101,47 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private IReadOnlyList<string>? _outdatedDependencyLines;
 
+    // ── Catalog compliance (#259, «Проверить → Правила») ────────────────
+    // Verdict of the last session compliance check: catalog item vs the
+    // effective rules of its category. Deliberately NOT a StaleReason — the
+    // «Обновить» button applies catalog content to the project and cannot
+    // fix a rule violation (the fix is edit + re-import).
+
+    /// <summary>#259: compliance verdict of the session «Проверить → Правила» run.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRuleViolations))]
+    [NotifyPropertyChangedFor(nameof(IsComplianceUnverifiable))]
+    [NotifyPropertyChangedFor(nameof(HasProblemBadge))]
+    [NotifyPropertyChangedFor(nameof(ProblemBadgeTooltip))]
+    [NotifyPropertyChangedFor(nameof(RuleBadgeTooltip))]
+    private ComplianceStatus _complianceStatus = ComplianceStatus.NotChecked;
+
+    /// <summary>#259: number of rule violations of the Fail verdict (drives the notice title).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRuleViolations))]
+    [NotifyPropertyChangedFor(nameof(RuleBadgeTooltip))]
+    private int _ruleViolationCount;
+
+    /// <summary><c>true</c> when the red shield badge is shown (Fail verdict).</summary>
+    public bool HasRuleViolations => ComplianceStatus == ComplianceStatus.Fail && RuleViolationCount > 0;
+
+    /// <summary><c>true</c> when the rules could not be evaluated (no extraction
+    /// data) — rides the existing orange problem triangle, guidance «Обновить базу».</summary>
+    public bool IsComplianceUnverifiable => ComplianceStatus == ComplianceStatus.CannotVerify;
+
+    /// <summary>One-line hint for the red rule-violation shield (the violation
+    /// table lives in the validation report behind the details dialog).</summary>
+    public string RuleBadgeTooltip
+    {
+        get
+        {
+            var count = SmartCon.UI.Converters.StatusTooltipText.ForRuleViolationCount(RuleViolationCount) ?? string.Empty;
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.IsNullOrEmpty(count) ? hint : count + " — " + hint;
+        }
+    }
+
     // ── Clickable status badges (#210) ─────────────────────────────────
     // The leaf shows at most two clickable badges (StatusBadgeButton
     // style): the paperclip (used-as-dependency info) and ONE problem
@@ -112,15 +153,17 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [ObservableProperty]
     private IReadOnlyList<StatusNotice> _statusNotices = Array.Empty<StatusNotice>();
 
-    /// <summary><c>true</c> when the problem triangle is shown (stale and/or outdated nested).</summary>
-    public bool HasProblemBadge => IsStale || HasOutdatedDependencies;
+    /// <summary><c>true</c> when the problem triangle is shown (stale, outdated
+    /// nested and/or unverifiable rules — #259 CannotVerify rides the same
+    /// warning badge; Fail has its own red shield).</summary>
+    public bool HasProblemBadge => IsStale || HasOutdatedDependencies || IsComplianceUnverifiable;
 
     /// <summary>One-line hint for the problem triangle (full texts live in the details dialog).</summary>
     public string ProblemBadgeTooltip
     {
         get
         {
-            var parts = new List<string>(2);
+            var parts = new List<string>(3);
             if (IsStale)
             {
                 parts.Add(SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Stale)
@@ -130,6 +173,11 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
             {
                 parts.Add(SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_OutdatedDeps_Short)
                     ?? "Устарели вложенные");
+            }
+            if (IsComplianceUnverifiable)
+            {
+                parts.Add(SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_RulesUnverifiable_Short)
+                    ?? "Нет данных для правил");
             }
             var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
                 ?? "Нажмите для подробностей";
@@ -173,6 +221,34 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
                     "Откройте семейство, перетащите актуальные вложенные версии из каталога и переимпортируйте его с новой версией."),
                 OutdatedDependencyLines));
         }
+        if (HasRuleViolations)
+        {
+            // #259: Error — the import gate would block this family today; the
+            // fix is edit + re-import, NOT «Обновить» (that applies catalog
+            // content to the project and cannot repair a rule violation).
+            var title = RuleViolationCount == 1
+                ? Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_RuleViolations_TitleOne,
+                    "Не соответствует правилам категории (1 нарушение)")
+                : string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_RuleViolations_TitleMany,
+                        "Не соответствует правилам категории ({0} нарушений)"),
+                    RuleViolationCount);
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Error,
+                title,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_RuleViolations_Guidance,
+                    "Исправьте семейство и импортируйте новую версию — гейт импорта перевалидирует его по действующим правилам.")));
+        }
+        if (IsComplianceUnverifiable)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_RuleCannotVerify_Title,
+                    "Правила нельзя проверить: нет данных атрибутов"),
+                Loc(SmartCon.UI.StringLocalization.Keys.FM_Notice_RuleCannotVerify_Guidance,
+                    "Выполните «Обновить базу», чтобы извлечь атрибуты, и повторите проверку.")));
+        }
         if (IsDependencyReferenced)
         {
             list.Add(new StatusNotice(
@@ -192,6 +268,8 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     partial void OnDependencyReferencedLinesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
     partial void OnHasOutdatedDependenciesChanged(bool value) => RebuildStatusNotices();
     partial void OnOutdatedDependencyLinesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
+    partial void OnComplianceStatusChanged(ComplianceStatus value) => RebuildStatusNotices();
+    partial void OnRuleViolationCountChanged(int value) => RebuildStatusNotices();
 
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,

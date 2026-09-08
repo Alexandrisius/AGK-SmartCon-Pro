@@ -405,6 +405,8 @@ public sealed partial class FamilyManagerMainViewModel
     {
         CheckCategoryCommand.NotifyCanExecuteChanged();
         CheckFamilyCommand.NotifyCanExecuteChanged();
+        CheckCategoryRulesCommand.NotifyCanExecuteChanged();
+        CheckFamilyRulesCommand.NotifyCanExecuteChanged();
         UpdateCategoryOverwriteParamsCommand.NotifyCanExecuteChanged();
         UpdateCategoryKeepParamsCommand.NotifyCanExecuteChanged();
     }
@@ -426,6 +428,15 @@ public sealed partial class FamilyManagerMainViewModel
     internal async Task RunPostImportStaleCheckAsync(IReadOnlyList<ImportedCatalogItem> items)
     {
         if (items.Count == 0) return;
+        // #259: the imported versions just passed the import gate (validated on
+        // entry) — their previous compliance verdicts are outdated. Drop them
+        // BEFORE the concurrency guard: invalidation must happen even when a
+        // check is already running and the stale cycle below is skipped.
+        _complianceService.InvalidateItems(
+            items.Select(i => i.CatalogItemId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
         // M1 (review): the cycle must hold the same guard as a manual Check —
         // otherwise a concurrent "Обновить"/"Проверить" would race the merge
         // and a stale badge could land on a just-updated family.

@@ -148,3 +148,51 @@ public interface ICategoryChangeGateService
 при этом сервис уже показал пользователю диалог (отчёт о нарушениях или
 нотис об отсутствии данных экстракции), вызывающий код просто прерывает
 операцию.
+
+---
+
+## ICatalogComplianceService
+
+Комплаенс-проверка каталога (#259, ADR-074, «Проверить → Правила»):
+перевалидирует СОХРАНЁННЫЕ элементы каталога против ТЕКУЩИХ effective-правил
+их категории. Pure SQLite + pure `IFamilyValidationEngine` — без Revit API,
+без открытого документа, работает офлайн и покрывает элементы, которых нет
+в проекте (в отличие от stale-проверки). Семантика намеренно отделена от
+`IStaleDetector`: staleness = проект vs каталог (лечится «Обновить»),
+комплаенс = каталог vs правила (лечится правкой семейства и переимпортом —
+гейт импорта перевалидирует на входе).
+
+**Файл:** `Services/Interfaces/ICatalogComplianceService.cs`
+**Реализация:** `SmartCon.FamilyManager/Services/Validation/CatalogComplianceService.cs`
+
+```csharp
+public interface ICatalogComplianceService
+{
+    Task<IReadOnlyList<ComplianceCheckResult>> CheckCategoriesAsync(
+        IReadOnlyList<string> categoryIds,
+        IProgress<ComplianceCheckProgress>? progress = null,
+        CancellationToken ct = default);
+
+    Task<ComplianceCheckResult> CheckItemAsync(string catalogItemId, CancellationToken ct = default);
+
+    CatalogComplianceSnapshot? GetCachedSnapshot();
+    CatalogComplianceSnapshot GetMergedSnapshot(IReadOnlyList<ComplianceCheckResult> newResults);
+    void InvalidateCache();
+    void InvalidateItems(IReadOnlyCollection<string> catalogItemIds);
+}
+```
+
+- `CheckCategoriesAsync` — проверяет все элементы переданных категорий (вызов
+  разворачивает поддерево; синтетический id `"__no_category__"` выбирает
+  элементы без категории — контракт `IStaleDetector.CheckCategoryAsync`).
+  Effective-правила резолвятся ОДИН раз на категорию за прогон (кэш).
+  Результаты сливаются в сессионный снимок.
+- `CheckItemAsync` — одиночный элемент против правил ЕГО категории;
+  отсутствующий элемент даёт `CannotVerify`.
+- `GetMergedSnapshot` — снимок, сложенный с новыми результатами (контракт
+  merge-без-мутации как у `IStaleDetector`); холодный кэш стартует с пустого
+  снимка, никогда не silent no-op.
+- `InvalidateCache` — полный сброс: правки правил (сервис сам подписан на
+  `IFamilyManagerMetadataMediator.MetadataChanged`), смена БД, «Обновить базу».
+- `InvalidateItems` — сброс вердиктов конкретных элементов (реимпорт: новая
+  версия уже прошла гейт импорта).

@@ -468,6 +468,104 @@ public sealed class StatusBadgeNoticeTests
         Assert.Empty(category.StatusNotices);
     }
 
+    // ---- Catalog compliance notices (#259, «Проверить → Правила») ----
+
+    [Fact]
+    public void Leaf_RuleViolations_ErrorNoticeAndShieldBadge()
+    {
+        var leaf = CreateLeaf();
+        Assert.False(leaf.HasRuleViolations);
+        Assert.Empty(leaf.StatusNotices);
+
+        leaf.RuleViolationCount = 3;
+        leaf.ComplianceStatus = ComplianceStatus.Fail;
+
+        Assert.True(leaf.HasRuleViolations);
+        // The red shield is a separate badge — the orange problem triangle
+        // (stale / outdated nested / unverifiable) stays off for a pure Fail.
+        Assert.False(leaf.HasProblemBadge);
+        Assert.NotEmpty(leaf.RuleBadgeTooltip);
+        var notice = Assert.Single(leaf.StatusNotices);
+        Assert.Equal(StatusNoticeSeverity.Error, notice.Severity);
+        Assert.Contains("3", notice.Title);
+        Assert.NotEmpty(notice.Explanation!);
+    }
+
+    [Fact]
+    public void Leaf_RuleCannotVerify_WarningNoticeRidesProblemTriangle()
+    {
+        var leaf = CreateLeaf();
+
+        leaf.ComplianceStatus = ComplianceStatus.CannotVerify;
+
+        Assert.False(leaf.HasRuleViolations);
+        Assert.True(leaf.IsComplianceUnverifiable);
+        Assert.True(leaf.HasProblemBadge);
+        Assert.Contains("Нет данных", leaf.ProblemBadgeTooltip);
+        var notice = Assert.Single(leaf.StatusNotices);
+        Assert.Equal(StatusNoticeSeverity.Warning, notice.Severity);
+        Assert.NotEmpty(notice.Explanation!);
+    }
+
+    [Fact]
+    public void Leaf_CompliancePass_NoNotices()
+    {
+        var leaf = CreateLeaf();
+
+        leaf.ComplianceStatus = ComplianceStatus.Pass;
+
+        Assert.Empty(leaf.StatusNotices);
+        Assert.False(leaf.HasRuleViolations);
+        Assert.False(leaf.HasProblemBadge);
+    }
+
+    [Fact]
+    public void Leaf_StalePlusRuleViolations_BothNoticesCoexist()
+    {
+        var leaf = CreateLeaf();
+        leaf.IsStale = true;
+        leaf.StaleReason = StaleReason.VersionMismatch;
+        leaf.RuleViolationCount = 1;
+        leaf.ComplianceStatus = ComplianceStatus.Fail;
+
+        // The two verdict models never mix into one notice: stale = Warning
+        // (fixed by «Обновить»), rule violation = Error (fixed by re-import).
+        Assert.Equal(2, leaf.StatusNotices.Count);
+        Assert.Contains(leaf.StatusNotices, n => n.Severity == StatusNoticeSeverity.Warning);
+        Assert.Contains(leaf.StatusNotices, n => n.Severity == StatusNoticeSeverity.Error);
+        Assert.True(leaf.HasProblemBadge);
+        Assert.True(leaf.HasRuleViolations);
+    }
+
+    [Fact]
+    public void Category_RuleViolationCount_ErrorNoticeBeforeStaleWarning()
+    {
+        var category = new CategoryNodeViewModel("cat1", "Фланцы", null, "Фланцы");
+
+        category.HasStale = true;
+        category.StaleCount = 2;
+        category.RuleViolationCount = 1;
+
+        Assert.Equal(2, category.StatusNotices.Count);
+        Assert.Equal(StatusNoticeSeverity.Error, category.StatusNotices[0].Severity);
+        Assert.Equal(StatusNoticeSeverity.Warning, category.StatusNotices[1].Severity);
+        Assert.True(category.HasRuleViolations);
+        Assert.NotEmpty(category.RuleViolationBadgeTooltip);
+    }
+
+    [Fact]
+    public void Category_RuleViolationsCleared_NoticeGone()
+    {
+        var category = new CategoryNodeViewModel("cat1", "Фланцы", null, "Фланцы");
+        category.RuleViolationCount = 2;
+        Assert.True(category.HasRuleViolations);
+
+        category.RuleViolationCount = 0;
+
+        Assert.False(category.HasRuleViolations);
+        Assert.Empty(category.StatusNotices);
+    }
+
     [Fact]
     public void TypeNode_DotTooltip_FollowsPresenceState()
     {

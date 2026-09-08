@@ -190,4 +190,10 @@ public sealed record FamilyManagerServices(
     /// — the import executors persist them from the mini extraction
     /// (<c>SegmentRuleWriter</c>).
     /// </summary>
-    ISegmentRuleRepository SegmentRuleRepository);
+    ISegmentRuleRepository SegmentRuleRepository,
+    /// <summary>
+    /// #259: catalog compliance check («Проверить → Правила») — catalog items
+    /// vs the effective validation rules of their category. Pure SQLite +
+    /// pure engine (no Revit, no open document); session snapshot of verdicts.
+    /// </summary>
+    ICatalogComplianceService ComplianceService);

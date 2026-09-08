@@ -252,6 +252,10 @@ public sealed partial class FamilyManagerMainViewModel
 
         await _updateState.UpdateAsync().ConfigureAwait(true);
 
+        // #259: actualization backfills extraction data (attributes-v1) —
+        // «нет данных для правил» verdicts are outdated, drop the snapshot.
+        _complianceService.InvalidateCache();
+
         // Migrations may have purged catalog rows or re-written
         // types/attributes/hashes — rebuild the tree to reflect the final
         // state.
@@ -274,6 +278,9 @@ public sealed partial class FamilyManagerMainViewModel
         var proceeded = await _updateState.EnsureUpToDateAsync().ConfigureAwait(true);
         if (proceeded && !_updateState.IsUpdateRequired)
         {
+            // #259: the update backfills extraction data — compliance verdicts
+            // (especially CannotVerify) are outdated.
+            _complianceService.InvalidateCache();
             // The user just completed the update — the catalog content may
             // have changed (purge / hash re-sync), so rebuild the tree.
             await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);

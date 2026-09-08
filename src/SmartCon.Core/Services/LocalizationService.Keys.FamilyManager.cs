@@ -154,6 +154,12 @@ public static partial class LocalizationService
         ru["FM_Diff_Section_VALUES"] = "Значения параметров"; en["FM_Diff_Section_VALUES"] = "Parameter values";
         ru["FM_UpdateBatchAllStale"] = "Пакетное обновление всех устаревших"; en["FM_UpdateBatchAllStale"] = "Batch update all stale";
         ru["FM_Check"] = "Проверить"; en["FM_Check"] = "Check";
+        // #259: «Проверить» submenu — two independent checks (staleness = project vs
+        // catalog, rules = catalog vs the category's effective validation rules)
+        ru["FM_Check_Staleness"] = "Актуальность"; en["FM_Check_Staleness"] = "Staleness";
+        ru["FM_Check_Rules"] = "Правила"; en["FM_Check_Rules"] = "Rules";
+        ru["FM_RuleCheckInProgress"] = "Проверка правил…"; en["FM_RuleCheckInProgress"] = "Checking rules…";
+        ru["FM_RuleCheck_ProgressFormat"] = "Проверка правил {0} из {1} — {2}"; en["FM_RuleCheck_ProgressFormat"] = "Rule check {0} of {1} — {2}";
         ru["FM_Stale"] = "Устарело"; en["FM_Stale"] = "Stale";
         ru["FM_StaleTooltipNone"] = "Актуальная версия"; en["FM_StaleTooltipNone"] = "Up to date";
         ru["FM_PresenceTooltipNotInProject"] = "Тип не загружен в активный проект"; en["FM_PresenceTooltipNotInProject"] = "Type is not loaded in the active project";
@@ -566,6 +572,18 @@ public static partial class LocalizationService
         ru["FM_Notice_CrossName_Body"] = "Содержимое совпадает, хотя имя файла другое. «Сделать активной» — файл не импортируется, активируется найденная версия. «Новая версия» — семейство будет переименовано в имя этого файла."; en["FM_Notice_CrossName_Body"] = "The content matches although the file name differs. \"Make Active\" — the file is not imported; the matched version is activated. \"New Version\" — the family will be renamed to this file's name.";
         ru["FM_Notice_DependencyRef_Guard"] = "Семейство нельзя удалить из каталога, пока оно используется как зависимость."; en["FM_Notice_DependencyRef_Guard"] = "The family cannot be deleted from the catalog while it is used as a dependency.";
         ru["FM_Notice_OutdatedDeps_Guidance"] = "Откройте семейство, перетащите актуальные вложенные версии из каталога и переимпортируйте его с новой версией."; en["FM_Notice_OutdatedDeps_Guidance"] = "Open the family, drag the up-to-date nested versions from the catalog into it and re-import it as a new version.";
+
+        // Catalog compliance (#259, «Проверить → Правила»)
+        ru["FM_StatusDetails_ActionsMenu"] = "Действия"; en["FM_StatusDetails_ActionsMenu"] = "Actions";
+        ru["FM_Badge_RulesUnverifiable_Short"] = "Нет данных для правил"; en["FM_Badge_RulesUnverifiable_Short"] = "No rule data";
+        ru["FM_RuleViolationsCountOne"] = "1 нарушение правил"; en["FM_RuleViolationsCountOne"] = "1 rule violation";
+        ru["FM_RuleViolationsCountMany"] = "{0} нарушений правил"; en["FM_RuleViolationsCountMany"] = "{0} rule violations";
+        ru["FM_Notice_RuleViolations_TitleOne"] = "Не соответствует правилам категории (1 нарушение)"; en["FM_Notice_RuleViolations_TitleOne"] = "Violates category rules (1 violation)";
+        ru["FM_Notice_RuleViolations_TitleMany"] = "Не соответствует правилам категории ({0} нарушений)"; en["FM_Notice_RuleViolations_TitleMany"] = "Violates category rules ({0} violations)";
+        ru["FM_Notice_RuleViolations_Guidance"] = "Исправьте семейство и импортируйте новую версию — гейт импорта перевалидирует его по действующим правилам."; en["FM_Notice_RuleViolations_Guidance"] = "Fix the family and import a new version — the import gate revalidates it against the current rules.";
+        ru["FM_Notice_RuleCannotVerify_Title"] = "Правила нельзя проверить: нет данных атрибутов"; en["FM_Notice_RuleCannotVerify_Title"] = "Cannot verify rules: no attribute data";
+        ru["FM_Notice_RuleCannotVerify_Guidance"] = "Выполните «Обновить базу», чтобы извлечь атрибуты, и повторите проверку."; en["FM_Notice_RuleCannotVerify_Guidance"] = "Run 'Update database' to extract the attributes, then repeat the check.";
+        ru["FM_Notice_CategoryRuleViolations_Title"] = "В категории есть семейства, нарушающие правила"; en["FM_Notice_CategoryRuleViolations_Title"] = "Category has families violating rules";
 
         // Validation Report dialog
         ru["FM_ValidationReport_Title"] = "Отчёт о проверке"; en["FM_ValidationReport_Title"] = "Validation Report";

@@ -106,6 +106,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IFamilyHealthChecker, RevitFamilyHealthChecker>();
         services.AddSingleton<IFamilyImportValidationService, SmartCon.FamilyManager.Services.Validation.FamilyImportValidationService>();
         services.AddSingleton<ICategoryChangeGateService, SmartCon.FamilyManager.Services.Validation.CategoryChangeGateService>();
+        // #259: catalog compliance check («Проверить → Правила») — pure SQLite,
+        // session snapshot invalidated via IFamilyManagerMetadataMediator.
+        services.AddSingleton<ICatalogComplianceService, SmartCon.FamilyManager.Services.Validation.CatalogComplianceService>();
 
         // --- Chain (Phase 7) ---
         services.AddSingleton<IElementChainIterator, ElementChainIterator>();

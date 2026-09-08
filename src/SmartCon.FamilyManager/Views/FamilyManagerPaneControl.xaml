@@ -750,11 +750,23 @@
                                   Style="{StaticResource ModernMenuItem}" />
                     </MenuItem>
 
+                    <!-- #259: «Проверить» = две независимые логики — «Актуальность»
+                         (проект vs каталог, существующая stale-проверка) и «Правила»
+                         (каталог vs актуальные правила категории, pure DB — открытый
+                         проект не нужен). Вердикты принципиально не смешиваются. -->
                     <MenuItem Header="{loc:Loc FM_Check}"
-                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                              Command="{Binding CheckCategoryCommand}"
-                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
-                              Style="{StaticResource ModernMenuItem}" />
+                              Style="{StaticResource ModernMenuItem}">
+                        <MenuItem Header="{loc:Loc FM_Check_Staleness}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  Command="{Binding CheckCategoryCommand}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_Check_Rules}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  Command="{Binding CheckCategoryRulesCommand}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
                 </ContextMenu>
 
                 <ContextMenu x:Key="FamilyLeafNodeContextMenu" Style="{StaticResource ModernContextMenu}"
@@ -827,11 +839,22 @@
                             </Style>
                         </MenuItem.Style>
                     </MenuItem>
+                    <!-- #259: «Проверить» = подменю из двух независимых проверок
+                         (см. CategoryNodeContextMenu): «Актуальность» требует
+                         открытый проект, «Правила» — pure DB, работает офлайн. -->
                     <MenuItem Header="{loc:Loc FM_Check}"
-                              Command="{Binding CheckFamilyCommand}"
-                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                              behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
-                              Style="{StaticResource ModernMenuItem}" />
+                              Style="{StaticResource ModernMenuItem}">
+                        <MenuItem Header="{loc:Loc FM_Check_Staleness}"
+                                  Command="{Binding CheckFamilyCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                        <MenuItem Header="{loc:Loc FM_Check_Rules}"
+                                  Command="{Binding CheckFamilyRulesCommand}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  behaviors:MenuItemCommandParameterRequery.RequeryOnChange="True"
+                                  Style="{StaticResource ModernMenuItem}" />
+                    </MenuItem>
                     <MenuItem Header="{loc:Loc FM_Properties}"
                               Command="{Binding OpenPropertiesCommand}"
                               Style="{StaticResource ModernMenuItem}" />
@@ -944,6 +967,18 @@
                                     Visibility="{Binding HasStale, Converter={StaticResource BoolToVis}}">
                                 <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
                                                             Foreground="{DynamicResource WarningBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
+                            <!-- #259: rule-violation roll-up — red shield, own color/icon
+                                 separate from the stale orange (#210 StatusBadgeButton canon) -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding RuleViolationBadgeTooltip}"
+                                    Visibility="{Binding HasRuleViolations, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="ShieldAlertOutline"
+                                                            Foreground="{DynamicResource DangerBrush}"
                                                             Width="11" Height="11"/>
                             </Button>
                             <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
@@ -1070,6 +1105,19 @@
                                     Visibility="{Binding HasProblemBadge, Converter={StaticResource BoolToVis}}">
                                 <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
                                                             Foreground="{DynamicResource WarningBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
+
+                            <!-- #259: rule-violation badge — red shield (Fail verdict of
+                                 «Проверить → Правила»), separate from the stale orange -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding RuleBadgeTooltip}"
+                                    Visibility="{Binding HasRuleViolations, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="ShieldAlertOutline"
+                                                            Foreground="{DynamicResource DangerBrush}"
                                                             Width="11" Height="11"/>
                             </Button>
 
