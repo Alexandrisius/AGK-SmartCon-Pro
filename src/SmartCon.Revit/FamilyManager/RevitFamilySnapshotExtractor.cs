@@ -372,6 +372,21 @@ public sealed class RevitFamilySnapshotExtractor : IFamilySnapshotExtractor
         if (familyName.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
             familyName = familyName[..^4];
 
+        // View-specific (annotation/detail) families never display in 3D
+        // views — skip before the expensive per-type loop (type switch +
+        // implicit regeneration, ~3 s/type on a title block with 13 nested
+        // annotation instances). Callers treat the empty result as "no
+        // extractable geometry": the pipeline writes the terminal
+        // glb_state=-1 marker (#157), so detection never stays pending.
+        var rootCategory = familyDoc.OwnerFamily?.FamilyCategory;
+        if (RevitFamilyGeometryExtractor.IsViewSpecificPreviewCategory(rootCategory))
+        {
+            SmartConLogger.Info(
+                $"ExtractGeometryPerType: '{familyName}' is a view-specific family " +
+                $"(category '{rootCategory!.Name}') — 3D preview not applicable, extraction skipped");
+            return result;
+        }
+
         var fm = familyDoc.FamilyManager;
         var typeCount = fm.Types.Size;
 

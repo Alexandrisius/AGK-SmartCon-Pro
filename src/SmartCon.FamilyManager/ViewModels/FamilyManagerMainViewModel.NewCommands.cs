@@ -23,6 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (category is null) return;
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -35,8 +36,9 @@ public sealed partial class FamilyManagerMainViewModel
             var subCategoryIds = ExpandCategorySubtree(category);
 
             var doc = _revitContext.GetDocument();
+            var progress = new Progress<StaleCheckProgress>(OnStaleCheckProgress);
             var results = await _staleDetector.CheckCategoryAsync(
-                subCategoryIds, doc, CancellationToken.None)
+                subCategoryIds, doc, CancellationToken.None, progress)
                 .ConfigureAwait(true);
 
             await ApplyStaleResultsToTreeAsync(results, CancellationToken.None).ConfigureAwait(true);
@@ -67,8 +69,23 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            ResetProgress();
             NotifyCheckCommands();
         }
+    }
+
+    /// <summary>
+    /// Per-family feed of <see cref="IStaleDetector.CheckCategoryAsync"/> —
+    /// renders the pane progress bar + «Проверка X из Y — имя» status text.
+    /// <see cref="Progress{T}"/> marshals the callback to the UI context.
+    /// </summary>
+    private void OnStaleCheckProgress(StaleCheckProgress p)
+    {
+        StaleCheckMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheck_ProgressFormat)
+                ?? "Проверка {0} из {1} — {2}",
+            p.Completed, p.Total, p.CurrentFamilyName);
+        ReportProgress(p.Completed, p.Total);
     }
 
     private static IReadOnlyList<string> ExpandCategorySubtree(CategoryNodeViewModel root)
@@ -100,6 +117,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (family is null) return;
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -179,6 +197,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            ResetProgress();
             NotifyCheckCommands();
         }
     }
@@ -216,6 +235,7 @@ public sealed partial class FamilyManagerMainViewModel
             $"UpdateCategoryStaleAsync START: IsStaleCheckInProgress=true (was false). " +
             $"CategoryId={category.CategoryId}, Overwrite={overwriteParameterValues}");
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdateInProgress);
+        BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -262,7 +282,11 @@ public sealed partial class FamilyManagerMainViewModel
             var request = new StaleUpdateRequest(staleIdsInSubtree, overwriteParameterValues);
             var progress = new Progress<StaleBatchUpdateProgress>(p =>
             {
-                StaleCheckMessage = $"{p.Completed}/{p.Total}: {p.CurrentFamilyName}";
+                StaleCheckMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdate_ProgressFormat)
+                        ?? "Обновление {0} из {1} — {2}",
+                    p.Completed, p.Total, p.CurrentFamilyName);
+                ReportProgress(p.Completed, p.Total);
             });
 
             var result = await _staleUpdater.UpdateBatchAsync(request, progress, CancellationToken.None)
@@ -298,6 +322,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            ResetProgress();
             NotifyCheckCommands();
         }
     }
@@ -415,6 +440,7 @@ public sealed partial class FamilyManagerMainViewModel
         // message must be non-null, otherwise the user sees a blank bar and
         // disabled commands with no reason.
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        BeginProgress();
         using var _scope = SmartConLogger.BeginScope(
             "StaleDetection",
             ("Method", nameof(RunPostImportStaleCheckAsync)),
@@ -436,8 +462,19 @@ public sealed partial class FamilyManagerMainViewModel
 
             var results = new List<StaleCheckResult>();
             var seenItemIds = new HashSet<string>(StringComparer.Ordinal);
+            var total = items.Count;
+            var done = 0;
             foreach (var item in items)
             {
+                // The bar advances on EVERY batch row (including duplicate
+                // skips) so the progress stays monotonic for the user.
+                done++;
+                StaleCheckMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheck_ProgressFormat)
+                        ?? "Проверка {0} из {1} — {2}",
+                    done, total, item.DisplayName);
+                ReportProgress(done, total);
+
                 // L3 (review): the batch may carry two rows for one catalog
                 // item (cross-name duplicate + MakeActive) — check it once.
                 if (!seenItemIds.Add(item.CatalogItemId)) continue;
@@ -492,6 +529,7 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            ResetProgress();
             NotifyCheckCommands();
         }
     }

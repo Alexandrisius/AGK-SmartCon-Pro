@@ -187,6 +187,25 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
                     conn.Name, conn.Path);
+                // A freshly created database is up to date by construction,
+                // but the singleton update-state may still carry the
+                // PREVIOUS database's verdict (critical banner + write gate
+                // stuck on the new empty DB). ActiveDatabaseChanged is
+                // detached for this branch and OnSelectedConnectionChanged
+                // early-returns (the new DB is already active) — recompute
+                // explicitly, same contract as Switch/ConnectDatabaseAsync.
+                // Isolated: a refresh failure must not mask the successful
+                // creation with the error dialog.
+                try
+                {
+                    await RefreshDatabaseUpdateStateAsync();
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"DbMigration: update-state refresh after database creation failed: {ex.Message} " +
+                        "[Action: переключите базу туда-обратно — состояние баннера пересчитается]");
+                }
             }
             finally
             {
@@ -249,6 +268,19 @@ public sealed partial class FamilyManagerMainViewModel
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Project database \"{0}\" created at {1}",
                     conn.Name, conn.Path);
+                // Same contract as CreateGeneralDatabaseAsync: the singleton
+                // update-state must be recomputed for the freshly created
+                // database (the switch/create event handler is detached here).
+                try
+                {
+                    await RefreshDatabaseUpdateStateAsync();
+                }
+                catch (Exception ex)
+                {
+                    SmartConLogger.Warn(
+                        $"DbMigration: update-state refresh after database creation failed: {ex.Message} " +
+                        "[Action: переключите базу туда-обратно — состояние баннера пересчитается]");
+                }
             }
             finally
             {

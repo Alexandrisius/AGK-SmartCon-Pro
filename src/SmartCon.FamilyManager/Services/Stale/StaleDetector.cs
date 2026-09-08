@@ -159,7 +159,8 @@ internal sealed class StaleDetector : IStaleDetector
     public async Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
         IReadOnlyList<string>? categoryIds,
         Document doc,
-        CancellationToken ct)
+        CancellationToken ct,
+        IProgress<StaleCheckProgress>? progress = null)
     {
         var scopeCategoryIds = categoryIds is null
             ? "<all>"
@@ -221,16 +222,20 @@ internal sealed class StaleDetector : IStaleDetector
         var results = new List<StaleCheckResult>();
         var targetRevit = ResolveTargetRevit();
 
+        var loadableDone = 0;
         if (loadableItems.Count > 0)
         {
-            var loadableResults = await CheckLoadableItemsAsync(loadableItems, doc, targetRevit, ct)
+            var loadableResults = await CheckLoadableItemsAsync(
+                    loadableItems, doc, targetRevit, progress, systemItems.Count, ct)
                 .ConfigureAwait(true);
             results.AddRange(loadableResults);
+            loadableDone = loadableResults.Count;
         }
 
         if (systemItems.Count > 0)
         {
-            var systemResults = await CheckSystemItemsAsync(systemItems, doc, targetRevit, ct)
+            var systemResults = await CheckSystemItemsAsync(
+                    systemItems, doc, targetRevit, progress, loadableDone, ct)
                 .ConfigureAwait(true);
             results.AddRange(systemResults);
         }
@@ -255,6 +260,8 @@ internal sealed class StaleDetector : IStaleDetector
         IReadOnlyList<FamilyCatalogItem> loadableItems,
         Document doc,
         int targetRevit,
+        IProgress<StaleCheckProgress>? progress,
+        int extraTotal,
         CancellationToken ct)
     {
         // 2) Collect Family element ids from the active document on the Revit thread.
@@ -344,6 +351,11 @@ internal sealed class StaleDetector : IStaleDetector
         // (family hash + per-type hashes; a cached null-field entry is a
         // cached "indeterminate").
         var fileProofCache = new Dictionary<string, EmbeddedContentVerifier.FileProof>(StringComparer.OrdinalIgnoreCase);
+        // Pane progress bar feed: one report per verified family; Total
+        // includes the system items queued after this phase (extraTotal) so
+        // the bar spans the whole CheckCategoryAsync run.
+        var progressTotal = matched.Count + extraTotal;
+        var progressDone = 0;
         foreach (var (item, familyName, id) in matched)
         {
             versions.TryGetValue(id, out var loaded);
@@ -362,6 +374,9 @@ internal sealed class StaleDetector : IStaleDetector
                 loaded?.VersionLabel,
                 reason != StaleReason.None,
                 reason));
+
+            progressDone++;
+            progress?.Report(new StaleCheckProgress(progressDone, progressTotal, familyName));
 
             if (reasonCounter.ShouldLog())
             {
@@ -979,6 +994,8 @@ internal sealed class StaleDetector : IStaleDetector
         IReadOnlyList<FamilyCatalogItem> systemItems,
         Document doc,
         int targetRevit,
+        IProgress<StaleCheckProgress>? progress,
+        int doneOffset,
         CancellationToken ct)
     {
         var typeNamesByItem = await _typeRepository
@@ -1121,6 +1138,8 @@ internal sealed class StaleDetector : IStaleDetector
         }
 
         var results = new List<StaleCheckResult>(matched.Count);
+        var sysProgressTotal = doneOffset + matched.Count;
+        var sysProgressDone = 0;
         foreach (var (item, typeIds) in matched)
         {
             var itemMarkers = typeIds
@@ -1141,6 +1160,9 @@ internal sealed class StaleDetector : IStaleDetector
                 loadedLabel,
                 isStale,
                 reason));
+
+            sysProgressDone++;
+            progress?.Report(new StaleCheckProgress(doneOffset + sysProgressDone, sysProgressTotal, item.Name));
         }
 
         // #187: per-type stale map — one verdict per (family, name) type so

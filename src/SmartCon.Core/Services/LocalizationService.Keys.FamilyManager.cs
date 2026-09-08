@@ -171,6 +171,8 @@ public static partial class LocalizationService
         ru["FM_ParametersPorted"] = "; добавлены параметры: {0}"; en["FM_ParametersPorted"] = "; added parameters: {0}";
         ru["FM_StaleCheckInProgress"] = "Проверка…"; en["FM_StaleCheckInProgress"] = "Checking…";
         ru["FM_StaleUpdateInProgress"] = "Обновление…"; en["FM_StaleUpdateInProgress"] = "Updating…";
+        ru["FM_StaleCheck_ProgressFormat"] = "Проверка {0} из {1} — {2}"; en["FM_StaleCheck_ProgressFormat"] = "Checking {0} of {1} — {2}";
+        ru["FM_StaleUpdate_ProgressFormat"] = "Обновление {0} из {1} — {2}"; en["FM_StaleUpdate_ProgressFormat"] = "Updating {0} of {1} — {2}";
         ru["FM_StaleCategoryTooltipOne"] = "1 устаревшее семейство"; en["FM_StaleCategoryTooltipOne"] = "1 stale family";
         ru["FM_StaleCategoryTooltipMany"] = "{0} устаревших семейств"; en["FM_StaleCategoryTooltipMany"] = "{0} stale families";
         ru["FM_UnavailableTooltipDeprecated"] = "Неактуальное семейство — загрузка в проект запрещена. Вернуть в работу: Свойства → Статус «Актуальное»."; en["FM_UnavailableTooltipDeprecated"] = "Family is deprecated — loading into the project is not allowed. To restore: Properties → Status 'Current'.";

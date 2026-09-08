@@ -686,6 +686,8 @@ public static class StringLocalization
         public const string FM_ParametersPorted = "FM_ParametersPorted";
         public const string FM_StaleCheckInProgress = "FM_StaleCheckInProgress";
         public const string FM_StaleUpdateInProgress = "FM_StaleUpdateInProgress";
+        public const string FM_StaleCheck_ProgressFormat = "FM_StaleCheck_ProgressFormat";
+        public const string FM_StaleUpdate_ProgressFormat = "FM_StaleUpdate_ProgressFormat";
         public const string FM_StaleCategoryTooltipOne = "FM_StaleCategoryTooltipOne";
         public const string FM_StaleCategoryTooltipMany = "FM_StaleCategoryTooltipMany";
         public const string FM_UnavailableTooltipDeprecated = "FM_UnavailableTooltipDeprecated";
