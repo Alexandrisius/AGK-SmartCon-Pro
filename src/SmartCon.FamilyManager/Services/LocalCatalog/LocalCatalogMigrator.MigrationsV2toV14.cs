@@ -1,0 +1,441 @@
+using System.IO;
+using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Interfaces;
+
+namespace SmartCon.FamilyManager.Services.LocalCatalog;
+
+public sealed partial class LocalCatalogMigrator
+{
+    private static async Task MigrateV2Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 2) return;
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '2' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV3Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 3) return;
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "category_id", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV3AddCategoryIdColumn;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '3' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV4Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 4) return;
+
+        if (!await TableExistsAsync(connection, "family_types", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyTypes;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateFamilyTypesIndexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '4' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV5Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 5) return;
+
+        if (!await TableExistsAsync(connection, "attribute_presets", ct))
+        {
+            using var createPresetsCmd = connection.CreateCommand();
+            createPresetsCmd.CommandText = FamilyCatalogSql.CreateAttributePresets;
+            await createPresetsCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "attribute_preset_parameters", ct))
+        {
+            using var createParamsCmd = connection.CreateCommand();
+            createParamsCmd.CommandText = FamilyCatalogSql.CreateAttributePresetParameters;
+            await createParamsCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_assets", "is_primary", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV5AddIsPrimaryColumn;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateAttributePresetsIndexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '5' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV6Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 6) return;
+
+        if (!await TableExistsAsync(connection, "attribute_definitions", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateAttributeDefinitions;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "category_attribute_bindings", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateCategoryAttributeBindings;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "family_data_import_runs", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateFamilyDataImportRuns;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await TableExistsAsync(connection, "extracted_attribute_values", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.CreateExtractedAttributeValues;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "version_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = FamilyCatalogSql.MigrateV6FamilyTypesAddColumns;
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateV6Indexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        await MigrateV6LegacyPresetsAsync(connection, ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '6' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV6LegacyPresetsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        var presetExists = await TableExistsAsync(connection, "attribute_presets", ct);
+        if (!presetExists) return;
+
+        using (var countCmd = connection.CreateCommand())
+        {
+            countCmd.CommandText = "SELECT COUNT(*) FROM attribute_presets";
+            var count = (long)(await countCmd.ExecuteScalarAsync(ct) ?? 0L);
+            if (count == 0) return;
+        }
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            using (var readerCmd = connection.CreateCommand())
+            {
+                readerCmd.CommandText = "SELECT p.id, p.category_id, pp.parameter_name, pp.sort_order FROM attribute_presets p LEFT JOIN attribute_preset_parameters pp ON p.id = pp.preset_id ORDER BY p.id, pp.sort_order";
+                using var reader = await readerCmd.ExecuteReaderAsync(ct);
+
+                var paramMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var bindings = new List<(string CategoryId, string AttributeId, int SortOrder)>();
+
+                while (await reader.ReadAsync(ct))
+                {
+                    var categoryId = reader.IsDBNull(1) ? null : reader.GetString(1);
+                    var paramName = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    var sortOrder = reader.IsDBNull(3) ? 0 : reader.GetInt32(3);
+
+                    if (paramName is null) continue;
+
+                    if (!paramMap.TryGetValue(paramName, out var attrId))
+                    {
+                        attrId = Guid.NewGuid().ToString();
+                        paramMap[paramName] = attrId;
+
+                        using var insertAttr = connection.CreateCommand();
+                        insertAttr.CommandText = "INSERT OR IGNORE INTO attribute_definitions (id, name, is_active, created_at_utc) VALUES (@id, @name, 1, @createdAt)";
+                        insertAttr.Parameters.Add(new SqliteParameter("@id", attrId));
+                        insertAttr.Parameters.Add(new SqliteParameter("@name", paramName));
+                        insertAttr.Parameters.Add(new SqliteParameter("@createdAt", DateTimeOffset.UtcNow.ToString("o")));
+                        await insertAttr.ExecuteNonQueryAsync(ct);
+
+                        using var getIdCmd = connection.CreateCommand();
+                        getIdCmd.CommandText = "SELECT id FROM attribute_definitions WHERE name = @name COLLATE NOCASE";
+                        getIdCmd.Parameters.Add(new SqliteParameter("@name", paramName));
+                        var existingId = await getIdCmd.ExecuteScalarAsync(ct);
+                        if (existingId is not null)
+                            paramMap[paramName] = existingId.ToString()!;
+                    }
+
+                    if (categoryId is not null)
+                        bindings.Add((categoryId, paramMap[paramName], sortOrder));
+                }
+
+                foreach (var (catId, attrId, sortOrder) in bindings)
+                {
+                    using var insertBinding = connection.CreateCommand();
+                    insertBinding.CommandText = "INSERT OR IGNORE INTO category_attribute_bindings (id, category_id, attribute_id, sort_order, is_enabled) VALUES (@id, @catId, @attrId, @sort, 1)";
+                    insertBinding.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString()));
+                    insertBinding.Parameters.Add(new SqliteParameter("@catId", catId));
+                    insertBinding.Parameters.Add(new SqliteParameter("@attrId", attrId));
+                    insertBinding.Parameters.Add(new SqliteParameter("@sort", sortOrder));
+                    await insertBinding.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+        }
+    }
+
+    private static async Task MigrateV7Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 7) return;
+
+        if (!await TableExistsAsync(connection, "db_users", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateDbUsers;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateDbUsersIndexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        if (!await ColumnExistsAsync(connection, "database_meta", "owner_identity", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV7AddOwnerIdentity;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '7' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV9Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 9) return;
+
+        if (!await ColumnExistsAsync(connection, "project_usage", "loaded_version_label", ct))
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = FamilyCatalogSql.MigrateV9AddLoadedVersionLabel;
+            await alterCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '9' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV10Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 10) return;
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.MigrateV10AddFamilyTypesNameIndex;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '10' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV11Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 11) return;
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "family_source", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable'";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "catalog_items", "revit_category", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE catalog_items ADD COLUMN revit_category TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (!await ColumnExistsAsync(connection, "family_types", "type_unique_id", ct))
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "ALTER TABLE family_types ADD COLUMN type_unique_id TEXT";
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var idxCmd = connection.CreateCommand();
+        idxCmd.CommandText = FamilyCatalogSql.CreateV11Indexes;
+        await idxCmd.ExecuteNonQueryAsync(ct);
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '11' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV12Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 12) return;
+
+        // 1. Drop the project_usage lookup index (Phase 23 era).
+        using (var dropIdxCmd = connection.CreateCommand())
+        {
+            dropIdxCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageIndex;
+            await dropIdxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 2. Drop the project_usage table (SSOT is now ExtensibleStorage on .rfa, ADR-030).
+        using (var dropCmd = connection.CreateCommand())
+        {
+            dropCmd.CommandText = FamilyCatalogSql.MigrateV12DropProjectUsageTable;
+            await dropCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // 3. Bump schema version.
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '12' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task MigrateV13Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 13) return;
+
+        if (!await TableExistsAsync(connection, "family_nested_shared_families", ct))
+        {
+            using var createCmd = connection.CreateCommand();
+            createCmd.CommandText = FamilyCatalogSql.CreateFamilyNestedSharedFamilies;
+            await createCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var idxCmd = connection.CreateCommand())
+        {
+            idxCmd.CommandText = FamilyCatalogSql.CreateNestedSharedFamiliesIndexes;
+            await idxCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '13' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// v2.0.0 migration v14: drop sha256/size_bytes columns. SQLite 3.35+
+    /// supports ALTER TABLE DROP COLUMN. We drop each column inside a single
+    /// BEGIN IMMEDIATE transaction so partial state is rolled back on
+    /// failure. Indexes on dropped columns are auto-removed by SQLite.
+    /// </summary>
+    private static async Task MigrateV14Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 14) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            // Idempotent index drops first. Even if the columns are already
+            // gone (idempotent retry), the DROP INDEX IF EXISTS won't fail.
+            using (var idxCmd = connection.CreateCommand())
+            {
+                idxCmd.CommandText = FamilyCatalogSql.MigrateV14DropSha256Indexes;
+                await idxCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            // Drop columns. SQLite allows DROP COLUMN only if the column
+            // exists and is not referenced by FK / PK. None of our columns
+            // are PK or FK targets, so this is safe.
+            if (await ColumnExistsAsync(connection, "family_files", "size_bytes", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN size_bytes";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_files", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_files DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "catalog_versions", "sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE catalog_versions DROP COLUMN sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            if (await ColumnExistsAsync(connection, "family_data_import_runs", "source_sha256", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE family_data_import_runs DROP COLUMN source_sha256";
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.CommandText = "UPDATE schema_info SET value = '14' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info("Migration v14: dropped sha256/size_bytes columns");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    private static async Task MigrateV8Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 8) return;
+
+        if (await IsColumnNotNullAsync(connection, "extracted_attribute_values", "attribute_id", ct))
+        {
+            using var recreateCmd = connection.CreateCommand();
+            recreateCmd.CommandText = FamilyCatalogSql.MigrateV8RecreateExtractedAttributeValues;
+            await recreateCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        using var versionCmd = connection.CreateCommand();
+        versionCmd.CommandText = "UPDATE schema_info SET value = '8' WHERE key = 'schema_version'";
+        await versionCmd.ExecuteNonQueryAsync(ct);
+    }
+}
