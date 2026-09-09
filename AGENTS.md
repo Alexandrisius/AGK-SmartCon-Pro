@@ -37,8 +37,7 @@
 1. **Прочитать обязательные файлы** (в этом порядке):
    - `docs/README.md` — понять контекст проекта
    - `docs/invariants.md` — выучить жёсткие правила I-01..I-17
-   - `docs/architecture/dependency-rule.md` — понять куда класть код
-   - `docs/architecture/solution-structure.md` — понять структуру проектов
+   - `docs/architecture/dependency-rule.md` — понять куда класть код, карту проектов и конвенции файлов (размер/partial)
    - `docs/known-workarounds.md` — проверить, не существует ли уже workaround для этой проблемы
 
 2. **Провести глубокое исследование через Exa**:
