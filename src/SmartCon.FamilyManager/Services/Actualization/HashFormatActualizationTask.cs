@@ -9,8 +9,8 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Actualization;
 
 /// <summary>
-/// CRITICAL actualization task (Id=<c>hash-v21</c>): recalculates stale
-/// (format v1..v20 / NULL) content hashes to the FHV21 format
+/// CRITICAL actualization task (Id=<c>hash-v22</c>): recalculates stale
+/// (format v1..v21 / NULL) content hashes to the FHV22 format
 /// (Issue #159, ADR-056; FHV4 — Issues #184/#179/#190, ADR-065; FHV5 —
 /// wire settings graph, manual test 2026-08-04; FHV6 — deterministic
 /// TYPES ordering tie-breaks, stress test 2026-08-05; FHV7 — duct Shape
@@ -55,9 +55,16 @@ namespace SmartCon.FamilyManager.Services.Actualization;
     /// mini changes the hash and forks a new version («Дубликат» gone);
     /// per-version store <c>family_segment_rules</c> (V38) makes rollback
     /// restore the version's own ranges; fitting rules stay out (World B),
-    /// system META prefix FHV10→FHV11, owner decision 2026-09-01).
+    /// system META prefix FHV10→FHV11, owner decision 2026-09-01;
+    /// FHV22 — wire conductor identity revival on Revit 2026+ (Issue #233):
+    /// the canonical string is unchanged (on ≤2025 the recomputation is
+    /// byte-identical), but the R26 build shipped with the WIRE section
+    /// compile-time dead (<c>WIRE|-|</c>) — the Conductor* port restores
+    /// it, and rows extracted by an R26 host before the port must be
+    /// recomputed. Fleet-wide detection is intentional: the group hash is
+    /// shared across Revit variants and the extracting host is not stored).
     /// Owns the <c>hash_format_version</c> marker
-    /// semantics: NULL/1..20 pending, 21 current, -1/-2 terminal (unreadable /
+    /// semantics: NULL/1..21 pending, 22 current, -1/-2 terminal (unreadable /
     /// missing — never retried).
 /// <para>
 /// Unlike hash-v2, there is NO file-free pass: the FHV3 system canonical
@@ -104,7 +111,7 @@ internal sealed class HashFormatActualizationTask : SqlDetectionActualizationTas
         _compositeComposer = new CompositeFamilyHashComposer(contentHasher);
     }
 
-    public override string Id => "hash-v21";
+    public override string Id => "hash-v22";
     public override int Order => 12;
     public override bool IsCritical => true;
 

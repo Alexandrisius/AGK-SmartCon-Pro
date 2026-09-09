@@ -862,9 +862,11 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
             // Same collision class as the finder (manual test 2026-08-04):
             // a WireMaterialType settings object shares name/family/category
             // with the real WireType — it must never become the Duplicate
-            // prototype on the create path either.
+            // prototype on the create path either (2026+: the Conductor*
+            // replacements are covered by the same filter, #233).
+            var isPhantom = RevitSystemTypeFinder.CreatePhantomFilter(doc);
             return collector.Cast<ElementType>()
-                .Where(t => !RevitSystemTypeFinder.IsElectricalSettingsObject(t))
+                .Where(t => !isPhantom(t))
                 .FirstOrDefault(t =>
                 !string.IsNullOrEmpty(familyKey)
                     ? string.Equals(SystemFamilyKeyResolver.Resolve(t), familyKey, StringComparison.OrdinalIgnoreCase)
@@ -1610,31 +1612,83 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
     }
 
     /// <summary>
-    /// FHV5: sync the wire settings graph — material / temperature rating /
-    /// insulation / max size / conduit / neutral scalars. Resolution order
-    /// follows the ownership chain (revitapidocs): temperature ratings
-    /// belong to the assigned material; insulations and wire sizes belong
-    /// to the assigned rating. A missing material is created from any
+    /// FHV5: sync the wire settings — material / temperature rating /
+    /// insulation / max size / conduit / neutral scalars. On Revit ≤2025 the
+    /// members are an ownership-chain object graph (revitapidocs): temperature
+    /// ratings belong to the assigned material; insulations and wire sizes
+    /// belong to the assigned rating. A missing material is created from any
     /// existing one (same as "Duplicate" in the Revit electrical settings
     /// UI); missing rating/insulation/size/conduit objects are NOT created
     /// (their numeric content — ampacity, diameter — cannot be invented)
-    /// and count as NotConverged with a Warn. Revit 2026 replaced this
-    /// object graph with the Conductor* element model (WireType.WireMaterial/
-    /// TemperatureRating/Insulation became ElementId, MaxSize became string)
-    /// — the conductor members are compile-time disabled there and counted
-    /// as NotConverged with a single Warn; conduit/neutral members still sync.
+    /// and count as NotConverged with a Warn. Revit 2026+ replaced the graph
+    /// with the FLAT Conductor* model (#233, <see cref="RevitConductorCompat"/>):
+    /// every conductor kind is an independent document-level list with a
+    /// Create() factory, so ALL missing conductor members (material/rating/
+    /// insulation/size — the size carrying the source diameter) are created
+    /// by name and the sync fully converges; only the conduit (still
+    /// WireConduitType, no creation API) keeps the find-only degradation.
     /// </summary>
     private int SyncWireSettings(Document doc, Electrical.WireType source, Electrical.WireType target)
     {
         var notConverged = 0;
 
 #if REVIT2026_OR_GREATER
-        // Conductor* port: #233
-        SmartConLogger.Warn(
-            "Wire conductor settings (material/rating/insulation/max size) are not synced on Revit 2026+ " +
-            "(the ElectricalSetting object graph was replaced by the Conductor* model — port pending) " +
-            "[Action: sync them manually in Manage > MEP Settings > Electrical Conductor and Cable Settings]");
-        notConverged += 4;
+        // #233: flat Conductor* model — WireMaterial/TemperatureRating/
+        // Insulation are ElementIds into document-level lists, MaxSize is
+        // the conductor-size NAME. Names are read through the per-kind
+        // statics (the objects are not Element-derived); the source names
+        // come from the SOURCE document, resolution/creation happens in the
+        // target. Empty/invalid source members are no-ops (≤2025 semantics).
+        notConverged += TrySetWireMember("WireMaterial", () =>
+        {
+            var sourceName = RevitConductorCompat.MaterialName(source.Document, source.WireMaterial);
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(
+                    RevitConductorCompat.MaterialName(doc, target.WireMaterial),
+                    sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            target.WireMaterial = RevitConductorCompat.ResolveOrCreateMaterial(doc, sourceName!);
+        });
+
+        notConverged += TrySetWireMember("TemperatureRating", () =>
+        {
+            var sourceName = RevitConductorCompat.TemperatureRatingName(source.Document, source.TemperatureRating);
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(
+                    RevitConductorCompat.TemperatureRatingName(doc, target.TemperatureRating),
+                    sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            target.TemperatureRating = RevitConductorCompat.ResolveOrCreateTemperatureRating(doc, sourceName!);
+        });
+
+        notConverged += TrySetWireMember("Insulation", () =>
+        {
+            var sourceName = RevitConductorCompat.InsulationName(source.Document, source.Insulation);
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(
+                    RevitConductorCompat.InsulationName(doc, target.Insulation),
+                    sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            target.Insulation = RevitConductorCompat.ResolveOrCreateInsulation(doc, sourceName!);
+        });
+
+        notConverged += TrySetWireMember("MaxSize", () =>
+        {
+            var sourceName = source.MaxSize;
+            if (string.IsNullOrEmpty(sourceName)
+                || string.Equals(target.MaxSize, sourceName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // WireType.MaxSize accepts only an EXISTING conductor-size name —
+            // ensure the size first, carrying the source diameter (the
+            // snapshot holds names only; the numeric content lives here).
+            RevitConductorCompat.EnsureConductorSize(
+                doc, sourceName!, RevitConductorCompat.SizeDiameter(source.Document, sourceName));
+            target.MaxSize = sourceName;
+        });
 #else
         notConverged += TrySetWireMember("WireMaterial", () =>
         {
@@ -1745,8 +1799,9 @@ public sealed class SystemTypeSyncService : ISystemTypeSyncService
         {
             SmartConLogger.Warn(
                 $"Wire settings member '{memberName}' rejected: {ex.Message} " +
-                "[Action: see the log; on Revit 2026+ the wire settings graph was replaced by the Conductor* model " +
-                "and this sync does not apply — the remaining members were applied]");
+                "[Action: check the member in the project electrical settings — Manage > MEP Settings > " +
+                "Electrical Conductor and Cable Settings (Revit 2026+) or Electrical Settings > Wiring (≤2025) — " +
+                "and re-run the sync; the remaining members were applied]");
             return 1;
         }
     }

@@ -18,6 +18,7 @@ internal static class AddinManifestWriter
         "2024" => new[] { 2024 },
         "2025" => new[] { 2025 },
         "2026" => new[] { 2026 },
+        "2027" => new[] { 2027 },
         _ => Array.Empty<int>()
     };
 

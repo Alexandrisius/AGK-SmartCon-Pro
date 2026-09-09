@@ -26,7 +26,13 @@ public static class ConnectorExtensions
         foreach (Connector connector in connectorManager.Connectors)
         {
             if (connector.ConnectorType == ConnectorType.End ||
+#if REVIT2027_OR_GREATER
+                // Revit 2027: MasterSurface удалён из enum (deprecated в 2026,
+                // замена MainSurface; в 2021 API MainSurface ещё нет — там MasterSurface)
+                connector.ConnectorType == ConnectorType.MainSurface)
+#else
                 connector.ConnectorType == ConnectorType.MasterSurface)
+#endif
             {
                 result.Add(connector);
             }

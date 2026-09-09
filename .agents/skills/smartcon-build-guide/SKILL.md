@@ -1,6 +1,6 @@
 ---
 name: smartcon-build-guide
-description: "SmartCon Revit plugin build guide. Multi-version build configurations (R19/R21/R24/R25), correct restore/build commands, CI/CD workflow, branch protection. Triggers on: build, deploy, release, compile, dotnet build, configuration. Keywords: SmartCon, Revit, build, deploy, release, R19, R21, R24, R25, net48, net8, restore, CI/CD."
+description: "SmartCon Revit plugin build guide. Multi-version build configurations (R19/R21/R24/R25/R26/R27), correct restore/build commands, CI/CD workflow, branch protection. Triggers on: build, deploy, release, compile, dotnet build, configuration. Keywords: SmartCon, Revit, build, deploy, release, R19, R21, R24, R25, R26, R27, net48, net8, net10, restore, CI/CD."
 license: MIT
 metadata:
   author: AGK Engineering
@@ -15,18 +15,27 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 
 | Config | Revit | TFM | Command |
 |---|---|---|---|
-| `Debug.R25` | 2025-2026 | net8.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25` |
+| `Debug.R27` | 2027 | net10.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27` |
+| `Debug.R26` | 2026 | net8.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26` |
+| `Debug.R25` | 2025 | net8.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25` |
 | `Debug.R24` | 2024 | net48 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` |
 | `Debug.R21` | 2021-2023 | net48 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21` |
 | `Debug.R19` | 2019-2020 | net48 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19` |
 
 **Tests:** `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25`
+(the Tests project is pinned to net8.0-windows — do NOT build it under R27: NU1201/NU1202;
+in the sln its R27 configurations are mapped to R25, honored only in VS)
+
+**SDK:** `global.json` pins SDK 10.0.100 (rollForward latestPatch) — ALL configurations
+(including net48) build under SDK 10. The .NET 8 RUNTIME is still required to run unit tests.
 
 ## Build vs Deploy
 
 ### Intermediate Build (Development/Testing)
 Build individual configurations for quick testing during development. Does NOT deploy to Revit.
 ```bash
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
@@ -45,7 +54,9 @@ build-and-deploy.bat
 ### 1. Build ALL Versions, Not Just R25
 When making changes that affect compilation (new APIs, #if directives, project files):
 ```bash
-# Build ALL 4 configurations (for verification, NOT deploy)
+# Build ALL 6 shipping configurations (for verification, NOT deploy)
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
@@ -69,7 +80,7 @@ dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R25
 `Nice3point.Revit.Api.RevitAPI` is pulled with `VersionOverride` that depends
 on `$(RevitVersion)`. Each configuration must produce a fresh
 `obj/project.assets.json` that targets the right Revit API year (2021.*,
-2022.*, 2025.*). Once an `assets.json` is written, it is reused on the
+2022.*, 2025.*, 2027.*). Once an `assets.json` is written, it is reused on the
 next build **regardless of the new `-c` flag** unless you re-restore.
 
 **This is why `build-and-deploy.bat` runs `dotnet build` WITHOUT
@@ -91,6 +102,8 @@ dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
 
 # CORRECT — restore is part of every build, just like build-and-deploy.bat
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21

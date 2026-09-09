@@ -105,13 +105,17 @@ public sealed record RailingStructureSnapshot(
     RailingBalusterSnapshot Balusters);
 
 /// <summary>
-/// Identity summary of a wire type's settings-graph references: the
-/// material / temperature rating / insulation / max size / conduit are
-/// NOT parameters — on Revit ≤2025 they are <c>WireType</c> properties
-/// pointing at <c>ElectricalSetting</c> objects (WireMaterialType →
+/// Identity summary of a wire type's settings references: the material /
+/// temperature rating / insulation / max size / conduit are NOT parameters —
+/// on Revit ≤2025 they are <c>WireType</c> properties pointing at
+/// <c>ElectricalSetting</c> objects (WireMaterialType →
 /// TemperatureRatingType → InsulationType/WireSize, WireConduitType);
-/// on Revit 2026+ the model was replaced by Conductor* elements. Names
-/// are user content (locale-stable). <c>null</c> = not set.
+/// on Revit 2026+ the graph was replaced by the flat Conductor* model
+/// (WireMaterial/TemperatureRating/Insulation are ElementIds, MaxSize is
+/// the ConductorSize name) and the names are resolved through the
+/// Conductor* statics (#233) — the snapshot fields are names on every
+/// version, so the canonical WIRE string is byte-identical across R25/R26
+/// (FHV22). Names are user content (locale-stable). <c>null</c> = not set.
 /// </summary>
 public sealed record WireSettingsSnapshot(
     string? MaterialName,

@@ -27,7 +27,7 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private string? _cachedVersion;
 
-    private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
+    private static readonly int[] s_supportedRevitVersions = [2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027];
 
     private const int MaxRetries = 3;
     private const int TransientFaultDelayMs = 500;
@@ -485,6 +485,7 @@ public sealed class GitHubUpdateService : IUpdateService
             "R24" => Path.Combine(s_smartConDir, "2024"),
             "R25" => Path.Combine(s_smartConDir, "2025"),
             "R26" => Path.Combine(s_smartConDir, "2026"),
+            "R27" => Path.Combine(s_smartConDir, "2027"),
             _ => Path.Combine(s_smartConDir, artifactTag)
         };
     }
@@ -504,9 +505,11 @@ public sealed class GitHubUpdateService : IUpdateService
             tags.Add("R25");
         if (installed.Contains(2026))
             tags.Add("R26");
+        if (installed.Contains(2027))
+            tags.Add("R27");
 
         if (tags.Count == 0)
-            tags = ["R19", "R21", "R24", "R25", "R26"];
+            tags = ["R19", "R21", "R24", "R25", "R26", "R27"];
 
         return tags;
     }
@@ -610,7 +613,9 @@ public sealed class GitHubUpdateService : IUpdateService
 
     private static string? ExtractArtifactTag(string assetName)
     {
-        var patterns = new[] { "-R19.", "-R20.", "-R21.", "-R22.", "-R23.", "-R24.", "-R25." };
+        // -R26. отсутствовал до #233-инфраструктуры: R26-архивы релизов никогда
+        // не распознавались апдейтером (zip молча игнорировался) — исправлено.
+        var patterns = new[] { "-R19.", "-R20.", "-R21.", "-R22.", "-R23.", "-R24.", "-R25.", "-R26.", "-R27." };
         foreach (var pattern in patterns)
         {
 #if NET8_0

@@ -5,7 +5,7 @@ description: WPF DockablePane freeze in net48 (Revit 2023) caused by FireAndForg
 
 # WPF DockablePane Freeze in net48 — FireAndForget + null `Application.Current?.Dispatcher`
 
-**Affects:** Revit 2019-2024 (net48) when FamilyManager-style FireAndForget pattern updates the WPF TreeView. **Does not** affect Revit 2025-2026 (net8.0-windows) because `Application.Current` is non-null there at runtime.
+**Affects:** Revit 2019-2024 (net48) when FamilyManager-style FireAndForget pattern updates the WPF TreeView. **Does not** affect Revit 2025+ (net8.0-windows / net10.0-windows, Revit 2025-2027) because `Application.Current` is non-null there at runtime.
 
 **Symptoms (user-observable):**
 

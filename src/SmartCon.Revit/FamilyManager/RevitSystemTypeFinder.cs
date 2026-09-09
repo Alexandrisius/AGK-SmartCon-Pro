@@ -20,6 +20,7 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
 
         ElementId? firstMatch = null;
         var duplicates = 0;
+        var isPhantom = CreatePhantomFilter(doc);
         using var collector = CreateCollector(doc, categoryOrdinal);
         foreach (var type in collector.Cast<ElementType>())
         {
@@ -31,7 +32,7 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
             // wire type (9-11 same-name "matches" seen in the wild), and the
             // whole sync then targets the wrong element. Settings objects
             // are never sync/import targets — excluded from matching.
-            if (IsElectricalSettingsObject(type)) continue;
+            if (isPhantom(type)) continue;
             if (!string.Equals(type.Name, typeName, StringComparison.OrdinalIgnoreCase)) continue;
             // #190 (ADR-064): the locale-invariant key is the PRIMARY family
             // filter — the localized FamilyName never matches across locales.
@@ -80,13 +81,14 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
             return Array.Empty<SystemTypeLocation>();
 
         var result = new List<SystemTypeLocation>();
+        var isPhantom = CreatePhantomFilter(doc);
         foreach (var ordinal in categoryOrdinals.Distinct())
         {
             using var collector = CreateCollector(doc, ordinal);
             foreach (var type in collector.Cast<ElementType>())
             {
                 if (type.Name is null) continue;
-                if (IsElectricalSettingsObject(type)) continue;
+                if (isPhantom(type)) continue;
                 // #183: FamilyName collected so stale detection can match
                 // by (family, name) instead of name alone.
                 // #190 (ADR-064): FamilyKey is the locale-invariant identity
@@ -107,7 +109,11 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
     /// collector — not listed. Revit 2026 replaced WireMaterialType/
     /// TemperatureRatingType/InsulationType with the Conductor* model —
     /// those are plain data objects (not Element-derived), so they never
-    /// reach a collector and are not listed either.
+    /// reach a collector and are not listed either; as a defense against
+    /// the undocumented 2026 internals, <see cref="CreatePhantomFilter"/>
+    /// additionally excludes any ElementType whose id is in the
+    /// conductor-id set (#233,
+    /// <see cref="RevitConductorCompat.CollectAllConductorIds"/>).
     /// </summary>
     internal static bool IsElectricalSettingsObject(ElementType type) => type is
 #if !REVIT2026_OR_GREATER
@@ -117,6 +123,27 @@ public sealed class RevitSystemTypeFinder : ISystemTypeFinder
 #endif
         Autodesk.Revit.DB.Electrical.VoltageType or
         Autodesk.Revit.DB.Electrical.DistributionSysType;
+
+    /// <summary>
+    /// Single exclusion predicate for EVERY ElementType collector loop that
+    /// must never bind an electrical settings object (finder matching, type
+    /// collection, attribute extraction, prototype lookup). On ≤2025 it is
+    /// <see cref="IsElectricalSettingsObject"/> alone; on 2026+ (#233) the
+    /// conductor-id set is enumerated ONCE per filter creation and joined
+    /// into the predicate — a cheap insurance that no Conductor*-backed
+    /// element can surface as a phantom system type, whatever the
+    /// undocumented 2026 internals do.
+    /// </summary>
+    internal static Func<ElementType, bool> CreatePhantomFilter(Document doc)
+    {
+#if REVIT2026_OR_GREATER
+        var conductorIds = RevitConductorCompat.CollectAllConductorIds(doc);
+        return type => IsElectricalSettingsObject(type) || conductorIds.Contains(type.Id);
+#else
+        _ = doc;
+        return IsElectricalSettingsObject;
+#endif
+    }
 
     private static FilteredElementCollector CreateCollector(Document doc, int? categoryOrdinal)
     {

@@ -12,7 +12,7 @@
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows'">
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- Full deps.json for the isolated AssemblyLoadContext (ADR-051) -->
     <EnableDynamicLoading>true</EnableDynamicLoading>

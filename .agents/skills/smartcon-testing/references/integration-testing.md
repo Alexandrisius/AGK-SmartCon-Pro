@@ -21,6 +21,9 @@
 # Revit 2025 (net8.0-windows)
 dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R25 --framework net8.0-windows
 
+# Revit 2027 (net10.0-windows) — требует установленный Revit 2027
+dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R27 --framework net10.0-windows
+
 # Любая net48-версия, УСТАНОВЛЕННАЯ на машине (2021–2024)
 dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Debug.R21 --framework net48 -p:RevitVersion=2023
 ```
@@ -32,8 +35,12 @@ dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csp
   передай `-p:RevitVersion=YYYY` (глобальное свойство перекрывает пин из
   `Directory.Build.props`).
 - **Философия версий:** суть прогона — платформа, не год. Обязательный
-  минимум: R25 (net8, новейший API) + любой net48 (2021–2024 по наличию).
-  По остаточному принципу — разные API (2021 min / 2023–2024 mid / 2025 max).
+  минимум: R25 (net8) + любой net48 (2021–2024 по наличию) + **R27 (net10,
+  новейший API — когда установлен Revit 2027)** — три платформы (net48/net8/net10).
+  По остаточному принципу — разные API (2021 min / 2023–2024 mid / 2025–2027 max).
+- **R26 — compile-only** на машине без установленного Revit 2026: компилируется
+  (`-c Debug.R26`), но непрогоняем; R27-прогон покрывает тот же Conductor*-код
+  (API 2026 ≡ 2027, #233).
 - Прогон запускает реальный процесс Revit (~30–60 сек на сессию).
 - `dotnet test -c Debug.R25` тоже работает (TestingPlatformDotnetTestSupport=true).
 
@@ -46,7 +53,8 @@ dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csp
 
 1. **Полный сьют — это gate, а НЕ диагностический инструмент.** Цикл:
    правка → **точечный прогон** класса/метода (секунды) → когда точечно
-   зелёно → **ОДИН** полный R25 → **ОДИН** полный net48. Никаких
+   зелёно → **ОДИН** полный R25 → **ОДИН** полный net48 → **ОДИН** полный
+   R27 (если установлен Revit 2027). Никаких
    повторных полных прогонов «для проверки» / «для имён».
 2. **Правильные `--treenode-filter` паттерны** (проверено прогонами;
    дерево = `/{сборка}/{ns}/{Класс}/{Метод}`):
@@ -119,7 +127,7 @@ dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csp
 
 ```
 src/SmartCon.IntegrationTests/
-├── SmartCon.IntegrationTests.csproj   # Exe, MTP, TFM из конфигурации (R21→net48, R25→net8)
+├── SmartCon.IntegrationTests.csproj   # Exe, MTP, TFM из конфигурации (R21→net48, R25/R26→net8, R27→net10)
 ├── TestsConfiguration.cs              # TestExecutor<RevitThreadExecutor> + NotInParallel
 ├── Support/
 │   ├── StubRevitContext.cs            # IRevitContext поверх тестового Document
@@ -159,6 +167,7 @@ src/SmartCon.IntegrationTests/
 | `string.Contains(s, StringComparison)` — ошибка на net48 | API появилось в .NET Core 2.1 | `string.Equals(a, b, StringComparison)` — кросс-TFM безопасно (CA2249 на net8 против IndexOf) |
 | `FamilyLoadResult.IsSuccess` не компилируется | Свойство называется `Success` | Проверять точные имена моделей по исходникам |
 | Запуск подмножества тестов | — | См. «Ранбук итераций» выше: класс `/*/*/*ClassName*/*`, метод `/*/*/*/*MethodName*`; паттерн с классом во 2-м сегменте молча даёт 0 тестов |
+| 91×CS0121 на `IsEqualTo`/`IsNotEqualTo` при сборке R27 (net10) | TUnit 1.44 дизамбигуит перегрузки атрибутом `[OverloadResolutionPriority]`, который honoured только C# 13+ (thomhurst/TUnit#5765/#6282); глобальный `LangVersion=12` на net10 | `LangVersion=latest` ТОЛЬКО для net10.0-windows в `SmartCon.IntegrationTests.csproj` — НЕ удалять этот пин; production-код остаётся на C# 12 |
 
 ## Gotchas, найденные на практике (2026-07-30, #104)
 
@@ -240,7 +249,15 @@ WPF UI / диалоги / picking?                 → ручной тест + �
 - net48: TUnit.Core требует `System.Text.Json >= 9.0.0`, production-пин — 8.0.6
   (ADR-051). Проект исключён из обрезки merge-списка в `Directory.Build.targets`
   и пинит STJ/Encodings.Web 9.0.0 через `VersionOverride` в csproj.
-- CI (`.github/workflows/build.yml`): compile-only шаг (на runner нет Revit).
+- net10 (R27): `LangVersion=latest` ТОЛЬКО для net10.0-windows в csproj — TUnit 1.44
+  дизамбигуит `IsEqualTo`/`IsNotEqualTo`-перегрузки атрибутом `[OverloadResolutionPriority]`,
+  honoured только C# 13+ (thomhurst/TUnit#5765/#6282); с глобальным `LangVersion=12` — 91×CS0121.
+  **НЕ удалять этот пин**; production-код остаётся на C# 12.
+- Пакеты Nice3point для 2027: RevitAPI/RevitAPIUI 2027.* — net10.0-windows
+  (NU1202 если таргетить net8); TUnit.Revit 2027.* — net10.0-windows7.0,
+  зависит от TUnit >= 1.44; Toolkit 2027.* существует.
+- CI (`.github/workflows/build.yml`): compile-only шаг (на runner нет Revit) —
+  R25 (net8) + R27 (net10) + R21 (net48).
   Прогон интеграционных тестов — локальный, перед фиксацией границы Revit-слоя.
 
 ## Production log validation (остаётся для UI/E2E)

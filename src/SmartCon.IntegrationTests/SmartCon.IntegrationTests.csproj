@@ -33,6 +33,14 @@
     <!-- Microsoft.Testing.Platform: поддержка `dotnet test` (TUnit построен на MTP) -->
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
 
+    <!-- net10 (Revit 2027): TUnit 1.44 дизамбигуит IsEqualTo/IsNotEqualTo-
+         перегрузки атрибутом [OverloadResolutionPriority], который honoured
+         только C# 13+ (thomhurst/TUnit#5765, #6282). Глобальный пин
+         LangVersion=12 (Directory.Build.props) на net10-срезе TUnit даёт
+         CS0121 на каждом same-type ассерте — поднимаем язык ТОЛЬКО здесь:
+         тест-хост, production-код и net48/net8-сьюты не затронуты. -->
+    <LangVersion Condition="'$(TargetFramework)' == 'net10.0-windows'">latest</LangVersion>
+
     <!-- net48: отключаем неявный polyfill-пакет TUnit (баг thomhurst/TUnit#3731 —
          на .NET Framework он не попадает в компиляцию, CS0122). Вместо него
          ModuleInitializerAttribute генерирует PolySharp (подключён централизованно
