@@ -37,8 +37,7 @@
 1. **Прочитать обязательные файлы** (в этом порядке):
    - `docs/README.md` — понять контекст проекта
    - `docs/invariants.md` — выучить жёсткие правила I-01..I-17
-   - `docs/architecture/dependency-rule.md` — понять куда класть код
-   - `docs/architecture/solution-structure.md` — понять структуру проектов
+   - `docs/architecture/dependency-rule.md` — понять куда класть код, карту проектов и конвенции файлов (размер/partial)
    - `docs/known-workarounds.md` — проверить, не существует ли уже workaround для этой проблемы
 
 2. **Провести глубокое исследование через Exa**:
@@ -406,6 +405,9 @@ workaround'ов с указанием Issue, файла, платформы и �
 ## Code Style
 
 - Комментарии: **НЕ добавлять** если не попросят
+- Размер `.cs`-файлов: цель **≤500 строк**, жёсткий лимит **600** (#260). Больше —
+  partial-разбивка `Class.Topic.cs` по зонам ответственности; поля с инициализаторами,
+  primary constructor и базовые типы остаются в ядровом файле; `#if`-блоки — только целиком
 - XAML code-behind: только `DataContext = viewModel` (I-10)
 - MVVM строго: `.xaml.cs` не содержит логики
 - Revit API из WPF → только через `IExternalEventHandler` (I-01)

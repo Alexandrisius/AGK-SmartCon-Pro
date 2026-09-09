@@ -28,8 +28,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`architecture/solution-structure.md`](architecture/solution-structure.md) | Проекты, папки, файлы каждого слоя | Всегда при создании/перемещении файлов |
-| [`architecture/dependency-rule.md`](architecture/dependency-rule.md) | Правило зависимостей между слоями | Всегда |
+| [`architecture/dependency-rule.md`](architecture/dependency-rule.md) | Правило зависимостей, карта проектов, конвенции файлов (размер, partial) | Всегда |
 | [`architecture/dependency-injection.md`](architecture/dependency-injection.md) | DI-контейнер, ServiceRegistrar, Constructor Injection | При добавлении сервиса/ViewModel |
 | [`architecture/database-migrations.md`](architecture/database-migrations.md) | Паттерн миграций catalog.db (badge + «Обновить базу» + load gate) | При любом изменении данных/схемы БД FamilyManager |
 | [`architecture/tech-stack.md`](architecture/tech-stack.md) | Стек технологий, версии, NuGet-пакеты | При настройке проекта или добавлении зависимостей |

@@ -31,6 +31,40 @@
 \* IntegrationTests → FamilyManager: только для оркестрационных тестов
 internal stale-сервисов в реальном Revit (2026-08); WPF-типы модуля запрещены.
 
+## Карта проектов
+
+> Бывший `solution-structure.md` (удалён 2026-09, #260): по-файловые деревья
+> гнили и вводили в заблуждение — ориентируйся по таблице и реальной файловой
+> системе; детали модуля — в его README (`docs/<module>/README.md`).
+
+| Проект | Назначение | Зависит от |
+|---|---|---|
+| **SmartCon.Core** | Чистый C#: модели, интерфейсы, алгоритмы, FormulaSolver. Запрет: вызовы Revit API, `using System.Windows` | — |
+| **SmartCon.Revit** | Реализации интерфейсов Core через Revit API (единственный проект с прямой зависимостью от `Autodesk.Revit.DB`) | Core |
+| **SmartCon.UI** | Общая WPF-библиотека: тема, стили, конвертеры, локализация (`TranslationSource`/`LocExtension`), behaviors | Core |
+| **SmartCon.App** | Точка входа: `IExternalApplication`, Ribbon, DI (`ServiceRegistrar`), ExternalEvents, диагностика загрузки | Core, Revit, UI, все модули |
+| **SmartCon.PipeConnect** | Модуль PipeConnect: Commands / ViewModels / Views / Services | Core, UI |
+| **SmartCon.ProjectManagement** | Модуль Share Project (ISO 19650): та же структура папок | Core, UI |
+| **SmartCon.FamilyManager** | Модуль FamilyManager (dockable panel, SQLite-каталог): Commands / Events / ViewModels / Views / Behaviors / Services (`LocalCatalog/`, `Stale/`, `Actualization/`, `Routing/`, `Geometry/`, `Import/`, `Migrations/`, `Validation/`) | Core, UI |
+| **SmartCon.Dependencies** | net48-only ILRepack-хост сторонних зависимостей (ADR-051), листовой | — (только NuGet) |
+| **SmartCon.Tests** | Unit + ViewModel тесты (xUnit + Moq), пиннут на net8.0-windows | Core, модули |
+| **SmartCon.IntegrationTests** | TUnit-тесты внутри реального Revit (net48 / net8 / net10) | Core, Revit, FamilyManager (оркестрационные) |
+| **SmartCon.Updater** | Standalone .NET 8 updater: применяет pending update при закрытии Revit | — |
+
+## Конвенции файлов и папок
+
+- Модули (PipeConnect / ProjectManagement / FamilyManager) держат структуру
+  `Commands/ ViewModels/ Views/ Services/`; SmartCon.Revit — по зонам
+  ответственности (`Transactions/`, `Selection/`, `Storage/`, `FamilyManager/`, …).
+- Интерфейсы и модели — в SmartCon.Core; реализации Revit API — в SmartCon.Revit.
+- ViewModel-базовые классы и команды — CommunityToolkit.Mvvm
+  (`ObservableObject`, `[ObservableProperty]`, `[RelayCommand]`).
+- Размер `.cs`-файлов: **цель ≤500 строк, жёсткий лимит 600** (#260). Больше —
+  partial-разбивка `Class.Topic.cs` по зонам ответственности; поля с
+  инициализаторами, primary constructor и базовые типы — в ядровом файле;
+  `#if`-блоки переносятся только целиком. Исключения — data-словари локализации
+  и неделимые single-методы (см. #260).
+
 ### SmartCon.IntegrationTests (особая роль)
 
 `SmartCon.IntegrationTests` — единственный проект, которому **разрешена** ссылка
