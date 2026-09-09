@@ -381,9 +381,17 @@ DEF-секция снапшота (#249, FHV12): привязки определ
 
 ## FamilyContentHasher.LoadableSections
 
-Partial-часть `FamilyContentHasher` с билдерами loadable-секций (#249): META (префикс FHVnn|LOADABLE|catOrdinal), PARAMS, TYPES (+per-type подстроки), PHANTOM, DEF (FHV14: bound-only формы, labeled-only размеры), GEOM (FHV12-усиленная), GEOM2D (FHV14: чистая 2D-графика), NESTED*/NESTEDHASH, FACTS, FLAGS, CONN, LOOKUP. `FormatCoord` (общий с VIEW3D) канонизирует `-0` → `0` (FHV16).
+Partial-часть `FamilyContentHasher` с билдерами loadable-секций (#249): META (префикс FHVnn|LOADABLE|catOrdinal), PARAMS, TYPES (+per-type подстроки), PHANTOM, DEF (FHV14: labeled-only размеры), NESTED*/NESTEDHASH, FACTS, FLAGS, CONN, LOOKUP. `FormatCoord` (общий с VIEW3D) канонизирует `-0` → `0` (FHV16).
 
 **Файл:** `Services/Implementation/FamilyContentHasher.LoadableSections.cs`
+
+---
+
+## FamilyContentHasher.LoadableSectionsGeom
+
+Partial-часть `FamilyContentHasher` с геометрическими билдерами loadable-канона (#260, вынесены из LoadableSections): GEOM (FHV12-усиленная: `BuildGeomSection` + per-form записи `BuildGeomFormEntry`/`BuildNestedInstanceEntry`/`BuildDefBoundFormEntry`) и GEOM2D (FHV14: чистая 2D-графика).
+
+**Файл:** `Services/Implementation/FamilyContentHasher.LoadableSectionsGeom.cs`
 
 ---
 
