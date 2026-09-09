@@ -164,6 +164,7 @@ public static class ServiceRegistrar
             presenter.Register<AssignmentRulesEditorViewModel>(vm => new AssignmentRulesEditorView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
+            presenter.Register<MissingRecordsCleanupViewModel>(vm => new MissingRecordsCleanupView(vm));
             presenter.Register<FmProjectBaseRulesEditorViewModel>(vm => new FmProjectBaseRulesEditorView(vm));
             presenter.Register<FmParseRuleViewModel>(vm => new FmParseRuleView(vm));
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));

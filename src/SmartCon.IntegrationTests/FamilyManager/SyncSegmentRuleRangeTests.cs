@@ -173,6 +173,9 @@ public sealed class SyncSegmentRuleRangeTests : RevitApiTest
 
     private sealed class StubRoutingRuleRepository : IFamilyRoutingRuleRepository
     {
+        public Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RoutingPartReference>>(Array.Empty<RoutingPartReference>());
+
         public bool HasRules { get; set; }
         public IReadOnlyList<FamilyRoutingRuleInfo> Rules { get; set; } = [];
         public IReadOnlyList<FamilyRoutingTypeSettings> Settings { get; set; } = [];

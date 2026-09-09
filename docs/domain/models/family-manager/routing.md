@@ -176,3 +176,34 @@ backfill'нута. `Compose` (читатели: редактор, sync, обе d
 
 **Файл:** `SmartCon.Core/Models/FamilyManager/ConnectorShapeLabelMap.cs`
 
+---
+
+## RoutingPartReference
+
+Сырая строка `item_routing_rules` с непустым `part_name` (вход детектора routing-фантомов #133; Segments-группа отфильтрована — это конфигурация сегментов, не ссылка на фитинг). Читается одним SQL по всей базе: `IFamilyRoutingRuleRepository.ReadAllPartReferencesAsync`.
+
+**Файл:** `Models/FamilyManager/RoutingPhantomInfo.cs`
+
+```csharp
+public sealed record RoutingPartReference(
+    string CatalogItemId,
+    string FamilyKey,
+    string TypeName,
+    string PartName);
+```
+
+---
+
+## RoutingPhantomInfo
+
+Нерезолвированная ссылка правила трассировки (#133): правило хранит фитинг строкой `part_name` «Семейство:Тип» БЕЗ FK — после удаления семейства из каталога (напр. purge'ем недоступных) правило остаётся с мёртвой ссылкой. Детектор (`IRoutingEditorService.FindRoutingPhantomsAsync`, тот же резолв, что вкладка «Трассировка»: семейство-часть токена до `:`, поиск по нормализованному имени среди loadable) гоняется после каждой загрузки дерева: затронутые семейства получают значок-бейдж (SourceBranch), клик по которому открывает свойства сразу на вкладке «Трассировка» на затронутом типе.
+
+**Файл:** `Models/FamilyManager/RoutingPhantomInfo.cs`
+
+```csharp
+public sealed record RoutingPhantomInfo(
+    string CatalogItemId,
+    string FamilyKey,
+    string TypeName,
+    string MissingPartFamilyName);
+```

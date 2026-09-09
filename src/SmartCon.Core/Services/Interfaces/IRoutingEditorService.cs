@@ -59,4 +59,12 @@ public interface IRoutingEditorService
         int requiredShapeMask = 0,
         bool excludeMultiShape = false,
         CancellationToken ct = default);
+    /// <summary>
+    /// #133: detects routing phantoms across the WHOLE catalog — rules whose
+    /// "Family:Type" part token references a family that no longer exists
+    /// (deleted manually or purged as missing). Pure catalog pass (rules +
+    /// name resolution, no Revit); used to badge the affected families in
+    /// the tree right after a purge and on every tree load.
+    /// </summary>
+    Task<IReadOnlyList<RoutingPhantomInfo>> FindRoutingPhantomsAsync(CancellationToken ct = default);
 }

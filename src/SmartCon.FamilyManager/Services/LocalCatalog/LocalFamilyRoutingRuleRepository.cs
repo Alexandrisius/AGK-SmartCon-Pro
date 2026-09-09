@@ -424,4 +424,32 @@ internal sealed class LocalFamilyRoutingRuleRepository : IFamilyRoutingRuleRepos
             return Array.Empty<RoutingCriterionSnapshot>();
         }
     }
+    public async Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default)
+    {
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        // The Segments group (ForManagerGroup(0)) is the segment
+        // configuration, not a fitting reference — excluded like in
+        // DependencyLinkWriter.AugmentLinksFromRoutingRulesAsync.
+        cmd.CommandText = """
+            SELECT catalog_item_id, family_key, type_name, part_name
+            FROM item_routing_rules
+            WHERE part_name IS NOT NULL
+              AND group_key != @segmentsGroup
+            ORDER BY catalog_item_id, type_name, group_key, rule_order
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@segmentsGroup", RoutingGroupKeys.ForManagerGroup(0)));
+        var references = new List<RoutingPartReference>();
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            references.Add(new RoutingPartReference(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3)));
+        }
+        return references;
+    }
 }

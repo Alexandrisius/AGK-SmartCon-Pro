@@ -185,6 +185,26 @@ public sealed class CatalogRoutingEditorServiceTests
             new LocalSegmentRuleRepository(fixture.GetDatabase()));
 
     [Fact]
+    public async Task FindRoutingPhantoms_DetectsDeletedFittings_SkipsResolvedAndSegments()
+    {
+        using var fixture = new TempCatalogFixture();
+        // Type A references the deleted "GhostElbow:DN50"; Type B references
+        // the live "ElbowOld:DN32"; the Segments rows are not fittings.
+        var (itemId, _) = await SeedSystemItemAsync(fixture, "pipes-1", "v1", TypeARouting("GhostElbow:DN50"));
+        await SeedLoadableFittingAsync(
+            fixture, "ElbowOld", RoutingGroupCatalog.PipeFittingCategoryId, 5, "DN50", "DN32");
+        var sut = CreateSut(fixture);
+
+        var phantoms = await sut.FindRoutingPhantomsAsync();
+
+        var phantom = Assert.Single(phantoms);
+        Assert.Equal(itemId, phantom.CatalogItemId);
+        Assert.Equal("GhostElbow", phantom.MissingPartFamilyName);
+        Assert.Equal("Type A", phantom.TypeName);
+        Assert.Equal("Single", phantom.FamilyKey);
+    }
+
+    [Fact]
     public async Task Save_EditsInPlace_NoVersionCreated_LinksRegenerated()
     {
         using var fixture = new TempCatalogFixture();

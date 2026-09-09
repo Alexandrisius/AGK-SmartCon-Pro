@@ -524,6 +524,21 @@
                                 </i:EventTrigger>
                             </i:Interaction.Triggers>
                         </Button>
+                        <Button Content="{loc:Loc FM_PBase_CleanupMissingRecords}"
+                                Command="{Binding CleanupMissingRecordsCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="{loc:Loc FM_PBase_CleanupMissingRecordsTooltip}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                         <Button Content="{loc:Loc FM_PBase_DeleteDatabase}"
                                 Command="{Binding DeleteDatabaseCommand}"
                                 MinWidth="180"
@@ -981,6 +996,18 @@
                                                             Foreground="{DynamicResource DangerBrush}"
                                                             Width="11" Height="11"/>
                             </Button>
+                            <!-- #133: routing-phantom roll-up — SourceBranch icon, opens
+                                 the status details (the per-family fix lives on the leaf badge) -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.ShowStatusDetailsCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding RoutingIssuesBadgeTooltip}"
+                                    Visibility="{Binding HasRoutingIssues, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="SourceBranch"
+                                                            Foreground="{DynamicResource DangerBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
                             <TextBlock Text="{Binding FamilyCount, StringFormat=' ({0})'}"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        FontSize="11" VerticalAlignment="Center"
@@ -1117,6 +1144,20 @@
                                     ToolTip="{Binding RuleBadgeTooltip}"
                                     Visibility="{Binding HasRuleViolations, Converter={StaticResource BoolToVis}}">
                                 <iconPacks:PackIconMaterial Kind="ShieldAlertOutline"
+                                                            Foreground="{DynamicResource DangerBrush}"
+                                                            Width="11" Height="11"/>
+                            </Button>
+
+                            <!-- #133: routing-phantom badge — SourceBranch icon; the click
+                                 opens the properties DIRECTLY on the Routing tab focused at
+                                 the broken type (the fix is picking a replacement fitting) -->
+                            <Button Style="{StaticResource StatusBadgeButton}"
+                                    Command="{Binding DataContext.OpenRoutingPropertiesCommand,
+                                                      RelativeSource={RelativeSource AncestorType=TreeView}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{Binding RoutingIssuesBadgeTooltip}"
+                                    Visibility="{Binding HasRoutingIssues, Converter={StaticResource BoolToVis}}">
+                                <iconPacks:PackIconMaterial Kind="SourceBranch"
                                                             Foreground="{DynamicResource DangerBrush}"
                                                             Width="11" Height="11"/>
                             </Button>

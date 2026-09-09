@@ -162,6 +162,9 @@ public sealed class RoutingDriftStaleTests : PipeModelFixture
         public Task<bool> HasAnyForItemAsync(string catalogItemId, CancellationToken ct = default)
             => Task.FromResult(_rules.Count > 0 || _settings.Count > 0);
 
+        public Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RoutingPartReference>>(Array.Empty<RoutingPartReference>());
+
         public Task<(IReadOnlyList<FamilyRoutingRuleInfo>, IReadOnlyList<FamilyRoutingTypeSettings>)> ReadForItemAsync(
             string catalogItemId, CancellationToken ct = default)
             => Task.FromResult((_rules, _settings));

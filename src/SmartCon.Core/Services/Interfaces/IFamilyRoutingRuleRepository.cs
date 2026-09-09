@@ -121,4 +121,13 @@ public interface IFamilyRoutingRuleRepository
     Task MarkCurrentVersionRoutingBackfilledAsync(
         string catalogItemId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// All item-level routing rule rows with a resolved part token (#133):
+    /// one <see cref="RoutingPartReference"/> per row of
+    /// <c>item_routing_rules</c> with a non-NULL <c>part_name</c>. Input for
+    /// the routing-phantom detector (rules referencing families that no
+    /// longer exist in the catalog).
+    /// </summary>
+    Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default);
 }

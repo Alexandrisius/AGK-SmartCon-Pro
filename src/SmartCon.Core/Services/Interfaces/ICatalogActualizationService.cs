@@ -40,17 +40,43 @@ public interface ICatalogActualizationService
 
     /// <summary>
     /// Permanently delete catalog rows whose managed files are missing
-    /// (the user confirmed the purge on the summary screen). Deletes the
-    /// affected versions (FK CASCADE cleans types/attributes/nested),
-    /// their file records and assets, and catalog items left without any
-    /// version; when a deleted version was the active one, the active
-    /// pointer is moved and the item hash/name re-synced. Filesystem
-    /// errors do NOT block the cleanup — rows are deleted DB-only.
-    /// E5 (#213, ADR-067): an item referenced in <c>family_dependencies</c>
-    /// by ANY parent version is NOT purged (dependency guard) — it is
-    /// skipped, logged and counted in <c>GuardedSkippedItems</c>.
+    /// (the user confirmed the purge). Deletes the affected versions (FK
+    /// CASCADE cleans types/attributes/nested), their file records and
+    /// assets, and catalog items left without any version; when a deleted
+    /// version was the active one, the active pointer is moved and the item
+    /// hash/name re-synced. Filesystem errors do NOT block the cleanup —
+    /// rows are deleted DB-only. Dependency links referencing a purged item
+    /// are RESET at the parents (family_dependencies FK CASCADE) instead of
+    /// blocking the cleanup (#133: a missing fitting can never be loaded
+    /// into routing — the link is dead weight); the result reports the count
+    /// so the UI can warn the user about stale project routing.
     /// </summary>
-    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
+    Task<PurgeMissingResult> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Loads the catalog versions marked
+    /// <see cref="FamilyContentHashFormat.RecalculationMissing"/> (-2) —
+    /// the always-cheap part of the candidate list for the cleanup dialog
+    /// (Issue #133). One row per (item, version label), with the file path
+    /// of the highest stored Revit variant.
+    /// </summary>
+    Task<IReadOnlyList<MissingRecordCandidate>> LoadMissingRecordCandidatesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// On-disk scan (Issue #133): checks every managed file of the ACTIVE
+    /// catalog (loadable + system) with File.Exists — the primary detector
+    /// for files deleted manually while Revit is running (no migration
+    /// needed, nothing to close). A version becomes a candidate when EVERY
+    /// variant file of its label is absent — a single surviving variant
+    /// keeps the record working in its Revit version. Versions already
+    /// marked -2 are reported as candidates but not double-counted.
+    /// Candidates arrive INCREMENTALLY via <c>progress.Found</c> so an
+    /// interrupted scan keeps its partial results; the return value is the
+    /// total number of discovered candidates.
+    /// </summary>
+    Task<int> ScanForMissingFilesAsync(
+        IProgress<MissingRecordScanProgress>? progress,
         CancellationToken ct = default);
 }

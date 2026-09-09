@@ -266,6 +266,43 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
+    /// #133: "Очистить недоступные записи" — ALWAYS visible with the
+    /// database tools (like "Удалить базу"): the user must be able to clean
+    /// up manually deleted files at any time, not only after a hash
+    /// migration marked them. Opening the command runs the scanner (cheap
+    /// -2 SQL + a full on-disk File.Exists pass) and offers the found
+    /// garbage for deletion.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCleanupMissingRecords))]
+    private async Task CleanupMissingRecordsAsync()
+    {
+        using var _scope = SmartConLogger.BeginScope("DbActualize",
+            ("Method", nameof(CleanupMissingRecordsAsync)));
+
+        var vm = _viewModelFactory.CreateMissingRecordsCleanupViewModel();
+        _dialogService.ShowMissingRecordsCleanupDialog(vm);
+        try
+        {
+            await vm.RunScanAsync().ConfigureAwait(true);
+            await vm.DialogCompletion.ConfigureAwait(true);
+        }
+        finally
+        {
+            vm.Dispose();
+        }
+
+        if (!vm.PurgedAny) return;
+
+        // Purged rows may carry extraction data — compliance verdicts are
+        // outdated; the tree must reflect the removed families.
+        _complianceService.InvalidateCache();
+        await RefreshTreeViaExternalEventAsync().ConfigureAwait(true);
+        await RefreshDatabaseUpdateStateAsync().ConfigureAwait(true);
+    }
+
+    private bool CanCleanupMissingRecords() => HasActiveDatabase && CanEdit;
+
+    /// <summary>
     /// Gate for write commands (imports, loads into project, edits,
     /// deletes, version management): while the database has pending
     /// migrations the write is blocked with an explanation and an offer to

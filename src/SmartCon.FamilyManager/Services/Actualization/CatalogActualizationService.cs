@@ -303,7 +303,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             WasCancelled: wasCancelled);
     }
 
-    public async Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
+    public async Task<PurgeMissingResult> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
         CancellationToken ct = default)
     {
@@ -314,7 +314,8 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
         var deletedItems = 0;
         var deletedVersions = 0;
         var failedDirectories = 0;
-        var guardedSkippedItems = 0;
+        var resetRoutingLinks = new List<ResetRoutingLinkInfo>();
+        var switchedActiveVersions = new List<SwitchedActiveVersionInfo>();
 
         foreach (var itemGroup in missing.GroupBy(m => m.CatalogItemId))
         {
@@ -331,24 +332,20 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
 
             if (remainingLabels.Count == 0)
             {
-                // E5 (#213, ADR-067): dependency guard — an item referenced
-                // by ANY parent version must survive the purge, otherwise the
-                // parent's stored versions lose their fittings.
+                // #133 (owner decision 2026-09-09): a missing fitting can
+                // NEVER be loaded into routing — dependency links to it are
+                // dead weight. The former E5 guard (skip) is retired: the
+                // item is purged anyway, family_dependencies FK CASCADE
+                // resets the parent links, and the caller warns the user
+                // that project routing using this fitting became stale.
+                // References are read BEFORE the delete (they vanish with it).
                 var references = await _dependencyRepository
                     .GetReferencingParentsAsync(itemId, ct)
                     .ConfigureAwait(false);
-                if (references.Count > 0)
-                {
-                    guardedSkippedItems++;
-                    SmartConLogger.Warn(
-                        $"Purge: item {itemId} ('{itemGroup.First().ItemName}') skipped — referenced as " +
-                        $"a dependency by {string.Join("; ", DependencyGuardText.FormatReferenceLines(references))}. " +
-                        "[Action: сначала удалите ссылающиеся версии родителей (окно свойств) или самих родителей, затем повторите очистку]");
-                    continue;
-                }
 
                 // Every version of this item is missing → delete the whole
-                // catalog item (FK CASCADE cleans versions/types/attributes).
+                // catalog item (FK CASCADE cleans versions/types/attributes
+                // and the dependency links).
                 SmartConLogger.Info(
                     $"Purging catalog item {itemId} ('{itemGroup.First().ItemName}') — all versions missing");
                 try
@@ -357,7 +354,10 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
                     if (deleted)
                     {
                         deletedItems++;
-                        deletedVersions += itemGroup.Count();
+                        // All version ROWS die with the item — a label may
+                        // carry several Revit variants.
+                        deletedVersions += versions.Count;
+                        CollectResetRoutingLinks(references, itemGroup.First().ItemName, resetRoutingLinks);
                     }
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -374,7 +374,8 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
                     if (dbDeleted)
                     {
                         deletedItems++;
-                        deletedVersions += itemGroup.Count();
+                        deletedVersions += versions.Count;
+                        CollectResetRoutingLinks(references, itemGroup.First().ItemName, resetRoutingLinks);
                     }
                 }
                 continue;
@@ -405,6 +406,7 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
                         $"[Action: skipping purge for this item — re-run the update after fixing the catalog]");
                     continue;
                 }
+                switchedActiveVersions.Add(new SwitchedActiveVersionInfo(item!.Name, newestRemaining));
             }
 
             foreach (var label in itemGroup.Select(g => g.VersionLabel).Distinct(StringComparer.Ordinal))
@@ -438,7 +440,9 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
         }
 
         SmartConLogger.Info(
-            $"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}, failedDirectories={failedDirectories}");
+            $"Purge finished: deletedItems={deletedItems}, deletedVersions={deletedVersions}, " +
+            $"failedDirectories={failedDirectories}, resetRoutingLinks={resetRoutingLinks.Count}, " +
+            $"switchedActiveVersions={switchedActiveVersions.Count}");
 
         // #249 (Phase 5): garbage sweep of the shared CAS preview pool —
         // crashed imports and historical bugs leave pool files with zero
@@ -455,7 +459,168 @@ internal sealed class CatalogActualizationService : ICatalogActualizationService
             SmartConLogger.Debug($"CAS pool sweep skipped: {ex.Message}");
         }
 
-        return (deletedItems, deletedVersions, failedDirectories, guardedSkippedItems);
+        return new PurgeMissingResult(
+            deletedItems, deletedVersions, failedDirectories, resetRoutingLinks, switchedActiveVersions);
+    }
+
+    /// <summary>
+    /// Records the reset routing links as name pairs (child fitting × parent
+    /// family) — deduplicated, the UI lists them so the user sees WHICH
+    /// families lost WHICH fitting.
+    /// </summary>
+    private static void CollectResetRoutingLinks(
+        IReadOnlyList<FamilyDependencyReference> references,
+        string purgedItemName,
+        List<ResetRoutingLinkInfo> target)
+    {
+        foreach (var reference in references)
+        {
+            var link = new ResetRoutingLinkInfo(purgedItemName, reference.ParentName);
+            if (!target.Contains(link)) target.Add(link);
+        }
+
+        if (references.Count > 0)
+        {
+            SmartConLogger.Warn(
+                $"Purge: routing links to '{purgedItemName}' were reset at " +
+                $"{string.Join("; ", references.Select(r => $"'{r.ParentName}' ({r.VersionLabel})").Distinct())}. " +
+                $"[Action: если фитинг использовался в трассировке проекта — трассировка стала stale: замените фитинг в окне свойств семейства или удалите его из проекта]");
+        }
+    }
+
+    public async Task<IReadOnlyList<MissingRecordCandidate>> LoadMissingRecordCandidatesAsync(CancellationToken ct = default)
+    {
+        // One row per (item, version label); variants are ordered by Revit
+        // DESC so the FIRST row of a label carries the highest-Revit variant
+        // (same convention as LoadAllGroupsAsync).
+        var candidates = new List<MissingRecordCandidate>();
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT ci.id AS itemId, ci.name AS itemName,
+                   cv.version_label AS versionLabel, cv.revit_major_version AS revit,
+                   ff.relative_path AS relPath, ff.file_name AS fileName
+            FROM catalog_versions cv
+            JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+            JOIN family_files ff ON ff.id = cv.file_id
+            WHERE cv.hash_format_version = @marker
+              AND ci.family_source IN ('loadable', 'system')
+            ORDER BY ci.name COLLATE NOCASE, ci.id, cv.version_label, cv.revit_major_version DESC
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@marker", FamilyContentHashFormat.RecalculationMissing));
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var itemId = reader.GetString(reader.GetOrdinal("itemId"));
+            var label = reader.GetString(reader.GetOrdinal("versionLabel"));
+            if (!seenKeys.Add(itemId + "|" + label)) continue;
+            candidates.Add(new MissingRecordCandidate(
+                itemId,
+                reader.GetString(reader.GetOrdinal("itemName")),
+                label,
+                reader.GetString(reader.GetOrdinal("fileName")),
+                reader.GetString(reader.GetOrdinal("relPath")),
+                reader.GetInt32(reader.GetOrdinal("revit")),
+                MissingRecordReason.MarkedMissing));
+        }
+
+        SmartConLogger.Debug($"Missing-record candidates loaded: {candidates.Count}");
+        return candidates;
+    }
+
+    public async Task<int> ScanForMissingFilesAsync(
+        IProgress<MissingRecordScanProgress>? progress,
+        CancellationToken ct = default)
+    {
+        using var _scope = SmartConLogger.BeginScope("DbActualize",
+            ("Method", nameof(ScanForMissingFilesAsync)));
+
+        var groups = await LoadAllGroupsAsync(ct).ConfigureAwait(false);
+        var markedKeys = await LoadMarkedKeysAsync(ct).ConfigureAwait(false);
+        var root = _pathResolver.GetDatabaseRoot();
+
+        // File.Exists is synchronous I/O (can hang for tens of seconds on an
+        // unreachable SMB share) — keep it off the caller's thread. Progress
+        // is reported for EVERY group (the dialog shows "X of Y — file"),
+        // and each discovered candidate rides along with its report so the
+        // dialog fills the list incrementally — an interrupted scan keeps
+        // everything found before the stop.
+        var foundCount = await Task.Run(() =>
+        {
+            var found = 0;
+            for (var i = 0; i < groups.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var group = groups[i];
+                var top = group.Variants[0];
+                MissingRecordCandidate? candidate = null;
+                if (markedKeys.Contains(group.Key))
+                {
+                    // Already marked -2 by a migration run — always a
+                    // candidate (cheap list), same row the SQL pass built.
+                    candidate = new MissingRecordCandidate(
+                        group.CatalogItemId, group.ItemName, group.VersionLabel,
+                        top.FileName, top.RelativePath, top.RevitMajorVersion,
+                        MissingRecordReason.MarkedMissing);
+                }
+                else
+                {
+                    // A label is a candidate only when EVERY variant file is
+                    // absent — a single surviving variant keeps the record
+                    // working in its Revit version and must not be purged
+                    // (DeleteVersionAsync removes all variants of the label).
+                    var anyExists = false;
+                    foreach (var variant in group.Variants)
+                    {
+                        if (File.Exists(Path.Combine(root, variant.RelativePath)))
+                        {
+                            anyExists = true;
+                            break;
+                        }
+                    }
+                    if (!anyExists && group.Variants.Count > 0)
+                    {
+                        candidate = new MissingRecordCandidate(
+                            group.CatalogItemId, group.ItemName, group.VersionLabel,
+                            top.FileName, top.RelativePath, top.RevitMajorVersion,
+                            MissingRecordReason.FileMissing);
+                    }
+                }
+                if (candidate is not null) found++;
+                progress?.Report(new MissingRecordScanProgress(i + 1, groups.Count, top.FileName, candidate));
+            }
+            return found;
+        }, ct).ConfigureAwait(false);
+
+        SmartConLogger.Info(
+            $"Disk scan finished: groups={groups.Count}, missing={foundCount} " +
+            $"(marked -2: {markedKeys.Count})");
+        return foundCount;
+    }
+
+    private async Task<HashSet<string>> LoadMarkedKeysAsync(CancellationToken ct)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT cv.catalog_item_id, cv.version_label
+            FROM catalog_versions cv
+            JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+            WHERE cv.hash_format_version = @marker
+              AND ci.family_source IN ('loadable', 'system')
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@marker", FamilyContentHashFormat.RecalculationMissing));
+        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            keys.Add(reader.GetString(0) + "|" + reader.GetString(1));
+        }
+        return keys;
     }
 
     private List<IDatabaseActualizationTask> TasksPendingOn(

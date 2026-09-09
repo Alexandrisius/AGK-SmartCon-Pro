@@ -64,6 +64,26 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
 
     [ObservableProperty] private int _selectedTabIndex;
     [ObservableProperty] private bool _isBusy;
+
+    /// <summary>
+    /// Index of the Routing tab in the properties TabControl. Stable: the
+    /// tab order is fixed (General, Content, Attributes, 3D, Versions,
+    /// Routing) and the Routing tab is the ONLY visibility-gated one — and
+    /// a deep-link targets it exactly when it is visible.
+    /// </summary>
+    public const int RoutingTabIndex = 5;
+
+    /// <summary>
+    /// #133 deep-link (routing-phantom badge): open the properties directly
+    /// on the Routing tab, focused at the type whose rule holds a dead part
+    /// reference (<see cref="RoutingTypeItem.KeyOf"/> format). Set BEFORE
+    /// <c>InitializeCommand</c> is executed.
+    /// </summary>
+    public bool FocusRoutingTab { get; set; }
+
+    /// <summary>#133 deep-link: RoutingTypeItem.KeyOf of the type to focus (null = first).</summary>
+    public string? FocusRoutingTypeKey { get; set; }
+
     [ObservableProperty] private System.Windows.Media.Imaging.BitmapImage? _avatarImage;
     [ObservableProperty] private bool _hasAvatar;
     [ObservableProperty] private ObservableCollection<FamilyAsset> _imageAssets = [];

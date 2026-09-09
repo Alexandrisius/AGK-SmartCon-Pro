@@ -349,6 +349,7 @@ public interface IRoutingEditorService
         int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals,
         int connectorShapeBits = 0, int requiredShapeMask = 0,
         bool excludeMultiShape = false, CancellationToken ct = default);
+    Task<IReadOnlyList<RoutingPhantomInfo>> FindRoutingPhantomsAsync(CancellationToken ct = default);
 }
 ```
 

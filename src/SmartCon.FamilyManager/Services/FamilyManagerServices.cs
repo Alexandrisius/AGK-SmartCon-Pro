@@ -184,6 +184,12 @@ public sealed record FamilyManagerServices(
     /// dependency links from stored rules (plan items 2/5).
     /// </summary>
     IFamilyRoutingRuleRepository FamilyRoutingRuleRepository,
+    /// <summary>
+    /// #133: the routing editor service — used by the main VM to detect
+    /// routing phantoms (rules referencing families deleted from the
+    /// catalog) and badge the affected families in the tree.
+    /// </summary>
+    IRoutingEditorService RoutingEditorService,
     ISegmentSizeRepository SegmentSizeRepository,
     /// <summary>
     /// FHV21 (owner decision 2026-09-01): per-version segment routing rules

@@ -47,9 +47,16 @@ public sealed class DatabaseUpdateStateServiceTests
             return Task.FromResult(RunResult);
         }
 
-        public Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
+        public Task<PurgeMissingResult> PurgeMissingAsync(
             IReadOnlyList<HashRecalculationMissingFile> missing, CancellationToken ct = default)
             => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<MissingRecordCandidate>> LoadMissingRecordCandidatesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<MissingRecordCandidate>>(Array.Empty<MissingRecordCandidate>());
+
+        public Task<int> ScanForMissingFilesAsync(
+            IProgress<MissingRecordScanProgress>? progress, CancellationToken ct = default)
+            => Task.FromResult(0);
     }
 
     private sealed class FakeAccessControl : IDbAccessControlService

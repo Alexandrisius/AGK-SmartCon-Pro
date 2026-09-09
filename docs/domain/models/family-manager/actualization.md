@@ -218,3 +218,73 @@ public sealed record SharedNestedSubtree(
 
 - `OwnerFamilyName` — нормализованное имя семейства, чей документ сканировался.
 - `NestedFamilyNames` — нормализованные имена ВСЕХ shared-nested, видимых в этом документе (плоско, все уровни).
+
+---
+
+## MissingRecordCandidate
+
+Один кандидат инструмента «Очистить недоступные записи» (#133): версия каталога, чей managed-файл недоступен. Причина `MarkedMissing` — версия помечена миграцией хэша (`hash_format_version = -2`, `RecalculationMissing`); `FileMissing` — файл отсутствует физически, найдено сканом диска. Удаление — через `ICatalogActualizationService.PurgeMissingAsync`.
+
+**Файл:** `Models/FamilyManager/MissingRecordCandidate.cs`
+
+```csharp
+public enum MissingRecordReason
+{
+    MarkedMissing = 0,
+    FileMissing = 1
+}
+
+public sealed record MissingRecordCandidate(
+    string CatalogItemId,
+    string ItemName,
+    string VersionLabel,
+    string FileName,
+    string RelativePath,
+    int RevitVersion,
+    MissingRecordReason Reason);
+```
+
+Лейбл становится кандидатом только если отсутствуют ВСЕ его варианты — единственный выживший вариант держит запись рабочей в своей версии Revit (`DeleteVersionAsync` удаляет лейбл целиком).
+
+---
+
+## MissingRecordScanProgress
+
+Прогресс скана недоступных записей (#133) — зеркало `DatabaseMigrationProgress` диалога актуализации («Проверка X из Y — файл»). `Found` non-null, когда проверенная версия оказалась недоступной — диалог добавляет строку сразу, поэтому прерванный скан сохраняет частичный результат.
+
+**Файл:** `Models/FamilyManager/MissingRecordCandidate.cs`
+
+```csharp
+public sealed record MissingRecordScanProgress(
+    int Current,
+    int Total,
+    string CurrentFileName,
+    MissingRecordCandidate? Found = null);
+```
+
+---
+
+## PurgeMissingResult
+
+Исход `ICatalogActualizationService.PurgeMissingAsync` — числа и СПИСКИ ИМЁН для сводок (диалог обновления БД и «Очистить недоступные записи», #133): пользователь видит, КАКИЕ семейства затронуты, а не только счётчики.
+
+**Файл:** `Models/FamilyManager/PurgeMissingResult.cs`
+
+```csharp
+public sealed record ResetRoutingLinkInfo(string PurgedItemName, string ParentItemName);
+public sealed record SwitchedActiveVersionInfo(string ItemName, string NewActiveVersionLabel);
+
+public sealed record PurgeMissingResult(
+    int DeletedItems,
+    int DeletedVersions,
+    int FailedDirectories,
+    IReadOnlyList<ResetRoutingLinkInfo> ResetRoutingLinks,
+    IReadOnlyList<SwitchedActiveVersionInfo> SwitchedActiveVersions)
+{
+    public static PurgeMissingResult Empty { get; }
+}
+```
+
+- `ResetRoutingLinks` (#133, решение владельца 2026-09-09): сброшенные связи трассировки — `family_dependencies` FK CASCADE умирает вместе с удалённым фитингом; пары имён идут в буллет-список «• Родитель: фитинг 'X' удалён» + предупреждение о stale-трассировке в проекте. Заменил упразднённый guard E5 (`GuardedSkippedItems`).
+- `SwitchedActiveVersions` — семейства, у которых удалённая версия была активной: active переключен на новейшую оставшуюся автоматически (удаление версии ≠ удаление семейства).
+- `FailedDirectories` — недоступные папки: строки удалены DB-only, папки — на ручное удаление.

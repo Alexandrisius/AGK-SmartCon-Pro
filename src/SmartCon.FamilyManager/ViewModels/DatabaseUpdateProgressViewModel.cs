@@ -220,7 +220,7 @@ public sealed partial class DatabaseUpdateProgressViewModel
 
         try
         {
-            var (deletedItems, deletedVersions, failedDirectories, guardedSkippedItems) = await _actualization
+            var result = await _actualization
                 .PurgeMissingAsync(missing, CancellationToken.None)
                 .ConfigureAwait(true);
 
@@ -228,20 +228,30 @@ public sealed partial class DatabaseUpdateProgressViewModel
             SummaryText += Environment.NewLine + string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResult)
                     ?? "Удалено семейств: {0}, версий: {1}.",
-                deletedItems, deletedVersions);
-            if (guardedSkippedItems > 0)
+                result.DeletedItems, result.DeletedVersions);
+            if (result.SwitchedActiveVersions.Count > 0)
             {
-                SummaryText += Environment.NewLine + string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeGuarded)
-                        ?? "Пропущены как используемые зависимости: {0}.",
-                    guardedSkippedItems);
+                SummaryText += Environment.NewLine + (
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeSwitchedActive)
+                        ?? "Активная версия переключена на оставшуюся:");
+                SummaryText += Environment.NewLine + FormatSwitchedActiveList(result.SwitchedActiveVersions);
             }
-            if (failedDirectories > 0)
+            if (result.ResetRoutingLinks.Count > 0)
+            {
+                SummaryText += Environment.NewLine + (
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResetLinks)
+                        ?? "Сброшены элементы трассировки (фитинг удалён из каталога):");
+                SummaryText += Environment.NewLine + FormatResetRoutingList(result.ResetRoutingLinks);
+                SummaryText += Environment.NewLine + (
+                    LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResetLinksNote)
+                        ?? "Если удалённый фитинг использовался в трассировке в проекте, эта трассировка стала устаревшей: замените фитинг в окне свойств семейства или удалите его из проекта.");
+            }
+            if (result.FailedDirectories > 0)
             {
                 SummaryText += Environment.NewLine + string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeDirsFailed)
                         ?? "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную.",
-                    failedDirectories);
+                    result.FailedDirectories);
             }
         }
         catch (Exception ex)
@@ -260,6 +270,22 @@ public sealed partial class DatabaseUpdateProgressViewModel
         _completionTcs.TrySetResult(true);
         RequestClose?.Invoke(true);
     }
+
+    /// <summary>«• Семейство → версия» bullets for the switched-active list
+    /// (bullet-dot marker — the StatusNotice list style).</summary>
+    internal static string FormatSwitchedActiveList(IReadOnlyList<SwitchedActiveVersionInfo> switched)
+        => string.Join(Environment.NewLine, switched
+            .OrderBy(s => s.ItemName, StringComparer.OrdinalIgnoreCase)
+            .Select(s => $"• {s.ItemName} → {s.NewActiveVersionLabel}"));
+
+    /// <summary>«• родитель: фитинг '…' удалён» bullets for the reset-routing list.</summary>
+    internal static string FormatResetRoutingList(IReadOnlyList<ResetRoutingLinkInfo> links)
+        => string.Join(Environment.NewLine, links
+            .OrderBy(l => l.ParentItemName, StringComparer.OrdinalIgnoreCase)
+            .Select(l => "• " + string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_HashRecalc_PurgeResetLinks_Item)
+                    ?? "{0}: фитинг '{1}' удалён",
+                l.ParentItemName, l.PurgedItemName)));
 
     public void ConfirmClose(CloseConfirmationArgs args)
     {

@@ -300,11 +300,12 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA", createFileOnDisk: false);
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
 
-        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var result = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
-        Assert.Equal(1, deletedItems);
-        Assert.Equal(1, deletedVersions);
-        Assert.Equal(0, failedDirs);
+        Assert.Equal(1, result.DeletedItems);
+        Assert.Equal(1, result.DeletedVersions);
+        Assert.Equal(0, result.FailedDirectories);
+        Assert.Empty(result.ResetRoutingLinks);
         Assert.Null(await _fixture.GetProvider().GetItemAsync(itemId));
     }
 
@@ -317,11 +318,15 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         await SeedV2VersionAsync(itemId);
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
 
-        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var result = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
-        Assert.Equal(0, deletedItems);
-        Assert.Equal(1, deletedVersions);
-        Assert.Equal(0, failedDirs);
+        Assert.Equal(0, result.DeletedItems);
+        Assert.Equal(1, result.DeletedVersions);
+        Assert.Equal(0, result.FailedDirectories);
+        // #133: the user must be told the active version was switched.
+        var switched = Assert.Single(result.SwitchedActiveVersions);
+        Assert.Equal("FamA", switched.ItemName);
+        Assert.Equal("v2", switched.NewActiveVersionLabel);
 
         var item = await _fixture.GetProvider().GetItemAsync(itemId);
         Assert.NotNull(item);
@@ -342,21 +347,23 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         await using var lockHandle = new FileStream(lockFile, FileMode.Open, FileAccess.Read, FileShare.None);
 
         var missing = new[] { new HashRecalculationMissingFile(itemId, "FamA", "v1", "FamA.rfa") };
-        var (deletedItems, deletedVersions, failedDirs, _) = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var result = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
-        Assert.Equal(1, deletedItems);
-        Assert.Equal(1, deletedVersions);
-        Assert.Equal(1, failedDirs);
+        Assert.Equal(1, result.DeletedItems);
+        Assert.Equal(1, result.DeletedVersions);
+        Assert.Equal(1, result.FailedDirectories);
         Assert.Null(await _fixture.GetProvider().GetItemAsync(itemId));
         Assert.True(Directory.Exists(itemDir));
     }
 
     [Fact]
-    public async Task PurgeMissing_ReferencedByDependency_SkipsItemAndReports()
+    public async Task PurgeMissing_ReferencedByDependency_DeletesItemAndResetsLinks()
     {
-        // E5 (#213, ADR-067): фитинг, на который ссылается любая версия
-        // родителя, purge НЕ удаляет — иначе сохранённые версии родителя
-        // теряют свои зависимости.
+        // #133 (owner decision 2026-09-09): a missing fitting can never be
+        // loaded into routing — the dependency link is dead weight. The purge
+        // deletes the item; family_dependencies FK CASCADE resets the parent
+        // links and the result reports the count (the UI warns about stale
+        // project routing).
         var (parentId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "ParentPipe");
         var (childId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
             _fixture, "FamA", createFileOnDisk: false);
@@ -367,14 +374,128 @@ public sealed class CatalogActualizationServiceTests : IDisposable
         });
         var missing = new[] { new HashRecalculationMissingFile(childId, "FamA", "v1", "FamA.rfa") };
 
-        var (deletedItems, deletedVersions, failedDirs, guardedSkipped) =
-            await _sut.PurgeMissingAsync(missing, CancellationToken.None);
+        var result = await _sut.PurgeMissingAsync(missing, CancellationToken.None);
 
-        Assert.Equal(0, deletedItems);
-        Assert.Equal(0, deletedVersions);
-        Assert.Equal(0, failedDirs);
-        Assert.Equal(1, guardedSkipped);
-        Assert.NotNull(await _fixture.GetProvider().GetItemAsync(childId));
+        Assert.Equal(1, result.DeletedItems);
+        Assert.Equal(1, result.DeletedVersions);
+        Assert.Equal(0, result.FailedDirectories);
+        var resetLink = Assert.Single(result.ResetRoutingLinks);
+        Assert.Equal("FamA", resetLink.PurgedItemName);
+        Assert.Equal("ParentPipe", resetLink.ParentItemName);
+        Assert.Null(await _fixture.GetProvider().GetItemAsync(childId));
+        // The parent survives; its dependency list no longer references the purged child.
+        Assert.NotNull(await _fixture.GetProvider().GetItemAsync(parentId));
+        var references = await dependencyRepository.GetReferencingParentsAsync(childId);
+        Assert.Empty(references);
+    }
+
+    [Fact]
+    public async Task LoadMissingRecordCandidates_MapsFields_OneRowPerItemAndLabel()
+    {
+        var (itemId, _, _, relPath) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA",
+            hashFormatVersion: FamilyContentHashFormat.RecalculationMissing, createFileOnDisk: false);
+        // A second Revit variant of the SAME label must not duplicate the row.
+        await CatalogSeedHelper.SeedAdditionalVariantAsync(_fixture, itemId, "FamA", "v1", 2023);
+
+        var candidates = await _sut.LoadMissingRecordCandidatesAsync();
+
+        var candidate = Assert.Single(candidates);
+        Assert.Equal(itemId, candidate.CatalogItemId);
+        Assert.Equal("FamA", candidate.ItemName);
+        Assert.Equal("v1", candidate.VersionLabel);
+        Assert.Equal("FamA.rfa", candidate.FileName);
+        Assert.Equal(relPath, candidate.RelativePath);
+        Assert.Equal(2025, candidate.RevitVersion);
+        Assert.Equal(MissingRecordReason.MarkedMissing, candidate.Reason);
+    }
+
+    [Fact]
+    public async Task ScanForMissingFiles_FindsMarkedAndUnmarked_ReportsIncrementally()
+    {
+        // -2 marked → candidate WITHOUT touching the disk (marked branch)
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamMarked",
+            hashFormatVersion: FamilyContentHashFormat.RecalculationMissing, createFileOnDisk: false);
+        // healthy record with its file on disk
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamHealthy");
+        // no marker + file deleted manually (Revit stayed open) → File.Exists branch
+        var (orphanId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(
+            _fixture, "FamOrphan", createFileOnDisk: false);
+        var reports = new List<MissingRecordScanProgress>();
+        var progress = new Progress<MissingRecordScanProgress>(reports.Add);
+
+        var found = await _sut.ScanForMissingFilesAsync(progress, CancellationToken.None);
+
+        Assert.Equal(2, found);
+        var withCandidates = reports.Where(r => r.Found is not null).ToList();
+        Assert.Equal(2, withCandidates.Count);
+        var marked = withCandidates.Single(r => r.Found!.CatalogItemId != orphanId);
+        Assert.Equal(MissingRecordReason.MarkedMissing, marked.Found!.Reason);
+        Assert.Equal(3, marked.Total);
+        var orphan = withCandidates.Single(r => r.Found!.CatalogItemId == orphanId);
+        Assert.Equal(MissingRecordReason.FileMissing, orphan.Found!.Reason);
+        // every group is reported with its file name (dialog shows "X of Y — file")
+        Assert.Equal(3, reports.Count);
+        Assert.All(reports, r => Assert.False(string.IsNullOrEmpty(r.CurrentFileName)));
+    }
+
+    [Fact]
+    public async Task ScanForMissingFiles_LabelWithSurvivingVariant_NotReported()
+    {
+        // The label's 2025 file exists; only an extra 2023 variant file is
+        // absent — the label still works in its Revit version and must NOT
+        // be purged (DeleteVersionAsync removes all variants of a label).
+        var (itemId, _, _, _) = await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamHalf");
+        await InsertVariantWithoutFileAsync(itemId, "FamHalf", 2023);
+
+        var found = await _sut.ScanForMissingFilesAsync(null, CancellationToken.None);
+
+        Assert.Equal(0, found);
+    }
+
+    [Fact]
+    public async Task ScanForMissingFiles_CancelledBeforeStart_Throws()
+    {
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "FamA");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => _sut.ScanForMissingFilesAsync(null, cts.Token));
+    }
+
+    private async Task InsertVariantWithoutFileAsync(string itemId, string name, int revitVersion)
+    {
+        using var conn = _fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        var fileId = Guid.NewGuid().ToString();
+        var relativePath = $"files/{itemId}/v1/r{revitVersion}/{name}.rfa";
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES (@id, @path, @name, @revit, @t)
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@id", fileId));
+            cmd.Parameters.Add(new SqliteParameter("@path", relativePath));
+            cmd.Parameters.Add(new SqliteParameter("@name", name + ".rfa"));
+            cmd.Parameters.Add(new SqliteParameter("@revit", revitVersion));
+            cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+            await cmd.ExecuteNonQueryAsync();
+        }
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label,
+                                              revit_major_version, published_at_utc)
+                VALUES (@id, @itemId, @fileId, 'v1', @revit, @t)
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString()));
+            cmd.Parameters.Add(new SqliteParameter("@itemId", itemId));
+            cmd.Parameters.Add(new SqliteParameter("@fileId", fileId));
+            cmd.Parameters.Add(new SqliteParameter("@revit", revitVersion));
+            cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     private async Task SeedV2VersionAsync(string itemId)

@@ -691,4 +691,51 @@ internal sealed class CatalogRoutingEditorService : IRoutingEditorService
         => await RoutingDependencyLinkRebuilder
             .RebuildAsync(connection, tx, _catalog, catalogItemId, currentVersionId, newRules, ct)
             .ConfigureAwait(false);
+    public async Task<IReadOnlyList<RoutingPhantomInfo>> FindRoutingPhantomsAsync(CancellationToken ct = default)
+    {
+        using var _scope = SmartConLogger.BeginScope("RoutingEditor",
+            ("Method", nameof(FindRoutingPhantomsAsync)));
+
+        var references = await _routingRuleRepository
+            .ReadAllPartReferencesAsync(ct)
+            .ConfigureAwait(false);
+
+        // Same resolution as the editor tab (PartFamiliesOf): family = the
+        // part token before the first ':'; the manager-group rows are not
+        // part references. Resolve each DISTINCT family name once.
+        var missingByName = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var phantoms = new List<RoutingPhantomInfo>();
+        foreach (var reference in references)
+        {
+            var separator = reference.PartName.IndexOf(':');
+            if (separator <= 0) continue;
+            var familyName = reference.PartName.Substring(0, separator);
+
+            if (!missingByName.TryGetValue(familyName, out var isMissing))
+            {
+                var child = await _catalog
+                    .FindByNormalizedNameAsync(FamilyNameNormalizer.Normalize(familyName), "loadable", ct)
+                    .ConfigureAwait(false);
+                isMissing = child is null;
+                missingByName[familyName] = isMissing;
+            }
+            if (isMissing)
+            {
+                phantoms.Add(new RoutingPhantomInfo(
+                    reference.CatalogItemId,
+                    reference.FamilyKey,
+                    reference.TypeName,
+                    familyName));
+            }
+        }
+
+        if (phantoms.Count > 0)
+        {
+            SmartConLogger.Info(
+                $"Routing phantoms detected: rules={references.Count}, phantomRules={phantoms.Count} " +
+                $"across {phantoms.Select(p => p.CatalogItemId).Distinct().Count()} families, " +
+                $"missing families: {string.Join(", ", missingByName.Where(kv => kv.Value).Select(kv => kv.Key))}");
+        }
+        return phantoms;
+    }
 }

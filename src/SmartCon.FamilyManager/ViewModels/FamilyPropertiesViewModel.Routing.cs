@@ -190,7 +190,18 @@ public sealed partial class FamilyPropertiesViewModel
                 _routingEdits[RoutingTypeItem.KeyOf(type.TypeName, type.FamilyKey)] = state;
                 _routingOriginals[RoutingTypeItem.KeyOf(type.TypeName, type.FamilyKey)] = state.Fingerprint();
             }
-            SelectedRoutingType = RoutingTypes.FirstOrDefault();
+            SelectedRoutingType = RoutingTypes.FirstOrDefault(t =>
+                    string.Equals(RoutingTypeItem.KeyOf(t.TypeName, t.FamilyKey), FocusRoutingTypeKey, StringComparison.Ordinal))
+                ?? RoutingTypes.FirstOrDefault();
+
+            // #133 deep-link (routing-phantom badge): land directly on the
+            // Routing tab focused at the broken type. Done HERE (not in
+            // InitializeRoutingTab) — that runs in the constructor, before
+            // the factory's object-initializer sets FocusRoutingTab.
+            if (FocusRoutingTab && IsRoutingTabVisible)
+            {
+                SelectedTabIndex = RoutingTabIndex;
+            }
         }
         catch (Exception ex)
         {

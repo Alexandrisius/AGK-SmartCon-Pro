@@ -111,6 +111,25 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
         }
     }
 
+    // ── Routing-phantom roll-up (#133) ─────────────────────────────────
+
+    /// <summary>Roll-up: number of leaves under this category (recursive) with
+    /// routing rules referencing families missing from the catalog (#133).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRoutingIssues))]
+    [NotifyPropertyChangedFor(nameof(RoutingIssuesBadgeTooltip))]
+    private int _routingIssueCount;
+
+    /// <summary><c>true</c> when the routing-phantom roll-up badge is shown.</summary>
+    public bool HasRoutingIssues => RoutingIssueCount > 0;
+
+    /// <summary>Tooltip for the routing-phantom roll-up badge.</summary>
+    public string RoutingIssuesBadgeTooltip
+        => string.Format(
+            SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_RoutingPhantom_Category)
+                ?? "Семейств с проблемами трассировки: {0}",
+            RoutingIssueCount);
+
     // ── Clickable status badge (#210) ──────────────────────────────────
 
     /// <summary>#210: the category's notices — rule-violation roll-up (#259,
@@ -150,12 +169,24 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
                     ?? "В категории есть устаревшие семейства",
                 SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty));
         }
+        if (HasRoutingIssues)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                string.Format(
+                    SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRouting_Title)
+                        ?? "В категории есть семейства с проблемами трассировки ({0})",
+                    RoutingIssueCount),
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRouting_Guidance)
+                    ?? "У части семейств трассировка ссылается на фитинги, удалённые из каталога. Откройте семейство по значку трассировки у листа и выберите замену."));
+        }
         StatusNotices = list;
     }
 
     partial void OnHasStaleChanged(bool value) => RebuildStatusNotices();
     partial void OnStaleCountChanged(int value) => RebuildStatusNotices();
     partial void OnRuleViolationCountChanged(int value) => RebuildStatusNotices();
+    partial void OnRoutingIssueCountChanged(int value) => RebuildStatusNotices();
 
     /// <summary>
     /// True if this category or any descendant category is collapsed.

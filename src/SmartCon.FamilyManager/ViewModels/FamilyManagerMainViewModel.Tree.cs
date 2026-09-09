@@ -278,6 +278,11 @@ public sealed partial class FamilyManagerMainViewModel
             }
             await RecomputePresenceAsync(ct).ConfigureAwait(true);
             SmartConLogger.Freeze($"LoadTreeAsync: RefreshSystemTypeProjectPresence took {stageSw.ElapsedMilliseconds}ms");
+
+            // #133: routing-phantom badges (rules referencing families that
+            // left the catalog) — cheap catalog pass, never fails the load.
+            await ApplyRoutingHealthToTreeAsync(ct).ConfigureAwait(true);
+            SmartConLogger.Freeze($"LoadTreeAsync: ApplyRoutingHealthToTreeAsync took {stageSw.ElapsedMilliseconds}ms");
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)

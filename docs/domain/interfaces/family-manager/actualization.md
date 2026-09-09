@@ -22,8 +22,13 @@ public interface ICatalogActualizationService
         int revitMajorVersion,
         IProgress<DatabaseMigrationProgress>? progress,
         CancellationToken ct = default);
-    Task<(int DeletedItems, int DeletedVersions, int FailedDirectories, int GuardedSkippedItems)> PurgeMissingAsync(
+    Task<PurgeMissingResult> PurgeMissingAsync(
         IReadOnlyList<HashRecalculationMissingFile> missing,
+        CancellationToken ct = default);
+    Task<IReadOnlyList<MissingRecordCandidate>> LoadMissingRecordCandidatesAsync(
+        CancellationToken ct = default);
+    Task<int> ScanForMissingFilesAsync(
+        IProgress<MissingRecordScanProgress>? progress,
         CancellationToken ct = default);
 }
 ```
@@ -32,7 +37,8 @@ public interface ICatalogActualizationService
 1. File-free passes задач (работа без файлов, напр. system re-flag хэша).
 2. Детекты задач → union ключей `catalogItemId|versionLabel`; группы загружаются одним запросом, openable-вариант — наивысший `revit_major_version` ≤ запущенного Revit; newer-only группы — счётчик в сводке.
 3. По группе: файл не найден → missing + `HandleGroupFailureAsync(MissingFile)` задач; не прочитался → failed + `HandleGroupFailureAsync(ExtractionFailed)`; иначе один open → `ApplyAsync` pending-задач по `Order` (сбой одной задачи не мешает остальным — её артефакт остаётся pending).
-4. `PurgeMissingAsync` — по подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени. E5 (#213, ADR-067): item, на который ссылается любая версия любого родителя (`family_dependencies`), purge НЕ удаляет — пропуск с Warn и счётчиком `GuardedSkippedItems`.
+4. `PurgeMissingAsync` — по подтверждению пользователя удаляет записи о недоступных файлах: versions (FK CASCADE чистит types/attributes/nested), file records, items без версий; если удалённая версия была активной — active переключается на новейшую оставшуюся с ресинком хэша и имени (факт — в `PurgeMissingResult.SwitchedActiveVersions`). #133 (решение владельца 2026-09-09): guard зависимостей E5 упразднён ТОЛЬКО здесь — мусорный фитинг (файла нет) никогда не подгрузится в трассировку, поэтому item удаляется, а `family_dependencies` FK CASCADE сбрасывает ссылки родителей; `PurgeMissingResult.ResetRoutingLinks` сообщает пары «удалённый фитинг × родитель» для предупреждения о stale-трассировке в проекте.
+5. `LoadMissingRecordCandidatesAsync` / `ScanForMissingFilesAsync` (#133, инструмент «Очистить недоступные записи»): дешёвый SQL по маркеру `-2` + полный скан диска `File.Exists` по ВСЕМ managed-файлам живой базы (главный детектор файла, удалённого вручную при запущенном Revit — без миграций и рестартов). Кандидаты приходят инкрементально через `MissingRecordScanProgress.Found` — прерванный скан сохраняет найденное; лейбл становится кандидатом только если отсутствуют ВСЕ его варианты (выживший вариант держит запись рабочей в своём Revit).
 
 ---
 

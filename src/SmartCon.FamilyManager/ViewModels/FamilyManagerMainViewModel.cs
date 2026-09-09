@@ -90,6 +90,9 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// session snapshot of rule verdicts, pure DB (no Revit).</summary>
     private readonly ICatalogComplianceService _complianceService;
 
+    /// <summary>#133: routing-phantom detector (rules referencing families that left the catalog).</summary>
+    private readonly IRoutingEditorService _routingEditorService;
+
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
     private ProjectBaseMatch? _activeBaseMatch;
@@ -152,6 +155,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private DatabaseListItem? _selectedConnection;
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(OpenProfileCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CleanupMissingRecordsCommand))]
     private bool _hasActiveDatabase;
     [ObservableProperty] private int _currentRevitVersion;
     [ObservableProperty]
@@ -171,6 +175,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     [NotifyCanExecuteChangedFor(nameof(ConfigureProjectBaseCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConvertToProjectBaseCommand))]
     [NotifyCanExecuteChangedFor(nameof(ConvertToGeneralBaseCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CleanupMissingRecordsCommand))]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToProject))]
     [NotifyPropertyChangedFor(nameof(CanConvertSelectedToGeneral))]
     [NotifyPropertyChangedFor(nameof(CanConfigureSelectedProjectBase))]
@@ -281,6 +286,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _systemTypeFinder = services.SystemTypeFinder;
         _contentHashAnalytics = services.ContentHashAnalytics;
         _complianceService = services.ComplianceService;
+        _routingEditorService = services.RoutingEditorService;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();

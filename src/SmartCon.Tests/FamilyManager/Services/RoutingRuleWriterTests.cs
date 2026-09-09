@@ -228,6 +228,9 @@ public sealed class RoutingRuleWriterTests
             IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings,
             CancellationToken ct = default) => Task.CompletedTask;
 
+        public Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RoutingPartReference>>(Array.Empty<RoutingPartReference>());
+
         public Task ReplaceForCurrentVersionAsync(string catalogItemId,
             IReadOnlyList<FamilyRoutingRuleInfo> rules, IReadOnlyList<FamilyRoutingTypeSettings> settings,
             CancellationToken ct = default)

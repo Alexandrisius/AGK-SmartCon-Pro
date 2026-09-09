@@ -67,10 +67,15 @@ NotConverged, а архивная версия родителя перестаё
   (DISTINCT по (parent, version) — kind-дубликаты схлопываются; IN-параметры,
   индекс `ix_family_dependencies_child`).
 - Guard-точки: `DeleteFamilyAsync` (единая команда ПКМ/кнопки) — блок-диалог
-  через стилизованный `ShowInfo` (НЕ MessageBox); purge —
-  `CatalogActualizationService.PurgeMissingAsync` пропускает guarded items
-  со счётчиком `GuardedSkippedItems` в сводке. Обхода через
-  `DeleteItemDbOnlyAsync` нет (fallback внутри guarded-ветки).
+  через стилизованный `ShowInfo` (НЕ MessageBox).
+- **Purge-guard упразднён (#133, решение владельца 2026-09-09):** мусорный
+  фитинг (managed-файла физически нет) НИКОГДА не подгрузится в трассировку —
+  связи на него мертвы. `PurgeMissingAsync` теперь удаляет такой item, а
+  `family_dependencies` FK CASCADE сбрасывает ссылки родителей; результат
+  (`PurgeMissingResult.ResetRoutingLinks`) несёт пары «фитинг × родитель»
+  для предупреждения о stale-трассировке в проекте, а затронутые родители
+  получают значок-фантом в дереве (клик → вкладка «Трассировка»). Guard
+  живого удаления (`DeleteFamilyAsync`) не изменился.
 - Guard fail-safe: ошибка чтения связей = блок удаления (Error + диалог),
   не молчаливое удаление.
 - Скрепка: `IsDependencyReferenced` + минимальный тултип «Семейство» (v2)

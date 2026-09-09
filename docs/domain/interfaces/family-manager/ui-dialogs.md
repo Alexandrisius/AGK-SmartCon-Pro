@@ -56,6 +56,7 @@ public interface IFamilyManagerDialogService
     bool? ShowValidationRulesEditor(object viewModel);
     void ShowModelessBatchImportDialog(object viewModel);
     void ShowDatabaseUpdateProgressDialog(object viewModel);
+    void ShowMissingRecordsCleanupDialog(object viewModel);
     bool? ShowAvatarCropper(object viewModel);
     SharedFamiliesLoadChoice ShowSharedFamiliesLoadModeDialog(SharedFamilyDecisionRequest request);
 }
@@ -65,6 +66,10 @@ public interface IFamilyManagerDialogService
 и возвращает выбор пользователя. **Должен вызываться на Revit main thread.**
 При отмене пользователем возвращает `SharedFamiliesLoadChoice.UseProject` как
 безопасный дефолт.
+
+`ShowMissingRecordsCleanupDialog` (#133) — modeless-диалог «Очистить недоступные записи»
+(ADR-048 паттерн): возвращает управление сразу, вызывающий запускает скан через VM
+(`RunScanAsync`) и ждёт `DialogCompletion`.
 
 `ShowStatusDetails` (#210) — диалог деталей статуса кликабельных бэйджей:
 read-only список `StatusNotice` строки batch-диалога / узла дерева

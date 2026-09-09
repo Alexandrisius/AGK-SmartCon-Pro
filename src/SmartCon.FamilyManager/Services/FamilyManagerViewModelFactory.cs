@@ -37,6 +37,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IAssignmentRuleRepository _assignmentRuleRepository;
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
     private readonly IRoutingEditorService _routingEditorService;
+    private readonly ICatalogActualizationService _actualization;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -68,7 +69,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         ICategoryChangeGateService categoryChangeGate,
         IAssignmentRuleRepository assignmentRuleRepository,
         IRevitCategoryLabelService revitCategoryLabels,
-        IRoutingEditorService routingEditorService)
+        IRoutingEditorService routingEditorService,
+        ICatalogActualizationService actualization)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -100,6 +102,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _assignmentRuleRepository = assignmentRuleRepository;
         _revitCategoryLabels = revitCategoryLabels;
         _routingEditorService = routingEditorService;
+        _actualization = actualization;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -110,7 +113,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         string? revitCategory = null,
         bool isReadOnly = false,
         string? familySource = null,
-        int? revitCategoryId = null)
+        int? revitCategoryId = null,
+        string? focusRoutingTypeKey = null)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
@@ -120,7 +124,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
             _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate,
             familySource, revitCategoryId, _routingEditorService)
-        { IsReadOnly = isReadOnly };
+        {
+            IsReadOnly = isReadOnly,
+            // #133 deep-link (routing-phantom badge): the presence of a
+            // focus type implies the Routing tab itself.
+            FocusRoutingTab = focusRoutingTypeKey is not null,
+            FocusRoutingTypeKey = focusRoutingTypeKey,
+        };
     }
 
     /// <summary>
@@ -169,6 +179,11 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public ProfileViewModel CreateProfileViewModel()
     {
         return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+    }
+
+    public MissingRecordsCleanupViewModel CreateMissingRecordsCleanupViewModel()
+    {
+        return new MissingRecordsCleanupViewModel(_actualization, _dialogService);
     }
 
     public ValidationReportViewModel CreateValidationReportViewModel(

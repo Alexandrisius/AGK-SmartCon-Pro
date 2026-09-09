@@ -132,6 +132,9 @@ public sealed class RoutingPartPickerViewModelTests
             _candidates = candidates;
         }
 
+        public Task<IReadOnlyList<RoutingPhantomInfo>> FindRoutingPhantomsAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RoutingPhantomInfo>>(Array.Empty<RoutingPhantomInfo>());
+
         public Task<RoutingEditorData?> LoadAsync(string catalogItemId, CancellationToken ct = default)
             => Task.FromResult<RoutingEditorData?>(null);
 

@@ -232,6 +232,9 @@ public sealed class SyncRoutingParamsFromDbTests : RevitApiTest
 
     private sealed class FakeRoutingRuleRepository : IFamilyRoutingRuleRepository
     {
+        public Task<IReadOnlyList<RoutingPartReference>> ReadAllPartReferencesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<RoutingPartReference>>(Array.Empty<RoutingPartReference>());
+
         public bool HasRules { get; set; }
         public IReadOnlyList<FamilyRoutingRuleInfo> Rules { get; set; } = [];
         public IReadOnlyList<FamilyRoutingTypeSettings> Settings { get; set; } = [];

@@ -122,6 +122,34 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     [NotifyPropertyChangedFor(nameof(RuleBadgeTooltip))]
     private int _ruleViolationCount;
 
+    // ── Routing phantoms (#133, «Очистить недоступные записи») ────────
+    // A routing rule of this family references a "Family:Type" token whose
+    // family no longer exists in the catalog (purged as missing / deleted).
+    // The badge opens the properties directly on the Routing tab at the
+    // affected type — the fix is to pick a replacement fitting there.
+
+    /// <summary>#133: at least one routing rule references a family missing from the catalog.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RoutingIssuesBadgeTooltip))]
+    private bool _hasRoutingIssues;
+
+    /// <summary>#133: display names of the missing fitting families (tooltip lines).</summary>
+    [ObservableProperty]
+    private IReadOnlyList<string>? _missingRoutingFamilies;
+
+    /// <summary>One-line hint for the routing-phantom badge.</summary>
+    public string RoutingIssuesBadgeTooltip
+    {
+        get
+        {
+            var title = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_RoutingPhantom_Short)
+                ?? "Трассировка: фитинг отсутствует в каталоге";
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_RoutingPhantom_Hint)
+                ?? "Нажмите, чтобы открыть вкладку «Трассировка»";
+            return title + " — " + hint;
+        }
+    }
+
     /// <summary><c>true</c> when the red shield badge is shown (Fail verdict).</summary>
     public bool HasRuleViolations => ComplianceStatus == ComplianceStatus.Fail && RuleViolationCount > 0;
 
@@ -259,8 +287,12 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
                     "Семейство нельзя удалить из каталога, пока оно используется как зависимость."),
                 DependencyReferencedLines));
         }
+        AddRoutingPhantomNotice(list);
         StatusNotices = list;
     }
+
+    partial void OnHasRoutingIssuesChanged(bool value) => RebuildStatusNotices();
+    partial void OnMissingRoutingFamiliesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
 
     partial void OnIsStaleChanged(bool value) => RebuildStatusNotices();
     partial void OnStaleReasonChanged(StaleReason value) => RebuildStatusNotices();
@@ -270,6 +302,18 @@ public sealed partial class FamilyLeafNodeViewModel : CatalogTreeNodeViewModel
     partial void OnOutdatedDependencyLinesChanged(IReadOnlyList<string>? value) => RebuildStatusNotices();
     partial void OnComplianceStatusChanged(ComplianceStatus value) => RebuildStatusNotices();
     partial void OnRuleViolationCountChanged(int value) => RebuildStatusNotices();
+
+    private void AddRoutingPhantomNotice(List<StatusNotice> list)
+    {
+        if (!HasRoutingIssues) return;
+        list.Add(new StatusNotice(
+            StatusNoticeSeverity.Warning,
+            SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_RoutingPhantom_Title)
+                ?? "Трассировка ссылается на отсутствующий фитинг",
+            SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_RoutingPhantom_Guidance)
+                ?? "Фитинг удалён из каталога, поэтому в трассировку он больше не подгрузится. Нажмите значок трассировки у семейства, чтобы открыть вкладку «Трассировка», и выберите замену — либо удалите правило.",
+            MissingRoutingFamilies));
+    }
 
     public FamilyLeafNodeViewModel(
         FamilyCatalogItemRow row,

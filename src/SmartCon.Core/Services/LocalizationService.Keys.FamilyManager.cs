@@ -706,7 +706,46 @@ public static partial class LocalizationService
         ru["FM_HashRecalc_PurgeConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Действие нельзя отменить."; en["FM_HashRecalc_PurgeConfirmBody"] = "Delete {0} records of unavailable files from the catalog? This action cannot be undone.";
         ru["FM_HashRecalc_PurgeResult"] = "Удалено семейств: {0}, версий: {1}."; en["FM_HashRecalc_PurgeResult"] = "Families deleted: {0}, versions: {1}.";
         ru["FM_HashRecalc_PurgeDirsFailed"] = "Папки на диске удалить не удалось (нет доступа): {0} — удалите их вручную."; en["FM_HashRecalc_PurgeDirsFailed"] = "Could not delete directories on disk (access denied): {0} — please remove them manually.";
-        ru["FM_HashRecalc_PurgeGuarded"] = "Пропущены как используемые зависимости: {0} — сначала удалите ссылающиеся версии родителей."; en["FM_HashRecalc_PurgeGuarded"] = "Skipped as referenced dependencies: {0} — delete the referencing parent versions first.";
+        ru["FM_HashRecalc_PurgeSwitchedActive"] = "Активная версия переключена на оставшуюся:"; en["FM_HashRecalc_PurgeSwitchedActive"] = "Active version switched to the remaining one:";
+        ru["FM_HashRecalc_PurgeResetLinks"] = "Сброшены элементы трассировки (фитинг удалён из каталога):"; en["FM_HashRecalc_PurgeResetLinks"] = "Routing entries reset (fitting deleted from the catalog):";
+        ru["FM_HashRecalc_PurgeResetLinks_Item"] = "{0}: фитинг '{1}' удалён"; en["FM_HashRecalc_PurgeResetLinks_Item"] = "{0}: fitting '{1}' deleted";
+        ru["FM_HashRecalc_PurgeResetLinksNote"] = "Если удалённый фитинг использовался в трассировке в проекте, эта трассировка стала устаревшей: замените фитинг в окне свойств семейства или удалите его из проекта."; en["FM_HashRecalc_PurgeResetLinksNote"] = "If a deleted fitting was used by project routing, that routing has become stale: replace the fitting in the family properties window or remove it from the project.";
+
+        // Cleanup of unavailable records (Issue #133)
+        ru["FM_PBase_CleanupMissingRecords"] = "Очистить недоступные записи"; en["FM_PBase_CleanupMissingRecords"] = "Clean up unavailable records";
+        ru["FM_PBase_CleanupMissingRecordsTooltip"] = "Найти и удалить записи каталога, чьи файлы отсутствуют на диске (помечены при обновлении базы или удалены вручную)"; en["FM_PBase_CleanupMissingRecordsTooltip"] = "Find and delete catalog records whose files are missing on disk (marked during a database update or deleted manually)";
+        ru["FM_Cleanup_Title"] = "Очистка недоступных записей"; en["FM_Cleanup_Title"] = "Clean Up Unavailable Records";
+        ru["FM_Cleanup_Warning"] = "В список попадают записи, чьи файлы отсутствуют на диске. Если база находится на сетевом диске — убедитесь, что он подключён: временно недоступный диск выглядит как отсутствующие файлы. Удаление записей необратимо."; en["FM_Cleanup_Warning"] = "The list contains records whose files are missing on disk. If the database lives on a network drive, make sure it is connected: a temporarily unavailable drive looks like missing files. Deleting records cannot be undone.";
+        ru["FM_Cleanup_NothingFound"] = "Недоступные записи не найдены."; en["FM_Cleanup_NothingFound"] = "No unavailable records found.";
+        ru["FM_Cleanup_FoundCount"] = "Найдено недоступных записей: {0}."; en["FM_Cleanup_FoundCount"] = "Unavailable records found: {0}.";
+        ru["FM_Cleanup_Searching"] = "Поиск недоступных записей..."; en["FM_Cleanup_Searching"] = "Searching for unavailable records...";
+        ru["FM_Cleanup_CheckDisk"] = "Проверить диск"; en["FM_Cleanup_CheckDisk"] = "Check disk";
+        ru["FM_Cleanup_CheckDiskTooltip"] = "Повторно проверить все файлы базы на диске — найти записи, чьи файлы удалены вручную (может быть долго на сетевом диске)"; en["FM_Cleanup_CheckDiskTooltip"] = "Re-verify all database files on disk — find records whose files were deleted manually (may be slow on a network drive)";
+        ru["FM_Cleanup_ScanProgress"] = "Проверка {0} из {1} — {2}"; en["FM_Cleanup_ScanProgress"] = "Checking {0} of {1} — {2}";
+        ru["FM_Cleanup_ScanCancelled"] = "Проверка прервана — показаны записи, найденные до остановки."; en["FM_Cleanup_ScanCancelled"] = "Check interrupted — records found before the stop are shown.";
+        ru["FM_Cleanup_ScanCancelledEmpty"] = "Проверка прервана — недоступные записи не найдены."; en["FM_Cleanup_ScanCancelledEmpty"] = "Check interrupted — no unavailable records found.";
+        ru["FM_Cleanup_Stopping"] = "Прерываю..."; en["FM_Cleanup_Stopping"] = "Stopping...";
+        ru["FM_Cleanup_SelectAll"] = "Выбрать все"; en["FM_Cleanup_SelectAll"] = "Select all";
+        ru["FM_Cleanup_ClearSelection"] = "Снять отметки"; en["FM_Cleanup_ClearSelection"] = "Clear selection";
+        ru["FM_Cleanup_DeleteSelected"] = "Удалить выбранные ({0})"; en["FM_Cleanup_DeleteSelected"] = "Delete selected ({0})";
+        ru["FM_Cleanup_DeleteAll"] = "Удалить все"; en["FM_Cleanup_DeleteAll"] = "Delete all";
+        ru["FM_Cleanup_ConfirmTitle"] = "Удаление записей"; en["FM_Cleanup_ConfirmTitle"] = "Delete records";
+        ru["FM_Cleanup_ConfirmBody"] = "Удалить из каталога {0} записей о недоступных файлах? Файлы могут быть временно недоступны (например, отключён сетевой диск) — удаление необратимо."; en["FM_Cleanup_ConfirmBody"] = "Delete {0} records of unavailable files from the catalog? The files may be temporarily unavailable (e.g. a disconnected network drive) — this cannot be undone.";
+        ru["FM_Cleanup_Close"] = "Закрыть"; en["FM_Cleanup_Close"] = "Close";
+        ru["FM_Cleanup_ReasonMarked"] = "Помечено при обновлении"; en["FM_Cleanup_ReasonMarked"] = "Marked during update";
+        ru["FM_Cleanup_ReasonFileMissing"] = "Файл отсутствует"; en["FM_Cleanup_ReasonFileMissing"] = "File missing";
+        ru["FM_Cleanup_ColItem"] = "Семейство"; en["FM_Cleanup_ColItem"] = "Family";
+        ru["FM_Cleanup_ColVersion"] = "Версия"; en["FM_Cleanup_ColVersion"] = "Version";
+        ru["FM_Cleanup_ColRevit"] = "Revit"; en["FM_Cleanup_ColRevit"] = "Revit";
+        ru["FM_Cleanup_ColFile"] = "Файл"; en["FM_Cleanup_ColFile"] = "File";
+        ru["FM_Cleanup_ColReason"] = "Причина"; en["FM_Cleanup_ColReason"] = "Reason";
+        ru["FM_Badge_RoutingPhantom_Short"] = "Трассировка: фитинг отсутствует в каталоге"; en["FM_Badge_RoutingPhantom_Short"] = "Routing: fitting missing from the catalog";
+        ru["FM_Badge_RoutingPhantom_Hint"] = "Нажмите, чтобы открыть вкладку «Трассировка»"; en["FM_Badge_RoutingPhantom_Hint"] = "Click to open the Routing tab";
+        ru["FM_Badge_RoutingPhantom_Category"] = "Семейств с проблемами трассировки: {0}"; en["FM_Badge_RoutingPhantom_Category"] = "Families with routing problems: {0}";
+        ru["FM_Notice_RoutingPhantom_Title"] = "Трассировка ссылается на отсутствующий фитинг"; en["FM_Notice_RoutingPhantom_Title"] = "Routing references a missing fitting";
+        ru["FM_Notice_RoutingPhantom_Guidance"] = "Фитинг удалён из каталога, поэтому в трассировку он больше не подгрузится. Нажмите значок трассировки у семейства, чтобы открыть вкладку «Трассировка», и выберите замену — либо удалите правило."; en["FM_Notice_RoutingPhantom_Guidance"] = "The fitting was deleted from the catalog and can no longer be loaded into routing. Click the routing badge on the family to open the Routing tab and pick a replacement — or remove the rule.";
+        ru["FM_Notice_CategoryRouting_Title"] = "В категории есть семейства с проблемами трассировки ({0})"; en["FM_Notice_CategoryRouting_Title"] = "The category has families with routing problems ({0})";
+        ru["FM_Notice_CategoryRouting_Guidance"] = "У части семейств трассировка ссылается на фитинги, удалённые из каталога. Откройте семейство по значку трассировки у листа и выберите замену."; en["FM_Notice_CategoryRouting_Guidance"] = "Some families' routing references fittings deleted from the catalog. Open a family via its routing leaf badge and pick a replacement.";
 
         // Unified Database Update Dialog (ADR-054)
         ru["FM_DbUpdate_Title"] = "Обновление базы"; en["FM_DbUpdate_Title"] = "Database Update";

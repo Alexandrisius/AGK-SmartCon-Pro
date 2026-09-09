@@ -231,6 +231,9 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowDatabaseUpdateProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>
+    public void ShowMissingRecordsCleanupDialog(object viewModel) => _presenter.ShowModeless(viewModel);
+
+    /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);
 
     /// <inheritdoc/>

@@ -17,7 +17,8 @@ public interface IFamilyManagerViewModelFactory
         string? revitCategory = null,
         bool isReadOnly = false,
         string? familySource = null,
-        int? revitCategoryId = null);
+        int? revitCategoryId = null,
+        string? focusRoutingTypeKey = null);
 
     /// <summary>
     /// Routing part picker (ADR-072, Phase 3): family + type selection for
@@ -35,6 +36,14 @@ public interface IFamilyManagerViewModelFactory
     SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames);
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
+
+    /// <summary>
+    /// "Очистить недоступные записи" dialog (Issue #133): candidates marked
+    /// RecalculationMissing (-2) plus an optional on-disk scan; deletion goes
+    /// through the actualization engine's purge.
+    /// </summary>
+    MissingRecordsCleanupViewModel CreateMissingRecordsCleanupViewModel();
+
     ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");
     ValidationReportViewModel CreateValidationReportViewModel(
         string familyName,
