@@ -208,8 +208,15 @@ public sealed partial class App : AppBase
     private static void RegisterGlobalExceptionHandlers()
     {
         var logPath = Path.Combine(Path.GetDirectoryName(typeof(App).Assembly.Location) ?? ".", "assembly-load.log");
-        void Mark(string step) => File.AppendAllText(logPath,
-            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] RGEH step: " + step + "\n");
+        void Mark(string step)
+        {
+            try
+            {
+                File.AppendAllText(logPath,
+                    "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] RGEH step: " + step + "\n");
+            }
+            catch { /* diagnostics must never throw (read-only add-in dir) */ }
+        }
 
         Mark("1: about to subscribe AppDomain.UnhandledException");
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>

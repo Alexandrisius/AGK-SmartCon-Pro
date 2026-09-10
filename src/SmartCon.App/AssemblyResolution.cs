@@ -198,6 +198,12 @@ public sealed partial class App
 
             var logDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
             var asmLogPath = Path.Combine(logDir ?? ".", "assembly-load.log");
+            // Stack traces make this file grow fast; past 5 MB stop appending —
+            // diagnostics only, never truncating (the file must survive
+            // TruncateMainLog, see the summary above).
+            var logInfo = new FileInfo(asmLogPath);
+            if (logInfo.Exists && logInfo.Length > 5_000_000)
+                return;
             var line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] thread=" + Environment.CurrentManagedThreadId + " " +
                        $"LOADED: {name} v{args.LoadedAssembly.GetName().Version}\nStackTrace:\n{stack}\n" +
                        new string('-', 80) + "\n";

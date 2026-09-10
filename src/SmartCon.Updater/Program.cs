@@ -143,6 +143,14 @@ void ApplyMultiVersionUpdate(JsonElement root)
         updatedTargetFolders.Add(targetPath);
     }
 
+    if (totalFailed > 0)
+    {
+        Log($"=== Multi-version update INCOMPLETE: {totalFailed} file(s) failed to copy — " +
+            "update-pending.json kept, staging preserved; the updater retries on the next Revit exit " +
+            "[Action: close all Revit instances so locked files can be replaced] ===");
+        return;
+    }
+
     foreach (var targetPath in updatedTargetFolders)
     {
         var folderName = new DirectoryInfo(targetPath.TrimEnd(Path.DirectorySeparatorChar)).Name;
@@ -235,6 +243,14 @@ void ApplySingleVersionUpdate(string json)
     }
 
     Log($"Copied {copiedFiles} files, {failedFiles} failed.");
+
+    if (failedFiles > 0)
+    {
+        Log($"=== Update INCOMPLETE: {failedFiles} file(s) failed to copy — " +
+            "update-pending.json kept, staging preserved; the updater retries on the next Revit exit " +
+            "[Action: close all Revit instances so locked files can be replaced] ===");
+        return;
+    }
 
     var obsoleteListPath = Path.Combine(pending.StagingPath, "obsolete-files.txt");
     if (File.Exists(obsoleteListPath) && IsNet48InstallFolder(pending.TargetInstallPath))
