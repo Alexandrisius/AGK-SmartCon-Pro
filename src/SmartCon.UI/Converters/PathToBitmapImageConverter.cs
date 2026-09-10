@@ -39,7 +39,7 @@ public sealed class PathToBitmapImageConverter : IValueConverter
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"PathToBitmapImageConverter: Failed to load image '{Path.GetFileName(path)}': {ex.Message}");
+            SmartConLogger.Warn($"PathToBitmapImageConverter: Failed to load image '{Path.GetFileName(path)}': {ex.Message} [Action: check the image file — the preview falls back to empty]");
             return null;
         }
     }

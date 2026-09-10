@@ -62,7 +62,7 @@ public static class PipeConnectDiagnostics
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"[DIAG {label}] Logging error: {ex.Message}");
+            SmartConLogger.Warn($"Logging error in diagnostic '{label}': {ex.Message} [Action: diagnostic logging failed — non-fatal, the operation continues]");
         }
     }
 }

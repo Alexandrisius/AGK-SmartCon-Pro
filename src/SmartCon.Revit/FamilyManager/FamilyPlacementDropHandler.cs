@@ -230,7 +230,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 if (!result.Success)
                 {
                     var errorMsg = $"Failed to load '{familyName}': {result.ErrorMessage}";
-                    SmartConLogger.Warn(errorMsg);
+                    SmartConLogger.Warn($"{errorMsg} [Action: check the managed .rfa file and retry the drag-drop]");
                     _onError?.Invoke(errorMsg);
                     return;
                 }
@@ -242,7 +242,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (!placementSuccess)
             {
                 var errorMsg = $"Failed to activate type '{typeName}' for placement";
-                SmartConLogger.Warn(errorMsg);
+                SmartConLogger.Warn($"{errorMsg} [Action: verify the type exists in the family]");
                 _onError?.Invoke(errorMsg);
                 return;
             }
@@ -291,7 +291,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message}");
+            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message} [Action: placement succeeded but stale detection may misreport — re-run the staleness check later]");
         }
     }
 

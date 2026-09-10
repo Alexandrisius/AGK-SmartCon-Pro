@@ -66,13 +66,13 @@ public sealed partial class RevitFamilyLoadService : IFamilyLoadService, IFamily
         if (loadOptions is not null)
         {
             SmartConLogger.Info(
-                $"[{attemptName}] LoadFamily WITH IFamilyLoadOptions — " +
+                $"{attemptName}: LoadFamily WITH IFamilyLoadOptions — " +
                 "expecting OnFamilyFound + OnSharedFamilyFound callbacks (Issue #76 verification)");
         }
         else
         {
             SmartConLogger.Info(
-                $"[{attemptName}] LoadFamily WITHOUT IFamilyLoadOptions — " +
+                $"{attemptName}: LoadFamily WITHOUT IFamilyLoadOptions — " +
                 "no callbacks will fire (silent overwrite fallback path)");
         }
 
@@ -110,10 +110,10 @@ public sealed partial class RevitFamilyLoadService : IFamilyLoadService, IFamily
         });
 
         if (loadedDescription is not null)
-            SmartConLogger.Info($"[{attemptName}] LoadFamily returned: {loadedDescription}, sourcePath='{path}'");
+            SmartConLogger.Info($"{attemptName}: LoadFamily returned: {loadedDescription}, sourcePath='{path}'");
 
         if (renameResult is not null)
-            SmartConLogger.Info($"[{attemptName}] {renameResult}");
+            SmartConLogger.Info($"{attemptName}: {renameResult}");
 
         if (success && loadedFamily is not null)
         {
@@ -124,7 +124,7 @@ public sealed partial class RevitFamilyLoadService : IFamilyLoadService, IFamily
             var msg = status == FamilyLoadStatus.Updated
                 ? $"Family '{displayName}' updated to latest version"
                 : $"Family '{displayName}' loaded successfully";
-            SmartConLogger.Info($"[{attemptName}] {msg}");
+            SmartConLogger.Info($"{attemptName}: {msg}");
             return new FamilyLoadResult(true, displayName, msg, null, status);
         }
 
@@ -132,15 +132,15 @@ public sealed partial class RevitFamilyLoadService : IFamilyLoadService, IFamily
         {
             // Revit rejected the load because the family is already up-to-date.
 #if REVIT2021_OR_GREATER
-            SmartConLogger.Info($"[{attemptName}] Family '{existingFamily.Name}' is already current (VersionGuid unchanged)");
+            SmartConLogger.Info($"{attemptName}: Family '{existingFamily.Name}' is already current (VersionGuid unchanged)");
 #else
-            SmartConLogger.Info($"[{attemptName}] Family '{existingFamily.Name}' is already current");
+            SmartConLogger.Info($"{attemptName}: Family '{existingFamily.Name}' is already current");
 #endif
             return new FamilyLoadResult(true, existingFamily.Name,
                 $"Family '{existingFamily.Name}' is already up-to-date", null, FamilyLoadStatus.Current);
         }
 
-        SmartConLogger.Info($"[{attemptName}] Failed: loadedFamily is null or success=false");
+        SmartConLogger.Info($"{attemptName}: Failed: loadedFamily is null or success=false");
         return null;
     }
 

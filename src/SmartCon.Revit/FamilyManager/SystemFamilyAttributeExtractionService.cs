@@ -138,7 +138,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             var missing = requestedSet.Except(foundNames).ToList();
             if (missing.Count > 0)
             {
-                SmartConLogger.Warn($"{missing.Count} requested types not found in rvt: {string.Join(", ", missing)}");
+                SmartConLogger.Warn($"{missing.Count} requested types not found in rvt: {string.Join(", ", missing)} [Action: check the type names in the staged mini-project]");
             }
         }
 
