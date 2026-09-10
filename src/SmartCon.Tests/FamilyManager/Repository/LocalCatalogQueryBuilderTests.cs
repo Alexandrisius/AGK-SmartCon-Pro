@@ -85,7 +85,7 @@ public sealed class LocalCatalogQueryBuilderTests
         var (sql, parameters) = LocalCatalogQueryBuilder.BuildWhereClause(query);
 
         Assert.Equal(2, parameters.Count);
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(sql, "OR EXISTS").Count);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Count(sql, "OR EXISTS"));
         Assert.Contains(") AND (", sql);
     }
 

@@ -1,7 +1,7 @@
-namespace SmartCon.Tests.FamilyManager.Behaviors;
-
 using SmartCon.FamilyManager.Behaviors;
 using Xunit;
+
+namespace SmartCon.Tests.FamilyManager.Behaviors;
 
 public sealed class StickyCascadingStackBuilderTests
 {
