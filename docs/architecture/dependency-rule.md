@@ -9,24 +9,27 @@
               (RevitAPI.dll compile-time only)
                  /    |    |    \     \        \
                 /     |    |     \     \        \
-          Revit    UI   App  PipeConnect  ProjectManagement  Tests
+          Revit    UI   App  PipeConnect  ProjectManagement  FamilyManager
+
+   Tests / IntegrationTests зависят от Core (+ модули для тестирования);
+   Updater — standalone .NET 8 (листовой). Полная матрица — ниже.
 ```
 
 **Стрелка «зависит от» направлена вверх.** Все проекты зависят от Core. Core не знает ни о ком.
 
 ## Матрица зависимостей
 
-| Проект | Core | Revit | UI | App | PipeConnect | ProjectManagement | FamilyManager |
-|---|---|---|---|---|---|---|---|
-| **Core** | — | — | — | — | — | — | — |
-| **Revit** | да | — | — | — | — | — | — |
-| **UI** | да | — | — | — | — | — | — |
-| **App** | да | да | да | — | да | да | да |
-| **PipeConnect** | да | — | да | — | — | — | — |
-| **ProjectManagement** | да | — | да | — | — | — | — |
-| **FamilyManager** | да | — | да | — | — | — | — |
-| **Tests** | да | — | — | — | да | да | да |
-| **IntegrationTests** | да | да | — | — | — | — | да* |
+| Проект | Core | Revit | UI | App | PipeConnect | ProjectManagement | FamilyManager | Updater |
+|---|---|---|---|---|---|---|---|---|
+| **Core** | — | — | — | — | — | — | — | — |
+| **Revit** | да | — | — | — | — | — | — | — |
+| **UI** | да | — | — | — | — | — | — | — |
+| **App** | да | да | да | — | да | да | да | — |
+| **PipeConnect** | да | — | да | — | — | — | — | — |
+| **ProjectManagement** | да | — | да | — | — | — | — | — |
+| **FamilyManager** | да | — | да | — | — | — | — | — |
+| **Tests** | да | — | да | — | да | да | да | да |
+| **IntegrationTests** | да | да | — | — | — | — | да* | — |
 
 \* IntegrationTests → FamilyManager: только для оркестрационных тестов
 internal stale-сервисов в реальном Revit (2026-08); WPF-типы модуля запрещены.

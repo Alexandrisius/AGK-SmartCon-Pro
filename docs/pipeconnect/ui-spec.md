@@ -13,15 +13,14 @@
 
 ### Взаимодействие WPF <-> Revit
 
-- Modal окна (PipeConnectEditor): Revit API вызывается напрямую из ViewModel в рамках command context (см. ADR-043).
-- Modeless окна (MappingEditor): вызовы Revit API только через `IExternalEventHandler.Raise()` (см. ADR-006 / ADR-008, используется FamilyManager и ProjectManagement).
+- Modal окна (PipeConnectEditor, MappingEditor): Revit API вызывается напрямую из ViewModel в рамках command context (см. ADR-043). MappingEditor открывается `SettingsCommand` через `presenter.ShowDialog` — тот же modal-режим I-01a. Modeless-окон в модуле нет.
 
 ---
 
 ## 1. PipeConnectEditor (финальное окно, S6)
 
 **Файл View:** `SmartCon.PipeConnect/Views/PipeConnectEditorView.xaml`
-**Файл VM:** `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs` (+ partial-файлы `.Chain.cs`, `.Connect.cs`, `.Cycle.cs`, `.Insert.cs`, `.Dynamic.cs`, `.Ctc.cs`)
+**Файл VM:** `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs` (+ partial-файлы `.Chain.cs`, `.Connect.cs`, `.Cycle.cs`, `.Ctc.cs`, `.Dynamic.cs`, `.Init.cs`, `.Insert.cs`, `.Inspect.cs`, `.LockNetwork.cs`, `.RotationSize.cs`)
 **Тип:** Модальное (modal) окно — **обязательно** для live real-element preview + single-undo cancel (см. [ADR-043](../adr/043-pipeconnect-modal-justification.md)). Modeless невозможен из-за ограничения Revit API: `TransactionGroup` откатывается при возврате из `IExternalCommand.Execute` / `IExternalEventHandler.Execute`.
 
 ### Layout
@@ -203,7 +202,9 @@ RollBack группы (Cancel).
 
 **Файл View:** `SmartCon.PipeConnect/Views/MappingEditorView.xaml`
 **Файл VM:** `SmartCon.PipeConnect/ViewModels/MappingEditorViewModel.cs`
-**Тип:** Немодальное (modeless) окно
+**Тип:** Модальное (modal) окно — открывается `SettingsCommand` через `presenter.ShowDialog()`
+в command context; ViewModel вызывает Revit API напрямую (тот же режим I-01a / ADR-043,
+что и PipeConnectEditor).
 
 ### Открытие
 Кнопка «Настройки SmartCon» на Ribbon.

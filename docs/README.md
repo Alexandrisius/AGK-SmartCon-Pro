@@ -1,7 +1,7 @@
 # SmartCon — SSOT (Single Source of Truth)
 
-> **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2026 / .NET Framework 4.8 + .NET 8 / C# 12 / WPF
-> **Последнее обновление:** 2026-07-08
+> **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2027 / .NET Framework 4.8 + .NET 8 + .NET 10 / C# 12 / WPF
+> **Последнее обновление:** 2026-09-10
 > **Pre-release:** Поддержка beta-версий через SemVer + GitHub pre-release (ADR-021)
 
 Этот файл — **единая точка входа** в документацию проекта SmartCon.
@@ -108,7 +108,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
 | SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
-| SmartCon.Tests | ✅ 1669 тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.Tests | ✅ 3284 теста, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.IntegrationTests | ✅ ~250 тестов в реальном Revit | TUnit + Nice3point: граница SmartCon ↔ Revit API (net48/net8/net10), см. AGENTS.md |
 
 **Phase 11 (ProjectManagement) завершена (2026-04-25):** Share Project, Field Library, FileNameParser с валидацией, 12-категорийная очистка модели, 716 тестов.
 
