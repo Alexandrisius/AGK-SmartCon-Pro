@@ -31,6 +31,56 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
     public string? FamilyKey { get; }
 
     /// <summary>
+    /// Issue #203: display badge distinguishing system family kinds (duct
+    /// profile shape, fittings presence, wall kind, stairs construction
+    /// method) — same-named types of different families are otherwise
+    /// visually identical in the tree. None for loadable, single-family,
+    /// unknown and legacy (pre-V27) rows.
+    /// </summary>
+    public SystemFamilyBadge Badge => SystemFamilyBadgeMap.Resolve(FamilyKey);
+
+    /// <summary>
+    /// Issue #203: whether the badge cell takes layout space at all — the
+    /// tree template collapses the whole badge on badge-less rows
+    /// (loadable/single-family/legacy), so the name keeps its normal
+    /// offset next to the presence dot.
+    /// </summary>
+    public bool HasBadge => Badge != SystemFamilyBadge.None;
+
+    /// <summary>
+    /// Issue #203: hover text for the family badge — the localized kind
+    /// caption plus the family name (the badge itself is glyph-only).
+    /// null when <see cref="Badge"/> is None.
+    /// </summary>
+    public string? BadgeTooltip
+    {
+        get
+        {
+            var label = Badge switch
+            {
+                SystemFamilyBadge.ShapeRound => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_Round, "Круглое сечение"),
+                SystemFamilyBadge.ShapeRectangular => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_Rectangular, "Прямоугольное сечение"),
+                SystemFamilyBadge.ShapeOval => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_Oval, "Овальное сечение"),
+                SystemFamilyBadge.Fittings => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_WithFittings, "С соединительными деталями"),
+                SystemFamilyBadge.FittingsNone => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_WithoutFittings, "Без соединительных деталей"),
+                SystemFamilyBadge.WallBasic => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_WallBasic, "Основная стена"),
+                SystemFamilyBadge.WallStacked => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_WallStacked, "Составная стена"),
+                SystemFamilyBadge.WallCurtain => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_WallCurtain, "Витраж"),
+                SystemFamilyBadge.StairsAssembled => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_StairsAssembled, "Смонтированная лестница"),
+                SystemFamilyBadge.StairsCastInPlace => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_StairsCastInPlace, "Монолитная лестница"),
+                SystemFamilyBadge.StairsPrecast => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_StairsPrecast, "Сборная лестница"),
+                _ => null,
+            };
+            if (label is null)
+                return null;
+            return string.IsNullOrEmpty(FamilyName) ? label : $"{label} · {FamilyName}";
+        }
+    }
+
+    private static string Text(string key, string fallback)
+        => SmartCon.UI.LanguageManager.GetString(key) ?? fallback;
+
+    /// <summary>
     /// #187: the type is present in the ACTIVE project (same family + name
     /// found in the document). Computed on every tree load via one
     /// CollectTypes pass over the system categories of the catalog.

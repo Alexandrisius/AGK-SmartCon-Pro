@@ -318,6 +318,42 @@ public static class SystemFamilyKeys
 
 ---
 
+## SystemFamilyBadge / SystemFamilyBadgeMap
+
+Display-бейдж вида системного семейства для узлов типов в дереве каталога
+(Issue #203): одноимённые типы разных семейств одной категории («Короб» из
+семей «с/без соединительных деталей», формы воздуховодов, виды стен и
+лестниц) стали визуально неразличимы. `SystemFamilyBadgeMap.Resolve` — чистая
+display-маппировка токена `family_key` (см. [SystemFamilyKeys](#systemfamilykeys))
+в enum бейджа; глифы (MDI path data) и tooltip рендерятся в
+`FamilyManagerPaneControl.xaml` + `FamilyBadgeGeometries.xaml`. `None` для
+loadable-типов, односемейных категорий (`SingleFamily`), `*.Unknown`,
+legacy-строк (pre-V27, пустой ключ) и нераспознанных токенов — тихая
+деградация без неверного значка. Схема БД и extraction не меняются.
+
+**Файл:** `SystemFamilyBadge.cs`
+
+```csharp
+public enum SystemFamilyBadge
+{
+    None,               // loadable / Single / Unknown / legacy / нераспознанный токен
+    ShapeRound,         // Duct.Round, FlexDuct.Round
+    ShapeRectangular,   // Duct.Rectangular, FlexDuct.Rectangular
+    ShapeOval,          // Duct.Oval
+    Fittings,           // Conduit/CableTray.WithFittings
+    FittingsNone,       // Conduit/CableTray.WithoutFittings
+    WallBasic, WallStacked, WallCurtain,
+    StairsAssembled, StairsCastInPlace, StairsPrecast,
+}
+
+public static class SystemFamilyBadgeMap
+{
+    public static SystemFamilyBadge Resolve(string? familyKey);
+}
+```
+
+---
+
 ## TypePresenceState
 
 Трёхзначное состояние присутствия типа в активном проекте (Issue #187) —

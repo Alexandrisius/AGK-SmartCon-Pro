@@ -796,6 +796,18 @@ public static class StringLocalization
         public const string FM_RefreshTooltip = "FM_RefreshTooltip";
         public const string FM_ClearSearch = "FM_ClearSearch";
         public const string FM_Refreshed = "FM_Refreshed";
+        // #203: family-kind badge labels on the catalog tree type nodes.
+        public const string FM_FamilyBadge_Round = "FM_FamilyBadge_Round";
+        public const string FM_FamilyBadge_Rectangular = "FM_FamilyBadge_Rectangular";
+        public const string FM_FamilyBadge_Oval = "FM_FamilyBadge_Oval";
+        public const string FM_FamilyBadge_WithFittings = "FM_FamilyBadge_WithFittings";
+        public const string FM_FamilyBadge_WithoutFittings = "FM_FamilyBadge_WithoutFittings";
+        public const string FM_FamilyBadge_WallBasic = "FM_FamilyBadge_WallBasic";
+        public const string FM_FamilyBadge_WallStacked = "FM_FamilyBadge_WallStacked";
+        public const string FM_FamilyBadge_WallCurtain = "FM_FamilyBadge_WallCurtain";
+        public const string FM_FamilyBadge_StairsAssembled = "FM_FamilyBadge_StairsAssembled";
+        public const string FM_FamilyBadge_StairsCastInPlace = "FM_FamilyBadge_StairsCastInPlace";
+        public const string FM_FamilyBadge_StairsPrecast = "FM_FamilyBadge_StairsPrecast";
 
         public const string FM_CTE_Title = "FM_CTE_Title";
         public const string FM_CTE_AddRoot = "FM_CTE_AddRoot";

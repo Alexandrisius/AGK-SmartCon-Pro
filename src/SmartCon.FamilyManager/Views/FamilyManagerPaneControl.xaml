@@ -19,6 +19,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
+                <ResourceDictionary Source="FamilyBadgeGeometries.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
@@ -1292,6 +1293,107 @@
                                     </Ellipse.Style>
                                 </Ellipse>
                             </Button>
+                            <!-- #203: family-kind badge — distinguishes same-named
+                                 types of different system families (duct profile
+                                 shape, fittings presence, wall kind, stairs
+                                 construction method). Left of the name so badges
+                                 line up in one column; 12px filled-outline glyphs
+                                 (FamilyBadgeGeometries.xaml), TextMutedBrush to
+                                 stay quiet next to the grey type text. Hidden for
+                                 loadable/single-family/legacy rows (Badge=None).
+                                 WithoutFittings reuses the wrench glyph and draws
+                                 a diagonal slash on top (bottom-left to top-right):
+                                 a background-colored halo under the muted stroke
+                                 keeps the line readable over the grey wrench fill. -->
+                            <Grid Width="12" Height="12"
+                                  Margin="0,0,5,0"
+                                  VerticalAlignment="Center"
+                                  ToolTip="{Binding BadgeTooltip}">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasBadge}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Path Stretch="Uniform"
+                                      Fill="{DynamicResource TextMutedBrush}">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.ShapeRound}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeShapeRoundGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.ShapeRectangular}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeShapeRectangularGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.ShapeOval}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeShapeOvalGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.Fittings}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeFittingsGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.FittingsNone}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeFittingsGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.WallBasic}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeWallBasicGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.WallStacked}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeWallStackedGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.WallCurtain}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeWallCurtainGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.StairsAssembled}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeStairsAssembledGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.StairsCastInPlace}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeStairsCastInPlaceGeometry}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.StairsPrecast}">
+                                                    <Setter Property="Data" Value="{StaticResource FamilyBadgeStairsPrecastGeometry}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                                <Path Data="M1.8,10.2 L10.2,1.8"
+                                      Stroke="{DynamicResource BackgroundBrush}"
+                                      StrokeThickness="2.6"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.FittingsNone}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                                <Path Data="M1.8,10.2 L10.2,1.8"
+                                      Stroke="{DynamicResource TextMutedBrush}"
+                                      StrokeThickness="1.2"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Badge}" Value="{x:Static coremodels:SystemFamilyBadge.FittingsNone}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </Grid>
                             <ContentControl VerticalAlignment="Center">
                                 <ContentControl.Style>
                                     <Style TargetType="ContentControl">

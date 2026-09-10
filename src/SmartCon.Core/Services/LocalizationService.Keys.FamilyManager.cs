@@ -214,6 +214,18 @@ public static partial class LocalizationService
         ru["FM_RefreshTooltip"] = "Обновить дерево категорий"; en["FM_RefreshTooltip"] = "Refresh category tree";
         ru["FM_ClearSearch"] = "Очистить"; en["FM_ClearSearch"] = "Clear";
         ru["FM_Refreshed"] = "Обновлено"; en["FM_Refreshed"] = "Refreshed";
+        // #203: family-kind badge labels on the catalog tree type nodes.
+        ru["FM_FamilyBadge_Round"] = "Круглое сечение"; en["FM_FamilyBadge_Round"] = "Round profile";
+        ru["FM_FamilyBadge_Rectangular"] = "Прямоугольное сечение"; en["FM_FamilyBadge_Rectangular"] = "Rectangular profile";
+        ru["FM_FamilyBadge_Oval"] = "Овальное сечение"; en["FM_FamilyBadge_Oval"] = "Oval profile";
+        ru["FM_FamilyBadge_WithFittings"] = "С соединительными деталями"; en["FM_FamilyBadge_WithFittings"] = "With fittings";
+        ru["FM_FamilyBadge_WithoutFittings"] = "Без соединительных деталей"; en["FM_FamilyBadge_WithoutFittings"] = "Without fittings";
+        ru["FM_FamilyBadge_WallBasic"] = "Основная стена"; en["FM_FamilyBadge_WallBasic"] = "Basic wall";
+        ru["FM_FamilyBadge_WallStacked"] = "Составная стена"; en["FM_FamilyBadge_WallStacked"] = "Stacked wall";
+        ru["FM_FamilyBadge_WallCurtain"] = "Витраж"; en["FM_FamilyBadge_WallCurtain"] = "Curtain wall";
+        ru["FM_FamilyBadge_StairsAssembled"] = "Смонтированная лестница"; en["FM_FamilyBadge_StairsAssembled"] = "Assembled stairs";
+        ru["FM_FamilyBadge_StairsCastInPlace"] = "Монолитная лестница"; en["FM_FamilyBadge_StairsCastInPlace"] = "Cast-in-place stairs";
+        ru["FM_FamilyBadge_StairsPrecast"] = "Сборная лестница"; en["FM_FamilyBadge_StairsPrecast"] = "Precast stairs";
 
         ru["FM_CTE_Title"] = "Редактор дерева категорий"; en["FM_CTE_Title"] = "Category Tree Editor";
         ru["FM_CTE_AddRoot"] = "+ Корень"; en["FM_CTE_AddRoot"] = "+ Root";
