@@ -285,8 +285,16 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
-        var resolvedCategoryId = importItem.TargetCategoryId ?? existingCategoryId;
-        var resolvedCategoryName = importItem.TargetCategoryName ?? existingCategoryName;
+        // #261: an explicit «Без категории» pick overrides the existing-category
+        // fallback — the item must MOVE to no category, not silently keep the
+        // old one (pre-fix the fallback resurrected the category the user
+        // had just cleared).
+        var resolvedCategoryId = importItem.ClearCategoryOnImport
+            ? null
+            : importItem.TargetCategoryId ?? existingCategoryId;
+        var resolvedCategoryName = importItem.ClearCategoryOnImport
+            ? null
+            : importItem.TargetCategoryName ?? existingCategoryName;
 
         var progress = new Progress<FamilyImportProgress>(p =>
         {
@@ -339,6 +347,7 @@ public sealed partial class FamilyManagerMainViewModel
                 Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.MakeActive,
+                ClearCategoryOnImport = importItem.ClearCategoryOnImport,
                 PublishedByUser = _revitContext.GetUsername()
             };
 
@@ -384,6 +393,7 @@ public sealed partial class FamilyManagerMainViewModel
                 Sections: importItem.Sections)
             {
                 Action = FamilyBatchImportAction.OverwriteCurrent,
+                ClearCategoryOnImport = importItem.ClearCategoryOnImport,
                 PublishedByUser = _revitContext.GetUsername()
             };
 

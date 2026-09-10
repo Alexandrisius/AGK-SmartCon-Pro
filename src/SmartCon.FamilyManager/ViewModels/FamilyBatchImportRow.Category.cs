@@ -52,6 +52,17 @@ public sealed partial class FamilyBatchImportRow
     private string? _existingCategoryId;
 
     /// <summary>
+    /// Issue #261: the user explicitly picked «Без категории» in the
+    /// picker — the import will MOVE the existing item to no category
+    /// (write NULL), not just "not assign one". Copied to
+    /// <c>FamilyBatchImportItem.ClearCategoryOnImport</c> by GetResultItems.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowCategoryMoveWarning))]
+    [NotifyPropertyChangedFor(nameof(CategoryMoveWarningTooltip))]
+    private bool _clearCategoryOnImport;
+
+    /// <summary>
     /// Issue #135: human-readable path of <see cref="ExistingCategoryId"/>
     /// for the move-warning tooltip.
     /// </summary>
@@ -70,13 +81,16 @@ public sealed partial class FamilyBatchImportRow
     /// <summary>
     /// Issue #135 (P2): <c>true</c> when the locked target category differs
     /// from the existing item's real category — the import will MOVE the
-    /// existing family between categories.
+    /// existing family between categories. Issue #261: an explicit
+    /// «Без категории» pick (move to no category) warns the same way.
     /// </summary>
     public bool ShowCategoryMoveWarning =>
-        TargetCategoryIsManual
-        && !string.IsNullOrEmpty(TargetCategoryId)
-        && !string.IsNullOrEmpty(ExistingCategoryId)
-        && TargetCategoryId != ExistingCategoryId
+        ((TargetCategoryIsManual
+                && !string.IsNullOrEmpty(TargetCategoryId)
+                && !string.IsNullOrEmpty(ExistingCategoryId)
+                && TargetCategoryId != ExistingCategoryId)
+            || (ClearCategoryOnImport
+                && !string.IsNullOrEmpty(ExistingCategoryId)))
         && (Status == FamilyBatchImportStatus.Existing || Status == FamilyBatchImportStatus.Duplicate);
 
     /// <summary>

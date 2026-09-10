@@ -36,4 +36,11 @@ public sealed record FamilyUpdateRequest(
     /// Issue #249 (Phase 4): canonical content sections from Prepare —
     /// see <c>FamilyImportRequest.Sections</c>.
     /// </summary>
-    IReadOnlyList<ContentSectionHash>? Sections = null);
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// Issue #261: the user explicitly picked «Без категории» in the batch
+    /// dialog — the update must WRITE a NULL category (move the item out of
+    /// its current category), as opposed to a null <see cref="CategoryId"/>
+    /// without the flag, which means "no explicit choice — don't touch".
+    /// </summary>
+    bool ClearCategory = false);

@@ -255,6 +255,11 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     // Issue #135: provenance is set BEFORE the path so the
                     // CategoryChanged batch-apply observes the new source
                     // provenance.
+                    // #261: the pick is also an explicit MOVE instruction —
+                    // on import the existing item's category is written as
+                    // NULL (not "leave as is"). The flag must be set before
+                    // the path fires CategoryChanged → ApplyCategoryToSelection.
+                    row.ClearCategoryOnImport = true;
                     row.CategoryProvenance = CategoryProvenance.None;
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
@@ -269,6 +274,7 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     // "move to this category" instruction. Lock the
                     // category so a subsequent rename does not silently
                     // re-categorize the row.
+                    row.ClearCategoryOnImport = false;
                     row.CategoryProvenance = CategoryProvenance.Manual;
                     row.TargetCategoryId = result;
                     row.TargetCategoryPath = pickerVm.SelectedPath;
@@ -444,7 +450,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             Sections: r.Sections,
             UnsubstitutedMiniRouting: r.UnsubstitutedMiniRouting)
         {
-            Action = r.Action
+            Action = r.Action,
+            ClearCategoryOnImport = r.ClearCategoryOnImport
         }).ToList();
     }
 }

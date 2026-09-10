@@ -154,10 +154,7 @@ public sealed partial class FamilyBatchImportRow
         if (value != FamilyRowGateStatus.Checking
             && (wasBlocked || !AvailableActions.Contains(Action)))
         {
-            SetActionSilently(
-                AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
-                    ? FamilyBatchImportAction.IncrementVersion
-                    : FamilyBatchImportAction.Skip);
+            SetActionSilently(RestoreStatusDefaultAction());
         }
     }
 
@@ -185,11 +182,23 @@ public sealed partial class FamilyBatchImportRow
         AvailableActions = BuildAvailableActions(Status);
         if (wasBlocked || !AvailableActions.Contains(Action))
         {
-            SetActionSilently(
-                AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
-                    ? FamilyBatchImportAction.IncrementVersion
-                    : FamilyBatchImportAction.Skip);
+            SetActionSilently(RestoreStatusDefaultAction());
         }
+    }
+
+    /// <summary>
+    /// Status-driven default used by the unblock restores: #262 — a
+    /// Duplicate row defaults to Skip (Phase 27: identical content adds
+    /// nothing as a new version); everything else prefers IncrementVersion
+    /// when available. Mirrors the rule in <see cref="OnStatusChanged"/>.
+    /// </summary>
+    private FamilyBatchImportAction RestoreStatusDefaultAction()
+    {
+        if (Status == FamilyBatchImportStatus.Duplicate)
+            return FamilyBatchImportAction.Skip;
+        return AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
+            ? FamilyBatchImportAction.IncrementVersion
+            : FamilyBatchImportAction.Skip;
     }
 
     /// <summary>

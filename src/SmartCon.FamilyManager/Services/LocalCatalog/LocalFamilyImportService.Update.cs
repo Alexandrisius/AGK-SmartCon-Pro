@@ -121,7 +121,11 @@ internal sealed partial class LocalFamilyImportService
                 {
                     await ReplaceFamilyFactsAsync(connection, request.CatalogItemId, request.Facts, ct).ConfigureAwait(false);
                 }
-                if (!string.IsNullOrEmpty(request.CategoryId))
+                // #261: an explicit «Без категории» pick writes a real NULL
+                // (ClearCategory) — moving the item out of its category. A
+                // null CategoryId WITHOUT the flag stays a no-op: "no explicit
+                // choice" must not touch the existing assignment.
+                if (!string.IsNullOrEmpty(request.CategoryId) || request.ClearCategory)
                 {
                     await UpdateCatalogItemCategoryAsync(connection, request.CatalogItemId, request.CategoryId, request.CategoryName, now, ct).ConfigureAwait(false);
                 }

@@ -350,6 +350,62 @@ public sealed class FamilyBatchImportCategoryTests
         Assert.False(row.ShowCategoryMoveWarning);
     }
 
+    [Fact]
+    public void ShowCategoryMoveWarning_ExplicitNoCategoryPick_IsTrue()
+    {
+        // #261: an explicit «Без категории» pick moves the existing item to
+        // no category — the move indicator must fire even though the target
+        // id is null (the old predicate required a non-empty id and stayed
+        // silent, hiding the move).
+        var items = new[]
+        {
+            MakeItem("a",
+                status: FamilyBatchImportStatus.Duplicate,
+                existingCatalogItemId: "existing-1",
+                existingCategoryId: "cat-old",
+                existingCategoryPath: "Old Cat"),
+        };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object);
+        var row = vm.Items.Single();
+
+        Assert.False(row.ShowCategoryMoveWarning);
+
+        row.ClearCategoryOnImport = true;
+        row.TargetCategoryPath = "Без категории";
+
+        Assert.True(row.ShowCategoryMoveWarning);
+        Assert.Contains("Old Cat", row.CategoryMoveWarningTooltip);
+        Assert.Contains("Без категории", row.CategoryMoveWarningTooltip);
+    }
+
+    [Fact]
+    public void GetResultItems_ExplicitNoCategoryPick_CarriesClearFlag()
+    {
+        // #261: the dialog row's explicit «Без категории» pick must reach
+        // the import item, or the update branch cannot distinguish "clear
+        // the category" from "no explicit choice".
+        var items = new[]
+        {
+            MakeItem("a",
+                status: FamilyBatchImportStatus.Duplicate,
+                existingCatalogItemId: "existing-1",
+                existingCategoryId: "cat-old",
+                existingCategoryPath: "Old Cat"),
+        };
+        using var vm = new FamilyBatchImportViewModel(
+            items, _dialogMock.Object, _factoryMock.Object);
+        var row = vm.Items.Single();
+
+        row.ClearCategoryOnImport = true;
+        row.TargetCategoryId = null;
+        row.TargetCategoryPath = "Без категории";
+
+        var result = vm.GetResultItems().Single();
+        Assert.True(result.ClearCategoryOnImport);
+        Assert.Null(result.TargetCategoryId);
+    }
+
     /// <summary>
     /// Issue #135 (P2) integration: a Command-locked row renamed to an
     /// existing family living in a DIFFERENT category keeps its locked

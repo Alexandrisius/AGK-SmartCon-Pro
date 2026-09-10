@@ -128,6 +128,28 @@ public sealed class FamilyBatchImportGateTests
     }
 
     [Fact]
+    public void Row_GateUnblock_DuplicateRow_StaysSkip()
+    {
+        // #262: a Duplicate row unblocked after a category change must
+        // restore to the Phase 27 default (Skip — identical content adds
+        // nothing as a new version), not to IncrementVersion.
+        // IncrementVersion stays manually selectable.
+        var row = new FamilyBatchImportRow(MakeItem("Elbow"))
+        {
+            Status = FamilyBatchImportStatus.Duplicate
+        };
+        Assert.Equal(FamilyBatchImportAction.Skip, row.Action);
+
+        row.GateStatus = FamilyRowGateStatus.Failed;
+        Assert.Equal(FamilyBatchImportAction.Skip, row.Action);
+
+        row.GateStatus = FamilyRowGateStatus.Passed;
+        Assert.Equal(FamilyBatchImportAction.Skip, row.Action);
+        Assert.Contains(FamilyBatchImportAction.IncrementVersion, row.AvailableActions);
+        Assert.False(row.CanImport);
+    }
+
+    [Fact]
     public void Row_StatusFlipWhileBlocked_StaysSkipped()
     {
         var row = new FamilyBatchImportRow(MakeItem("Elbow", HealthWithError()));
@@ -272,6 +294,55 @@ public sealed class FamilyBatchImportGateTests
         Assert.Null(row.ValidationReport);
         Assert.Equal(0, row.ValidationRulesCount);
         Assert.True(row.CanImport);
+    }
+
+    [Fact]
+    public async Task Vm_RuleBlockedDuplicateRow_CategoryCleared_StaysSkip()
+    {
+        // #262 repro (owner log 2026-09-10): a Duplicate row blocked by the
+        // category rules, then reset to «Без категории», must NOT silently
+        // become IncrementVersion — the identical content would be posted
+        // as a new version. The row unblocks but stays Skip; forcing a new
+        // version remains a manual choice.
+        var rules = new[]
+        {
+            new EffectiveValidationRule("Pressure", false,
+                new ValidationRule("r1", "b1", ValidationRuleOperator.HasValue, null, null, null, null, null, 0, true)),
+        };
+        SetupRules("cat1", rules);
+        SetupEngineReport(new FamilyValidationReport(false,
+            [new RuleViolation("DN50", "Pressure", ValidationRuleOperator.HasValue, null, null, null, null, null)], 1));
+
+        var item = new FamilyBatchImportItem(
+            FilePath: @"C:\fake\Ducts.rvt",
+            FileName: "Ducts",
+            RevitMajorVersion: 2025,
+            Status: FamilyBatchImportStatus.Duplicate,
+            ExistingCatalogItemId: "item-1",
+            TargetCategoryId: "cat1",
+            TargetCategoryName: "Трубы",
+            FamilySource: "system",
+            LoadableSnapshot: SnapshotWithFilledParam(),
+            ExistingCategoryId: "cat1",
+            ExistingCategoryPath: "Трубы");
+        using var vm = new FamilyBatchImportViewModel(
+            [item],
+            _dialogMock.Object,
+            _factoryMock.Object,
+            validationService: _validationMock.Object);
+
+        var row = vm.Items[0];
+        await WaitForAsync(() => row.GateStatus == FamilyRowGateStatus.Failed);
+        Assert.Equal(FamilyBatchImportAction.Skip, row.Action);
+
+        row.ClearCategoryOnImport = true;
+        row.CategoryProvenance = CategoryProvenance.None;
+        row.TargetCategoryId = null;
+        row.TargetCategoryPath = "Без категории";
+
+        await WaitForAsync(() => row.GateStatus == FamilyRowGateStatus.NotChecked);
+        Assert.Equal(FamilyBatchImportAction.Skip, row.Action);
+        Assert.False(row.CanImport);
     }
 
     private static async Task WaitForAsync(Func<bool> condition, int timeoutMs = 3000)

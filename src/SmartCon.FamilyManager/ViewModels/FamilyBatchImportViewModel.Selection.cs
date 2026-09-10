@@ -71,6 +71,7 @@ public sealed partial class FamilyBatchImportViewModel
                     continue;
                 }
                 target.CategoryProvenance = source.CategoryProvenance;
+                target.ClearCategoryOnImport = source.ClearCategoryOnImport;
                 target.TargetCategoryId = id;
                 target.TargetCategoryPath = path;
                 applied++;

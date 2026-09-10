@@ -158,7 +158,17 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var app = (Autodesk.Revit.UI.UIApplication)obj;
-                app.OpenAndActivateDocument(resolved.AbsolutePath);
+                var uiDoc = app.OpenAndActivateDocument(resolved.AbsolutePath);
+                // #205: some catalog rows point at mini-project .rvt files
+                // while family_source != "system" (classification residue),
+                // so the loadable edit path opens minis too. The saved
+                // starting view makes them open nicely already; the
+                // activator adds ZoomToFit. Guarded by the managed-storage
+                // path pattern — regular .rfa files are untouched.
+                if (MiniProjectPathPattern.IsMiniProjectPath(resolved.AbsolutePath))
+                {
+                    MiniProjectViewActivator.Activate(uiDoc);
+                }
             }
             catch (Exception ex)
             {

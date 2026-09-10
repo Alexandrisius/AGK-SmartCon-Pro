@@ -248,6 +248,11 @@ public sealed partial class FamilyBatchImportViewModel
         if (!row.TargetCategoryIsManual)
         {
             var previousCategoryId = row.TargetCategoryId;
+            // #261: an auto-derived category replaces the explicit
+            // «Без категории» instruction — without this reset the import
+            // would clear the category of the (possibly different) item
+            // the rename re-resolved to.
+            row.ClearCategoryOnImport = false;
             if ((newStatus == FamilyBatchImportStatus.Existing || newStatus == FamilyBatchImportStatus.Duplicate) && newExistingId is not null)
             {
                 // Provenance BEFORE the path: the CategoryChanged

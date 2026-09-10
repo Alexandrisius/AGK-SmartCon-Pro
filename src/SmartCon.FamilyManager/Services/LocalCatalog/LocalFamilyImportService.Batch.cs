@@ -268,9 +268,10 @@ internal sealed partial class LocalFamilyImportService
                         // a real CategoryId is present, mirroring the
                         // FamilyImportRequest branch above. UpdateFamilyAsync
                         // calls UpdateCatalogItemCategoryAsync only when
-                        // CategoryId is not empty (Database.cs:443-445), so
-                        // passing null here is a no-op — the row's existing
-                        // category assignment is preserved.
+                        // CategoryId is not empty — EXCEPT when the user
+                        // explicitly picked «Без категории» (#261: ClearCategory
+                        // writes a real NULL, moving the item out of its
+                        // current category).
                         var effectiveCategoryName = item.TargetCategoryId is null
                             ? null
                             : item.TargetCategoryName;
@@ -292,7 +293,8 @@ internal sealed partial class LocalFamilyImportService
                         RevitCategoryId: item.LoadableSnapshot?.CategoryId ?? item.SystemSnapshot?.CategoryId,
                         Facts: item.LoadableSnapshot?.Facts,
                         PerTypeHashes: item.PerTypeHashes,
-                        Sections: item.Sections);
+                        Sections: item.Sections,
+                        ClearCategory: item.ClearCategoryOnImport);
                         result = await UpdateFamilyAsync(request, ct);
                     }
                     else

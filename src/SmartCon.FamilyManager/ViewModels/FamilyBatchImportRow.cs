@@ -283,6 +283,7 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _matchedItemName = item.MatchedItemName;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
+        _clearCategoryOnImport = item.ClearCategoryOnImport;
         // Display rule for the category cell:
         //   * TargetCategoryId is set   → a real category is assigned; show its
         //                                 path (or "Без категории" placeholder

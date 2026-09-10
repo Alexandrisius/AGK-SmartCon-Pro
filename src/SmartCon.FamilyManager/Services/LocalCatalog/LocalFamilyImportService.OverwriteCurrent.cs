@@ -198,9 +198,15 @@ internal sealed partial class LocalFamilyImportService
             }
 
             // Update category_id + category_name if the user picked one.
-            if (!string.IsNullOrEmpty(item.TargetCategoryId))
+            // #261: an explicit «Без категории» pick (ClearCategoryOnImport)
+            // writes a real NULL — same move semantics as the IncrementVersion
+            // branch; a plain null TargetCategoryId stays a no-op.
+            if (!string.IsNullOrEmpty(item.TargetCategoryId) || item.ClearCategoryOnImport)
             {
-                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, item.TargetCategoryName, now, ct);
+                var overwriteCategoryName = item.TargetCategoryId is null
+                    ? null
+                    : item.TargetCategoryName;
+                await UpdateCatalogItemCategoryAsync(connection, item.ExistingCatalogItemId!, item.TargetCategoryId, overwriteCategoryName, now, ct);
             }
 
             // ADR-040: UPDATE catalog_versions in place (no new row).

@@ -812,4 +812,55 @@ public sealed class LocalFamilyImportServiceTests : IDisposable
         var fact = Assert.Single(data.Facts);
         Assert.Equal("6", fact.ValueKey);
     }
+
+    /// <summary>
+    /// #261: an explicit «Без категории» pick (ClearCategory) on an existing
+    /// item must MOVE it — write a real NULL into catalog_items.category_id.
+    /// A null CategoryId WITHOUT the flag stays a no-op: "no explicit
+    /// choice" must not touch the existing assignment.
+    /// </summary>
+    [Fact]
+    public async Task UpdateFamily_ClearCategory_WritesNullCategoryId()
+    {
+        var categoryRepo = new LocalCategoryRepository(_fixture.GetDatabase());
+        var category = await categoryRepo.AddAsync("Трубы", null, 0);
+
+        var seedPath = _fixture.CreateFakeRfaFile("ClearCatFamily.rfa");
+        var seed = await _importService.ImportFileAsync(
+            new FamilyImportRequest(seedPath, 2025, null, null, null, CategoryId: category.Id));
+        Assert.True(seed.Success);
+        Assert.NotNull(seed.CatalogItemId);
+        Assert.Equal(category.Id,
+            (await _fixture.GetProvider().GetItemAsync(seed.CatalogItemId!))!.CategoryId);
+
+        var stagedNoop = _fixture.CreateFakeStagedManagedFile(
+            seed.CatalogItemId!, "v2", "ClearCatFamily.rfa");
+        var noopResult = await _importService.UpdateFamilyAsync(new FamilyUpdateRequest(
+            CatalogItemId: seed.CatalogItemId!,
+            FilePath: stagedNoop,
+            RevitMajorVersion: 2025,
+            CategoryId: null,
+            CategoryName: null,
+            FileName: "ClearCatFamily",
+            PrecomputedVersionLabel: "v2",
+            PrecomputedManagedPath: stagedNoop));
+        Assert.True(noopResult.Success);
+        Assert.Equal(category.Id,
+            (await _fixture.GetProvider().GetItemAsync(seed.CatalogItemId!))!.CategoryId);
+
+        var stagedClear = _fixture.CreateFakeStagedManagedFile(
+            seed.CatalogItemId!, "v3", "ClearCatFamily.rfa");
+        var clearResult = await _importService.UpdateFamilyAsync(new FamilyUpdateRequest(
+            CatalogItemId: seed.CatalogItemId!,
+            FilePath: stagedClear,
+            RevitMajorVersion: 2025,
+            CategoryId: null,
+            CategoryName: null,
+            FileName: "ClearCatFamily",
+            PrecomputedVersionLabel: "v3",
+            PrecomputedManagedPath: stagedClear,
+            ClearCategory: true));
+        Assert.True(clearResult.Success);
+        Assert.Null((await _fixture.GetProvider().GetItemAsync(seed.CatalogItemId!))!.CategoryId);
+    }
 }

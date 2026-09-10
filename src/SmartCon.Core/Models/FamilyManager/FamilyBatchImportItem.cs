@@ -155,6 +155,14 @@ public sealed record FamilyBatchImportItem(
     public FamilyBatchImportAction Action { get; set; } =
         FamilyBatchImportAction.IncrementVersion;
 
+    /// <summary>
+    /// Issue #261: the user explicitly picked «Без категории» in the batch
+    /// dialog picker — the import must move the item to no category (write
+    /// NULL), unlike a plain null <see cref="TargetCategoryId"/> which means
+    /// "no explicit choice". Copied from the row by GetResultItems.
+    /// </summary>
+    public bool ClearCategoryOnImport { get; set; }
+
     /// <summary>User-selected target category for this file (overrides dialog-level category).</summary>
     public string? TargetCategoryId { get; set; } = TargetCategoryId;
 
