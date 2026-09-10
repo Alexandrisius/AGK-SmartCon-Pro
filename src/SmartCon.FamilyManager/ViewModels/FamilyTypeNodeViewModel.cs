@@ -48,15 +48,20 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
     public bool HasBadge => Badge != SystemFamilyBadge.None;
 
     /// <summary>
-    /// Issue #203: hover text for the family badge — the localized kind
-    /// caption plus the family name (the badge itself is glyph-only).
-    /// null when <see cref="Badge"/> is None.
+    /// Issue #203: hover text for the family badge — the catalog family
+    /// name the type belongs to. The badge distinguishes same-named types
+    /// of different families; the category is evident from the tree and
+    /// the kind wording is already part of the family name, so no label
+    /// prefix (#264). The localized label is only a fallback for rows
+    /// without a family name. null when <see cref="Badge"/> is None.
     /// </summary>
     public string? BadgeTooltip
     {
         get
         {
-            var label = Badge switch
+            if (!string.IsNullOrEmpty(FamilyName))
+                return FamilyName;
+            return Badge switch
             {
                 SystemFamilyBadge.ShapeRound => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_Round, "Круглое сечение"),
                 SystemFamilyBadge.ShapeRectangular => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_Rectangular, "Прямоугольное сечение"),
@@ -71,9 +76,6 @@ public sealed partial class FamilyTypeNodeViewModel : CatalogTreeNodeViewModel
                 SystemFamilyBadge.StairsPrecast => Text(SmartCon.UI.StringLocalization.Keys.FM_FamilyBadge_StairsPrecast, "Сборная лестница"),
                 _ => null,
             };
-            if (label is null)
-                return null;
-            return string.IsNullOrEmpty(FamilyName) ? label : $"{label} · {FamilyName}";
         }
     }
 

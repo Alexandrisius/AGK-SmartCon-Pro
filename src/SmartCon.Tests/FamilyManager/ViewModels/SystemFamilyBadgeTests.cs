@@ -77,15 +77,30 @@ public sealed class SystemFamilyBadgeTests
     }
 
     [Fact]
-    public void BadgeTooltip_IncludesFamilyName()
+    public void BadgeTooltip_IsFamilyName_Alone()
     {
+        // #264: the tooltip is the family name and nothing else — the badge
+        // points at the family within the category, the kind wording is
+        // already part of the name.
         var node = new FamilyTypeNodeViewModel(
             "item1", "Короб", familySource: "system",
             familyName: "Короб без соединительных деталей",
             familyKey: SystemFamilyKeys.CableTrayWithoutFittings);
 
-        Assert.NotNull(node.BadgeTooltip);
-        Assert.Contains("Короб без соединительных деталей", node.BadgeTooltip);
+        Assert.Equal("Короб без соединительных деталей", node.BadgeTooltip);
+    }
+
+    [Fact]
+    public void BadgeTooltip_FamilyNameWithoutKindWording_Alone()
+    {
+        // #264: no label prefix even when the name does not state the kind —
+        // the category comes from the tree, not the tooltip.
+        var node = new FamilyTypeNodeViewModel(
+            "item1", "Магистраль", familySource: "system",
+            familyName: "Воздуховоды 1",
+            familyKey: SystemFamilyKeys.DuctRound);
+
+        Assert.Equal("Воздуховоды 1", node.BadgeTooltip);
     }
 
     [Fact]
