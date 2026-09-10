@@ -137,6 +137,11 @@ public sealed partial class SystemFamilyRevitOperations
             // Транзакция на каждый тип (как просил пользователь).
             NormalizeInstanceDimensions(newDoc, placedInstancesByType, category);
 
+            // #205: печём презентационный вид (3D Fine + ShadedWithEdges +
+            // стартовый вид; проводам — план этажа) до SaveAs, чтобы
+            // «Редактировать» всегда открывал читаемую модель.
+            MiniProjectViewConfigurator.Configure(_transactionService, newDoc, category);
+
             var placedCount = placedInstancesByType.Sum(kv => kv.Value.Count);
 
             // #188: mark the staged file as a SmartCon reference mini-project

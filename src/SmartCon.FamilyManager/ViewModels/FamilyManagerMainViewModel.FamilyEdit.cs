@@ -190,7 +190,10 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var app = (Autodesk.Revit.UI.UIApplication)obj;
-                app.OpenAndActivateDocument(resolved.AbsolutePath);
+                var uiDoc = app.OpenAndActivateDocument(resolved.AbsolutePath);
+                // #205: переключаем на сохранённый стартовый вид мини-проекта
+                // (3D Fine/ShadedWithEdges; проводам — план) без транзакции.
+                MiniProjectViewActivator.Activate(uiDoc);
             }
             catch (Exception ex)
             {
