@@ -301,6 +301,7 @@ internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogServi
     public bool? ShowRoutingPartPicker(object viewModel) => null;
     public bool? ShowValidationRulesEditor(object viewModel) => null;
     public bool? ShowAssignmentRulesEditor(object viewModel) => null;
+    public bool? ShowAdvancedSearch(object viewModel) => null;
     public void ShowModelessBatchImportDialog(object viewModel) { }
     public void ShowDatabaseUpdateProgressDialog(object viewModel) { }
     public void ShowMissingRecordsCleanupDialog(object viewModel) { }

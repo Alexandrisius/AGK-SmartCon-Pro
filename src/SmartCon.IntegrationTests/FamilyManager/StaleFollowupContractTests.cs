@@ -783,6 +783,8 @@ public sealed class StaleFollowupContractTests : RevitApiTest
                 : Array.Empty<ExtractedAttributeValue>());
         public Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForTypeAsync(string typeId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<ExtractedAttributeValue>>(Array.Empty<ExtractedAttributeValue>());
+        public Task<IReadOnlyList<string>> GetDistinctValueTextsAsync(string attributeId, string attributeName, int limit = 100, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         public Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForRunAsync(string runId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<ExtractedAttributeValue>>(Array.Empty<ExtractedAttributeValue>());
         public Task SaveValuesAsync(IReadOnlyList<ExtractedAttributeValue> values, CancellationToken ct = default)
