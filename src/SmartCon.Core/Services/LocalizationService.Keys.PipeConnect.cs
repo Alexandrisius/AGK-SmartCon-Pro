@@ -87,6 +87,10 @@ public static partial class LocalizationService
         en["Tx_CleanupOldFitting"] = "PipeConnect — Delete point fitting/reducer";
         ru["Tx_CleanupOldReducer"] = "PipeConnect — Удаление переходника";
         en["Tx_CleanupOldReducer"] = "PipeConnect — Delete reducer";
+        ru["Tx_RollbackConnector"] = "PipeConnect — Возврат коннектора";
+        en["Tx_RollbackConnector"] = "PipeConnect — Roll back connector";
+        ru["Tx_SetConnectorType"] = "PipeConnect — Задание типа соединения";
+        en["Tx_SetConnectorType"] = "PipeConnect — Set connector type";
 
         ru["Status_AttachingElement"] = "Присоединение элемента {0} из {1}…";
         en["Status_AttachingElement"] = "Attaching element {0} of {1}…";

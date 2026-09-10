@@ -187,7 +187,7 @@ public sealed class PipeConnectSessionBuilder(
 
         if (element is MEPCurve or FlexPipe)
         {
-            txService.RunInTransaction("SetConnectorType", txDoc =>
+            txService.RunInTransaction(LocalizationService.GetString("Tx_SetConnectorType"), txDoc =>
             {
                 familyConnSvc.SetConnectorTypeCode(
                     txDoc, proxy.OwnerElementId, proxy.ConnectorIndex, selected);
@@ -300,7 +300,7 @@ public sealed class PipeConnectSessionBuilder(
             // Разрешены только валидные строки таблицы — constrained-результат.
 
             SmartConLogger.Debug($"  → Pass 1 result: DN{nearestDn} (constraints={lookupConstraints.Count})");
-            SmartConLogger.Warn($"LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter)");
+            SmartConLogger.Warn($"LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter) [Action: an adapter fitting is required — extend the size_lookup table with this DN to avoid adapters]");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
@@ -311,7 +311,7 @@ public sealed class PipeConnectSessionBuilder(
         if (dep is null)
         {
             SmartConLogger.Debug("  → No table and no dep → Plan(NeedsAdapter=true, warning)");
-            SmartConLogger.Warn("No table, dep=null — S4 failed (NeedsAdapter)");
+            SmartConLogger.Warn("No table, dep=null — S4 failed (NeedsAdapter) [Action: an adapter fitting is required — define a size_lookup table for this family]");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,

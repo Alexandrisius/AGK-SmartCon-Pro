@@ -17,6 +17,18 @@ public static partial class LocalizationService
         ru["PM_Title_FieldLibrary"] = "Библиотека полей"; en["PM_Title_FieldLibrary"] = "Field Library";
         ru["PM_Title_AllowedValues"] = "Редактор валидации поля"; en["PM_Title_AllowedValues"] = "Field Validation Editor";
         ru["PM_Title_ParseRule"] = "Правило парсинга"; en["PM_Title_ParseRule"] = "Parse Rule";
+        ru["PM_Title_ShareDialog"] = "Share Project"; en["PM_Title_ShareDialog"] = "Share Project";
+        ru["PM_Msg_MustBeSaved"] = "Файл должен быть сохранён перед шарингом."; en["PM_Msg_MustBeSaved"] = "File must be saved first.";
+        ru["PM_Msg_TransformFailed"] = "Не удалось сформировать имя файла по шаблону."; en["PM_Msg_TransformFailed"] = "Failed to transform file name.";
+        ru["PM_Msg_SyncFailed"] = "Ошибка синхронизации:\n{0}"; en["PM_Msg_SyncFailed"] = "Synchronization failed:\n{0}";
+        ru["PM_Msg_ContinueWithoutSync"] = "Продолжить без синхронизации?"; en["PM_Msg_ContinueWithoutSync"] = "Continue without synchronization?";
+        ru["PM_Msg_SaveFailed"] =
+            "Не удалось сохранить документ перед шарингом:\n{0}\n\n" +
+            "Шаринг отменён — документ остаётся открытым со всеми изменениями.";
+        en["PM_Msg_SaveFailed"] =
+            "Failed to save the project before sharing:\n{0}\n\n" +
+            "Share cancelled — your document is still open with all changes.";
+        ru["PM_Msg_ExportFailed"] = "Ошибка экспорта:\n{0}"; en["PM_Msg_ExportFailed"] = "Export failed:\n{0}";
         ru["PM_Result_Success"] = "Проект успешно перемещён в зону Shared."; en["PM_Result_Success"] = "Project exported successfully.";
         ru["PM_ShareResult_Title"] = "Проект успешно экспортирован"; en["PM_ShareResult_Title"] = "Project shared successfully";
         ru["PM_ShareResult_Subtitle"] = "Файл сохранён в зоне Shared:"; en["PM_ShareResult_Subtitle"] = "File saved to the Shared zone:";
@@ -110,6 +122,7 @@ public static partial class LocalizationService
         ru["PM_Folder"] = "Папка:"; en["PM_Folder"] = "Folder:";
         ru["PM_SharedFolder"] = "Папка Shared"; en["PM_SharedFolder"] = "Shared Folder";
         ru["PM_Browse"] = "Обзор..."; en["PM_Browse"] = "Browse...";
+        ru["PM_BrowseShareFolder"] = "Выберите папку Shared"; en["PM_BrowseShareFolder"] = "Select the Shared folder";
         ru["PM_SyncBefore"] = "Синхронизировать перед экспортом"; en["PM_SyncBefore"] = "Synchronize before export";
         ru["PM_PurgeTitle"] = "Выберите элементы для удаления из Shared-файла:"; en["PM_PurgeTitle"] = "Select elements to remove from the Shared file:";
         ru["PM_PurgeRvtLinks"] = "RVT-связи"; en["PM_PurgeRvtLinks"] = "RVT Links";

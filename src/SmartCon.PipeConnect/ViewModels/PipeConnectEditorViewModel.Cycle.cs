@@ -174,7 +174,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         var dynId = previousConnector.OwnerElementId;
 
-        _groupSession!.RunInTransaction("Tx_RollbackConnector", d =>
+        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_RollbackConnector"), d =>
         {
             var fresh = _connSvc.RefreshConnector(d, dynId, previousConnector.ConnectorIndex)
                 ?? previousConnector;
@@ -226,7 +226,7 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (element is MEPCurve or FlexPipe)
         {
-            _txService.RunInTransaction("SetConnectorType", txDoc =>
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_SetConnectorType"), txDoc =>
             {
                 _familyConnSvc.SetConnectorTypeCode(
                     txDoc, proxy.OwnerElementId, proxy.ConnectorIndex, selected);
@@ -309,7 +309,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (_currentFittingId is not null)
         {
             SmartConLogger.Info("Deleting old fitting before re-insert");
-            _groupSession!.RunInTransaction("Tx_CleanupOldFitting", doc =>
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_CleanupOldFitting"), doc =>
             {
                 _fittingInsertSvc.DeleteElement(doc, _currentFittingId);
                 _virtualCtcStore.RemoveForElement(_currentFittingId);
@@ -321,7 +321,7 @@ public sealed partial class PipeConnectEditorViewModel
         if (_primaryReducerId is not null)
         {
             SmartConLogger.Info("Deleting old reducer before re-insert");
-            _groupSession!.RunInTransaction("Tx_CleanupOldReducer", doc =>
+            _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_CleanupOldReducer"), doc =>
             {
                 _fittingInsertSvc.DeleteElement(doc, _primaryReducerId);
                 _virtualCtcStore.RemoveForElement(_primaryReducerId);

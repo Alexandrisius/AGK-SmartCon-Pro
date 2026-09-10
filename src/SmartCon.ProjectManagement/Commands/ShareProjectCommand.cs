@@ -56,7 +56,9 @@ public sealed class ShareProjectCommand : CommandBase
 
             if (string.IsNullOrWhiteSpace(originalDoc.PathName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "File must be saved first.");
+                Autodesk.Revit.UI.TaskDialog.Show(
+                    LocalizationService.GetString("PM_Title_ShareDialog"),
+                    LocalizationService.GetString("PM_Msg_MustBeSaved"));
                 return Result.Failed;
             }
 
@@ -67,8 +69,9 @@ public sealed class ShareProjectCommand : CommandBase
 
             if (string.IsNullOrWhiteSpace(settings.ShareFolderPath) || settings.FileNameTemplate.Blocks.Count == 0)
             {
-                SmartConLogger.Warn("Settings incomplete — showing configure dialog.");
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project",
+                SmartConLogger.Warn("Settings incomplete — showing configure dialog. " +
+                    "[Action: задайте папку Shared и блоки шаблона имени в настройках Share и повторите команду]");
+                Autodesk.Revit.UI.TaskDialog.Show(LocalizationService.GetString("PM_Title_ShareDialog"),
                     LocalizationService.GetString("PM_Result_NoSettings"));
                 return Result.Failed;
             }
@@ -85,7 +88,8 @@ public sealed class ShareProjectCommand : CommandBase
             {
                 var combinedSummary = exportValidation.Summary;
 
-                SmartConLogger.Warn($"Export validation failed for '{currentFileName}': {combinedSummary}");
+                SmartConLogger.Warn($"Export validation failed for '{currentFileName}': {combinedSummary} " +
+                    "[Action: будет показан диалог коррекции имени экспорта или применён сохранённый override]");
 
                 var existingOverride = settingsRepo.LoadExportNameOverride(originalDoc);
                 if (existingOverride is not null)
@@ -158,7 +162,9 @@ public sealed class ShareProjectCommand : CommandBase
 
             if (string.IsNullOrWhiteSpace(sharedFileName))
             {
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", "Failed to transform file name.");
+                Autodesk.Revit.UI.TaskDialog.Show(
+                    LocalizationService.GetString("PM_Title_ShareDialog"),
+                    LocalizationService.GetString("PM_Msg_TransformFailed"));
                 return Result.Failed;
             }
 
@@ -216,7 +222,7 @@ public sealed class ShareProjectCommand : CommandBase
 
                 SmartConLogger.Info("Suppressing unknown dialog → Cancel");
                 try { args.OverrideResult((int)Autodesk.Revit.UI.TaskDialogResult.Cancel); }
-                catch (Exception ex) { SmartConLogger.Warn($"OverrideResult failed: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"OverrideResult failed: {ex.Message} [Action: диалог Revit останется показанным пользователю — продолжите вручную]"); }
             };
             uiapp.DialogBoxShowing += dialogHandler;
 
@@ -240,9 +246,9 @@ public sealed class ShareProjectCommand : CommandBase
                         {
                             SmartConLogger.Warn($"Sync failed: {syncEx.Message} [Action: пользователю показан диалог — можно продолжить share без синхронизации или синхронизировать модель вручную]");
 
-                            using var td = new Autodesk.Revit.UI.TaskDialog("Share Project");
-                            td.MainInstruction = $"Synchronization failed:\n{syncEx.Message}";
-                            td.MainContent = "Continue without synchronization?";
+                            using var td = new Autodesk.Revit.UI.TaskDialog(LocalizationService.GetString("PM_Title_ShareDialog"));
+                            td.MainInstruction = LocalizationService.Format("PM_Msg_SyncFailed", syncEx.Message);
+                            td.MainContent = LocalizationService.GetString("PM_Msg_ContinueWithoutSync");
                             td.CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No;
 
                             if (td.Show() != TaskDialogResult.Yes)
@@ -304,8 +310,8 @@ public sealed class ShareProjectCommand : CommandBase
                         uiapp.DialogBoxShowing -= dialogHandler;
                         ReportProgress(LocalizationService.GetString("PM_Step_Failed"), 0);
                         CloseProgress();
-                        Autodesk.Revit.UI.TaskDialog.Show("Share Project",
-                            $"Failed to save the project before sharing:\n{saveEx.Message}\n\nShare cancelled — your document is still open with all changes.");
+                        Autodesk.Revit.UI.TaskDialog.Show(LocalizationService.GetString("PM_Title_ShareDialog"),
+                            LocalizationService.Format("PM_Msg_SaveFailed", saveEx.Message));
                         return Result.Failed;
                     }
 
@@ -470,13 +476,15 @@ public sealed class ShareProjectCommand : CommandBase
                     SmartConLogger.Error($"Failed to reopen original file: {reopenEx.Message}");
                 }
 
-                ReportProgress("Failed", 0);
+                ReportProgress(LocalizationService.GetString("PM_Step_Failed"), 0);
                 CloseProgress();
 
                 uiapp.Application.FailuresProcessing -= failureHandler;
                 uiapp.DialogBoxShowing -= dialogHandler;
 
-                Autodesk.Revit.UI.TaskDialog.Show("Share Project", $"Export failed:\n{ex.Message}");
+                Autodesk.Revit.UI.TaskDialog.Show(
+                    LocalizationService.GetString("PM_Title_ShareDialog"),
+                    LocalizationService.Format("PM_Msg_ExportFailed", ex.Message));
                 return Result.Failed;
             }
         }
