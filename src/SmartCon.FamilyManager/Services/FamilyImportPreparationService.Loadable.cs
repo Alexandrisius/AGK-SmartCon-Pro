@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -151,31 +150,32 @@ public sealed partial class FamilyImportPreparationService
 
         try
         {
-            var openSw = Stopwatch.StartNew();
-            doc = await _awaitableEvent
-                .RaiseAsync(app =>
+            using (var _openMs = SmartConLogger.Measure("PrepSingle.OpenDocumentFile"))
+            {
+                doc = await _awaitableEvent
+                    .RaiseAsync(app =>
+                    {
+                        var activeDoc = _revitContext.GetDocument();
+                        return activeDoc.Application.OpenDocumentFile(filePath);
+                    }, ct)
+                    .ConfigureAwait(false);
+
+                if (doc is null)
+                    throw new InvalidOperationException("OpenDocumentFile returned null");
+
+                if (_openMs.GetElapsedMilliseconds() > 2000)
                 {
-                    var activeDoc = _revitContext.GetDocument();
-                    return activeDoc.Application.OpenDocumentFile(filePath);
-                }, ct)
-                .ConfigureAwait(false);
-            openSw.Stop();
-
-            if (doc is null)
-                throw new InvalidOperationException("OpenDocumentFile returned null");
-
-            if (openSw.ElapsedMilliseconds > 2000)
-            {
-                SmartConLogger.Warn(
-                    $"OpenDocumentFile slow: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
-                    $"(heldOpen={_openedDocuments.Count}) " +
-                    "[Action: known Revit degradation after 30+ opens; consider splitting batch into sub-batches of 20]");
-            }
-            else
-            {
-                SmartConLogger.Debug(
-                    $"OpenDocumentFile: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
-                    $"(heldOpen={_openedDocuments.Count})");
+                    SmartConLogger.Warn(
+                        $"OpenDocumentFile slow: {(long)_openMs.GetElapsedMilliseconds()}ms for '{Path.GetFileName(filePath)}' " +
+                        $"(heldOpen={_openedDocuments.Count}) " +
+                        "[Action: known Revit degradation after 30+ opens; consider splitting batch into sub-batches of 20]");
+                }
+                else
+                {
+                    SmartConLogger.Debug(
+                        $"OpenDocumentFile: {(long)_openMs.GetElapsedMilliseconds()}ms for '{Path.GetFileName(filePath)}' " +
+                        $"(heldOpen={_openedDocuments.Count})");
+                }
             }
 
             if (!doc.IsFamilyDocument)
