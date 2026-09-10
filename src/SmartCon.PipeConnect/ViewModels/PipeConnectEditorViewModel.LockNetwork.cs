@@ -72,7 +72,8 @@ public sealed partial class PipeConnectEditorViewModel
             // Точка подключения root: static для Direct-топологии, fitting conn2 —
             // для FittingOnly (root физически стоит у фитинга, не у static — иначе
             // проверка «root не тронут» всегда падает в soft mode и baseline restore
-            // с триггером reducer никогда не срабатывает, кейс ниппеля #167).
+            // с триггером reducer никогда не срабатывает для соединения типа
+            // «ниппель», #167).
             var upstream = ResolveLockUpstream();
 
             if (_rootBaselineSnapshot is null || !IsRootAtUpstream(upstream, out var rootDyn))

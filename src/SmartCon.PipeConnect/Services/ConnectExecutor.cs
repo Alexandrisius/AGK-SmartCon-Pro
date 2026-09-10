@@ -25,9 +25,6 @@ public sealed class ConnectOperationContext
 /// <summary>
 /// Result of pre-connect validation with optional updated dynamic connector and reducer flag.
 /// </summary>
-/// <summary>
-/// Result of pre-connect validation with optional updated dynamic connector and reducer flag.
-/// </summary>
 /// <param name="ActiveDynamic">Refreshed dynamic connector after validation corrections.</param>
 /// <param name="NeedsPrimaryReducer">Whether a reducer must be inserted due to unresolvable size mismatch.</param>
 public record ValidateResult(ConnectorProxy? ActiveDynamic, bool NeedsPrimaryReducer);
