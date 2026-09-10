@@ -242,17 +242,6 @@ Pure C# парсер имени файла по `FileNameTemplate`. Pure без 
 
 ---
 
-## CategoryCompat
-
-Кросс-TFM абстракция `Category → BuiltInCategory`:
-- **Revit 2022+** — канонический `Category.BuiltInCategory` (корректно для standard, INVALID для custom sub-category).
-- **Revit 2019–2021** — guarded cast `(BuiltInCategory)(int)catId.GetValue()` через
-  `ElementIdCompat.GetValue()`.
-
-**Файл:** `SmartCon.Core/Compatibility/CategoryCompat.cs`
-
----
-
 ## NetFrameworkCompat
 
 Кросс-TFM хелперы для net48/net8 совместимости (Encoding, Path, Path.Combine и т.д.). Заменяет platform-specific методы, недоступные в net48.
@@ -265,7 +254,7 @@ Pure C# парсер имени файла по `FileNameTemplate`. Pure без 
 
 Глобальные константы проекта (пути, ключи реестра, дефолтные значения).
 
-**Файл:** `SmartCon.Core/Common/Constants.cs`
+**Файл:** `SmartCon.Core/Constants.cs`
 
 ## PipeAbsorption
 

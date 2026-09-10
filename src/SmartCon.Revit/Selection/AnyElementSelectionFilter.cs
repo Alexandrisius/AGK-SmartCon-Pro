@@ -1,6 +1,6 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI.Selection;
-using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Revit.FamilyManager;
 

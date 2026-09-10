@@ -4,7 +4,8 @@ namespace SmartCon.Updater;
 /// Writes SmartCon.addin manifests after an update (ADR-051). The Updater is the only
 /// component that can refresh manifests for Revit versions whose plugin updates through
 /// the in-app Updater; afterwards the plugin's AddinManifestHealer keeps them current.
-/// ManifestSettings (ALC isolation) is included for Revit 2025+.
+/// ManifestSettings (ALC isolation) is included for Revit 2026+ only — on Revit 2025
+/// the tag makes Revit reject the whole manifest.
 /// NOTE: the manifest template intentionally duplicates SmartCon.Core SmartConAddinManifest —
 /// the Updater is self-contained and must not load SmartCon.Core.dll (which references RevitAPI).
 /// Keep the XML shape in sync.

@@ -2,7 +2,7 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
-using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;

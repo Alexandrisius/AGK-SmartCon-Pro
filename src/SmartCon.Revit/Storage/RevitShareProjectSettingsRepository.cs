@@ -170,7 +170,7 @@ public sealed class RevitShareProjectSettingsRepository : IShareProjectSettingsR
             using var _scope = SmartConLogger.BeginScope("PM", ("Method", "FindDataStorage"));
             SmartConLogger.Warn(
                 $"Found {matches.Count} DataStorage elements with PM schema. Using the first one (ids: " +
-                string.Join(", ", matches.Select(m => m.Id.GetValue())) + ").");
+                string.Join(", ", matches.Select(m => m.Id.GetValue())) + "). [Action: duplicate schema storage detected — delete the stale DataStorage if settings misbehave]");
         }
 
         return matches[0];

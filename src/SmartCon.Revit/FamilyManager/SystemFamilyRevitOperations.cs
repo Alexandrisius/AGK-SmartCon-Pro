@@ -2,11 +2,11 @@ using System.Runtime.InteropServices;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Autodesk.Revit.UI.Selection;
-using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Compatibility;
 using SmartCon.Revit.Context;
 
@@ -131,7 +131,7 @@ public sealed partial class SystemFamilyRevitOperations : ISystemFamilyRevitOper
                 SmartConLogger.Warn(
                     $"Type '{typeElem.Name}' has BuiltInCategory='{builtInCategory}' " +
                     $"(category='{categoryName}') which is not in the supported set — " +
-                    $"will copy as type-only, no instances");
+                    $"will copy as type-only, no instances [Action: expected for unsupported categories — fix the source category if instances are required]");
                 builtInCategory = BuiltInCategory.INVALID;
             }
 

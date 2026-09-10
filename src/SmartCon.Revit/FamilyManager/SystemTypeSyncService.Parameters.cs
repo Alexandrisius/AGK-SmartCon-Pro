@@ -368,7 +368,65 @@ public sealed partial class SystemTypeSyncService
         var dataType = Compatibility.RevitUnitsCompat.GetDataType(sourceParam.Definition);
         if (dataType is null) return null;
         return new ExternalDefinitionCreationOptions(name, dataType);
+#elif REVIT2021_OR_GREATER
+        return CreatePortedDefinitionOptionsR21(name, sourceParam);
 #else
+        return CreatePortedDefinitionOptionsLegacy(name, sourceParam);
+#endif
+    }
+
+#if REVIT2021_OR_GREATER && !REVIT2022_OR_GREATER
+    // The R21 binary runs on Revit 2021-2023: the ForgeTypeId ctor of
+    // ExternalDefinitionCreationOptions and Definition.GetDataType only
+    // exist from 2022, while Definition.ParameterType is REMOVED in 2023.
+    // A direct reference to either poisons the JIT of the whole caller
+    // (MissingMethodException escapes try/catch on net48) — resolve via
+    // cached reflection instead, same approach as #153.
+    private static readonly System.Reflection.ConstructorInfo? PortedOptionsModernCtor =
+        typeof(ExternalDefinitionCreationOptions).GetConstructor(new[] { typeof(string), typeof(ForgeTypeId) });
+
+    private static readonly System.Reflection.ConstructorInfo? PortedOptionsLegacyCtor = FindPortedOptionsLegacyCtor();
+
+    private static readonly System.Reflection.PropertyInfo? DefinitionParameterTypeProperty =
+        typeof(Definition).GetProperty("ParameterType");
+
+    private static ExternalDefinitionCreationOptions? CreatePortedDefinitionOptionsR21(
+        string name, Parameter sourceParam)
+    {
+        try
+        {
+            var dataType = Compatibility.RevitUnitsCompat.GetDataType(sourceParam.Definition);
+            if (dataType is not null && PortedOptionsModernCtor is not null)
+                return (ExternalDefinitionCreationOptions?)PortedOptionsModernCtor.Invoke(new object[] { name, dataType });
+
+            // Revit 2021 runtime: no ForgeTypeId ctor — port via the legacy enum.
+            var legacyType = DefinitionParameterTypeProperty?.GetValue(sourceParam.Definition);
+            if (legacyType is not null && PortedOptionsLegacyCtor is not null)
+                return (ExternalDefinitionCreationOptions?)PortedOptionsLegacyCtor.Invoke(new object[] { name, legacyType });
+        }
+        catch { }
+        return null;
+    }
+
+    private static System.Reflection.ConstructorInfo? FindPortedOptionsLegacyCtor()
+    {
+        foreach (var ctor in typeof(ExternalDefinitionCreationOptions).GetConstructors())
+        {
+            var parameters = ctor.GetParameters();
+            if (parameters.Length == 2
+                && parameters[0].ParameterType == typeof(string)
+                && parameters[1].ParameterType.IsEnum)
+                return ctor;
+        }
+        return null;
+    }
+#endif
+
+#if !REVIT2021_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static ExternalDefinitionCreationOptions? CreatePortedDefinitionOptionsLegacy(
+        string name, Parameter sourceParam)
+    {
         try
         {
 #pragma warning disable CS0618
@@ -379,8 +437,8 @@ public sealed partial class SystemTypeSyncService
         {
             return null;
         }
-#endif
     }
+#endif
 
     private bool TrySetElementId(
         Document sourceDoc,

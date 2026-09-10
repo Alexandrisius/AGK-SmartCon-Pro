@@ -134,7 +134,7 @@ public sealed partial class RevitLookupTableService
                     isQueryParam = sl is not null && sl.Value.QueryParameters
                         .Any(q => string.Equals(q, rootName, StringComparison.OrdinalIgnoreCase));
                 }
-                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message}"); }
+                catch (Exception ex) { SmartConLogger.Warn($"size_lookup formula parse failed: {ex.GetType().Name}: {ex.Message} [Action: check the size_lookup formula syntax — the parameter keeps its current value]"); }
 
                 tableStoresDiameters = isQueryParam || isDiameter;
                 SmartConLogger.Debug($"  tableStoresDiameters={tableStoresDiameters} (SolveFor=null, isQueryParam={isQueryParam}, isDiameter={isDiameter})");

@@ -45,14 +45,14 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
         var family = FindFamily(doc, familyName);
         if (family is null)
         {
-            SmartConLogger.Warn($"ActivateAndPlaceType: Family '{familyName}' not found");
+            SmartConLogger.Warn($"ActivateAndPlaceType: Family '{familyName}' not found [Action: verify the family is loaded and its name matches the catalog]");
             return false;
         }
 
         var symbol = FindSymbol(doc, family, typeName);
         if (symbol is null)
         {
-            SmartConLogger.Warn($"ActivateAndPlaceType: Type '{typeName}' not found in family '{familyName}'");
+            SmartConLogger.Warn($"ActivateAndPlaceType: Type '{typeName}' not found in family '{familyName}' [Action: verify the type name in the catalog version]");
             return false;
         }
 
@@ -86,21 +86,21 @@ public sealed class RevitFamilyPlacementService : IFamilyPlacementService
 
         if (!result.Success)
         {
-            SmartConLogger.Warn($"LoadAndPlaceFamily: Failed to load {familyName} - {result.ErrorMessage}");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: Failed to load {familyName} - {result.ErrorMessage} [Action: check the managed .rfa file and retry the placement]");
             return;
         }
 
         var family = FindFamily(doc, familyName);
         if (family is null)
         {
-            SmartConLogger.Warn($"LoadAndPlaceFamily: Family '{familyName}' not found after loading");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: Family '{familyName}' not found after loading [Action: the family file may be corrupt — reimport it into the catalog]");
             return;
         }
 
         var typeName = preferredTypeName ?? GetFirstTypeName(doc, family);
         if (typeName is null)
         {
-            SmartConLogger.Warn($"LoadAndPlaceFamily: No types found in family '{familyName}'");
+            SmartConLogger.Warn($"LoadAndPlaceFamily: No types found in family '{familyName}' [Action: reimport the family — it has no types]");
             return;
         }
 

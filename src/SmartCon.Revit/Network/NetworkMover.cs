@@ -74,7 +74,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerId is null)
         {
-            SmartConLogger.Warn($"InsertFitting returned null for '{reducerFamily.FamilyName}'");
+            SmartConLogger.Warn($"InsertFitting returned null for '{reducerFamily.FamilyName}' [Action: check the reducer family definition in the mapping — the gap stays open]");
             return null;
         }
 

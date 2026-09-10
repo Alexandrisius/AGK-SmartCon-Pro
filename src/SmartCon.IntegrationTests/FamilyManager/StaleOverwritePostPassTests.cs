@@ -412,6 +412,8 @@ internal sealed class StubAttributeValueRepository : IAttributeValueRepository
 
     public Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForTypeAsync(string typeId, CancellationToken ct = default)
         => throw new NotSupportedException();
+    public Task<IReadOnlyList<string>> GetDistinctValueTextsAsync(string attributeId, string attributeName, int limit = 100, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     public Task<IReadOnlyList<ExtractedAttributeValue>> GetValuesForRunAsync(string runId, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task SaveValuesAsync(IReadOnlyList<ExtractedAttributeValue> values, CancellationToken ct = default)

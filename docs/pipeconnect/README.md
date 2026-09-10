@@ -38,6 +38,8 @@ docs/pipeconnect/
 | [ADR-011](../adr/011-dn-symbol-name-in-dropdown.md) | Отображение DN в выпадающем списке |
 | [ADR-012](../adr/012-per-project-extensible-storage.md) | ExtensibleStorage для маппинга фитингов |
 | [ADR-043](../adr/043-pipeconnect-modal-justification.md) | Почему PipeConnectEditor — модальное окно |
+| [ADR-052](../adr/052-pipe-length-displacement-absorption.md) | Гашение смещения сети длиной трубы (per-level absorption, минимальная монтажная длина 100 мм) |
+| [ADR-053](../adr/053-dn-transition-compensation.md) | DN-компенсация по уровням — переходные элементы вместо resize-каскада |
 
 ## Ключевые инварианты
 

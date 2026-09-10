@@ -306,7 +306,7 @@ public sealed partial class SystemFamilyRevitOperations
             .FirstOrDefault();
         if (level is null)
         {
-            SmartConLogger.Warn("No Level 1 in new project");
+            SmartConLogger.Warn("No Level 1 in new project [Action: instances are skipped — check the level naming in the mini-project template]");
             return instancesByType;
         }
 
@@ -341,7 +341,7 @@ public sealed partial class SystemFamilyRevitOperations
             }
             catch (Exception ex)
             {
-                SmartConLogger.Warn($"Failed type '{type.Name}': {ex.Message}");
+                SmartConLogger.Warn($"Failed type '{type.Name}': {ex.Message} [Action: the remaining types continue — reimport if this type is required]");
             }
 
             i++;

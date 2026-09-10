@@ -404,7 +404,7 @@ public sealed partial class SystemTypeSyncService
     {
         try
         {
-            var builtIn = Core.Compatibility.CategoryCompat.GetBuiltInCategory(type?.Category);
+            var builtIn = Compatibility.CategoryCompat.GetBuiltInCategory(type?.Category);
             if (builtIn == BuiltInCategory.INVALID) return null;
             return (int)builtIn;
         }

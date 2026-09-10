@@ -114,7 +114,7 @@ public static class ConnectorWrapper
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"ConnectorWrapper.GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message}");
+            SmartConLogger.Warn($"ConnectorWrapper.GetTypeDescriptionSafe: {ex.GetType().Name}: {ex.Message} [Action: non-fatal — the connector type description is skipped]");
             return null;
         }
     }

@@ -118,7 +118,7 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
         var doc = TryGetDocument();
         if (doc is null)
         {
-            SmartConLogger.Warn("Mapping.SavePayload: skipped: active document is not available.");
+            SmartConLogger.Warn("Mapping.SavePayload: skipped: active document is not available. [Action: open a document and save the mapping again]");
             return;
         }
 
@@ -154,7 +154,7 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
             using var _scope = SmartConLogger.BeginScope("Mapping", ("Method", "FindDataStorage"));
             SmartConLogger.Warn(
                 $"Found {matches.Count} DataStorage elements with SmartCon schema. Using the first one (ids: " +
-                string.Join(", ", matches.Select(m => m.Id.GetValue())) + ").");
+                string.Join(", ", matches.Select(m => m.Id.GetValue())) + "). [Action: duplicate schema storage detected — delete the stale DataStorage if mappings misbehave]");
         }
 
         return matches[0];

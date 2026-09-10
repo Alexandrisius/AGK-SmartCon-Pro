@@ -43,8 +43,19 @@ public sealed class RevitTransactionGroupSession : ITransactionGroupSession
         {
             tx.Start();
             action(doc);
-            tx.Commit();
-            SmartConLogger.Info($"Transaction '{name}' committed");
+            var status = tx.Commit();
+            if (status != TransactionStatus.Committed)
+            {
+                SmartConLogger.Warn(
+                    $"Transaction '{name}' inside '{_name}' was silently rolled back by Revit " +
+                    $"(Commit status: {status}) — the document was NOT modified. " +
+                    "[Action: check the operation's preconditions (e.g. deleting " +
+                    "the last type of a system family is forbidden) and retry]");
+            }
+            else
+            {
+                SmartConLogger.Info($"Transaction '{name}' committed");
+            }
         }
         catch
         {

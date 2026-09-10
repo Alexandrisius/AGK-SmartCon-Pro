@@ -257,7 +257,7 @@ public sealed class SystemFamilyPlacementService : ISystemFamilyPlacementService
     {
         try
         {
-            var builtIn = Core.Compatibility.CategoryCompat.GetBuiltInCategory(elementType.Category);
+            var builtIn = Compatibility.CategoryCompat.GetBuiltInCategory(elementType.Category);
             return builtIn == BuiltInCategory.INVALID ? null : (int)builtIn;
         }
         catch
