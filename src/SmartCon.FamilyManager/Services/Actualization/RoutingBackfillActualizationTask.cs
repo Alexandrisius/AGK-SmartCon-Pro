@@ -1,0 +1,380 @@
+using System.IO;
+using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Implementation;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.LocalCatalog;
+
+namespace SmartCon.FamilyManager.Services.Actualization;
+
+/// <summary>
+/// OPTIONAL actualization task (Id=<c>routing-backfill-v1</c>, Issue #254,
+/// ADR-072; World B rework 2026-08-29): heals pre-refactor catalog items —
+/// <list type="number">
+///   <item>SEED: writes the ITEM-level routing link tables (V37) while the
+///   item carries none. Primary source: the pre-slim extraction of the
+///   opened mini-project (Pass B). The file-free Pass A (ROUTING sections
+///   of <c>catalog_versions.section_strings</c>) only works for sections
+///   written BEFORE <c>hash-v20</c> — the critical hash task (Order 12)
+///   rewrites section strings WITHOUT the ROUTING section in the same
+///   «Обновить базу» run, ahead of this task (Order 65).</item>
+///   <item>SLIMMING: the staged mini is healed to the new reference shape
+///   via <see cref="IMiniProjectRoutingSlimmingService"/> (fitting rules
+///   removed, fitting instances/families deleted, orphan materials —
+///   the #254 duplicates included — deleted, suffixed working copies
+///   renamed, saved in place, backups deleted, read-only restored).</item>
+/// </list>
+/// Detection keys off the tracking column
+/// <c>catalog_versions.routing_backfilled</c> (V35): 0 = pending,
+/// 1 = done, -1 = unreadable, -2 = missing — NEVER off the absence of
+/// routing rows (a legitimately routing-less type has none).
+/// Optional because sync has a non-destructive legacy fallback (reads
+/// routing from the mini) until the item is healed.
+/// </summary>
+internal sealed class RoutingBackfillActualizationTask : SqlDetectionActualizationTaskBase
+{
+    private readonly IMiniProjectRoutingSlimmingService _slimmingService;
+    private readonly IFamilyRoutingRuleRepository _routingRuleRepository;
+    private readonly ISegmentRuleRepository _segmentRuleRepository;
+
+    public RoutingBackfillActualizationTask(
+        LocalCatalogDatabase database,
+        IMiniProjectRoutingSlimmingService slimmingService,
+        IFamilyRoutingRuleRepository routingRuleRepository,
+        ISegmentRuleRepository segmentRuleRepository)
+        : base(database)
+    {
+        _slimmingService = slimmingService ?? throw new ArgumentNullException(nameof(slimmingService));
+        _routingRuleRepository = routingRuleRepository ?? throw new ArgumentNullException(nameof(routingRuleRepository));
+        _segmentRuleRepository = segmentRuleRepository ?? throw new ArgumentNullException(nameof(segmentRuleRepository));
+    }
+
+    public override string Id => "routing-backfill-v1";
+    public override int Order => 65;
+    public override bool IsCritical => false;
+
+    /// <summary>File-level task: owns open/save via
+    /// <see cref="IMiniProjectRoutingSlimmingService"/> — the engine skips
+    /// its extraction (same pattern as the marker task).</summary>
+    public override bool RequiresExtraction => false;
+
+    protected override string DetectionSql => """
+        FROM catalog_versions cv
+        JOIN catalog_items ci ON ci.id = cv.catalog_item_id
+        WHERE ci.family_source = 'system'
+          AND cv.routing_backfilled = 0
+        """;
+
+    public override async Task ApplyAsync(FamilyActualizationContext context, CancellationToken ct = default)
+    {
+        using var _scope = SmartConLogger.BeginScope(
+            "RoutingBackfill",
+            ("Method", nameof(ApplyAsync)),
+            ("Item", context.Group.ItemName),
+            ("Variants", context.Group.Variants.Count));
+
+        var dbRoot = Database.GetDatabaseRoot();
+        // World B: item-level links are seeded ONCE per item (the first
+        // variant with a routing source wins); re-imports and later variants
+        // never overwrite curated links. Seeding is allowed ONLY from the
+        // CURRENT version's group: groups are processed in alphabetical
+        // label order, so an archived label would otherwise seed first and
+        // the current version's slimming would then destroy the live
+        // routing without saving it anywhere. Archived groups still get
+        // slimmed below; when the current group cannot seed (missing file /
+        // newer host), the item simply stays unseeded (sync legacy-fallback
+        // reads the mini — non-destructive) until the current version heals.
+        var seedNeeded = context.Group.IsActiveLabel
+            && !await _routingRuleRepository
+                .HasAnyForItemAsync(context.Group.CatalogItemId, ct).ConfigureAwait(false);
+        foreach (var variant in context.Group.Variants)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Same newer-host rule as the marker task: a variant newer than
+            // this Revit cannot be opened — leave it pending (0), never
+            // terminal.
+            if (variant.RevitMajorVersion > context.OpenedVariant.RevitMajorVersion)
+            {
+                SmartConLogger.Debug(
+                    $"Variant Revit {variant.RevitMajorVersion} skipped — newer than the openable " +
+                    $"{context.OpenedVariant.RevitMajorVersion}; stays pending until a newer host");
+                continue;
+            }
+
+            var absolutePath = Path.Combine(dbRoot ?? string.Empty, variant.RelativePath);
+            if (!File.Exists(absolutePath))
+            {
+                await WriteVariantMarkerAsync(variant.VersionId, -2, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            // Pass A (file-free, legacy-only): pre-FHV20 section strings still
+            // carry the ROUTING sections — seed without opening the file.
+            // hash-v20 (Order 12) strips ROUTING from sections in the same
+            // run, so on a healed DB this pass finds nothing and Pass B (or
+            // the V37 migration / import seed) is the real source.
+            var backfilled = seedNeeded && await TryBackfillFromSectionStringsAsync(variant, context.Group.CatalogItemId, ct)
+                .ConfigureAwait(false);
+            if (backfilled)
+                seedNeeded = false;
+
+            // Pass B (Revit): slimming always needs the file; when the
+            // file-free pass found no section strings, the pre-slim
+            // extraction of THIS open is the backfill source.
+            var outcome = await _slimmingService
+                .SlimManagedFileAsync(absolutePath, ct)
+                .ConfigureAwait(false);
+
+            if (!backfilled && seedNeeded && outcome.PreSlimSnapshot is not null)
+            {
+                await BackfillFromSnapshotAsync(outcome.PreSlimSnapshot, variant, context, ct)
+                    .ConfigureAwait(false);
+                backfilled = true;
+                seedNeeded = false;
+            }
+
+            // FHV21: the variant's own SEGMENT configuration is per-version
+            // content — persist it for EVERY variant with a routing source
+            // (active AND archived labels alike: a later rollback reads the
+            // activated version's rows, so each version needs its own).
+            // Runs regardless of the item-seed gate above (replace is
+            // idempotent; the item tables keep fittings only).
+            if (outcome.PreSlimSnapshot is not null)
+            {
+                var segmentRecords = SegmentRuleComposition.FromSnapshot(outcome.PreSlimSnapshot);
+                if (segmentRecords.Count > 0)
+                {
+                    await _segmentRuleRepository
+                        .ReplaceForVersionAsync(variant.VersionId, segmentRecords, ct)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            // An already-slim CURRENT mini carries no routing source: the
+            // item is legitimately routing-less (template duct with an empty
+            // manager, flex with all-None params). Materialize the "routing
+            // as data: empty" marker settings per catalog type so sync never
+            // falls back to reading the slim mini as an (equally empty, but
+            // untracked) snapshot and the drift probes share the same source
+            // of truth.
+            if (!backfilled && seedNeeded && outcome.Status == MiniProjectSlimmingStatus.AlreadySlim)
+            {
+                backfilled = await SeedEmptyRoutingMarkersAsync(context.Group.CatalogItemId, ct)
+                    .ConfigureAwait(false);
+                if (backfilled)
+                    seedNeeded = false;
+            }
+
+            if (!backfilled)
+            {
+                SmartConLogger.Debug(
+                    $"Variant '{variant.VersionId}': no routing source found (routing-less category or already stored) — rules untouched");
+            }
+
+            var marker = outcome.Status switch
+            {
+                MiniProjectSlimmingStatus.Slimmed => 1,
+                MiniProjectSlimmingStatus.AlreadySlim => 1,
+                MiniProjectSlimmingStatus.Missing => -2,
+                _ => -1,
+            };
+            await WriteVariantMarkerAsync(variant.VersionId, marker, ct).ConfigureAwait(false);
+        }
+
+        SmartConLogger.Info(
+            $"routing-backfill-v1: group '{context.Group.ItemName}' processed ({context.Group.Variants.Count} variant(s))");
+    }
+
+    public override async Task HandleGroupFailureAsync(
+        ActualizationGroup group, ActualizationFailureKind kind, CancellationToken ct = default)
+    {
+        var marker = kind == ActualizationFailureKind.MissingFile ? -2 : -1;
+        using var connection = Database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"""
+            UPDATE catalog_versions
+            SET routing_backfilled = @marker
+            WHERE id IN ({VariantIdParams(cmd, group.Variants)})
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@marker", marker));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Pass A: parse ROUTING/FAMKEY sections from
+    /// <c>catalog_versions.section_strings</c> and write the version's
+    /// routing records. <c>false</c> when the version carries no section
+    /// strings (pass B falls back to the opened mini).
+    /// </summary>
+    private async Task<bool> TryBackfillFromSectionStringsAsync(
+        ActualizationVariant variant, string catalogItemId, CancellationToken ct)
+    {
+        string? sectionStringsJson = null;
+        using (var connection = Database.CreateConnection())
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT section_strings FROM catalog_versions WHERE id = @vid";
+            cmd.Parameters.Add(new SqliteParameter("@vid", variant.VersionId));
+            sectionStringsJson = (await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false)) as string;
+        }
+
+        var sections = ContentSectionJsonSerializer.Deserialize(sectionStringsJson);
+        if (sections is null)
+            return false;
+
+        var parsed = RoutingSectionParser.Parse(sections);
+        if (parsed.Count == 0)
+            return false;
+
+        var rules = new List<FamilyRoutingRuleInfo>();
+        var settings = new List<FamilyRoutingTypeSettings>();
+        foreach (var type in parsed)
+        {
+            RoutingRuleRecordMapper.ToRecords(
+                new SystemTypeSnapshot(type.TypeName, [], Routing: type.Routing, FamilyKey: type.FamilyKey),
+                rules, settings);
+        }
+
+        // FHV21: segment rules are per-version content — they never enter
+        // the item-level seed (the per-version write happens per variant in
+        // the caller's loop / import writer).
+        rules = rules
+            .Where(r => !SegmentRuleComposition.IsSegmentsGroup(r.GroupKey))
+            .ToList();
+
+        await _routingRuleRepository
+            .ReplaceForItemAsync(catalogItemId, rules, settings, ct)
+            .ConfigureAwait(false);
+        SmartConLogger.Info(
+            $"routing-backfill-v1: item '{catalogItemId}' seeded file-free from section strings " +
+            $"({rules.Count} rules, {settings.Count} settings)");
+        return true;
+    }
+
+    /// <summary>
+    /// Pass B: build the records from the pre-slim snapshot of the opened
+    /// mini, trimmed to the catalog's authoritative type names (same
+    /// helper as the hash task — the mini also carries renamed template
+    /// leftovers whose routing must not be backfilled).
+    /// </summary>
+    private async Task BackfillFromSnapshotAsync(
+        SystemFamilySnapshot preSlimSnapshot,
+        ActualizationVariant variant,
+        FamilyActualizationContext context,
+        CancellationToken ct)
+    {
+        var trimmed = await SystemTypeCatalogTrimHelper
+            .TrimToCatalogTypeNamesAsync(preSlimSnapshot, context.Group, Database, ct)
+            .ConfigureAwait(false);
+
+        var rules = new List<FamilyRoutingRuleInfo>();
+        var settings = new List<FamilyRoutingTypeSettings>();
+        foreach (var type in trimmed.Types)
+        {
+            RoutingRuleRecordMapper.ToRecords(type, rules, settings);
+        }
+
+        // FHV21: segment rules are per-version content — excluded from the
+        // item-level seed (the caller persists them per variant).
+        rules = rules
+            .Where(r => !SegmentRuleComposition.IsSegmentsGroup(r.GroupKey))
+            .ToList();
+
+        await _routingRuleRepository
+            .ReplaceForItemAsync(context.Group.CatalogItemId, rules, settings, ct)
+            .ConfigureAwait(false);
+        SmartConLogger.Info(
+            $"routing-backfill-v1: item '{context.Group.CatalogItemId}' seeded from the pre-slim mini extraction " +
+            $"({rules.Count} rules, {settings.Count} settings)");
+    }
+
+    /// <summary>
+    /// Already-slim marker path: the item is legitimately routing-less, so
+    /// write ONLY the per-type settings markers (no rules) — the presence
+    /// of a settings row is the discriminator "routing is stored as data"
+    /// (a legitimately empty routing keeps the settings row, see
+    /// <see cref="IFamilyRoutingRuleRepository"/>). <c>false</c> when the
+    /// catalog carries no type rows for the item at all (nothing to mark).
+    /// FLEX categories are skipped entirely (validator MAJOR-1): their raw
+    /// preferred-junction value cannot be assumed (param convention is
+    /// inverted vs the enum and legacy types vary) — a wrong marker would
+    /// create an eternal phantom RoutingDrift. The no-opinion guard in
+    /// <c>SystemTypeSyncService</c> (audit M11) protects those items
+    /// instead: empty tables + slim mini = routing left untouched.
+    /// </summary>
+    private async Task<bool> SeedEmptyRoutingMarkersAsync(string catalogItemId, CancellationToken ct)
+    {
+        var settings = new List<FamilyRoutingTypeSettings>();
+        using (var connection = Database.CreateConnection())
+        {
+            await connection.OpenAsync(ct).ConfigureAwait(false);
+            int? categoryId = null;
+            using (var catCmd = connection.CreateCommand())
+            {
+                catCmd.CommandText = "SELECT revit_category_id FROM catalog_items WHERE id = @item";
+                catCmd.Parameters.Add(new SqliteParameter("@item", catalogItemId));
+                var raw = await catCmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+                if (raw is not null and not DBNull)
+                    categoryId = (int?)(long)raw;
+            }
+            if (categoryId is RoutingGroupCatalog.FlexPipeCurvesCategoryId
+                or RoutingGroupCatalog.FlexDuctCurvesCategoryId)
+            {
+                SmartConLogger.Info(
+                    $"routing-backfill-v1: item '{catalogItemId}' is flex and legitimately routing-less — " +
+                    "left WITHOUT marker settings (no-opinion guard protects the live routing)");
+                return true;
+            }
+
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = $"""
+                SELECT DISTINCT type_name, family_key FROM family_types
+                WHERE catalog_item_id = @item AND type_name <> '{FamilyTypeSnapshot.DefaultTypeName}'
+                """;
+            cmd.Parameters.Add(new SqliteParameter("@item", catalogItemId));
+            using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                settings.Add(new FamilyRoutingTypeSettings(
+                    reader.GetString(0), reader.GetString(1), PreferredJunctionType: 0));
+            }
+        }
+
+        if (settings.Count == 0)
+            return false;
+
+        await _routingRuleRepository
+            .ReplaceForItemAsync(catalogItemId, [], settings, ct)
+            .ConfigureAwait(false);
+        SmartConLogger.Info(
+            $"routing-backfill-v1: item '{catalogItemId}' marked as legitimately routing-less " +
+            $"({settings.Count} type settings, no rules)");
+        return true;
+    }
+
+    private async Task WriteVariantMarkerAsync(string versionId, int marker, CancellationToken ct)
+    {
+        using var connection = Database.CreateConnection();
+        await connection.OpenAsync(ct).ConfigureAwait(false);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE catalog_versions SET routing_backfilled = @marker WHERE id = @vid";
+        cmd.Parameters.Add(new SqliteParameter("@marker", marker));
+        cmd.Parameters.Add(new SqliteParameter("@vid", versionId));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static string VariantIdParams(SqliteCommand cmd, IReadOnlyList<ActualizationVariant> variants)
+    {
+        var idParams = new string[variants.Count];
+        for (var p = 0; p < variants.Count; p++)
+        {
+            idParams[p] = "@vid" + p;
+            cmd.Parameters.Add(new SqliteParameter(idParams[p], variants[p].VersionId));
+        }
+        return string.Join(", ", idParams);
+    }
+}

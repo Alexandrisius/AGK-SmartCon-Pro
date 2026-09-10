@@ -1,0 +1,63 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ==================================================================
+         #203: family-kind badges for the catalog tree type nodes.
+         Glyphs are Material Design Icons path data (Pictogrammers,
+         Apache 2.0, no attribution required) on the 24x24 grid - same
+         filled-outline style as the other tree icons (FolderIconGeometry
+         in SmartCon.UI Generic.xaml). Rendered at 12x12 via Stretch=Uniform.
+         The oval ring is composed in the same 2px-ring language (MDI has
+         no oval glyph); the WithoutFittings slash is a separate stroked
+         path in the item template (an overlaid filled quad under NonZero
+         fill killed the wrench holes - MDI outlines rely on EvenOdd).
+         NOTE: keep comments ASCII-only - the markup compiler chokes on
+         non-ASCII comment text in this dictionary (MC3072, #203).
+         ================================================================== -->
+
+    <!-- mdi:circle-outline - Duct.Round / FlexDuct.Round -->
+    <PathGeometry x:Key="FamilyBadgeShapeRoundGeometry"
+                  Figures="M12,20 a8,8 0 0 1 -8,-8 a8,8 0 0 1 8,-8 a8,8 0 0 1 8,8 a8,8 0 0 1 -8,8 m0,-18 A10,10 0 0 0 2,12 a10,10 0 0 0 10,10 a10,10 0 0 0 10,-10 A10,10 0 0 0 12,2"/>
+
+    <!-- mdi:rectangle-outline - Duct.Rectangular / FlexDuct.Rectangular -->
+    <PathGeometry x:Key="FamilyBadgeShapeRectangularGeometry"
+                  Figures="M4,6 V19 H20 V6 H4 M18,17 H6 V8 H18 V17 Z"/>
+
+    <!-- Oval ring (composed, 2px ring like circle-outline) - Duct.Oval.
+         Both subpaths are exact concentric ellipses centered at (12,12):
+         outer rx=10 ry=7, inner rx=8 ry=5 (top 12,5 / bottom 12,19 / left
+         2,12 / right 22,12). Off-curve endpoints make WPF silently scale
+         the radii and the ring goes uneven - keep the points on-curve. -->
+    <PathGeometry x:Key="FamilyBadgeShapeOvalGeometry"
+                  Figures="M12,7 A8,5 0 0 1 20,12 A8,5 0 0 1 12,17 A8,5 0 0 1 4,12 A8,5 0 0 1 12,7 Z M12,5 A10,7 0 0 0 2,12 A10,7 0 0 0 12,19 A10,7 0 0 0 22,12 A10,7 0 0 0 12,5 Z"/>
+
+    <!-- mdi:wrench-outline - Conduit/CableTray.WithFittings AND WithoutFittings
+         (the "without" variant draws a separate slash on top in the template) -->
+    <PathGeometry x:Key="FamilyBadgeFittingsGeometry"
+                  Figures="M22.61,19 L13.53,9.91 C14.46,7.57 14,4.81 12.09,2.91 C9.79,0.61 6.21,0.4 3.66,2.26 L7.5,6.11 L6.08,7.5 L2.25,3.69 C0.39,6.23 0.6,9.82 2.9,12.11 C4.76,13.97 7.47,14.46 9.79,13.59 L18.9,22.7 C19.29,23.09 19.92,23.09 20.31,22.7 L22.61,20.4 C23,20 23,19.39 22.61,19 M19.61,20.59 L10.15,11.13 C9.54,11.58 8.86,11.85 8.15,11.95 C6.79,12.15 5.36,11.74 4.32,10.7 C3.37,9.76 2.93,8.5 3,7.26 L6.09,10.35 L10.33,6.11 L7.24,3 C8.5,2.95 9.73,3.39 10.68,4.33 C11.76,5.41 12.17,6.9 11.92,8.29 C11.8,9 11.5,9.66 11.04,10.25 L20.5,19.7 L19.61,20.59 Z"/>
+
+    <!-- mdi:wall (7 bricks) - Wall.Basic -->
+    <PathGeometry x:Key="FamilyBadgeWallBasicGeometry"
+                  Figures="M3,16 H12 V21 H3 Z M2,10 H8 V15 H2 Z M9,10 H15 V15 H9 Z M16,10 H22 V15 H16 Z M13,16 H21 V21 H13 Z M3,4 H11 V9 H3 Z M12,4 H21 V9 H12 Z"/>
+
+    <!-- mdi:layers - Wall.Stacked -->
+    <PathGeometry x:Key="FamilyBadgeWallStackedGeometry"
+                  Figures="M12,16 L19.36,10.27 L21,9 L12,2 L3,9 L4.63,10.27 M12,18.54 L4.62,12.81 L3,14.07 L12,21.07 L21,14.07 L19.37,12.8 L12,18.54 Z"/>
+
+    <!-- mdi:view-grid-outline (curtain-wall mullion grid) - Wall.Curtain -->
+    <PathGeometry x:Key="FamilyBadgeWallCurtainGeometry"
+                  Figures="M3,11 H11 V3 H3 M5,5 H9 V9 H5 M13,21 H21 V13 H13 M15,15 H19 V19 H15 M3,21 H11 V13 H3 M5,15 H9 V19 H5 M13,3 V11 H21 V3 M19,9 H15 V5 H19 Z"/>
+
+    <!-- mdi:stairs - Stairs.CastInPlace (monolithic staircase silhouette) -->
+    <PathGeometry x:Key="FamilyBadgeStairsCastInPlaceGeometry"
+                  Figures="M15,5 V9 H11 V13 H7 V17 H3 V20 H10 V16 H14 V12 H18 V8 H22 V5 Z"/>
+
+    <!-- mdi:hammer - Stairs.Assembled (assembled/mounted on site) -->
+    <PathGeometry x:Key="FamilyBadgeStairsAssembledGeometry"
+                  Figures="M2,19.63 L13.43,8.2 l-0.71,-0.7 l1.42,-1.43 L12,3.89 c1.2,-1.19 3.09,-1.19 4.27,0 l3.6,3.61 l-1.42,1.41 h2.84 l0.71,0.71 l-3.55,3.59 l-0.71,-0.71 V9.62 l-1.47,1.42 l-0.71,-0.71 L4.13,21.76 Z"/>
+
+    <!-- mdi:stairs-up - Stairs.Precast (prefabricated flights) -->
+    <PathGeometry x:Key="FamilyBadgeStairsPrecastGeometry"
+                  Figures="M15,6 h7 v3 h-4 v4 h-4 v4 h-4 v4 H3 v-3 h4 v-4 h4 v-4 h4 Z m-4.83,0.66 l-5.51,5.51 l-1.83,-1.83 l5.51,-5.51 L6.5,3 H12 v5.5 Z"/>
+
+</ResourceDictionary>

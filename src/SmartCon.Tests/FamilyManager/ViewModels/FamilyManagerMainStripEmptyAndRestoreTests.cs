@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using Moq;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.ViewModels;
 using Xunit;
 
@@ -10,7 +12,7 @@ public sealed class FamilyManagerMainStripEmptyCategoriesTests
     private static FamilyLeafNodeViewModel MakeLeaf(string id, string name)
     {
         var row = new FamilyCatalogItemRow { Id = id, Name = name };
-        return new FamilyLeafNodeViewModel(row);
+        return new FamilyLeafNodeViewModel(row, new Mock<IFamilyAssetService>().Object);
     }
 
     private static CategoryNodeViewModel MakeCat(string id, string name)
@@ -177,7 +179,7 @@ public sealed class FamilyManagerMainRestoreExpandedStateTests
     private static FamilyLeafNodeViewModel MakeLeaf(string id, string name)
     {
         var row = new FamilyCatalogItemRow { Id = id, Name = name };
-        return new FamilyLeafNodeViewModel(row);
+        return new FamilyLeafNodeViewModel(row, new Mock<IFamilyAssetService>().Object);
     }
 
     private static CategoryNodeViewModel MakeCat(string id, string name)

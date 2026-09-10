@@ -134,7 +134,18 @@
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource TextMutedBrush}"
                                    Margin="8,0,0,0"
-                                   IsHitTestVisible="False"/>
+                                   IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=ViewSearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
 
                     <ListBox Grid.Row="2" ItemsSource="{Binding FilteredViews}" Style="{DynamicResource CompactListBox}">

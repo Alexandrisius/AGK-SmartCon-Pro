@@ -7,17 +7,20 @@ namespace SmartCon.FamilyManager.Behaviors;
 /// категории скрываются за уже закреплёнными строками, но ещё не достигли
 /// верхней границы viewport.
 /// </summary>
-/// <remarks>
-/// <para><b>Алгоритм:</b></para>
-/// <list type="number">
-///   <item>Начинаем с <c>occupiedTop = 0</c> — высота уже занятая sticky-заголовками.</item>
-///   <item>Ищем самую "близкую к viewport" (max <c>top</c>) категорию,
-///         у которой <c>top &lt; occupiedTop</c> и которая ещё не в стеке.</item>
-///   <item>Добавляем в стек путь от корня до этой категории, пропуская уже добавленные.</item>
-///   <item>Увеличиваем <c>occupiedTop</c> на высоту новых заголовков.</item>
-///   <item>Повторяем, пока находятся категории, ушедшие под sticky-bar.</item>
-/// </list>
-/// </remarks>
+    /// <remarks>
+    /// <para><b>Алгоритм:</b></para>
+    /// <list type="number">
+    ///   <item>Начинаем с <c>occupiedTop = 0</c> и <c>lastPinnedIndex = -1</c>.</item>
+    ///   <item>Ищем среди прямых детей последней закреплённой категории
+    ///         (или корней, если <c>lastPinnedIndex = -1</c>) самую "близкую к viewport"
+    ///         (max <c>top</c>) категорию, у которой <c>top &lt; occupiedTop</c>.</item>
+    ///   <item>Добавляем найденную категорию в стек; её предки уже в стеке, поэтому
+    ///         добавляется только сама категория.</item>
+    ///   <item>Увеличиваем <c>occupiedTop</c> на высоту добавленного заголовка
+    ///         и устанавливаем <c>lastPinnedIndex</c> = найденная категория.</item>
+    ///   <item>Повторяем, пока находятся категории, ушедшие под sticky-bar.</item>
+    /// </list>
+    /// </remarks>
 public static class StickyCascadingStackBuilder
 {
     /// <summary>
@@ -37,18 +40,22 @@ public static class StickyCascadingStackBuilder
         if (tops.Count != heights.Count || tops.Count != parentIndices.Count)
             throw new ArgumentException("tops, heights и parentIndices должны быть одинаковой длины");
 
+        // Без логирования: чистая функция, вызывается на каждый тик скролла.
+        // Результат логирует вызывающий RecalculateSticky при смене стека.
         var result = new List<int>();
         var included = new HashSet<int>();
         var occupiedTop = 0.0;
+        var lastPinnedIndex = -1;
         var maxIterations = tops.Count * 2;
 
         for (int iteration = 0; iteration < maxIterations && occupiedTop < viewportHeight; iteration++)
         {
-            var candidate = FindNextCandidate(tops, viewportHeight, occupiedTop, included);
+            var candidate = FindNextCandidate(tops, parentIndices, lastPinnedIndex, viewportHeight, occupiedTop, included);
             if (candidate < 0) break;
 
             var addedHeight = AppendPath(candidate, parentIndices, heights, included, result);
             occupiedTop += addedHeight;
+            lastPinnedIndex = candidate;
         }
 
         return result;
@@ -56,6 +63,8 @@ public static class StickyCascadingStackBuilder
 
     private static int FindNextCandidate(
         IReadOnlyList<double> tops,
+        IReadOnlyList<int> parentIndices,
+        int lastPinnedIndex,
         double viewportHeight,
         double occupiedTop,
         HashSet<int> included)
@@ -65,6 +74,7 @@ public static class StickyCascadingStackBuilder
 
         for (int i = 0; i < tops.Count; i++)
         {
+            if (parentIndices[i] != lastPinnedIndex) continue;
             if (included.Contains(i)) continue;
 
             var top = tops[i];

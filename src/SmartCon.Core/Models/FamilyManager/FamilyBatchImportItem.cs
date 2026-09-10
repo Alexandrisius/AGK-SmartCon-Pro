@@ -49,6 +49,28 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// the version label whose stored hash matched this row's hash (e.g. "v2").
 /// Displayed in the dialog as "Duplicate (v2)". <c>null</c> otherwise.
 /// </param>
+/// <param name="IsCrossNameDuplicate">
+/// Issue #126: <c>true</c> when the content hash matched an item whose
+/// name differs from this row's file name (the file was renamed). The
+/// batch dialog renders a warning icon with a tooltip for such rows.
+/// </param>
+/// <param name="MatchedItemName">
+/// Issue #126: display name of the catalog item whose version matched
+/// the content hash. Used by the cross-name duplicate tooltip.
+/// <c>null</c> unless <see cref="Status"/> is Duplicate.
+/// </param>
+/// <param name="ExistingCategoryId">
+/// Issue #135: real category of the existing catalog item this row
+/// resolves to (<see cref="ExistingCatalogItemId"/>), independent of
+/// <see cref="TargetCategoryId"/> — the target may be overridden by the
+/// «Импорт в категорию» command or the picker. Used by the batch dialog
+/// to warn that a locked target category will MOVE the existing family
+/// between categories on import.
+/// </param>
+/// <param name="ExistingCategoryPath">
+/// Issue #135: human-readable path of <see cref="ExistingCategoryId"/>
+/// for the move-warning tooltip.
+/// </param>
 /// <param name="LoadableSnapshot">
 /// Phase 27: in-memory snapshot of the loadable family extracted during
 /// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
@@ -60,6 +82,12 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// Phase 1 Prepare. Survives the dialog round-trip so Phase 3 Commit can
 /// write types + parameter values WITHOUT re-opening the staged .rvt.
 /// <c>null</c> for loadable families or when Prepare failed.
+/// </param>
+/// <param name="DependencyLinks">
+/// ADR-066: set on CHILD rows (dependencies of another row) — the parents
+/// this row must be linked to in <c>family_dependencies</c> after import.
+/// The Phase-3 executor writes the links; the row itself is imported as a
+/// regular loadable family.
 /// </param>
 public sealed record FamilyBatchImportItem(
     string FilePath,
@@ -85,11 +113,55 @@ public sealed record FamilyBatchImportItem(
     FamilySnapshot? LoadableSnapshot = null,
     SystemFamilySnapshot? SystemSnapshot = null,
     string? PublishedBy = null,
-    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null)
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null,
+    string? ExistingCategoryId = null,
+    string? ExistingCategoryPath = null,
+    FamilyHealthReport? HealthReport = null,
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
+    /// <summary>
+    /// #180 (2026-08-12): <see cref="MatchedVersionLabel"/> came from the
+    /// verified ES marker override, not from content-hash dedup (the
+    /// embedded identity hash disagrees or has no match — expected after a
+    /// nested update, a merge never propagates parameter groups).
+    /// Display-only: the status column annotates the version as
+    /// marker-resolved. Never consumed by import logic.
+    /// </summary>
+    bool IsMarkerResolvedVersion = false,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes from Prepare,
+    /// written to <c>family_type_hashes</c> by the import transaction.
+    /// <c>null</c> for legacy/folder imports — the optional
+    /// <c>type-hashes-v1</c> actualization task backfills them.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare,
+    /// written to <c>catalog_versions.section_hashes/section_strings</c>
+    /// by the import transaction. <c>null</c> for legacy paths —
+    /// backfilled by the <c>section-hashes-v1</c> task.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// ADR-072 World B (audit M11): <c>true</c> when the
+    /// <see cref="SystemSnapshot"/> routing is the UNsubstituted slim mini
+    /// state (reimport from mini + no stored routing rows in the DB) — the
+    /// item-level routing tables must NOT be seeded from it.
+    /// </summary>
+    bool UnsubstitutedMiniRouting = false)
 {
     /// <summary>User-selected action for this file.</summary>
     public FamilyBatchImportAction Action { get; set; } =
         FamilyBatchImportAction.IncrementVersion;
+
+    /// <summary>
+    /// Issue #261: the user explicitly picked «Без категории» in the batch
+    /// dialog picker — the import must move the item to no category (write
+    /// NULL), unlike a plain null <see cref="TargetCategoryId"/> which means
+    /// "no explicit choice". Copied from the row by GetResultItems.
+    /// </summary>
+    public bool ClearCategoryOnImport { get; set; }
 
     /// <summary>User-selected target category for this file (overrides dialog-level category).</summary>
     public string? TargetCategoryId { get; set; } = TargetCategoryId;

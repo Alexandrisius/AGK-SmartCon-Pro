@@ -46,6 +46,15 @@ public interface IFamilyGeometryPipeline
     /// <param name="versionId">Version id.</param>
     /// <param name="versionLabel">Version label.</param>
     /// <param name="familyName">Family display name (without extension).</param>
+    /// <param name="overwriteBaselineSectionHashes">#252: pre-overwrite
+    /// section hashes of the SAME version, captured by
+    /// <c>OverwriteCurrentAsync</c> before it rewrites the catalog row.
+    /// When supplied and the new sections still match this baseline on the
+    /// preview-relevant keys (DEF/GEOM/TYPES/NESTED*), the overwrite did
+    /// not touch preview content — the pipeline keeps the version's
+    /// existing pooled previews untouched and skips BOTH the stale-asset
+    /// deletion and the extraction (a text-only overwrite costs zero Revit
+    /// work). <c>null</c> on the H1/H2 (new-version) paths.</param>
     /// <param name="ct">Cancellation token.</param>
     Task RunAsync(
         IReadOnlyList<FamilyGeometryPerType>? geometryPerType,
@@ -54,5 +63,6 @@ public interface IFamilyGeometryPipeline
         string versionId,
         string versionLabel,
         string familyName,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
         CancellationToken ct = default);
 }

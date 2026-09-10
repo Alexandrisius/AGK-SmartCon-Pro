@@ -113,6 +113,35 @@ SQLite.org official guidance ([Internal Versus External BLOB](https://www.sqlite
 
 Extract требует `OpenDocumentFile` (Revit API). Все вызовы — только через `IFamilyManagerAwaitableEvent.RaiseAsync`. WPF-поток НЕ трогает Revit API напрямую.
 
+## Amendment (2026-07-15, Issue #129)
+
+The SharpGLTF.Core GLB writer was replaced by a **custom zero-dependency GLB writer**. The
+root cause was a runtime failure in Revit 2021: SharpGLTF.Core 1.0.3 internally uses
+`System.Text.Json`, and the version loaded by Revit 2021's shared AppDomain does not include
+`JsonWriterOptions.set_Encoder(...)`, producing
+`MissingMethodException: System.Text.Json.JsonWriterOptions.set_Encoder`. No binding redirect,
+`AssemblyResolve` hook, or `System.Text.Json` upgrade could safely resolve the conflict.
+
+The new writer is implemented entirely in `SmartCon.FamilyManager`:
+- `FamilyGeometryGlbWriter.cs` — public entry point, logging, directory creation
+- `GltfBufferBuilder.cs` — builds accessors, buffer views, materials, scene graph, and the binary buffer
+- `GltfJsonSerializer.cs` — manual JSON serialization using `StringBuilder` and invariant culture
+- `GltfBinaryWriter.cs` — GLB 2.0 header and JSON/BIN chunks with correct padding
+- `Gltf/*.cs` — internal immutable glTF JSON domain records
+
+It has **no dependency** on `System.Text.Json`, `Newtonsoft.Json`, or `SharpGLTF`, fixing the
+Revit 2021 crash while preserving net8.0-windows (Revit 2025+) support. The coordinate system
+mapping (Revit Z-up → glTF Y-up) and per-mesh material colors are preserved.
+
+> **Implementation detail (orientation):** The root node transform is a -90° rotation around
+> the X axis that maps Revit `(x, y, z)` to glTF `(x, z, -y)` and therefore Revit `+Z` up
+> to glTF `+Y` up. `System.Numerics.Matrix4x4` is row-major and uses row-vector convention
+> (`v * M`), whereas glTF stores matrices in column-major order and applies them with
+> column-vector convention (`M * v`). The writer must therefore store the **transpose** of
+> the .NET matrix in the glTF `node.matrix` array. The first custom implementation omitted
+> this transpose, causing the model to be rendered upside-down; this was caught by a
+> `GltfBufferBuilder` unit test verifying the third column of the root matrix is `(0, 1, 0)`.
+
 ## Архитектура (слои)
 
 ```
@@ -123,11 +152,12 @@ SmartCon.Core (pure C#, no Revit, no WPF — I-09)
   └── Services/Interfaces/IGlbWriter.cs
 
 SmartCon.Revit (Revit API impl)
-  └── FamilyManager/RevitFamilyGeometryExtractor.cs  ← pattern из RevitFamilyDataExtractionService.cs
+  └── FamilyManager/RevitFamilyGeometryExtractor.cs  ← pattern from RevitFamilyDataExtractionService.cs
 
 SmartCon.FamilyManager (UI + storage + GLB writer)
   ├── Services/Geometry/IFamilyGeometryPipeline.cs   ← interface (extends IGlbWriter + extractor coordination)
-  ├── Services/Geometry/FamilyGeometryGlbWriter.cs   ← SharpGLTF.MeshBuilder
+  ├── Services/Geometry/FamilyGeometryGlbWriter.cs   ← custom zero-dependency GLB writer
+  ├── Services/Geometry/Gltf/*                       ← internal glTF JSON models, serializer, buffer builder, binary writer
   ├── Services/Geometry/FamilyGeometryPipeline.cs    ← extract → write → register asset (auto-extracted-preview prefix)
   ├── Services/Geometry/GlbSceneLoader.cs            ← HelixToolkit.SharpDX.Assimp.Importer.Load → SceneNode
   ├── ViewModels/FamilyPropertiesViewModel.Preview3D.cs  ← EffectsManager, Camera3D, Scene3DRoot (SceneNodeGroupModel3D), Items3D (ObservableElement3DCollection), commands
@@ -168,6 +198,7 @@ SmartConLogger.Warn($"Geometry extraction failed: {ex.Message} [Action: check fa
 | `Application.Current == null` в net48 → Helix binding issues (skill `revit-wpf-compat`) | `_uiDispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher` в ctor VM |
 | Viewport3DX re-host ломает render (helix-toolkit issue #1120) | singleton dockable panel (I-15) — только hide/show; fallback `EnableSwapChainRendering=true` |
 | SharpDX native dlls в multi-version build | NuGet разруливает native deps по RID; проверить на R19/R21/R24/R25 |
+| `MissingMethodException` в `System.Text.Json` на Revit 2021 (зависимость SharpGLTF.Core от shared AppDomain) | Заменён на custom zero-dependency GLB writer (Issue #129) — без System.Text.Json/Newtonsoft.Json |
 | Geometry extraction ~200мс-1сек на файл | Вызывается ПОСЛЕ `tx.Commit()` → импорт не замедляется БД-транзакцией; failures не прерывают; для batch-импорта >5 файлов — последовательные вызовы (I-01 запрещает параллельные Revit API) |
 | Shared nested families без собственного solid | Рекурсия через `GetSubComponentIds` |
 | Empty geometry (некоторые семьи) | Pipeline возвращает `null` → `if (preview.Meshes.Count == 0) return;` + Warn `[Action: ...]`, не создавать asset |
@@ -187,5 +218,5 @@ SmartConLogger.Warn($"Geometry extraction failed: {ex.Message} [Action: check fa
 - Build R24 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` ✅ 0 errors, 0 warnings
 - Build R21 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21` ✅ 0 errors, 0 warnings
 - Build R19 (net48): `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19` ✅ 0 errors, 0 warnings
-- Tests: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` ✅ 1690/1690 passed (9 FamilyGeometryGlbWriterTests + 5 GlbSceneLoaderTests + 1676 existing) — Issue #108 добавил `WriteAsync_MultipleMeshesDifferentColors_PreservesMaterialColors` + `WriteAsync_FallbackGrayColor_PreservesBaseColor`
-- Manual: импорт `.rfa` в Revit 2025 → открыть окно свойств семейства → вкладка «3D Просмотр» → должна появиться интерактивная 3D-модель (вращение правой кнопкой, zoom колесом, pan левой кнопкой). Переключение активной версии в вкладке «Версии» перезагружает превью (через `LoadAssetsAsync` → `Load3DPreviewAsync`). На net48 (Revit 2019-2024) показывается placeholder «3D-просмотр недоступен».
+- Tests: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` ✅ 1867/1867 passed (9 FamilyGeometryGlbWriterTests + 5 GlbSceneLoaderTests + 7 GltfBufferBuilderTests + 1846 existing) — Issue #129 replaced SharpGLTF with custom zero-dependency GLB writer
+- Manual: импорт `.rfa` в Revit 2021 и Revit 2025 → открыть окно свойств семейства → вкладка «3D Просмотр» → должна появиться интерактивная 3D-модель. На net48 (Revit 2019-2024) ранее показывался placeholder, но теперь GLB writer работает на обеих платформах; viewer по-прежнему использует `mc:AlternateContent`.

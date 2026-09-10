@@ -7,6 +7,8 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:fmModels="clr-namespace:SmartCon.Core.Models.FamilyManager;assembly=SmartCon.Core"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="{loc:Loc FM_BatchImport_Title}"
         Width="1080" Height="520"
         MinWidth="880" MinHeight="420"
@@ -21,6 +23,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:FamilyBatchImportActionConverter x:Key="ActionConverter"/>
             <converters:FamilyBatchImportStatusConverter x:Key="StatusConverter"/>
             <converters:TypeCountToDisplayConverter x:Key="TypeCountConverter"/>
@@ -53,6 +56,22 @@
                 <Setter Property="IsSelected"
                         Value="{Binding IsSelected, Mode=TwoWay}"/>
             </Style>
+            <!--
+                Issue #135 (P1/P4): category column cell. The tooltip
+                explains WHERE the category came from (provenance), and
+                the cell flashes (whole-cell, light blue, hold+fade) when
+                the rename handler changes the category automatically.
+                BasedOn the shared compact cell so padding/selection
+                behaviour stays identical to the other columns.
+            -->
+            <Style x:Key="CategoryCellStyle"
+                   TargetType="DataGridCell"
+                   BasedOn="{StaticResource CompactDataGridCell}">
+                <Setter Property="ToolTip"
+                        Value="{Binding CategoryProvenanceDescription}"/>
+                <Setter Property="behaviors:CellFlashBehavior.FlashToken"
+                        Value="{Binding CategoryFlashToken}"/>
+            </Style>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -83,6 +102,7 @@
                      Style="{DynamicResource CompactDataGrid}"
                      RowStyle="{StaticResource BatchImportRowStyle}"
                      CellStyle="{DynamicResource CompactDataGridCell}"
+                     IsEnabled="{Binding IsGridEnabled}"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"
                      CanUserResizeColumns="True"
@@ -98,6 +118,200 @@
                     </Style>
                 </DataGrid.ColumnHeaderStyle>
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="36" MinWidth="36">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <!--
+                                        Единая иконка статуса (Import Validation Gate):
+                                        Pending  — результат пре-проверки (health + правила);
+                                        Success  — импорт выполнен, отчёт доступен по клику;
+                                        Running/Error/Skipped — ход/итог импорта (не кликабельны).
+                                        Язык иконок единый: CheckCircle/AlertCircle/CloseCircle/TimerSand.
+                                    -->
+                                    <Button Command="{Binding OpenValidationReportCommand}"
+                                            ToolTip="{Binding GateTooltip}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Cursor="Hand">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource FlatIconButton}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Success}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <Grid>
+                                            <iconPacks:PackIconMaterial Kind="CheckCircleOutline"
+                                                                        Foreground="#9E9E9E"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}"/>
+                                                                    <Condition Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.NotChecked}"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="TimerSand"
+                                                                        Foreground="#2196F3"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}"/>
+                                                                    <Condition Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Checking}"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="Check"
+                                                                        Foreground="#4CAF50"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}"/>
+                                                                    <Condition Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Passed}"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="CheckCircleOutline"
+                                                                        Foreground="#4CAF50"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Success}">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                                        Foreground="#FB8C00"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}"/>
+                                                                    <Condition Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Warning}"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
+                                                                        Foreground="#F44336"
+                                                                        Width="16" Height="16">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding ImportRowState}" Value="{x:Static fmModels:FamilyBatchImportRowState.Pending}"/>
+                                                                    <Condition Binding="{Binding GateStatus}" Value="{x:Static fmModels:FamilyRowGateStatus.Failed}"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                        </Grid>
+                                    </Button>
+                                    <!-- Import progress/result icons (не кликабельны) -->
+                                    <Grid ToolTip="{Binding ImportErrorMessage}">
+                                        <iconPacks:PackIconMaterial Kind="CloseCircleOutline"
+                                                                    Foreground="#F44336"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Error}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                        <iconPacks:PackIconMaterial Kind="TimerSand"
+                                                                    Foreground="#2196F3"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Running}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                        <iconPacks:PackIconMaterial Kind="MinusCircleOutline"
+                                                                    Foreground="#9E9E9E"
+                                                                    Width="16" Height="16"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ImportRowState}"
+                                                                     Value="{x:Static fmModels:FamilyBatchImportRowState.Skipped}">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn x:Name="ColFileName"
                                         Binding="{Binding FileName}"
                                         Width="*"
@@ -109,42 +323,197 @@
                                         MinWidth="80"
                                         IsReadOnly="True"
                                         ElementStyle="{StaticResource CenterCell}"/>
-                    <DataGridTextColumn x:Name="ColTypeCount"
-                                        Binding="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
-                                        Width="Auto"
-                                        MinWidth="50"
-                                        IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}"/>
-                    <DataGridTextColumn x:Name="ColStatus"
-                                        Width="Auto"
-                                        MinWidth="100"
-                                        IsReadOnly="True"
-                                        ElementStyle="{StaticResource CenterCell}">
-                        <DataGridTextColumn.Binding>
-                            <MultiBinding Converter="{StaticResource StatusConverter}">
-                                <Binding Path="Status"/>
-                                <Binding Path="MatchedVersionLabel"/>
-                            </MultiBinding>
-                        </DataGridTextColumn.Binding>
-                    </DataGridTextColumn>
+                    <DataGridTemplateColumn x:Name="ColTypeCount"
+                                            Width="Auto"
+                                            MinWidth="50"
+                                            IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Background="Transparent"
+                                      ToolTipService.IsEnabled="{Binding HasTypeNames}">
+                                    <Grid.ToolTip>
+                                        <ToolTip MaxHeight="340" Padding="6,4"
+                                                 Background="{DynamicResource SurfaceBrush}"
+                                                 BorderBrush="{DynamicResource BorderAltBrush}"
+                                                 BorderThickness="1">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                          HorizontalScrollBarVisibility="Hidden">
+                                                <ItemsControl ItemsSource="{Binding TypeNames}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                                <TextBlock Text="•"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                           FontSize="13"
+                                                                           Margin="0,0,6,0"
+                                                                           VerticalAlignment="Top"/>
+                                                                <TextBlock Text="{Binding}"
+                                                                           TextWrapping="NoWrap"
+                                                                           FontSize="12"
+                                                                           VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </ToolTip>
+                                    </Grid.ToolTip>
+                                    <TextBlock Text="{Binding TypeCount, Converter={StaticResource TypeCountConverter}}"
+                                               Style="{StaticResource CenterCell}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn x:Name="ColStatus"
+                                            Width="Auto"
+                                            MinWidth="110"
+                                            IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock VerticalAlignment="Center">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{StaticResource StatusConverter}">
+                                                <Binding Path="Status"/>
+                                                <Binding Path="MatchedVersionLabel"/>
+                                                <Binding Path="IsMarkerResolvedVersion"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <!-- #210: clickable badges (StatusBadgeButton pattern — Generic.xaml).
+                                         Paperclip / muted info badge → related-elements view
+                                         (info only, no actions); the ONE problem triangle
+                                         (worst severity colour) → problem view with actions.
+                                         Two separate dialogs by design. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenInfoDetailsCommand}"
+                                            ToolTip="{Binding DependencyBadgeTooltip}"
+                                            Visibility="{Binding IsDependency, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="Paperclip"
+                                                                    Foreground="#607D8B"
+                                                                    Width="11" Height="11"/>
+                                    </Button>
+                                    <!-- #249 (Phase 4): "what changed" diff against the active
+                                         version — change class + sections + per-type lists,
+                                         with the «Перезаписать текущую» action for cosmetic
+                                         changes. Existing rows only. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenDiffDetailsCommand}"
+                                            ToolTip="{loc:Loc FM_Diff_BadgeTooltip}"
+                                            Visibility="{Binding ShowDiffBadge, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="SwapHorizontal"
+                                                                    Foreground="{DynamicResource AccentBrush}"
+                                                                    Width="12" Height="12"/>
+                                    </Button>
+                                    <!-- Info-only fallback (e.g. a top-level row whose version was
+                                         resolved by the verification marker): keeps the explanation
+                                         reachable when neither badge above is shown. -->
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenInfoDetailsCommand}"
+                                            ToolTip="{Binding InfoBadgeTooltip}"
+                                            Visibility="{Binding ShowInfoBadge, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="InformationOutline"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                                    Width="11" Height="11"/>
+                                    </Button>
+                                    <Button Style="{StaticResource StatusBadgeButton}"
+                                            Command="{Binding OpenStatusDetailsCommand}"
+                                            ToolTip="{Binding ProblemBadgeTooltip}"
+                                            Visibility="{Binding HasProblemNotices, Converter={StaticResource BoolToVis}}">
+                                        <!-- Иконка в языке гейта валидации: AlertCircleOutline
+                                             (warning) / CloseCircleOutline (error). Дефолты — в
+                                             Setters стиля: локальные значения на элементе
+                                             перебивают триггеры и не дают смене иконки работать. -->
+                                        <iconPacks:PackIconMaterial Width="12" Height="12">
+                                            <iconPacks:PackIconMaterial.Style>
+                                                <Style TargetType="iconPacks:PackIconMaterial">
+                                                    <Setter Property="Kind" Value="AlertCircleOutline"/>
+                                                    <Setter Property="Foreground" Value="#FB8C00"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ProblemBadgeSeverity}"
+                                                                     Value="{x:Static vm:StatusNoticeSeverity.Error}">
+                                                            <Setter Property="Kind" Value="CloseCircleOutline"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </iconPacks:PackIconMaterial.Style>
+                                        </iconPacks:PackIconMaterial>
+                                    </Button>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTemplateColumn x:Name="ColCategory"
                                             Width="*"
-                                            MinWidth="120">
+                                            MinWidth="120"
+                                            CellStyle="{StaticResource CategoryCellStyle}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Grid VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
+                                    <!--
+                                        Issue #135 (P3): italic+gray ghost for the
+                                        «Без категории» placeholder so it never reads
+                                        as a real category. No bold for locked
+                                        categories — provenance lives in the cell
+                                        tooltip (P1).
+                                    -->
                                     <TextBlock Grid.Column="0"
-                                              Text="{Binding TargetCategoryPath}"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
-                                              TextTrimming="CharacterEllipsis"
-                                              Margin="4,0"
-                                              Foreground="{DynamicResource TextPrimaryBrush}"/>
-                                    <Button Grid.Column="1"
+                                               Text="{Binding TargetCategoryPath}"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Left"
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="4,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TargetCategoryId}" Value="{x:Null}">
+                                                        <Setter Property="FontStyle" Value="Italic"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <!-- Issue #135 (P2): warn that the locked category
+                                         will MOVE the existing family on import. Same
+                                         visual pattern as the cross-name duplicate ⚠. -->
+                                    <TextBlock Grid.Column="1"
+                                               Text="⚠"
+                                               Margin="2,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WarningBrush}"
+                                               ToolTip="{Binding CategoryMoveWarningTooltip}"
+                                               Visibility="{Binding ShowCategoryMoveWarning, Converter={StaticResource BoolToVis}}"/>
+                                    <!-- #241: the auto-assignment rules recommend a
+                                         category that differs from the current one —
+                                         clickable warning opens the picker pre-filtered
+                                         to the recommended categories. Stays visible
+                                         for ANY non-matching category (incl. «Без
+                                         категории») so the conflict is never lost. -->
+                                    <Button Grid.Column="2"
+                                            Command="{Binding PickRecommendedCategoryCommand}"
+                                            Padding="2,0"
+                                            Margin="2,0,0,0"
+                                            Width="20" Height="20"
+                                            Style="{DynamicResource FlatIconButton}"
+                                            ToolTip="{Binding RuleRecommendationTooltip}"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding ShowRuleConflictIcon, Converter={StaticResource BoolToVis}}">
+                                        <iconPacks:PackIconMaterial Kind="AlertCircleOutline"
+                                                                    Foreground="{DynamicResource WarningBrush}"
+                                                                    Width="14" Height="14"/>
+                                    </Button>
+                                    <Button Grid.Column="3"
                                             Content="..."
                                             Command="{Binding PickCategoryCommand}"
                                             Padding="6,0"
@@ -182,22 +551,50 @@
             </DataGrid>
         </Border>
 
-        <!-- Buttons -->
-        <StackPanel Grid.Row="2"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0">
-            <Button Content="{loc:Loc FM_BatchImport_Load}"
-                    Command="{Binding ImportCommand}"
-                    IsDefault="True"
-                    Style="{DynamicResource PrimaryButton}"
-                    Width="80" Height="28"/>
-            <Button Content="{loc:Loc FM_BatchImport_Cancel}"
-                    Command="{Binding CancelCommand}"
-                    IsCancel="True"
-                    Style="{DynamicResource SecondaryButton}"
-                    Margin="8,0,0,0"
-                    Width="80" Height="28"/>
-        </StackPanel>
+        <!-- Bottom: progress / summary + buttons -->
+        <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0"
+                        Visibility="{Binding IsImporting, Converter={StaticResource BoolToVis}}">
+                <ProgressBar Value="{Binding ProgressValue}"
+                             Maximum="{Binding ProgressMaximum}"
+                             Minimum="0"
+                             Height="6"/>
+                <TextBlock Text="{Binding StatusText}"
+                           Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <TextBlock Grid.Row="0"
+                       Text="{Binding SummaryMessage}"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       Visibility="{Binding IsSummary, Converter={StaticResource BoolToVis}}"/>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Margin="0,8,0,0">
+                <Button Content="{Binding PrimaryButtonText}"
+                        Command="{Binding ImportCommand}"
+                        IsDefault="True"
+                        Style="{DynamicResource PrimaryButton}"
+                        MinWidth="100" Height="28"
+                        Padding="10,0"/>
+                <Button Content="{Binding SecondaryButtonText}"
+                        Command="{Binding CancelCommand}"
+                        IsCancel="True"
+                        Visibility="{Binding IsSecondaryVisible, Converter={StaticResource BoolToVis}}"
+                        Style="{DynamicResource SecondaryButton}"
+                        Margin="8,0,0,0"
+                        MinWidth="100" Height="28"
+                        Padding="10,0"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </controls:DialogWindowBase>

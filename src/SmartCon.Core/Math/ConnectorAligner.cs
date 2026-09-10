@@ -21,6 +21,141 @@ public static class ConnectorAligner
     public const double BasisXSnapStepDegrees = 15.0;
 
     /// <summary>
+    /// Minimum projection length of a global axis onto the connector plane for it
+    /// to be usable as an orientation reference (below this the axis is too close
+    /// to the connector Z — its projection is degenerate).
+    /// </summary>
+    private const double MinReferenceProjection = 0.3;
+
+    /// <summary>
+    /// Select the global axis (X/Y/Z) used as the orientation reference for snap
+    /// operations on a connector with the given BasisZ. Priority goes to global Y
+    /// (legacy GlobalYSnap behaviour — horizontal networks snap to it naturally);
+    /// when its projection onto the connector plane is degenerate (vertical
+    /// connectors), the best-projected of Z/X wins. One reference axis for both
+    /// attach (BasisX snap) and editor rotation (global snap) — this keeps every
+    /// element of the chain on ONE global angular grid, so users always see
+    /// "clean" angles (0/15/30/45…) instead of arbitrary parent-dependent ones.
+    /// </summary>
+    public static Vec3 SelectGlobalReferenceAxis(Vec3 connectorBasisZ)
+    {
+        var axisNorm = VectorUtils.Normalize(connectorBasisZ);
+
+        var projY = ProjectOntoPlane(Vec3.BasisY, axisNorm);
+        if (projY.LengthSquared >= MinReferenceProjection * MinReferenceProjection)
+            return Vec3.BasisY;
+
+        var projZ = ProjectOntoPlane(Vec3.BasisZ, axisNorm);
+        var projX = ProjectOntoPlane(Vec3.BasisX, axisNorm);
+
+        return projZ.LengthSquared >= projX.LengthSquared ? Vec3.BasisZ : Vec3.BasisX;
+    }
+
+    /// <summary>
+    /// Select the reference direction for "upright" orientation of a connector
+    /// whose Z-axis (rotation axis) is <paramref name="axisZ"/>: global +Z (world
+    /// up) whenever its projection onto the plane ⊥ axisZ is usable; when the
+    /// axis is vertical (riser / plan-placed family — rotation around it cannot
+    /// change uprightness), falls back to global Y, then X (horizontal grid).
+    /// </summary>
+    public static Vec3 SelectUprightReference(Vec3 axisZ)
+    {
+        var axisNorm = VectorUtils.Normalize(axisZ);
+
+        var projUp = ProjectOntoPlane(Vec3.BasisZ, axisNorm);
+        if (projUp.LengthSquared >= MinReferenceProjection * MinReferenceProjection)
+            return Vec3.BasisZ;
+
+        var projY = ProjectOntoPlane(Vec3.BasisY, axisNorm);
+        if (projY.LengthSquared >= MinReferenceProjection * MinReferenceProjection)
+            return Vec3.BasisY;
+
+        return Vec3.BasisX;
+    }
+
+    /// <summary>
+    /// Compute a rotation around the connector Z-axis that makes the element
+    /// upright: the FREE CONNECTOR's BasisY (the family's "height" direction —
+    /// Tammik: "the height is relative to the y axis of the coordinate system of
+    /// the connector") lands exactly on the projection of the upright reference
+    /// (<see cref="SelectUprightReference"/>) onto the connector plane.
+    ///
+    /// Why the connector BasisY and not FamilyInstance.GetTransform().BasisY:
+    /// the connector BasisY always lies in the rotation plane (⊥ its own BasisZ),
+    /// so its projection never degenerates — the family transform basis can be
+    /// parallel to the rotation axis for some families (e.g. Kan-therm elbows),
+    /// which silently disabled the reset, and it also ignores FacingFlipped /
+    /// HandFlipped. The directional up target is unique — the element can never
+    /// land upside down (no 0°/180° ambiguity).
+    ///
+    /// Sign convention: right-hand rule around the axis — RotateElement(axis, θ)
+    /// brings 'from' onto 'to' with θ = signed angle from→to (Tammik cable-tray
+    /// pattern: Location.Rotate(axis, BasisY.AngleOnPlaneTo(target, axis))). Our
+    /// AngleBetweenInPlane uses the same convention.
+    /// Returns null when already upright or the configuration is degenerate.
+    /// </summary>
+    public static RotationStep? ComputeUprightRotation(Vec3 axisZ, Vec3 connectorBasisY)
+    {
+        var axisNorm = VectorUtils.Normalize(axisZ);
+        var referenceAxis = SelectUprightReference(axisNorm);
+        var projTarget = ProjectOntoPlane(referenceAxis, axisNorm);
+        var projCurrent = ProjectOntoPlane(connectorBasisY, axisNorm);
+
+        if (projTarget.LengthSquared < RadiusComparison * RadiusComparison)
+            return null;
+        if (projCurrent.LengthSquared < RadiusComparison * RadiusComparison)
+            return null;
+
+        var fromNorm = VectorUtils.Normalize(projCurrent);
+        var toNorm = VectorUtils.Normalize(projTarget);
+
+        var delta = VectorUtils.AngleBetweenInPlane(fromNorm, toNorm, axisNorm);
+
+        if (System.Math.Abs(delta) < VectorUtils.Tolerance)
+            return null;
+
+        return new RotationStep(axisNorm, delta);
+    }
+
+    /// <summary>
+    /// Compute a rotation around the connector Z-axis that snaps the element's
+    /// basis vector to a multiple of <paramref name="stepDegrees"/> relative to
+    /// the projection of the selected global reference axis (<see cref="SelectGlobalReferenceAxis"/>)
+    /// onto the connector plane. Pass a tiny step (e.g. 0.01°) for an exact
+    /// "zero the angle" rotation. Returns null when already snapped or the
+    /// configuration is degenerate.
+    /// </summary>
+    public static RotationStep? ComputeGlobalAxisSnap(
+        Vec3 connectorBasisZ,
+        Vec3 elementBasis,
+        double stepDegrees)
+    {
+        var referenceAxis = SelectGlobalReferenceAxis(connectorBasisZ);
+        var projTarget = ProjectOntoPlane(referenceAxis, connectorBasisZ);
+        var projCurrent = ProjectOntoPlane(elementBasis, connectorBasisZ);
+
+        if (projTarget.LengthSquared < RadiusComparison * RadiusComparison)
+            return null;
+        if (projCurrent.LengthSquared < RadiusComparison * RadiusComparison)
+            return null;
+
+        var fromNorm = VectorUtils.Normalize(projCurrent);
+        var toNorm = VectorUtils.Normalize(projTarget);
+
+        var currentAngle = VectorUtils.AngleBetweenInPlane(fromNorm, toNorm, connectorBasisZ);
+        var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, stepDegrees);
+
+        // Right-hand rule: RotateElement(axis, θ) rotates 'from' TOWARDS 'to',
+        // shrinking the signed from→to angle by θ — so θ = current - snapped.
+        var delta = currentAngle - snappedAngle;
+
+        if (System.Math.Abs(delta) < VectorUtils.Tolerance)
+            return null;
+
+        return new RotationStep(VectorUtils.Normalize(connectorBasisZ), delta);
+    }
+
+    /// <summary>
     /// Compute a set of transforms to align the dynamic connector to the static connector.
     /// </summary>
     /// <param name="staticOrigin">Static connector origin</param>
@@ -44,9 +179,9 @@ public static class ConnectorAligner
             ? RotateVector(dynamicBasisX, basisZRotation.Axis, basisZRotation.AngleRadians)
             : dynamicBasisX;
 
-        // Step 3: snap BasisX to a "nice" angle
+        // Step 3: snap BasisX to a "nice" angle on the global grid
         // planeNormal = -staticBasisZ (anti-parallel direction — connector plane normal)
-        var basisXSnap = ComputeBasisXSnap(rotatedDynamicBasisX, staticBasisX, staticBasisZ);
+        var basisXSnap = ComputeBasisXSnap(rotatedDynamicBasisX, staticBasisZ);
 
         return new AlignmentResult
         {
@@ -89,12 +224,17 @@ public static class ConnectorAligner
     }
 
     /// <summary>
-    /// Step 3: snap BasisX to the nearest "nice" angle.
-    /// Skipped if staticBasisZ is parallel to global Y axis — in that case
-    /// rotation around Y tilts the element out of the horizontal plane (visual artifact).
+    /// Step 3: snap BasisX to the nearest "nice" angle on the GLOBAL angular grid —
+    /// the reference is the projection of the selected global axis
+    /// (<see cref="SelectGlobalReferenceAxis"/>) onto the connector plane, NOT the
+    /// parent's BasisX. Parent-BasisX is arbitrary (family connector orientation),
+    /// which used to put every element on a different "dirty" angle; the global
+    /// grid gives clean 15°-multiple angles everywhere and matches the editor
+    /// rotation snap. Skipped if staticBasisZ is parallel to global Y axis —
+    /// rotation around Y tilts the element out of the horizontal plane.
     /// </summary>
     internal static RotationStep? ComputeBasisXSnap(
-        Vec3 dynamicBasisX, Vec3 staticBasisX, Vec3 staticBasisZ)
+        Vec3 dynamicBasisX, Vec3 staticBasisZ)
     {
         // If rotation axis (staticBasisZ) is parallel to global Y — skip.
         // Rotation around Y tilts fittings (elbows, tees) out of their natural plane.
@@ -103,9 +243,18 @@ public static class ConnectorAligner
         if (dotWithY > Tolerance.AxisParallelDot)
             return null;
 
-        var currentAngle = VectorUtils.AngleBetweenInPlane(dynamicBasisX, staticBasisX, staticBasisZ);
+        var referenceAxis = SelectGlobalReferenceAxis(staticBasisZ);
+        var projTarget = ProjectOntoPlane(referenceAxis, staticBasisZ);
+        if (projTarget.LengthSquared < RadiusComparison * RadiusComparison)
+            return null;
+
+        var targetNorm = VectorUtils.Normalize(projTarget);
+        var currentAngle = VectorUtils.AngleBetweenInPlane(dynamicBasisX, targetNorm, staticBasisZ);
         var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, BasisXSnapStepDegrees);
-        var deltaAngle = snappedAngle - currentAngle;
+
+        // Right-hand rule: RotateElement(axis, θ) shrinks the signed from→to
+        // angle by θ — so the snap delta is (current - snapped).
+        var deltaAngle = currentAngle - snappedAngle;
 
         if (System.Math.Abs(deltaAngle) < VectorUtils.Tolerance)
         {
@@ -135,15 +284,9 @@ public static class ConnectorAligner
 
     /// <summary>
     /// Computes rotation around the connector Z-axis (connectorBasisZ) so that BasisY
-    /// of the element coincides with (or is closest to) global Y axis (0,1,0)
-    /// with quantization by 15-degree steps.
-    ///
-    /// Algorithm:
-    /// 1. Project current elementBasisY onto the plane perpendicular to connectorBasisZ.
-    /// 2. Project global Y onto the same plane.
-    /// 3. Compute angle from current projection to nearest 15-degree multiple relative to globalY projection.
-    ///
-    /// Returns null if the configuration is degenerate (BasisZ parallel to global Y).
+    /// of the element lands on the global angular grid with quantization by 15-degree
+    /// steps. Kept for backward compatibility — delegates to the generalized
+    /// <see cref="ComputeGlobalAxisSnap"/> (global reference axis with Y priority).
     /// </summary>
     /// <param name="connectorBasisZ">Connector Z-axis (rotation axis)</param>
     /// <param name="elementBasisY">Current element BasisY in world coordinates</param>
@@ -153,33 +296,7 @@ public static class ConnectorAligner
         Vec3 elementBasisY,
         Vec3 rotationCenter)
     {
-        var globalY = Vec3.BasisY; // (0, 1, 0)
-
-        // Project element BasisY onto the plane perpendicular to connectorBasisZ
-        var projCurrent = ProjectOntoPlane(elementBasisY, connectorBasisZ);
-        var projTargetY = ProjectOntoPlane(globalY, connectorBasisZ);
-
-        // If global Y projection degenerates (BasisZ parallel to Y) — no alignment possible
-        if (projTargetY.LengthSquared < RadiusComparison * RadiusComparison)
-            return null;
-
-        if (projCurrent.LengthSquared < RadiusComparison * RadiusComparison)
-            return null;
-
-        var fromNorm = VectorUtils.Normalize(projCurrent);
-        var toNorm = VectorUtils.Normalize(projTargetY);
-
-        // Angle from current BasisY to globalY in the plane (-PI, PI]
-        var currentAngle = VectorUtils.AngleBetweenInPlane(fromNorm, toNorm, connectorBasisZ);
-
-        // Round to nearest 15-degree multiple
-        var snappedAngle = VectorUtils.RoundToNearestAngle(currentAngle, BasisXSnapStepDegrees);
-        var delta = snappedAngle - currentAngle;
-
-        if (System.Math.Abs(delta) < VectorUtils.Tolerance)
-            return null;
-
-        return new RotationStep(VectorUtils.Normalize(connectorBasisZ), delta);
+        return ComputeGlobalAxisSnap(connectorBasisZ, elementBasisY, BasisXSnapStepDegrees);
     }
 
     /// <summary>

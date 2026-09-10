@@ -6,91 +6,142 @@
 
 ## Общие правила UI
 
-1. Все немодальные окна взаимодействуют с Revit **только** через `IExternalEventHandler` (инвариант I-01)
+1. Все **modeless** окна взаимодействуют с Revit **только** через `IExternalEventHandler` (инвариант I-01). **Modal** окна (PipeConnectEditor) могут вызывать Revit API напрямую из ViewModel — см. ADR-043 (исключение из I-01 для modal command context).
 2. MVVM строго: .xaml.cs содержит только `DataContext = viewModel` (инвариант I-10)
-3. Все кнопки биндятся к `ICommand` (RelayCommand из SmartCon.UI)
+3. Все кнопки биндингся к `ICommand` (RelayCommand из SmartCon.UI)
 4. Открытие окон — через `IDialogService`, не `new Window().ShowDialog()`
 
-### Паттерн взаимодействия WPF <-> Revit
+### Взаимодействие WPF <-> Revit
 
-```
-WPF UI Thread                     Revit Main Thread
------------------                 -----------------
-ViewModel.ButtonClick()
-  --> _externalEvent.Raise()  ------->  PipeConnectExternalEvent.Execute(app)
-                                          --> _transactionService.RunInTransaction(...)
-  <-- PropertyChanged  <--------------  Уведомление через dispatcher
-ViewModel обновляет UI
-```
+- Modal окна (PipeConnectEditor, MappingEditor): Revit API вызывается напрямую из ViewModel в рамках command context (см. ADR-043). MappingEditor открывается `SettingsCommand` через `presenter.ShowDialog` — тот же modal-режим I-01a. Modeless-окон в модуле нет.
 
 ---
 
 ## 1. PipeConnectEditor (финальное окно, S6)
 
 **Файл View:** `SmartCon.PipeConnect/Views/PipeConnectEditorView.xaml`
-**Файл VM:** `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs`
-**Тип:** Немодальное (modeless) окно
+**Файл VM:** `SmartCon.PipeConnect/ViewModels/PipeConnectEditorViewModel.cs` (+ partial-файлы `.Chain.cs`, `.Connect.cs`, `.Cycle.cs`, `.Ctc.cs`, `.Dynamic.cs`, `.Init.cs`, `.Insert.cs`, `.Inspect.cs`, `.LockNetwork.cs`, `.RotationSize.cs`)
+**Тип:** Модальное (modal) окно — **обязательно** для live real-element preview + single-undo cancel (см. [ADR-043](../adr/043-pipeconnect-modal-justification.md)). Modeless невозможен из-за ограничения Revit API: `TransactionGroup` откатывается при возврате из `IExternalCommand.Execute` / `IExternalEventHandler.Execute`.
 
 ### Layout
 
 ```
 +--------------------------------------------+
-| SmartCon - PipeConnect                [X]  |
+| Настройка соединения                  [X]  |
 +--------------------------------------------+
-|                                            |
-| -- Коннектор --------------------------   |
-| [v Connector 1 (Free) - Сварка]           |
-| [Изменить]                                |
-|                                            |
-| -- Поворот ----------------------------   |
-| [<-]  [ 0.00 ]  [->]      Шаг: [15 v]   |
-|                                            |
-| -- Фитинги ---------------------------   |
-| o Без фитинга (прямое соединение)         |
-| * СварнойШов DN50          [Примерить]    |
-| o Переходник_С-Р DN50      [Примерить]    |
-|                                            |
-| [ ] Переместить всю сеть                  |
-|                                            |
-| [ Отмена ]               [ Соединить ]    |
+| ┌ Отвод 90°: DN50 — Приварной      Элемент 2 из 5 ┐ |
+| | DN50 • Уровень 1                               | |  <- инфо-панель динамика
+| └------------------------------------------------┘ |
+| [↺]  [ 45 ]  [↻]            <- поворот активного элемента
+| [ Изменить соединение ]     <- только root (ChainDepth==0)
+| Размер: [DN50 — авто    v]  [Изменить]             |
+| [⇅] [СварнойШов DN50    v]  [Примерить]            |
+| [⇅] [Переходник_С-Р     v]  [Примерить]            |
+| Сеть: [−] [+]        [ Подключить всё ]            |
+| ┌ Статус ----------------------------------------┐ |
+| | Элемент 2 из 5 присоединён                     | |
+| └------------------------------------------------┘ |
+| ● Активна       [ Соединить ]      [ Отмена ]      |
 +--------------------------------------------+
 ```
 
-### Секция «Коннектор»
+### Инфо-панель текущего элемента (динамика)
 
-| Элемент | Тип | Binding | Описание |
-|---|---|---|---|
-| Выпадающий список | ComboBox | `SelectedConnector` | Все свободные коннекторы динамического элемента |
-| Кнопка «Изменить» | Button -> ICommand | `ChangeConnectorCommand` | Смена коннектора -> переалайн. Если Description пустой -> MiniTypeSelector поверх окна |
+Компактная панель сверху: метка «Текущий элемент:» + название
+(«Семейство: Типоразмер» для FamilyInstance, `Element.Name` для трубы),
+переносится на несколько строк при длинном имени. DN намеренно не показывается
+(виден в комбобоксе размера), позиция в очереди — в статусной строке внизу.
+
+| Свойство | Тип | Описание |
+|---|---|---|
+| `DynamicElementTitle` | string | Название активного динамика |
+
+### Модель «динамика» (element-wise chain mode)
+
+Цепь подключается **по одному элементу** (flattened BFS-очередь
+`ConnectionGraph.GetElementQueue()`), а не пачками уровней. После каждого
+подключённого элемента (`+`) он становится **активным динамиком**:
+
+- **Поворот** — вокруг оси BasisZ коннектора родителя, к которому он только что
+  подключился (`_activeParentConnector` — «локальный static» точки).
+- **Размер** — комбобокс размеров перезагружается под активный элемент.
+- **Фитинг/переходник** — вставляются между активным динамиком и его родителем;
+  состояние каждой точки (fitting/reducer/выборы) хранится в слоте
+  `_pointStates[индекс очереди]` и восстанавливается при возврате (`−`).
+- **Изменить соединение** (cycle) — доступно только для root-точки
+  (`ChainDepth == 0`): элемент уровня N уже физически подключён к родителю,
+  смена его коннектора потребовала бы disconnect→align→reconnect и инвалидировала
+  бы immutable-граф, поэтому намеренно не предлагается.
+
+При `−` динамик возвращается на предыдущий элемент очереди; fitting/reducer
+откатанной точки удаляются из модели.
 
 ### Секция «Поворот»
 
 | Элемент | Тип | Binding | Описание |
 |---|---|---|---|
-| Кнопка ↺ | Button -> ICommand | `RotateLeftCommand` | Повернуть влево на шаг. Hotkey: Ctrl+Left |
-| TextBox угла | TextBox | `RotationAngleDeg` | Угол в градусах. Two-way binding. Enter = применить |
-| Кнопка ↻ | Button -> ICommand | `RotateRightCommand` | Повернуть вправо на шаг. Hotkey: Ctrl+Right |
-| Шаг | ComboBox | `RotationStep` | Значения: 5, 10, 15, 30, 45, 90 градусов |
+| Кнопка ↺ | Button -> ICommand | `RotateLeftCommand` | Повернуть активный динамик против часовой на `RotationAngleDeg` |
+| TextBox угла | TextBox | `RotationAngleDeg` | Угол в градусах, по умолчанию **45** (частые кейсы 45/90) |
+| Кнопка ↻ | Button -> ICommand | `RotateRightCommand` | Повернуть активный динамик по часовой |
 
-Поворот выполняется вокруг оси Z коннектора (BasisZ) через `RotateElement`.
+Поворот выполняется вокруг оси BasisZ родительского коннектора активной точки
+через `PipeConnectRotationHandler`; после поворота динамик перечитывается
+(`RefreshWithCtcOverride`) и инфо-панель обновляется. Если цепь была запечатана
+(seal), поворот сначала снимает seal (UnsealIfSealed) — граница разрывается
+в транзакции, редактирование продолжается поэлементно.
 
-### Секция «Фитинги»
+### Секция «Сеть» (цепь)
 
 | Элемент | Тип | Binding | Описание |
 |---|---|---|---|
-| Список фитингов | ListView + RadioButton | `ProposedFittings`, `SelectedFitting` | Карточки с именем семейства и DN |
-| Вариант «Без фитинга» | RadioButton | `NoFittingSelected` | Прямое соединение (если isDirectConnect) |
-| Кнопка «Примерить» | Button -> ICommand | `PreviewFittingCommand` | Реальная вставка фитинга через Transaction |
+| Кнопка − | Button -> ICommand | `DecrementChainDepthCommand` | Откатить последний подключённый элемент (LIFO). Снимает seal |
+| Кнопка + | Button -> ICommand | `IncrementChainDepthCommand` | Подключить следующий элемент очереди (ровно один). На границе уровня — авто-seal (ADR-052). При «Блокировать» — элемент подключается как есть: без resize/reducer и без поглощения длины трубы |
+| «Подключить всё» | Button -> ICommand | `ConnectAllChainCommand` | Иерархия fast path: seal (тихий остаток) → rigid move (остаток одним переносом; при «Блокировать» — и одним поворотом) → поэлементный обход (bulk: переключение динамика один раз в конце). **Доступна на любом шаге**, пока есть неподключённые элементы и цепь не запечатана |
+| «Блокировать» | CheckBox | `LockNetwork` | Сеть = единое тело: «Подключить всё» двигает/вращает её целиком без компенсации и подбора размеров (DN границы: переход из маппинга, иначе зазор 100 мм + диалог). Сама по себе не влияет на ручной режим до нажатия «Подключить всё». После rigid-подключения вращение крутит всё тело вокруг оси Z коннектора границы |
 
-При «Примерить»: старый фитинг удаляется, новый вставляется (отдельная Transaction внутри TransactionGroup).
+**Rigid move (fast path 2):** применим когда граница требует одинаковую
+трансляцию (±1 мм) у всех рёбер; вращение — только при «Блокировать» и
+одиночной границе. Без «Блокировать» остаток с трубами всегда идёт поэлементно
+(компенсация длиной, ADR-052). Снапшоты остатка не делаются: откат — через
+«−» хвоста + пересчёт offset при повторном rigid, полный откат — через
+RollBack группы (Cancel).
+
+**Seal (ранняя компенсация) обратим:** любая мутация хвоста (поворот, размер,
+фитинг, cycle) или «−» сначала разрывает seal-границу транзакцией
+(`UnsealIfSealed`), затем выполняет операцию. Исключение — вращение при
+«Блокировать» после rigid-подключения: всё тело крутится вместе, seal
+сохраняется, cross-edges границы восстанавливаются после поворота.
+
+Если attach элемента физически не удался (нет ребра к родителю / мёртвый
+коннектор), элемент автоматически откатывается к исходным соединениям, глубина
+очереди не продвигается, в статусе — ошибка. Это гарантирует, что «Соединить»
+не выполнится молча с разорванной сетью.
+
+### Диалог «неподключённые элементы сети»
+
+При нажатии «Соединить», когда очередь не исчерпана и цепь не запечатана,
+показывается Revit `TaskDialog` с двумя CommandLink + Cancel:
+
+| Выбор | Действие |
+|---|---|
+| «Подключить всё и соединить» | `ConnectAllChain`, затем продолжение Connect (если обход не завершился — Connect отменяется, окно остаётся) |
+| «Соединить как есть» | Connect продолжается; оторванные элементы остаются отсоединёнными (осознанный выбор, пишется Warn в лог) |
+| «Вернуться» (Cancel) | Connect отменяется, пользователь возвращается в редактор |
+
+Возвращает `UnconnectedChainChoice` из `IDialogService.ShowUnconnectedChainWarning`.
 
 ### Нижняя панель
 
 | Элемент | Тип | Binding | Описание |
 |---|---|---|---|
+| «−» | Button | `ZoomOutCommand` | Отдалить вид (×1/0.7) вокруг центра видимой зоны — без дрейфа за окном. IconButton |
+| «Просмотр» | Button | `InspectCommand` | Программный зум к активному коннектору динамика: `UIView.ZoomAndCenterRectangle` на `_activeDynamic.Origin`, радиус ~0.75 м. Без транзакций — допустимо в modal command context (ADR-043). Зум смещается так, чтобы точка не оказалась за окном редактора (`ViewZoomMath` + `IEditorWindowBoundsAccessor`, компенсация перекрытия окном). При смене активного динамика (работа с сетью) центрирует его коннектор. Стиль: SecondaryButton (белая) |
+| «+» | Button | `ZoomInCommand` | Приблизить вид (×0.7) вокруг центра видимой зоны. IconButton |
+| «Соединить» | Button | `ConnectCommand` | Диалог неподключённых (если нужно) → SwitchToPoint(0) → ValidateAndFix → ConnectTo + Assimilate(). Hotkey: Enter |
 | «Отмена» | Button | `CancelCommand` | TransactionGroup.RollBack(). Hotkey: Escape |
-| «Соединить» | Button | `CommitCommand` | ConnectTo + Assimilate(). Hotkey: Enter |
-| Toggle «Переместить всю сеть» | CheckBox | `MoveEntireChain` | По умолчанию: false (одиночный элемент) |
+
+Порядок в layout: блок зума слева (`−`, «Просмотр», `+`), справа «Соединить» (AccentButton), «Отмена».
+Статус-индикатор (точка + «Активно») удалён — состояние сессии видно по StatusMessage и доступности кнопок.
 
 ### Поведение при закрытии окна
 Закрытие крестиком [X] = «Отмена» (RollBack).
@@ -151,7 +202,9 @@ ViewModel обновляет UI
 
 **Файл View:** `SmartCon.PipeConnect/Views/MappingEditorView.xaml`
 **Файл VM:** `SmartCon.PipeConnect/ViewModels/MappingEditorViewModel.cs`
-**Тип:** Немодальное (modeless) окно
+**Тип:** Модальное (modal) окно — открывается `SettingsCommand` через `presenter.ShowDialog()`
+в command context; ViewModel вызывает Revit API напрямую (тот же режим I-01a / ADR-043,
+что и PipeConnectEditor).
 
 ### Открытие
 Кнопка «Настройки SmartCon» на Ribbon.

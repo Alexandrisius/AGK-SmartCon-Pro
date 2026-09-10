@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
@@ -104,6 +105,154 @@ public sealed class LocalCatalogProviderTests
     }
 
     [Fact]
+    public async Task SearchAsync_WithTags_PreservesRevitCategoryId()
+    {
+        // #187: the tags enrichment in SearchAsync rebuilt FamilyCatalogItem
+        // WITHOUT RevitCategoryId — every search returned null, silently
+        // breaking presence badges and the batch stale check for system items.
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: new[] { "mep" });
+
+        var query = new FamilyCatalogQuery(null, null, null, null, FamilyCatalogSort.NameAsc, 0, 50);
+        var results = await fixture.GetProvider().SearchAsync(query);
+
+        var item = Assert.Single(results);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+        Assert.Equal("system", item.FamilySource);
+        Assert.Contains("mep", item.Tags);
+    }
+
+    private static async Task SeedSystemItemWithRevitCategoryAsync(
+        TempCatalogFixture fixture, string id, string name, string[] tags)
+    {
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO catalog_items (id, name, normalized_name, content_status, family_source, revit_category, revit_category_id, created_at_utc, updated_at_utc)
+            VALUES (@id, @name, @norm, 'Active', 'system', 'Стены', -2000011, @now, @now)
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@id", id));
+        cmd.Parameters.Add(new SqliteParameter("@name", name));
+        cmd.Parameters.Add(new SqliteParameter("@norm", name.ToLowerInvariant()));
+        cmd.Parameters.Add(new SqliteParameter("@now", DateTimeOffset.UtcNow.ToString("o")));
+        await cmd.ExecuteNonQueryAsync();
+
+        foreach (var tag in tags)
+        {
+            var normalizedTag = SmartCon.Core.Services.FamilyManager.FamilySearchNormalizer.Normalize(tag);
+            using var tagCmd = connection.CreateCommand();
+            tagCmd.CommandText = """
+                INSERT OR IGNORE INTO catalog_tags (catalog_item_id, tag, normalized_tag)
+                VALUES (@id, @tag, @normalizedTag)
+                """;
+            tagCmd.Parameters.Add(new SqliteParameter("@id", id));
+            tagCmd.Parameters.Add(new SqliteParameter("@tag", tag));
+            tagCmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
+            await tagCmd.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetItemAsync_WithTags_PreservesRevitCategoryId()
+    {
+        // Manual test 2026-08-04 (round 4): GetItemAsync rebuilt the record
+        // field-by-field like SearchAsync did before #187 — and dropped
+        // RevitCategoryId (+ Active/MinRevitMajorVersion). Every consumer
+        // resolving the category from GetItemAsync (sync orchestrator,
+        // placement, stale detector) silently fell back to an unscoped
+        // name match — the wire sync bound a settings object and wrote
+        // params + the ES marker to the wrong element.
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: new[] { "mep" });
+
+        var item = await fixture.GetProvider().GetItemAsync("sys1");
+
+        Assert.NotNull(item);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+        Assert.Equal("system", item.FamilySource);
+        Assert.Contains("mep", item.Tags);
+    }
+
+    [Fact]
+    public async Task FindByRevitCategoryIdAsync_Found_ReturnsItem()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: []);
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "system");
+
+        Assert.NotNull(item);
+        Assert.Equal("sys1", item.Id);
+        Assert.Equal(-2000011, item.RevitCategoryId);
+    }
+
+    [Fact]
+    public async Task FindByRevitCategoryIdAsync_NotFound_ReturnsNull()
+    {
+        using var fixture = await CreateAndMigrate();
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "system");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task FindByRevitCategoryIdAsync_CrossSourceSeparation_ReturnsNull()
+    {
+        // #192: a system-category id must never resolve to a loadable row
+        // and vice versa (same separation as the hash search).
+        using var fixture = await CreateAndMigrate();
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Стены", tags: []);
+
+        var item = await fixture.GetProvider().FindByRevitCategoryIdAsync(-2000011, "loadable");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task FindByNormalizedNameAsync_SourceFilter_ReturnsItemOfThatSource()
+    {
+        // #201: the same normalized name exists in both sources — the
+        // source filter must pick the row of the requested source.
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+        await SeedSystemItemWithRevitCategoryAsync(fixture, "sys1", "Трубы", tags: []);
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы", "system");
+
+        Assert.NotNull(item);
+        Assert.Equal("sys1", item.Id);
+        Assert.Equal("system", item.FamilySource);
+    }
+
+    [Fact]
+    public async Task FindByNormalizedNameAsync_CrossSource_ReturnsNull()
+    {
+        // #201: a system query must never match a loadable row with the
+        // same name (and vice versa).
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы", "system");
+
+        Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task FindByNormalizedNameAsync_NullSource_MatchesAnySource()
+    {
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "load1", "Трубы", "трубы");
+
+        var item = await fixture.GetProvider().FindByNormalizedNameAsync("трубы");
+
+        Assert.NotNull(item);
+        Assert.Equal("load1", item.Id);
+    }
+
+    [Fact]
     public async Task SearchAsync_FilterByCategoryId()
     {
         using var fixture = await CreateAndMigrate();
@@ -177,6 +326,23 @@ public sealed class LocalCatalogProviderTests
 
         var item = await fixture.GetProvider().GetItemAsync("del1");
         Assert.Null(item);
+    }
+
+    [Fact]
+    public async Task DeleteItemAsync_CascadesItemRoutingLinks()
+    {
+        // ADR-072 World B (V37 item_routing_*) — the item-level routing
+        // links must die with their item via FK CASCADE.
+        using var fixture = await CreateAndMigrate();
+        await SeedItemAsync(fixture, "delr", "Routing Owner", "routing owner");
+        var repo = new LocalFamilyRoutingRuleRepository(fixture.GetDatabase());
+        await repo.ReplaceForItemAsync("delr",
+            [new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "A:B", "", [])],
+            [new FamilyRoutingTypeSettings("Type A", "Single", 0)]);
+
+        var deleted = await fixture.GetProvider().DeleteItemAsync("delr");
+        Assert.True(deleted);
+        Assert.False(await repo.HasAnyForItemAsync("delr"));
     }
 
     [Fact]

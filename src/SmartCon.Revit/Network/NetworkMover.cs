@@ -64,7 +64,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerFamily is null)
         {
-            SmartConLogger.Warn($"Reducer not found in rule {parentCtc.Value}↔{childCtc.Value}");
+            SmartConLogger.Warn($"Reducer not found in rule {parentCtc.Value}↔{childCtc.Value} [Action: добавьте семейство перехода в mapping правил в настройках — соединение будет выполнено напрямую без перехода]");
             return null;
         }
 
@@ -74,7 +74,7 @@ public sealed class NetworkMover : INetworkMover
 
         if (reducerId is null)
         {
-            SmartConLogger.Warn($"InsertFitting returned null for '{reducerFamily.FamilyName}'");
+            SmartConLogger.Warn($"InsertFitting returned null for '{reducerFamily.FamilyName}' [Action: check the reducer family definition in the mapping — the gap stays open]");
             return null;
         }
 

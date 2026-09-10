@@ -5,6 +5,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Selectors;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -16,10 +17,11 @@ public sealed partial class FamilyManagerMainViewModel
         _suppressConnectionChanged = true;
         try
         {
-            var list = _databaseManager.ListConnections();
-            Connections = new ObservableCollection<DatabaseConnection>(list);
+            var connections = _databaseManager.ListConnections();
             var active = _databaseManager.GetActiveConnection();
-            SelectedConnection = Connections.FirstOrDefault(c => c.Id == active?.Id);
+            var items = connections.Select(c => BuildListItem(c, active)).ToList();
+            Connections = new ObservableCollection<DatabaseListItem>(items);
+            SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == active?.Id);
             HasActiveDatabase = active is not null;
         }
         finally
@@ -28,22 +30,81 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private void OnActiveDatabaseChanged(object? sender, string connectionId)
+    private DatabaseListItem BuildListItem(DatabaseConnection connection, DatabaseConnection? active)
+    {
+        // #174: positively unsaved document (empty path received) — every
+        // project base is blocked until the file is saved: show the lock
+        // (mismatch) icon, not the general one. A null path ("no event yet",
+        // startup race) is NOT unsaved and falls through to NotApplicable.
+        if (connection.Kind == BaseType.Project && _currentActiveDocumentPath is { Length: 0 })
+        {
+            var unsavedReason = LanguageManager.GetString(StringLocalization.Keys.FM_PBase_StatusProjectUnsaved)
+                ?? "File not saved — project bases are unavailable. Save the file to activate a project base.";
+            return new DatabaseListItem(connection, ProjectBaseMatchKind.Mismatch, unsavedReason);
+        }
+
+        if (connection.Kind != BaseType.Project || string.IsNullOrEmpty(_currentActiveDocumentPath))
+        {
+            using var _scope = SmartConLogger.BeginScope("FMVM",
+                ("Method", nameof(BuildListItem)),
+                ("BaseName", connection.Name),
+                ("Kind", connection.Kind),
+                ("HasActiveDocPath", !string.IsNullOrEmpty(_currentActiveDocumentPath)));
+            SmartConLogger.Debug($"BuildListItem: '{connection.Name}' is not a project base or no active document path -> NotApplicable");
+            return new DatabaseListItem(connection, ProjectBaseMatchKind.NotApplicable);
+        }
+
+        var filePath = _currentActiveDocumentPath!;
+        if (connection.ConnectionEquals(active))
+        {
+            var kind = _activeBaseMatch?.Kind ?? ProjectBaseMatchKind.NotApplicable;
+            using var _scope = SmartConLogger.BeginScope("FMVM",
+                ("Method", nameof(BuildListItem)),
+                ("BaseName", connection.Name),
+                ("IsActive", true),
+                ("MatchKind", kind),
+                ("Reason", _activeBaseMatch?.Reason ?? string.Empty));
+            SmartConLogger.Debug($"BuildListItem: active project base '{connection.Name}' -> {kind}");
+            return new DatabaseListItem(connection, kind, _activeBaseMatch?.Reason);
+        }
+
+        var evaluation = _projectBaseEvaluator.Evaluate(connection.ProjectBinding, filePath);
+        using var _scope2 = SmartConLogger.BeginScope("FMVM",
+            ("Method", nameof(BuildListItem)),
+            ("BaseName", connection.Name),
+            ("IsActive", false),
+            ("MatchKind", evaluation.Kind),
+            ("Reason", evaluation.Reason ?? string.Empty));
+        SmartConLogger.Debug($"BuildListItem: project base '{connection.Name}' evaluated -> {evaluation.Kind}");
+        return new DatabaseListItem(connection, evaluation.Kind, evaluation.Reason);
+    }
+
+    private void OnActiveDatabaseChanged(object? sender, string? connectionId)
     {
         // D-10: stale cache is per-DB. Snapshot from the previous DB must not leak
         // into the new tree (different catalog items, different versions).
         _staleDetector.InvalidateCache();
+        // #259: compliance verdicts are per-DB too (other items, other rules).
+        _complianceService.InvalidateCache();
+        // #87: advanced-search conditions belong to the previous catalog
+        // (category ids + attribute values) — reset before the tree reload.
+        ResetAdvancedFilter();
+        RecomputeActiveBaseMatch();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();
+        InvalidateLoadAndPlaceCommands();
+        // Issue #126: the switched-to database may carry stale hashes.
+        _ = RefreshDatabaseUpdateStateAsync();
     }
 
-    partial void OnSelectedConnectionChanged(DatabaseConnection? value)
+    partial void OnSelectedConnectionChanged(DatabaseListItem? value)
     {
+        DeleteDatabaseCommand.NotifyCanExecuteChanged();
         if (value is null) return;
         if (_suppressConnectionChanged) return;
         var active = _databaseManager.GetActiveConnection();
-        if (active?.Id == value.Id) return;
-        _ = SwitchDatabaseAsync(value.Id);
+        if (active?.Id == value.Connection.Id) return;
+        _ = SwitchDatabaseAsync(value.Connection.Id);
     }
 
     private async Task SwitchDatabaseAsync(string connectionId)
@@ -57,12 +118,18 @@ public sealed partial class FamilyManagerMainViewModel
                 var success = await _databaseManager.SwitchDatabaseAsync(connectionId);
                 if (success)
                 {
+                    RecomputeActiveBaseMatch();
                     RefreshConnections();
                     await RefreshAccessAndLoadTreeAsync();
-                    var conn = Connections.FirstOrDefault(c => c.Id == connectionId);
+                    RefreshCanLoadToProject();
+                    RefreshCanPlaceType();
+                    InvalidateLoadAndPlaceCommands();
+                    var conn = Connections.FirstOrDefault(c => c.Connection.Id == connectionId);
                     StatusMessage = string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Switched to: {0}",
                         conn?.Name ?? connectionId);
+                    // Issue #126: the switched-to database may carry stale hashes.
+                    _ = RefreshDatabaseUpdateStateAsync();
                 }
                 else
                 {
@@ -77,6 +144,7 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (InvalidOperationException ex)
         {
+            SmartConLogger.Error($"SwitchDatabase failed (InvalidOperation): {ex.Message}");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
                 ex.Message);
@@ -84,58 +152,11 @@ public sealed partial class FamilyManagerMainViewModel
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"SwitchDatabase failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database",
                 ex.Message);
             StatusMessage = $"{LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitchError) ?? "Error switching database"}: {ex.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    [RelayCommand]
-    private async Task CreateDatabaseAsync()
-    {
-        var path = _dialogService.ShowFolderBrowserDialog(
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select parent folder for database");
-        if (string.IsNullOrWhiteSpace(path)) return;
-
-        var name = _dialogService.ShowInputDialog(
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewTitle) ?? "New Database",
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewPrompt) ?? "Enter database name:",
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbNewDefault) ?? "New Catalog");
-
-        if (string.IsNullOrWhiteSpace(name)) return;
-
-        IsLoading = true;
-        try
-        {
-            _databaseManager.ActiveDatabaseChanged -= OnActiveDatabaseChanged;
-            try
-            {
-                var conn = await _databaseManager.CreateDatabaseAsync(name!.Trim(), path!);
-                RefreshConnections();
-                await RefreshAccessAndLoadTreeAsync();
-                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
-                StatusMessage = string.Format(
-                    LanguageManager.GetString(StringLocalization.Keys.FM_DbCreated) ?? "Database \"{0}\" created at {1}",
-                    conn.Name, conn.Path);
-            }
-            finally
-            {
-                _databaseManager.ActiveDatabaseChanged += OnActiveDatabaseChanged;
-            }
-        }
-        catch (Exception ex)
-        {
-            _dialogService.ShowError(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateErrorTitle) ?? "Database creation error",
-                ex.Message);
-            StatusMessage = string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbCreateError) ?? "Error creating database: {0}",
-                ex.Message);
         }
         finally
         {
@@ -157,12 +178,15 @@ public sealed partial class FamilyManagerMainViewModel
             try
             {
                 var conn = await _databaseManager.ConnectDatabaseAsync(path!);
+                RecomputeActiveBaseMatch();
                 RefreshConnections();
                 await RefreshAccessAndLoadTreeAsync();
-                SelectedConnection = Connections.FirstOrDefault(c => c.Id == conn.Id);
+                SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == conn.Id);
                 StatusMessage = string.Format(
                     LanguageManager.GetString(StringLocalization.Keys.FM_DbSwitched) ?? "Connected to: {0}",
                     conn.Name);
+                // Issue #126: an externally connected database may carry stale hashes.
+                _ = RefreshDatabaseUpdateStateAsync();
             }
             finally
             {
@@ -205,19 +229,10 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedConnection is null) return;
 
-        var connections = _databaseManager.ListConnections();
-        if (connections.Count <= 1)
-        {
-            _dialogService.ShowWarning(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Disconnect",
-                LanguageManager.GetString(StringLocalization.Keys.FM_CannotDisconnectOnlyDatabase) ?? "Cannot disconnect the only database.");
-            return;
-        }
-
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.DisconnectDatabaseAsync(SelectedConnection.Id);
+            var success = await _databaseManager.DisconnectDatabaseAsync(SelectedConnection.Connection.Id);
             if (success)
             {
                 StatusMessage = string.Format(
@@ -243,16 +258,6 @@ public sealed partial class FamilyManagerMainViewModel
     {
         if (SelectedConnection is null) return;
 
-        var isActive = _databaseManager.GetActiveConnection()?.Id == SelectedConnection.Id;
-        var connections = _databaseManager.ListConnections();
-        if (isActive && connections.Count <= 1)
-        {
-            _dialogService.ShowWarning(
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
-                LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteSingle) ?? "Cannot delete the only database.");
-            return;
-        }
-
         var confirm = _dialogService.ShowInputDialog(
             LanguageManager.GetString(StringLocalization.Keys.FM_DbDeleteTitle) ?? "Delete Database",
             string.Format(
@@ -265,7 +270,7 @@ public sealed partial class FamilyManagerMainViewModel
         IsLoading = true;
         try
         {
-            var success = await _databaseManager.DeleteDatabaseAsync(SelectedConnection.Id);
+            var success = await _databaseManager.DeleteDatabaseAsync(SelectedConnection.Connection.Id);
             if (success)
             {
                 StatusMessage = string.Format(
@@ -287,4 +292,13 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     private bool CanManageUsersCheck() => CanManageUsers;
+
+    /// <summary>
+    /// ADR-058 (#173): the plugin-compatibility banner's
+    /// "Обновить приложение" button — routes to the existing About dialog
+    /// (update channel, changelog, update check) instead of duplicating
+    /// update logic here.
+    /// </summary>
+    [RelayCommand]
+    private void OpenAbout() => _aboutDialogService.ShowAbout();
 }

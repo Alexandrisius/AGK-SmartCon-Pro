@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
+using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
 using SmartCon.UI;
@@ -13,7 +15,7 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <summary>
 /// ViewModel for the batch import dialog.
 /// </summary>
-public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose, IDisposable
+public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, IDisposable
 {
     public event Action<bool?>? RequestClose;
 
@@ -38,6 +40,27 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly IFamilyCatalogProvider? _catalogProvider;
     /// <summary>
+    /// Import Validation Gate: resolves effective rules per category and
+    /// evaluates row snapshots. Nullable for backward compatibility with
+    /// older test fixtures — production always passes a real instance;
+    /// when null, the gate stays inert (rows behave as pre-feature).
+    /// </summary>
+    private readonly IFamilyImportValidationService? _validationService;
+    /// <summary>
+    /// #241: auto-assignment rules evaluation. Nullable for backward
+    /// compatibility with older test fixtures — production always passes a
+    /// real instance; when null (or no rules configured), no row gets an
+    /// automatic category.
+    /// </summary>
+    private readonly ICategoryAutoAssignService? _autoAssignService;
+    /// <summary>
+    /// #241: rules preloaded ONCE per dialog (the dialog is modal — rules
+    /// cannot change mid-session; documented limitation). Sync
+    /// <see cref="ICategoryAutoAssignService.Evaluate"/> uses this cache on
+    /// every row evaluation.
+    /// </summary>
+    private CategoryAutoAssignPreloaded? _autoAssignRules;
+    /// <summary>
     /// v2.0.0: optional precomputer that re-derives the
     /// (CatalogItemId, VersionLabel, ManagedPath) triple when the user
     /// renames a row in the dialog. Nullable for backward compatibility
@@ -46,8 +69,38 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// </summary>
     private readonly IFamilyImportPrecomputer? _importPrecomputer;
     private readonly IContentHashDedupService? _dedupService;
+    private readonly IFamilyBatchImportExecutor? _executor;
+    /// <summary>
+    /// #249 (Phase 4): read access to the stored content analytics of the
+    /// ACTIVE version (section hashes + per-type hashes) for the "what
+    /// changed" diff. Nullable for backward compatibility with older test
+    /// fixtures — the diff then degrades to the "analytics pending"
+    /// notice instead of failing.
+    /// </summary>
+    private readonly IContentHashAnalyticsRepository? _analyticsRepository;
+    private readonly string? _categoryId;
+    private readonly string? _publishedByUser;
+    /// <summary>
+    /// Dispatcher for marshalling background name-change recomputes back to
+    /// the UI thread (ADR-031/ADR-036). Production passes the shared
+    /// <see cref="IDispatcher"/> from FamilyManagerServices; the default
+    /// inline fallback executes directly (unit tests, where no UI thread
+    /// with a message pump exists).
+    /// </summary>
+    private readonly IDispatcher _dispatcher;
     private bool _disposed;
     private bool _batchApplying;
+
+    private sealed class InlineDispatcher : IDispatcher
+    {
+        public bool CheckAccess() => true;
+        public void Invoke(Action action) => action();
+        public Task InvokeAsync(Action action, CancellationToken ct = default)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+    }
 
     /// <summary>
     /// v2.0.0 hotfix: debouncer for the per-row name change handler. The
@@ -59,7 +112,31 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     /// the user typed a unique name).
     /// </summary>
     private const int NameChangeDebounceMs = 250;
-    private CancellationTokenSource? _nameChangeCts;
+
+    /// <summary>
+    /// Per-row pending name-change recomputation. A single shared CTS
+    /// cancelled the PREVIOUS row's recompute when two rows were renamed
+    /// in quick succession, leaving the first row with a stale
+    /// precomputed triple; <see cref="RunImportAsync"/> awaits every
+    /// pending task before snapshotting rows so a rename typed right
+    /// before pressing Import cannot race the import.
+    /// </summary>
+    private readonly Dictionary<FamilyBatchImportRow, (CancellationTokenSource Cts, Task Task)> _pendingNameChanges = new();
+    private readonly object _pendingNameChangesLock = new();
+
+    /// <summary>
+    /// Import Validation Gate: the most recent in-flight
+    /// <see cref="RevalidateRowsSafeAsync"/> task. Awaited by
+    /// <c>RunImportAsync</c> so a category change typed right before
+    /// pressing Import cannot race the row snapshot.
+    /// </summary>
+    private Task? _pendingValidation;
+
+    /// <summary>
+    /// Set when the dialog starts closing — in-flight gate revalidations
+    /// discard their results instead of mutating rows of a torn-down view.
+    /// </summary>
+    private volatile bool _isClosing;
 
     public FamilyBatchImportViewModel(
         IReadOnlyList<FamilyBatchImportItem> items,
@@ -69,13 +146,27 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         string? defaultCategoryName = null,
         IFamilyCatalogProvider? catalogProvider = null,
         IFamilyImportPrecomputer? importPrecomputer = null,
-        IContentHashDedupService? dedupService = null)
+        IContentHashDedupService? dedupService = null,
+        IFamilyBatchImportExecutor? executor = null,
+        string? publishedByUser = null,
+        IDispatcher? dispatcher = null,
+        IFamilyImportValidationService? validationService = null,
+        ICategoryAutoAssignService? autoAssignService = null,
+        IContentHashAnalyticsRepository? analyticsRepository = null)
     {
         _dialogService = dialogService;
         _viewModelFactory = viewModelFactory;
         _catalogProvider = catalogProvider;
         _importPrecomputer = importPrecomputer;
         _dedupService = dedupService;
+        _executor = executor;
+        _analyticsRepository = analyticsRepository;
+        _categoryId = defaultCategoryId;
+        _publishedByUser = publishedByUser;
+        _dispatcher = dispatcher ?? new InlineDispatcher();
+        _validationService = validationService;
+        _autoAssignService = autoAssignService;
+        InitializeExecutionState();
 
         foreach (var item in items)
         {
@@ -85,27 +176,60 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                 item.TargetCategoryName ??= defaultCategoryName;
             }
             var row = new FamilyBatchImportRow(item);
+            // Issue #135 defect 1: when the dialog was opened via
+            // «Импорт в категорию» (defaultCategoryId != null), the
+            // preselected category is an explicit user instruction —
+            // lock it (Command) so a rename never resets it to
+            // «Без категории». A category inherited from an existing
+            // catalog item stays automatic (AutoName) and continues to
+            // follow renames.
+            if (!string.IsNullOrEmpty(defaultCategoryId)
+                && string.Equals(row.TargetCategoryId, defaultCategoryId, StringComparison.Ordinal))
+            {
+                row.CategoryProvenance = CategoryProvenance.Command;
+            }
+            else if (!string.IsNullOrEmpty(row.TargetCategoryId))
+            {
+                row.CategoryProvenance = CategoryProvenance.AutoName;
+            }
+            else
+            {
+                row.CategoryProvenance = CategoryProvenance.None;
+            }
             row.PropertyChanged += OnRowPropertyChanged;
             row.PickCategoryRequested += OnRowPickCategoryRequestedAsync;
+            row.PickRecommendedCategoryRequested += OnRowPickRecommendedCategoryRequestedAsync;
             row.ActionChanged += OnRowActionChanged;
             row.CategoryChanged += OnRowCategoryChanged;
             row.SelectionChanged += OnRowSelectionChanged;
             row.NameChanged += OnRowNameChanged;
+            row.OpenValidationReportRequested += OnRowOpenValidationReport;
+            row.OpenStatusDetailsRequested += OnRowOpenStatusDetails;
+            row.OpenDiffDetailsRequested += OnRowOpenDiffDetailsAsync;
             Items.Add(row);
         }
+        var commandLockedCount = Items.Count(r => r.CategoryProvenance == CategoryProvenance.Command);
+        if (commandLockedCount > 0)
+        {
+            SmartConLogger.Debug(
+                $"BatchImport.Category: locked {commandLockedCount}/{Items.Count} rows to command category " +
+                $"'{defaultCategoryName ?? defaultCategoryId}' (provenance=Command)");
+        }
         UpdateCanImport();
-    }
 
-    private void OnRowSelectionChanged(FamilyBatchImportRow row, bool isSelected)
-    {
-        if (isSelected)
-        {
-            _selectedRows.Add(row);
-        }
-        else
-        {
-            _selectedRows.Remove(row);
-        }
+        // Import Validation Gate + auto-assignment (#241): rows that
+        // arrive with a category assigned (Import-to-Category command,
+        // AutoName from existing items) get their rule check immediately;
+        // rows without a category get one from the assignment rules FIRST
+        // so the gate revalidation covers the assigned category too.
+        // Health-blocked rows are included in the gate: they stay Failed
+        // but still collect the rule report for the detail dialog.
+        _pendingValidation = RunInitialGateAsync();
+
+        // ADR-066: initial dependency indicators (health-based gate states
+        // are already known from row construction; rule-based states refresh
+        // the indicators again when the async revalidation lands).
+        RefreshDependencyIndicators();
     }
 
     private async Task OnRowPickCategoryRequestedAsync(FamilyBatchImportRow row)
@@ -126,21 +250,34 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
                     // the dynamic ExistingCatalogItemId lookup — otherwise
                     // renaming to another existing family would keep the
                     // row at "Без категории" instead of pulling the
-                    // target family's category. Clear the manual flag so
+                    // target family's category. Clear the lock so
                     // ApplyNameChangeResult picks the category up again.
+                    // Issue #135: provenance is set BEFORE the path so the
+                    // CategoryChanged batch-apply observes the new source
+                    // provenance.
+                    // #261: the pick is also an explicit MOVE instruction —
+                    // on import the existing item's category is written as
+                    // NULL (not "leave as is"). The flag must be set before
+                    // the path fires CategoryChanged → ApplyCategoryToSelection.
+                    row.ClearCategoryOnImport = true;
+                    row.CategoryProvenance = CategoryProvenance.None;
                     row.TargetCategoryId = null;
                     row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
-                    row.TargetCategoryIsManual = false;
+                    // #241: the rules' recommendation survives the reset —
+                    // «Без категории» is not a recommended category, so the
+                    // warning icon stays visible and keeps pointing at the
+                    // recommended categories.
                 }
                 else
                 {
-                    row.TargetCategoryId = result;
-                    row.TargetCategoryPath = pickerVm.SelectedPath;
                     // v2.0.1: a real category choice is a deliberate
                     // "move to this category" instruction. Lock the
                     // category so a subsequent rename does not silently
                     // re-categorize the row.
-                    row.TargetCategoryIsManual = true;
+                    row.ClearCategoryOnImport = false;
+                    row.CategoryProvenance = CategoryProvenance.Manual;
+                    row.TargetCategoryId = result;
+                    row.TargetCategoryPath = pickerVm.SelectedPath;
                 }
                 // OnTargetCategoryPathChanged partial-method on Row fires
                 // ApplyCategoryToSelection, so the multi-select batch effect
@@ -153,6 +290,38 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         }
     }
 
+    /// <summary>
+    /// #241: the category-column warning icon opens the picker
+    /// pre-filtered to the categories the rules recommend, with a subtitle
+    /// explaining why. An explicit pick from ANY picker is a deliberate
+    /// user instruction → provenance Manual (locked).
+    /// </summary>
+    private async Task OnRowPickRecommendedCategoryRequestedAsync(FamilyBatchImportRow row)
+    {
+        try
+        {
+            if (!row.HasRuleRecommendation) return;
+
+            var pickerVm = _viewModelFactory.CreateCategoryPickerViewModel(allowClear: false);
+            var subtitle = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_RulePicker_Subtitle)
+                    ?? "Под правила автоназначения подходят {0} категорий — выберите одну:",
+                row.RecommendedCategoryIds!.Count);
+            await pickerVm.InitializeRecommendedAsync(row.RecommendedCategoryIds!, subtitle);
+            var result = _dialogService.ShowCategoryPicker(pickerVm);
+            if (!string.IsNullOrEmpty(result))
+            {
+                row.CategoryProvenance = CategoryProvenance.Manual;
+                row.TargetCategoryId = result;
+                row.TargetCategoryPath = pickerVm.SelectedPath;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartCon.Core.Logging.SmartConLogger.Error($"BatchImport.RecommendedPicker: failed: {ex.Message}");
+        }
+    }
+
     private void OnRowActionChanged(FamilyBatchImportRow row, FamilyBatchImportAction newValue)
     {
         // Re-entrancy guard: when ApplyActionToSelection sets
@@ -162,240 +331,22 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         // same reason.
         if (_batchApplying) return;
         ApplyActionToSelection(row, newValue);
+
+        // E2 (#209): MakeActive on an outdated-nested row lifts its
+        // parents' import block (and switching back re-arms it).
+        RefreshDependencyIndicators();
     }
 
     private void OnRowCategoryChanged(FamilyBatchImportRow row, (string? Id, string Path) payload)
     {
         if (_batchApplying) return;
         ApplyCategoryToSelection(row, payload.Id, payload.Path);
-    }
 
-    /// <summary>
-    /// v2.0.0 hotfix: re-resolve catalog status when the user renames a
-    /// row. Debounced by <see cref="NameChangeDebounceMs"/> so we don't
-    /// fire one DB query per keystroke. The lookup uses
-    /// <see cref="FamilyNameNormalizer"/> to match the same canonical
-    /// form the pre-build flow uses, so the row's Status flips
-    /// New ↔ Existing as soon as the user types a name that no longer
-    /// (or now) matches an existing catalog item.
-    /// <para>
-    /// v2.0.0: when an <see cref="IFamilyImportPrecomputer"/> is wired
-    /// in, we also re-derive the precomputed
-    /// (CatalogItemId, VersionLabel, ManagedPath) triple — without this
-    /// re-derivation, the dialog would carry a stale precomputed id
-    /// (the one from the row's original name) into the post-dialog
-    /// import, and <c>ImportFileAsync</c> would try to
-    /// <c>INSERT</c> a new <c>catalog_items</c> row with that id,
-    /// tripping the <c>UNIQUE constraint failed: catalog_items.id</c>
-    /// failure mode observed in the v2.0.0 manual run (the
-    /// "Трубы → Трубы новые" rename in the active-project flow).
-    /// </para>
-    /// </summary>
-    private void OnRowNameChanged(FamilyBatchImportRow row, string newName)
-    {
-        if (_batchApplying) return;
-        if (_catalogProvider is null && _importPrecomputer is null) return;
-        if (string.IsNullOrWhiteSpace(newName)) return;
-
-        _nameChangeCts?.Cancel();
-        _nameChangeCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        _nameChangeCts = cts;
-        var token = cts.Token;
-
-        var extension = ResolveExtensionForRow(row);
-
-        var rowContentHash = row.PrecomputedContentHash;
-        var rowHashFormatVersion = row.HashFormatVersion;
-        var rowFamilySource = row.FamilySource;
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(NameChangeDebounceMs, token).ConfigureAwait(false);
-                if (token.IsCancellationRequested) return;
-
-                var normalized = FamilyNameNormalizer.Normalize(newName);
-
-                FamilyContentHash? contentHash = null;
-                if (rowContentHash is not null && rowHashFormatVersion is not null)
-                {
-                    contentHash = new FamilyContentHash(
-                        rowContentHash, rowHashFormatVersion.Value, rowFamilySource);
-                }
-
-                ContentHashDedupResult? dedupResult = null;
-                if (_dedupService is not null)
-                {
-                    dedupResult = await _dedupService
-                        .CheckAsync(normalized, contentHash, rowFamilySource, token)
-                        .ConfigureAwait(false);
-                    if (token.IsCancellationRequested) return;
-                }
-
-                var existing = _catalogProvider is null
-                    ? null
-                    : await _catalogProvider
-                        .FindByNormalizedNameAsync(normalized, token)
-                        .ConfigureAwait(false);
-                if (token.IsCancellationRequested) return;
-
-                var newStatus = dedupResult?.Status
-                    ?? (existing is null
-                        ? FamilyBatchImportStatus.New
-                        : FamilyBatchImportStatus.Existing);
-                var newExistingId = dedupResult?.ExistingCatalogItemId ?? existing?.Id;
-                var newExistingVersionLabel = dedupResult?.ExistingVersionLabel ?? existing?.CurrentVersionLabel;
-                var newMatchedVersionLabel = dedupResult?.HashMatch?.MatchedVersionLabel;
-                var newExistingCategoryId = existing?.CategoryId;
-                var newExistingCategoryPath = existing?.CategoryPath;
-
-                PrecomputedImportTriple? precomputed = null;
-                if (_importPrecomputer is not null)
-                {
-                    precomputed = await _importPrecomputer
-                        .BuildPrecomputedTripleAsync(newName, extension, token)
-                        .ConfigureAwait(false);
-                    if (token.IsCancellationRequested) return;
-                }
-
-                var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher is not null && !dispatcher.CheckAccess())
-                {
-                    dispatcher.Invoke(() => ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel));
-                }
-                else
-                {
-                    ApplyNameChangeResult(row, newStatus, newExistingId, newExistingVersionLabel, newExistingCategoryId, newExistingCategoryPath, precomputed, newMatchedVersionLabel);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                SmartCon.Core.Logging.SmartConLogger.Warn(
-                    $"BatchImport.NameChange lookup failed: {ex.Message} [Action: проверьте, что БД каталога доступна; статус строки может быть неактуальным до Refresh]");
-            }
-        }, token);
-    }
-
-    private static string ResolveExtensionForRow(FamilyBatchImportRow row)
-    {
-        // v2.0.0: extension is the file-type component of the
-        // precomputed managed path. System-family rows stage .rvt
-        // snapshots, loadable rows stage .rfa. We read it from the row
-        // (not the catalog) because the row already carries the
-        // resolved FamilySource — see FamilyBatchImportRow constructor.
-        return row.FamilySource switch
-        {
-            "system" => ".rvt",
-            _ => ".rfa"
-        };
-    }
-
-    private void ApplyNameChangeResult(
-        FamilyBatchImportRow row,
-        FamilyBatchImportStatus newStatus,
-        string? newExistingId,
-        string? newExistingVersionLabel,
-        string? newExistingCategoryId,
-        string? newExistingCategoryPath,
-        PrecomputedImportTriple? precomputed,
-        string? matchedVersionLabel = null)
-    {
-        if (row.Status != newStatus)
-        {
-            row.Status = newStatus;
-        }
-        row.ExistingCatalogItemId = newExistingId;
-        row.ExistingVersionLabel = newExistingVersionLabel;
-        row.MatchedVersionLabel = matchedVersionLabel;
-
-        if (!row.TargetCategoryIsManual)
-        {
-            if ((newStatus == FamilyBatchImportStatus.Existing || newStatus == FamilyBatchImportStatus.Duplicate) && newExistingId is not null)
-            {
-                row.TargetCategoryId = newExistingCategoryId;
-                row.TargetCategoryPath = !string.IsNullOrWhiteSpace(newExistingCategoryPath)
-                    ? newExistingCategoryPath!
-                    : (LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории");
-            }
-            else
-            {
-                row.TargetCategoryId = null;
-                row.TargetCategoryPath = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "Без категории";
-            }
-        }
-
-        if (precomputed is not null)
-        {
-            row.PrecomputedCatalogItemId = precomputed.CatalogItemId;
-            row.PrecomputedVersionLabel = precomputed.VersionLabel;
-            row.PrecomputedManagedPath = precomputed.ManagedPath;
-        }
-        else
-        {
-            row.PrecomputedCatalogItemId = null;
-            row.PrecomputedVersionLabel = null;
-            row.PrecomputedManagedPath = null;
-        }
-    }
-
-    private void ApplyActionToSelection(FamilyBatchImportRow source, FamilyBatchImportAction newValue)
-    {
-        if (_batchApplying) return;
-        _batchApplying = true;
-        try
-        {
-            foreach (var target in GetOtherSelectedRows(source))
-            {
-                if (target.AvailableActions.Contains(newValue))
-                {
-                    target.Action = newValue;
-                }
-                else
-                {
-                    SmartCon.Core.Logging.SmartConLogger.Debug(
-                        $"BatchImport.Action: skip apply {newValue} to '{target.FileName}' — not in AvailableActions");
-                }
-            }
-        }
-        finally
-        {
-            _batchApplying = false;
-        }
-    }
-
-    private void ApplyCategoryToSelection(FamilyBatchImportRow source, string? id, string path)
-    {
-        if (_batchApplying) return;
-        _batchApplying = true;
-        try
-        {
-            foreach (var target in GetOtherSelectedRows(source))
-            {
-                target.TargetCategoryId = id;
-                target.TargetCategoryPath = path;
-            }
-        }
-        finally
-        {
-            _batchApplying = false;
-        }
-    }
-
-    private List<FamilyBatchImportRow> GetOtherSelectedRows(FamilyBatchImportRow source)
-    {
-        // Exclude the source so the setter isn't fired twice (it would
-        // still be idempotent but would emit an extra PropertyChanged and
-        // a redundant UpdateCanImport cycle). The Count <= 1 fast-path
-        // also covers the single-row selection case — when the user
-        // changes Action on a single selected row there is nothing to
-        // batch-apply.
-        if (_selectedRows.Count <= 1) return new List<FamilyBatchImportRow>();
-        return _selectedRows.Where(r => !ReferenceEquals(r, source)).ToList();
+        // Import Validation Gate: re-check the affected rows against the
+        // new category's rules (source + batch-applied selection).
+        var affected = new List<FamilyBatchImportRow> { row };
+        affected.AddRange(GetOtherSelectedRows(row).Where(r => r.CategoryProvenance == row.CategoryProvenance));
+        _pendingValidation = RevalidateRowsSafeAsync(affected);
     }
 
     private void OnRowPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -411,9 +362,16 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
         if (_disposed) return;
         _disposed = true;
 
-        _nameChangeCts?.Cancel();
-        _nameChangeCts?.Dispose();
-        _nameChangeCts = null;
+        lock (_pendingNameChangesLock)
+        {
+            foreach (var pending in _pendingNameChanges.Values)
+            {
+                pending.Cts.Cancel();
+                pending.Cts.Dispose();
+            }
+            _pendingNameChanges.Clear();
+        }
+        DisposeExecution();
 
         foreach (var row in Items)
         {
@@ -423,6 +381,8 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             row.CategoryChanged -= OnRowCategoryChanged;
             row.SelectionChanged -= OnRowSelectionChanged;
             row.NameChanged -= OnRowNameChanged;
+            row.OpenValidationReportRequested -= OnRowOpenValidationReport;
+            row.OpenStatusDetailsRequested -= OnRowOpenStatusDetails;
         }
     }
 
@@ -430,18 +390,6 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
     {
         CanImport = Items.Any(r => r.CanImport);
         System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-    }
-
-    [RelayCommand(CanExecute = nameof(CanImport))]
-    private void Import()
-    {
-        RequestClose?.Invoke(true);
-    }
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        RequestClose?.Invoke(false);
     }
 
     /// <summary>
@@ -492,9 +440,18 @@ public sealed partial class FamilyBatchImportViewModel : ObservableObject, IObse
             HashFormatVersion: r.HashFormatVersion,
             MatchedVersionLabel: r.MatchedVersionLabel,
             LoadableSnapshot: r.LoadableSnapshot,
-            SystemSnapshot: r.SystemSnapshot)
+            SystemSnapshot: r.SystemSnapshot,
+            IsCrossNameDuplicate: r.IsCrossNameDuplicate,
+            MatchedItemName: r.MatchedItemName,
+            ExistingCategoryId: r.ExistingCategoryId,
+            ExistingCategoryPath: r.ExistingCategoryPath,
+            DependencyLinks: r.DependencyLinks,
+            PerTypeHashes: r.PerTypeHashes,
+            Sections: r.Sections,
+            UnsubstitutedMiniRouting: r.UnsubstitutedMiniRouting)
         {
-            Action = r.Action
+            Action = r.Action,
+            ClearCategoryOnImport = r.ClearCategoryOnImport
         }).ToList();
     }
 }

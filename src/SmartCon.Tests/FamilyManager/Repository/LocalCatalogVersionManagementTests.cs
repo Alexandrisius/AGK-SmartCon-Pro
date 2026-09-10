@@ -9,7 +9,8 @@ namespace SmartCon.Tests.FamilyManager.Repository;
 /// <summary>
 /// Tests for the V17 migration (ADR-041): adds FOREIGN KEY
 /// (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
-/// on family_types and extracted_attribute_values.
+/// on family_types and extracted_attribute_values. A fresh catalog database
+/// ends up at schema version 21.
 /// </summary>
 public sealed class LocalCatalogV17MigrationTests : IDisposable
 {
@@ -23,14 +24,14 @@ public sealed class LocalCatalogV17MigrationTests : IDisposable
     public void Dispose() => _fixture.Dispose();
 
     [Fact]
-    public async Task Migrate_FreshDb_SetsSchemaVersion19()
+    public async Task Migrate_FreshDb_SetsSchemaVersion38()
     {
         using var conn = _fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key = 'schema_version'";
         var result = await cmd.ExecuteScalarAsync();
-        Assert.Equal("19", result?.ToString());
+        Assert.Equal("38", result?.ToString());
     }
 
     [Fact]
@@ -106,7 +107,7 @@ public sealed class SetActiveVersionAsyncTests : IDisposable
         var v1Request = new FamilyImportRequest(
             FilePath: v1Path, RevitMajorVersion: 2025, Category: null,
             Tags: null, Description: null, CategoryId: null,
-            FamilySource: "loadable", RevitCategory: null, FileName: "Family-V1.rfa");
+            FamilySource: "loadable", RevitCategory: null, FileName: "Family-V1");
         var v1Result = await _importService.ImportFileAsync(v1Request);
         var itemId = v1Result.CatalogItemId!;
 
@@ -278,6 +279,46 @@ public sealed class SetActiveVersionAsyncTests : IDisposable
         var setResult = await provider.SetActiveVersionAsync(itemId, "v2");
         Assert.False(setResult.Success);
     }
+
+    [Fact]
+    public async Task SetActiveVersion_DifferentFileName_UpdatesItemName()
+    {
+        // Issue #126: the catalog item name follows the ACTIVE version's
+        // file name. The seed stores v1 as "Family-V1.rfa" and v2 as
+        // "Family-V2.rfa" — activating v2 must rename the item.
+        var (itemId, _, _) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+
+        var result = await provider.SetActiveVersionAsync(itemId, "v2");
+
+        Assert.True(result.Success);
+        Assert.True(result.NameChanged);
+        Assert.Equal("Family-V2", result.NewName);
+
+        var item = await provider.GetItemAsync(itemId);
+        Assert.Equal("Family-V2", item?.Name);
+        Assert.Equal(
+            SmartCon.Core.Services.FamilyManager.FamilyNameNormalizer.Normalize("Family-V2"),
+            item?.NormalizedName);
+    }
+
+    [Fact]
+    public async Task SetActiveVersion_SameFileName_NameUnchanged()
+    {
+        // Activating the version whose file name matches the current item
+        // name must NOT rewrite the name (NameChanged = false). The seed
+        // already names the item "Family-V1" — the v1 file base name.
+        var (itemId, _, _) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+
+        var result = await provider.SetActiveVersionAsync(itemId, "v1");
+
+        Assert.True(result.Success);
+        Assert.False(result.NameChanged);
+
+        var item = await provider.GetItemAsync(itemId);
+        Assert.Equal("Family-V1", item?.Name);
+    }
 }
 
 /// <summary>
@@ -394,6 +435,31 @@ public sealed class DeleteVersionAsyncTests : IDisposable
         var result = await provider.DeleteVersionAsync(itemId, "v99");
         Assert.True(result.Success);
         Assert.Equal(0, result.VersionsDeleted);
+    }
+
+    [Fact]
+    public async Task DeleteVersion_CascadesRoutingRulesAndSegmentSizes()
+    {
+        // ADR-072 tables (V34 family_routing_*, V36 family_segment_sizes)
+        // must die with their version via FK CASCADE — an orphan row would
+        // resurrect stale routing for a re-created version label.
+        var (itemId, _, v2Id) = await SeedItemWithTwoVersionsAsync();
+        var provider = _fixture.GetProvider();
+        var routingRepo = new LocalFamilyRoutingRuleRepository(_fixture.GetDatabase());
+        var sizeRepo = new LocalSegmentSizeRepository(_fixture.GetDatabase());
+        await routingRepo.ReplaceForVersionAsync(itemId, v2Id,
+            [new FamilyRoutingRuleInfo("Type A", "Single", "Elbows", 0, "A:B", "", [])],
+            [new FamilyRoutingTypeSettings("Type A", "Single", 0)]);
+        await sizeRepo.ReplaceForVersionAsync(v2Id,
+            [new SegmentSizeRecord("Seg", 0.1, 0.09, 0.11, true, true, 0)]);
+
+        var result = await provider.DeleteVersionAsync(itemId, "v2");
+        Assert.True(result.Success);
+
+        var (rules, settings) = await routingRepo.ReadForVersionAsync(itemId, v2Id);
+        Assert.Empty(rules);
+        Assert.Empty(settings);
+        Assert.Empty(await sizeRepo.ReadForVersionAsync(v2Id));
     }
 
     [Fact]

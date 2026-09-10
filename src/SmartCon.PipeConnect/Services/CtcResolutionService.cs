@@ -47,7 +47,7 @@ public sealed class CtcResolutionService(
     }
 
     /// <summary>
-    /// Resolve which connector of an element faces the static side and which faces dynamic.
+    /// Determine which connector of an element faces the static side and which faces dynamic.
     /// Uses CTC matching rules first, falls back to spatial proximity.
     /// </summary>
     public (ConnectorProxy? ToStatic, ConnectorProxy? ToDynamic) ResolveConnectorSidesForElement(

@@ -9,9 +9,12 @@
 ```
 
 **Why `net8.0-windows` only:** R24/R21/R19 are .NET Framework 4.x and don't run
-unit tests (the test project uses xUnit + WPF which requires net8+). Unit tests
-are built and run only against R25's API surface, then validated in R24/R21/R19
-by manual testing.
+unit tests (the test project uses xUnit + WPF which requires net8+). R27 (net10,
+Revit 2027) must NOT be used for the test project either — it is PINNED to
+net8.0-windows: a net10 build fails with NU1201/NU1202, and in the sln its R27
+configurations are mapped to R25 (the mapping is honored only in VS). Unit tests
+are built and run only against R25's API surface, then validated in the other
+configurations by manual testing.
 
 ```xml
 <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -36,7 +39,8 @@ for why this matters.
 
 `Microsoft.NET.Sdk` auto-defines `DEBUG;TRACE` only for the **base**
 `Configuration=Debug`. Our multi-version build uses named configurations
-`Debug.R19` / `Debug.R21` / `Debug.R24` / `Debug.R25` / `Debug.R26`.
+`Debug.R19` / `Debug.R21` / `Debug.R24` / `Debug.R25` / `Debug.R26` / `Debug.R27`
+(the full list is R19..R27; `Directory.Build.props` adds `DEBUG;TRACE` to all `Debug.*`).
 
 **Symptom if you forget this fix:**
 - `SmartConLogger.Debug(...)` calls are silently dropped at runtime

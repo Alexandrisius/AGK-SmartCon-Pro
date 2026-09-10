@@ -304,12 +304,26 @@ public sealed class VirtualCtcStore
 
 ## NetworkSnapshot
 
-Снапшот позиции элемента для отката цепочки.
+Снапшот состояния элемента для отката цепочки (кнопка `−`). Для FamilyInstance —
+полный Transform, для MEPCurve — концы кривой, для FlexPipe — весь путь точек
+verbatim (форма, заданная пользователем, восстанавливается полностью, ADR-052).
 
 **Файл:** `SmartCon.Core/Models/NetworkSnapshot.cs`
 
 ```csharp
-public sealed record NetworkSnapshot(ElementId ElementId, XYZ OriginalOrigin);
+public sealed record ElementSnapshot
+{
+    public ElementId ElementId { get; init; }
+    public bool IsMepCurve { get; init; }
+    public XYZ? FiOrigin/FiBasisX/FiBasisY/FiBasisZ { get; init; }  // FamilyInstance
+    public XYZ? CurveStart/CurveEnd { get; init; }                  // MEPCurve (Line)
+    public IReadOnlyList<XYZ>? FlexPoints { get; init; }            // FlexPipe — весь путь
+    public XYZ? FirstConnectorOrigin { get; init; }                 // fallback-позиция
+    public double ConnectorRadius { get; init; }
+    public ElementId? FamilySymbolId { get; init; }
+    public IReadOnlyDictionary<int, double> ConnectorRadii { get; init; }
+    public IReadOnlyList<ConnectionRecord> Connections { get; init; }
+}
 ```
 
 ---
@@ -322,6 +336,43 @@ public sealed record NetworkSnapshot(ElementId ElementId, XYZ OriginalOrigin);
 
 ```csharp
 public sealed class NetworkSnapshotStore { ... }
+```
+
+---
+
+## ChainQueueEntry
+
+Одна запись поэлементной очереди цепи (element-wise chain mode): элемент и BFS-уровень,
+на котором он был обнаружен. Уровень нужен для поиска родительского ребра
+(родитель всегда на уровне −1) и для детекции границы уровня при раннем
+«запечатывании» цепи (ADR-052). Очередь строится `ConnectionGraph.GetElementQueue()`:
+индекс 0 = root dynamic, далее элементы уровней 1..N в порядке обнаружения —
+родитель любого элемента всегда имеет меньший индекс, поэтому цепь подключается
+строго по одному элементу.
+
+**Файл:** `SmartCon.Core/Models/ChainQueueEntry.cs`
+
+```csharp
+public readonly record struct ChainQueueEntry(ElementId ElementId, int Level);
+```
+
+---
+
+## UnconnectedChainChoice
+
+Выбор пользователя в диалоге «неподключённые элементы сети», который показывается
+при нажатии «Соединить», когда часть цепи ещё не присоединена (элементы оторваны
+от своей сети). Возвращается `IDialogService.ShowUnconnectedChainWarning`.
+
+**Файл:** `SmartCon.Core/Models/UnconnectedChainChoice.cs`
+
+```csharp
+public enum UnconnectedChainChoice
+{
+    ConnectAll,    // присоединить все оставшиеся элементы, затем завершить соединение
+    ConnectAsIs,   // соединить как есть — остальная сеть останется отсоединённой
+    GoBack,        // вернуться в редактор без соединения
+}
 ```
 
 ---
@@ -649,4 +700,102 @@ public sealed class ElementIdEqualityComparer : IEqualityComparer<ElementId>
     public bool Equals(ElementId? x, ElementId? y);
     public int GetHashCode(ElementId obj);
 }
+```
+
+---
+
+## ChainTraversalRunner
+
+Драйвер обхода цепочки уровней («Подключить всё») с непробиваемой защитой от бесконечного цикла. Шаг обязан либо продвинуть глубину, либо вернуть null (ошибка) — иначе обход останавливается с причиной `NoProgress`. См. issue #137.
+
+**Файл:** `SmartCon.Core/Services/ChainTraversalRunner.cs`
+
+```csharp
+public enum ChainTraversalStopReason { Completed, StepFailed, NoProgress }
+
+public readonly record struct ChainTraversalResult(
+    int FinalDepth, int Processed, ChainTraversalStopReason StopReason);
+
+public static class ChainTraversalRunner
+{
+    public static ChainTraversalResult Run(
+        int startDepth, int targetLevel, int maxLevel, Func<int?> step);
+}
+```
+
+---
+
+## PipeAdjustOp
+
+Дельты концов кривой прямой трубы для per-level гашения смещения (ADR-052).
+Результат `PipeLengthAbsorber.Compute`. Применяется как
+`Line.CreateBound(start + StartDelta, end + EndDelta)`.
+Элемент идентифицируется сырым `long` — тестируемость без Revit runtime.
+Все величины в Internal Units (decimal feet, I-02).
+
+**Файл:** `SmartCon.Core/Models/PipeAdjustOp.cs`
+
+```csharp
+public sealed record PipeAdjustOp
+{
+    public required long ElementId { get; init; }
+    public required Vec3 StartDelta { get; init; }      // дельта endpoint 0
+    public required Vec3 EndDelta { get; init; }        // дельта endpoint 1
+    public required double AbsorbedLengthFt { get; init; }  // >0 укорочение, <0 удлинение, 0 трансляция
+}
+```
+
+---
+
+## ScreenRect
+
+Прямоугольник в физических экранных пикселях (origin top-left, Y вниз).
+Описывает rect окна вида Revit (`UIView.GetWindowRectangle`) и экранные границы
+WPF-диалога — для компенсации перекрытия в кнопке «Обзор» (`OverviewZoomMath`).
+
+**Файл:** `SmartCon.Core/Models/ScreenRect.cs`
+
+```csharp
+public sealed record ScreenRect(double Left, double Top, double Right, double Bottom)
+{
+    public double Width { get; }
+    public double Height { get; }
+    public double CenterX { get; }
+    public double CenterY { get; }
+    public bool IntersectsWith(ScreenRect other);
+}
+```
+
+---
+
+## ViewZoomMath
+
+Pure-математика навигации вида PipeConnectEditor (кнопки «Просмотр» и ±, без Revit API, I-09).
+Вычисляет zoom-rect для `UIView.ZoomAndCenterRectangle` с компенсацией
+перекрытия вида модальным окном: видимая зона = max-area срез view rect
+минус rect окна (`ComputeVisibleRect`, fallback при зоне <150px), центр rect
+смещается от окна на экранное расстояние между центром view и центром видимой
+зоны. `Compute` — для кнопки «Просмотр» (целевая точка + радиус);
+`ComputeScaled` — для кнопок ± (масштабирование текущих corners, модельная
+точка в центре видимой зоны не дрейфует между шагами зума).
+Результат — `ViewZoomRect` в координатах плоскости вида
+(u вдоль RightDirection, v вдоль UpDirection).
+
+**Файл:** `SmartCon.Core/Services/PipeConnect/ViewZoomMath.cs`
+
+```csharp
+public static class ViewZoomMath
+{
+    public const double MinVisiblePx = 150;
+    public static ScreenRect ComputeVisibleRect(ScreenRect view, ScreenRect? occlusion);
+    public static ViewZoomRect? Compute(
+        double targetU, double targetV, double radiusModel,
+        ScreenRect view, ScreenRect? occlusion);
+    public static ViewZoomRect? ComputeScaled(
+        double currentU0, double currentV0, double currentU1, double currentV1,
+        double factor, ScreenRect view, ScreenRect? occlusion);
+}
+
+public sealed record ViewZoomRect(
+    double CenterU, double CenterV, double HalfWidth, double HalfHeight, bool UsedFallback);
 ```

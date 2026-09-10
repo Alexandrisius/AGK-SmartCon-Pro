@@ -19,7 +19,10 @@ public interface IFamilyTypeRepository
     /// <list type="number">
     /// <item>DELETE all existing types matching (catalogItemId, versionId, fileId)</item>
     /// <item>INSERT (or UPSERT on conflict) the supplied <paramref name="types"/> list</item>
-    /// <item>Return a {typeName → typeId} map for downstream attribute-value persistence</item>
+    /// <item>Return a {identityKey → typeId} map for downstream attribute-value persistence.
+    /// The key is <c>SystemTypeIdentityKey.Build(familyKey, familyName, typeName)</c>
+    /// ("TOKEN|NAME", upper-invariant; Issue #191) — for loadable/legacy rows
+    /// without a family token it degrades to "|NAME".</item>
     /// </list>
     /// </summary>
     /// <param name="runId">Extraction run id (audit trail). Pass <c>"no-run"</c> for synthetic callers (orchestrators) that do not need a run record.</param>

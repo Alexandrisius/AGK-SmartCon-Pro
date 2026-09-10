@@ -24,6 +24,28 @@
 
 Same as above but the file goes to `docs/domain/interfaces/<module>.md` and the section starts with `## ITypeName`.
 
+## Where to put a FamilyManager type
+
+FamilyManager docs live in **subfolders**, not a single file:
+
+- Models → `docs/domain/models/family-manager/<topic>.md`
+- Interfaces → `docs/domain/interfaces/family-manager/<topic>.md`
+
+Pick the topic that fits (`catalog`, `import`, `stale-detection`, `extraction`, ...).
+The full topic list is in the subfolder's `README.md`. If none fits, create a new
+topic file with the same `module: family-manager` frontmatter and add it to that index.
+
+## File too big? Split it
+
+Hard limit: **1000 lines per .md file** (validator prints `[WARN]` above that).
+At ~900 lines start splitting:
+
+1. `models/<module>.md` → `models/<module>/<topic>.md` + `models/<module>/README.md` (index)
+2. Keep `module: <module>` frontmatter in every topic file
+3. `## TypeName` only for types — never for topic-group headers (validator parses H2-H4)
+4. Delete the old flat file, update `models/README.md` (or `interfaces/README.md`)
+5. Re-run validator → `PASSED`, no oversized warnings
+
 ## If the file has BOTH a non-matching type first and the matching type
 
 Example: `IFamilyManagerDialogService.cs` has `public enum DialogResult` then `public interface IFamilyManagerDialogService`.
@@ -41,6 +63,7 @@ But if the file has `public class Container` and `public interface IFoo` (where 
 | `[module] IRevitUIContext (file.md:N)` | Type lives in `SmartCon.Revit/`, not Core | Leave as-is (validator scope is Core) |
 | `[module] IFamilyManagerViewModelFactory` | Type lives in `SmartCon.FamilyManager/`, not Core | Leave as-is (Clean Architecture boundary) |
 | `[module] FamilyManagerServices Aggregate` | Sub-heading, not a type | Convert to a paragraph or callout |
+| `<file>.md (NNNN lines > 1000)` oversized | File grew past the split threshold | Split into `<module>/<topic>.md` (see above) |
 
 > **Note:** "Nested types" are no longer a cause of warnings — every public type in Core has its own .cs file (1 type = 1 file convention).
 
@@ -49,10 +72,10 @@ But if the file has `public class Container` and `public interface IFoo` (where 
 If a type logically belongs to multiple modules, document it in **one** file (the primary module) and link to it from the others:
 
 ```markdown
-In `docs/domain/models/family-manager.md`:
-## FamilyMetadataPackage
+In `docs/domain/models/family-manager/import.md`:
+## PreparedFamilyItem
 (...)
-См. также: [FamilyMetadataExportPackage в `family-manager-loadable.md`](family-manager-loadable.md#familymetadataexportpackage)
+См. также: [SelectedElementsAnalysis в `catalog.md`](catalog.md#selectedelementsanalysis)
 ```
 
 ## Validator exit codes

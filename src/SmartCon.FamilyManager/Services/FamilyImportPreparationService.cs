@@ -8,6 +8,7 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.FamilyManager;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Import;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.FamilyManager.Services;
@@ -19,7 +20,7 @@ namespace SmartCon.FamilyManager.Services;
 /// Open documents are held in a dictionary so Phase 3 (Commit)
 /// can SaveAs from the same document without re-opening.
 /// </summary>
-public sealed class FamilyImportPreparationService
+public sealed partial class FamilyImportPreparationService : IFamilyImportPreparationService
 {
     private readonly IFamilyManagerAwaitableEvent _awaitableEvent;
     private readonly IFamilySnapshotExtractor _snapshotExtractor;
@@ -27,8 +28,19 @@ public sealed class FamilyImportPreparationService
     private readonly IContentHashDedupService _dedupService;
     private readonly IRevitContext _revitContext;
     private readonly IFamilyTypeCatalogBaker _typeCatalogBaker;
+    private readonly IFamilyHealthChecker _healthChecker;
+    private readonly IFamilyDependencyCollector _dependencyCollector;
+    private readonly IFamilyVersionStore _versionStore;
+    private readonly IMiniProjectMarker? _miniProjectMarker;
+    private readonly IFamilyRoutingRuleRepository? _routingRuleRepository;
 
     private readonly Dictionary<string, Document> _openedDocuments = new(StringComparer.Ordinal);
+
+    // UC-2 (#209): the active family document is never held in
+    // _openedDocuments (the prepare cleanup must NOT close the user's
+    // document) — the nested queue resolves it through this override.
+    private Document? _activeFamilyDoc;
+    private string? _activeFamilyDocKey;
 
     public FamilyImportPreparationService(
         IFamilyManagerAwaitableEvent awaitableEvent,
@@ -36,7 +48,12 @@ public sealed class FamilyImportPreparationService
         IFamilyContentHasher contentHasher,
         IContentHashDedupService dedupService,
         IRevitContext revitContext,
-        IFamilyTypeCatalogBaker typeCatalogBaker)
+        IFamilyTypeCatalogBaker typeCatalogBaker,
+        IFamilyHealthChecker healthChecker,
+        IFamilyDependencyCollector dependencyCollector,
+        IFamilyVersionStore versionStore,
+        IMiniProjectMarker? miniProjectMarker = null,
+        IFamilyRoutingRuleRepository? routingRuleRepository = null)
     {
         _awaitableEvent = awaitableEvent ?? throw new ArgumentNullException(nameof(awaitableEvent));
         _snapshotExtractor = snapshotExtractor ?? throw new ArgumentNullException(nameof(snapshotExtractor));
@@ -44,6 +61,13 @@ public sealed class FamilyImportPreparationService
         _dedupService = dedupService ?? throw new ArgumentNullException(nameof(dedupService));
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));
         _typeCatalogBaker = typeCatalogBaker ?? throw new ArgumentNullException(nameof(typeCatalogBaker));
+        _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
+        _dependencyCollector = dependencyCollector ?? throw new ArgumentNullException(nameof(dependencyCollector));
+        _versionStore = versionStore ?? throw new ArgumentNullException(nameof(versionStore));
+        // ADR-072: optional so legacy test wirings keep the pre-V34 behavior
+        // (no substitution — routing rides in the mini-project).
+        _miniProjectMarker = miniProjectMarker;
+        _routingRuleRepository = routingRuleRepository;
     }
 
     /// <summary>
@@ -59,6 +83,12 @@ public sealed class FamilyImportPreparationService
             return Array.Empty<PreparedFamilyItem>();
 
         LogDiagSnapshot("Prepare.entry", _openedDocuments.Count);
+
+        // A previous UC-2 run may have left the override behind when its
+        // dialog was cancelled without cleanup — never let a stale active
+        // document leak into the file-based nested resolution.
+        _activeFamilyDoc = null;
+        _activeFamilyDocKey = null;
 
         using var _scope = SmartConLogger.BeginScope("FamilyPrep",
             ("Method", nameof(PrepareForFileImportAsync)),
@@ -111,6 +141,9 @@ public sealed class FamilyImportPreparationService
             $"{results.Count(r => r.ErrorMessage is not null)} errors, " +
             $"{_openedDocuments.Count} documents held open");
 
+        await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+        await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
+
         LogDiagSnapshot("Prepare.exit", _openedDocuments.Count);
 
         return results;
@@ -118,9 +151,13 @@ public sealed class FamilyImportPreparationService
 
     /// <summary>
     /// Prepare the active family document (.rfa in Family Editor) for import.
-    /// The document is already open — no OpenDocumentFile needed.
+    /// The document is already open — no OpenDocumentFile needed. Returns the
+    /// parent item FIRST, followed by its shared-nested children (E2, #209):
+    /// the nested queue re-opens each shared nested from the live document
+    /// (EditFamily independent copy, probe P2) exactly like the file-based
+    /// flow, so the batch dialog shows the full dependency set.
     /// </summary>
-    public async Task<PreparedFamilyItem> PrepareActiveFamilyAsync(
+    public async Task<IReadOnlyList<PreparedFamilyItem>> PrepareActiveFamilyAsync(
         CancellationToken ct = default)
     {
         using var _scope = SmartConLogger.BeginScope("FamilyPrep",
@@ -150,38 +187,56 @@ public sealed class FamilyImportPreparationService
 
         SmartConLogger.Info($"Preparing active family: '{displayName}'");
 
+        var sourcePath = activeDoc.PathName ?? $"active://{displayName}";
+        _activeFamilyDoc = activeDoc;
+        _activeFamilyDocKey = sourcePath;
+
         try
         {
-            var snapshot = await _awaitableEvent
-                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(activeDoc), ct)
+            // Active document stays untouched (no type switching — the user
+            // is editing it): collect accumulated warnings only.
+            var healthReport = await _awaitableEvent
+                .RaiseAsync(app => _healthChecker.CheckActiveFamilyDocument(activeDoc), ct)
                 .ConfigureAwait(false);
 
-            var hash = _contentHasher.ComputeForLoadable(snapshot);
-            var normalizedName = FamilyNameNormalizer.Normalize(displayName);
+            IReadOnlyList<FamilyDependencyDescriptor>? sharedNested = null;
+            var snapshot = await _awaitableEvent
+                .RaiseAsync(app =>
+                {
+                    var extracted = _snapshotExtractor.ExtractFromFamilyDocument(activeDoc);
+                    // ADR-066 (E2): same Revit-thread roundtrip — shared
+                    // nested families are scanned flat in the family
+                    // document (probe P1).
+                    sharedNested = _dependencyCollector.CollectSharedNestedDependencies(activeDoc);
+                    return extracted;
+                }, ct)
+                .ConfigureAwait(false);
 
-            var dedupResult = await Task.Run(
-                () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
-                ct).ConfigureAwait(false);
+            var results = new List<PreparedFamilyItem>
+            {
+                new(
+                    SourcePath: sourcePath,
+                    DisplayName: displayName,
+                    RevitMajorVersion: GetRevitMajorVersion(),
+                    ContentHash: null,
+                    LoadableSnapshot: snapshot,
+                    SystemSnapshot: null,
+                    ErrorMessage: null,
+                    Source: null,
+                    SourceTypes: null,
+                    FamilySource: "loadable",
+                    HealthReport: healthReport,
+                    SharedNestedDependencies: sharedNested),
+            };
+
+            await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+            await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
 
             SmartConLogger.Info(
-                $"Active family prepared: hash={hash?.HexString ?? "null"}, " +
-                $"status={dedupResult.Status}");
+                $"Active family prepared: '{displayName}' + {results.Count - 1} shared nested, " +
+                $"status={results[0].Status}");
 
-            return new PreparedFamilyItem(
-                SourcePath: activeDoc.PathName ?? $"active://{displayName}",
-                DisplayName: displayName,
-                RevitMajorVersion: GetRevitMajorVersion(),
-                ContentHash: hash,
-                LoadableSnapshot: snapshot,
-                SystemSnapshot: null,
-                ErrorMessage: null,
-                Source: null,
-                SourceTypes: null,
-                FamilySource: "loadable",
-                Status: dedupResult.Status,
-                ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-                ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-                MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
+            return results;
         }
         catch (Exception ex)
         {
@@ -205,6 +260,9 @@ public sealed class FamilyImportPreparationService
             ("Method", nameof(PrepareProjectImportAsync)),
             ("SystemCount", systemAnalyses.Count),
             ("LoadableCount", loadableFamilies.Count));
+
+        _activeFamilyDoc = null;
+        _activeFamilyDocKey = null;
 
         SmartConLogger.Info(
             $"Preparing project import: {systemAnalyses.Count} system categories, " +
@@ -268,563 +326,15 @@ public sealed class FamilyImportPreparationService
             }
         }
 
+        await PrepareDependencyItemsAsync(results, ct).ConfigureAwait(false);
+        await PrepareSharedNestedItemsAsync(results, ct).ConfigureAwait(false);
+        await FinalizeLoadableHashesAsync(results, ct).ConfigureAwait(false);
+
         SmartConLogger.Info(
             $"Project prepare complete: {results.Count} items, " +
             $"{_openedDocuments.Count} EditFamily docs held open");
 
         return results;
-    }
-
-    /// <summary>
-    /// Close all documents opened during Phase 1 (Prepare).
-    /// Call this when the user cancels the batch dialog.
-    /// </summary>
-    public async Task CloseAllPreparedDocumentsAsync(CancellationToken ct = default)
-    {
-        using var _scope = SmartConLogger.BeginScope("FamilyPrep",
-            ("Method", nameof(CloseAllPreparedDocumentsAsync)),
-            ("HeldOpenCount", _openedDocuments.Count));
-
-        SmartConLogger.Info(
-            $"Closing prepared documents: heldOpen={_openedDocuments.Count} " +
-            "(will also enumerate app.Documents to detect leaked handles)");
-
-        await _awaitableEvent.RaiseAsync(app =>
-        {
-            LogAllOpenRevitDocuments();
-
-            foreach (var pair in _openedDocuments)
-            {
-                try
-                {
-                    if (pair.Value is not null)
-                    {
-                        // Phase 27B: after staging (SaveAs + ReleaseDocument),
-                        // some documents may have been invalidated by Revit.
-                        // IsValidObject check prevents "The referenced object
-                        // is not valid" warnings during cleanup.
-                        if (!pair.Value.IsValidObject)
-                        {
-                            SmartConLogger.Debug(
-                                $"Document '{Path.GetFileName(pair.Key)}' already invalidated by Revit — skipping Close");
-                            continue;
-                        }
-                        pair.Value.Close(false);
-                        SmartConLogger.Debug($"Closed document: {Path.GetFileName(pair.Key)}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        $"Failed to close document '{Path.GetFileName(pair.Key)}': {ex.Message} " +
-                        "[Action: document may remain open — user can close manually]");
-                }
-            }
-        }, ct).ConfigureAwait(false);
-
-        _openedDocuments.Clear();
-        SmartConLogger.Info("All prepared documents closed");
-    }
-
-    /// <summary>
-    /// Get a document that was opened during Phase 1 and is held open
-    /// for Phase 3 (SaveAs). Returns null if the path was not prepared,
-    /// the entry was null, or the document has been invalidated by Revit
-    /// (IsValidObject == false). Stale entries are evicted from the cache.
-    /// </summary>
-    public Document? GetOpenedDocument(string sourcePath)
-    {
-        if (_openedDocuments.TryGetValue(sourcePath, out var doc))
-        {
-            if (doc is null)
-            {
-                _openedDocuments.Remove(sourcePath);
-                return null;
-            }
-
-            if (!doc.IsValidObject)
-            {
-                SmartConLogger.Warn(
-                    $"GetOpenedDocument: held-open document for '{Path.GetFileName(sourcePath)}' " +
-                    "is invalidated by Revit (IsValidObject=false) — evicting from cache " +
-                    "[Action: caller will fall back to a fresh OpenDocumentFile/EditFamily]");
-                _openedDocuments.Remove(sourcePath);
-                return null;
-            }
-
-            SmartConLogger.Debug(
-                $"GetOpenedDocument HIT: path='{Path.GetFileName(sourcePath)}', " +
-                $"PathName='{(string.IsNullOrEmpty(doc.PathName) ? "<empty>" : doc.PathName)}', " +
-                $"Title='{doc.Title}'");
-            return doc;
-        }
-
-        SmartConLogger.Debug($"GetOpenedDocument MISS: path='{Path.GetFileName(sourcePath)}'");
-        return null;
-    }
-
-    /// <summary>
-    /// Remove a document from the held-open dictionary without closing it.
-    /// Use this only when the document is known to be already invalidated or
-    /// closed by other means (e.g. exception paths). For the normal Phase 3
-    /// flow (SaveAs followed by cleanup) prefer <see cref="CloseAndRelease"/>.
-    /// </summary>
-    public void ReleaseDocument(string sourcePath)
-    {
-        _openedDocuments.Remove(sourcePath);
-    }
-
-    /// <summary>
-    /// Close a held-open document with <c>Close(false)</c> and remove it from
-    /// the cache. Must be called on the Revit UI thread (e.g. from inside an
-    /// <c>IFamilyManagerAwaitableEvent.RaiseAsync</c> callback) because it
-    /// touches <c>Document.IsValidObject</c> and <c>Document.Close</c>.
-    /// Silently evicts entries that are null or already invalidated by Revit.
-    /// </summary>
-    public void CloseAndRelease(string sourcePath)
-    {
-        if (!_openedDocuments.TryGetValue(sourcePath, out var doc))
-        {
-            SmartConLogger.Debug($"CloseAndRelease MISS: path='{Path.GetFileName(sourcePath)}'");
-            return;
-        }
-
-        _openedDocuments.Remove(sourcePath);
-
-        if (doc is null)
-            return;
-
-        if (!doc.IsValidObject)
-        {
-            SmartConLogger.Debug(
-                $"CloseAndRelease: document '{Path.GetFileName(sourcePath)}' already invalidated by Revit — " +
-                "evicted from cache without Close");
-            return;
-        }
-
-        try
-        {
-            doc.Close(false);
-            SmartConLogger.Info(
-                $"CloseAndRelease: closed held-open document '{Path.GetFileName(sourcePath)}' " +
-                $"(PathName='{(string.IsNullOrEmpty(doc.PathName) ? "<empty>" : doc.PathName)}')");
-        }
-        catch (Autodesk.Revit.Exceptions.InvalidObjectException)
-        {
-            SmartConLogger.Debug(
-                $"CloseAndRelease: document '{Path.GetFileName(sourcePath)}' already closed by Revit " +
-                "(InvalidObjectException after SaveAs-overwrite) — no leak");
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                $"CloseAndRelease: failed to close document '{Path.GetFileName(sourcePath)}': {ex.Message} " +
-                "[Action: document may remain open in Revit — user can close it manually]");
-        }
-    }
-
-    /// <summary>
-    /// Enumerate every open document in the Revit session and log it with
-    /// its title, path, validity and family-document flag. Documents whose
-    /// path contains <paramref name="filterId"/> are tagged so callers (e.g.
-    /// <c>DeleteFamilyAsync</c> catching <c>IOException</c>) can identify
-    /// which open document holds the lock on a managed path. Marshalled via
-    /// <c>IFamilyManagerAwaitableEvent</c>, so safe to call from any thread.
-    /// </summary>
-    public async Task LogOpenRevitDocumentsStateAsync(
-        string contextTag,
-        string? filterId = null,
-        CancellationToken ct = default)
-    {
-        using var _scope = SmartConLogger.BeginScope("FamilyPrep",
-            ("Method", nameof(LogOpenRevitDocumentsStateAsync)),
-            ("ContextTag", contextTag),
-            ("FilterId", filterId ?? "<none>"));
-
-        await _awaitableEvent.RaiseAsync(_ =>
-        {
-            LogAllOpenRevitDocuments(filterId);
-        }, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Synchronous helper that walks <c>Application.Documents</c> and writes
-    /// one structured <c>Info</c> line per open document. Must be called on
-    /// the Revit UI thread. Best-effort: any per-document access failure is
-    /// logged and skipped so a single corrupted document does not hide the
-    /// rest of the session state.
-    /// </summary>
-    private void LogAllOpenRevitDocuments(string? filterId = null)
-    {
-        try
-        {
-            var activeDoc = _revitContext.GetDocument();
-            if (activeDoc is null)
-            {
-                SmartConLogger.Info("LogAllOpenRevitDocuments: no active document (Revit context is null)");
-                return;
-            }
-
-            var revitApp = activeDoc.Application;
-            var allDocs = revitApp.Documents.OfType<Document>().ToList();
-            var heldKeys = new HashSet<string>(_openedDocuments.Keys, StringComparer.Ordinal);
-
-            var lines = new List<string>(allDocs.Count);
-            var matchCount = 0;
-
-            foreach (var d in allDocs)
-            {
-                string title;
-                try { title = d.Title; }
-                catch (Exception ex) { title = $"<title-threw:{ex.GetType().Name}>"; }
-
-                string path;
-                try { path = d.PathName ?? string.Empty; }
-                catch (Exception ex) { path = $"<path-threw:{ex.GetType().Name}>"; }
-
-                bool isValid;
-                try { isValid = d.IsValidObject; }
-                catch (Exception ex) { isValid = false; title += $"(IsValidObject-threw:{ex.GetType().Name})"; }
-
-                bool isFamilyDoc;
-                try { isFamilyDoc = d.IsFamilyDocument; }
-                catch { isFamilyDoc = false; }
-
-                var heldFlag = heldKeys.Contains(path) ? " [HELD-OPEN]" : string.Empty;
-
-                var filterFlag = string.Empty;
-                if (ContainsOrdinalIgnoreCase(path, filterId))
-                {
-                    filterFlag = " [MATCHES-FILTER]";
-                    matchCount++;
-                }
-
-                var pathDisplay = string.IsNullOrEmpty(path) ? "<empty>" : path;
-                lines.Add(
-                    $"  title='{title}', path='{pathDisplay}', valid={isValid}, " +
-                    $"isFamilyDoc={isFamilyDoc}{heldFlag}{filterFlag}");
-            }
-
-            SmartConLogger.Info(
-                $"app.Documents.Size={allDocs.Count}, heldOpenInCache={_openedDocuments.Count}, " +
-                $"filterMatches={matchCount}. Open docs:\n{string.Join("\n", lines)}");
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"LogAllOpenRevitDocuments failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private async Task<PreparedFamilyItem> PrepareSingleFileAsync(
-        string filePath, CancellationToken ct)
-    {
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-        SmartConLogger.Debug($"Preparing file: {Path.GetFileName(filePath)}");
-
-        Document? doc = null;
-        FamilySnapshot? snapshot = null;
-        IReadOnlyList<FamilyGeometryPerType>? geometryPerType = null;
-
-        try
-        {
-            var openSw = Stopwatch.StartNew();
-            doc = await _awaitableEvent
-                .RaiseAsync(app =>
-                {
-                    var activeDoc = _revitContext.GetDocument();
-                    return activeDoc.Application.OpenDocumentFile(filePath);
-                }, ct)
-                .ConfigureAwait(false);
-            openSw.Stop();
-
-            if (doc is null)
-                throw new InvalidOperationException("OpenDocumentFile returned null");
-
-            if (openSw.ElapsedMilliseconds > 2000)
-            {
-                SmartConLogger.Warn(
-                    $"OpenDocumentFile slow: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
-                    $"(heldOpen={_openedDocuments.Count}) " +
-                    "[Action: known Revit degradation after 30+ opens; consider splitting batch into sub-batches of 20]");
-            }
-            else
-            {
-                SmartConLogger.Debug(
-                    $"OpenDocumentFile: {openSw.ElapsedMilliseconds}ms for '{Path.GetFileName(filePath)}' " +
-                    $"(heldOpen={_openedDocuments.Count})");
-            }
-
-            if (!doc.IsFamilyDocument)
-                throw new InvalidOperationException("File is not a family document");
-
-            // Phase 27B: bake Type Catalog (.txt) into the held-open family
-            // document BEFORE extracting the snapshot. This way the snapshot
-            // contains the baked types and the content hash is computed over
-            // the baked content — eliminating the re-open that BakeAsync
-            // performed in Commit. The document is already open; baker only
-            // runs a transaction + regenerate, no save/close.
-            var sidecarPath = Path.ChangeExtension(filePath, ".txt");
-            if (File.Exists(sidecarPath))
-            {
-                using var _bakeScope = SmartConLogger.BeginScope("Sidecar",
-                    ("Method", "PrepareBake"),
-                    ("File", Path.GetFileName(sidecarPath)));
-
-                SmartConLogger.Debug(
-                    $"PrepareBake: .txt sidecar found for '{Path.GetFileName(filePath)}' — " +
-                    "reading content");
-
-                var catalogContent = await Task.Run(
-                    () => LocalFamilyImportService.ReadTypeCatalogWithEncodingFallback(sidecarPath),
-                    ct).ConfigureAwait(false);
-
-                if (catalogContent.Length == 0)
-                {
-                    SmartConLogger.Warn(
-                        $"PrepareBake: Type Catalog file is empty: '{Path.GetFileName(sidecarPath)}' " +
-                        "[Action: verify the .txt content — snapshot will use raw .rfa types]");
-                }
-                else
-                {
-                    var parseResult = TypeCatalogParser.Parse(catalogContent);
-                    if (!parseResult.HasEntries)
-                    {
-                        SmartConLogger.Warn(
-                            $"PrepareBake: parsed 0 entries from '{Path.GetFileName(sidecarPath)}' " +
-                            "[Action: verify the Type Catalog format — snapshot will use raw .rfa types]");
-                    }
-                    else
-                    {
-                        SmartConLogger.Debug(
-                            $"PrepareBake: baking {parseResult.Entries.Count} type(s) " +
-                            "into held-open document (no re-open)");
-
-                        var bakeResult = await _typeCatalogBaker
-                            .BakeInExistingDocumentAsync(doc, parseResult, ct)
-                            .ConfigureAwait(false);
-
-                        if (!bakeResult.Success)
-                        {
-                            SmartConLogger.Warn(
-                                $"PrepareBake: bake failed — {bakeResult.ErrorMessage} " +
-                                "[Action: verify the .rfa and .txt are compatible — snapshot will use raw .rfa types]");
-                        }
-                        else
-                        {
-                            SmartConLogger.Info(
-                                $"PrepareBake: baked {bakeResult.BakedTypeCount} type(s) " +
-                                "into held-open document — snapshot will contain baked types");
-                        }
-                    }
-                }
-            }
-            else
-            {
-                SmartConLogger.Debug(
-                    $"PrepareBake: no .txt sidecar for '{Path.GetFileName(filePath)}' — " +
-                    "snapshot from raw .rfa");
-            }
-
-            // Phase: snapshot + hashing only. 3D geometry extraction is
-            // DEFERRED to the post-confirmation geometry pipeline
-            // (FamilyGeometryPipeline.RunAsync → IFamilyGeometryExtractor.ExtractAsync)
-            // so it runs on a freshly-opened managed .rfa AFTER the user
-            // confirms the batch dialog, not on a held-open document BEFORE.
-            // Rationale (white-dialog bug): ExtractGeometryPerType uses
-            // Transaction + RollBack on a held-open family document,
-            // which on net48 R2019-2024 leaves the WPF render thread in a
-            // zombie state — the following ShowDialog blocks ~9s waiting
-            // for paint (white window). Deferring extraction (passing null)
-            // keeps Prepare fast and the dialog responsive.
-            var familySnapshot = await _awaitableEvent
-                .RaiseAsync(app => _snapshotExtractor.ExtractFromFamilyDocument(doc), ct)
-                .ConfigureAwait(false);
-            snapshot = familySnapshot;
-            // geometryPerType stays null → pipeline extracts post-confirm.
-
-            _openedDocuments[filePath] = doc;
-            SmartConLogger.Debug($"Document held open: {Path.GetFileName(filePath)}");
-
-            LogDiagSnapshot("Prepare.perFile", _openedDocuments.Count);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"PrepareSingleFile cleanup: {ex.Message}");
-            if (doc is not null)
-            {
-                try { doc.Close(false); } catch { }
-            }
-            throw;
-        }
-
-        var hash = _contentHasher.ComputeForLoadable(snapshot!);
-        var normalizedName = FamilyNameNormalizer.Normalize(fileName);
-
-        var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
-            ct).ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"File prepared: '{fileName}', hash={hash?.HexString ?? "null"}, " +
-            $"status={dedupResult.Status}");
-
-        return new PreparedFamilyItem(
-            SourcePath: filePath,
-            DisplayName: fileName,
-            RevitMajorVersion: GetRevitMajorVersion(),
-            ContentHash: hash,
-            LoadableSnapshot: snapshot,
-            SystemSnapshot: null,
-            ErrorMessage: null,
-            Source: null,
-            SourceTypes: null,
-            FamilySource: "loadable",
-            Status: dedupResult.Status,
-            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel,
-            GeometryPerType: geometryPerType);
-    }
-
-    private async Task<PreparedFamilyItem> PrepareSystemCategoryAsync(
-        CategoryAnalysis analysis, CancellationToken ct)
-    {
-        SmartConLogger.Debug($"Preparing system category: {analysis.DisplayName}");
-
-        var typeUniqueIds = analysis.Types.Select(t => t.UniqueId).ToList();
-        var builtInCategory = analysis.Category;
-
-        var snapshot = await _awaitableEvent
-            .RaiseAsync(app =>
-            {
-                var activeDoc = _revitContext.GetDocument();
-                return _snapshotExtractor.ExtractFromProject(
-                    activeDoc, typeUniqueIds, builtInCategory);
-            }, ct)
-            .ConfigureAwait(false);
-
-        var hash = _contentHasher.ComputeForSystem(snapshot);
-        var displayName = analysis.DisplayName;
-        var normalizedName = FamilyNameNormalizer.Normalize(displayName);
-
-        var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "system", ct),
-            ct).ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"System category prepared: '{displayName}', hash={hash?.HexString ?? "null"}, " +
-            $"status={dedupResult.Status}");
-
-        var sourceTypes = analysis.Types
-            .Select(t => new FamilySourceTypeInfo(t.UniqueId, t.Name, displayName, (int)builtInCategory))
-            .ToList();
-
-        var source = new FamilyImportSource.SystemSource(
-            DisplayName: displayName,
-            CategoryId: (int)builtInCategory,
-            TypeUniqueIds: typeUniqueIds,
-            TypeNames: analysis.Types.Select(t => t.Name).ToList());
-
-        return new PreparedFamilyItem(
-            SourcePath: $"system://{displayName}",
-            DisplayName: displayName,
-            RevitMajorVersion: GetRevitMajorVersion(),
-            ContentHash: hash,
-            LoadableSnapshot: null,
-            SystemSnapshot: snapshot,
-            ErrorMessage: null,
-            Source: source,
-            SourceTypes: sourceTypes,
-            FamilySource: "system",
-            Status: dedupResult.Status,
-            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
-    }
-
-    private async Task<PreparedFamilyItem> PrepareLoadableFromProjectAsync(
-        LoadableFamilyInfo loadable, CancellationToken ct)
-    {
-        SmartConLogger.Debug($"Preparing loadable from project: {loadable.FamilyName}");
-
-        FamilySnapshot? snapshot = null;
-        Document? familyDoc = null;
-        var sourcePath = $"loadable://{loadable.FamilyName}";
-
-        try
-        {
-            snapshot = await _awaitableEvent
-                .RaiseAsync<FamilySnapshot>(app =>
-                {
-                    var activeDoc = _revitContext.GetDocument();
-                    var family = activeDoc.GetElement(loadable.FamilyUniqueId) as Autodesk.Revit.DB.Family;
-                    if (family is null)
-                        throw new InvalidOperationException($"Family '{loadable.FamilyName}' not found by UniqueId");
-
-                    var loadedSymbolIds = family.GetFamilySymbolIds();
-                    SmartConLogger.Debug(
-                        $"EditFamily IN: family.UniqueId={loadable.FamilyUniqueId}, name='{loadable.FamilyName}', " +
-                        $"loadedSymbolsInProject={loadedSymbolIds.Count}, IsEditable={family.IsEditable}, " +
-                        $"alreadyHeldOpen={_openedDocuments.ContainsKey(sourcePath)}");
-
-                    familyDoc = activeDoc.EditFamily(family);
-
-                    SmartConLogger.Debug(
-                        $"EditFamily OUT: familyDoc.PathName='{(string.IsNullOrEmpty(familyDoc.PathName) ? "<empty>" : familyDoc.PathName)}', " +
-                        $"Title='{familyDoc.Title}', IsValidObject={familyDoc.IsValidObject}, " +
-                        $"IsFamilyDocument={familyDoc.IsFamilyDocument}");
-
-                    return _snapshotExtractor.ExtractFromFamilyDocument(familyDoc);
-                }, ct)
-                .ConfigureAwait(false);
-
-            if (familyDoc is not null)
-            {
-                _openedDocuments[sourcePath] = familyDoc;
-                SmartConLogger.Debug($"EditFamily document held open: {loadable.FamilyName}");
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Debug($"PrepareLoadableFromProject cleanup: {ex.Message}");
-            if (familyDoc is not null)
-            {
-                try { familyDoc.Close(false); } catch { }
-            }
-            throw;
-        }
-
-        var hash = _contentHasher.ComputeForLoadable(snapshot!);
-        var normalizedName = FamilyNameNormalizer.Normalize(loadable.FamilyName);
-
-        var dedupResult = await Task.Run(
-            () => _dedupService.CheckAsync(normalizedName, hash, "loadable", ct),
-            ct).ConfigureAwait(false);
-
-        SmartConLogger.Info(
-            $"Loadable from project prepared: '{loadable.FamilyName}', " +
-            $"hash={hash?.HexString ?? "null"}, status={dedupResult.Status}");
-
-        var source = new FamilyImportSource.LoadableSource(
-            FamilyName: loadable.FamilyName,
-            FamilyUniqueId: loadable.FamilyUniqueId,
-            CategoryName: loadable.CategoryName);
-
-        return new PreparedFamilyItem(
-            SourcePath: sourcePath,
-            DisplayName: loadable.FamilyName,
-            RevitMajorVersion: GetRevitMajorVersion(),
-            ContentHash: hash,
-            LoadableSnapshot: snapshot,
-            SystemSnapshot: null,
-            ErrorMessage: null,
-            Source: source,
-            SourceTypes: null,
-            FamilySource: "loadable",
-            Status: dedupResult.Status,
-            ExistingCatalogItemId: dedupResult.ExistingCatalogItemId,
-            ExistingVersionLabel: dedupResult.ExistingVersionLabel,
-            MatchedVersionLabel: dedupResult.HashMatch?.MatchedVersionLabel);
     }
 
     private int GetRevitMajorVersion()

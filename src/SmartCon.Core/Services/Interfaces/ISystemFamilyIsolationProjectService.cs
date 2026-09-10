@@ -18,11 +18,16 @@ public interface ISystemFamilyIsolationProjectService
     /// normalized instance per type, then SaveAs into the supplied managed
     /// storage path. Source MUST be the active project.
     /// MUST be called from the Revit UI thread (inside an ExternalEvent).
+    /// The staged file is marked as a SmartCon reference mini-project
+    /// (Issue #188) BEFORE SaveAs.
     /// </summary>
+    /// <param name="catalogItemId">Owning catalog item for the mini-project
+    /// marker when known (precomputed or existing id); null is allowed.</param>
     CreateCleanProjectResult CreateCleanProjectWithTypesAndInstances(
         Document sourceDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory category,
         string displayName,
-        string managedRvtPath);
+        string managedRvtPath,
+        string? catalogItemId = null);
 }

@@ -21,6 +21,24 @@ _externalEvent.Raise();
 _transactionService.RunInTransaction("name", doc => { /* Revit API здесь */ });
 ```
 
+### I-01a: Исключение для modal command context (PipeConnectEditor)
+
+`PipeConnectEditorViewModel` вызывает Revit API **напрямую** из `[RelayCommand]`-методов
+(через `_groupSession.RunInTransaction(...)`, `_connSvc.*`, `_transformSvc.*`) без
+`ExternalEvent`. Это **допустимо** потому что:
+
+1. `view.ShowDialog()` блокирует `IExternalCommand.Execute` — command context не возвращается
+2. При `ShowDialog` WPF UI thread == Revit main thread (один поток) — гонок нет
+3. Revit idle loop НЕ качает пока modal открыт — нет конфликтов с регенерацией
+4. `TransactionGroup` живёт в command context до закрытия окна
+
+**Это исключение действует ТОЛЬКО для modal окон внутри `IExternalCommand.Execute`.**
+Любой переход на modeless обязан обернуть ВСЕ Revit API вызовы в `ExternalEvent.Raise()`.
+Прямые вызовы из modeless UI = гонки и `InvalidOperationException`
+(«Starting a transaction from an external application running outside of API context is not allowed»).
+
+Полное обоснование почему modeless невозможен для PipeConnect — см. [ADR-043](adr/043-pipeconnect-modal-justification.md).
+
 ---
 
 ## I-02: Внутренние единицы
@@ -53,8 +71,12 @@ _transactionService.RunInTransaction("Name", doc => { ... });
 `Document`, не управляемый `ITransactionService` (у него свой стек транзакций).
 
 **Где применяется:**
-- `FittingCtcManager.ApplyFittingCtcToFamily` — запись CTC описаний коннекторов в family.
+- `CtcFamilyWriter.ApplyFittingCtcToFamily` — запись CTC описаний коннекторов в family.
 - `RevitFamilyConnectorService.SetConnectorTypeCode` — запись описания коннектора в family.
+- `RevitFamilySnapshotExtractor.ExtractEvaluatedAtReferenceType` — `SmartCon_HashReferenceType`: переключение `FamilyManager.CurrentType` на детерминированный reference-тип перед извлечением evaluated-секций снапшота (#249, FHV15). Транзакция всегда **откатывается** (RollBack) — документ и его IsModified не меняются; при уже открытой транзакции используется `SubTransaction`. Заменило удалённый `EmbeddedContentVerifier.AlignCurrentTypeForVerification` (#240).
+- `RevitFamilySnapshotExtractor.ExtractGeometryPerType` — `SmartCon_GeometryPerType`: перебор типов для per-type превью, Transaction+RollBack (тот же паттерн).
+- `RevitFamilySnapshotExtractor` (`SmartCon_PhantomValues`, #209) и `RevitFamilyDataExtractionService` (`SmartCon_TempTypeExtraction`) — временные ES-записи в family document, Transaction+RollBack.
+- `RevitFamilyHealthChecker` — `SmartCon Health Check` группы/транзакции для проверок family document.
 
 **Правило:** `new Transaction` используется только для family doc. Проектный
 `Document` всегда через `ITransactionService`. После commit/load family doc
@@ -85,6 +107,12 @@ _transactionService.RunInTransaction("Name", doc => { ... });
 `DisplayUnitType` **удалён** начиная с Revit 2022. Использовать только:
 - `UnitTypeId` (например `UnitTypeId.Millimeters`)
 - `ForgeTypeId`
+
+**Исключение:** в `#if`-ветках R19–R20 (`src/SmartCon.Revit/Compatibility/RevitUnitsCompat.cs`,
+`#else` от `REVIT2021_OR_GREATER`) `DisplayUnitType` легален — R19-бинарник исполняется
+только на Revit 2019/2020, где этот API существует. Для диапазона R21–2023
+(`Definition.GetDataType`/`GetSpecTypeId`) — cached-reflection по #153: прямой вызов
+отравляет JIT на рантайме без этого API.
 
 ---
 
@@ -162,9 +190,9 @@ public partial class SomeView : Window
 
 ## I-11: ElementIdCompat — единственный RevitAPI-зависимый класс в Core
 
-`ElementIdCompat` в `SmartCon.Core/Compatibility/` — единственный допустимый класс в Core, зависящий от RevitAPI (carrier-тип `ElementId`). Новые классы с RevitAPI-зависимостью в Core — запрещены без явного ревью архитектора.
+`ElementIdCompat` в `SmartCon.Core/Compatibility/` — единственный допустимый класс в Core, зависящий от RevitAPI (carrier-тип `ElementId`). Новые классы с RevitAPI-зависимостью в Core — запрещены без явного ревью архитектора. (Аудит 2.1: `CategoryCompat` с нарушением этого правила перенесён в `SmartCon.Revit/Compatibility/`.)
 
-**Мотивация:** Multi-version support (Revit 2021-2025) требует абстракции над различиями 32/64-bit ElementId. `ElementIdCompat` решает это через `#if REVIT2024_OR_GREATER`.
+**Мотивация:** Multi-version support (Revit 2019-2027) требует абстракции над различиями 32/64-bit ElementId. `ElementIdCompat` решает это через `#if REVIT2024_OR_GREATER`.
 
 ---
 
@@ -226,8 +254,10 @@ ColCode.Header = LanguageManager.GetString(StringLocalization.Keys.Col_Code);
 
 - DELETE journal mode для универсальной совместимости (локальные диски и сетевые SMB)
 - DELETE mode используется universally для любых путей (локальные D:/C: и сетевые UNC)
+- WAL **запрещён** — не работает поверх сетевых ФС (процессы на разных машинах не разделяют shared memory wal-index), см. ADR-050
 - Только один writer одновременно (ограничение SQLite)
-- `LocalCatalogDatabase.SwitchToPath` защищён lock-ом
+- Read-only роли (Engineer) получают коннекшены с `Mode=ReadOnly` — `DbAccessControlService` выставляет флаг через `LocalCatalogDatabase.SetWriteAccess` после резолва роли. Операции, которые обязаны писать независимо от роли (bookkeeping `db_users`, миграции схемы), используют `CreateWritableConnection()`
+- `LocalCatalogDatabase.SwitchToPath` защищён lock-ом и сбрасывает write access в writable до повторного резолва роли
 - `new SqliteConnection()` вне `LocalCatalogDatabase` **запрещён**
 
 ---

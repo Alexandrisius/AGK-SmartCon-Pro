@@ -23,6 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (category is null) return;
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        var progressRunId = BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -35,8 +36,9 @@ public sealed partial class FamilyManagerMainViewModel
             var subCategoryIds = ExpandCategorySubtree(category);
 
             var doc = _revitContext.GetDocument();
+            var progress = new Progress<StaleCheckProgress>(p => OnStaleCheckProgress(progressRunId, p));
             var results = await _staleDetector.CheckCategoryAsync(
-                subCategoryIds, doc, CancellationToken.None)
+                subCategoryIds, doc, CancellationToken.None, progress)
                 .ConfigureAwait(true);
 
             await ApplyStaleResultsToTreeAsync(results, CancellationToken.None).ConfigureAwait(true);
@@ -47,19 +49,31 @@ public sealed partial class FamilyManagerMainViewModel
             if (totalLoaded == 0)
             {
                 StatusMessage = totalInTree == 0
-                    ? $"«{category.DisplayName}»: в каталоге нет семейств этой категории"
-                    : $"«{category.DisplayName}»: семейства в каталоге есть, но ни одно не загружено в проект";
+                    ? string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryNoFamilies)
+                            ?? "«{0}»: в каталоге нет семейств этой категории",
+                        category.DisplayName)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryNoneLoaded)
+                            ?? "«{0}»: семейства в каталоге есть, но ни одно не загружено в проект",
+                        category.DisplayName);
             }
             else
             {
-                StatusMessage = $"«{category.DisplayName}»: проверено {totalLoaded}, устарело {staleCount}";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_CategoryCheckResult)
+                        ?? "«{0}»: проверено {1}, устарело {2}",
+                    category.DisplayName, totalLoaded, staleCount);
             }
             SmartConLogger.Info(
                 $"Check completed: {staleCount} stale of {totalLoaded} families in category '{category.CategoryId}' (subtree={subCategoryIds.Count}).");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{category.DisplayName}»: ошибка проверки — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_CheckError)
+                    ?? "«{0}»: ошибка проверки — {1}",
+                category.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckCategoryAsync failed: {ex.Message}. [Action: report to user, retry from context menu]");
         }
@@ -67,8 +81,32 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            CompleteProgress();
             NotifyCheckCommands();
         }
+    }
+
+    /// <summary>
+    /// Per-family feed of <see cref="IStaleDetector.CheckCategoryAsync"/> —
+    /// renders the pane progress bar + «Проверка X из Y — имя» status text.
+    /// <see cref="Progress{T}"/> POSTS the callback: the run-id guard keeps
+    /// reports arriving after a fast run finished (they fill the bar during
+    /// the completion hold) and drops superseded/already-hidden ones —
+    /// see <see cref="OnComplianceCheckProgress"/>.
+    /// </summary>
+    private void OnStaleCheckProgress(int runId, StaleCheckProgress p)
+    {
+        if (!IsProgressReportCurrent(runId))
+        {
+            SmartConLogger.Debug(
+                $"OnStaleCheckProgress: dropped stale report {p.Completed}/{p.Total} of run {runId} (current {_progressRunId})");
+            return;
+        }
+        StaleCheckMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheck_ProgressFormat)
+                ?? "Проверка {0} из {1} — {2}",
+            p.Completed, p.Total, p.CurrentFamilyName);
+        ReportProgress(p.Completed, p.Total);
     }
 
     private static IReadOnlyList<string> ExpandCategorySubtree(CategoryNodeViewModel root)
@@ -100,6 +138,7 @@ public sealed partial class FamilyManagerMainViewModel
         if (family is null) return;
         IsStaleCheckInProgress = true;
         StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleCheckInProgress);
+        BeginProgress();
         try
         {
             using var _scope = SmartConLogger.BeginScope(
@@ -108,13 +147,54 @@ public sealed partial class FamilyManagerMainViewModel
                 ("CatalogItemId", family.CatalogItemId));
 
             var doc = _revitContext.GetDocument();
+
+            // Issue #104: system leaves are matched by their types'
+            // ElementType markers, not by a Family element.
+            if (family.FamilySource == "system")
+            {
+                var systemResult = await _staleDetector.CheckSystemFamilyAsync(
+                    family.CatalogItemId, family.DisplayName, doc, CancellationToken.None)
+                    .ConfigureAwait(true);
+
+                if (systemResult is null)
+                {
+                    StatusMessage = string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyNotLoaded)
+                            ?? "«{0}»: не загружено в проект — сначала загрузите",
+                        family.DisplayName);
+                    return;
+                }
+
+                family.IsStale = systemResult.IsStale;
+                family.StaleReason = systemResult.Reason;
+                StatusMessage = systemResult.IsStale
+                    ? string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyStaleReason)
+                            ?? "«{0}»: устарело — {1}",
+                        family.DisplayName, systemResult.Reason)
+                    : string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyUpToDate)
+                            ?? "«{0}»: актуально",
+                        family.DisplayName);
+                // The detector already upserted the fresh result (and the
+                // per-type verdicts) into the snapshot — apply the merged
+                // picture so the orange type dots and the category rollup
+                // repaint, exactly like after a category Check.
+                await ApplyStaleResultsToTreeAsync([], CancellationToken.None)
+                    .ConfigureAwait(true);
+                return;
+            }
+
             var familyId = await _awaitableEvent.RaiseAsync(
                 _ => _familyFinder.FindByName(doc, family.DisplayName),
                 CancellationToken.None).ConfigureAwait(true);
 
             if (familyId is null)
             {
-                StatusMessage = $"«{family.DisplayName}»: не загружено в проект — сначала загрузите";
+                StatusMessage = string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyNotLoaded)
+                        ?? "«{0}»: не загружено в проект — сначала загрузите",
+                    family.DisplayName);
                 SmartConLogger.Info(
                     $"CheckFamily: family '{family.DisplayName}' not loaded in document. " +
                     "[Action: skipped, user can load then re-check]");
@@ -131,14 +211,27 @@ public sealed partial class FamilyManagerMainViewModel
             // no InvalidateCache — other categories' stale markers must stay intact.
 
             StatusMessage = result.IsStale
-                ? $"«{family.DisplayName}»: устарело — {result.Reason}"
-                : $"«{family.DisplayName}»: актуально";
+                ? string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyStaleReason)
+                        ?? "«{0}»: устарело — {1}",
+                    family.DisplayName, result.Reason)
+                : string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Status_FamilyUpToDate)
+                        ?? "«{0}»: актуально",
+                    family.DisplayName);
             SmartConLogger.Info(
                 $"Check completed: '{family.DisplayName}' IsStale={result.IsStale} Reason={result.Reason}.");
+            // Same repaint as the system path above: the snapshot holds the
+            // fresh result — apply it so the category rollup stays truthful.
+            await ApplyStaleResultsToTreeAsync([], CancellationToken.None)
+                .ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"«{family.DisplayName}»: ошибка проверки — {ex.Message}";
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Status_CheckError)
+                    ?? "«{0}»: ошибка проверки — {1}",
+                family.DisplayName, ex.Message);
             SmartConLogger.Warn(
                 $"CheckFamilyAsync failed: {ex.Message}. [Action: report to user, retry from context menu]");
         }
@@ -146,125 +239,13 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsStaleCheckInProgress = false;
             StaleCheckMessage = null;
+            CompleteProgress();
             NotifyCheckCommands();
         }
     }
 
     private bool CanCheckFamily(FamilyLeafNodeViewModel? family) =>
         family != null && !IsStaleCheckInProgress;
-
-    [RelayCommand(CanExecute = nameof(CanUpdateCategoryOverwrite))]
-    private Task UpdateCategoryOverwriteParamsAsync(CategoryNodeViewModel? category)
-    {
-        if (category is null) return Task.CompletedTask;
-        return UpdateCategoryStaleAsync(category, overwriteParameterValues: true);
-    }
-
-    private bool CanUpdateCategoryOverwrite(CategoryNodeViewModel? category) =>
-        category != null && category.HasStale && !IsStaleCheckInProgress;
-
-    [RelayCommand(CanExecute = nameof(CanUpdateCategoryKeep))]
-    private Task UpdateCategoryKeepParamsAsync(CategoryNodeViewModel? category)
-    {
-        if (category is null) return Task.CompletedTask;
-        return UpdateCategoryStaleAsync(category, overwriteParameterValues: false);
-    }
-
-    private bool CanUpdateCategoryKeep(CategoryNodeViewModel? category) =>
-        category != null && category.HasStale && !IsStaleCheckInProgress;
-
-    private async Task UpdateCategoryStaleAsync(CategoryNodeViewModel category, bool overwriteParameterValues)
-    {
-        IsStaleCheckInProgress = true;
-        SmartConLogger.Debug(
-            $"UpdateCategoryStaleAsync START: IsStaleCheckInProgress=true (was false). " +
-            $"CategoryId={category.CategoryId}, Overwrite={overwriteParameterValues}");
-        StaleCheckMessage = LanguageManager.GetString(StringLocalization.Keys.FM_StaleUpdateInProgress);
-        try
-        {
-            using var _scope = SmartConLogger.BeginScope(
-                "StaleDetection",
-                ("Method", nameof(UpdateCategoryStaleAsync)),
-                ("CategoryId", category.CategoryId));
-
-            var snapshot = _staleDetector.GetCachedSnapshot();
-            if (snapshot is null)
-            {
-                SmartConLogger.Info(
-                    "UpdateCategory: no snapshot, run Проверить first. " +
-                    "[Action: no-op, prompt user to check first]");
-                return;
-            }
-
-            // 1) Determine which catalog item IDs belong to this category subtree.
-            //    Without this filter the batch would include stale families from
-            //    every other category checked in the session (e.g. all 42
-            //    uncategorized stale families when the user clicks 'Update' on
-            //    a 2-family category).
-            var rootCategories = TreeNodes.OfType<CategoryNodeViewModel>().ToList();
-            var adapterRoots = CategoryTreeAdapter.AdaptRoots(rootCategories);
-            var subCategoryIds = new HashSet<string>(
-                ExpandCategorySubtree(category),
-                StringComparer.Ordinal);
-            var allStaleIds = snapshot.Results
-                .Where(r => r.Value.IsStale)
-                .Select(r => r.Key)
-                .ToList();
-            var categoryMap = _staleAggregator.BuildCatalogToCategoryMap(
-                allStaleIds, adapterRoots);
-            var staleIdsInSubtree = StaleSnapshotLogic.FilterStaleBySubtree(
-                allStaleIds, categoryMap, subCategoryIds);
-            if (staleIdsInSubtree.Count == 0)
-            {
-                SmartConLogger.Info(
-                    $"UpdateCategory: no stale items in '{category.CategoryId}' (snapshot has " +
-                    $"{snapshot.Results.Count(r => r.Value.IsStale)} stale total). " +
-                    "[Action: no-op]");
-                return;
-            }
-
-            var request = new StaleUpdateRequest(staleIdsInSubtree, overwriteParameterValues);
-            var progress = new Progress<StaleBatchUpdateProgress>(p =>
-            {
-                StaleCheckMessage = $"{p.Completed}/{p.Total}: {p.CurrentFamilyName}";
-            });
-
-            var result = await _staleUpdater.UpdateBatchAsync(request, progress, CancellationToken.None)
-                .ConfigureAwait(true);
-
-            var modeText = overwriteParameterValues ? "с перезаписью параметров" : "с сохранением параметров";
-            if (result.FailedCount == 0)
-            {
-                StatusMessage = $"«{category.DisplayName}»: обновлено {result.SuccessCount} из {result.TotalRequested} ({modeText})";
-            }
-            else
-            {
-                StatusMessage = $"«{category.DisplayName}»: обновлено {result.SuccessCount} из {result.TotalRequested}, ошибок: {result.FailedCount}";
-            }
-            SmartConLogger.Info(
-                $"Batch update in '{category.CategoryId}': {result.SuccessCount}/{result.TotalRequested} succeeded. " +
-                $"Failed: [{string.Join(", ", result.FailedCatalogItemIds)}]");
-
-            // Remove only the successfully updated items from the snapshot so the
-            // next Check re-evaluates them from scratch. Other categories' markers
-            // (and the families that FAILED to update) stay intact.
-            _staleDetector.MarkUpdated(result.SuccessCatalogItemIds);
-            await LoadTreeAsync().ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"«{category.DisplayName}»: ошибка обновления — {ex.Message}";
-            SmartConLogger.Warn(
-                $"UpdateCategoryStaleAsync failed: {ex.Message}. " +
-                "[Action: report to user, retry from context menu]");
-        }
-        finally
-        {
-            IsStaleCheckInProgress = false;
-            StaleCheckMessage = null;
-            NotifyCheckCommands();
-        }
-    }
 
     /// <summary>
     /// Updates <c>HasStale</c> / <c>StaleCount</c> on every category in the tree
@@ -285,10 +266,10 @@ public sealed partial class FamilyManagerMainViewModel
         ct.ThrowIfCancellationRequested();
 
         // 0) Get the complete picture: existing snapshot + fresh results.
-        //    Returns null only if the cache has been invalidated (DB switch,
-        //    explicit InvalidateCache) — in that case we have nothing to apply.
+        //    A cold/invalidated cache is no longer a silent no-op (#220):
+        //    GetMergedSnapshot starts from the empty snapshot, so the
+        //    post-DnD tree rebuild always recomputes badges.
         var merged = _staleDetector.GetMergedSnapshot(results);
-        if (merged is null) return;
 
         // 1) Collect all stale IDs from the merged snapshot — covers every
         //    category that was checked in this session.
@@ -334,6 +315,9 @@ public sealed partial class FamilyManagerMainViewModel
             }
         }
 
+        // 5) #187: per-type orange dots follow the freshly checked markers.
+        ApplySystemTypeStaleMaps();
+
         await Task.CompletedTask;
     }
 
@@ -341,37 +325,10 @@ public sealed partial class FamilyManagerMainViewModel
     {
         CheckCategoryCommand.NotifyCanExecuteChanged();
         CheckFamilyCommand.NotifyCanExecuteChanged();
+        CheckCategoryRulesCommand.NotifyCanExecuteChanged();
+        CheckFamilyRulesCommand.NotifyCanExecuteChanged();
         UpdateCategoryOverwriteParamsCommand.NotifyCanExecuteChanged();
         UpdateCategoryKeepParamsCommand.NotifyCanExecuteChanged();
     }
 
-    private static IEnumerable<CategoryNodeViewModel> EnumerateAllCategories(
-        IEnumerable<CategoryNodeViewModel> roots)
-    {
-        var stack = new Stack<CategoryNodeViewModel>(roots);
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            yield return node;
-            foreach (var child in node.Children.OfType<CategoryNodeViewModel>())
-            {
-                stack.Push(child);
-            }
-        }
-    }
-
-    private static IEnumerable<FamilyLeafNodeViewModel> EnumerateAllLeaves(
-        IEnumerable<CategoryNodeViewModel> roots)
-    {
-        var stack = new Stack<CategoryNodeViewModel>(roots);
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            foreach (var child in node.Children)
-            {
-                if (child is FamilyLeafNodeViewModel leaf) yield return leaf;
-                else if (child is CategoryNodeViewModel sub) stack.Push(sub);
-            }
-        }
-    }
 }

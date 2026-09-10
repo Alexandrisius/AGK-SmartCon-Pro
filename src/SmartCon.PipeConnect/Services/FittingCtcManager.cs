@@ -1,11 +1,7 @@
 using Autodesk.Revit.DB;
-using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
-using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.PipeConnect.ViewModels;
-
-using static SmartCon.Core.Units;
 
 namespace SmartCon.PipeConnect.Services;
 
@@ -74,16 +70,6 @@ public sealed class FittingCtcManager(
     /// <summary>Promote virtual CTC overrides to pending writes for a single element.</summary>
     public void PromoteElementCtcToPendingWrites(Document doc, ElementId? elementId)
         => guessSvc.PromoteElementCtcToPendingWrites(doc, elementId);
-
-    /// <summary>Build connector setup items for the CTC assignment dialog from a FamilySymbol.</summary>
-    public List<FittingCtcSetupItem> BuildConnectorItems(
-        Document doc, FamilySymbol symbol, IReadOnlyList<ConnectorTypeDefinition> types,
-        FittingMappingRule rule, ConnectionTypeCode staticCtc, bool crossConnect = false)
-        => guessSvc.BuildConnectorItems(doc, symbol, types, rule, staticCtc, crossConnect);
-
-    /// <summary>Check if all connectors of a FamilySymbol have CTC defined.</summary>
-    public bool IsFittingCtcDefined(Document doc, FamilySymbol symbol)
-        => familyWriter.IsFittingCtcDefined(doc, symbol);
 
     /// <summary>Write CTC values to a family document and reload it.</summary>
     public void ApplyFittingCtcToFamily(

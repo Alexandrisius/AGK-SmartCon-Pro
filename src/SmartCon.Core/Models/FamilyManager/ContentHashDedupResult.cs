@@ -9,16 +9,23 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <see cref="FamilyBatchImportStatus.Existing"/>,
 /// <see cref="FamilyBatchImportStatus.Duplicate"/>, or
 /// <see cref="FamilyBatchImportStatus.Error"/>.</param>
-/// <param name="ExistingCatalogItemId">ID of the existing catalog item
-/// found by normalized name, or <c>null</c> if the name is not in the
-/// catalog.</param>
+/// <param name="ExistingCatalogItemId">ID of the catalog item this row
+/// resolves to. Issue #126: for <see cref="FamilyBatchImportStatus.Duplicate"/>
+/// this is the item matched BY CONTENT HASH (which may have a different
+/// name); for <see cref="FamilyBatchImportStatus.Existing"/> it is the
+/// item matched by normalized name; <c>null</c> for New/Error.</param>
 /// <param name="ExistingVersionLabel">Current version label of the
-/// existing item, or <c>null</c>.</param>
+/// resolved item, or <c>null</c>.</param>
 /// <param name="HashMatch">Cross-version hash match details if the
 /// status is <see cref="FamilyBatchImportStatus.Duplicate"/>; otherwise
 /// <c>null</c>.</param>
+/// <param name="IsCrossNameDuplicate">Issue #126: <c>true</c> when the
+/// content hash matched an item whose normalized name differs from this
+/// row's normalized name (the file was renamed). The batch dialog shows
+/// a warning icon with an explanatory tooltip for such rows.</param>
 public sealed record ContentHashDedupResult(
     FamilyBatchImportStatus Status,
     string? ExistingCatalogItemId,
     string? ExistingVersionLabel,
-    ContentHashMatch? HashMatch);
+    ContentHashMatch? HashMatch,
+    bool IsCrossNameDuplicate = false);

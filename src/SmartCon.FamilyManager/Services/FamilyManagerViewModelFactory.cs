@@ -1,6 +1,7 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.ViewModels.ProjectBase;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -22,6 +23,21 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IUserIdentityService _identityService;
     private readonly IFamilyStorageRenameService _renameService;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
+    private readonly IRevitContext _revitContext;
+    private readonly IFileNameParser _fileNameParser;
+    private readonly IFamilyGeometryPipeline _geometryPipeline;
+    private readonly IFamilyFileResolver _fileResolver;
+    private readonly IAvatarCropService _avatarCropService;
+    private readonly IDatabaseUpdateStateService _updateState;
+    private readonly ISharedParameterFileParser _sharedParameterFileParser;
+    private readonly IFamilyManagerUserSettingsRepository _userSettingsRepository;
+    private readonly IFamilyFactRepository _factRepository;
+    private readonly IValidationRuleRepository _ruleRepository;
+    private readonly ICategoryChangeGateService _categoryChangeGate;
+    private readonly IAssignmentRuleRepository _assignmentRuleRepository;
+    private readonly IRevitCategoryLabelService _revitCategoryLabels;
+    private readonly IRoutingEditorService _routingEditorService;
+    private readonly ICatalogActualizationService _actualization;
 
     public FamilyManagerViewModelFactory(
         IWritableFamilyCatalogProvider writableProvider,
@@ -39,7 +55,22 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IDbAccessControlService accessControl,
         IUserIdentityService identityService,
         IFamilyStorageRenameService renameService,
-        IFamilyManagerMetadataMediator metadataMediator)
+        IFamilyManagerMetadataMediator metadataMediator,
+        IRevitContext revitContext,
+        IFileNameParser fileNameParser,
+        IFamilyGeometryPipeline geometryPipeline,
+        IFamilyFileResolver fileResolver,
+        IAvatarCropService avatarCropService,
+        IDatabaseUpdateStateService updateState,
+        ISharedParameterFileParser sharedParameterFileParser,
+        IFamilyManagerUserSettingsRepository userSettingsRepository,
+        IFamilyFactRepository factRepository,
+        IValidationRuleRepository ruleRepository,
+        ICategoryChangeGateService categoryChangeGate,
+        IAssignmentRuleRepository assignmentRuleRepository,
+        IRevitCategoryLabelService revitCategoryLabels,
+        IRoutingEditorService routingEditorService,
+        ICatalogActualizationService actualization)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -57,6 +88,21 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _identityService = identityService;
         _renameService = renameService;
         _metadataMediator = metadataMediator;
+        _revitContext = revitContext;
+        _fileNameParser = fileNameParser;
+        _geometryPipeline = geometryPipeline;
+        _fileResolver = fileResolver;
+        _avatarCropService = avatarCropService;
+        _updateState = updateState;
+        _sharedParameterFileParser = sharedParameterFileParser;
+        _userSettingsRepository = userSettingsRepository;
+        _factRepository = factRepository;
+        _ruleRepository = ruleRepository;
+        _categoryChangeGate = categoryChangeGate;
+        _assignmentRuleRepository = assignmentRuleRepository;
+        _revitCategoryLabels = revitCategoryLabels;
+        _routingEditorService = routingEditorService;
+        _actualization = actualization;
     }
 
     public FamilyPropertiesViewModel CreatePropertiesViewModel(
@@ -64,27 +110,72 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
-        bool isReadOnly = false)
+        string? revitCategory = null,
+        bool isReadOnly = false,
+        string? familySource = null,
+        int? revitCategoryId = null,
+        string? focusRoutingTypeKey = null)
     {
         return new FamilyPropertiesViewModel(
             catalogItemId, name, description,
             categoryId, categoryPath, tags, contentStatus,
-            versionLabel, createdAtText, updatedAtText,
+            versionLabel, createdAtText, updatedAtText, revitCategory,
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
-            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService)
-        { IsReadOnly = isReadOnly };
+            _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
+            _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate,
+            familySource, revitCategoryId, _routingEditorService)
+        {
+            IsReadOnly = isReadOnly,
+            // #133 deep-link (routing-phantom badge): the presence of a
+            // focus type implies the Routing tab itself.
+            FocusRoutingTab = focusRoutingTypeKey is not null,
+            FocusRoutingTypeKey = focusRoutingTypeKey,
+        };
     }
+
+    /// <summary>
+    /// Routing part picker (ADR-072, Phase 3): family + type selection for
+    /// one routing rule, filtered by fitting category + part_type ordinals.
+    /// </summary>
+    public RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName,
+        string? contextLabel = null, int preferredJunctionType = -1, int connectorShapeBits = 0,
+        int requiredShapeMask = 0, bool excludeMultiShape = false)
+        => new(_routingEditorService, fittingCategoryId, partTypeOrdinals, currentPartName, contextLabel,
+            preferredJunctionType, connectorShapeBits, requiredShapeMask, excludeMultiShape);
 
     public CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel()
     {
         return new CategoryTreeEditorViewModel(
-            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this);
+            _categoryRepository, _dialogService, _attributeDefRepository, _bindingService, _metadataMediator, this, _ruleRepository,
+            _assignmentRuleRepository);
+    }
+
+    public AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(
+        string categoryId, string categoryPath, string? copyFromCategoryId = null, string? copyFromCategoryPath = null)
+    {
+        return new AssignmentRulesEditorViewModel(
+            categoryId, categoryPath, _assignmentRuleRepository, _attributeDefRepository, _revitCategoryLabels,
+            _dialogService, copyFromCategoryId, copyFromCategoryPath);
+    }
+
+    public AdvancedSearchViewModel CreateAdvancedSearchViewModel()
+    {
+        return new AdvancedSearchViewModel(
+            _categoryRepository, _bindingService, _attributeDefRepository, _valueRepository,
+            _revitCategoryLabels, _dialogService);
     }
 
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
     {
         return new AttributeLibraryViewModel(
-            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator);
+            _attributeDefRepository, _bindingService, _dialogService, _categoryRepository, _metadataMediator, this);
+    }
+
+    public SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames)
+    {
+        return new SharedParameterPickerViewModel(
+            _sharedParameterFileParser, _userSettingsRepository, _dialogService, existingNames);
     }
 
     public CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true)
@@ -95,5 +186,35 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     public ProfileViewModel CreateProfileViewModel()
     {
         return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+    }
+
+    public MissingRecordsCleanupViewModel CreateMissingRecordsCleanupViewModel()
+    {
+        return new MissingRecordsCleanupViewModel(_actualization, _dialogService);
+    }
+
+    public ValidationReportViewModel CreateValidationReportViewModel(
+        string familyName,
+        string categoryPath,
+        FamilyHealthReport? healthReport,
+        FamilyValidationReport? validationReport,
+        int validationRulesCount)
+    {
+        return new ValidationReportViewModel(familyName, categoryPath, healthReport, validationReport, validationRulesCount);
+    }
+
+    public ValidationRulesEditorViewModel CreateValidationRulesEditorViewModel(
+        string bindingId, string attributeName, string categoryPath)
+    {
+        return new ValidationRulesEditorViewModel(bindingId, attributeName, categoryPath, _ruleRepository);
+    }
+
+    public ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "")
+    {
+        return new ProjectBaseRulesEditorViewModel(
+            existingBinding ?? ProjectBaseBinding.Empty,
+            currentDocumentPath,
+            _fileNameParser,
+            _dialogService);
     }
 }

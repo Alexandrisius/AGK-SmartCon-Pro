@@ -62,4 +62,20 @@ public sealed record FamilyImportRequest(
     string? ContentHash = null,
     int? HashFormatVersion = null,
     string? PublishedBy = null,
-    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null);
+    IReadOnlyList<FamilyGeometryPerType>? PreextractedGeometry = null,
+    int? RevitCategoryId = null,
+    IReadOnlyList<FamilyFact>? Facts = null,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes from Prepare,
+    /// written to <c>family_type_hashes</c> in the import transaction.
+    /// <c>null</c> for legacy/folder imports — backfilled by the optional
+    /// <c>type-hashes-v1</c> actualization task.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare,
+    /// written to <c>catalog_versions.section_hashes/section_strings</c>
+    /// in the import transaction. <c>null</c> for legacy/folder imports —
+    /// backfilled by the <c>section-hashes-v1</c> task.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null);

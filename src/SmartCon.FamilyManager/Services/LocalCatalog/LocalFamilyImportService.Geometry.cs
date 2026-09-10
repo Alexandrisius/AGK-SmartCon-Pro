@@ -43,12 +43,19 @@ internal sealed partial class LocalFamilyImportService
         string versionId,
         string versionLabel,
         string familyName,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null)
     {
+        SmartConLogger.Info(
+            $"Geometry pipeline hook called: family='{familyName}', v='{versionLabel}', " +
+            $"catalogItemId='{catalogItemId}', managedRfaPath='{Path.GetFileName(managedRfaPath ?? "")}', " +
+            $"hasPreextractedGeometry={preextractedGeometry is not null && preextractedGeometry.Count > 0}");
+
         if (_geometryPipeline is null)
         {
-            SmartConLogger.Debug(
-                $"Geometry pipeline skipped (no pipeline registered): family='{familyName}', v{versionLabel}");
+            SmartConLogger.Warn(
+                "Geometry pipeline skipped: IFamilyGeometryPipeline is not registered in DI " +
+                "[Action: verify that SmartCon.App.DI.ServiceRegistrar registers IFamilyGeometryPipeline]");
             return;
         }
 
@@ -61,6 +68,7 @@ internal sealed partial class LocalFamilyImportService
                 versionId,
                 versionLabel,
                 familyName,
+                overwriteBaselineSectionHashes,
                 ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

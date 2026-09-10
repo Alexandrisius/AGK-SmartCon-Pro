@@ -45,8 +45,27 @@ public interface IFamilyCatalogProvider
     /// <summary>Get available Revit major versions for a catalog item's current version.</summary>
     Task<IReadOnlyList<int>> GetAvailableRevitVersionsAsync(string catalogItemId, CancellationToken ct = default);
 
-    /// <summary>Find a catalog item by normalized name (exact match).</summary>
-    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default);
+    /// <summary>
+    /// Find a catalog item by normalized name (exact match), optionally
+    /// filtered by <paramref name="familySource"/> for cross-source
+    /// separation. Issue #201: without the source filter a "system" row can
+    /// match a loadable item with the same name (and vice versa), and the
+    /// unordered LIMIT 1 is non-deterministic when duplicates exist.
+    /// </summary>
+    /// <param name="normalizedName">Normalized name (exact match).</param>
+    /// <param name="familySource"><c>"loadable"</c> / <c>"system"</c>, or
+    /// <c>null</c> to search across all sources (legacy behaviour).</param>
+    Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, string? familySource = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Find a catalog item by its <c>BuiltInCategory</c> ordinal
+    /// (<c>catalog_items.revit_category_id</c>), filtered by
+    /// <paramref name="familySource"/> for cross-source separation.
+    /// Issue #192: for system families the category ordinal is the stable
+    /// identity — the category display name varies per
+    /// document/template/locale and cannot be used for the lookup.
+    /// </summary>
+    Task<FamilyCatalogItem?> FindByRevitCategoryIdAsync(int revitCategoryId, string familySource, CancellationToken ct = default);
 
     /// <summary>
     /// Cross-version content-hash search. Looks for a matching

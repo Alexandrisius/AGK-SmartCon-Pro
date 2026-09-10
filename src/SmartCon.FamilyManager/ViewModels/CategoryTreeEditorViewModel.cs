@@ -3,10 +3,8 @@ using System.Linq;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using SmartCon.Core.Common;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
-using SmartCon.Core.Services.Helpers;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Models.Metadata;
 using SmartCon.FamilyManager.Services;
@@ -14,7 +12,7 @@ using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel
+public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObservableRequestClose, ICloseAwareViewModel
 {
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerDialogService _dialogService;
@@ -22,10 +20,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     private readonly ICategoryAttributeBindingService _bindingService;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
     private readonly IFamilyManagerViewModelFactory _viewModelFactory;
+    private readonly IValidationRuleRepository _ruleRepository;
+    private readonly IAssignmentRuleRepository _assignmentRuleRepository;
     private List<AttributeListItemViewModel> _allAttributeItems = [];
-    private readonly Dictionary<string, bool> _bindingChanges = new();
-    private readonly List<CategoryNodeViewModel> _pendingCategoryDeletions = [];
-    private List<MetadataExportBinding>? _pendingBindingImports;
 
     [ObservableProperty] private ObservableCollection<CategoryNodeViewModel> _rootNodes = [];
     [ObservableProperty] private CategoryNodeViewModel? _selectedNode;
@@ -36,11 +33,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
     [ObservableProperty] private ObservableCollection<string> _availableGroups = [];
     [ObservableProperty] private string _selectedCategoryPath = string.Empty;
     [ObservableProperty] private bool _hasSelectedCategory;
-    [ObservableProperty] private bool _hasUnsavedChanges;
-    [ObservableProperty] private bool _isSaved;
 
     public event Action<bool?>? RequestClose;
-    public event Action? Saved;
 
     public CategoryTreeEditorViewModel(
         ICategoryRepository categoryRepository,
@@ -48,7 +42,9 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         IAttributeDefinitionRepository attributeDefRepository,
         ICategoryAttributeBindingService bindingService,
         IFamilyManagerMetadataMediator metadataMediator,
-        IFamilyManagerViewModelFactory viewModelFactory)
+        IFamilyManagerViewModelFactory viewModelFactory,
+        IValidationRuleRepository ruleRepository,
+        IAssignmentRuleRepository assignmentRuleRepository)
     {
         _categoryRepository = categoryRepository;
         _dialogService = dialogService;
@@ -56,6 +52,8 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         _bindingService = bindingService;
         _metadataMediator = metadataMediator;
         _viewModelFactory = viewModelFactory;
+        _ruleRepository = ruleRepository;
+        _assignmentRuleRepository = assignmentRuleRepository;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -115,8 +113,56 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             SmartConLogger.Warn($"CategoryTreeEditor GetAllFamilyCountsAsync failed: {ex.Message} [Action: проверьте БД каталога; counts могут быть неполными до Refresh]");
         }
 
+        // #241: per-category assignment rule counts for the tree filter icon.
+        var (assignmentCounts, assignmentDisabledCounts) = await LoadAssignmentRuleCountsAsync(ct);
+
         var tree = new CategoryTree(nodes);
         RootNodes = BuildTreeNodes(tree, null, familyCounts);
+        ApplyAssignmentRuleCounts(RootNodes, assignmentCounts, assignmentDisabledCounts);
+    }
+
+    /// <summary>#241: loads (total, disabled) assignment group counts per
+    /// category — the tree icon's three states. Failure degrades to empty
+    /// counts (gray icons), never breaks the tree load.</summary>
+    private async Task<(IReadOnlyDictionary<string, int> Total, IReadOnlyDictionary<string, int> Disabled)> LoadAssignmentRuleCountsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var groups = await _assignmentRuleRepository.GetGroupsWithConditionsAsync(ct);
+            var total = new Dictionary<string, int>();
+            var disabled = new Dictionary<string, int>();
+            foreach (var group in groups)
+            {
+                total[group.CategoryId] = total.TryGetValue(group.CategoryId, out var count) ? count + 1 : 1;
+                if (!group.IsEnabled)
+                {
+                    disabled[group.CategoryId] = disabled.TryGetValue(group.CategoryId, out var disabledCount) ? disabledCount + 1 : 1;
+                }
+            }
+
+            return (total, disabled);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn($"CategoryTreeEditor assignment rule counts failed: {ex.Message} [Action: проверьте БД каталога; индикаторы правил могут быть скрыты до обновления]");
+            return (new Dictionary<string, int>(), new Dictionary<string, int>());
+        }
+    }
+
+    private static void ApplyAssignmentRuleCounts(
+        IEnumerable<CatalogTreeNodeViewModel> nodes,
+        IReadOnlyDictionary<string, int> total,
+        IReadOnlyDictionary<string, int> disabled)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat)
+            {
+                cat.AssignmentRuleCount = total.TryGetValue(cat.CategoryId, out var count) ? count : 0;
+                cat.DisabledAssignmentRuleCount = disabled.TryGetValue(cat.CategoryId, out var disabledCount) ? disabledCount : 0;
+            }
+            ApplyAssignmentRuleCounts(node.Children, total, disabled);
+        }
     }
 
     private static ObservableCollection<CategoryNodeViewModel> BuildTreeNodes(
@@ -145,281 +191,17 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
         return total;
     }
 
-    private async Task LoadAttributesForCategoryAsync(CategoryNodeViewModel? categoryNode)
-    {
-        if (categoryNode is null)
-        {
-            HasSelectedCategory = false;
-            AttributeItems = [];
-            AvailableGroups = [];
-            _allAttributeItems = [];
-            return;
-        }
-
-        try
-        {
-            var categoryId = categoryNode.CategoryId;
-            var allDefs = await _attributeDefRepository.GetAllAsync();
-            var categories = await _categoryRepository.GetAllAsync();
-            var categoryNameById = categories.ToDictionary(c => c.Id, c => c.Name);
-
-            // Collect effective attributes (DB + draft tree)
-            List<EffectiveCategoryAttribute> effectiveAttrs;
-            List<CategoryAttributeBinding> directBindings;
-            
-            // Build effective attrs with draft awareness for ALL categories
-            effectiveAttrs = await GetDraftEffectiveAttributesAsync(categoryNode, categoryNameById);
-            directBindings = categoryNode.IsNew
-                ? GetDraftDirectBindings(categoryNode)
-                : [..await _bindingService.GetDirectBindingsAsync(categoryId)];
-
-            var effectiveByAttrId = effectiveAttrs.ToDictionary(e => e.AttributeId);
-            var bindingByAttrId = directBindings.ToDictionary(b => b.AttributeId);
-
-            var items = new List<AttributeListItemViewModel>();
-            foreach (var def in allDefs.Where(d => d.IsActive))
-            {
-                effectiveByAttrId.TryGetValue(def.Id, out var effective);
-                bindingByAttrId.TryGetValue(def.Id, out var binding);
-
-                var sourceName = effective?.SourceCategoryId is not null
-                    && categoryNameById.TryGetValue(effective.SourceCategoryId, out var catName)
-                    ? catName : null;
-
-                var isBound = effective is not null;
-                var key = $"{categoryId}:{def.Id}";
-                if (_bindingChanges.TryGetValue(key, out var changedBound))
-                {
-                    isBound = changedBound;
-                }
-
-                items.Add(new AttributeListItemViewModel
-                {
-                    AttributeId = def.Id,
-                    Name = def.Name,
-                    Group = def.Group,
-                    IsBound = isBound,
-                    OriginalIsBound = effective is not null,
-                    IsInherited = effective?.IsInherited ?? false,
-                    SourceCategoryName = sourceName,
-                    BindingId = binding?.Id,
-                    IsEnabled = effective?.IsEnabled ?? true,
-                    Parent = this
-                });
-            }
-
-            _allAttributeItems = items;
-
-            var groups = allDefs
-                .Where(d => d.IsActive && d.Group is not null)
-                .Select(d => d.Group!)
-                .Distinct()
-                .OrderBy(g => g)
-                .ToList();
-
-            var allGroupsLabel = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AllGroups) ?? "Все атрибуты";
-            var allGroups = new List<string> { allGroupsLabel };
-            allGroups.AddRange(groups);
-
-            AvailableGroups = new ObservableCollection<string>(allGroups);
-            SelectedGroupFilter = allGroupsLabel;
-            AttributeFilterText = string.Empty;
-            ApplyAttributeFilter();
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn($"LoadAttributesForCategoryAsync failed: {ex.Message} [Action: закройте и откройте editor; проверьте БД каталога]");
-        }
-    }
-
-    internal void HandleBindingToggle(AttributeListItemViewModel item, bool shouldBeBound)
-    {
-        if (SelectedNode is null) return;
-        var categoryId = SelectedNode.CategoryId;
-        var attributeId = item.AttributeId;
-
-        var key = $"{categoryId}:{attributeId}";
-        _bindingChanges[key] = shouldBeBound;
-
-        item.IsBound = shouldBeBound;
-        item.IsDirty = true;
-        UpdateHasUnsavedChanges();
-        ApplyAttributeFilter();
-    }
-
-    private void UpdateHasUnsavedChanges()
-    {
-        var allNodes = FlattenNodes(RootNodes);
-        HasUnsavedChanges = _pendingCategoryDeletions.Count > 0
-                         || _bindingChanges.Count > 0
-                         || _pendingBindingImports is { Count: > 0 }
-                         || allNodes.Any(n => n.IsNew || n.IsDirty);
-    }
-
-    private void ApplyAttributeFilter()
-    {
-        var filtered = _allAttributeItems.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(AttributeFilterText))
-        {
-            var filter = AttributeFilterText.Trim().ToUpperInvariant();
-            filtered = filtered.Where(x =>
-                x.Name.ToUpperInvariant().Contains(filter) ||
-                (x.Group is not null && x.Group.ToUpperInvariant().Contains(filter)));
-        }
-
-        var allGroupsLabel = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AllGroups) ?? "Все атрибуты";
-        if (!string.IsNullOrWhiteSpace(SelectedGroupFilter) && SelectedGroupFilter != allGroupsLabel)
-        {
-            filtered = filtered.Where(x => x.Group == SelectedGroupFilter);
-        }
-
-        AttributeItems = new ObservableCollection<AttributeListItemViewModel>(filtered);
-    }
-
-    [RelayCommand]
-    private async Task OpenAttributeLibraryAsync()
-    {
-        var libraryVm = _viewModelFactory.CreateAttributeLibraryViewModel();
-        libraryVm.RequestClose += _ => libraryVm.Detach();
-        await libraryVm.InitializeAsync();
-        _dialogService.ShowAttributeLibrary(libraryVm);
-
-        if (SelectedNode is not null)
-            await LoadAttributesForCategoryAsync(SelectedNode);
-    }
-
-    [RelayCommand]
-    private async Task OkAsync()
-    {
-        try
-        {
-            SmartConLogger.Info($"OkAsync started. HasUnsavedChanges={HasUnsavedChanges}");
-
-            foreach (var node in _pendingCategoryDeletions.Where(n => !n.IsNew))
-            {
-                await _categoryRepository.DeleteAsync(node.CategoryId);
-            }
-            _pendingCategoryDeletions.Clear();
-
-            var allNodes = FlattenNodes(RootNodes);
-
-            var existingByPath = new Dictionary<string, CategoryNode>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                var allCategories = await _categoryRepository.GetAllAsync();
-                foreach (var c in allCategories)
-                {
-                    existingByPath[c.FullPath] = c;
-                }
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"CategoryTreeEditor OkAsync GetAllAsync failed: {ex.Message} [Action: закройте editor и проверьте БД каталога, изменения могли не сохраниться]");
-            }
-
-            var tempToRealId = new Dictionary<string, string>();
-
-            foreach (var node in allNodes.Where(n => n.IsNew))
-            {
-                var realParentId = node.ParentId is not null && tempToRealId.TryGetValue(node.ParentId, out var mappedParent)
-                    ? mappedParent
-                    : node.ParentId;
-
-                if (existingByPath.TryGetValue(node.FullPath, out var existing))
-                {
-                    node.CategoryId = existing.Id;
-                    node.ParentId = existing.ParentId;
-                    node.IsNew = false;
-                    node.IsDirty = false;
-                    continue;
-                }
-
-                var created = await _categoryRepository.AddAsync(node.DisplayName, realParentId, node.SortOrder);
-                tempToRealId[node.CategoryId] = created.Id;
-                node.CategoryId = created.Id;
-                node.ParentId = realParentId;
-                node.IsNew = false;
-                node.IsDirty = false;
-            }
-
-            foreach (var node in allNodes.Where(n => n.IsDirty && !n.IsNew))
-            {
-                if (node.DisplayName != node.OriginalName)
-                {
-                    await _categoryRepository.RenameAsync(node.CategoryId, node.DisplayName);
-                    node.OriginalName = node.DisplayName;
-                }
-                if (node.ParentId != node.OriginalParentId || node.SortOrder != node.OriginalSortOrder)
-                {
-                    await _categoryRepository.MoveAsync(node.CategoryId, node.ParentId, node.SortOrder);
-                    node.OriginalParentId = node.ParentId;
-                    node.OriginalSortOrder = node.SortOrder;
-                }
-                node.IsDirty = false;
-            }
-
-            var resolvedBindings = new Dictionary<string, bool>();
-            foreach (var change in _bindingChanges)
-            {
-                var parts = change.Key.Split(new[] { ':' }, 2);
-                if (parts.Length != 2) continue;
-                var categoryId = parts[0];
-                var attributeId = parts[1];
-
-                var realCategoryId = tempToRealId.TryGetValue(categoryId, out var mappedId)
-                    ? mappedId
-                    : categoryId;
-
-                var key = $"{realCategoryId}:{attributeId}";
-                resolvedBindings[key] = change.Value;
-            }
-            _bindingChanges.Clear();
-
-            foreach (var change in resolvedBindings)
-            {
-                var parts = change.Key.Split(new[] { ':' }, 2);
-                if (parts.Length != 2) continue;
-                var categoryId = parts[0];
-                var attributeId = parts[1];
-                var shouldBeBound = change.Value;
-
-                var existing = await _bindingService.GetDirectBindingsAsync(categoryId);
-                var existingBinding = existing.FirstOrDefault(b => b.AttributeId == attributeId);
-
-                if (shouldBeBound && existingBinding is null)
-                {
-                    var sortOrder = existing.Count;
-                    await _bindingService.CreateBindingAsync(categoryId, attributeId, sortOrder);
-                }
-                else if (!shouldBeBound && existingBinding is not null)
-                {
-                    await _bindingService.DeleteBindingAsync(existingBinding.Id);
-                }
-            }
-
-            if (_pendingBindingImports is { Count: > 0 })
-            {
-                await ApplyPendingBindingImportsAsync(_pendingBindingImports);
-                _pendingBindingImports = null;
-            }
-
-            HasUnsavedChanges = false;
-            _metadataMediator.RaiseMetadataChanged();
-            Saved?.Invoke();
-            RequestClose?.Invoke(true);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"OkAsync failed: {ex}");
-            StatusMessage = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error: {0}", ex.Message);
-        }
-    }
-
-    private async Task ApplyPendingBindingImportsAsync(List<MetadataExportBinding> bindings)
+    /// <summary>
+    /// Atomic metadata import: writes package bindings + their validation
+    /// rules directly to the catalog database (dedupe: existing binding
+    /// keeps its own rules — the package never silently overwrites them).
+    /// </summary>
+    private async Task<BindingImportResult> ImportBindingsToDbAsync(List<MetadataExportBinding> bindings)
     {
         var bindingsImported = 0;
         var bindingsSkipped = 0;
+        var rulesImported = 0;
+        var rulesSkipped = 0;
         var warnings = new List<string>();
 
         var allCategories = await _categoryRepository.GetAllAsync();
@@ -449,103 +231,64 @@ public sealed partial class CategoryTreeEditorViewModel : ObservableObject, IObs
             var existingBindings = await _bindingService.GetDirectBindingsAsync(category.Id);
             if (existingBindings.Any(b => b.AttributeId == attribute.Id))
             {
+                // Existing binding keeps its own rules — the package does
+                // not silently overwrite them.
                 bindingsSkipped++;
+                rulesSkipped += binding.ValidationRules.Count;
                 continue;
             }
 
-            await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
+            var created = await _bindingService.CreateBindingAsync(category.Id, attribute.Id, binding.SortOrder);
             bindingsImported++;
-        }
 
-        if (bindingsImported > 0 || bindingsSkipped > 0 || warnings.Count > 0)
-        {
-            var parts = new List<string>();
-            if (bindingsImported > 0) parts.Add($"bindings: {bindingsImported}");
-            if (bindingsSkipped > 0) parts.Add($"bindings skipped: {bindingsSkipped}");
-            if (warnings.Count > 0)
+            foreach (var exportedRule in binding.ValidationRules)
             {
-                var preview = warnings.Count <= 3
-                    ? string.Join("; ", warnings)
-                    : $"{warnings.Count} warnings";
-                parts.Add(preview);
-            }
-            StatusMessage = $"Imported {string.Join(", ", parts)}";
-        }
-    }
+                if (!Enum.TryParse<ValidationRuleOperator>(exportedRule.Operator, out var ruleOperator)
+                    || !Enum.IsDefined(typeof(ValidationRuleOperator), ruleOperator))
+                {
+                    warnings.Add($"Rule skipped: unknown operator '{exportedRule.Operator}' for '{binding.AttributeName}'.");
+                    rulesSkipped++;
+                    continue;
+                }
 
-    public async Task SaveAsync() => await OkAsync();
-
-    private static List<CategoryNodeViewModel> FlattenNodes(ObservableCollection<CategoryNodeViewModel> nodes)
-    {
-        var result = new List<CategoryNodeViewModel>();
-        foreach (var node in nodes)
-        {
-            result.Add(node);
-            result.AddRange(FlattenNodes(node.Children));
-        }
-        return result;
-    }
-
-    private static List<CategoryNodeViewModel> FlattenNodes(ObservableCollection<CatalogTreeNodeViewModel> nodes)
-    {
-        var result = new List<CategoryNodeViewModel>();
-        foreach (var node in nodes)
-        {
-            if (node is CategoryNodeViewModel cat)
-            {
-                result.Add(cat);
-                result.AddRange(FlattenNodes(cat.Children));
+                await _ruleRepository.CreateRuleAsync(new ValidationRule(
+                    string.Empty,
+                    created.Id,
+                    ruleOperator,
+                    exportedRule.ValueText,
+                    exportedRule.ValueNumber,
+                    exportedRule.MinValue,
+                    exportedRule.MaxValue,
+                    UnitTypeId: null,
+                    SortOrder: 0,
+                    exportedRule.IsEnabled));
+                rulesImported++;
             }
         }
-        return result;
+
+        return new BindingImportResult(bindingsImported, bindingsSkipped, rulesImported, rulesSkipped, warnings);
     }
 
-    public void ConfirmClose(CloseConfirmationArgs args) =>
-        this.ConfirmUnsavedChanges(
-            args,
-            _dialogService.ShowYesNoCancel,
-            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
-            LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+    private sealed record BindingImportResult(
+        int BindingsImported,
+        int BindingsSkipped,
+        int RulesImported,
+        int RulesSkipped,
+        IReadOnlyList<string> Warnings);
+
+    /// <summary>
+    /// Full-immediate editor: every change is committed the moment it is
+    /// made, so closing never discards anything — no confirm needed.
+    /// </summary>
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
+        args.DialogResult = true;
+    }
 
     [RelayCommand]
-    private async Task CancelAsync()
+    private void Close()
     {
-        if (HasUnsavedChanges)
-        {
-            var result = _dialogService.ShowYesNoCancel(
-                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
-                LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
-
-            if (result == Core.Services.Interfaces.DialogResult.Yes)
-            {
-                await OkAsync();
-                return;
-            }
-
-            if (result == Core.Services.Interfaces.DialogResult.Cancel)
-                return;
-        }
-
-        RequestClose?.Invoke(false);
-    }
-
-    private static void FireAndForget(Func<Task> taskFactory, string operationName)
-    {
-        Guard.ThrowIfNull(taskFactory);
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await taskFactory().ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn($"FireAndForget '{operationName}': {ex.GetBaseException().Message} [Action: операция выполнена в фоне, проверьте результат через Refresh]");
-            }
-        });
+        RequestClose?.Invoke(true);
     }
 }
 

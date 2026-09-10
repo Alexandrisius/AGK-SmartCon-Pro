@@ -48,13 +48,79 @@ public static partial class LocalizationService
         en["Tx_FitDynamicToFitting"] = "PipeConnect — Fit dynamic to fitting";
         ru["Tx_AlignAfterSize"] = "PipeConnect — Выравнивание после размера";
         en["Tx_AlignAfterSize"] = "PipeConnect — Alignment after size";
-        ru["Tx_ChainLevel"] = "Цепочка: уровень {0}";
-        en["Tx_ChainLevel"] = "Chain: level {0}";
-        ru["Tx_ChainRollback"] = "Цепочка: откат уровня {0}";
-        en["Tx_ChainRollback"] = "Chain: rollback level {0}";
+        ru["Tx_ChainSeal"] = "Цепочка: финальное переподключение";
+        en["Tx_ChainSeal"] = "Chain: final reconnect";
+        ru["Tx_ChainUnseal"] = "Цепочка: отмена компенсации";
+        en["Tx_ChainUnseal"] = "Chain: unseal";
+        ru["Tx_ChainRigidMove"] = "Цепочка: жёсткий перенос сети";
+        en["Tx_ChainRigidMove"] = "Chain: rigid network move";
+        ru["Tx_RestoreCrossEdges"] = "Цепочка: восстановление петель";
+        en["Tx_RestoreCrossEdges"] = "Chain: restore loop edges";
+        ru["Tx_LockNetworkRigid"] = "Блокировать: жёсткое перемещение";
+        en["Tx_LockNetworkRigid"] = "Lock: rigid move";
+        ru["Tx_LockNetworkAbsorb"] = "Блокировать: компенсация длиной";
+        en["Tx_LockNetworkAbsorb"] = "Lock: length compensation";
+
+        ru["Status_NetworkMoved"] = "Сеть перемещена целиком ({0} элементов одним переносом)";
+        en["Status_NetworkMoved"] = "Network moved as one body ({0} elements in a single move)";
+        ru["Status_NetworkMovedReducer"] = "Сеть перемещена целиком и подключена через переход";
+        en["Status_NetworkMovedReducer"] = "Network moved as one body and connected via a reducer";
+        ru["Status_NetworkGapped"] = "Сеть выставлена с зазором 100 мм — нужен переход (см. диалог)";
+        en["Status_NetworkGapped"] = "Network placed with a 100 mm gap — transition required (see dialog)";
+        ru["Dialog_GapNetwork_Title"] = "PipeConnect — требуется переход";
+        en["Dialog_GapNetwork_Title"] = "PipeConnect — transition required";
+        ru["Dialog_GapNetwork_Message"] =
+            "Диаметр сети не совпадает с подключаемым элементом, а подходящий переход не найден в маппинге.\n\n" +
+            "Сеть НЕ подключена: она выставлена с зазором 100 мм по оси коннектора — " +
+            "вставьте переход вручную в месте зазора или добавьте семейство перехода в маппинг (Настройки → Правила).";
+        en["Dialog_GapNetwork_Message"] =
+            "The network diameter does not match the connected element, and no suitable transition was found in the mapping.\n\n" +
+            "The network is NOT connected: it was placed with a 100 mm gap along the connector axis — " +
+            "insert a transition manually at the gap, or add a transition family to the mapping (Settings → Rules).";
+        ru["Tx_ChainElement"] = "Цепочка: элемент {0}";
+        en["Tx_ChainElement"] = "Chain: element {0}";
+        ru["Tx_ChainRollbackElement"] = "Цепочка: откат элемента {0}";
+        en["Tx_ChainRollbackElement"] = "Chain: rollback element {0}";
+        ru["Tx_ZeroRotation"] = "PipeConnect — Сброс угла";
+        en["Tx_ZeroRotation"] = "PipeConnect — Reset angle";
+        ru["Tx_CleanupOldFitting"] = "PipeConnect — Удаление фитинга/перехода точки";
+        en["Tx_CleanupOldFitting"] = "PipeConnect — Delete point fitting/reducer";
+        ru["Tx_CleanupOldReducer"] = "PipeConnect — Удаление переходника";
+        en["Tx_CleanupOldReducer"] = "PipeConnect — Delete reducer";
+        ru["Tx_RollbackConnector"] = "PipeConnect — Возврат коннектора";
+        en["Tx_RollbackConnector"] = "PipeConnect — Roll back connector";
+        ru["Tx_SetConnectorType"] = "PipeConnect — Задание типа соединения";
+        en["Tx_SetConnectorType"] = "PipeConnect — Set connector type";
+
+        ru["Status_AttachingElement"] = "Присоединение элемента {0} из {1}…";
+        en["Status_AttachingElement"] = "Attaching element {0} of {1}…";
+        ru["Status_ElementAttached"] = "Элемент {0} из {1} присоединён";
+        en["Status_ElementAttached"] = "Element {0} of {1} attached";
+        ru["Status_ElementAttachedIdle"] = "Элемент {0} из {1} присоединён без изменений";
+        en["Status_ElementAttachedIdle"] = "Element {0} of {1} attached unchanged";
+        ru["Status_RollingBackElement"] = "Откат элемента {0}…";
+        en["Status_RollingBackElement"] = "Rolling back element {0}…";
+        ru["Status_ElementDetached"] = "Элемент {0} отсоединён";
+        en["Status_ElementDetached"] = "Element {0} detached";
+        ru["Status_ElementsConnected"] = "Подключено элементов: {0}";
+        en["Status_ElementsConnected"] = "{0} element(s) connected";
+        ru["Status_LockNetworkApplied"] = "Сеть заблокирована: жёсткий режим — подключайте «+» или «Подключить всё»";
+        en["Status_LockNetworkApplied"] = "Network locked: rigid mode — attach via «+» or «Connect all»";
+        ru["Status_LockNetworkReverted"] = "Блокировка снята: сеть компенсирована";
+        en["Status_LockNetworkReverted"] = "Lock released: network compensated";
+        ru["Status_LockNetworkAppliedTail"] = "Жёсткий режим применён к последнему соединению — остальная сеть сохранена";
+        en["Status_LockNetworkAppliedTail"] = "Rigid mode applied to the last connection — the rest of the network is preserved";
+        ru["Status_LockNetworkRevertedTail"] = "Компенсация восстановлена от последнего соединения — остальная сеть сохранена";
+        en["Status_LockNetworkRevertedTail"] = "Compensation restored from the last connection — the rest of the network is preserved";
+        ru["Status_LockReducerNotFound"] = "Переход не найден в маппинге — соединение напрямую (добавьте в Настройки → Правила)";
+        en["Status_LockReducerNotFound"] = "Reducer not found in the mapping — direct connection (add it in Settings → Rules)";
 
         ru["Status_Rotated"] = "Повернуто на {0}°";
         en["Status_Rotated"] = "Rotated by {0}°";
+        ru["Status_RotationZeroed"] = "Угол сброшен";
+        en["Status_RotationZeroed"] = "Angle reset";
+        ru["Status_RotationAlreadyZero"] = "Угол уже сброшен (референс {0})";
+        en["Status_RotationAlreadyZero"] = "Angle already reset (reference {0})";
         ru["Status_Initializing"] = "Инициализация…";
         en["Status_Initializing"] = "Initializing…";
         ru["Status_InsertingFitting"] = "Установка фитинга…";
@@ -81,6 +147,12 @@ public static partial class LocalizationService
         en["Status_WritingCtc"] = "Writing connector types…";
         ru["Status_Connected"] = "Соединение выполнено";
         en["Status_Connected"] = "Connection completed";
+        ru["Status_InspectDone"] = "Вид отцентрирован на активном коннекторе";
+        en["Status_InspectDone"] = "View centered on the active connector";
+        ru["Status_InspectNoView"] = "Просмотр недоступен: активный вид не графический";
+        en["Status_InspectNoView"] = "Inspect unavailable: active view is not graphical";
+        ru["Status_InspectFailed"] = "Просмотр не выполнен";
+        en["Status_InspectFailed"] = "Inspect failed";
         ru["Status_ReducerSet"] = "Переходник: {0}";
         en["Status_ReducerSet"] = "Reducer: {0}";
         ru["Status_NoReducerData"] = "Нет данных о семействе переходника";
@@ -103,18 +175,34 @@ public static partial class LocalizationService
         en["Status_FamilyNotFoundInProject"] = "Family '{0}' not found in project";
         ru["Status_InsertingFittingAction"] = "Вставка фитинга…";
         en["Status_InsertingFittingAction"] = "Inserting fitting…";
-        ru["Status_AttachingLevel"] = "Присоединение уровня {0}…";
-        en["Status_AttachingLevel"] = "Attaching level {0}…";
-        ru["Status_LevelAttached"] = "Уровень {0} присоединён";
-        en["Status_LevelAttached"] = "Level {0} attached";
-        ru["Status_RollbackLevel"] = "Откат уровня {0}…";
-        en["Status_RollbackLevel"] = "Rolling back level {0}…";
-        ru["Status_LevelDetached"] = "Уровень {0} отсоединён";
-        en["Status_LevelDetached"] = "Level {0} detached";
         ru["Status_ConnectingNetwork"] = "Подключение всей сети…";
         en["Status_ConnectingNetwork"] = "Connecting entire network…";
-        ru["Status_LevelsConnected"] = "Подключено {0} уровней";
-        en["Status_LevelsConnected"] = "{0} levels connected";
+        ru["Status_ChainSealed"] = "Вся сеть подключена автоматически (компенсировано на уровне {0}) — обход не требуется";
+        en["Status_ChainSealed"] = "Entire network connected automatically (compensated at level {0}) — no traversal needed";
+
+        ru["Status_ConnectPostponedChain"] = "Соединение отложено — подключите оставшиеся элементы сети (+ или «Подключить всё»)";
+        en["Status_ConnectPostponedChain"] = "Connect postponed — attach the remaining network elements (+ or \"Connect all\")";
+
+        ru["Dialog_UnconnectedChain_Title"] = "PipeConnect — неподключённые элементы сети";
+        en["Dialog_UnconnectedChain_Title"] = "PipeConnect — unconnected network elements";
+        ru["Dialog_UnconnectedChain_Instruction"] = "Часть сети осталась отсоединённой";
+        en["Dialog_UnconnectedChain_Instruction"] = "Part of the network is still detached";
+        ru["Dialog_UnconnectedChain_Message"] =
+            "Подключено элементов: {0} из {1}.\n\n" +
+            "Элементы, которые вы переместили, оторваны от остальной сети. " +
+            "Если соединить сейчас, они так и останутся отсоединёнными — это приведёт к разрыву сети в модели.";
+        en["Dialog_UnconnectedChain_Message"] =
+            "Elements attached: {0} of {1}.\n\n" +
+            "The elements you moved are detached from the rest of the network. " +
+            "If you connect now, they will stay detached — this will break the network in the model.";
+        ru["Dialog_UnconnectedChain_ConnectAll"] = "Подключить всё и соединить";
+        en["Dialog_UnconnectedChain_ConnectAll"] = "Attach all and connect";
+        ru["Dialog_UnconnectedChain_ConnectAllHint"] = "Присоединить все оставшиеся элементы сети, затем завершить соединение";
+        en["Dialog_UnconnectedChain_ConnectAllHint"] = "Attach all remaining network elements, then finish the connection";
+        ru["Dialog_UnconnectedChain_ConnectAsIs"] = "Соединить как есть";
+        en["Dialog_UnconnectedChain_ConnectAsIs"] = "Connect as-is";
+        ru["Dialog_UnconnectedChain_ConnectAsIsHint"] = "Завершить соединение — остальная сеть останется отсоединённой";
+        en["Dialog_UnconnectedChain_ConnectAsIsHint"] = "Finish the connection — the rest of the network stays detached";
 
         ru["Pick_FirstElement"] = "PipeConnect: выберите ПЕРВЫЙ элемент (будет присоединён)";
         en["Pick_FirstElement"] = "PipeConnect: select FIRST element (to be connected)";
@@ -140,12 +228,16 @@ public static partial class LocalizationService
         en["Error_ChangeSize"] = "Size change error: {0}";
         ru["Error_Insert"] = "Ошибка вставки: {0}";
         en["Error_Insert"] = "Insert error: {0}";
+        ru["Error_AttachElement"] = "Не удалось присоединить элемент {0} — он возвращён в исходное состояние. Проверьте его и повторите.";
+        en["Error_AttachElement"] = "Failed to attach element {0} — it was restored to its original state. Check it and retry.";
         ru["Error_Chain"] = "Ошибка цепочки: {0}";
         en["Error_Chain"] = "Chain error: {0}";
         ru["Error_Rollback"] = "Ошибка отката: {0}";
         en["Error_Rollback"] = "Rollback error: {0}";
         ru["Error_General"] = "Ошибка: {0}";
         en["Error_General"] = "Error: {0}";
+        ru["Error_ConnectRemovedElement"] = "Revit удалил элемент при соединении (коннекторы со-направлены — «её направление изменено и она не может существовать»). Операция отменена, изменения откачены — проверьте ориентацию и размеры коннекторов.";
+        en["Error_ConnectRemovedElement"] = "Revit removed an element during connect (co-directional connectors: \"its direction was changed and it can no longer exist\"). Operation cancelled and rolled back — check connector orientation and sizes.";
 
         ru["About_Version"] = "Версия {0}";
         en["About_Version"] = "Version {0}";
@@ -186,8 +278,6 @@ public static partial class LocalizationService
         ru["Fitting_ReducerSuffix"] = "🔧 {0} (переход)";
         en["Fitting_ReducerSuffix"] = "🔧 {0} (transition)";
 
-        ru["Warn_SizeNotExactUnconstrained"] = "Размер DN{0} не найден точно. Ближайший DN{1} (other connectors will change).";
-        en["Warn_SizeNotExactUnconstrained"] = "Size DN{0} not found exactly. Nearest DN{1} (other connectors will change).";
         ru["Warn_SizeNotInTable"] = "Размер DN{0} отсутствует в таблице. Будет выбран DN{1}, нужен переходник.";
         en["Warn_SizeNotInTable"] = "Size DN{0} not in table. Nearest DN{1} will be used, reducer needed.";
         ru["Warn_NoSizeParameter"] = "Не удалось определить параметр размера. Будет вставлен переходник если настроен в маппинге.";

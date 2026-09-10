@@ -15,7 +15,14 @@ namespace SmartCon.Core.Models.FamilyManager;
 public sealed record FamilyGeometryPerType(
     string TypeName,
     string FamilyName,
-    IReadOnlyList<MeshData> Meshes)
+    IReadOnlyList<MeshData> Meshes,
+    /// <summary>
+    /// #249 (Phase 5): the per-type preview INPUT snapshot extracted in
+    /// the same pass as <see cref="Meshes"/> — the input of the VIEW3D
+    /// hash that keys the shared CAS preview pool. <c>null</c> for
+    /// pre-CAS extraction paths (legacy callers).
+    /// </summary>
+    PreviewTypeSnapshot? Preview = null)
 {
     /// <summary>Sum of triangle counts across all meshes.</summary>
     public int TotalTriangleCount => Meshes.Sum(m => m.TriangleCount);

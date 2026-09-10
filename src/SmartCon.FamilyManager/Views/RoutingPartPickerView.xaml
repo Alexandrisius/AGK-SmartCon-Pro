@@ -1,0 +1,129 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.RoutingPartPickerView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        Title="{Binding PickerTitle}"
+        Width="720" Height="480" MinWidth="560" MinHeight="320"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBox Grid.Row="0" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                 Padding="4,2" Margin="0,0,0,8"
+                 ToolTip="{Binding SearchWatermark}"
+                 Style="{DynamicResource CompactTextBox}"/>
+
+        <!-- Dual-pane: candidate families + their types. -->
+        <Grid Grid.Row="1" Visibility="{Binding HasNoCandidates, Converter={StaticResource BoolToVis}, ConverterParameter=invert}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="4*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Panel headers. -->
+            <TextBlock Text="{loc:Loc FM_Routing_Picker_Family}"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                       Margin="0,0,0,4"/>
+            <TextBlock Grid.Column="2" Text="{loc:Loc FM_Routing_Picker_Type}"
+                       Foreground="{DynamicResource TextMutedBrush}" FontSize="11"
+                       Margin="0,0,0,4"/>
+
+            <Border Grid.Row="1" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                    CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
+                <ListBox ItemsSource="{Binding Candidates}"
+                         SelectedItem="{Binding SelectedCandidate}"
+                         Style="{DynamicResource CompactListBox}"
+                         ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Family name only: the part class is the
+                                 dialog context and lives in the window
+                                 title (owner decision 2026-08-30) — a
+                                 second line made the selection highlight
+                                 visibly thicker than the type column's. -->
+                            <TextBlock Text="{Binding FamilyName}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding FamilyName}"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <Border Grid.Row="1" Grid.Column="2" BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                    CornerRadius="4" Background="{DynamicResource SurfaceBrush}">
+                <ListBox ItemsSource="{Binding Types}"
+                         SelectedItem="{Binding SelectedType}"
+                         Style="{DynamicResource CompactListBox}"
+                         ItemContainerStyle="{DynamicResource CompactListBoxItem}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding}"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </Grid>
+
+        <!-- Empty state: no compatible fittings in the catalog. -->
+        <TextBlock Grid.Row="1" Text="{Binding NoCandidatesMessage}"
+                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Margin="24" MaxWidth="380"
+                   TextWrapping="Wrap" TextAlignment="Center"
+                   Visibility="{Binding HasNoCandidates, Converter={StaticResource BoolToVis}}"/>
+
+        <TextBlock Grid.Row="2" Margin="0,6,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11">
+            <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0}: {1}">
+                    <MultiBinding.Bindings>
+                        <Binding Path="SelectedCandidate.FamilyName" TargetNullValue="—"/>
+                        <Binding Path="SelectedType" TargetNullValue="—"/>
+                    </MultiBinding.Bindings>
+                </MultiBinding>
+            </TextBlock.Text>
+        </TextBlock>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{loc:Loc Btn_OK}" Command="{Binding OkCommand}"
+                    Width="80" Height="28" Margin="0,0,4,0"
+                    Style="{DynamicResource PrimaryButton}" IsDefault="True"/>
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
+                    Width="80" Height="28"
+                    Style="{DynamicResource SecondaryButton}" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

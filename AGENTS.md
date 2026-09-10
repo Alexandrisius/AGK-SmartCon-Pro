@@ -2,7 +2,7 @@
 
 # SmartCon — Системная инструкция для AI-агентов
 
-Ты работаешь над проектом **SmartCon** — плагином для Autodesk Revit (.NET 8 / C# 12 / WPF).
+Ты работаешь над проектом **SmartCon** — плагином для Autodesk Revit 2019-2027 (net48 / .NET 8 / .NET 10, C# 12 / WPF).
 Флагманский модуль — **PipeConnect**: соединение трубных MEP-элементов в 3D двумя кликами.
 
 Исходный код расположен в `src/`. Solution: `src/SmartCon.sln`.
@@ -19,9 +19,14 @@
 
 | Действие | Команда |
 |---|---|
+| Собрать R27 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27` |
+| Собрать R26 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26` |
 | Собрать R25 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25` |
 | Собрать R24 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` |
-| Тесты | `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` |
+| Тесты | `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` (проект пиннут на net8.0-windows — НЕ собирать под R27) |
+| Интеграционные тесты R27 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R27 --framework net10.0-windows` (требует установленный Revit 2027) |
+| Интеграционные тесты R25 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows` |
+| Интеграционные тесты net48 (R21-R24) | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023` (версия = любой **установленный** Revit 2021-2024; суть прогона — платформа net48, а не конкретный год) |
 | Собрать все + деплой | `build-and-deploy.bat` |
 | Release | `tools\release.bat` |
 
@@ -32,8 +37,7 @@
 1. **Прочитать обязательные файлы** (в этом порядке):
    - `docs/README.md` — понять контекст проекта
    - `docs/invariants.md` — выучить жёсткие правила I-01..I-17
-   - `docs/architecture/dependency-rule.md` — понять куда класть код
-   - `docs/architecture/solution-structure.md` — понять структуру проектов
+   - `docs/architecture/dependency-rule.md` — понять куда класть код, карту проектов и конвенции файлов (размер/partial)
    - `docs/known-workarounds.md` — проверить, не существует ли уже workaround для этой проблемы
 
 2. **Провести глубокое исследование через Exa**:
@@ -120,6 +124,13 @@
 Их главная ценность — сохранение контекста главного агента: каждый файл, каждый поиск,
 каждый тупик потребляет токены. Субагенты берут эту нагрузку на себя и возвращают сжатый результат.
 
+**В арсенале два субагента** (параметр `subagent_type` в Task tool):
+
+| Субагент | Характер | Когда использовать |
+|---|---|---|
+| `general` | Самая умная, но медленная модель с большим контекстом — помнит всё | **Обязательная валидация этапов** (см. gate ниже), сложный анализ нескольких модулей, исследования, требующие полного контекста |
+| `explore` | Менее умная, но очень быстрая модель с небольшим контекстом (достаточно для изучения функционала одной фичи) | Быстрые read-only исследования: найти файлы, изучить функционал одной фичи, поиск паттернов, навигация по кодовой базе |
+
 **Область применения субагентов:**
 - Исследование кодовой базы (поиск файлов, чтение, анализ структуры)
 - Изучение документации и внешних источников (Exa, Context7, MCP Revit API docs)
@@ -139,6 +150,24 @@
 - Субагент получает полный контекст задачи в prompt, но не весь проект
 - Главный агент анализирует результаты и принимает решение о реализации
 - Если результат субагента недостаточен — запускай другой, не додумывай
+
+### Обязательный gate: валидация этапа субагентом `general`
+
+Каждый логический этап работы **завершается валидацией субагентом `general`**:
+- каждая фаза большого плана,
+- каждый issue (баг или фича),
+- реализация плана целиком (финальная валидация).
+
+**Главный агент НЕ переходит дальше**, пока `general` не проверил всё сделанное на текущем этапе.
+
+**Что передавать в prompt валидатору:**
+- что планировалось сделать (фаза / issue / пункт плана) и критерии приёмки,
+- список изменённых файлов (`git status`, `git diff --stat`),
+- результаты сборки и тестов,
+- просьба проверить: соответствие инвариантам I-01..I-17 и dependency rule, полноту реализации (нет ли забытых мест — например DI-регистрации, локализации, multi-version), регрессии в смежных модулях.
+
+**Если валидатор нашёл проблемы** — исправить и прогнать валидацию повторно.
+Переход к следующему этапу только после чистого вердикта `general`.
 
 ### Правило стоп-крана: не гадай — наблюдай
 
@@ -186,21 +215,76 @@
 **ЗАПРЕЩЕНО** начинать менять код пока не собран весь контекст и не уточнены
 все неоднозначности у пользователя. Переделывать дороже чем спросить заранее.
 
-### Никаких коммитов без тестирования пользователем
+### Ручной тест в Revit + валидация логов — единственный источник истины для UI
 
-**ЗАПРЕЩЕНО** делать `git commit`, `git push` или создавать PR пока пользователь
-лично не протестирует изменения и не подтвердит что всё работает.
+**Для UI/E2E-сценариев ЕДИНСТВЕННЫЙ достоверный способ проверки — валидация логов ручного теста в Revit.** Сборка, юнит-тесты и статический анализ НЕ доказывают, что задача реализована.
+**Для границы SmartCon ↔ Revit API (DB-уровень) источник истины — интеграционные тесты** (`SmartCon.IntegrationTests`, см. следующий раздел): они выполняют production-код внутри реального Revit и не требуют ручного прогона.
 
-**Паттерн работы:**
-1. Агент вносит изменения в код
-2. Агент собирает проект и прогоняет тесты
-3. Агент сообщает пользователю: «Готово, нужно протестировать»
-4. Пользователь тестирует и даёт обратную связь
-5. **Только после подтверждения** — коммит/пуш/PR по запросу пользователя
+**До подтверждения пользователем главный агент НЕ трогает файлы, не влияющие на работу приложения:**
+- документацию `docs/` (включая domain models/interfaces, статусы в `docs/README.md`),
+- ADR,
+- changelog (`docs/changelogs/`),
+- GitHub Issues (Resolution-комментарии, закрытие),
+- коммиты, пуши, PR.
 
-**Причина:** мусорные коммиты с багами плодятся когда агент спешит закоммитить
-до ручной проверки. Revit-плагин нельзя полноценно протестировать автотестами —
-только ручной запуск в Revit подтверждает работоспособность.
+**Полный порядок завершения задачи:**
+1. Реализация кода + сборка + тесты + валидация каждого этапа субагентом `general` (gate выше)
+2. **Интеграционные тесты обязательны**, если задача трогает Revit-boundary код (`SmartCon.Revit`, ExtensibleStorage, транзакции, коннекторы, коллекторы, LoadFamily и т.п.):
+   - существующее поведение покрыто? → прогнать сьют (`dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows`) и убедиться, что зелёный
+   - новая Revit-boundary логика? → **добавить интеграционный тест** по образцу соседнего класса модуля (см. раздел ниже и skill `smartcon-testing`)
+3. Перед ручным тестом: убедиться, что ключевые точки покрыты `Debug`-логами (skill `smartcon-logging`) — по логу должно быть видно, что каждый важный сценарий отработал. Нет покрытия → добавить логирование ДО ручного теста
+4. Агент предлагает ручной тест: чёткий сценарий (что нажать, что ожидать) + просит прислать лог
+5. Пользователь тестирует в Revit и присылает лог: `C:\Users\klim9\AppData\Roaming\AGK\SmartCon\smartcon.log`
+6. Агент валидирует лог: нет необъяснимых `Error`/`Warn`, ключевые операции присутствуют и завершились, цепочки `OpId` целые, поведение соответствует ожиданию
+7. **Только если лог чистый и поведение верное** — агент решает, что задача реализована на 100%, и дальше (по запросу пользователя): правит docs/ADR, формирует changelog (skill `smartcon-changelog`), делает коммит, закрывает issues
+
+**Причина:** мусорные коммиты с багами плодятся, когда агент спешит закоммитить
+до проверки. UI-поведение Revit-плагина нельзя протестировать автотестами —
+только ручной запуск в Revit с последующей валидацией логов. Модельную логику
+(DB-уровень) при этом покрываем интеграционными тестами — см. следующий раздел.
+
+## Интеграционные тесты (SmartCon.IntegrationTests)
+
+`src/SmartCon.IntegrationTests` — тесты, выполняемые **внутри реального процесса Revit**
+(TUnit + Nice3point.TUnit.Revit): инжектор запускает настоящий Revit нужной версии
+и маршалит каждый тест на его API-поток. Это НЕ моки — настоящие `Document`,
+`Element`, `Connector`, `Transaction`, `FilteredElementCollector`, ExtensibleStorage.
+
+**Полное руководство — skill `smartcon-testing` → `references/integration-testing.md`:**
+как запускать, как писать (по образцу соседних классов модуля), **9 жёстких правил**
+(lazy-поля, `[assembly: NotInParallel]`, запрет RevitAPIUI, skip-гарды и др. —
+нарушение = краш сессии). Перед написанием интеграционного теста читай его обязательно.
+
+### Что покрывать интеграционными тестами (цель: вся граница — для защиты от регрессий при рефакторингах)
+
+| Тестируемо интеграционными тестами (DB-уровень, RevitAPI.dll) | НЕ тестируемо (UI-сессия, RevitAPIUI.dll) |
+|---|---|
+| Сервисы `SmartCon.Revit`: транзакции, коннекторы, параметры, transform, chain iterator, purge | `UIDocument`, `Selection`, `PickObjects` |
+| ExtensibleStorage: маппинг фитингов, настройки Share, stale-маркеры | `TaskDialog`, диалоги, WPF-окна |
+| Загрузка/извлечение семейств: `LoadFamily`, `OpenDocumentFile`, type catalog, snapshot/hash | Dockable-панели, Ribbon |
+| Геометрия, коллекторы, формулы на реальных элементах | `ISelectionFilter`-классы (RevitAPIUI = краш хоста) |
+| Сидированная модель: трубы, стены, виды, листы, ведомости | Worksharing UI (`OpenAndActivateDocument`) |
+
+**Правило покрытия:** любой новый сервис в `SmartCon.Revit` или новая ветка
+существующего — с интеграционным тестом в соответствующей папке модуля
+(`PipeConnect/`, `FamilyManager/`, `ProjectManagement/`). Рефакторинг
+Revit-boundary кода без зелёного интеграционного сьюта не считается завершённым.
+
+**Запуск** (требуется установленный Revit соответствующей версии, ~60 сек на сьют):
+```bash
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R27 --framework net10.0-windows  # требует установленный Revit 2027
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
+# Подмножество: ... -- --treenode-filter "/*/*/*ClassName*/*"  (класс в 3-м сегменте!)
+```
+
+R26 компилируется (`-c Debug.R26`), но на машине без установленного Revit 2026 непрогоняем;
+R27-прогон покрывает тот же Conductor*-код (API 2026 ≡ 2027, #233).
+
+**Философия версий прогона (важно, не путать!):** суть сьюта — проверка **платформы**, а не конкретного года Revit. Обязательный минимум: **R25 (net8)** + **любой net48-прогон (Revit 2021-2024, по наличию на машине)** + **R27 (net10, новейший API — когда установлен Revit 2027)** — три платформы (net48/net8/net10). Инжектор Nice3point ищет Revit года `$(RevitVersion)` — поэтому на машине без Revit 2021 прогон `-c Debug.R21` падает с `FileNotFoundException: RevitAPI 21.0.0.0`; лечение — явный `-p:RevitVersion=YYYY` (глобальное свойство перекрывает пин из `Directory.Build.props`, год = любой установленный net48-Revit). По остаточному принципу, если установлено несколько версий, полезно гонять разные API (2021 минимальный / 2023-2024 промежуточные / 2025-2027 новейшие).
+
+**Доказанная ценность:** сьют поймал production-баг #176 в день внедрения
+(флаги PurgeSheets/PurgeSchedules не сохраняли листы/ведомости — невидимо для юнит-тестов).
 
 ## База знаний решённых багов (GitHub Issues)
 
@@ -244,6 +328,8 @@ GitHub Issues — это **официальная база знаний** про
    Почему так сделано, какие альтернативы отвергнуты.
 
    ### Verification
+   - Build R27: ✅ 0 warnings / 0 errors
+   - Build R26: ✅ 0 warnings / 0 errors
    - Build R25: ✅ 0 warnings / 0 errors
    - Build R24: ✅ 0 warnings / 0 errors
    - Tests: ✅ 1434/1434 passed
@@ -319,14 +405,17 @@ workaround'ов с указанием Issue, файла, платформы и �
 ## Code Style
 
 - Комментарии: **НЕ добавлять** если не попросят
+- Размер `.cs`-файлов: цель **≤500 строк**, жёсткий лимит **600** (#260). Больше —
+  partial-разбивка `Class.Topic.cs` по зонам ответственности; поля с инициализаторами,
+  primary constructor и базовые типы остаются в ядровом файле; `#if`-блоки — только целиком
 - XAML code-behind: только `DataContext = viewModel` (I-10)
 - MVVM строго: `.xaml.cs` не содержит логики
 - Revit API из WPF → только через `IExternalEventHandler` (I-01)
 - Транзакции → только через `ITransactionService`. Запрещено `new Transaction(doc)` (I-03)
 - Не хранить `Element`/`Connector` между транзакциями. Только `ElementId` (I-05)
 - `SmartCon.Core` НЕ вызывает Revit API — compile-time only. Запрет `using System.Windows` (I-09)
-- Новые доменные классы → обнови `docs/domain/models/<module>.md` (см. `docs/domain/models/README.md`)
-- Новые интерфейсы → обнови `docs/domain/interfaces/<module>.md` (см. `docs/domain/interfaces/README.md`)
+- Новые доменные классы → обнови `docs/domain/models/<module>.md` (для крупных модулей — тематический файл в `docs/domain/models/<module>/<topic>.md`, см. `docs/domain/models/README.md`)
+- Новые интерфейсы → обнови `docs/domain/interfaces/<module>.md` (для крупных модулей — тематический файл в `docs/domain/interfaces/<module>/<topic>.md`, см. `docs/domain/interfaces/README.md`)
 - Архитектурные решения → создай ADR в `docs/adr/`
 - **Логирование** → **НИКОГДА** не пиши `$"[Cat] message"` — используй
   `using var _scope = SmartConLogger.BeginScope("Cat", ("Method", nameof(M)));`
@@ -342,14 +431,17 @@ workaround'ов с указанием Issue, файла, платформы и �
 |---|---|
 | `smartcon-build-guide` | **ВСЕГДА** перед сборкой / деплоем / релизом |
 | `revit-api-best-practice` | Работа с Revit API, ExternalEvent, Threading, MVVM+Revit |
-| `revit-wpf-compat` | WPF-диалоги, Dispatcher, `Application.Current`, net48/net8 совместимость |
+| `revit-wpf-compat` | WPF-диалоги, Dispatcher, `Application.Current`, net48/net8/net10 совместимость |
 | `smartcon-logging` | **ВСЕГДА** при работе с логами (чтение, добавление вызовов, миграция prefix→scope, аудит `smartcon.log`) |
+| `smartcon-testing` | **ВСЕГДА** при написании/обновлении тестов (unit + integration) и перед запуском интеграционного сьюта (9 жёстких правил в `references/integration-testing.md`) |
+| `smartcon-db-actualization` | **ВСЕГДА** при добавлении миграции/актуализации старых `catalog.db` (critical/optional задача, `IDatabaseActualizationTask`, команда «Обновить базу», баннер/гейт/точка) |
+| `smartcon-changelog` | **ВСЕГДА** при подготовке текста релиза / changelog (stable→анализ `main`, beta→анализ `develop`, архив в `docs/changelogs/`, передача в `release.ps1` через `-ChangelogFile`) |
 
 ## Частые ловушки (gotchas)
 
 - **`dotnet restore` без `-p:Configuration`** → fallback на RevitAPI 2021.* → ложные ошибки CS0618
 - **Собирай `SmartCon.App.csproj`**, НЕ `SmartCon.sln` (подтянет лишние TFM)
-- **При переходе net8 ↔ net48** — ВСЕГДА делай restore с конфигурацией
+- **При переходе net8 ↔ net48 ↔ net10** — ВСЕГДА делай restore с конфигурацией
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
 - **`.GetAwaiter().GetResult()` на UI thread** → DEADLOCK. Используй `AsyncBridge.RunSync(() => async())` из `SmartCon.Core.Threading` (обёртка над `Task.Run + GetResult`). См. skill `revit-api-best-practice` + skill `smartcon-logging` §"Threading".
@@ -364,6 +456,16 @@ workaround'ов с указанием Issue, файла, платформы и �
   - **`Warn` без `[Action: ...]`** — оператор читает лог и не знает что делать. Каждый Warn должен заканчиваться конкретным actionable предложением (L9). Примеры: см. skill `smartcon-logging` → `references/recent-patterns.md` §"L9".
   - **`BeginScope` вокруг долгого метода (>1 сек с тяжёлой inner работой)** — 7803 строк лога из-за одного scope в PipeConnect Editor. Убирай внешний scope, оставь только inner (C15).
 - **Format specifiers `{x:F0}`, `{date:format}` в interpolated strings ЗАПРЕЩЕНЫ** в файлах, транзитивно ссылающихся на HelixToolkit/SharpDX (FamilyManager, App/Diagnostics) на net48 — CS1739. Используй `.ToString("F0", CultureInfo.InvariantCulture)`. См. #97.
+- **Revit 2027 API удаляет `ConnectorType.MasterSurface`** (deprecated в 2026) → в коде `#if REVIT2027_OR_GREATER` использует `MainSurface` (в API 2021 `MainSurface` ещё нет — поэтому именно 2027+, не раньше). Прецедент: при сборке R27 всегда проверять removed-API (revitapidocs /2027/news).
+- **`SmartCon.Tests` НЕ собирать под R27** — проект пиннут на net8.0-windows, net10-сборка даёт NU1201/NU1202. В sln его R27-конфигурации замапены на R25 (маппинг honored только в VS). Юнит-тесты — всегда `-c Debug.R25`.
+- **Интеграционные тесты (SmartCon.IntegrationTests)**:
+  - `dotnet run` требует `--framework` явно (`net8.0-windows` / `net10.0-windows` / `net48`) — иначе «проект для нескольких платформ».
+  - **RevitAPIUI-типы в тестах = краш всей сессии** (`FileLoadException` + нативный AVE у последующих тестов). DB-уровень only.
+  - Поля с Revit-типами — только ленивые; `= null!`/`static readonly XYZ` ломают инжектор (#78).
+  - Параллелизм отключён (`[assembly: NotInParallel]`) — не включать: один процесс Revit = AVE.
+  - Подмножество: класс `-- --treenode-filter "/*/*/*ClassName*/*"`, метод `-- --treenode-filter "/*/*/*/*MethodName*"` (дерево = сборка/ns/класс/метод; имя класса во 2-м сегменте молча даёт «Запущено ноль тестов» — всегда проверяй счётчик `всего: N` > 0). Подробно — skill `smartcon-testing`.
+  - **Итерации (жёстко):** правка → точечный прогон класса (секунды) → ОДИН полный R25 → ОДИН net48 → ОДИН R27 (если установлен Revit 2027). Полный сьют — gate, а не диагностика. **НИКОГДА не перезапускай прогон ради имён упавших** — имена/причины извлекай из того же запуска (консоль: `сбой TestName`, `--report-trx`, или TestResults/*-report.html). Новые скипы относительно baseline = сигнал регрессии наравне с падениями.
+  - **TUnit на net10 (R27):** TUnit 1.44 дизамбигуит перегрузки `IsEqualTo`/`IsNotEqualTo` атрибутом `[OverloadResolutionPriority]`, который honoured только C# 13+ (thomhurst/TUnit#5765/#6282). С глобальным `LangVersion=12` на net10 — 91×CS0121. Фикс: `LangVersion=latest` ТОЛЬКО для net10.0-windows в `SmartCon.IntegrationTests.csproj` — **НЕ удалять этот пин**; production-код остаётся на C# 12.
 
 ## Инструменты поиска
 
@@ -461,6 +563,8 @@ skill: smartcon-build-guide
 ### Промежуточная сборка (для тестирования)
 Build individual configurations — does NOT deploy:
 ```bash
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 ```
@@ -472,10 +576,12 @@ build-and-deploy.bat
 ```
 
 ### Критические правила (агенты постоянно забывают):
-1. **Собирай ВСЕ версии:** R19, R21, R24, R25 (а не только R25!)
+1. **Собирай ВСЕ версии:** R19, R21, R24, R25, R26, R27 (а не только R25!)
 2. **Restore требует Configuration:** `dotnet restore -p:Configuration=Debug.R25`
-3. **При смене TFM (net8 ↔ net48):** ВСЕГДА restore с конфигурацией
+3. **При смене TFM (net8 ↔ net48 ↔ net10):** ВСЕГДА restore с конфигурацией
 4. **Собирай `SmartCon.App.csproj`, НЕ `SmartCon.sln`**
+5. **Per-version бинарники:** каждая версия Revit получает СВОЮ сборку (R25→2025, R26→2026, R27→2027). Эпоха «one binary для 2025+2026» закончилась с #233: в API 2026 у `WireType.WireMaterial`/`TemperatureRating`/`Insulation` сменились типы на `ElementId`, `MaxSize` → `string` — старый бинарник на 2026 = `MissingMethodException`.
+6. **SDK:** `global.json` пинит SDK 10.0.100 (rollForward latestPatch) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
 
 **Подробная документация в skill:**
 - `references/build-configurations.md` — мульти-версионная сборка

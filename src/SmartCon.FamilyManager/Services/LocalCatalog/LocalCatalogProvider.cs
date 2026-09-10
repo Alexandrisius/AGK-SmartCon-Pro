@@ -25,182 +25,6 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         throw new NotSupportedException("Use IFamilyImportService for import operations.");
     }
 
-    public async Task<FamilyCatalogItem> UpdateItemAsync(string id, string? name, string? description, string? categoryId, IReadOnlyList<string>? tags, ContentStatus? status, CancellationToken ct = default)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var tx = connection.BeginTransaction();
-
-        try
-        {
-            var setClauses = new List<string>();
-            var cmd = connection.CreateCommand();
-
-            if (name is not null)
-            {
-                setClauses.Add("name = @name");
-                setClauses.Add("normalized_name = @normalizedName");
-                cmd.Parameters.Add(new SqliteParameter("@name", name));
-                cmd.Parameters.Add(new SqliteParameter("@normalizedName", Core.Services.FamilyManager.FamilyNameNormalizer.Normalize(name)));
-            }
-
-            if (description is not null)
-            {
-                setClauses.Add("description = @description");
-                cmd.Parameters.Add(new SqliteParameter("@description", description));
-            }
-
-            setClauses.Add("category_id = @categoryId");
-            cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
-
-            if (status is not null)
-            {
-                setClauses.Add("content_status = @status");
-                cmd.Parameters.Add(new SqliteParameter("@status", status.Value.ToString()));
-            }
-
-            setClauses.Add("updated_at_utc = @updatedAtUtc");
-            cmd.Parameters.Add(new SqliteParameter("@updatedAtUtc", DateTimeOffset.UtcNow.ToString("o")));
-            cmd.Parameters.Add(new SqliteParameter("@id", id));
-
-            cmd.CommandText = $"UPDATE catalog_items SET {string.Join(", ", setClauses)} WHERE id = @id";
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-
-            if (tags is not null)
-            {
-                using var delCmd = connection.CreateCommand();
-                delCmd.CommandText = "DELETE FROM catalog_tags WHERE catalog_item_id = @id";
-                delCmd.Parameters.Add(new SqliteParameter("@id", id));
-                await delCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-
-                foreach (var tag in tags)
-                {
-                    var normalizedTag = Core.Services.FamilyManager.FamilySearchNormalizer.Normalize(tag);
-                    using var tagCmd = connection.CreateCommand();
-                    tagCmd.CommandText = "INSERT OR IGNORE INTO catalog_tags (catalog_item_id, tag, normalized_tag) VALUES (@id, @tag, @normalizedTag)";
-                    tagCmd.Parameters.Add(new SqliteParameter("@id", id));
-                    tagCmd.Parameters.Add(new SqliteParameter("@tag", tag));
-                    tagCmd.Parameters.Add(new SqliteParameter("@normalizedTag", normalizedTag));
-                    await tagCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
-            }
-
-            tx.Commit();
-        }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
-
-        return (await GetItemAsync(id, ct).ConfigureAwait(false))!;
-    }
-
-    public async Task<bool> DeleteItemAsync(string id, CancellationToken ct = default)
-    {
-        var dbRoot = _database.GetDatabaseRoot();
-        var familyDir = Path.Combine(dbRoot, "files", id);
-        var dirExists = Directory.Exists(familyDir);
-
-        // Attempt file deletion BEFORE database transaction.
-        // If files are locked, exception surfaces here and DB record remains intact.
-        if (dirExists)
-        {
-            await DeleteDirectoryWithRetryAsync(familyDir, ct).ConfigureAwait(false);
-        }
-
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-
-        using (var pragmaCmd = connection.CreateCommand())
-        {
-            pragmaCmd.CommandText = "PRAGMA foreign_keys = ON";
-            await pragmaCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
-
-        int rowsAffected;
-        using var tx = connection.BeginTransaction();
-        try
-        {
-            using var delItem = connection.CreateCommand();
-            delItem.CommandText = "DELETE FROM catalog_items WHERE id = @id";
-            delItem.Parameters.Add(new SqliteParameter("@id", id));
-            rowsAffected = await delItem.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            tx.Commit();
-        }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
-
-        return rowsAffected > 0;
-    }
-
-    private static async Task DeleteDirectoryWithRetryAsync(string path, CancellationToken ct, int maxRetries = 5)
-    {
-        for (var i = 0; i < maxRetries; i++)
-        {
-            try
-            {
-                if (Directory.Exists(path))
-                {
-                    await Task.Run(() =>
-                    {
-                        RemoveReadOnlyAttributes(path);
-                        Directory.Delete(path, recursive: true);
-                    }, ct);
-                }
-                return;
-            }
-            catch (IOException ex) when (i < maxRetries - 1)
-            {
-                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
-                SmartConLogger.Warn($"failed to delete directory: {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
-                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
-            }
-            catch (UnauthorizedAccessException ex) when (i < maxRetries - 1)
-            {
-                using var _scope = SmartConLogger.BeginScope("FM Delete", ("Path", path), ("Attempt", i + 1));
-                SmartConLogger.Warn($"failed (access denied): {ex.Message}. Retrying... [Action: обычно файл заблокирован антивирусом или другим процессом; операция будет повторена до 5 раз]");
-                await Task.Delay(200 * (i + 1), ct).ConfigureAwait(false);
-            }
-        }
-
-        // Final attempt: force GC to release any lingering WPF image handles before last try
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-
-        try
-        {
-            if (Directory.Exists(path))
-            {
-                await Task.Run(() =>
-                {
-                    RemoveReadOnlyAttributes(path);
-                    Directory.Delete(path, recursive: true);
-                }, ct);
-            }
-        }
-        catch (Exception ex)
-        {
-            throw new IOException($"Failed to delete family directory after {maxRetries} attempts: {path}. The file may be open in Revit or another application. {ex.Message}");
-        }
-    }
-
-    private static void RemoveReadOnlyAttributes(string path)
-    {
-        foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
-        {
-            var attr = File.GetAttributes(file);
-            if ((attr & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
-            {
-                File.SetAttributes(file, attr & ~FileAttributes.ReadOnly);
-            }
-        }
-    }
-
     public FamilyCatalogCapabilities GetCapabilities() => new(
         SupportsWrite: true,
         SupportsSearch: true,
@@ -216,7 +40,13 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         var limitOffsetParams = LocalCatalogQueryBuilder.BuildLimitOffsetParameters(query);
 
         var sql = $"""
-            SELECT ci.* FROM catalog_items ci
+            SELECT ci.*,
+                (SELECT MIN(cv.revit_major_version) FROM catalog_versions cv
+                 WHERE cv.catalog_item_id = ci.id
+                   AND cv.version_label = ci.current_version_label) AS active_revit_major_version,
+                (SELECT MIN(cv2.revit_major_version) FROM catalog_versions cv2
+                 WHERE cv2.catalog_item_id = ci.id) AS min_revit_major_version
+            FROM catalog_items ci
             {whereSql}
             {orderBy}
             LIMIT @limit OFFSET @offset
@@ -247,23 +77,12 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             {
                 tagsMap.TryGetValue(items[i].Id, out var tags);
                 tags ??= [];
-                var old = items[i];
-                items[i] = new FamilyCatalogItem(
-                    old.Id,
-                    old.Name,
-                    old.NormalizedName,
-                    old.Description,
-                    old.CategoryPath,
-                    old.CategoryId,
-                    old.Manufacturer,
-                    old.ContentStatus,
-                    old.CurrentVersionLabel,
-                    tags,
-                    old.PublishedBy,
-                    old.CreatedAtUtc,
-                    old.UpdatedAtUtc,
-                    old.FamilySource,
-                    old.RevitCategory);
+                // #187: tags enrichment must never rebuild the record
+                // field-by-field — a rebuild dropped RevitCategoryId once
+                // (SearchAsync always returned null, silently breaking
+                // presence badges and the batch stale check). The `with`
+                // expression carries every field, present and future.
+                items[i] = items[i] with { Tags = tags };
             }
         }
 
@@ -284,24 +103,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
 
         var item = ReadCatalogItem(reader);
         var tags = await LoadTagsAsync(connection, id, ct).ConfigureAwait(false);
-        return new FamilyCatalogItem(
-            item.Id,
-            item.Name,
-            item.NormalizedName,
-            item.Description,
-            item.CategoryPath,
-            item.CategoryId,
-            item.Manufacturer,
-            item.ContentStatus,
-            item.CurrentVersionLabel,
-            tags,
-            item.PublishedBy,
-            item.CreatedAtUtc,
-            item.UpdatedAtUtc,
-            item.FamilySource,
-            item.RevitCategory,
-            item.ContentHash,
-            item.HashFormatVersion);
+        return item with { Tags = tags };
     }
 
     public async Task<IReadOnlyList<FamilyCatalogVersion>> GetVersionsAsync(string catalogItemId, CancellationToken ct = default)
@@ -309,7 +111,13 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         using var connection = _database.CreateConnection();
         await connection.OpenAsync(ct).ConfigureAwait(false);
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_versions WHERE catalog_item_id = @itemId ORDER BY published_at_utc DESC";
+        cmd.CommandText = """
+            SELECT cv.*, ff.file_name
+            FROM catalog_versions cv
+            LEFT JOIN family_files ff ON ff.id = cv.file_id
+            WHERE cv.catalog_item_id = @itemId
+            ORDER BY cv.published_at_utc DESC
+            """;
         cmd.Parameters.Add(new SqliteParameter("@itemId", catalogItemId));
 
         var versions = new List<FamilyCatalogVersion>();
@@ -429,6 +237,7 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         var categoryId = TryGetString(reader, "category_id");
         var familySource = TryGetString(reader, "family_source") ?? "loadable";
         var revitCategory = TryGetString(reader, "revit_category");
+        var revitCategoryId = TryGetInt(reader, "revit_category_id");
         var contentHash = TryGetString(reader, "content_hash");
         int? hashFormatVersion = TryGetInt(reader, "hash_format_version");
 
@@ -459,7 +268,10 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
             FamilySource: familySource,
             RevitCategory: revitCategory,
             ContentHash: contentHash,
-            HashFormatVersion: hashFormatVersion);
+            HashFormatVersion: hashFormatVersion,
+            ActiveRevitMajorVersion: TryGetInt(reader, "active_revit_major_version"),
+            MinRevitMajorVersion: TryGetInt(reader, "min_revit_major_version"),
+            RevitCategoryId: revitCategoryId);
     }
 
     private static FamilyCatalogVersion ReadCatalogVersion(SqliteDataReader reader) => new(
@@ -477,7 +289,8 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         PublishedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("published_at_utc"))),
         ContentHash: TryGetString(reader, "content_hash"),
         HashFormatVersion: TryGetInt(reader, "hash_format_version"),
-        PublishedBy: TryGetString(reader, "published_by"));
+        PublishedBy: TryGetString(reader, "published_by"),
+        FileName: TryGetString(reader, "file_name"));
 
     private static FamilyFileRecord ReadFileRecord(SqliteDataReader reader) => new(
         Id: reader.GetString(reader.GetOrdinal("id")),
@@ -486,119 +299,6 @@ internal sealed partial class LocalCatalogProvider : IFamilyCatalogProvider, IWr
         RevitMajorVersion: reader.GetInt32(reader.GetOrdinal("revit_major_version")),
         ImportedAtUtc: DateTimeOffset.Parse(reader.GetString(reader.GetOrdinal("imported_at_utc"))));
 
-    public async Task<FamilyCatalogItem?> FindByNormalizedNameAsync(string normalizedName, CancellationToken ct = default)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_items WHERE normalized_name = @name LIMIT 1";
-        cmd.Parameters.Add(new SqliteParameter("@name", normalizedName));
-
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-            return null;
-
-        return ReadCatalogItem(reader);
-    }
-
-    public async Task<IReadOnlyList<FamilyCatalogItem>> GetItemsBySourceAsync(string familySource, CancellationToken ct = default)
-    {
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT * FROM catalog_items WHERE family_source = @source ORDER BY name";
-        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
-
-        var items = new List<FamilyCatalogItem>();
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            items.Add(ReadCatalogItem(reader));
-        }
-
-        return items;
-    }
-
-    private static string? TryGetString(SqliteDataReader reader, string columnName)
-    {
-        for (var i = 0; i < reader.FieldCount; i++)
-        {
-            if (reader.GetName(i) == columnName && !reader.IsDBNull(i))
-                return reader.GetString(i);
-        }
-        return null;
-    }
-
-    private static int? TryGetInt(SqliteDataReader reader, string columnName)
-    {
-        for (var i = 0; i < reader.FieldCount; i++)
-        {
-            if (reader.GetName(i) == columnName && !reader.IsDBNull(i))
-                return reader.GetInt32(i);
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Cross-version content-hash search. Looks for a matching
-    /// <c>content_hash</c> across ALL versions (current and archived) of
-    /// ALL catalog items, filtered by <paramref name="familySource"/> to
-    /// enforce cross-source separation (system hashes never match
-    /// loadable hashes) and by <paramref name="hashFormatVersion"/> so
-    /// old-format hashes do not produce false duplicate matches against
-    /// new-format ones.
-    /// </summary>
-    /// <param name="hexHash">SHA-256 hex string.</param>
-    /// <param name="hashFormatVersion">Hash format version (must match
-    /// <c>hash_format_version</c> column).</param>
-    /// <param name="familySource"><c>"loadable"</c> or <c>"system"</c>.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A <see cref="ContentHashMatch"/> if a match was found,
-    /// or <c>null</c> if no version has this hash.</returns>
-    public async Task<ContentHashMatch?> FindByContentHashAcrossVersionsAsync(
-        string hexHash,
-        int hashFormatVersion,
-        string familySource,
-        CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(hexHash))
-            return null;
-
-        using var connection = _database.CreateConnection();
-        await connection.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = """
-            SELECT cv.catalog_item_id AS itemId,
-                   cv.version_label AS versionLabel,
-                   ci.current_version_label AS currentLabel
-            FROM catalog_versions cv
-            JOIN catalog_items ci ON cv.catalog_item_id = ci.id
-            WHERE cv.content_hash = @hash
-              AND cv.hash_format_version = @fmt
-              AND ci.family_source = @source
-            ORDER BY cv.published_at_utc DESC
-            LIMIT 1
-            """;
-        cmd.Parameters.Add(new SqliteParameter("@hash", hexHash));
-        cmd.Parameters.Add(new SqliteParameter("@fmt", hashFormatVersion));
-        cmd.Parameters.Add(new SqliteParameter("@source", familySource));
-
-        using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-            return null;
-
-        var itemId = reader.GetString(reader.GetOrdinal("itemId"));
-        var versionLabel = reader.GetString(reader.GetOrdinal("versionLabel"));
-        var currentLabel = reader.IsDBNull(reader.GetOrdinal("currentLabel"))
-            ? null
-            : reader.GetString(reader.GetOrdinal("currentLabel"));
-        var isCurrent = string.Equals(versionLabel, currentLabel, StringComparison.Ordinal);
-
-        return new ContentHashMatch(
-            CatalogItemId: itemId,
-            MatchedVersionLabel: versionLabel,
-            IsCurrentVersion: isCurrent);
-    }
 }
 
 

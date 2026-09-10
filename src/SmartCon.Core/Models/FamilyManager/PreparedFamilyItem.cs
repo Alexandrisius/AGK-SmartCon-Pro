@@ -29,7 +29,35 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// (parallel to <see cref="FamilyBatchImportItem.SourceTypes"/>);
 /// <c>null</c> for loadable families.</param>
 /// <param name="FamilySource"><c>"loadable"</c> or <c>"system"</c>.</param>
-public sealed record PreparedFamilyItem(
+/// <param name="RoutingDependencies">
+/// ADR-066 (E1): dependency descriptors discovered from this item's routing
+/// rules — set on SYSTEM items only, transient (Phase-1 → dependency
+/// preparation inside the same call), never carried into the dialog.
+/// </param>
+/// <param name="DependencyLinks">
+/// ADR-066: set on CHILD items (dependencies of another row) — the parent
+/// rows this item must be linked to in <c>family_dependencies</c> after
+/// import. <c>null</c> for top-level rows.
+/// </param>
+    /// <param name="SharedNestedDependencies">
+    /// ADR-066 (E2, #209): shared-nested descriptors discovered in this item's
+    /// family document — set on LOADABLE items only, transient (Phase-1 →
+    /// nested preparation inside the same call), never carried into the dialog.
+    /// <see cref="FamilyDependencyDescriptor.FamilyUniqueId"/> values are valid
+    /// in THIS item's held-open family document only.
+    /// </param>
+    /// <param name="EmbeddedMarkerCatalogItemId">
+    /// #209 (2026-08-11): the ES version marker
+    /// (<c>SmartCon_FamilyVersion_v1</c>) read from the embedded nested
+    /// family element in the parent's family document — set on nested-child
+    /// rows only. The marker is written by the stale-update command ONLY
+    /// after the embedded content passed FHV10 verification, so it is a
+    /// stronger version signal than identity-hash matching (which cannot
+    /// see past parameter groups — a merge never propagates them).
+    /// </param>
+    /// <param name="EmbeddedMarkerVersionLabel">Version label from the same
+    /// marker (e.g. <c>v2</c>).</param>
+    public sealed record PreparedFamilyItem(
     string SourcePath,
     string DisplayName,
     int RevitMajorVersion,
@@ -44,4 +72,50 @@ public sealed record PreparedFamilyItem(
     string? ExistingCatalogItemId = null,
     string? ExistingVersionLabel = null,
     string? MatchedVersionLabel = null,
-    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null);
+    IReadOnlyList<FamilyGeometryPerType>? GeometryPerType = null,
+    bool IsCrossNameDuplicate = false,
+    string? MatchedItemName = null,
+    FamilyHealthReport? HealthReport = null,
+    IReadOnlyList<FamilyDependencyDescriptor>? RoutingDependencies = null,
+    IReadOnlyList<FamilyDependencyLink>? DependencyLinks = null,
+    IReadOnlyList<FamilyDependencyDescriptor>? SharedNestedDependencies = null,
+    string? EmbeddedMarkerCatalogItemId = null,
+    string? EmbeddedMarkerVersionLabel = null,
+    /// <summary>
+    /// #180 (2026-08-12): <c>true</c> when <see cref="MatchedVersionLabel"/>
+    /// came from the verified ES marker override
+    /// (<c>EmbeddedMarkerMatchResolver</c>), not from the content-hash
+    /// dedup — i.e. the embedded identity hash disagrees (or has no match).
+    /// Expected after a nested update: a merge never propagates parameter
+    /// groups, so the identity hash keeps matching the OLD version forever.
+    /// Display-only flag: the batch dialog annotates the version as
+    /// marker-resolved so "Duplicate (v2)" is not read as "content-identical
+    /// to v2". Never consumed by import logic (MakeActive/executor).
+    /// </summary>
+    bool IsMarkerResolvedVersion = false,
+    /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes computed from
+    /// <see cref="LoadableSnapshot"/>/<see cref="SystemSnapshot"/> at
+    /// Prepare time, carried to the DB writer so
+    /// <c>family_type_hashes</c> is populated without re-opening the
+    /// family file. <c>null</c> when preparation failed before hashing.
+    /// </summary>
+    IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes = null,
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections computed at
+    /// Prepare from the SAME enriched snapshot as
+    /// <see cref="ContentHash"/> (composite-consistent NESTEDHASH),
+    /// persisted to <c>catalog_versions.section_hashes/section_strings</c>
+    /// at import. <c>null</c> when preparation failed before hashing.
+    /// </summary>
+    IReadOnlyList<ContentSectionHash>? Sections = null,
+    /// <summary>
+    /// ADR-072 World B (audit M11): <c>true</c> when this is a reimport FROM
+    /// a mini-project AND the catalog DB carried no stored routing rows to
+    /// substitute — the <see cref="SystemSnapshot"/> routing is then the slim
+    /// mini state (Segments + no-part rules), NOT catalog truth. The import
+    /// must not seed the item-level routing tables from it (sync would
+    /// converge user projects to the slim state); it stays unseeded until a
+    /// live import / backfill / editor edit provides real routing.
+    /// </summary>
+    bool UnsubstitutedMiniRouting = false);

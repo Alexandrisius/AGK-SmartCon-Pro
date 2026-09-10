@@ -23,8 +23,12 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
     private readonly IStaleDetector _staleDetector;
     private readonly IClock _clock;
     private readonly IWindowFocusService? _windowFocusService;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
+    private readonly IFamilyDependencyRepository? _dependencyRepository;
+    private readonly IFamilyCatalogProvider? _catalogProvider;
 
     public event Action? PlacementCompleted;
+    public event Action<FamilyPlacementDragData>? SystemTypePlaced;
     public event Action<string>? PlacementFailed;
     public event Action<string>? PlacementSucceeded;
     public event Action<string>? PlacementStatusMessage;
@@ -40,7 +44,10 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         IFamilyVersionStore versionStore,
         IStaleDetector staleDetector,
         IClock clock,
-        IWindowFocusService? windowFocusService = null)
+        IWindowFocusService? windowFocusService = null,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null,
+        IFamilyDependencyRepository? dependencyRepository = null,
+        IFamilyCatalogProvider? catalogProvider = null)
     {
         _revitUIContext = revitUIContext;
         _searchService = searchService;
@@ -52,6 +59,9 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         _staleDetector = staleDetector;
         _clock = clock;
         _windowFocusService = windowFocusService;
+        _nestedSharedRepository = nestedSharedRepository;
+        _dependencyRepository = dependencyRepository;
+        _catalogProvider = catalogProvider;
     }
 
     public void StartPlacementDrag(FamilyPlacementDragData data)
@@ -73,7 +83,11 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
                 OnPlacementFailed,
                 OnPlacementSucceeded,
                 OnPlacementStatusMessage,
-                OnSharedFamilyDecisionRequested);
+                OnSharedFamilyDecisionRequested,
+                _nestedSharedRepository,
+                OnSystemTypePlaced,
+                _dependencyRepository,
+                _catalogProvider);
 
             UIApplication.DoDragDrop(data, handler);
         }
@@ -81,6 +95,11 @@ public sealed class RevitFamilyPlacementDragService : IFamilyPlacementDragServic
         {
             SmartConLogger.Error($"RevitFamilyPlacementDragService.DoDragDrop: failed: {ex}");
         }
+    }
+
+    private void OnSystemTypePlaced(FamilyPlacementDragData data)
+    {
+        SystemTypePlaced?.Invoke(data);
     }
 
     private void OnPlacementCompleted()

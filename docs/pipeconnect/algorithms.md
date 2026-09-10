@@ -112,6 +112,33 @@ correction = static.Origin - newDynamic.Origin
 - Перед изменением параметра типа — `SubTransaction` для проверки (preview), затем Commit или Rollback.
 - Результат `SolveFor()` округляется до 6 знаков decimal feet перед записью.
 
+### DN-компенсация на уровнях сети (ADR-053, ревизия 2026-07-20)
+
+При обработке уровней (`ChainOperationHandler.AdjustElementSize`) несовпадение
+радиусов с родителем разрешается иерархией стратегий:
+
+```
+1. TRANSITION — элемент сам становится переходным (тройник DN25×DN25 → DN20×DN25).
+   TransitionSizeMatcher по prefetch-нутым GetAvailableFamilySizes:
+   target-порт совпадает точно, остальные порты меняются минимально (идеально 0).
+   Применение: ApplyQueryParamsIfExists → иначе per-connector TrySetConnectorRadius.
+   Опции со сменой FamilySymbol исключены.
+2. REDUCER — редьюсер из маппинга CTC (NetworkMover.InsertReducer),
+   элемент и сеть не трогаем (для FamilyInstance — до resize).
+3. RESIZE — классический resize; каскад останавливается на первом
+   DN-поглощающем элементе ниже (зеркало pipe length absorption, §7).
+```
+
+`AdjustRelatedFamilyConnectors` трогает только порты с **общим** DN-параметром
+(`DnParamsShared` — сравнение имён из `GetConnectorRadiusDependencies`).
+Независимые порты сохраняют DN — точечный фикс #146.
+
+Prefetch конфигураций — в snapshot-фазе `IncrementLevel` (вне транзакции:
+`GetAvailableFamilySizes` требует `IsModifiable == false` из-за EditFamily).
+
+Known limitation: семейства без lookup/типов с nested-IF формулами, ожидающими
+конкретные DN — см. ADR-053.
+
 ---
 
 ## 3. Алгоритм подбора фитингов (S5)
@@ -199,35 +226,54 @@ BuildGraph(doc, startElementId, stopAtElements = null):
 ### Особенности
 - **Тройники/крестовины:** все ветки включаются в граф (BFS обходит все направления)
 - **Защита от циклов:** `visited` HashSet
+- **Петли сети (cross-edges):** ребро к уже посещённому соседу не становится
+  tree-ребром (не попадает в `Edges`/`Levels`/`Adjacency` — иначе сломался бы
+  выбор родителя и seal), но **физическая связь записывается** в
+  `originalConnections` обеих сторон. Иначе attach элемента разорвал бы её в
+  `DisconnectElementConnections`, и никто бы её не восстановил (баг: труба
+  оставалась оторванной от тройника после компенсации). Восстановление —
+  `RestoreCrossEdgesToAttached` при attach: cross-edge к уже подключённому
+  соседу переподключается через `ConnectTo` (с проверкой зазора ≤ 2 мм, чтобы
+  Revit не сдвинул элементы); сосед, подключённый позже, восстановит то же
+  ребро со своей стороны (симметрия). При откате cross-edge восстанавливается
+  из снапшота по обычным правилам `ReconnectSnapshotConnections`.
 - **Ограничений на глубину нет**
 - **ConnectorType.Curve** исключается (инвариант I-08)
 
 ---
 
-## 5. Алгоритм Дейкстры для цепочки фитингов (PathfinderService)
+## 5. Алгоритм подбора цепочки фитингов (FittingMapper / IFittingChainResolver)
 
-**Файл:** `SmartCon.Core/Services/Implementation/PathfinderService.cs`
-**Фаза:** 9A (продвинутый функционал)
+**Файлы:** `SmartCon.Core/Services/Implementation/FittingMapper.cs`, `SmartCon.Core/Services/Interfaces/IFittingChainResolver.cs`  
+**ADR:** [ADR-010](../adr/010-fitting-chain-resolver.md)
 
 Граф строится из `FittingMappingRule`:
 - **Узел** = `ConnectionTypeCode`
-- **Ребро** = правило маппинга (FromType -> ToType)
+- **Ребро** = правило маппинга (`FromType -> ToType`)
 - **Вес** = Priority правила
 
 ```
-FindShortestFittingPath(from: ConnectionTypeCode, to: ConnectionTypeCode):
-    Стандартный Дейкстра на графе типов
-    Возвращает: List<FittingMappingRule> — минимальная цепочка переходников
+rules = IFittingMapper.GetMappings(static.TypeCode, dynamic.TypeCode)
+
+Если rules пуст:
+   --> path = IFittingChainResolver.FindShortestPath(static.TypeCode, dynamic.TypeCode)
+   --> Если путь найден: rules = цепочка правил
+   --> Если нет: предупреждение, ProposedFittings = []
 ```
 
-**Кейс:** TYPE-1 -> TYPE-3 прямого правила нет, но есть TYPE-1->TYPE-2 (Priority=1) и TYPE-2->TYPE-3 (Priority=2). Результат: цепочка из 2 фитингов, суммарный вес = 3.
+**Кейс:** TYPE-1 → TYPE-3 прямого правила нет, но есть TYPE-1→TYPE-2 (Priority=1) и TYPE-2→TYPE-3 (Priority=2). Результат: цепочка из 2 фитингов, суммарный вес = 3.
+
+Для каждого правила в цепочке:
+- `IsDirectConnect` + `FittingFamilies` пуст → прямое соединение
+- `IsDirectConnect` + `FittingFamilies` не пуст → фильтрация по размерам, автовыбор по Priority
+- `!IsDirectConnect` → обязателен фитинг-переходник, фильтрация + автовыбор
 
 ---
 
 ## 6. FormulaSolver: архитектура парсера
 
-**Файл:** `SmartCon.Core/Services/Implementation/FormulaSolver.cs`
-**Фаза:** 6
+**Файл:** `SmartCon.Core/Math/FormulaEngine/Solver/FormulaSolver.cs`  
+**ADR:** [ADR-005](../adr/005-formula-solver-ast.md)
 
 ### Pipeline
 
@@ -255,3 +301,108 @@ FindShortestFittingPath(from: ConnectionTypeCode, to: ConnectionTypeCode):
 1. **Линейные формулы** (x * a + b): алгебраическая инверсия AST
 2. **Сложные** (if, trig): метод бисекции на интервале допустимых значений
 3. Округление результата до 6 знаков decimal feet
+
+---
+
+## 7. Гашение смещения сети длиной трубы (per-level absorption)
+
+**Файл:** `SmartCon.Core/Math/PipeLengthAbsorber.cs` (pure math, Vec3)
+**Интеграция:** `SmartCon.PipeConnect/Services/ChainOperationHandler.cs` (`TryAlignPipeByLength`)
+**ADR:** [ADR-052](../adr/052-pipe-length-displacement-absorption.md)
+
+### Проблема
+
+При подключении уровня сети (кнопки `+` / «Подключить всё») элемент отсоединялся,
+сдвигался как жёсткое тело на вектор выравнивания `v` и переподключался. Смещение
+протаскивалось по всем уровням — вся система (например, отопление здания) сдвигалась
+на `v`, хотя физически нужно было только скорректировать длину одной трубы.
+
+### Идея (per-level, ревизия 2026-07-20)
+
+Смещение распространяется по уровням классически — по одному элементу за инкремент.
+Когда инкремент доходит до элемента, который **сам является прямой трубой**, и его
+выравнивание — чистая трансляция, труба **меняет длину вместо перемещения**:
+ближний к родителю конец `LocationCurve` следует за `v`, дальний получает только
+непоглощённый остаток. При полном поглощении propagation останавливается —
+downstream-уровни получают нулевой offset. Вперёд и назад — строго поэлементно.
+
+То же правило действует при **начальном выравнивании динамика** (addendum
+2026-07-20b): если динамический элемент — прямая/гибкая труба, `AlignDynamic`
+меняет её геометрию вместо жёсткого сдвига (`PipeAbsorptionApplier`), и сеть за
+дальним концом не двигается вообще. Применение вынесено в общий
+`PipeAbsorptionApplier` (SmartCon.PipeConnect/Services).
+
+> Eager-модель (обход поддерева вперёд) отвергнута после полевых тестов: один
+> уровень двигал весь узел, электрические коннекторы терялись, уровни 12–13
+> оставались пустыми. См. ADR-052 §"Почему eager-модель отвергнута".
+
+### Предусловия
+
+Гашение применяется, только когда элемент — MEPCurve с `LocationCurve` типа `Line`
+и выравнивание — **чистая трансляция** (`BasisZRotation == null && BasisXSnap == null
+&& !IsZero(InitialOffset)`). Иначе → классический rigid align.
+
+### Алгоритм (PipeLengthAbsorber.Compute)
+
+```
+axis     = normalize(far - near)      // near = конец кривой ближе к коннектору родителя
+axial    = dot(v, axis)
+absorbed = axial > 0
+    ? min(axial, max(0, length - minPipeLength))   // укорочение ограничено минимумом
+    : axial                                        // удлинение без ограничений
+nearDelta = v                          // ближний конец → к родителю (точное совпадение)
+farDelta  = v - axis * absorbed        // дальний конец: 0 при полном поглощении
+lc.Curve = Line.CreateBound(p0 + StartDelta, p1 + EndDelta)
+```
+
+### Правила (бизнес-решения)
+
+1. **Минимальная длина трубы 100 мм** (`PipeAbsorption.MinPipeLengthMm` →
+   `MinPipeLengthFt = 100 / 304.8`). Revit падает ниже ~2.5 мм (1/10"), но монтажно
+   короткие вставки нежелательны. Труба уже короче 100 мм не укорачивается вообще
+   (чистая трансляция, весь offset уходит дальше).
+2. **Частичное поглощение:** запаса не хватает → труба гасит до 100 мм, остаток
+   получает следующий уровень (возможно, следующая труба доберёт его на своём уровне).
+3. **Перпендикулярная труба** математически вырождается в трансляцию (`absorbed ≈ 0`).
+4. Обработка только своего элемента — электрика и прочие домены не затрагиваются.
+
+### Применение (ChainOperationHandler.ProcessIncrementElement)
+
+1. `DisconnectElementConnections` → `AdjustElementSize` (как раньше).
+2. `TryAlignPipeByLength`: вычислить `ConnectorAligner.ComputeAlignment`; если
+   трансляция и элемент — прямая труба: `PipeLengthAbsorber.Compute` →
+   `lc.Curve = Line.CreateBound(...)` → `doc.Regenerate()`. Иначе — `AlignElement`.
+3. `ReconnectIncrementElement` — ближний конец совпадает с родителем точно.
+4. Дальний конец трубы переподключается на уровне downstream-соседа обычным
+   потоком (offset = остаток или 0).
+
+### Откат (DecrementLevel)
+
+Без изменений: восстанавливаются только элементы текущего уровня из снапшотов
+(кривая трубы восстанавливается через `RestoreMepCurve`). Полная симметрия с
+increment: один уровень = один элемент в обе стороны.
+
+### FlexPipe (addendum 2026-07-20)
+
+Гибкая труба гасит смещение через сеттер `FlexPipe.Points` (НЕ `LocationCurve.Curve` —
+присвоение HermiteSpline для flex-элементов бросает исключение, Autodesk forum
+10671223). Меняется только концевая точка со стороны родителя на полный offset
+(flex гнётся в любую сторону), промежуточные точки сохраняются verbatim
+(`PipeLengthAbsorber.ComputeFlexPath`). Ограничение: длина ломаного пути после
+изменения ≥ 100 мм, иначе rigid fallback. Снапшот хранит `FlexPoints` целиком —
+откат восстанавливает форму полностью.
+
+### Запечатывание и авто-пропуск мёртвых уровней (addendum 2026-07-20)
+
+**Запечатывание (seal):** после каждого инкремента `TrySealQuietChain` проверяет,
+осталась ли работа: все boundary-дети следующего уровня с нулевым offset, без
+поворотов и с совпадающим радиусом + все глубокие piping-рёбра с совпадающими
+радиусами. Если тихо — одна транзакция `Tx_ChainSeal` переподключает границу,
+`+` и «Подключить всё» блокируются (`_chainSealed`), сеть дальше не трогается.
+Откат снимает флаг.
+
+**Авто-пропуск (fallback):** `IncrementLevel` возвращает `anyWork`; VM хранит
+флаги `_levelDidWork` и при `+`/`−` авто-пропускает уровни без изменений
+(обработка выполняется — нужна для переподключения), статус «пропущено без
+изменений: N». Уровни с resize/reducer никогда не пропускаются. Эффективный
+максимум уровней не предсказывается заранее — зависит от компенсаций и диаметров.

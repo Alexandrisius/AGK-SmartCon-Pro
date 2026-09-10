@@ -62,6 +62,19 @@ public sealed class StoragePathResolver
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), fileName);
     }
 
+    /// <summary>File name of the derived avatar thumbnail (ADR-047 / issue #131).</summary>
+    public const string AvatarFileName = "avatar.png";
+
+    /// <summary>
+    /// Path of the derived avatar thumbnail for a catalog item:
+    /// {db-root}/files/{family-id}/avatar.png. Version-independent — the avatar
+    /// represents the whole family, not a single version (ADR-047).
+    /// </summary>
+    public string GetAvatarPath(string catalogItemId)
+    {
+        return Path.Combine(GetFamilyDirectory(catalogItemId), AvatarFileName);
+    }
+
     public string GetAssetsDirectory(string catalogItemId, string versionLabel)
     {
         return Path.Combine(GetVersionDirectory(catalogItemId, versionLabel), "assets");
@@ -81,6 +94,50 @@ public sealed class StoragePathResolver
             return relative;
         }
         return absolutePath;
+    }
+
+    /// <summary>
+    /// #249 (Phase 5): the shared CAS preview pool —
+    /// <c>{db-root}/files/_shared/models/{shard2}/{view3dHash-40}.glb</c>.
+    /// Files are immutable by construction (the name IS the content hash,
+    /// I-16); versions reference pool files via
+    /// <c>family_assets.relative_path</c> rows, so identical preview
+    /// content is stored once — across versions AND across families.
+    /// The 2-hex-char shard caps the directory count at 256 forever
+    /// (the git-objects sharding model — keeps NTFS enumeration fast).
+    /// The file name is the first 40 hex chars (160 bits) of the VIEW3D
+    /// hash: collision odds stay at the 2^80 birthday bound while the
+    /// relative path drops to 69 chars, leaving ~190 chars of MAX_PATH
+    /// headroom for deep/network catalog roots (manual-test review).
+    /// </summary>
+    public const string SharedPreviewPoolRelativePrefix = "files/_shared/models/";
+
+    /// <summary>
+    /// <c>true</c> when a <c>family_assets.relative_path</c> points into
+    /// the shared CAS preview pool (and therefore must NOT be deleted
+    /// or moved together with the owning version — refcount rules apply).
+    /// </summary>
+    public static bool IsSharedPreviewPoolPath(string? relativePath)
+        => relativePath is not null
+            && relativePath.StartsWith(SharedPreviewPoolRelativePrefix, StringComparison.Ordinal);
+
+    /// <summary>Relative path of a pooled preview file for a VIEW3D hash.</summary>
+    public static string GetSharedPreviewRelativePath(string view3dHash)
+        => SharedPreviewPoolRelativePrefix + view3dHash[..2] + "/" + view3dHash[..40] + ".glb";
+
+    /// <summary>Absolute path of a pooled preview file for a VIEW3D hash.</summary>
+    public string GetSharedPreviewFilePath(string view3dHash)
+        => Path.Combine(GetDatabaseRoot(), GetSharedPreviewRelativePath(view3dHash));
+
+    /// <summary>Absolute path of the shared preview pool directory.</summary>
+    public string GetSharedPreviewPoolDirectory()
+        => Path.Combine(GetFilesRoot(), "_shared", "models");
+
+    /// <summary>Ensures the shard directory of a pooled preview file exists.</summary>
+    public void EnsureSharedPreviewDirectory(string view3dHash)
+    {
+        Directory.CreateDirectory(
+            Path.Combine(GetSharedPreviewPoolDirectory(), view3dHash[..2]));
     }
 
     public static string GetAssetTypeFolder(FamilyAssetType? assetType) => assetType switch

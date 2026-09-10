@@ -19,6 +19,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     private readonly IFamilyManagerDialogService _dialogService;
     private readonly ICategoryRepository _categoryRepository;
     private readonly IFamilyManagerMetadataMediator _metadataMediator;
+    private readonly IFamilyManagerViewModelFactory _viewModelFactory;
     private readonly System.Windows.Threading.Dispatcher _uiDispatcher;
     private readonly List<AttributeDefinitionDraft> _pendingDeletions = [];
     private bool _detached;
@@ -26,6 +27,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     [ObservableProperty] private ObservableCollection<AttributeDefinitionDraft> _items = [];
     [ObservableProperty] private AttributeDefinitionDraft? _selectedItem;
     [ObservableProperty] private string _statusMessage = string.Empty;
+    [ObservableProperty] private ObservableCollection<string> _availableGroups = [];
 
     public bool HasUnsavedChanges => _pendingDeletions.Count > 0
         || Items.Any(i => i.IsNew || i.IsDirty);
@@ -37,13 +39,15 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
         ICategoryAttributeBindingService bindingService,
         IFamilyManagerDialogService dialogService,
         ICategoryRepository categoryRepository,
-        IFamilyManagerMetadataMediator metadataMediator)
+        IFamilyManagerMetadataMediator metadataMediator,
+        IFamilyManagerViewModelFactory viewModelFactory)
     {
         _attributeDefRepository = attributeDefRepository;
         _bindingService = bindingService;
         _dialogService = dialogService;
         _categoryRepository = categoryRepository;
         _metadataMediator = metadataMediator;
+        _viewModelFactory = viewModelFactory;
 
         // Application.Current?.Dispatcher is null in Revit addins (especially net48)
         // because WPF Application is not auto-created. Dispatcher.CurrentDispatcher
@@ -129,7 +133,30 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
             };
         }).ToList();
 
+        foreach (var draft in drafts)
+            draft.PropertyChanged += OnDraftPropertyChanged;
+
         Items = new ObservableCollection<AttributeDefinitionDraft>(drafts);
+        RefreshAvailableGroups();
+    }
+
+    private void OnDraftPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AttributeDefinitionDraft.Group))
+            RefreshAvailableGroups();
+    }
+
+    private void RefreshAvailableGroups()
+    {
+        var groups = Items
+            .Select(i => i.Group)
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Select(g => g!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        AvailableGroups = new ObservableCollection<string>(groups);
     }
 
     [RelayCommand]
@@ -146,16 +173,62 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
             IsNew = true,
             IsDirty = false
         };
+        draft.PropertyChanged += OnDraftPropertyChanged;
         Items.Add(draft);
         SelectedItem = draft;
     }
 
     [RelayCommand]
-    private void Delete()
+    private void ImportFromSharedParameters()
     {
-        if (SelectedItem is null) return;
+        using var _scope = SmartConLogger.BeginScope("FMEdit",
+            ("Method", nameof(ImportFromSharedParameters)));
 
-        var draft = SelectedItem;
+        var existingNames = Items
+            .Select(i => i.Name)
+            .Where(n => !string.IsNullOrWhiteSpace(n));
+
+        var pickerVm = _viewModelFactory.CreateSharedParameterPickerViewModel(existingNames);
+        pickerVm.Initialize();
+
+        if (_dialogService.ShowSharedParameterPicker(pickerVm) != true)
+            return;
+
+        var added = 0;
+        foreach (var entry in pickerVm.GetSelectedEntries())
+        {
+            if (Items.Any(i => string.Equals(i.Name, entry.Name, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var draft = new AttributeDefinitionDraft
+            {
+                OriginalId = null,
+                Name = entry.Name,
+                Group = null,
+                IsActive = true,
+                OriginalIsActive = true,
+                BindingCount = 0,
+                IsNew = true,
+                IsDirty = true
+            };
+            draft.PropertyChanged += OnDraftPropertyChanged;
+            Items.Add(draft);
+            added++;
+        }
+
+        SmartConLogger.Info($"ImportFromSharedParameters: added {added} drafts");
+        StatusMessage = added > 0
+            ? string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_AL_ImportedFromSP)
+                    ?? "Добавлено из ФОП: {0}. Нажмите OK для сохранения.",
+                added)
+            : string.Empty;
+    }
+
+    [RelayCommand]
+    private void Delete(AttributeDefinitionDraft? draft)
+    {
+        if (draft is null) return;
 
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_AL_Delete) ?? "Delete";
         var message = draft.BindingCount > 0
@@ -164,17 +237,17 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
 
         if (!_dialogService.ShowConfirmation(title, message)) return;
 
-        if (draft.IsNew)
-        {
-            Items.Remove(draft);
-            SelectedItem = null;
-        }
-        else
+        if (!draft.IsNew)
         {
             _pendingDeletions.Add(draft);
-            Items.Remove(draft);
+        }
+
+        Items.Remove(draft);
+        if (ReferenceEquals(SelectedItem, draft))
+        {
             SelectedItem = null;
         }
+
         StatusMessage = string.Empty;
     }
 
@@ -240,7 +313,7 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
                 var exists = await _attributeDefRepository.NameExistsAsync(draft.Name, null);
                 if (exists)
                 {
-                    var errorTitle = LanguageManager.GetString(StringLocalization.Keys.FM_ImportError) ?? "Error";
+                    var errorTitle = LanguageManager.GetString(StringLocalization.Keys.FM_ImportErrorTitle) ?? "Error";
                     var errorMsg = string.Format(LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AttrExists) ?? "Attribute \"{0}\" already exists.", draft.Name);
                     _dialogService.ShowWarning(errorTitle, errorMsg);
                     return;
@@ -294,12 +367,23 @@ public sealed partial class AttributeLibraryViewModel : ObservableObject, IObser
     [RelayCommand]
     private async Task OkAsync() => await SaveAsync();
 
-    public void ConfirmClose(CloseConfirmationArgs args) =>
+    public void ConfirmClose(CloseConfirmationArgs args)
+    {
         this.ConfirmUnsavedChanges(
             args,
             _dialogService.ShowYesNoCancel,
             LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesTitle) ?? "Unsaved Changes",
             LanguageManager.GetString(StringLocalization.Keys.FM_CTE_UnsavedChangesMessage) ?? "You have unsaved changes. Save before closing?");
+
+        // X / Alt+F4 paths that proceed with the close (clean window or the
+        // user chose "No") never pass through RequestClose, which is where
+        // Detach() is normally wired — unsubscribe from the singleton
+        // mediator here or this VM stays rooted for the whole session.
+        // When args.Cancel is set the window stays open (or SaveAsync will
+        // re-request close, which detaches via RequestClose).
+        if (!args.Cancel)
+            Detach();
+    }
 
     [RelayCommand]
     private async Task CancelAsync()

@@ -7,4 +7,5 @@ public sealed record EffectiveCategoryAttribute(
     int SortOrder,
     bool IsEnabled,
     bool IsInherited,
-    string? SourceCategoryId);
+    string? SourceCategoryId,
+    string? BindingId = null);

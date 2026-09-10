@@ -11,8 +11,10 @@ namespace SmartCon.Core.Services.Interfaces;
 public interface IStaleFamilyUpdater
 {
     /// <summary>
-    /// Update a single family. Returns <c>true</c> on success, <c>false</c> otherwise.
-    /// The host must call <c>IStaleDetector.MarkUpdated([catalogItemId])</c>
+    /// Update a single family. Returns the outcome with the #222 per-type
+    /// change report (which catalog types changed values between the loaded
+    /// version and the target, split by the types currently loaded in the
+    /// project). The host must call <c>IStaleDetector.MarkUpdated([catalogItemId])</c>
     /// afterwards — the in-Revit state is the source of truth, the marker
     /// write is best-effort.
     /// </summary>
@@ -20,10 +22,16 @@ public interface IStaleFamilyUpdater
     /// <param name="overwriteParameterValues">
     /// Passed to <c>FamilyLoadOptions.OverwriteParameterValues</c>.
     /// </param>
+    /// <param name="fromVersionLabel">
+    /// Version label the project currently HAS (from the stale snapshot / ES
+    /// marker). Drives the per-type change report; pass <c>null</c> when
+    /// unknown (batch path) — the report is then skipped.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    Task<bool> UpdateFamilyAsync(
+    Task<StaleFamilyUpdateResult> UpdateFamilyAsync(
         string catalogItemId,
         bool overwriteParameterValues,
+        string? fromVersionLabel,
         CancellationToken ct);
 
     /// <summary>

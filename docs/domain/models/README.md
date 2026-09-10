@@ -15,11 +15,12 @@ module: models-index
 |---|---|---|
 | [`pipeconnect.md`](pipeconnect.md) | Модели флагманского модуля PipeConnect: ConnectorProxy, PipeConnectionSession, Fitting*, Chain* | `SmartCon.Core/Models/` (root) |
 | [`project-management.md`](project-management.md) | Share Project, FileNameTemplate, FieldDefinition, PurgeOptions | `SmartCon.Core/Models/` (root) |
-| [`family-manager.md`](family-manager.md) | Каталог семейств, атрибуты, импорт, батч-операции, метаданные | `SmartCon.Core/Models/FamilyManager/` |
+| [`family-manager/`](family-manager/README.md) | Каталог семейств, атрибуты, импорт, батч-операции, метаданные (10 тематических файлов) | `SmartCon.Core/Models/FamilyManager/` |
 | [`family-manager-rbac.md`](family-manager-rbac.md) | RBAC: DbUser, UserIdentity, DbAccessDeniedException | `SmartCon.Core/Models/FamilyManager/Rbac/` |
 | [`family-manager-loadable.md`](family-manager-loadable.md) | Loadable Family Import (Phase 22): LoadableFamilyInfo, SelectedElementsAnalysis | `SmartCon.Core/Models/FamilyManager/` |
 | [`system-families.md`](system-families.md) | System Families Import: CategoryAnalysis, SelectedSystemType, SystemFamilyImportResult | `SmartCon.Core/Models/FamilyManager/SystemFamilies/` |
 | [`formula-engine.md`](formula-engine.md) | AST парсер формул Revit: Token, AstNode, Solver | `SmartCon.Core/Math/FormulaEngine/` |
 | [`math-utilities.md`](math-utilities.md) | Vec3, ConnectorAligner, VectorUtils, BestSizeMatcher | `SmartCon.Core/Math/` |
 | [`updates.md`](updates.md) | Автообновление через GitHub: PendingUpdate, SemVersion, UpdateInfo | `SmartCon.Core/Models/` (root) |
+| [`deployment.md`](deployment.md) | Изоляция зависимостей (ADR-051): SmartConAddinManifest, DependencyConflictAnalyzer | `SmartCon.Core/Deployment/` |
 | [`cross-cutting.md`](cross-cutting.md) | CtcGuesser, ElementIdEqualityComparer, FamilyMetadataFormat, JsonOptions, ILocalCatalogMigrator, TypeCatalogValueApplier, TypeCatalogValueApplyResult, TypeCatalogValueApplyStatus | `SmartCon.Core/Models/` + `Core/Services/` |

@@ -57,17 +57,55 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_EmptySnapshot_DifferentNames_DifferentHashes()
+    public void ComputeForLoadable_CategoryIdAndFacts_ShiftHash()
     {
-        var snapshot1 = CreateLoadableSnapshot(familyName: "LogoA");
-        var snapshot2 = CreateLoadableSnapshot(familyName: "LogoB");
+        // ADR-056 (FHV3): category ordinal and facts ARE content — the
+        // ordinal defines identity locale-independently, and the Part
+        // Type defines a fitting's function ("Отвод" vs "Тройник").
+        var baseline = CreateLoadableSnapshot();
+        var withFacts = baseline with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "5", "Elbow")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(baseline);
+        var hash2 = _hasher.ComputeForLoadable(withFacts);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_SameContent_DifferentNames_SameHash()
+    {
+        // Issue #126: hash format v2 is rename-invariant — the family name
+        // is mutable metadata and must NOT affect content identity.
+        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
+        var type = new FamilyTypeSnapshot("DN50", [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)]);
+        var geometry = new GeometryMetrics(1, [new FormMetrics("Extrusion", true, 1250.0, 6, 12, null)]);
+
+        var snapshot1 = CreateLoadableSnapshot(familyName: "LogoA", parameters: [param], types: [type], geometry: geometry);
+        var snapshot2 = CreateLoadableSnapshot(familyName: "LogoB", parameters: [param], types: [type], geometry: geometry);
 
         var hash1 = _hasher.ComputeForLoadable(snapshot1);
         var hash2 = _hasher.ComputeForLoadable(snapshot2);
 
         Assert.NotNull(hash1);
         Assert.NotNull(hash2);
-        Assert.NotEqual(hash1.HexString, hash2.HexString);
+        Assert.Equal(hash1.HexString, hash2.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_EmptySnapshot_DifferentNames_SameHash()
+    {
+        var hash1 = _hasher.ComputeForLoadable(CreateLoadableSnapshot(familyName: "LogoA"));
+        var hash2 = _hasher.ComputeForLoadable(CreateLoadableSnapshot(familyName: "LogoB"));
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1.HexString, hash2.HexString);
     }
 
     [Fact]
@@ -391,9 +429,11 @@ public class FamilyContentHasherTests
     {
         var snapshot1 = CreateSystemSnapshot(
             categoryName: "Трубы",
+            categoryId: -2008044,
             types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
         var snapshot2 = CreateSystemSnapshot(
             categoryName: "Воздуховоды",
+            categoryId: -2008001,
             types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("Diameter", "Double", true, "25", 25.0, null)])]);
 
         var hash1 = _hasher.ComputeForSystem(snapshot1);
@@ -632,52 +672,6 @@ public class FamilyContentHasherTests
     }
 
     [Fact]
-    public void ComputeForLoadable_RfaExtension_StrippedFromHash()
-    {
-        var param = new FamilyParameterInfo("Width", "Double", "PG_GEOMETRY", false, false, null, false, false, null, null);
-        var snapshotWithRfa = CreateLoadableSnapshot(
-            familyName: "MyFamily.rfa",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("DN50",
-                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
-        var snapshotWithoutRfa = CreateLoadableSnapshot(
-            familyName: "MyFamily",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("DN50",
-                [new FamilyParameterValue("Width", "Double", true, "50", 50.0, null)])]);
-
-        var hashWithRfa = _hasher.ComputeForLoadable(snapshotWithRfa);
-        var hashWithoutRfa = _hasher.ComputeForLoadable(snapshotWithoutRfa);
-
-        Assert.NotNull(hashWithRfa);
-        Assert.NotNull(hashWithoutRfa);
-        Assert.Equal(hashWithoutRfa.HexString, hashWithRfa.HexString);
-    }
-
-    [Fact]
-    public void ComputeForLoadable_RfaExtension_CaseInsensitive_Stripped()
-    {
-        var param = new FamilyParameterInfo("W", "Double", "", false, false, null, false, false, null, null);
-        var snapshotUpper = CreateLoadableSnapshot(
-            familyName: "Fam.RFA",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("T",
-                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
-        var snapshotNoExt = CreateLoadableSnapshot(
-            familyName: "Fam",
-            parameters: [param],
-            types: [new FamilyTypeSnapshot("T",
-                [new FamilyParameterValue("W", "Double", true, "1", 1.0, null)])]);
-
-        var hashUpper = _hasher.ComputeForLoadable(snapshotUpper);
-        var hashNoExt = _hasher.ComputeForLoadable(snapshotNoExt);
-
-        Assert.NotNull(hashUpper);
-        Assert.NotNull(hashNoExt);
-        Assert.Equal(hashNoExt.HexString, hashUpper.HexString);
-    }
-
-    [Fact]
     public void ComputeForLoadable_DefaultType_AffectsHashVsNoTypes()
     {
         var snapshotNoTypes = CreateLoadableSnapshot(
@@ -696,5 +690,1110 @@ public class FamilyContentHasherTests
         Assert.NotNull(hashNoTypes);
         Assert.NotNull(hashWithDefault);
         Assert.NotEqual(hashNoTypes.HexString, hashWithDefault.HexString);
+    }
+
+    // ---------- FHV3 (ADR-056, Issue #159) ----------
+
+    [Fact]
+    public void ComputeForLoadable_SameOrdinalDifferentCategoryDisplayName_SameHash()
+    {
+        // Locale-invariance: the ordinal is the identity, the display
+        // name ("Pipe Fittings" / "Трубопроводные фитинги") is not hashed.
+        var en = CreateLoadableSnapshot(category: "Pipe Fittings") with { CategoryId = -2008049 };
+        var ru = CreateLoadableSnapshot(category: "Трубопроводные фитинги") with { CategoryId = -2008049 };
+
+        var hashEn = _hasher.ComputeForLoadable(en);
+        var hashRu = _hasher.ComputeForLoadable(ru);
+
+        Assert.NotNull(hashEn);
+        Assert.NotNull(hashRu);
+        Assert.Equal(hashEn!.HexString, hashRu!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NullOrdinal_FallsBackToDisplayName()
+    {
+        var a = CreateLoadableSnapshot(category: "Pipe Fittings");
+        var b = CreateLoadableSnapshot(category: "Трубопроводные фитинги");
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PartTypeChange_ShiftsHash()
+    {
+        var elbow = CreateLoadableSnapshot() with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "5", "Elbow")],
+        };
+        var tee = CreateLoadableSnapshot() with
+        {
+            CategoryId = -2008049,
+            Facts = [new FamilyFact("part_type", "6", "Tee")],
+        };
+
+        var hashElbow = _hasher.ComputeForLoadable(elbow);
+        var hashTee = _hasher.ComputeForLoadable(tee);
+
+        Assert.NotNull(hashElbow);
+        Assert.NotNull(hashTee);
+        Assert.NotEqual(hashElbow!.HexString, hashTee!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorSizeChange_ShiftsHash()
+    {
+        var small = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+        var large = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.10, 0, 0, 0, -1)],
+        };
+
+        var hashSmall = _hasher.ComputeForLoadable(small);
+        var hashLarge = _hasher.ComputeForLoadable(large);
+
+        Assert.NotNull(hashSmall);
+        Assert.NotNull(hashLarge);
+        Assert.NotEqual(hashSmall!.HexString, hashLarge!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorSystemClassificationChange_ShiftsHash()
+    {
+        var coldWater = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+        var hotWater = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 8, true, null, null, 0.05, 0, 0, 0, -1)],
+        };
+
+        var hashCold = _hasher.ComputeForLoadable(coldWater);
+        var hashHot = _hasher.ComputeForLoadable(hotWater);
+
+        Assert.NotNull(hashCold);
+        Assert.NotNull(hashHot);
+        Assert.NotEqual(hashCold!.HexString, hashHot!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorOriginChange_ShiftsHash()
+    {
+        var here = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 1.0, 0, 0, -1)],
+        };
+        var there = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 2.0, 0, 0, -1)],
+        };
+
+        var hashHere = _hasher.ComputeForLoadable(here);
+        var hashThere = _hasher.ComputeForLoadable(there);
+
+        Assert.NotNull(hashHere);
+        Assert.NotNull(hashThere);
+        Assert.NotEqual(hashHere!.HexString, hashThere!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorOriginWithinRounding_SameHash()
+    {
+        // 1e-4 ft rounding absorbs regen noise (ADR-056 §Risks).
+        var a = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0.12342, 0, 0, -1)],
+        };
+        var b = CreateLoadableSnapshot() with
+        {
+            Connectors = [new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0.12344, 0, 0, -1)],
+        };
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.Equal(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_ConnectorLinkedIndexChange_ShiftsHash()
+    {
+        var unlinked = CreateLoadableSnapshot() with
+        {
+            Connectors =
+            [
+                new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, -1),
+                new ConnectorSnapshot(2, 0, 7, false, null, null, 0.05, 1, 0, 0, -1),
+            ],
+        };
+        var linked = CreateLoadableSnapshot() with
+        {
+            Connectors =
+            [
+                new ConnectorSnapshot(2, 0, 7, true, null, null, 0.05, 0, 0, 0, 1),
+                new ConnectorSnapshot(2, 0, 7, false, null, null, 0.05, 1, 0, 0, 0),
+            ],
+        };
+
+        var hashUnlinked = _hasher.ComputeForLoadable(unlinked);
+        var hashLinked = _hasher.ComputeForLoadable(linked);
+
+        Assert.NotNull(hashUnlinked);
+        Assert.NotNull(hashLinked);
+        Assert.NotEqual(hashUnlinked!.HexString, hashLinked!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_BehaviorFlagsChange_ShiftsHash()
+    {
+        var shared = CreateLoadableSnapshot() with
+        {
+            BehaviorFlags = new FamilyBehaviorFlags(true, false, false, false),
+        };
+        var notShared = CreateLoadableSnapshot() with
+        {
+            BehaviorFlags = new FamilyBehaviorFlags(false, false, false, false),
+        };
+
+        var hashShared = _hasher.ComputeForLoadable(shared);
+        var hashNotShared = _hasher.ComputeForLoadable(notShared);
+
+        Assert.NotNull(hashShared);
+        Assert.NotNull(hashNotShared);
+        Assert.NotEqual(hashShared!.HexString, hashNotShared!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_BoundingBoxChange_SameVolume_ShiftsHash()
+    {
+        var still = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null,
+                SurfaceArea: 500.0,
+                Bounds: new BoundingBoxSnapshot(0, 0, 0, 10, 10, 12.5)),
+        ]);
+        var moved = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null,
+                SurfaceArea: 500.0,
+                Bounds: new BoundingBoxSnapshot(5, 0, 0, 15, 10, 12.5)),
+        ]);
+
+        var hashStill = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: still));
+        var hashMoved = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: moved));
+
+        Assert.NotNull(hashStill);
+        Assert.NotNull(hashMoved);
+        Assert.NotEqual(hashStill!.HexString, hashMoved!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_SurfaceAreaChange_ShiftsHash()
+    {
+        var a = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null, SurfaceArea: 500.0),
+        ]);
+        var b = new GeometryMetrics(1,
+        [
+            new FormMetrics("Extrusion", true, 1250.0, 6, 12, null, SurfaceArea: 600.0),
+        ]);
+
+        var hashA = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: a));
+        var hashB = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: b));
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_CurveLengthChange_ShiftsHash()
+    {
+        var short_ = new GeometryMetrics(0, [], SymbolicCurveCount: 2, TotalSymbolicCurveLength: 1.0);
+        var long_ = new GeometryMetrics(0, [], SymbolicCurveCount: 2, TotalSymbolicCurveLength: 2.0);
+
+        var hashShort = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: short_));
+        var hashLong = _hasher.ComputeForLoadable(CreateLoadableSnapshot(geometry: long_));
+
+        Assert.NotNull(hashShort);
+        Assert.NotNull(hashLong);
+        Assert.NotEqual(hashShort!.HexString, hashLong!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NonSharedNestedChange_ShiftsHash()
+    {
+        var a = CreateLoadableSnapshot() with { NonSharedNestedFamilyNames = ["NestedA"] };
+        var b = CreateLoadableSnapshot() with { NonSharedNestedFamilyNames = ["NestedB"] };
+
+        var hashA = _hasher.ComputeForLoadable(a);
+        var hashB = _hasher.ComputeForLoadable(b);
+
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.NotEqual(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_SeparatorInContent_Escaped_NoFieldInjection()
+    {
+        // Without escaping, param name "A|Double" would inject an extra
+        // field and could collide with param "A" + storage "Double".
+        var injected = CreateLoadableSnapshot(
+            parameters: [new FamilyParameterInfo("A|Double", "Double", "G", false, false, null, false, false, null, null)]);
+        var plain = CreateLoadableSnapshot(
+            parameters: [new FamilyParameterInfo("A", "Double", "Double", false, false, null, false, false, null, null)]);
+
+        var canonicalInjected = FamilyContentHasher.BuildLoadableCanonicalString(injected);
+        var canonicalPlain = FamilyContentHasher.BuildLoadableCanonicalString(plain);
+
+        Assert.Contains("A%7CDouble", canonicalInjected);
+        Assert.NotEqual(canonicalInjected, canonicalPlain);
+    }
+
+    [Fact]
+    public void IsBlankValue_UserLiteralInvalid_StringStorage_IsNotBlank()
+    {
+        // The extractor emits "INVALID" only for ElementId storage — a
+        // user's literal "INVALID" text parameter is real content (v3).
+        Assert.False(FamilyContentHasher.IsBlankValue(true, "INVALID", "String"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "INVALID", "ElementId"));
+        Assert.False(FamilyContentHasher.IsBlankValue(true, "UNSUPPORTED", "String"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "UNSUPPORTED", "None"));
+        Assert.True(FamilyContentHasher.IsBlankValue(true, "READERROR", "String"));
+    }
+
+    [Fact]
+    public void ComputeForSystem_SameCategoryIdDifferentDisplayName_SameHash()
+    {
+        var ru = CreateSystemSnapshot(
+            categoryName: "Трубы",
+            categoryId: -2008044,
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("D", "Double", true, "25", 25.0, null)])]);
+        var en = CreateSystemSnapshot(
+            categoryName: "Pipes",
+            categoryId: -2008044,
+            types: [new SystemTypeSnapshot("Стандартный", [new SystemParameterValue("D", "Double", true, "25", 25.0, null)])]);
+
+        var hashRu = _hasher.ComputeForSystem(ru);
+        var hashEn = _hasher.ComputeForSystem(en);
+
+        Assert.NotNull(hashRu);
+        Assert.NotNull(hashEn);
+        Assert.Equal(hashRu!.HexString, hashEn!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_CompoundLayerMaterialChange_ShiftsHash()
+    {
+        var brick = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 1,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "Brick", false),
+                    new CompoundLayerSnapshot(5, 0.1, "Gypsum", false),
+                ])),
+        ]);
+        var concrete = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 1,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "Concrete", false),
+                    new CompoundLayerSnapshot(5, 0.1, "Gypsum", false),
+                ])),
+        ]);
+
+        var hashBrick = _hasher.ComputeForSystem(brick);
+        var hashConcrete = _hasher.ComputeForSystem(concrete);
+
+        Assert.NotNull(hashBrick);
+        Assert.NotNull(hashConcrete);
+        Assert.NotEqual(hashBrick!.HexString, hashConcrete!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_CompoundLayerOrderChange_ShiftsHash()
+    {
+        var ab = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 0,
+                [
+                    new CompoundLayerSnapshot(1, 0.5, "A", false),
+                    new CompoundLayerSnapshot(5, 0.1, "B", false),
+                ])),
+        ]);
+        var ba = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(0, 0,
+                [
+                    new CompoundLayerSnapshot(5, 0.1, "B", false),
+                    new CompoundLayerSnapshot(1, 0.5, "A", false),
+                ])),
+        ]);
+
+        var hashAb = _hasher.ComputeForSystem(ab);
+        var hashBa = _hasher.ComputeForSystem(ba);
+
+        Assert.NotNull(hashAb);
+        Assert.NotNull(hashBa);
+        Assert.NotEqual(hashAb!.HexString, hashBa!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RoutingChange_DoesNotShiftHash()
+    {
+        // ADR-072 World B (FHV20, owner decision 2026-08-29): routing is a
+        // catalog-family link, NOT file content — part picks, rule order,
+        // criteria, preferred junction and no-part rules all leave the
+        // content hash untouched (routing equality lives in
+        // RoutingFingerprint instead).
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(0,
+                [
+                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
+                    new RoutingRuleSnapshot(1, "ElbowA:Standard", "отвод",
+                        [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.1)]),
+                ])),
+        ]);
+        var edited = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Routing: new RoutingPreferencesSnapshot(1,
+                [
+                    new RoutingRuleSnapshot(1, "ElbowB:Other", "",
+                        [new RoutingCriterionSnapshot("PrimarySizeCriterion", 0.0, 0.2)]),
+                    new RoutingRuleSnapshot(0, "SegA:Standard", "", []),
+                    new RoutingRuleSnapshot(1, null, "", []),
+                ])),
+        ]);
+
+        var hashBaseline = _hasher.ComputeForSystem(baseline);
+        var hashEdited = _hasher.ComputeForSystem(edited);
+
+        Assert.NotNull(hashBaseline);
+        Assert.NotNull(hashEdited);
+        Assert.Equal(hashBaseline!.HexString, hashEdited!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_FamilyKey_IsHashContent()
+    {
+        // ADR-064/065 (FHV4): the locale-invariant family key is identity —
+        // same type name in two families must hash differently.
+        var withFittings = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Стандарт", [], FamilyKey: SystemFamilyKeys.ConduitWithFittings),
+        ]);
+        var withoutFittings = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Стандарт", [], FamilyKey: SystemFamilyKeys.ConduitWithoutFittings),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(withFittings);
+        var hash2 = _hasher.ComputeForSystem(withoutFittings);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_StructExtras_ShiftHash()
+    {
+        // #179 (FHV4): StructuralMaterialIndex/EndCap/OpeningWrapping and
+        // per-layer LayerCapFlag/ParticipatesInWrapping are hash content.
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(1, 1,
+                    [new CompoundLayerSnapshot(1, 0.5, "Concrete", false, false, false)],
+                    StructuralMaterialIndex: 0, EndCap: 1, OpeningWrapping: 2)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wall", [],
+                Structure: new CompoundStructureSnapshot(1, 1,
+                    [new CompoundLayerSnapshot(1, 0.5, "Concrete", false, true, true)],
+                    StructuralMaterialIndex: 1, EndCap: 2, OpeningWrapping: 3)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_StairsSubtypes_ShiftHash()
+    {
+        // #184 (FHV4): subtype references are identity — changing the run
+        // type in the reference changes the hash.
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Stair", [],
+                Stairs: new StairsSubtypesSnapshot("Run A", "Landing A", null, null, null, "Cut A")),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Stair", [],
+                Stairs: new StairsSubtypesSnapshot("Run B", "Landing A", null, null, null, "Cut A")),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_RailingStructure_ShiftHash()
+    {
+        var balusters = new RailingBalusterSnapshot(0.5, 0, 0, ["Bal:Std"], false, 0, null);
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Railing", [],
+                Railing: new RailingStructureSnapshot("TopRail A", 0.9, null, null, null, null,
+                    null, null, null, null,
+                    [new RailingRailSnapshot("Rail 1", 0.5, 0.0, "Profile:Rect", "Steel")],
+                    balusters)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Railing", [],
+                Railing: new RailingStructureSnapshot("TopRail A", 1.0, null, null, null, null,
+                    null, null, null, null,
+                    [new RailingRailSnapshot("Rail 1", 0.5, 0.0, "Profile:Rect", "Steel")],
+                    balusters)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_SegmentSizeTables_ShiftHash()
+    {
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Segments:
+                [
+                    new SegmentSnapshot("Steel", "Steel", null, 0.00015,
+                        [new SegmentSizeSnapshot(0.05, 0.04, 0.05, true, true)]),
+                ]),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Pipe", [],
+                Segments:
+                [
+                    new SegmentSnapshot("Steel", "Steel", null, 0.00015,
+                        [new SegmentSizeSnapshot(0.06, 0.04, 0.06, true, true)]),
+                ]),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_OptionalSections_NullVsPresent_Differ()
+    {
+        // A type without the FHV4 sections must not collide with the same
+        // type carrying them (section marker '-' vs real content).
+        var bare = CreateSystemSnapshot(types: [new SystemTypeSnapshot("Type", [])]);
+        var enriched = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Type", [], FamilyKey: SystemFamilyKeys.SingleFamily),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(bare);
+        var hash2 = _hasher.ComputeForSystem(enriched);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_WireSettings_ShiftHash()
+    {
+        // FHV5: the wire settings graph is identity — changing the material
+        // of a wire type in the reference changes the hash (manual test
+        // 2026-08-04: the change was invisible to FHV4).
+        var baseline = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [],
+                Wire: new WireSettingsSnapshot("Медь", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+        var changed = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [],
+                Wire: new WireSettingsSnapshot("Алюминий", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+
+        var hash1 = _hasher.ComputeForSystem(baseline);
+        var hash2 = _hasher.ComputeForSystem(changed);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_SameNamedTypes_ExtractionOrderDoesNotShiftHash()
+    {
+        // Stress test 2026-08-05 (conduit «Короб» bug): both conduit
+        // families name their type identically — the FHV6 canon must tie-
+        // break by family identity, so the source project and the staged
+        // mini-project (different ElementId/extraction order) produce the
+        // SAME hash for identical content → «Дубликат», not «Существующая».
+        var withFittings = new SystemTypeSnapshot("Короб",
+            [new SystemParameterValue("P", "Double", true, "1", 1.0, null)],
+            FamilyKey: SystemFamilyKeys.ConduitWithFittings,
+            FamilyName: "Conduit with Fittings");
+        var withoutFittings = new SystemTypeSnapshot("Короб",
+            [new SystemParameterValue("P", "Double", true, "2", 2.0, null)],
+            FamilyKey: SystemFamilyKeys.ConduitWithoutFittings,
+            FamilyName: "Conduit without Fittings");
+
+        var hash1 = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [withoutFittings, withFittings]));
+        var hash2 = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [withFittings, withoutFittings]));
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.Equal(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_SegmentRuleRange_ChangesHash_Fhv21()
+    {
+        // FHV21 (owner decision 2026-09-01): the segment rule's size-range
+        // criterion is mini-owned versioned content — editing Мин/Макс in
+        // the mini must change the hash (no more «Дубликат» on reimport).
+        static SystemTypeSnapshot PipeType(double? min, double? max) => new(
+            "DN50",
+            [new SystemParameterValue("Diameter", "Double", true, "50", 50.0, null)],
+            Segments:
+            [
+                new SegmentSnapshot("Steel", "Сталь", "SCH40", 0.00015,
+                    [new SegmentSizeSnapshot(0.05, 0.045, 0.055, true, true)],
+                    RuleMinSizeFeet: min, RuleMaxSizeFeet: max),
+            ]);
+
+        var unrestricted = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(null, null)]));
+        var ranged = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(0.05, 0.15)]));
+        var rangedWider = _hasher.ComputeForSystem(CreateSystemSnapshot(types: [PipeType(0.05, 0.20)]));
+
+        Assert.NotNull(unrestricted);
+        Assert.NotNull(ranged);
+        Assert.NotNull(rangedWider);
+        Assert.NotEqual(unrestricted!.HexString, ranged!.HexString);
+        Assert.NotEqual(ranged.HexString, rangedWider!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForSystem_Fhv11GoldenCanon_IsStable()
+    {
+        // Golden: a FIXED snapshot must always produce this exact hash — any
+        // drift in the FHV11 canon (escaping, culture, ordering, section
+        // layout, WIRE fields, duct FAMKEY, segment rule ranges) fails
+        // loudly here instead of silently re-flagging every field catalog.
+        // FHV11 (owner decision 2026-09-01): the SEGMENTS section carries
+        // the rule's size-range criterion — mini-owned segment configuration
+        // is versioned content. When the canon changes ON PURPOSE, bump
+        // FamilyContentHashFormat.CurrentVersion and update the golden in
+        // the same commit.
+        var snapshot = CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Wire", [new SystemParameterValue("Diameter", "Double", true, "2.5", 2.5, null)],
+                Wire: new WireSettingsSnapshot("Медь", "60°C", "ПВХ", "2.5", "Steel", 1.0, true)),
+        ]);
+
+        var hash = _hasher.ComputeForSystem(snapshot);
+
+        Assert.NotNull(hash);
+        Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
+        Assert.Equal("729B8398BEDECEE66A7EDEB9C4E7D521DD7531BF28929F50A319D417C73EB7DE", hash.HexString);
+    }
+
+    [Fact]
+    public void ComputeSectionsForSystem_RoutingLeftTheHash_NoRoutingSection()
+    {
+        // ADR-072 World B (FHV20): routing is a catalog-family link, not
+        // file content — the sections carry no ROUTING entry anymore
+        // (manager- and parameter-based rules alike); routing equality
+        // lives in RoutingFingerprint instead.
+        var paramRule = new RoutingRuleSnapshot(
+            RoutingGroupKeys.ParamGroupType, "FlexTee:Standard", string.Empty,
+            Array.Empty<RoutingCriterionSnapshot>(),
+            GroupKey: RoutingGroupKeys.ForParam("RBS_CURVETYPE_DEFAULT_TEE_PARAM"));
+
+        var sections = _hasher.ComputeSectionsForSystem(CreateSystemSnapshot(types:
+        [
+            new SystemTypeSnapshot("Flex", [], Routing: new RoutingPreferencesSnapshot(1, [paramRule])),
+        ]));
+
+        Assert.NotNull(sections);
+        Assert.DoesNotContain(sections!, s => s.SectionName == FamilyContentSectionNames.Routing);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_Fhv18GoldenCanon_IsStable()
+    {
+        // Golden: a FIXED loadable snapshot must always produce this exact
+        // hash — any drift in the FHV13 loadable canon (escaping, culture,
+        // ordering, section layout, NESTEDHASH pairs, PHANTOM values, DEF
+        // wiring, LOOKUP section) fails loudly here. When the canon changes
+        // ON PURPOSE, bump FamilyContentHashFormat.CurrentVersion and update
+        // the golden in the same commit.
+        var snapshot = new FamilySnapshot(
+            FamilyName: "GoldenFamily",
+            Category: "Pipe Fittings",
+            Parameters:
+            [
+                new FamilyParameterInfo(
+                    "Diameter", "Double", "PG_GEOMETRY", false, false, null, false, false, null, "ALL_MODEL_TYPE_NAME"),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot("DN50",
+                    [new FamilyParameterValue("Diameter", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(1,
+                [new FormMetrics("Extrusion", true, 0.5, 6, 9, "Pipes", 1.25,
+                    new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1))]),
+            SharedNestedFamilyNames: ["Flange"],
+            CategoryId: -2008049,
+            NonSharedNestedFamilyNames: ["PrivatePart"],
+            SharedNestedContentHashes: [new NestedContentHash("Flange", new string('A', 64))],
+            PhantomTypeValues: [new FamilyParameterValue("Модель", "String", true, "M-1", null, null)]);
+
+        var hash = _hasher.ComputeForLoadable(snapshot);
+
+        Assert.NotNull(hash);
+        Assert.Equal(FamilyContentHashFormat.CurrentVersion, hash!.FormatVersion);
+        Assert.Equal("F6CEE0EABCFAD4A40675A63A9058D22B1F4CB7E7823B42C6ECDEA6251DF2A133", hash.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableContent_ShiftsHash()
+    {
+        // FHV11 (Issue #238): an edit of a lookup table's VALUES must shift
+        // the hash — the pre-FHV11 bug was a false Duplicate on a table-only
+        // edit.
+        var baseSnapshot = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,50\n");
+        var editedSnapshot = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,51\n");
+
+        var baseHash = _hasher.ComputeForLoadable(baseSnapshot);
+        var editedHash = _hasher.ComputeForLoadable(editedSnapshot);
+
+        Assert.NotNull(baseHash);
+        Assert.NotNull(editedHash);
+        Assert.NotEqual(baseHash!.HexString, editedHash!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_NoLookupTables_SectionOmitted()
+    {
+        // Table-less families get NO LOOKUP section: null and empty list are
+        // the same hash (and differ from any snapshot WITH a table).
+        var withoutTables = CreateLookupSnapshot(csv: null);
+        var emptyTables = CreateLookupSnapshot(csv: null) with { LookupTables = [] };
+        var withTable = CreateLookupSnapshot(csv: ",Dn##length##millimeters\n50,50\n");
+
+        var hashWithout = _hasher.ComputeForLoadable(withoutTables);
+        var hashEmpty = _hasher.ComputeForLoadable(emptyTables);
+        var hashWith = _hasher.ComputeForLoadable(withTable);
+
+        Assert.NotNull(hashWithout);
+        Assert.NotNull(hashEmpty);
+        Assert.NotNull(hashWith);
+        Assert.Equal(hashWithout!.HexString, hashEmpty!.HexString);
+        Assert.NotEqual(hashWithout.HexString, hashWith!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableOrder_IsDeterministic()
+    {
+        // Multiple tables per family are normal (MEP fittings): the section
+        // sorts tables by name (Ordinal), so extraction order never leaks
+        // into the hash.
+        var tableA = new LookupTableSnapshot("A_table", ",X##number##general\n1\n");
+        var tableB = new LookupTableSnapshot("B_table", ",Y##number##general\n2\n");
+        var ordered = CreateLookupSnapshot(csv: null) with { LookupTables = [tableA, tableB] };
+        var reversed = CreateLookupSnapshot(csv: null) with { LookupTables = [tableB, tableA] };
+
+        var hashOrdered = _hasher.ComputeForLoadable(ordered);
+        var hashReversed = _hasher.ComputeForLoadable(reversed);
+
+        Assert.NotNull(hashOrdered);
+        Assert.NotNull(hashReversed);
+        Assert.Equal(hashOrdered!.HexString, hashReversed!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_LookupTableNameWithDelimiter_IsEscaped()
+    {
+        // The canonical format escapes '|' (and '%') — a table named with a
+        // delimiter must not collide with a structurally shifted name.
+        var withPipe = CreateLookupSnapshot(csv: null) with
+        {
+            LookupTables = [new LookupTableSnapshot("A|B", ",X##number##general\n1\n")],
+        };
+        var withoutPipe = CreateLookupSnapshot(csv: null) with
+        {
+            LookupTables = [new LookupTableSnapshot("A", "|B,X##number##general\n1\n")],
+        };
+
+        var hashPipe = _hasher.ComputeForLoadable(withPipe);
+        var hashNoPipe = _hasher.ComputeForLoadable(withoutPipe);
+
+        Assert.NotNull(hashPipe);
+        Assert.NotNull(hashNoPipe);
+        Assert.NotEqual(hashPipe!.HexString, hashNoPipe!.HexString);
+    }
+
+    private static FamilySnapshot CreateLookupSnapshot(string? csv)
+    {
+        return new FamilySnapshot(
+            FamilyName: "LookupFamily",
+            Category: "Pipe Fittings",
+            Parameters:
+            [
+                new FamilyParameterInfo(
+                    "Dn", "Double", "PG_GEOMETRY", false, false, "size_lookup(Lookup, \"Dn\", \"\", Dn)", true, false, null, null),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot("DN50",
+                    [new FamilyParameterValue("Dn", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(0, []),
+            SharedNestedFamilyNames: [],
+            CategoryId: -2008049,
+            LookupTables: csv is null ? null : [new LookupTableSnapshot("Lookup", csv)]);
+    }
+
+    private static FamilySnapshot CreateVerificationBaseline()
+    {
+        return new FamilySnapshot(
+            FamilyName: "Nut",
+            Category: "Pipe Accessories",
+            Parameters:
+            [
+                new FamilyParameterInfo("DN", "Double", "autodesk.parameter.group:constraints-1.0.0",
+                    false, false, null, false, false, null, null),
+                new FamilyParameterInfo("ADSK_Материал обозначение", "String", "autodesk.parameter.group:materials-1.0.0",
+                    true, true, null, false, false, "dbe7f282-3606-44cf-ac51-0f274c34c07b", null),
+            ],
+            Types:
+            [
+                new FamilyTypeSnapshot(" ",
+                    [new FamilyParameterValue("DN", "Double", true, "50", 50.0, null)]),
+            ],
+            Geometry: new GeometryMetrics(1,
+                [new FormMetrics("Revolution", true, 0.5, 6, 9, null, 1.25,
+                    new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1))],
+                SymbolicCurveCount: 4, ModelCurveCount: 6, ReferencePlaneCount: 8, DimensionCount: 3,
+                TotalSymbolicCurveLength: 10.5, TotalModelCurveLength: 20.25),
+            SharedNestedFamilyNames: [],
+            CategoryId: -2008055);
+    }
+
+    [Fact]
+    public void UnifiedHash_GeometryMetricChange_Detected()
+    {
+        // FHV10 unified hash (probe 2026-08-12,
+        // DrivenEmbeddedPollutionProbeTests): the "host-driven regen
+        // pollutes the embedded document" hypothesis is DISPROVED —
+        // associations live on instances in the host, the EditFamily
+        // document keeps the authored state byte-for-byte. So geometry
+        // metrics are hashed like any other content: a metric diff means
+        // a REAL content diff (incl. #180 free-form local edits).
+        var baseline = CreateVerificationBaseline();
+        var metricChanged = baseline with
+        {
+            Geometry = baseline.Geometry with
+            {
+                Forms =
+                [
+                    new FormMetrics("Revolution", true, 1.75, 6, 9, null, 4.9,
+                        new BoundingBoxSnapshot(-1, -1, 0, 2, 2, 1)),
+                ],
+                TotalSymbolicCurveLength = 33.3,
+                TotalModelCurveLength = 77.7,
+            },
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(metricChanged);
+        Assert.NotNull(verifyA);
+        Assert.NotNull(verifyB);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+
+        var identityA = _hasher.ComputeForLoadable(baseline);
+        var identityB = _hasher.ComputeForLoadable(metricChanged);
+        Assert.NotEqual(identityA!.HexString, identityB!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_ParameterGroupChange_NeverShiftsHash()
+    {
+        // FHV10 (owner decision 2026-08-12): parameter groups are NOT
+        // hashed at all — they are the only content field a reload merge
+        // physically cannot transfer (probe-proven twice: UI/plain-merge
+        // 2026-08-11, poke + doc-to-doc 2026-08-12), so versioning them
+        // forked one identification into two divergent grades. The single
+        // unified hash now ignores a regroup in EVERY context: import
+        // dedup, versioning, embedded verification. Product tradeoff
+        // (accepted): a group-only edit no longer version-bumps.
+        var baseline = CreateVerificationBaseline();
+        var regrouped = baseline with
+        {
+            Parameters =
+            [
+                baseline.Parameters[0],
+                baseline.Parameters[1] with { ParameterGroup = "autodesk.parameter.group:identityData-1.0.0" },
+            ],
+        };
+
+        var hashA = _hasher.ComputeForLoadable(baseline);
+        var hashB = _hasher.ComputeForLoadable(regrouped);
+        Assert.NotNull(hashA);
+        Assert.NotNull(hashB);
+        Assert.Equal(hashA!.HexString, hashB!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_FormulaChange_Detected()
+    {
+        var baseline = CreateVerificationBaseline();
+        var formulaChanged = baseline with
+        {
+            Parameters =
+            [
+                baseline.Parameters[0] with { Formula = "size_lookup(T, \"N\", \"?\", DN)", IsDeterminedByFormula = true },
+                baseline.Parameters[1],
+            ],
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(formulaChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_TopologyChange_Detected()
+    {
+        // Face/edge counts and form kinds are hashed — they are topology,
+        // not size.
+        var baseline = CreateVerificationBaseline();
+        var topologyChanged = baseline with
+        {
+            Geometry = baseline.Geometry with
+            {
+                Forms =
+                [
+                    new FormMetrics("Revolution", true, 0.5, 12, 18, null, 1.25,
+                        new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1)),
+                ],
+            },
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(topologyChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_TypeValueChange_Detected()
+    {
+        // Type values are NOT host-drivable for shared nested families
+        // (only instance parameters can be associated in the host).
+        var baseline = CreateVerificationBaseline();
+        var valueChanged = baseline with
+        {
+            Types =
+            [
+                new FamilyTypeSnapshot(" ",
+                    [new FamilyParameterValue("DN", "Double", true, "65", 65.0, null)]),
+            ],
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(valueChanged);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_NullSnapshot_ReturnsNull()
+    {
+        Assert.Null(_hasher.ComputeForLoadable(null!));
+    }
+
+    [Fact]
+    public void UnifiedHash_MetricDifferentForms_Detected()
+    {
+        // Forms with the same topology but different metrics are a REAL
+        // content diff (embedded pollution disproved — see
+        // DrivenEmbeddedPollutionProbeTests) and must be detected. The
+        // sort keys stay topology-based, so identical twins still cannot
+        // false-fail on extraction order (validator H1).
+        var formA = new FormMetrics("Extrusion", true, 0.5, 6, 9, null, 1.25,
+            new BoundingBoxSnapshot(0, 0, 0, 1, 1, 1));
+        var formB = new FormMetrics("Extrusion", true, 0.8, 6, 9, null, 1.6,
+            new BoundingBoxSnapshot(0, 0, 0, 2, 2, 1));
+        var baseline = CreateVerificationBaseline() with
+        {
+            Geometry = new GeometryMetrics(2, [formA, formB]),
+        };
+        var resized = baseline with
+        {
+            Geometry = new GeometryMetrics(2,
+            [
+                formB with { Volume = 0.4, SurfaceArea = 1.1, Bounds = new BoundingBoxSnapshot(0, 0, 0, 0.5, 0.5, 1) },
+                formA with { Volume = 0.9, SurfaceArea = 1.8, Bounds = new BoundingBoxSnapshot(0, 0, 0, 1.5, 1.5, 1) },
+            ]),
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(resized);
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
+    }
+
+    private static FamilyParameterValue PhantomValue(string name, string? text, double? number = null)
+    {
+        return new FamilyParameterValue(
+            ParameterName: name,
+            StorageType: number.HasValue ? "Double" : "String",
+            HasValue: true,
+            ValueText: text,
+            ValueNumber: number,
+            ResolvedElementName: null);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValuesPresent_ShiftHash()
+    {
+        // FHV9 (#209 stress test 2026-08-12): typeless-family values are
+        // content — without the PHANTOM section a «Модель» edit on a
+        // typeless family never shifted the hash (false Duplicate).
+        var baseline = CreateLoadableSnapshot();
+        var withPhantom = baseline with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(baseline);
+        var hash2 = _hasher.ComputeForLoadable(withPhantom);
+
+        Assert.NotNull(hash1);
+        Assert.NotNull(hash2);
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValueChange_ShiftsHash()
+    {
+        var v1 = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+        var v2 = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-200")],
+        };
+
+        var hash1 = _hasher.ComputeForLoadable(v1);
+        var hash2 = _hasher.ComputeForLoadable(v2);
+
+        Assert.NotEqual(hash1!.HexString, hash2!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomValues_OrderIndependent()
+    {
+        var a = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("A", "1"), PhantomValue("B", "2")],
+        };
+        var b = CreateLoadableSnapshot() with
+        {
+            PhantomTypeValues = [PhantomValue("B", "2"), PhantomValue("A", "1")],
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(a)!.HexString,
+            _hasher.ComputeForLoadable(b)!.HexString);
+    }
+
+    [Fact]
+    public void ComputeForLoadable_PhantomBlankValues_Skipped()
+    {
+        var baseline = CreateLoadableSnapshot();
+        var blankOnly = baseline with
+        {
+            PhantomTypeValues =
+            [
+                new FamilyParameterValue("EmptyText", "String", false, null, null, null),
+                new FamilyParameterValue("EmptyString", "String", true, string.Empty, null, null),
+            ],
+        };
+
+        Assert.Equal(
+            _hasher.ComputeForLoadable(baseline)!.HexString,
+            _hasher.ComputeForLoadable(blankOnly)!.HexString);
+    }
+
+    [Fact]
+    public void UnifiedHash_PhantomValues_Detected()
+    {
+        // Phantom values are hashed (FHV9+/FHV10): the embedded document
+        // keeps the authored phantom values even under a host drive
+        // (probe), and the two extraction contexts (EditFamily current
+        // type vs raw-open synthesized type) read the same defaults
+        // (ADR-068 §6 probe). A phantom diff = real diff.
+        var baseline = CreateVerificationBaseline();
+        var withPhantom = baseline with
+        {
+            PhantomTypeValues = [PhantomValue("Модель", "M-100")],
+        };
+
+        var verifyA = _hasher.ComputeForLoadable(baseline);
+        var verifyB = _hasher.ComputeForLoadable(withPhantom);
+
+        Assert.NotEqual(verifyA!.HexString, verifyB!.HexString);
     }
 }

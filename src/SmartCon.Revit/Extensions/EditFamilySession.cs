@@ -49,7 +49,8 @@ internal static class EditFamilySession
         {
             using var _scope = SmartConLogger.BeginScope("EditFamilySession", ("FamilyName", family.Name));
             SmartConLogger.Debug($"EditFamily exception: {ex.GetType().Name}: {ex.Message}");
-            SmartConLogger.Warn($"Failed for '{family.Name}': {ex.Message}");
+            SmartConLogger.Warn($"Failed for '{family.Name}': {ex.Message} " +
+                $"[Action: закройте редактор семейства, если он открыт, и повторите операцию вне активной транзакции]");
             return default;
         }
         finally

@@ -4,6 +4,8 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.Stale;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;
@@ -14,50 +16,73 @@ public sealed partial class FamilyManagerMainViewModel
     private async Task LoadTreeAsync(CancellationToken ct = default)
     {
         IsLoading = true;
-        var totalSw = System.Diagnostics.Stopwatch.StartNew();
-        var stageSw = System.Diagnostics.Stopwatch.StartNew();
+        using var _totalMs = SmartConLogger.Measure("LoadTree");
         try
         {
-            stageSw.Restart();
             IReadOnlyList<Core.Models.FamilyManager.CategoryNode> categories = [];
-            try
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.GetAllAsync"))
             {
-                categories = await _categoryRepository.GetAllAsync(ct);
+                try
+                {
+                    categories = await _categoryRepository.GetAllAsync(ct);
+                }
+                catch (Exception ex)
+                {
+                    using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "GetAllAsync"));
+                    SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
+                }
+                SmartConLogger.Freeze($"LoadTreeAsync: GetAllAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms, categories={categories.Count}");
             }
-            catch (Exception ex)
-            {
-                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "GetAllAsync"));
-                SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
-            }
-            SmartConLogger.Freeze($"LoadTreeAsync: GetAllAsync took {stageSw.ElapsedMilliseconds}ms, categories={categories.Count}");
 
             var tree = new CategoryTree(categories);
 
+            // #87: расширенный поиск — категория-охват + условия по атрибутам;
+            // комбинируется с текстовым поиском по «И» на уровне SQL.
+            var advancedFilter = AdvancedSearchFilter;
             var query = new FamilyCatalogQuery(
                 SearchText: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText,
-                CategoryFilter: null,
+                CategoryFilter: advancedFilter?.CategoryId,
                 StatusFilter: null,
                 Tags: null,
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
-                Limit: int.MaxValue);
+                Limit: int.MaxValue,
+                // Import Validation Gate: the "Без категории" quarantine
+                // zone is hidden from read-only roles (Engineer) — only
+                // editors see and distribute quarantined families.
+                ExcludeUncategorized: !_accessControl.IsEditorRole,
+                AttributeFilters: advancedFilter?.Conditions);
 
-            stageSw.Restart();
-            var results = await _catalogProvider.SearchAsync(query, ct);
-            SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {stageSw.ElapsedMilliseconds}ms, results={results.Count}");
+            IReadOnlyList<FamilyCatalogItem> results;
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.SearchAsync"))
+            {
+                results = await _catalogProvider.SearchAsync(query, ct);
+                // #87: counter bottom-right — families currently visible in the
+                // tree (with search/advanced filter applied).
+                VisibleItemCount = results.Count;
+                SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms, results={results.Count}");
+            }
+            // #187 (M1): gates the presence refresh on document switches
+            // that do NOT reload the tree (OnActiveDocumentChanged).
+            _treeLoadedOnce = true;
 
-            stageSw.Restart();
-            TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
-            SmartConLogger.Freeze($"LoadTreeAsync: GetItemCountAsync took {stageSw.ElapsedMilliseconds}ms, totalItemCount={TotalItemCount}");
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.GetItemCountAsync"))
+            {
+                TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
+                OnPropertyChanged(nameof(ItemCountDisplay));
+                OnPropertyChanged(nameof(ItemCountTooltip));
+                SmartConLogger.Freeze($"LoadTreeAsync: GetItemCountAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms, totalItemCount={TotalItemCount}");
+            }
 
             var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-            var expandAll = !string.IsNullOrWhiteSpace(SearchText);
+            var expandAll = !string.IsNullOrWhiteSpace(SearchText) || advancedFilter is not null;
 
             // DIAG-DUMP (Issue: net48 tree-expand after search).
             // Logs the search-vs-restore decision BEFORE building root nodes so
             // we can correlate with the per-category IsExpanded outcome below.
             SmartConLogger.Info(
                 $"FMTree.LoadTreeAsync.begin: searchText='{SearchText}' expandAll={expandAll} " +
+                $"advancedFilter={advancedFilter is not null} advancedConditions={advancedFilter?.Conditions.Count ?? 0} " +
                 $"savedCatIds={_savedExpandedCategoryIds.Count} " +
                 $"savedFamIds={_savedExpandedFamilyIds.Count}");
 
@@ -95,21 +120,28 @@ public sealed partial class FamilyManagerMainViewModel
                 .GroupBy(i => i.CategoryId ?? string.Empty)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            stageSw.Restart();
             var rootCategoryCount = 0;
-            foreach (var catNode in tree.GetRootNodes())
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.BuildCategoryNode"))
             {
-                var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, staleSnapshot);
-                if (catVm is CategoryNodeViewModel)
+                foreach (var catNode in tree.GetRootNodes())
                 {
-                    rootNodes.Add(catVm);
-                    rootCategoryCount++;
+                    var catVm = BuildCategoryNode(tree, catNode, itemsByCategory, expandAll, expandedIds, staleSnapshot);
+                    if (catVm is CategoryNodeViewModel)
+                    {
+                        rootNodes.Add(catVm);
+                        rootCategoryCount++;
+                    }
                 }
+                SmartConLogger.Freeze($"LoadTreeAsync: BuildCategoryNode took {(long)_stageMs.GetElapsedMilliseconds()}ms, rootCategories={rootCategoryCount}");
             }
-            SmartConLogger.Freeze($"LoadTreeAsync: BuildCategoryNode took {stageSw.ElapsedMilliseconds}ms, rootCategories={rootCategoryCount}");
 
             var uncategorized = results.Where(r => string.IsNullOrEmpty(r.CategoryId)).ToList();
             var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
+            // Import Validation Gate: quarantine zone — the node exists
+            // only for editor roles; read-only roles neither see the node
+            // nor receive uncategorized rows (query filter above).
+            if (_accessControl.IsEditorRole)
+            {
             _noCategoryNode = new CategoryNodeViewModel(
                 categoryId: "__no_category__",
                 name: noCatLabel,
@@ -136,7 +168,11 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale, staleReason: staleReason));
+                    RevitCategory = item.RevitCategory,
+                    ActiveRevitMajorVersion = item.ActiveRevitMajorVersion,
+                    MinRevitMajorVersion = item.MinRevitMajorVersion,
+                }, _assetService, isStale: isStale, staleReason: staleReason,
+                    currentRevitVersion: CurrentRevitVersion, searchText: SearchText));
             }
             _noCategoryNode.FamilyCount = uncategorized.Count;
             // Mirror the logic from BuildCategoryNode so the _noCategoryNode
@@ -154,18 +190,37 @@ public sealed partial class FamilyManagerMainViewModel
             }
             _noCategoryNode.AttachCollapseTracking();
             rootNodes.Add(_noCategoryNode);
+            }
+            else
+            {
+                _noCategoryNode = null;
+            }
 
-            stageSw.Restart();
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.AttachCachedTypesAsync"))
+            {
+                try
+                {
+                    await AttachCachedTypesAsync(rootNodes, expandedFamilyIds, ct);
+                }
+                catch (Exception ex)
+                {
+                    using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachCachedTypesAsync"));
+                    SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
+                }
+                SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms");
+            }
+
+            // E5 (#213, ADR-067): paperclip indicator on leaves referenced by
+            // any parent's version — one batch reverse query for the tree.
             try
             {
-                await AttachCachedTypesAsync(rootNodes, expandedFamilyIds, ct);
+                await AttachDependencyIndicatorsAsync(rootNodes, ct);
             }
             catch (Exception ex)
             {
-                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachCachedTypesAsync"));
+                using var _scope = SmartConLogger.BeginScope("LoadTreeAsync", ("Stage", "AttachDependencyIndicatorsAsync"));
                 SmartConLogger.Warn($"failed: {ex.Message} [Action: нажмите Refresh чтобы перезагрузить дерево, проверьте БД каталога]");
             }
-            SmartConLogger.Freeze($"LoadTreeAsync: AttachCachedTypesAsync took {stageSw.ElapsedMilliseconds}ms");
 
             // Удаляем пустые категории при активном поиске, чтобы пользователь видел
             // только ветки с совпадениями (best practice: скрывать нерелевантные разделы).
@@ -199,9 +254,11 @@ public sealed partial class FamilyManagerMainViewModel
 
             _previousLoadWasSearch = expandAll;
 
-            stageSw.Restart();
-            TreeNodes = rootNodes;
-            SmartConLogger.Freeze($"LoadTreeAsync: TreeNodes= took {stageSw.ElapsedMilliseconds}ms (WPF binding sync)");
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.TreeNodesAssign"))
+            {
+                TreeNodes = rootNodes;
+                SmartConLogger.Freeze($"LoadTreeAsync: TreeNodes= took {(long)_stageMs.GetElapsedMilliseconds()}ms (WPF binding sync)");
+            }
 
             // Re-apply per-category roll-up from the cached snapshot. BuildCategoryNode
             // only sets IsStale on leaves; the HasStale/StaleCount on category nodes
@@ -209,9 +266,54 @@ public sealed partial class FamilyManagerMainViewModel
             // the one triggered by 'Update on a single family') would wipe the
             // HasStale indicator on every category — even ones whose stale markers
             // are still perfectly valid in the snapshot.
-            stageSw.Restart();
-            await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
-            SmartConLogger.Freeze($"LoadTreeAsync: ApplyStaleResultsToTreeAsync took {stageSw.ElapsedMilliseconds}ms");
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.ApplyStaleResults"))
+            {
+                await ApplyStaleResultsToTreeAsync(Array.Empty<StaleCheckResult>(), ct).ConfigureAwait(true);
+                SmartConLogger.Freeze($"LoadTreeAsync: ApplyStaleResultsToTreeAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms");
+            }
+
+            // #259: compliance badges follow the same session-snapshot contract —
+            // a tree rebuild re-applies the cached verdicts instead of wiping them
+            // (and drops verdicts whose category no longer matches the leaf).
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.ApplyComplianceResults"))
+            {
+                ApplyComplianceResultsToTree(Array.Empty<ComplianceCheckResult>());
+                SmartConLogger.Freeze($"LoadTreeAsync: ApplyComplianceResultsToTree took {(long)_stageMs.GetElapsedMilliseconds()}ms");
+            }
+
+            // #187: project-presence badges on system type nodes — one
+            // CollectTypes pass over the catalog's system categories, then a
+            // (family, name) set lookup per node. Cheap: a single collector
+            // per tree load, refreshed with every LoadTreeAsync (import,
+            // sync, stale check, DB switch).
+            //
+            // #2 (no flicker): the freshly rebuilt nodes first receive the
+            // CACHED snapshot (same document → badges appear instantly, not
+            // after the Revit round-trip); the recompute then refreshes them
+            // and replaces the cache.
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.RefreshPresence"))
+            {
+                // L1 (review): when no document event has arrived yet the path is
+                // UNKNOWN (startup race, #174) — treat it as "same document" so
+                // the cached snapshot still prevents flicker; a real mismatch is
+                // healed by the recompute below.
+                if (_presenceSnapshot is not null
+                    && (_currentActiveDocumentPath is null
+                        || string.Equals(_presenceSnapshot.DocumentPath, _currentActiveDocumentPath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    ApplyPresenceSnapshot(_presenceSnapshot);
+                }
+                await RecomputePresenceAsync(ct).ConfigureAwait(true);
+                SmartConLogger.Freeze($"LoadTreeAsync: RefreshSystemTypeProjectPresence took {(long)_stageMs.GetElapsedMilliseconds()}ms");
+            }
+
+            // #133: routing-phantom badges (rules referencing families that
+            // left the catalog) — cheap catalog pass, never fails the load.
+            using (var _stageMs = SmartConLogger.Measure("LoadTree.ApplyRoutingHealth"))
+            {
+                await ApplyRoutingHealthToTreeAsync(ct).ConfigureAwait(true);
+                SmartConLogger.Freeze($"LoadTreeAsync: ApplyRoutingHealthToTreeAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms");
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -223,8 +325,7 @@ public sealed partial class FamilyManagerMainViewModel
         finally
         {
             IsLoading = false;
-            totalSw.Stop();
-            SmartConLogger.Freeze($"LoadTreeAsync: TOTAL took {totalSw.ElapsedMilliseconds}ms, thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
+            SmartConLogger.Freeze($"LoadTreeAsync: TOTAL took {(long)_totalMs.GetElapsedMilliseconds()}ms, thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
             SmartConLogger.Debug($"LoadTreeAsync: finally thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
         }
     }
@@ -274,7 +375,11 @@ public sealed partial class FamilyManagerMainViewModel
                     Tags = item.Tags,
                     Description = item.Description,
                     FamilySource = item.FamilySource,
-                }, isStale: isStale, staleReason: staleReason));
+                    RevitCategory = item.RevitCategory,
+                    ActiveRevitMajorVersion = item.ActiveRevitMajorVersion,
+                    MinRevitMajorVersion = item.MinRevitMajorVersion,
+                }, _assetService, isStale: isStale, staleReason: staleReason,
+                    currentRevitVersion: CurrentRevitVersion, searchText: SearchText));
             }
         }
 
@@ -325,73 +430,58 @@ public sealed partial class FamilyManagerMainViewModel
     }
 
     /// <summary>
-    /// Удаляет категории без family items при активном поиске, чтобы пользователь
-    /// видел только ветки, содержащие совпадения. При <paramref name="expandAll"/>=<c>false</c>
-    /// (поиск неактивен) метод не трогает дерево.
-    /// Категория считается пустой, если у неё <c>FamilyCount == 0</c> и ни одна дочерняя
-    /// категория не содержит результатов. Идём по списку с конца, чтобы удаление было
-    /// безопасным для итерации.
+    /// E5 (#213, ADR-067): выставляет <see cref="FamilyLeafNodeViewModel.IsDependencyReferenced"/>
+    /// и строки «родитель (версии)» для диалога деталей (#210) одним batch
+    /// reverse-запросом (<see cref="IFamilyDependencyRepository.GetReferencingParentsBatchAsync"/>)
+    /// на всё дерево. Индикатор пересчитывается с каждой перезагрузкой дерева
+    /// (импорт / удаление / MakeActive идут через LoadTreeAsync).
     /// </summary>
-    internal static void StripEmptyCategories(ObservableCollection<CatalogTreeNodeViewModel> roots, bool expandAll)
+    private async Task AttachDependencyIndicatorsAsync(
+        ObservableCollection<CatalogTreeNodeViewModel> rootNodes, CancellationToken ct)
     {
-        if (!expandAll || roots is null)
-        {
-            return;
-        }
+        var leaves = new List<FamilyLeafNodeViewModel>();
+        CollectFamilyLeaves(rootNodes, leaves);
+        if (leaves.Count == 0) return;
 
-        var beforeCount = CountAll(roots);
-        StripEmptyRecursive(roots);
-        var afterCount = CountAll(roots);
-        // DIAG-DUMP (Issue: net48 tree-expand after search).
-        // Confirms whether search actually pruned empty categories and how many
-        // nodes were removed. If the user reports "no categories expanded", the
-        // answer to "were there even matching categories?" lives here.
-        SmartConLogger.Debug(
-            $"FMTree.StripEmptyCategories: pruned {beforeCount - afterCount} empty category node(s) " +
-            $"({beforeCount} → {afterCount})");
+        var batch = await _familyDependencyRepository.GetReferencingParentsBatchAsync(
+            leaves.Select(l => l.CatalogItemId).ToList(), ct);
+
+        // E2 (#209): amber "требует переимпорта" badge — the current
+        // version embeds a child version that is no longer the child's
+        // active one. Same batch pass, same invalidation points.
+        var driftBatch = await _familyDependencyRepository.GetDependencyDriftBatchAsync(
+            leaves.Select(l => l.CatalogItemId).ToList(), ct);
+
+        foreach (var leaf in leaves)
+        {
+            if (batch.TryGetValue(leaf.CatalogItemId, out var references))
+            {
+                leaf.IsDependencyReferenced = true;
+                // #210: сырые строки «Родитель (версии)» — буллет-список
+                // в диалоге деталей статуса (больше не длинный тултип).
+                leaf.DependencyReferencedLines =
+                    DependencyGuardText.FormatReferenceLines(references, includeCurrentMark: false);
+            }
+
+            if (driftBatch.TryGetValue(leaf.CatalogItemId, out var drifts))
+            {
+                leaf.HasOutdatedDependencies = true;
+                leaf.OutdatedDependencyLines = drifts
+                    .Select(d => $"{d.ChildName} ({d.EmbeddedVersionLabel} → {d.CurrentVersionLabel})")
+                    .ToList();
+            }
+        }
     }
 
-    private static int CountAll(ObservableCollection<CatalogTreeNodeViewModel> nodes)
+    private static void CollectFamilyLeaves(
+        ObservableCollection<CatalogTreeNodeViewModel> nodes, List<FamilyLeafNodeViewModel> leaves)
     {
-        if (nodes is null) return 0;
-        int count = nodes.Count;
         foreach (var node in nodes)
         {
-            count += CountAll(node.Children);
-        }
-        return count;
-    }
-
-    private static void StripEmptyRecursive(ObservableCollection<CatalogTreeNodeViewModel> nodes)
-    {
-        for (int i = nodes.Count - 1; i >= 0; i--)
-        {
-            if (nodes[i] is not CategoryNodeViewModel cat)
-            {
-                continue;
-            }
-
-            StripEmptyRecursive(cat.Children);
-
-            if (cat.FamilyCount == 0 && !HasNonEmptyCategoryDescendant(cat))
-            {
-                nodes.RemoveAt(i);
-            }
+            if (node is FamilyLeafNodeViewModel leaf)
+                leaves.Add(leaf);
+            CollectFamilyLeaves(node.Children, leaves);
         }
     }
 
-    private static bool HasNonEmptyCategoryDescendant(CategoryNodeViewModel category)
-    {
-        foreach (var child in category.Children)
-        {
-            if (child is CategoryNodeViewModel childCat)
-            {
-                if (childCat.FamilyCount > 0 || HasNonEmptyCategoryDescendant(childCat))
-                {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 }

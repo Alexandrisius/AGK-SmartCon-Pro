@@ -4,14 +4,14 @@
 
 | Термин | Определение |
 |---|---|
-| **StaticConnector** | Первый выбранный коннектор. Неподвижен. Точка назначения для Dynamic. |
-| **DynamicConnector** | Второй выбранный коннектор. Его владелец (и опционально вся цепочка) перемещается к Static. |
+| **StaticConnector** | Неподвижный коннектор — **второй** клик. К нему присоединяют Dynamic. |
+| **DynamicConnector** | Движущийся коннектор — **первый** клик. Его владелец (и опционально цепочка) перемещается к Static. |
 | **FreeConnector** | Коннектор, у которого `connector.AllRefs.IsEmpty == true` — не подключён ни к чему. |
 | **ConnectionTypeCode** | Числовой код типа соединения, хранимый в `Connector.Description`. Определяет материал/способ соединения (напр. 1 = сварка, 2 = резьба, 3 = раструб). Настраивается пользователем через окно маппинга. |
 | **Internal Units** | Десятичные футы (decimal feet). Все числовые значения внутри Core — в этих единицах. Конвертация в мм/м — только на UI-слое. |
 | **Chain** | Цепочка связанных MEP-элементов, обходимых через `Connector.AllRefs`. Может обрабатываться как единое жёсткое тело при перемещении. |
 | **TransactionGroup + Assimilate** | Паттерн для группировки нескольких Transaction в одну запись Undo. Используется для всей операции PipeConnect. При отмене — RollBack. |
-| **IExternalEventHandler** | Механизм Revit для безопасного вызова API из не-основного потока (WPF UI thread). Все вызовы API из немодальных окон — только через него. |
+| **IExternalEventHandler** | Механизм Revit для безопасного вызова API из не-основного потока (WPF UI thread). Все вызовы API из **modeless** окон — только через него. **Modal** окна (PipeConnectEditor) вызывают API напрямую — см. ADR-043 (исключение из I-01 для modal command context). |
 | **LookupTable** | Таблица поиска в семействе Revit (FamilySizeTableManager). CSV-файл определяющий допустимые комбинации параметров. Порядок столбцов определяется из формулы `size_lookup()`. |
 | **ForgeTypeId / UnitTypeId** | Замена устаревшего `DisplayUnitType` (удалён с Revit 2022). Используется для конвертации единиц. |
 | **size_lookup()** | Формула Revit вида `size_lookup(TableName, ..., Param1, Param2, Param3)`. Порядок параметров в конце формулы определяет порядок столбцов в CSV (первый столбец CSV всегда пустой). |
@@ -21,7 +21,7 @@
 | **ConnectorProxy** | Иммутабельный снапшот данных Revit-коннектора. Живёт в пределах одной операции. Хранит ElementId владельца, координаты, оси, радиус, тип. |
 | **Assimilate** | Метод TransactionGroup: объединяет все вложенные Transaction в одну Undo-запись. |
 | **RollBack** | Метод TransactionGroup: откатывает все вложенные Transaction. Модель возвращается в исходное состояние. |
-| **PipeConnectEditor** | Немодальное WPF-окно финальной настройки соединения (фаза S6). Поворот, смена коннектора, выбор фитинга, кнопки Соединить/Отмена. |
+| **PipeConnectEditor** | Модальное WPF-окно финальной настройки соединения (фаза S6). Поворот, смена коннектора, выбор фитинга, кнопки Соединить/Отмена. Модальность обязательна для live real-element preview + single-undo cancel (ADR-043). |
 | **EditFamily** | Программное открытие семейства Revit для редактирования. Используется для записи Description в коннектор (это атрибут семейства, не экземпляра). |
 | **Share Project** | Операция экспорта модели в Shared зону по ISO 19650. Включает sync, detach, purge, трансформацию имени, save to shared folder. |
 | **WIP** | Work In Progress — рабочая зона проекта. Файл находится в редактировании инженером. |
@@ -34,3 +34,11 @@
 | **ExportNameOverride** | Ручное переопределение имени файла при ошибке валидации. Позволяет инженеру скорректировать имя перед шарингом. |
 | **Type Catalog** | Текстовый файл `.txt` рядом с семейством Revit `.rfa`, определяющий типоразмеры семейства. Header содержит `##TYPE##UNITS` annotation (`Width##length##millimeters`). Каждая строка — один типоразмер. В SmartCon: импортируется через bake-in (ADR-033) — типы запекаются в `.rfa` при импорте, `.txt` больше не хранится в managed storage (ADR-023-002 supersedes). |
 | **BAKE-006..009** | Секции ADR-033 описывающие unit conversion в Type Catalog: парсинг `##TYPE##UNITS`, конвертация через `UnitUtils.ConvertToInternalUnits`, multi-version support (R21+ UnitTypeId vs R19-R20 DisplayUnitType), backward compatibility (no annotation = raw value). |
+| **Vec3** | 3D-вектор (`readonly record struct`) в `SmartCon.Core/Math/`. Заменяет `XYZ` для чистой математики в Core (ADR-009). Конвертация `Vec3` ↔ `XYZ` на границе Revit-слоя. |
+| **RBAC** | Role-Based Access Control для локальных каталогов FamilyManager. Роли: Owner, BimMaster, Engineer, Ban (ADR-022). |
+| **DbUser** | SQLite-запись пользователя в каталоге (`db_users` table). Идентификация по `UserName@MachineName`. |
+| **UserIdentity** | Identity пользователя в FamilyManager: `UserName@MachineName` (ADR-022). |
+| **DbAccessDeniedException** | Исключение при нарушении RBAC-прав доступа к каталогу. |
+| **SemVersion** | Семантическая версия проекта SmartCon (SemVer 2.0). Используется для pre-release/beta-релизов (ADR-021). |
+| **PendingUpdate** | Staged-обновление плагина, ожидающее применения при закрытии Revit (`update-pending.json`). |
+| **UpdateInfo** | Информация о доступном обновлении (версия, URL, changelog). |

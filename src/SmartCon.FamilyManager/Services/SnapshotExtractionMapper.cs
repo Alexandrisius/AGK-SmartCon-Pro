@@ -123,7 +123,9 @@ internal static class SnapshotExtractionMapper
                 // System family types only carry Type-scope parameters.
                 values.Add(ToValueResult(v, null, AttributeScope.Type));
             }
-            types.Add(new FamilyExtractionTypeValues(t.Name, sortOrder++, values));
+            // #191: the family identity flows into the attribute pipeline —
+            // same-named types of different system families stay distinct.
+            types.Add(new FamilyExtractionTypeValues(t.Name, sortOrder++, values, t.FamilyName, t.FamilyKey));
         }
 
         SmartConLogger.Info(
@@ -200,7 +202,8 @@ internal static class SnapshotExtractionMapper
         AttributeScope? scope = null;
         if (scopeByName is not null && scopeByName.TryGetValue(v.ParameterName, out var s))
             scope = s;
-        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope);
+        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope,
+            v.ValueDisplay, v.UnitTypeId);
     }
 
     private static FamilyExtractionValueResult ToValueResult(
@@ -211,7 +214,8 @@ internal static class SnapshotExtractionMapper
         var scope = fixedScope;
         if (scope is null && scopeByName is not null && scopeByName.TryGetValue(v.ParameterName, out var s))
             scope = s;
-        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope);
+        return ToValueResultCore(v.ParameterName, v.StorageType, v.HasValue, v.ValueText, v.ValueNumber, scope,
+            v.ValueDisplay, v.UnitTypeId);
     }
 
     private static FamilyExtractionValueResult ToValueResultCore(
@@ -220,7 +224,9 @@ internal static class SnapshotExtractionMapper
         bool hasValue,
         string? valueText,
         double? valueNumber,
-        AttributeScope? scope)
+        AttributeScope? scope,
+        string? valueDisplay,
+        string? unitTypeId)
     {
         if (!hasValue)
         {
@@ -243,10 +249,10 @@ internal static class SnapshotExtractionMapper
             parameterName,
             scope,
             storageType,
-            ValueText: valueText,
+            ValueText: valueDisplay ?? valueText,
             ValueRaw: valueRaw,
             ValueNumber: valueNumber,
-            UnitTypeId: null,
+            UnitTypeId: unitTypeId,
             Status: AttributeValueStatus.Found,
             Message: null);
     }
@@ -275,6 +281,32 @@ internal static class SnapshotExtractionMapper
         if (sourceTypes is not null) return sourceTypes.Count;
         if (loadableSnapshot?.Types is not null) return loadableSnapshot.Types.Count;
         if (systemSnapshot?.Types is not null) return systemSnapshot.Types.Count;
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the display-ready type-name list for the batch import
+    /// dialog's Types-column tooltip. Same source priority as
+    /// <see cref="ResolveTypeCount"/> (sourceTypes → loadableSnapshot →
+    /// systemSnapshot → <c>null</c>), so the tooltip always matches the
+    /// number shown in the column. The synthetic
+    /// <see cref="FamilyTypeSnapshot.DefaultTypeName"/> literal is replaced
+    /// with <paramref name="familyName"/> via
+    /// <see cref="FamilyTypeSnapshot.ResolveDisplayName"/> — the user never
+    /// sees the raw "&lt;default&gt;" marker.
+    /// </summary>
+    public static IReadOnlyList<string>? ResolveTypeNames(
+        FamilySnapshot? loadableSnapshot,
+        SystemFamilySnapshot? systemSnapshot,
+        IReadOnlyList<FamilySourceTypeInfo>? sourceTypes,
+        string familyName)
+    {
+        if (sourceTypes is not null)
+            return sourceTypes.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
+        if (loadableSnapshot?.Types is not null)
+            return loadableSnapshot.Types.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
+        if (systemSnapshot?.Types is not null)
+            return systemSnapshot.Types.Select(t => FamilyTypeSnapshot.ResolveDisplayName(t.Name, familyName)).ToList();
         return null;
     }
 

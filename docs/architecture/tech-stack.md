@@ -12,6 +12,8 @@
 | CAD-платформа | Autodesk Revit | 2019-2026 | RevitAPI.dll + RevitAPIUI.dll (multi-version) |
 | DI-контейнер | Microsoft.Extensions.DependencyInjection | 8.0.1 | Регистрация в SmartCon.App |
 | MVVM Toolkit | CommunityToolkit.Mvvm | 8.4.0 | ObservableObject, RelayCommand, source generators |
+| Изоляция зависимостей (net8) | Nice3point.Revit.Toolkit | $(RevitVersion).* (2025.*) | AssemblyLoadContext 'SmartCon' (ADR-051) |
+| Слияние зависимостей (net48) | ILRepack.Lib.MSBuild.Task | 2.0.46 | merge в SmartCon.Dependencies.dll (ADR-051) |
 | Тестирование | xUnit | 2.9.3 | Unit + ViewModel тесты |
 | Моки | Moq | 4.20.72 | Мокирование интерфейсов Revit |
 | Сериализация | System.Text.Json | встроен в .NET 8 / NuGet для net48 | JSON маппинга фитингов |
@@ -29,7 +31,13 @@
 - `Nice3point.Revit.Api.UI` — Reference, CopyLocal = false
 
 ### SmartCon.App
-- `Microsoft.Extensions.DependencyInjection` 8.0.1
+- `Microsoft.Extensions.DependencyInjection` 8.0.1 (net8; на net48 — внутри merged SmartCon.Dependencies)
+- `Nice3point.Revit.Toolkit` $(RevitVersion).* — только net8.0-windows (ADR-051)
+
+### SmartCon.Dependencies (net48 only, ADR-051)
+- Merge-список (сшивается ILRepack в `SmartCon.Dependencies.dll`): `CommunityToolkit.Mvvm` (+Common, +Diagnostics), `Microsoft.Extensions.DependencyInjection` (+Abstractions), `Microsoft.Bcl.AsyncInterfaces`, `System.Threading.Tasks.Extensions`, `System.Text.Json` (+Encodings.Web, Memory, Buffers, Unsafe, Numerics.Vectors), `System.Text.Encoding.CodePages`, `UTF.Unknown`
+- `ILRepack.Lib.MSBuild.Task` 2.0.46 (build-time only)
+- Намеренно НЕ сшиваются: HelixToolkit/SharpDX/MahApps (WPF XAML, XmlnsDefinition/pack URI), SQLite (native interop), System.ValueTuple (фасад фреймворка)
 
 ### SmartCon.UI
 - `CommunityToolkit.Mvvm` 8.4.0 — ObservableObject, RelayCommand, [ObservableProperty], [RelayCommand] source generators

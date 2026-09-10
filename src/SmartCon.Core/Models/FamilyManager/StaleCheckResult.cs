@@ -23,6 +23,25 @@ public enum StaleReason
 
     /// <summary>Family exists in the project but is not in the FamilyManager catalog.</summary>
     NotInCatalog = 4,
+
+    /// <summary>
+    /// #180: the ES marker matches the catalog's current version, but the
+    /// FHV10 content proof shows the embedded/loaded copy was EDITED
+    /// LOCALLY (type values, formulas, geometry, connectors) after the
+    /// marker was written. Marker-only checks are blind to this drift.
+    /// «Обновить» restores the catalog content (local edits are lost).
+    /// </summary>
+    ContentDrift = 5,
+
+    /// <summary>
+    /// ADR-072 World B: the ES marker matches the catalog, but the LIVE
+    /// routing preferences of the loaded system type differ from the
+    /// catalog's item-level routing links (the editor edited them, or the
+    /// project type was reconfigured manually). Routing left the content
+    /// hash, so the drift probe compares <c>RoutingFingerprint</c>s.
+    /// «Обновить» applies the catalog routing to the project type.
+    /// </summary>
+    RoutingDrift = 6,
 }
 
 /// <summary>

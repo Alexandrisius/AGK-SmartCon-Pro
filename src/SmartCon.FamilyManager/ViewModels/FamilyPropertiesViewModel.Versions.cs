@@ -22,6 +22,22 @@ public sealed partial class FamilyPropertiesViewModel
     private string? _versionsStatusMessage;
 
     /// <summary>
+    /// Set when <see cref="MakeActiveAsync"/> committed a new active version to
+    /// the DB. The main panel watches this after the dialog closes (even on
+    /// Cancel) to rebuild the tree — the leaf's availability badge (lock icon)
+    /// depends on the active version's Revit major version, which may have
+    /// just changed.
+    /// </summary>
+    public bool ActiveVersionChanged { get; private set; }
+
+    /// <summary>
+    /// E5 (#213): set when <see cref="DeleteVersion"/> committed — deleting a
+    /// parent version CASCADE-frees its dependency links, so the main panel
+    /// must rebuild the tree (the freed child's paperclip clears) even when
+    /// the dialog closes with Cancel.
+    /// </summary>
+    public bool VersionsChanged { get; private set; }
+    /// <summary>
     /// Load all versions of the catalog item for display in the Versions tab.
     /// The active version (matching <c>catalog_items.current_version_label</c>)
     /// is marked with <see cref="FamilyVersionRow.IsActive"/> = true.
@@ -58,7 +74,8 @@ public sealed partial class FamilyPropertiesViewModel
                     contentHash: v.ContentHash,
                     hashFormatVersion: v.HashFormatVersion,
                     publishedBy: v.PublishedBy,
-                    typeNames: Array.Empty<string>()))
+                    typeNames: Array.Empty<string>(),
+                    fileName: v.FileName))
                 .ToList();
 
             // ADR-041 rev #5: attach type-name list per version for the
@@ -72,7 +89,9 @@ public sealed partial class FamilyPropertiesViewModel
                 {
                     var types = await _typeRepository.GetTypesForItemVersionAsync(
                         _catalogItemId, row.VersionId, ct).ConfigureAwait(true);
-                    row.SetTypeNames(types.Select(t => t.Name).ToList());
+                    row.SetTypeNames(types
+                        .Select(t => Core.Models.FamilyManager.FamilyTypeSnapshot.ResolveDisplayName(t.Name, Name))
+                        .ToList());
                 }
                 catch (Exception typeEx)
                 {
@@ -108,6 +127,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task MakeActiveAsync(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(MakeActiveAsync)),
@@ -143,6 +163,7 @@ public sealed partial class FamilyPropertiesViewModel
 
             if (result.Success)
             {
+                ActiveVersionChanged = true;
                 // Refresh internal state: flip IsActive flags.
                 foreach (var row in Versions)
                 {
@@ -150,9 +171,23 @@ public sealed partial class FamilyPropertiesViewModel
                 }
                 SelectedVersionRow = Versions.FirstOrDefault(r => r.IsActive);
                 VersionLabel = newLabel;
+                // Issue #126: the item name follows the ACTIVE version's
+                // file name. When the activated version was stored under a
+                // different name, SetActiveVersionAsync has already renamed
+                // the item in the DB — reflect it in the dialog.
+                if (result.NameChanged && result.NewName is not null)
+                {
+                    // The rename is already persisted by SetActiveVersionAsync —
+                    // sync the "original" BEFORE assigning Name so
+                    // HasUnsavedChanges stays false.
+                    _originalName = result.NewName;
+                    Name = result.NewName;
+                }
                 SmartConLogger.Info(
                     $"MakeActive succeeded: prev={result.PreviousVersionLabel ?? "<null>"} " +
-                    $"new={newLabel} hashSynced={result.ContentHashSynced}");
+                    $"new={newLabel} hashSynced={result.ContentHashSynced} " +
+                    $"nameChanged={result.NameChanged}" +
+                    (result.NameChanged ? $" ('{result.PreviousName}' -> '{result.NewName}')" : string.Empty));
                 DeleteVersionCommand.NotifyCanExecuteChanged();
                 MakeActiveCommand.NotifyCanExecuteChanged();
 
@@ -188,6 +223,37 @@ public sealed partial class FamilyPropertiesViewModel
                 {
                     SmartConLogger.Warn(
                         $"MakeActive succeeded but Assets reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладки «Содержимое» и «3D Просмотр» для новой активной версии]");
+                }
+
+                // FHV21 (owner stress test 2026-09-01): the routing tab's
+                // Segments row is per-version content — after a rollback it
+                // must show the ACTIVATED version's segment configuration,
+                // not the previously loaded one. Fitting links are
+                // item-level and version-independent, but the type set is
+                // per-version too, so a full reload is the correct move;
+                // pending unsaved routing edits are discarded (same as the
+                // Attributes tab reload above). Restore the type selection
+                // when the type still exists in the new active version.
+                if (IsRoutingTabVisible)
+                {
+                    try
+                    {
+                        var selectedKey = SelectedRoutingType is { } selected
+                            ? RoutingTypeItem.KeyOf(selected.TypeName, selected.FamilyKey)
+                            : null;
+                        await LoadRoutingAsync(ct).ConfigureAwait(true);
+                        if (selectedKey is not null)
+                        {
+                            SelectedRoutingType = RoutingTypes.FirstOrDefault(t =>
+                                RoutingTypeItem.KeyOf(t.TypeName, t.FamilyKey) == selectedKey)
+                                ?? RoutingTypes.FirstOrDefault();
+                        }
+                    }
+                    catch (Exception reloadEx)
+                    {
+                        SmartConLogger.Warn(
+                            $"MakeActive succeeded but Routing reload failed: {reloadEx.Message} [Action: закройте и откройте окно свойств, чтобы перечитать вкладку «Трассировка» для новой активной версии]");
+                    }
                 }
             }
             else
@@ -225,6 +291,7 @@ public sealed partial class FamilyPropertiesViewModel
     private async Task DeleteVersion(CancellationToken ct)
     {
         if (SelectedVersionRow is null) return;
+        if (!await _updateState.EnsureUpToDateAsync().ConfigureAwait(true)) return;
 
         using var _scope = SmartConLogger.BeginScope("FMProperties",
             ("Method", nameof(DeleteVersion)),
@@ -251,6 +318,7 @@ public sealed partial class FamilyPropertiesViewModel
 
             if (result.Success)
             {
+                VersionsChanged = true;
                 // Remove the row(s) for the deleted label from the observable list.
                 var toRemove = Versions.Where(r => r.VersionLabel == victimLabel).ToList();
                 foreach (var row in toRemove)

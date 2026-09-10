@@ -56,6 +56,36 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 
 **Файл:** `Math/ConnectorAligner.cs`
 
+## ConnectorOrdering
+
+Детерминированная геометрическая сортировка коннекторов (issue #163):
+`ConnectorSet` в Revit API перечисляет коннекторы в случайном порядке, меняющемся
+от вызова к вызову — потребители не должны на него полагаться.
+
+Порядок: **X asc** (слева-направо) → **Z desc** (сверху-вниз) → **Y asc** →
+tie-break по `Connector.Id` (делает порядок тотальным и воспроизводимым независимо
+от порядка входа). Оси сравниваются с толерансом `PositionTolerance` = 1e-6 ft.
+
+Ключ позиции поставляет вызывающий код. Чтобы порядок был стабилен, пока элемент
+перемещается/поворачивается (PipeConnectEditor реалайнит элемент на каждом цикле),
+ключ должен быть инвариантен к rigid transform — см. `ConnectorService`
+(SmartCon.Revit): `FamilyInstance` → семейно-локальные координаты
+(`GetTotalTransform().Inverse`), `MEPCurve` → проекция на ось `LocationCurve`.
+
+**Файл:** `Math/ConnectorOrdering.cs`
+
+```csharp
+public static class ConnectorOrdering
+{
+    public const double PositionTolerance = 1e-6;
+
+    public static IReadOnlyList<T> OrderByPosition<T>(
+        IEnumerable<T> items,
+        Func<T, Vec3> positionSelector,
+        Func<T, int> tieBreakerSelector);
+}
+```
+
 ## VectorUtils
 
 Базовые векторные операции с Vec3.
@@ -68,6 +98,31 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 
 **Файл:** `Math/BestSizeMatcher.cs`
 
+---
+
+## TransitionSizeMatcher
+
+Подбор переходной конфигурации multi-DN семейства (ADR-053): target-порт совпадает
+точно с требуемым радиусом, остальные порты меняются минимально (идеально — 0,
+«чистый» переход, downstream не трогается). Опции со сменой FamilySymbol и
+auto-select исключаются. Pure math над `FamilySizeOption`.
+
+**Файл:** `Math/TransitionSizeMatcher.cs`
+
+```csharp
+public static class TransitionSizeMatcher
+{
+    public static FamilySizeOption? FindBestTransition(
+        IReadOnlyList<FamilySizeOption> candidates, double targetRadius,
+        int targetConnIdx, IReadOnlyDictionary<int, double> currentRadii,
+        double radiusTolerance = 1e-5);
+
+    public static double OtherPortsDelta(
+        FamilySizeOption option, int targetConnIdx,
+        IReadOnlyDictionary<int, double> currentRadii);
+}
+```
+
 ## SizeRowSymbolMatcher
 
 Сопоставление строки типоразмера с символом DN.
@@ -79,3 +134,30 @@ public sealed record RotationStep(Vec3 Axis, double AngleRadians);
 Парсинг CSV LookupTable семейства Revit.
 
 **Файл:** `Math/LookupTableCsvParser.cs`
+
+---
+
+## PipeLengthAbsorber
+
+Per-level гашение смещения длиной трубы (ADR-052, pure math на Vec3).
+Когда подключаемый элемент сам — прямая труба и выравнивание — чистая трансляция,
+труба меняет длину вместо жёсткого перемещения: ближний к родителю конец следует
+за offset, дальний получает только непоглощённый остаток. Укорочение ограничено
+`PipeAbsorption.MinPipeLengthMm` = 100 мм, удлинение без ограничений.
+
+**Файл:** `Math/PipeLengthAbsorber.cs`
+
+```csharp
+public static class PipeLengthAbsorber
+{
+    // null при вырожденной геометрии (нулевой offset или нулевая длина).
+    public static PipeAdjustOp? Compute(
+        long elementId, Vec3 pipeStart, Vec3 pipeEnd, Vec3 entryPoint,
+        Vec3 offset, double minPipeLength);
+
+    // FlexPipe: новый путь точек — двигается только концевая точка со стороны
+    // родителя, промежуточные сохраняются verbatim. null если путь < minPathLength.
+    public static IReadOnlyList<Vec3>? ComputeFlexPath(
+        IReadOnlyList<Vec3> points, Vec3 entryPoint, Vec3 offset, double minPathLength);
+}
+```

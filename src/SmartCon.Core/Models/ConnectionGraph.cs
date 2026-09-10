@@ -15,6 +15,7 @@ public sealed class ConnectionGraph
     private readonly List<List<ElementId>> _levels;
     private readonly Dictionary<long, List<ConnectionRecord>> _originalConnections;
     private readonly Dictionary<long, List<ElementId>> _adjacency;
+    private readonly HashSet<long> _mepCurveNodes;
 
     internal ConnectionGraph(
         ElementId rootId,
@@ -22,7 +23,8 @@ public sealed class ConnectionGraph
         List<ConnectionEdge> edges,
         List<List<ElementId>> levels,
         Dictionary<long, List<ConnectionRecord>> originalConnections,
-        Dictionary<long, List<ElementId>> adjacency)
+        Dictionary<long, List<ElementId>> adjacency,
+        HashSet<long> mepCurveNodes)
     {
         RootId = rootId;
         _nodes = nodes;
@@ -30,6 +32,7 @@ public sealed class ConnectionGraph
         _levels = levels;
         _originalConnections = originalConnections;
         _adjacency = adjacency;
+        _mepCurveNodes = mepCurveNodes;
     }
 
     /// <summary>Root element (dynamic element) from which BFS started.</summary>
@@ -54,6 +57,15 @@ public sealed class ConnectionGraph
     public IReadOnlyList<ConnectionRecord> GetOriginalConnections(ElementId elementId)
         => _originalConnections.TryGetValue(elementId.GetValue(), out var list) ? list : [];
 
+    /// <summary>
+    /// Numeric ids of nodes that are linear elements (MEPCurve / FlexPipe) — the
+    /// only elements capable of absorbing displacement by length change (ADR-052).
+    /// A remainder containing such nodes should be traversed element-wise so the
+    /// compensation works; a remainder without them can only be rigid-moved.
+    /// </summary>
+    public bool ContainsMepCurve(ElementId elementId)
+        => _mepCurveNodes.Contains(elementId.GetValue());
+
     /// <summary>BFS traversal from a given element within the graph.</summary>
     public IEnumerable<ElementId> GetChainFrom(ElementId startId)
     {
@@ -74,6 +86,22 @@ public sealed class ConnectionGraph
             }
         }
     }
+
+    /// <summary>
+    /// Flattened element queue in BFS discovery order: index 0 = root dynamic,
+    /// then level-1 elements in discovery order, then level-2, and so on.
+    /// Because levels are emitted in ascending order, every element's parent
+    /// always appears earlier in the queue — the chain can be attached strictly
+    /// one element at a time (element-wise chain mode).
+    /// </summary>
+    public IReadOnlyList<ChainQueueEntry> GetElementQueue()
+    {
+        var queue = new List<ChainQueueEntry>(_nodes.Count);
+        for (int level = 0; level < _levels.Count; level++)
+            foreach (var id in _levels[level])
+                queue.Add(new ChainQueueEntry(id, level));
+        return queue;
+    }
 }
 
 /// <summary>
@@ -86,6 +114,7 @@ public sealed class ConnectionGraphBuilder
     private readonly List<ConnectionEdge> _edges;
     private readonly List<List<ElementId>> _levels;
     private readonly Dictionary<long, List<ConnectionRecord>> _originalConnections = new();
+    private readonly HashSet<long> _mepCurveNodes = new();
 
     /// <summary>Creates a builder rooted at the specified element.</summary>
     public ConnectionGraphBuilder(ElementId rootId)
@@ -100,6 +129,12 @@ public sealed class ConnectionGraphBuilder
     public void AddNode(ElementId elementId)
     {
         _nodes.Add(elementId);
+    }
+
+    /// <summary>Mark a node as a linear element (MEPCurve / FlexPipe) — can absorb displacement by length.</summary>
+    public void MarkMepCurve(ElementId elementId)
+    {
+        _mepCurveNodes.Add(elementId.GetValue());
     }
 
     /// <summary>Add a connection edge between two elements.</summary>
@@ -153,6 +188,6 @@ public sealed class ConnectionGraphBuilder
             toList.Add(edge.FromElementId);
         }
 
-        return new ConnectionGraph(_rootId, _nodes, _edges, _levels, _originalConnections, adjacency);
+        return new ConnectionGraph(_rootId, _nodes, _edges, _levels, _originalConnections, adjacency, _mepCurveNodes);
     }
 }

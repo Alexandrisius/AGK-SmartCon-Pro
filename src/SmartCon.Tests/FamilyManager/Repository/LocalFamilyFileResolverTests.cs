@@ -76,6 +76,31 @@ public sealed class LocalFamilyFileResolverTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveForLoadAsync_FileNewerThanTargetRevit_ReturnsEmptyPath()
+    {
+        var itemId = await SeedItemAsync("TooNew.rfa", 2025);
+
+        var resolved = await _resolver.ResolveForLoadAsync(itemId, 2024);
+
+        Assert.NotNull(resolved);
+        Assert.Equal(string.Empty, resolved.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task ResolveForLoadAsync_LegacyMultiVariant_PicksHighestNotAboveTarget()
+    {
+        var itemId = await SeedItemAsync("Multi.rfa", 2021);
+        await CatalogSeedHelper.SeedAdditionalVariantAsync(_fixture, itemId, "Multi2025", "v1", 2025);
+
+        var resolved = await _resolver.ResolveForLoadAsync(itemId, 2024);
+
+        Assert.NotNull(resolved);
+        Assert.NotEmpty(resolved.AbsolutePath);
+        Assert.Contains("Multi.rfa", resolved.AbsolutePath);
+        Assert.DoesNotContain("Multi2025", resolved.AbsolutePath);
+    }
+
+    [Fact]
     public void GetDatabaseRoot_ReturnsTempDir()
     {
         var root = _resolver.GetDatabaseRoot();

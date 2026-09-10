@@ -15,6 +15,25 @@ module: cross-cutting
 
 ---
 
+## EnumOption
+
+Универсальная обёртка для enum-значений с human-readable Display/Description. Используется в WPF VM для ComboBox/RadioButton (например, `ParseMode`, `ValidationMode`).
+
+**Файл:** `SmartCon.Core/Models/EnumOption.cs`
+
+```csharp
+public sealed class EnumOption<T>
+{
+    public T Value { get; init; } = default!;
+    public string Display { get; init; } = "";
+    public string Description { get; init; } = "";
+
+    public override string ToString() => Display;
+}
+```
+
+---
+
 ## Guard
 
 Polyfill для `ArgumentNullException.ThrowIfNull` (нет в net48). Удовлетворяет CA1510.
@@ -223,17 +242,6 @@ Pure C# парсер имени файла по `FileNameTemplate`. Pure без 
 
 ---
 
-## CategoryCompat
-
-Кросс-TFM абстракция `Category → BuiltInCategory`:
-- **Revit 2022+** — канонический `Category.BuiltInCategory` (корректно для standard, INVALID для custom sub-category).
-- **Revit 2019–2021** — guarded cast `(BuiltInCategory)(int)catId.GetValue()` через
-  `ElementIdCompat.GetValue()`.
-
-**Файл:** `SmartCon.Core/Compatibility/CategoryCompat.cs`
-
----
-
 ## NetFrameworkCompat
 
 Кросс-TFM хелперы для net48/net8 совместимости (Encoding, Path, Path.Combine и т.д.). Заменяет platform-specific методы, недоступные в net48.
@@ -246,7 +254,16 @@ Pure C# парсер имени файла по `FileNameTemplate`. Pure без 
 
 Глобальные константы проекта (пути, ключи реестра, дефолтные значения).
 
-**Файл:** `SmartCon.Core/Common/Constants.cs`
+**Файл:** `SmartCon.Core/Constants.cs`
+
+## PipeAbsorption
+
+Лимиты гашения смещения длиной труб (ADR-052). `MinPipeLengthMm = 100.0` — минимальная
+монтажная длина трубы после укорочения (SI); `MinPipeLengthFt = 100 / 304.8` — то же
+в Internal Units (decimal feet, I-02). Revit API допускает трубу от ~2.5 мм (1/10"),
+но короче 100 мм вставка не монтируется на стройке.
+
+**Файл:** `SmartCon.Core/Constants.cs`
 
 ---
 
@@ -392,3 +409,23 @@ Pure C# реализация `ITypeCatalogValueApplier`. Парсит сырое
 - Прочее → `UnsupportedStorageType`
 
 **Тестирование:** 19 unit-тестов в `src/SmartCon.Tests/Core/Services/TypeCatalogValueApplierTests.cs` покрывают все ветки + null-safety + culture fallback + негативные кейсы (InvalidFormat для разных StorageType).
+
+---
+
+## PauseGate (Issue #127)
+
+Cooperative pause-гейт для batch-импорта (аналог Stephen Cleary PauseToken). VM вызывает `Pause()` (кнопка «Остановить») / `Resume()` («Продолжить» или «Закрыть»); executor между элементами ждёт `WaitWhilePausedAsync()`. Потокобезопасен (volatile + Interlocked), continuations — `RunContinuationsAsynchronously`.
+
+**Файл:** `SmartCon.Core/Threading/PauseGate.cs`
+
+```csharp
+public sealed class PauseGate
+{
+    public bool IsPaused { get; }
+    public void Pause();
+    public void Resume();
+    public Task WaitWhilePausedAsync();
+}
+```
+
+**Покрытие:** 7 unit-тестов в `src/SmartCon.Tests/Core/Threading/PauseGateTests.cs`.

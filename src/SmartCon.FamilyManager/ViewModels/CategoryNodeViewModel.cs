@@ -14,20 +14,179 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
     public string FullPath { get; set; }
     public int SortOrder { get; set; }
 
-    public bool IsNew { get; set; }
-    public bool IsDirty { get; set; }
-    public bool IsDeleted { get; set; }
-    public string OriginalName { get; set; } = string.Empty;
-    public string? OriginalParentId { get; set; }
-    public int OriginalSortOrder { get; set; }
-
     [ObservableProperty] private int _familyCount;
+
+    // ── Auto-assignment rules indicator (#241) ─────────────────────────
+
+    /// <summary>Total assignment rule groups of this category (all states).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AssignmentIconKind))]
+    [NotifyPropertyChangedFor(nameof(AssignmentIconBrush))]
+    [NotifyPropertyChangedFor(nameof(AssignmentRulesTooltip))]
+    private int _assignmentRuleCount;
+
+    /// <summary>Assignment rule groups with IsEnabled = false — drives the
+    /// orange state (mirrors the validation shield semantics).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AssignmentIconKind))]
+    [NotifyPropertyChangedFor(nameof(AssignmentIconBrush))]
+    [NotifyPropertyChangedFor(nameof(AssignmentRulesTooltip))]
+    private int _disabledAssignmentRuleCount;
+
+    /// <summary>
+    /// Filter icon on the category node: gray cog outline when no rules
+    /// (still clickable — opens the editor), gray filter-check when every
+    /// rule is enabled, orange cog outline when at least one rule is
+    /// disabled. Same three-state semantics as the validation shield.
+    /// </summary>
+    public string AssignmentIconKind =>
+        AssignmentRuleCount == 0 ? "FilterCogOutline"
+        : DisabledAssignmentRuleCount > 0 ? "FilterCogOutline"
+        : "FilterCheck";
+
+    public string AssignmentIconBrush =>
+        AssignmentRuleCount == 0 ? "#9E9E9E"
+        : DisabledAssignmentRuleCount > 0 ? "#FB8C00"
+        : "#9E9E9E";
+
+    /// <summary>Tooltip of the filter icon (count + click hint).</summary>
+    public string AssignmentRulesTooltip
+    {
+        get
+        {
+            static string? Loc(string key) => SmartCon.UI.LanguageManager.GetString(key);
+            if (AssignmentRuleCount == 0)
+            {
+                return Loc(SmartCon.UI.StringLocalization.Keys.FM_AssignEditor_TreeNone)
+                    ?? "Правила автоназначения не заданы — нажмите для настройки";
+            }
+
+            var count = DisabledAssignmentRuleCount > 0
+                ? string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_AssignEditor_TreeCountDisabled)
+                        ?? "Правила автоназначения: {0} (отключено: {1})",
+                    AssignmentRuleCount,
+                    DisabledAssignmentRuleCount)
+                : string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    Loc(SmartCon.UI.StringLocalization.Keys.FM_AssignEditor_TreeCount)
+                        ?? "Правила автоназначения: {0}",
+                    AssignmentRuleCount);
+            var hint = Loc(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return count + " — " + hint;
+        }
+    }
 
     /// <summary>Roll-up: true if any leaf under this category is stale (recursive).</summary>
     [ObservableProperty] private bool _hasStale;
 
     /// <summary>Roll-up: number of stale leaves under this category (recursive).</summary>
-    [ObservableProperty] private int _staleCount;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StaleBadgeTooltip))]
+    private int _staleCount;
+
+    // ── Catalog compliance roll-up (#259) ────────────────────────────────
+
+    /// <summary>Roll-up: number of leaves under this category (recursive) whose
+    /// last «Проверить → Правила» run ended with a Fail verdict.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRuleViolations))]
+    [NotifyPropertyChangedFor(nameof(RuleViolationBadgeTooltip))]
+    private int _ruleViolationCount;
+
+    /// <summary><c>true</c> when the red shield roll-up badge is shown.</summary>
+    public bool HasRuleViolations => RuleViolationCount > 0;
+
+    /// <summary>One-line hint for the red shield (count + click hint).</summary>
+    public string RuleViolationBadgeTooltip
+    {
+        get
+        {
+            var count = SmartCon.UI.Converters.StatusTooltipText.ForRuleViolationCount(RuleViolationCount) ?? string.Empty;
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.IsNullOrEmpty(count) ? hint : count + " — " + hint;
+        }
+    }
+
+    // ── Routing-phantom roll-up (#133) ─────────────────────────────────
+
+    /// <summary>Roll-up: number of leaves under this category (recursive) with
+    /// routing rules referencing families missing from the catalog (#133).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRoutingIssues))]
+    [NotifyPropertyChangedFor(nameof(RoutingIssuesBadgeTooltip))]
+    private int _routingIssueCount;
+
+    /// <summary><c>true</c> when the routing-phantom roll-up badge is shown.</summary>
+    public bool HasRoutingIssues => RoutingIssueCount > 0;
+
+    /// <summary>Tooltip for the routing-phantom roll-up badge.</summary>
+    public string RoutingIssuesBadgeTooltip
+        => string.Format(
+            SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_RoutingPhantom_Category)
+                ?? "Семейств с проблемами трассировки: {0}",
+            RoutingIssueCount);
+
+    // ── Clickable status badge (#210) ──────────────────────────────────
+
+    /// <summary>#210: the category's notices — rule-violation roll-up (#259,
+    /// Error) plus a single warning while stale leaves exist.</summary>
+    [ObservableProperty]
+    private IReadOnlyList<StatusNotice> _statusNotices = Array.Empty<StatusNotice>();
+
+    /// <summary>One-line hint for the warning triangle (count + click hint).</summary>
+    public string StaleBadgeTooltip
+    {
+        get
+        {
+            var count = SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty;
+            var hint = SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Badge_ClickHint)
+                ?? "Нажмите для подробностей";
+            return string.IsNullOrEmpty(count) ? hint : count + " — " + hint;
+        }
+    }
+
+    private void RebuildStatusNotices()
+    {
+        var list = new List<StatusNotice>(2);
+        if (HasRuleViolations)
+        {
+            // #259: Error, listed first — worst severity drives the dialog header.
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Error,
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRuleViolations_Title)
+                    ?? "В категории есть семейства, нарушающие правила",
+                SmartCon.UI.Converters.StatusTooltipText.ForRuleViolationCount(RuleViolationCount) ?? string.Empty));
+        }
+        if (HasStale)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryStale_Title)
+                    ?? "В категории есть устаревшие семейства",
+                SmartCon.UI.Converters.StatusTooltipText.ForStaleCount(StaleCount) ?? string.Empty));
+        }
+        if (HasRoutingIssues)
+        {
+            list.Add(new StatusNotice(
+                StatusNoticeSeverity.Warning,
+                string.Format(
+                    SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRouting_Title)
+                        ?? "В категории есть семейства с проблемами трассировки ({0})",
+                    RoutingIssueCount),
+                SmartCon.UI.LanguageManager.GetString(SmartCon.UI.StringLocalization.Keys.FM_Notice_CategoryRouting_Guidance)
+                    ?? "У части семейств трассировка ссылается на фитинги, удалённые из каталога. Откройте семейство по значку трассировки у листа и выберите замену."));
+        }
+        StatusNotices = list;
+    }
+
+    partial void OnHasStaleChanged(bool value) => RebuildStatusNotices();
+    partial void OnStaleCountChanged(int value) => RebuildStatusNotices();
+    partial void OnRuleViolationCountChanged(int value) => RebuildStatusNotices();
+    partial void OnRoutingIssueCountChanged(int value) => RebuildStatusNotices();
 
     /// <summary>
     /// True if this category or any descendant category is collapsed.
@@ -43,11 +202,8 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
         CategoryId = node.Id;
         ParentId = node.ParentId;
         DisplayName = node.Name;
-        OriginalName = node.Name;
         FullPath = node.FullPath;
         SortOrder = node.SortOrder;
-        OriginalSortOrder = node.SortOrder;
-        OriginalParentId = node.ParentId;
         PropertyChanged += OnSelfPropertyChanged;
     }
 
@@ -56,24 +212,25 @@ public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
         CategoryId = categoryId;
         ParentId = parentId;
         DisplayName = name;
-        OriginalName = name;
         FullPath = fullPath;
-        IsNew = true;
-        IsDirty = true;
         PropertyChanged += OnSelfPropertyChanged;
     }
 
     private void OnSelfPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(IsExpanded))
+        {
             RecomputeIsAnyDescendantCollapsed();
+        }
     }
 
     private void RecomputeIsAnyDescendantCollapsed()
     {
         var current = ComputeIsAnyDescendantCollapsed();
         if (IsAnyDescendantCollapsed != current)
+        {
             IsAnyDescendantCollapsed = current;
+        }
     }
 
     private bool ComputeIsAnyDescendantCollapsed()

@@ -20,6 +20,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly Document _doc;
     private readonly IConnectorService _connSvc;
     private readonly ITransformService _transformSvc;
+    private readonly IAlignmentService _alignmentSvc;
     private readonly IFittingInsertService _fittingInsertSvc;
     private readonly IParameterResolver _paramResolver;
     private readonly IDynamicSizeResolver _sizeResolver;
@@ -35,6 +36,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     private readonly PipeConnectSizeHandler _sizeHandler;
     private readonly DynamicSizeLoader _sizeLoader;
     private readonly ConnectorCycleService _cycleService;
+    private readonly IViewNavigationService _viewNavigation;
     private readonly PipeConnectSessionContext _ctx;
     private readonly VirtualCtcStore _virtualCtcStore;
 
@@ -47,6 +49,32 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     // См. также TODO в ConnectExecutor.ExecuteConnectTo()
     private ConnectorProxy? _activeDynamic;
     private ConnectorProxy? _activeFittingConn2;
+
+    /// <summary>
+    /// Last root dynamic connector chosen by the user via CycleConnector (issue: root
+    /// point must follow the cycle selection, not the session-default connector).
+    /// Falls back to <see cref="PipeConnectSessionContext.DynamicConnector"/> when the
+    /// user never cycled. Used only for OwnerElementId/ConnectorIndex — always refresh
+    /// before use (I-05).
+    /// </summary>
+    private ConnectorProxy? _rootDynamicConnector;
+
+    /// <summary>
+    /// Root baseline snapshot (issue #167): full root state (DN/symbol/curve/position)
+    /// captured at Init BEFORE any mutation (absorb, resize, ChangeTypeId). The
+    /// "Блокировать" toggle restores it via ChainOperationHandler.RestoreElementFromSnapshot.
+    /// </summary>
+    private ElementSnapshot? _rootBaselineSnapshot;
+
+    /// <summary>
+    /// Root compensated snapshot: root state as configured by the session flow
+    /// (absorb/подобранный DN), captured when the toggle goes ON — restored on OFF.
+    /// </summary>
+    private ElementSnapshot? _rootCompensatedSnapshot;
+
+    /// <summary>True when the primary reducer was inserted by the toggle itself
+    /// (removed again on OFF). Reducers from the session flow are left alone.</summary>
+    private bool _lockInsertedReducer;
     private FittingMappingRule? _activeFittingRule;
     private bool _isClosing;
     private bool _needsPrimaryReducer;
@@ -79,7 +107,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
     [ObservableProperty] private bool _isReducerVisible;
     public ObservableCollection<FittingCardItem> AvailableReducers { get; } = [];
 
-    [ObservableProperty] private int _rotationAngleDeg = 15;
+    [ObservableProperty] private int _rotationAngleDeg = 45;
     [ObservableProperty] private FamilySizeOption? _selectedDynamicSize;
     [ObservableProperty] private bool _hasSizeOptions;
 
@@ -106,13 +134,15 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         IFittingMapper fittingMapper,
         ChainOperationHandler chainOpHandler,
         PipeConnectRotationHandler rotationHandler,
-        DynamicSizeLoader sizeLoader)
+        DynamicSizeLoader sizeLoader,
+        IViewNavigationService viewNavigation)
     {
         _ctx = ctx;
         _doc = doc;
         _txService = txService;
         _connSvc = connSvc;
         _transformSvc = transformSvc;
+        _alignmentSvc = alignmentSvc;
         _fittingInsertSvc = fittingInsertSvc;
         _paramResolver = paramResolver;
         _sizeResolver = sizeResolver;
@@ -127,14 +157,17 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         var guessSvc = new CtcGuessService(connSvc, mappingRepo, _virtualCtcStore);
         var familyWriter = new CtcFamilyWriter(connSvc, familyConnSvc, _virtualCtcStore);
         _ctcManager = new FittingCtcManager(resolutionSvc, guessSvc, familyWriter);
-        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
+        _connectExecutor = new ConnectExecutor(connSvc, transformSvc, alignmentSvc, paramResolver, fittingInsertSvc, networkMover, mappingRepo, _ctcManager);
         _initHandler = new PipeConnectInitHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _rotationHandler = rotationHandler;
         _sizeHandler = new PipeConnectSizeHandler(connSvc, transformSvc, paramResolver, _ctcManager);
         _sizeLoader = sizeLoader;
+        _viewNavigation = viewNavigation;
         _cycleService = new ConnectorCycleService(connSvc, alignmentSvc, paramResolver, _ctcManager);
         _activeDynamic = ctx.DynamicConnector;
         _chainGraph = ctx.ChainGraph;
+        _elementQueue = _chainGraph?.GetElementQueue();
+        _attachedElementIds.Add(ctx.DynamicConnector.OwnerElementId.GetValue());
 
         var (fittings, reducers) = FittingCardBuilder.Build(
             ctx.ProposedFittings,
@@ -163,7 +196,7 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         using var _scope = SmartConLogger.BeginScope("Editor",
             ("Method", "RefreshAutoSelectSize"));
         var newAuto = _sizeLoader.RefreshAutoSelect(
-            _doc, _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
+            _doc, _activeDynamic ?? _ctx.DynamicConnector, _activeDynamic!, AvailableDynamicSizes);
 
         if (newAuto is not null && AvailableDynamicSizes.Count > 0)
         {
@@ -185,8 +218,12 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
 
         try
         {
+            _activeParentConnector = _ctx.StaticConnector;
+            _rootBaselineSnapshot = _chainOpHandler.CaptureSnapshot(
+                _doc, _ctx.DynamicConnector.OwnerElementId, _chainGraph);
             _activeDynamic = _initHandler.DisconnectAndAlign(_doc, _ctx, _groupSession)
                 ?? _ctx.DynamicConnector;
+            _rootDynamicConnector = _activeDynamic;
 
             var conns = GetFreeConnectorsSnapshot();
             _cycleService.State.Initialize(conns, _activeDynamic ?? _ctx.DynamicConnector);
@@ -203,6 +240,8 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
             }
 
             RefreshAutoSelectSize();
+            UpdateDynamicInfoPanel();
+            TrySealAtCurrentBoundary();
             SmartConLogger.Info("DONE");
         }
         catch (Exception ex)
@@ -216,350 +255,5 @@ public sealed partial class PipeConnectEditorViewModel : ObservableObject, IObse
         }
     }
 
-    private void InitLegacyFlow()
-    {
-        using var _scope = SmartConLogger.BeginScope("Editor",
-            ("Method", "InitLegacyFlow"));
-        var defaultFitting = SelectedFitting;
-        if (defaultFitting is not null && !defaultFitting.IsDirectConnect)
-        {
-            StatusMessage = LocalizationService.GetString("Status_InsertingFitting");
-            InsertFittingSilent(defaultFitting);
-        }
-        else if (_ctx.ParamTargetRadius is { } directTargetRadius)
-        {
-            _activeDynamic = _initHandler.RunDirectConnectSizing(
-                _doc, _ctx, _groupSession!, directTargetRadius, AvailableDynamicSizes)
-                ?? _ctx.DynamicConnector;
-            StatusMessage = LocalizationService.GetString("Status_ReadyToConnect");
-        }
-        else
-        {
-            StatusMessage = LocalizationService.GetString("Status_ReadyToConnect");
-        }
-
-        if (_primaryReducerId is null && _activeDynamic is not null)
-        {
-            bool needsReducer;
-
-            if (_currentFittingId is not null && _activeFittingConn2 is not null)
-            {
-                needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
-                    _activeDynamic, _activeFittingConn2);
-            }
-            else if (_currentFittingId is null)
-            {
-                const double radiusEps = 1e-5;
-                var dynRadius = _activeDynamic.Radius;
-                var staticRadius = _ctx.StaticConnector.Radius;
-                needsReducer = Math.Abs(dynRadius - staticRadius) > radiusEps;
-
-                if (needsReducer)
-                    SmartConLogger.Info($"Radii mismatch: dyn={dynRadius * FeetToMm:F1}mm, " +
-                        $"static={staticRadius * FeetToMm:F1}mm → reducer needed");
-            }
-            else
-            {
-                needsReducer = false;
-            }
-
-            if (needsReducer)
-            {
-                _needsPrimaryReducer = true;
-
-                if (AvailableReducers.Count > 0)
-                {
-                    SelectedReducer = AvailableReducers[0];
-                    IsReducerVisible = true;
-                    StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
-                    InsertReducerSilent();
-                }
-            }
-        }
-    }
-
-    private void InitReducerFittingChain()
-    {
-        using var _scope = SmartConLogger.BeginScope("Editor",
-            ("Method", "InitReducerFittingChain"));
-        // TODO [ChainV2]: Обобщить для N звеньев. Сейчас работает для 2 звеньев: reducer + fitting.
-        var plan = _activeChainPlan!;
-
-        if (plan.Links.Count < 2)
-        {
-            SmartConLogger.Warn("ReducerFitting plan has < 2 links — falling back to legacy flow");
-            InitLegacyFlow();
-            return;
-        }
-
-        var reducerLink = plan.Links[0];
-        var fittingLink = plan.Links[1];
-
-        if (reducerLink.Type != FittingChainNodeType.Reducer ||
-            fittingLink.Type != FittingChainNodeType.Fitting)
-        {
-            SmartConLogger.Warn("ReducerFitting plan has unexpected link types — falling back to legacy flow");
-            InitLegacyFlow();
-            return;
-        }
-
-        _activeFittingRule = fittingLink.Rule;
-
-        // Step 1: Insert REDUCER aligned to static
-        ElementId? insertedReducerId = null;
-        ConnectorProxy? reducerConn2 = null;
-
-        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertReducer"), doc =>
-        {
-            insertedReducerId = _fittingInsertSvc.InsertFitting(
-                doc, reducerLink.Family.FamilyName, reducerLink.Family.SymbolName,
-                _ctx.StaticConnector.Origin);
-
-            if (insertedReducerId is null) return;
-
-            SmartConLogger.Info($"ReducerFitting: inserted reducer id={insertedReducerId.GetValue()}");
-            doc.Regenerate();
-
-            var overrides = GuessCtcForReducer(insertedReducerId);
-
-            reducerConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedReducerId, _ctx.StaticConnector, _transformSvc, _connSvc,
-                dynamicTypeCode: reducerLink.CtcOut,
-                ctcOverrides: overrides,
-                directConnectRules: _mappingRepo.GetMappingRules());
-
-            doc.Regenerate();
-        });
-
-        if (insertedReducerId is null)
-        {
-            SmartConLogger.Warn("ReducerFitting: reducer insertion failed — falling back");
-            InitLegacyFlow();
-            return;
-        }
-
-        _primaryReducerId = insertedReducerId;
-        SizeFittingConnectors(_doc, insertedReducerId, reducerConn2, adjustDynamicToFit: false);
-
-        // Refresh reducer conn2 after sizing
-        var allRConns = _connSvc.GetAllFreeConnectors(_doc, insertedReducerId).ToList();
-        reducerConn2 = allRConns.Count >= 2 ? allRConns[1] : allRConns.FirstOrDefault();
-
-        // Step 2: Insert FITTING aligned to reducer.conn2
-        var fittingFamily = fittingLink.Family;
-        ElementId? insertedFittingId = null;
-        ConnectorProxy? fitConn2 = null;
-        ConnectorProxy? alignTarget = reducerConn2 ?? _ctx.StaticConnector;
-
-        _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertFitting"), doc =>
-        {
-            insertedFittingId = _fittingInsertSvc.InsertFitting(
-                doc, fittingFamily.FamilyName, fittingFamily.SymbolName,
-                alignTarget.Origin);
-
-            if (insertedFittingId is null) return;
-
-            SmartConLogger.Info($"ReducerFitting: inserted fitting id={insertedFittingId.GetValue()}");
-            doc.Regenerate();
-
-            var ctcOverrides = GuessCtcForFitting(insertedFittingId, fittingLink.Rule);
-            var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
-
-            fitConn2 = _fittingInsertSvc.AlignFittingToStatic(
-                doc, insertedFittingId, alignTarget, _transformSvc, _connSvc,
-                dynamicTypeCode: dynCtc,
-                ctcOverrides: ctcOverrides,
-                directConnectRules: _mappingRepo.GetMappingRules());
-
-            if (fitConn2 is not null && _activeDynamic is not null)
-            {
-                var activeProxy = _connSvc.RefreshConnector(
-                    doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
-                    ?? _activeDynamic;
-                var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
-                if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
-            }
-
-            doc.Regenerate();
-        });
-
-        if (insertedFittingId is not null)
-        {
-            _currentFittingId = insertedFittingId;
-            _activeFittingConn2 = fitConn2;
-            StatusMessage = string.Format(LocalizationService.GetString("Status_Inserted"), fittingFamily.FamilyName);
-
-            var newFitConn2 = SizeFittingConnectors(_doc, insertedFittingId, fitConn2);
-            if (newFitConn2 is not null)
-                _activeFittingConn2 = newFitConn2;
-        }
-
-        _needsPrimaryReducer = true;
-        IsReducerVisible = true;
-        SmartConLogger.Info($"ReducerFitting: DONE reducer={_primaryReducerId?.GetValue()}, fitting={_currentFittingId?.GetValue()}");
-    }
-
-    [RelayCommand(CanExecute = nameof(CanOperate))]
-    private void RotateLeft() => ExecuteRotate(+RotationAngleDeg);
-
-    [RelayCommand(CanExecute = nameof(CanOperate))]
-    private void RotateRight() => ExecuteRotate(-RotationAngleDeg);
-
-    private void ExecuteRotate(int angleDeg)
-    {
-        using var _scope = SmartConLogger.BeginScope("Editor",
-            ("Method", "ExecuteRotate"),
-            ("Angle", angleDeg));
-        IsBusy = true;
-        try
-        {
-            _rotationHandler.ExecuteRotation(
-                _doc, _groupSession!, _ctx, _activeDynamic,
-                _currentFittingId, _primaryReducerId, _chainGraph,
-                _snapshotStore, ChainDepth, angleDeg);
-            StatusMessage = string.Format(LocalizationService.GetString("Status_Rotated"), angleDeg);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"Failed: {ex.Message}");
-            StatusMessage = string.Format(LocalizationService.GetString("Error_Rotate"), ex.Message);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanChangeDynamicSize))]
-    private void ChangeDynamicSize()
-    {
-        using var _scope = SmartConLogger.BeginScope("Editor",
-            ("Method", "ChangeDynamicSize"));
-        if (SelectedDynamicSize is null || SelectedDynamicSize.IsAutoSelect) return;
-
-        IsBusy = true;
-        StatusMessage = string.Format(LocalizationService.GetString("Status_ChangingSizeTo"), SelectedDynamicSize.DisplayName);
-        SmartConLogger.Info($"Attempting size change to {SelectedDynamicSize.DisplayName} " +
-            $"(radius={SelectedDynamicSize.Radius * FeetToMm:F2} mm, source={SelectedDynamicSize.Source}, " +
-            $"allRadii={SelectedDynamicSize.AllConnectorRadii.Count} коннекторов)");
-
-        try
-        {
-            var result = _sizeHandler.ChangeSize(
-                _doc, _groupSession!, _ctx, SelectedDynamicSize,
-                _activeDynamic!, _currentFittingId, _primaryReducerId);
-
-            _activeDynamic = result.ActiveDynamic;
-            _userManuallyChangedSize = result.UserManuallyChangedSize;
-
-            StatusMessage = string.Format(LocalizationService.GetString("Status_SizeChangedTo"), SelectedDynamicSize.DisplayName);
-
-            if (_currentFittingId is not null)
-            {
-                StatusMessage = LocalizationService.GetString("Status_UpdatingFitting");
-                var currentFitting = SelectedFitting;
-                if (currentFitting is not null && !currentFitting.IsDirectConnect)
-                {
-                    SmartConLogger.Info($"Auto-update fitting: {currentFitting.DisplayName}");
-                    InsertFittingSilent(currentFitting, adjustDynamicToFit: false);
-                }
-            }
-
-            if (_primaryReducerId is not null)
-            {
-                SmartConLogger.Info($"Auto-update reducer (id={_primaryReducerId})");
-                var reducerUpstream = (_currentFittingId is not null && _activeFittingConn2 is not null)
-                    ? _activeFittingConn2
-                    : _ctx.StaticConnector;
-                var newReducerConn2 = SizeFittingConnectors(_doc, _primaryReducerId, null, adjustDynamicToFit: false, reducerUpstream);
-                if (newReducerConn2 is not null && _activeDynamic is not null)
-                {
-                    _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_PositionAfterReducer"), doc =>
-                    {
-                        var dynProxy = _connSvc.RefreshConnector(
-                            doc, _activeDynamic.OwnerElementId, _activeDynamic.ConnectorIndex)
-                            ?? _activeDynamic;
-                        var offset = newReducerConn2.OriginVec3 - dynProxy.OriginVec3;
-                        if (!SmartCon.Core.Math.VectorUtils.IsZero(offset))
-                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
-                        doc.Regenerate();
-                    });
-                }
-            }
-
-            if (result.NeedsPrimaryReducer && _currentFittingId is null && _primaryReducerId is null)
-            {
-                _needsPrimaryReducer = true;
-
-                if (AvailableReducers.Count > 0)
-                {
-                    SelectedReducer = AvailableReducers[0];
-                    IsReducerVisible = true;
-                    StatusMessage = LocalizationService.GetString("Status_InsertingReducer");
-                    InsertReducerSilent();
-                }
-                else
-                {
-                    IsReducerVisible = true;
-                    SmartConLogger.Warn("Reducer needed but no reducer families found");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Error($"Error: {ex.Message}");
-            StatusMessage = string.Format(LocalizationService.GetString("Error_ChangeSize"), ex.Message);
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    private bool CanChangeDynamicSize() =>
-        IsSessionActive && !IsBusy &&
-        SelectedDynamicSize is not null && !SelectedDynamicSize.IsAutoSelect;
-
-    partial void OnSelectedDynamicSizeChanged(FamilySizeOption? value)
-    {
-        ChangeDynamicSizeCommand.NotifyCanExecuteChanged();
-    }
-
-    private void EnsureReducersForFittingPair(ConnectorProxy fitConn2, ConnectorProxy dynamicConn)
-    {
-        using var _scope = SmartConLogger.BeginScope("Editor",
-            ("Method", "EnsureReducersForFittingPair"));
-        if (AvailableReducers.Count > 0) return;
-
-        var fitCtc = fitConn2.ConnectionTypeCode.IsDefined
-            ? fitConn2.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
-        var dynCtc = dynamicConn.ConnectionTypeCode.IsDefined
-            ? dynamicConn.ConnectionTypeCode
-            : new ConnectionTypeCode(0);
-
-        if (!fitCtc.IsDefined || !dynCtc.IsDefined) return;
-
-        var rules = _mappingRepo.GetMappingRules();
-
-        foreach (var rule in rules)
-        {
-            if (rule.ReducerFamilies.Count == 0) continue;
-
-            bool match = (rule.FromType.Value == fitCtc.Value && rule.ToType.Value == dynCtc.Value) ||
-                         (rule.FromType.Value == dynCtc.Value && rule.ToType.Value == fitCtc.Value);
-
-            if (match)
-            {
-                SmartConLogger.Info($"Found reducer rule: From={rule.FromType.Value} To={rule.ToType.Value} ({rule.ReducerFamilies.Count} families)");
-                foreach (var reducer in rule.ReducerFamilies.OrderBy(f => f.Priority))
-                    AvailableReducers.Add(new FittingCardItem(rule, reducer, isReducer: true));
-                return;
-            }
-        }
-
-        SmartConLogger.Info($"No reducer rule found for pair CTC {fitCtc.Value} ↔ {dynCtc.Value}");
-    }
 }
 

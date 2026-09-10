@@ -1,6 +1,6 @@
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
-internal static class FamilyCatalogSql
+internal static partial class FamilyCatalogSql
 {
     public const string CreateDatabaseMeta = """
         CREATE TABLE IF NOT EXISTS database_meta (
@@ -39,6 +39,7 @@ internal static class FamilyCatalogSql
             published_by TEXT,
             family_source TEXT NOT NULL DEFAULT 'loadable',
             revit_category TEXT,
+            revit_category_id INTEGER,
             content_hash TEXT,
             hash_format_version INTEGER,
             created_at_utc TEXT NOT NULL,
@@ -57,6 +58,8 @@ internal static class FamilyCatalogSql
             parameters_count INTEGER,
             content_hash TEXT,
             hash_format_version INTEGER,
+            glb_state INTEGER,
+            es_marker_version INTEGER NOT NULL DEFAULT 0,
             published_at_utc TEXT NOT NULL,
             published_by TEXT,
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
@@ -130,10 +133,6 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_categories_parent ON categories (parent_id)
         """;
 
-    public const string MigrateV3AddCategoryIdColumn = """
-        ALTER TABLE catalog_items ADD COLUMN category_id TEXT
-        """;
-
     public const string CreateFamilyTypes = """
         CREATE TABLE IF NOT EXISTS family_types (
             id TEXT PRIMARY KEY,
@@ -144,10 +143,12 @@ internal static class FamilyCatalogSql
             file_id TEXT,
             extraction_run_id TEXT,
             type_unique_id TEXT,
+            family_name TEXT NOT NULL DEFAULT '',
+            family_key TEXT NOT NULL DEFAULT '',
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
             FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
-            UNIQUE(catalog_item_id, version_id, type_name)
+            UNIQUE(catalog_item_id, version_id, family_name, type_name)
         )
         """;
 
@@ -156,129 +157,15 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         -- v2.1.0 (ADR-041 rev #2): orchestrator types have version_id IS NULL.
         -- SQLite treats NULL != NULL in composite UNIQUE, so the table-level
-        -- UNIQUE(catalog_item_id, version_id, type_name) does not prevent
-        -- duplicate orchestrator types. This partial unique index closes the
-        -- gap: one (catalog_item_id, type_name) per item for NULL versions.
+        -- UNIQUE(catalog_item_id, version_id, family_name, type_name) does
+        -- not prevent duplicate orchestrator types. This partial unique
+        -- index closes the gap: one (catalog_item_id, family_name,
+        -- type_name) per item for NULL versions. V26 (#183): family_name
+        -- added — a system type is identified by (family, name), never by
+        -- name alone.
         CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
-        ON family_types (catalog_item_id, type_name)
+        ON family_types (catalog_item_id, family_name, type_name)
         WHERE version_id IS NULL
-        """;
-
-    public const string CreateAttributePresets = """
-        CREATE TABLE IF NOT EXISTS attribute_presets (
-            id TEXT PRIMARY KEY,
-            category_id TEXT,
-            created_at_utc TEXT NOT NULL,
-            updated_at_utc TEXT NOT NULL,
-            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
-        )
-        """;
-
-    public const string CreateAttributePresetParameters = """
-        CREATE TABLE IF NOT EXISTS attribute_preset_parameters (
-            preset_id TEXT NOT NULL,
-            parameter_name TEXT NOT NULL,
-            display_name TEXT,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (preset_id, parameter_name),
-            FOREIGN KEY (preset_id) REFERENCES attribute_presets(id) ON DELETE CASCADE
-        )
-        """;
-
-    public const string CreateAttributePresetsIndexes = """
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
-        """;
-
-    public const string MigrateV5AddIsPrimaryColumn = """
-        ALTER TABLE family_assets ADD COLUMN is_primary INTEGER DEFAULT 0
-        """;
-
-    public const string CreateAttributeDefinitions = """
-        CREATE TABLE IF NOT EXISTS attribute_definitions (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL COLLATE NOCASE,
-            group_name TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            created_at_utc TEXT NOT NULL,
-            UNIQUE(name)
-        )
-        """;
-
-    public const string CreateCategoryAttributeBindings = """
-        CREATE TABLE IF NOT EXISTS category_attribute_bindings (
-            id TEXT PRIMARY KEY,
-            category_id TEXT NOT NULL,
-            attribute_id TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            is_enabled INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
-            UNIQUE(category_id, attribute_id)
-        )
-        """;
-
-    public const string CreateFamilyDataImportRuns = """
-        CREATE TABLE IF NOT EXISTS family_data_import_runs (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            version_id TEXT,
-            file_id TEXT,
-            revit_major_version INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Succeeded',
-            types_count INTEGER NOT NULL DEFAULT 0,
-            started_at_utc TEXT NOT NULL,
-            completed_at_utc TEXT,
-            error_message TEXT,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
-        )
-        """;
-
-    public const string CreateExtractedAttributeValues = """
-        CREATE TABLE IF NOT EXISTS extracted_attribute_values (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            version_id TEXT,
-            file_id TEXT,
-            type_id TEXT,
-            attribute_id TEXT,
-            binding_id TEXT,
-            parameter_name TEXT NOT NULL,
-            parameter_scope TEXT,
-            storage_type TEXT,
-            value_text TEXT,
-            value_raw TEXT,
-            value_number REAL,
-            unit_type_id TEXT,
-            status TEXT NOT NULL DEFAULT 'Found',
-            message TEXT,
-            extraction_run_id TEXT NOT NULL,
-            extracted_at_utc TEXT NOT NULL,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
-            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
-            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
-        )
-        """;
-
-    public const string MigrateV6FamilyTypesAddColumns = """
-        ALTER TABLE family_types ADD COLUMN version_id TEXT;
-        ALTER TABLE family_types ADD COLUMN file_id TEXT;
-        ALTER TABLE family_types ADD COLUMN extraction_run_id TEXT
-        """;
-
-    public const string CreateV6Indexes = """
-        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
-        CREATE INDEX IF NOT EXISTS ix_attr_bindings_category ON category_attribute_bindings (category_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_bindings_attribute ON category_attribute_bindings (attribute_id);
-        CREATE UNIQUE INDEX IF NOT EXISTS ix_attr_definitions_name ON attribute_definitions (name COLLATE NOCASE);
-        CREATE INDEX IF NOT EXISTS ix_import_runs_item ON family_data_import_runs (catalog_item_id);
-        CREATE INDEX IF NOT EXISTS ix_import_runs_started ON family_data_import_runs (started_at_utc)
         """;
 
     public const string CreateDbUsers = """
@@ -297,67 +184,6 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_db_users_status ON db_users (status)
         """;
 
-    public const string MigrateV7AddOwnerIdentity = """
-        ALTER TABLE database_meta ADD COLUMN owner_identity TEXT
-        """;
-
-    public const string MigrateV8RecreateExtractedAttributeValues = """
-        -- Clean up any leftover from a previous failed migration
-        DROP TABLE IF EXISTS extracted_attribute_values_new;
-        -- Create temporary table with new schema. All four FK constraints
-        -- are present so that if V8 runs AFTER V15 (via EnsureCriticalColumns
-        -- path on a DB that never had V15 applied yet) the type_id and
-        -- attribute_id FKs survive the recreate. Without them, Bug #85
-        -- regression would lose cascade-cleanup for attribute values
-        -- whenever the V8 path executes on an old DB.
-        CREATE TABLE extracted_attribute_values_new (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            version_id TEXT,
-            file_id TEXT,
-            type_id TEXT,
-            attribute_id TEXT,
-            binding_id TEXT,
-            parameter_name TEXT NOT NULL,
-            parameter_scope TEXT,
-            storage_type TEXT,
-            value_text TEXT,
-            value_raw TEXT,
-            value_number REAL,
-            unit_type_id TEXT,
-            status TEXT NOT NULL DEFAULT 'Found',
-            message TEXT,
-            extraction_run_id TEXT NOT NULL,
-            extracted_at_utc TEXT NOT NULL,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
-            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
-        );
-        -- Copy data from old table
-        INSERT INTO extracted_attribute_values_new (
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        )
-        SELECT
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        FROM extracted_attribute_values;
-        -- Drop old table
-        DROP TABLE extracted_attribute_values;
-        -- Rename new table
-        ALTER TABLE extracted_attribute_values_new RENAME TO extracted_attribute_values;
-        -- Recreate indexes
-        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
-        """;
-
     public const string CreateTables = $"""
         {CreateDatabaseMeta};
         {CreateSchemaInfo};
@@ -373,36 +199,72 @@ internal static class FamilyCatalogSql
         {CreateAttributePresetParameters};
         {CreateAttributeDefinitions};
         {CreateCategoryAttributeBindings};
+        {CreateCategoryValidationRules};
+        {CreateCategoryAssignmentRuleGroups};
+        {CreateCategoryAssignmentConditions};
         {CreateFamilyDataImportRuns};
         {CreateExtractedAttributeValues};
         {CreateDbUsers};
-        {CreateFamilyNestedSharedFamilies}
+        {CreateFamilyNestedSharedFamilies};
+        {CreateFamilyDependencies};
+        {CreateFamilyFacts};
+        {CreateFamilyTypeHashes};
+        {CreateFamilyRoutingRules};
+        {CreateFamilyRoutingTypeSettings}
         """;
 
-    public const string MigrateV9AddLoadedVersionLabel = """
-        ALTER TABLE project_usage ADD COLUMN loaded_version_label TEXT
+    /// <summary>
+    /// V22 (ADR-055): category-driven facts extracted from the family file
+    /// (e.g. Part Type for fitting categories). One row per
+    /// (catalog_item, fact). <c>value_key</c> is the stable machine value
+    /// (enum ordinal string; empty string = evaluated-but-absent sentinel),
+    /// <c>value_display</c> the extraction-time human fallback. Facts are
+    /// item-level metadata and never participate in dedup.
+    /// </summary>
+    public const string CreateFamilyFacts = """
+        CREATE TABLE IF NOT EXISTS family_facts (
+            catalog_item_id TEXT NOT NULL,
+            fact_key TEXT NOT NULL,
+            value_key TEXT NOT NULL,
+            value_display TEXT NOT NULL,
+            PRIMARY KEY (catalog_item_id, fact_key),
+            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        )
         """;
 
-    public const string MigrateV10AddFamilyTypesNameIndex = """
-        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name)
+    public const string CreateFamilyFactsIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_facts_key ON family_facts (fact_key, value_key)
         """;
 
-    public const string MigrateV11AddSystemFamilyColumns = """
-        ALTER TABLE catalog_items ADD COLUMN family_source TEXT NOT NULL DEFAULT 'loadable';
-        ALTER TABLE catalog_items ADD COLUMN revit_category TEXT;
-        ALTER TABLE family_types ADD COLUMN type_unique_id TEXT
+    /// <summary>
+    /// V32 (Issue #249, Phase 2): per-type content hashes of a catalog
+    /// version — one row per (version, type). <c>type_identity_key</c> is
+    /// computed in C# (<c>typeName.ToUpperInvariant()</c> for loadable,
+    /// <c>SystemTypeIdentityKey.Build</c> "TOKEN|NAME" for system — one
+    /// category can hold same-named types of different system families,
+    /// FHV6), so the key is culture-correct for Cyrillic unlike SQLite's
+    /// NOCASE collation (see the comment in
+    /// <see cref="CreateFamilyNestedSharedFamilies"/>). Populated at import
+    /// from the Prepare-time snapshot hashes and backfilled for legacy
+    /// versions by the optional <c>type-hashes-v1</c> actualization task.
+    /// Typeless loadable families legitimately have ZERO rows — the
+    /// backfill detection keys off <c>family_types</c>, not off this table.
+    /// </summary>
+    public const string CreateFamilyTypeHashes = """
+        CREATE TABLE IF NOT EXISTS family_type_hashes (
+            catalog_version_id TEXT NOT NULL,
+            type_identity_key TEXT NOT NULL,
+            type_name TEXT NOT NULL,
+            type_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            PRIMARY KEY (catalog_version_id, type_identity_key),
+            FOREIGN KEY (catalog_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
+        )
         """;
 
-    public const string CreateV11Indexes = """
-        CREATE INDEX IF NOT EXISTS ix_catalog_items_family_source ON catalog_items (family_source)
-        """;
-
-    public const string MigrateV12DropProjectUsageIndex = """
-        DROP INDEX IF EXISTS ix_project_usage_lookup
-        """;
-
-    public const string MigrateV12DropProjectUsageTable = """
-        DROP TABLE IF EXISTS project_usage
+    public const string CreateFamilyTypeHashesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_hash ON family_type_hashes (type_hash);
+        CREATE INDEX IF NOT EXISTS ix_family_type_hashes_key ON family_type_hashes (type_identity_key)
         """;
 
     public const string CreateFamilyNestedSharedFamilies = """
@@ -425,6 +287,46 @@ internal static class FamilyCatalogSql
             FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
             FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE
         )
+        """;
+
+    /// <summary>
+    /// V29 (#207, ADR-066): parent→child dependency links between catalog
+    /// items. <c>dependency_kind</c> discriminates the dependency class
+    /// (<c>routing</c> — fitting families referenced by a system MEPCurve
+    /// type's RoutingPreferenceManager rules; <c>shared_nested</c> — shared
+    /// nested families of a loadable parent). <c>part_name</c> keeps the
+    /// original "Family:Type" token of the routing rule so a rule can be
+    /// matched to a link without re-parsing the parent snapshot. The link is
+    /// version-scoped for history/audit (the parent's staging version that
+    /// declared the dependency); sync reads links of the parent's CURRENT
+    /// version (join by <c>current_version_label</c>) and always resolves
+    /// the child's ACTIVE version — the stored version ids never drive
+    /// version selection. V30 (E2, #209): <c>child_version_label</c> records
+    /// which child version was EMBEDDED in the parent's version at import
+    /// time — compared against the child's <c>current_version_label</c> for
+    /// dependency-drift detection (pure SQL); NULL = unknown (legacy V29
+    /// links) = never drifted.
+    /// </summary>
+    public const string CreateFamilyDependencies = """
+        CREATE TABLE IF NOT EXISTS family_dependencies (
+            parent_catalog_item_id TEXT NOT NULL,
+            parent_version_id TEXT NOT NULL,
+            child_catalog_item_id TEXT NOT NULL,
+            dependency_kind TEXT NOT NULL,
+            part_name TEXT,
+            ordinal INTEGER NOT NULL DEFAULT 0,
+            child_version_label TEXT,
+            PRIMARY KEY (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind),
+            FOREIGN KEY (parent_catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+            FOREIGN KEY (child_catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE
+        )
+        """;
+
+    public const string CreateFamilyDependenciesIndexes = """
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_parent ON family_dependencies (parent_catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_child ON family_dependencies (child_catalog_item_id);
+        CREATE INDEX IF NOT EXISTS ix_family_dependencies_version ON family_dependencies (parent_version_id)
         """;
 
     public const string CreateNestedSharedFamiliesIndexes = """
@@ -454,326 +356,7 @@ internal static class FamilyCatalogSql
         CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
         CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL;
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id)
-        """;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attribute_presets_category ON attribute_presets (category_id);
+        """ + CreateFamilyDependenciesIndexes + ";" + CreateCategoryAssignmentRuleIndexes + ";" + CreateFamilyTypeHashesIndexes + ";" + CreateFamilyRoutingRulesIndexes;
 
-    /// <summary>
-    /// v2.0.0 migration v14: drop sha256 / size_bytes columns. SQLite 3.35+
-    /// supports ALTER TABLE DROP COLUMN, so we drop each column inside a
-    /// single transaction. Indexes on the dropped columns are auto-removed.
-    /// </summary>
-    public const string MigrateV14DropSha256Columns = """
-        ALTER TABLE family_files DROP COLUMN size_bytes;
-        ALTER TABLE family_files DROP COLUMN sha256;
-        ALTER TABLE catalog_versions DROP COLUMN sha256;
-        ALTER TABLE family_data_import_runs DROP COLUMN source_sha256
-        """;
-
-    public const string MigrateV14DropSha256Indexes = """
-        DROP INDEX IF EXISTS ix_family_files_sha256;
-        DROP INDEX IF EXISTS ix_catalog_versions_sha256
-        """;
-
-    /// <summary>
-    /// v2.0.0 (ADR-036) migration v15: add FOREIGN KEY (type_id) REFERENCES
-    /// family_types(id) ON DELETE CASCADE on extracted_attribute_values. This
-    /// is a prerequisite for SyncTypesAsync (the new unified type-save method)
-    /// to clean up orphan attribute values via DB-level CASCADE when a type
-    /// is removed from a family.
-    ///
-    /// SQLite does not support ALTER TABLE ADD CONSTRAINT, so we recreate
-    /// the table inside a single transaction, copy data verbatim, and let the
-    /// new FK constraints take effect on the renamed table. Pre-existing
-    /// orphan rows (extracted_attribute_values.type_id pointing at a deleted
-    /// family_types.id) are deleted before the recreate.
-    ///
-    /// Note: PRAGMA foreign_keys is a no-op inside a transaction (SQLite
-    /// limitation), so we cannot toggle it for the recreate. The pre-delete
-    /// of orphan rows is what makes the table-recreate safe.
-    /// </summary>
-    public const string MigrateV15AddAttributeValuesForeignKey = """
-        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
-        --    extracted_attribute_values.type_id is nullable; only NOT-NULL
-        --    values that don't match any family_types.id need cleanup.
-        DELETE FROM extracted_attribute_values
-        WHERE type_id IS NOT NULL
-          AND type_id NOT IN (SELECT id FROM family_types);
-
-        -- 2. Recreate extracted_attribute_values with the new FK constraint.
-        DROP TABLE IF EXISTS extracted_attribute_values_new;
-
-        CREATE TABLE extracted_attribute_values_new (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            version_id TEXT,
-            file_id TEXT,
-            type_id TEXT,
-            attribute_id TEXT,
-            binding_id TEXT,
-            parameter_name TEXT NOT NULL,
-            parameter_scope TEXT,
-            storage_type TEXT,
-            value_text TEXT,
-            value_raw TEXT,
-            value_number REAL,
-            unit_type_id TEXT,
-            status TEXT NOT NULL DEFAULT 'Found',
-            message TEXT,
-            extraction_run_id TEXT NOT NULL,
-            extracted_at_utc TEXT NOT NULL,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
-            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
-        );
-
-        INSERT INTO extracted_attribute_values_new (
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        )
-        SELECT
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        FROM extracted_attribute_values;
-
-        DROP TABLE extracted_attribute_values;
-        ALTER TABLE extracted_attribute_values_new RENAME TO extracted_attribute_values;
-
-        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent).
-        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
-        """;
-
-    /// <summary>
-    /// v2.1.0 migration v16: add content_hash and hash_format_version
-    /// columns to catalog_items and catalog_versions for content-fingerprint
-    /// deduplication. Additive only — no breaking changes. Partial indexes
-    /// (WHERE content_hash IS NOT NULL) avoid indexing legacy rows that have
-    /// no hash yet.
-    /// </summary>
-    public const string MigrateV16AddContentHashColumns = """
-        ALTER TABLE catalog_items ADD COLUMN content_hash TEXT;
-        ALTER TABLE catalog_items ADD COLUMN hash_format_version INTEGER;
-        ALTER TABLE catalog_versions ADD COLUMN content_hash TEXT;
-        ALTER TABLE catalog_versions ADD COLUMN hash_format_version INTEGER
-        """;
-
-    public const string CreateV16Indexes = """
-        CREATE INDEX IF NOT EXISTS ix_catalog_items_content_hash
-            ON catalog_items (content_hash) WHERE content_hash IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS ix_catalog_versions_content_hash
-            ON catalog_versions (content_hash) WHERE content_hash IS NOT NULL
-        """;
-
-    /// <summary>
-    /// v2.0.0 (ADR-041) migration v17: add FOREIGN KEY (version_id) REFERENCES
-    /// catalog_versions(id) ON DELETE CASCADE on family_types. SQLite does not
-    /// support ALTER TABLE ADD CONSTRAINT, so we recreate the table inside a
-    /// single transaction, copy data verbatim (after orphan cleanup), and let
-    /// the new FK constraints take effect on the renamed table. Pre-existing
-    /// orphan rows (family_types.version_id pointing at a deleted
-    /// catalog_versions.id) are deleted before the recreate — same pattern as
-    /// V15 (extracted_attribute_values.type_id FK).
-    ///
-    /// This FK is what allows DeleteVersionAsync to remove types via a single
-    /// `DELETE FROM catalog_versions WHERE version_label=@label` instead of
-    /// manually walking family_types + extracted_attribute_values.
-    ///
-    /// NOTE: V17 keeps the legacy UNIQUE(catalog_item_id, type_name). V18
-    /// migrates it to UNIQUE(catalog_item_id, version_id, type_name) for
-    /// per-version type storage.
-    /// </summary>
-    public const string MigrateV17RecreateFamilyTypesWithVersionFk = """
-        -- 1. Clean up orphan rows: family_types.version_id pointing at non-existent catalog_versions.id
-        DELETE FROM family_types
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
-
-        -- 2. Recreate family_types with the new FK constraint on version_id
-        DROP TABLE IF EXISTS family_types_v17;
-
-        CREATE TABLE family_types_v17 (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            type_name TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            version_id TEXT,
-            file_id TEXT,
-            extraction_run_id TEXT,
-            type_unique_id TEXT,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
-            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
-            UNIQUE(catalog_item_id, type_name)
-        );
-
-        INSERT INTO family_types_v17 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
-        SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
-        FROM family_types;
-
-        DROP TABLE family_types;
-        ALTER TABLE family_types_v17 RENAME TO family_types;
-
-        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent)
-        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
-        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
-        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL
-        """;
-
-    /// <summary>
-    /// v2.0.0 (ADR-041) migration v17 step 2: add FOREIGN KEY (version_id)
-    /// REFERENCES catalog_versions(id) ON DELETE CASCADE on
-    /// extracted_attribute_values. Same recreate-and-copy pattern as V15.
-    /// orphan rows (extracted_attribute_values.version_id pointing at a deleted
-    /// catalog_versions.id) are deleted before the recreate.
-    /// </summary>
-    public const string MigrateV17RecreateExtractedAttributeValuesWithVersionFk = """
-        -- 1. Clean up any orphan rows that would otherwise violate the new FK.
-        DELETE FROM extracted_attribute_values
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
-
-        -- 2. Recreate extracted_attribute_values with the new FK constraint on version_id.
-        DROP TABLE IF EXISTS extracted_attribute_values_v17;
-
-        CREATE TABLE extracted_attribute_values_v17 (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            version_id TEXT,
-            file_id TEXT,
-            type_id TEXT,
-            attribute_id TEXT,
-            binding_id TEXT,
-            parameter_name TEXT NOT NULL,
-            parameter_scope TEXT,
-            storage_type TEXT,
-            value_text TEXT,
-            value_raw TEXT,
-            value_number REAL,
-            unit_type_id TEXT,
-            status TEXT NOT NULL DEFAULT 'Found',
-            message TEXT,
-            extraction_run_id TEXT NOT NULL,
-            extracted_at_utc TEXT NOT NULL,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (type_id) REFERENCES family_types(id) ON DELETE CASCADE,
-            FOREIGN KEY (attribute_id) REFERENCES attribute_definitions(id) ON DELETE CASCADE,
-            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
-            FOREIGN KEY (extraction_run_id) REFERENCES family_data_import_runs(id) ON DELETE CASCADE,
-            UNIQUE(catalog_item_id, version_id, type_id, parameter_name)
-        );
-
-        INSERT INTO extracted_attribute_values_v17 (
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        )
-        SELECT
-            id, catalog_item_id, version_id, file_id, type_id, attribute_id, binding_id,
-            parameter_name, parameter_scope, storage_type, value_text, value_raw, value_number,
-            unit_type_id, status, message, extraction_run_id, extracted_at_utc
-        FROM extracted_attribute_values;
-
-        DROP TABLE extracted_attribute_values;
-        ALTER TABLE extracted_attribute_values_v17 RENAME TO extracted_attribute_values;
-
-        -- 3. Recreate indexes (IF NOT EXISTS makes this idempotent)
-        CREATE INDEX IF NOT EXISTS ix_attr_values_item_version ON extracted_attribute_values (catalog_item_id, version_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_type ON extracted_attribute_values (type_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute ON extracted_attribute_values (attribute_id);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_text ON extracted_attribute_values (attribute_id, value_text);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_attribute_number ON extracted_attribute_values (attribute_id, value_number);
-        CREATE INDEX IF NOT EXISTS ix_attr_values_version ON extracted_attribute_values (version_id) WHERE version_id IS NOT NULL
-        """;
-
-    /// <summary>
-    /// v2.0.0 (ADR-041) migration v17 step 3: composite index on
-    /// (catalog_item_id, version_label) for fast version-by-label lookups
-    /// used by GetVersionByLabelAsync and SetActiveVersionAsync.
-    /// </summary>
-    public const string CreateV17Indexes = """
-        CREATE INDEX IF NOT EXISTS ix_catalog_versions_item_label
-        ON catalog_versions (catalog_item_id, version_label)
-        """;
-
-    /// <summary>
-    /// v2.1.0 (ADR-041 rev #2) migration v18: change
-    /// UNIQUE(catalog_item_id, type_name) →
-    /// UNIQUE(catalog_item_id, version_id, type_name) so the same type name
-    /// ("100", "200") can co-exist in multiple versions of the same catalog
-    /// item. Without this, SyncTypesAsync's version-scoped DELETE + INSERT
-    /// for a new version with the same type names as the previous version
-    /// would UPSERT (via ON CONFLICT) and silently reassign
-    /// family_types.version_id to the new version — destroying the previous
-    /// version's type rows.
-    ///
-    /// Same recreate-and-copy pattern as V15/V17 because SQLite does not
-    /// support altering a UNIQUE constraint in place. Orphan rows
-    /// (family_types.version_id not in catalog_versions) are cleaned up
-    /// before the copy — same defensive pattern as V17.
-    ///
-    /// A partial UNIQUE INDEX on (catalog_item_id, type_name)
-    /// WHERE version_id IS NULL protects the orchestrator case
-    /// (LoadableFamilyImportOrchestrator / SystemFamilyImportOrchestrator
-    /// import families from the project without a version handle). SQLite
-    /// treats NULL != NULL in composite UNIQUE, so without this partial
-    /// index, two rows with the same (catalog_item_id, null version_id,
-    /// type_name) would violate the "one type per name" invariant for
-    /// project families.
-    /// </summary>
-    public const string MigrateV18RecreateFamilyTypesPerVersionUnique = """
-        -- 1. Clean up orphan rows (defensive — same as V17).
-        DELETE FROM family_types
-        WHERE version_id IS NOT NULL
-          AND version_id NOT IN (SELECT id FROM catalog_versions);
-
-        -- 2. Recreate family_types with per-version UNIQUE.
-        DROP TABLE IF EXISTS family_types_v18;
-
-        CREATE TABLE family_types_v18 (
-            id TEXT PRIMARY KEY,
-            catalog_item_id TEXT NOT NULL,
-            type_name TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            version_id TEXT,
-            file_id TEXT,
-            extraction_run_id TEXT,
-            type_unique_id TEXT,
-            FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
-            FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
-            FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
-            UNIQUE(catalog_item_id, version_id, type_name)
-        );
-
-        INSERT INTO family_types_v18 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
-        SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
-        FROM family_types;
-
-        DROP TABLE family_types;
-        ALTER TABLE family_types_v18 RENAME TO family_types;
-
-        -- 3. Recreate indexes and the orchestrator partial UNIQUE index.
-        CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
-        CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
-        CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
-        CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
-        ON family_types (catalog_item_id, type_name)
-        WHERE version_id IS NULL
-        """;
-
-    /// <summary>
-    /// V19: adds <c>published_by</c> column to <c>catalog_versions</c>
-    /// so each version row records which Revit user published it.
-    /// ADR-041 rev #5. Simple ALTER TABLE ADD COLUMN (nullable, no default)
-    /// — no recreate needed. Existing rows get NULL (unknown author).
-    /// </summary>
-    public const string MigrateV19AddPublishedByColumn = """
-        ALTER TABLE catalog_versions ADD COLUMN published_by TEXT
-        """;
 }

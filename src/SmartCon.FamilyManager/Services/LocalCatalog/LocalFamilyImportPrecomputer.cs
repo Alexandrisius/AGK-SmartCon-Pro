@@ -26,9 +26,8 @@ namespace SmartCon.FamilyManager.Services.LocalCatalog;
 /// <c>FindByNormalizedNameAsync</c> + <c>GetNextVersionLabelAsync</c> +
 /// <c>ComputeManagedFilePath</c> for the purpose of pre-computing an
 /// import triple. The dialog rename handler goes through here, and so
-/// does the initial <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
-/// <c>BuildLoadableFamilyBatchRowVirtualAsync</c> build (so the two
-/// stay in lock-step on the next-version math).
+/// does the initial <c>MapPreparedItemsToBatchItemsAsync</c> build (so
+/// the two stay in lock-step on the next-version math).
 /// </para>
 /// <para>
 /// <b>Pure compute, no side effects.</b> This service MUST NOT touch
@@ -70,6 +69,8 @@ internal sealed class LocalFamilyImportPrecomputer : IFamilyImportPrecomputer
     public async Task<PrecomputedImportTriple?> BuildPrecomputedTripleAsync(
         string displayName,
         string extension,
+        string familySource,
+        string? forcedCatalogItemId = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(displayName))
@@ -77,33 +78,50 @@ internal sealed class LocalFamilyImportPrecomputer : IFamilyImportPrecomputer
             return null;
         }
 
-        var normalizedName = FamilyNameNormalizer.Normalize(displayName);
-        var existing = await _catalogProvider
-            .FindByNormalizedNameAsync(normalizedName, ct)
-            .ConfigureAwait(false);
-
         string catalogItemId;
         string versionLabel;
 
-        if (existing is not null)
+        if (!string.IsNullOrEmpty(forcedCatalogItemId))
         {
-            // Re-import: keep the existing id and advance the version. The
-            // import service's ComputeManagedFilePath is the single source
-            // of truth for "what's the next version label for an existing
-            // item", so the dialog pre-build, the dialog rename, and the
-            // import service all agree on the value.
-            catalogItemId = existing.Id;
+            // Issue #126: the dedup service matched this row to an existing
+            // catalog item by CONTENT HASH (possibly under a different
+            // name). The triple must target that item — its id, its next
+            // version label, and a managed path under ITS folder —
+            // otherwise IncrementVersion would write the file to an
+            // orphan GUID folder and trip the UNIQUE constraint with a
+            // stale "v1" label.
+            catalogItemId = forcedCatalogItemId!;
             versionLabel = await _importService
-                .GetNextVersionLabelAsync(existing.Id, ct)
+                .GetNextVersionLabelAsync(catalogItemId, ct)
                 .ConfigureAwait(false);
         }
         else
         {
-            // New item: allocate a fresh GUID + "v1". The "N" format
-            // strips dashes so the catalog_items.id column matches the
-            // other writers in the pipeline (no surprises with INSERT).
-            catalogItemId = Guid.NewGuid().ToString("N");
-            versionLabel = "v1";
+            var normalizedName = FamilyNameNormalizer.Normalize(displayName);
+            var existing = await _catalogProvider
+                .FindByNormalizedNameAsync(normalizedName, familySource, ct)
+                .ConfigureAwait(false);
+
+            if (existing is not null)
+            {
+                // Re-import: keep the existing id and advance the version. The
+                // import service's ComputeManagedFilePath is the single source
+                // of truth for "what's the next version label for an existing
+                // item", so the dialog pre-build, the dialog rename, and the
+                // import service all agree on the value.
+                catalogItemId = existing.Id;
+                versionLabel = await _importService
+                    .GetNextVersionLabelAsync(existing.Id, ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                // New item: allocate a fresh GUID + "v1". The "N" format
+                // strips dashes so the catalog_items.id column matches the
+                // other writers in the pipeline (no surprises with INSERT).
+                catalogItemId = Guid.NewGuid().ToString("N");
+                versionLabel = "v1";
+            }
         }
 
         // The file-name component of the path has to be sanitised the

@@ -16,10 +16,14 @@ public static class LookupTableCsvParser
         @"(\d)\s*(мм²|мм³|мм|мм|см|дм|mm|cm|ft|in|м|m)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>
+    /// Pure single-cell parser — called in hot loops over whole lookup tables
+    /// (thousands of rows × columns per operation). Intentionally has NO logging
+    /// scope: a BeginScope here produced ~370k INF lines (~70 MB) per session
+    /// (see log audit 2026-07). Context is provided by the caller's scope.
+    /// </summary>
     public static bool TryParseRevitValue(string cell, out double value)
     {
-        using var _scope = SmartConLogger.BeginScope("LookupTable",
-            ("Method", "TryParseRevitValue"));
         value = 0;
         if (string.IsNullOrWhiteSpace(cell)) return false;
 

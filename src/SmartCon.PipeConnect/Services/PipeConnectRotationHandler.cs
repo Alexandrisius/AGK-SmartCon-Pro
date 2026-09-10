@@ -10,31 +10,56 @@ using SmartCon.Core.Compatibility;
 namespace SmartCon.PipeConnect.Services;
 
 /// <summary>
-/// Handles rotation of fitting and chain elements during PipeConnect sessions.
+/// Handles rotation of the active dynamic element during PipeConnect sessions.
+/// In element-wise chain mode the active dynamic is always the queue tail, so
+/// the rotation set is just the dynamic itself plus the fitting/reducer of its
+/// connection point (children are attached later, already aligned to the
+/// rotated connector). The rotation axis is the BasisZ of the parent connector
+/// the dynamic is attached to (its "local static").
 /// </summary>
 public sealed class PipeConnectRotationHandler(
     ITransformService transformSvc)
 {
+    /// <summary>
+    /// Rotate the active dynamic (and its connection point fitting/reducer)
+    /// around the BasisZ axis of <paramref name="rotationAxisConnector"/>.
+    /// </summary>
+    /// <param name="doc">Active Revit document.</param>
+    /// <param name="groupSession">Active transaction group session.</param>
+    /// <param name="activeDynamic">Connector of the active dynamic element (must not be null).</param>
+    /// <param name="rotationAxisConnector">
+    /// Parent connector the dynamic is attached to — provides the rotation axis
+    /// (Origin + BasisZ). For the root connection point this is the static connector.
+    /// </param>
+    /// <param name="fittingId">Fitting of the active connection point, if any.</param>
+    /// <param name="reducerId">Reducer of the active connection point, if any.</param>
+    /// <param name="angleDeg">Rotation angle in degrees (positive = counterclockwise).</param>
+    /// <param name="rigidSubtreeIds">
+    /// Lock-network mode with a sealed chain: the whole sealed remainder rotates
+    /// together with the dynamic as one rigid body (its connections survive a
+    /// common-axis rotation). Null in normal mode.
+    /// </param>
     public void ExecuteRotation(
         Document doc,
         ITransactionGroupSession groupSession,
-        PipeConnectSessionContext ctx,
-        ConnectorProxy? activeDynamic,
+        ConnectorProxy activeDynamic,
+        ConnectorProxy rotationAxisConnector,
         ElementId? fittingId,
         ElementId? reducerId,
-        ConnectionGraph? chainGraph,
-        NetworkSnapshotStore snapshotStore,
-        int chainDepth,
-        int angleDeg)
+        int angleDeg,
+        IReadOnlyList<ElementId>? rigidSubtreeIds = null)
     {
-        var dynId = ctx.DynamicConnector.OwnerElementId;
-        using var _scope = SmartConLogger.BeginScope("Rotate", ("DynId", dynId.GetValue()), ("Angle", angleDeg));
+        var dynId = activeDynamic.OwnerElementId;
+        using var _scope = SmartConLogger.BeginScope("Rotate",
+            ("DynId", dynId.GetValue()),
+            ("Angle", angleDeg),
+            ("AxisOwner", rotationAxisConnector.OwnerElementId.GetValue()));
         SmartConLogger.Info($"START fitting={fittingId?.GetValue()}, reducer={reducerId?.GetValue()}");
 
         groupSession.RunInTransaction(LocalizationService.GetString("Tx_Rotate"), d =>
         {
-            var axisOrigin = ctx.StaticConnector.OriginVec3;
-            var axisDir = ctx.StaticConnector.BasisZVec3;
+            var axisOrigin = rotationAxisConnector.OriginVec3;
+            var axisDir = rotationAxisConnector.BasisZVec3;
             var radians = angleDeg * System.Math.PI / 180.0;
 
             var idsToRotate = new List<ElementId> { dynId };
@@ -42,22 +67,15 @@ public sealed class PipeConnectRotationHandler(
                 idsToRotate.Add(fittingId);
             if (reducerId is not null)
                 idsToRotate.Add(reducerId);
-
-            if (chainGraph is not null && chainDepth > 0)
+            if (rigidSubtreeIds is not null)
             {
-                for (int level = 1; level <= chainDepth && level < chainGraph.Levels.Count; level++)
-                {
-                    foreach (var elemId in chainGraph.Levels[level])
-                    {
-                        idsToRotate.Add(elemId);
-                        foreach (var rId in snapshotStore.GetReducers(elemId))
-                            idsToRotate.Add(rId);
-                    }
-                }
+                SmartConLogger.Info($"Rigid subtree rotation: {rigidSubtreeIds.Count} sealed element(s) rotate as one body");
+                idsToRotate.AddRange(rigidSubtreeIds);
             }
 
-            var activeIdx = activeDynamic?.ConnectorIndex
-                         ?? ctx.DynamicConnector.ConnectorIndex;
+            // Elements still attached to OTHER connectors of the dynamic rotate with it
+            // (rigid-body semantics — matches Revit UI behaviour).
+            var activeIdx = activeDynamic.ConnectorIndex;
             var dynElem = d.GetElement(dynId);
             ConnectorManager? cm = dynElem switch
             {
@@ -75,7 +93,7 @@ public sealed class PipeConnectRotationHandler(
                     foreach (Connector refConn in c.AllRefs)
                     {
                         var refId = refConn.Owner?.Id;
-                        if (refId is not null && refId != dynId)
+                        if (refId is not null && refId != dynId && !idsToRotate.Contains(refId))
                             idsToRotate.Add(refId);
                     }
                 }
@@ -90,13 +108,15 @@ public sealed class PipeConnectRotationHandler(
             {
                 var t = fiForSnap.GetTransform();
                 var elemBasisY = new Vec3(t.BasisY.X, t.BasisY.Y, t.BasisY.Z);
-                var staticBZ = ctx.StaticConnector.BasisZVec3;
                 var globalYSnap = ConnectorAligner.ComputeGlobalYAlignmentSnap(
-                    staticBZ, elemBasisY, axisOrigin);
+                    axisDir, elemBasisY, axisOrigin);
                 if (globalYSnap is not null)
                 {
-                    SmartConLogger.Debug("GlobalYSnap applied");
-                    transformSvc.RotateElement(d, dynId,
+                    // Snap applies to the WHOLE rotation set (dynamic + fitting/reducer
+                    // + rigid subtree): snapping the dynamic alone would tear its
+                    // connections to the rest of the body.
+                    SmartConLogger.Debug($"GlobalYSnap applied to {idsToRotate.Count} element(s)");
+                    transformSvc.RotateElements(d, idsToRotate,
                         axisOrigin, globalYSnap.Axis, globalYSnap.AngleRadians);
                 }
                 else

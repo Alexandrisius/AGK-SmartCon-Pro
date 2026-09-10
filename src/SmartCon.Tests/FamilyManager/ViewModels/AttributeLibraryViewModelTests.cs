@@ -1,3 +1,4 @@
+using System.IO;
 using Moq;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Services;
@@ -15,6 +16,7 @@ public sealed class AttributeLibraryViewModelTests : IDisposable
     private readonly LocalCategoryAttributeBindingService _bindingService;
     private readonly LocalCategoryRepository _categoryRepository;
     private readonly Mock<IFamilyManagerDialogService> _dialogMock;
+    private readonly Mock<IFamilyManagerViewModelFactory> _factoryMock;
     private readonly FamilyManagerMetadataMediator _mediator;
 
     public AttributeLibraryViewModelTests()
@@ -27,13 +29,14 @@ public sealed class AttributeLibraryViewModelTests : IDisposable
         _bindingService = new LocalCategoryAttributeBindingService(
             _fixture.GetDatabase(), _categoryRepository, _fixture.GetMigrator());
         _dialogMock = new Mock<IFamilyManagerDialogService>();
+        _factoryMock = new Mock<IFamilyManagerViewModelFactory>();
         _mediator = new FamilyManagerMetadataMediator();
     }
 
     public void Dispose() => _fixture.Dispose();
 
     private AttributeLibraryViewModel CreateVm() =>
-        new(_attributeRepository, _bindingService, _dialogMock.Object, _categoryRepository, _mediator);
+        new(_attributeRepository, _bindingService, _dialogMock.Object, _categoryRepository, _mediator, _factoryMock.Object);
 
     [Fact]
     public async Task InitializeAsync_EmptyDb_LoadsZeroItems()
@@ -136,5 +139,140 @@ public sealed class AttributeLibraryViewModelTests : IDisposable
 
         vm.Detach();
         vm.Detach();
+    }
+
+    [Fact]
+    public async Task ImportFromSharedParameters_AddsSelectedEntriesAsNewDraftsWithoutGroup()
+    {
+        var entries = new List<SmartCon.Core.Models.FamilyManager.SharedParameterEntry>
+        {
+            new(Guid.NewGuid(), "ADSK_Масса", "NUMBER", null, "01 Общие", null),
+            new(Guid.NewGuid(), "ADSK_Длина", "LENGTH", null, null, null),
+        };
+        SetupPicker(entries, vm =>
+        {
+            vm.Items.First(i => i.Name == "ADSK_Масса").IsSelected = true;
+            return true;
+        });
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+
+        vm.ImportFromSharedParametersCommand.Execute(null);
+
+        var draft = Assert.Single(vm.Items);
+        Assert.Equal("ADSK_Масса", draft.Name);
+        Assert.True(draft.IsNew);
+        Assert.Null(draft.Group);
+        Assert.True(vm.HasUnsavedChanges);
+    }
+
+    [Fact]
+    public async Task ImportFromSharedParameters_Cancelled_AddsNothing()
+    {
+        var entries = new List<SmartCon.Core.Models.FamilyManager.SharedParameterEntry>
+        {
+            new(Guid.NewGuid(), "ADSK_Масса", "NUMBER", null, null, null),
+        };
+        SetupPicker(entries, _ => false);
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+
+        vm.ImportFromSharedParametersCommand.Execute(null);
+
+        Assert.Empty(vm.Items);
+        Assert.False(vm.HasUnsavedChanges);
+    }
+
+    [Fact]
+    public async Task ImportFromSharedParameters_SkipsNamesAlreadyInList()
+    {
+        var entries = new List<SmartCon.Core.Models.FamilyManager.SharedParameterEntry>
+        {
+            new(Guid.NewGuid(), "Width", "LENGTH", null, null, null),
+        };
+        SetupPicker(entries, vm =>
+        {
+            foreach (var item in vm.Items)
+                item.IsSelected = true;
+            return true;
+        });
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        vm.AddAttributeCommand.Execute(null);
+        vm.Items[0].Name = "Width";
+
+        vm.ImportFromSharedParametersCommand.Execute(null);
+
+        Assert.Single(vm.Items);
+    }
+
+    [Fact]
+    public async Task AvailableGroups_PopulatedFromItems()
+    {
+        await _attributeRepository.CreateAsync("Width", "Dimensions");
+        await _attributeRepository.CreateAsync("Height", "Dimensions");
+        await _attributeRepository.CreateAsync("Material", "Props");
+        await _attributeRepository.CreateAsync("Note", null);
+
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+
+        Assert.Equal(2, vm.AvailableGroups.Count);
+        Assert.Contains("Dimensions", vm.AvailableGroups);
+        Assert.Contains("Props", vm.AvailableGroups);
+    }
+
+    [Fact]
+    public async Task AvailableGroups_UpdatesWhenDraftGroupChanges()
+    {
+        var vm = CreateVm();
+        await vm.InitializeAsync();
+        Assert.Empty(vm.AvailableGroups);
+
+        vm.AddAttributeCommand.Execute(null);
+        vm.Items[0].Name = "NewAttr";
+        vm.Items[0].Group = "NewGroup";
+
+        Assert.Single(vm.AvailableGroups);
+        Assert.Equal("NewGroup", vm.AvailableGroups[0]);
+    }
+
+    private void SetupPicker(
+        IReadOnlyList<SmartCon.Core.Models.FamilyManager.SharedParameterEntry> entries,
+        Func<SharedParameterPickerViewModel, bool> userAction)
+    {
+        var parserMock = new Mock<ISharedParameterFileParser>();
+        parserMock.Setup(p => p.ParseFile(It.IsAny<string>())).Returns(entries);
+        var settingsMock = new Mock<IFamilyManagerUserSettingsRepository>();
+        settingsMock.Setup(s => s.Load()).Returns(SmartCon.Core.Models.FamilyManager.FamilyManagerUserSettings.Default);
+
+        _factoryMock
+            .Setup(f => f.CreateSharedParameterPickerViewModel(It.IsAny<IEnumerable<string>>()))
+            .Returns<IEnumerable<string>>(names =>
+                new SharedParameterPickerViewModel(parserMock.Object, settingsMock.Object, _dialogMock.Object, names));
+
+        _dialogMock
+            .Setup(d => d.ShowSharedParameterPicker(It.IsAny<object>()))
+            .Returns<object>(vmObj =>
+            {
+                var pickerVm = (SharedParameterPickerViewModel)vmObj;
+                var tmpFile = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".txt");
+                File.WriteAllText(tmpFile, "dummy");
+                try
+                {
+                    _dialogMock
+                        .Setup(d => d.ShowOpenTextFileDialog(It.IsAny<string>(), It.IsAny<string?>()))
+                        .Returns(tmpFile);
+                    pickerVm.BrowseCommand.Execute(null);
+                    return userAction(pickerVm);
+                }
+                finally
+                {
+                    File.Delete(tmpFile);
+                }
+            });
     }
 }

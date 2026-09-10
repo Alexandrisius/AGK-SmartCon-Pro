@@ -3,8 +3,10 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.UI;
+using SmartCon.App.Diagnostics;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
+using SmartCon.Core.Deployment;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.FamilyManager;
@@ -12,20 +14,50 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Threading;
 using SmartCon.FamilyManager;
 using SmartCon.UI;
+#if NET8_0_OR_GREATER
+using AppBase = Nice3point.Revit.Toolkit.External.ExternalApplication;
+#else
+using AppBase = Autodesk.Revit.UI.IExternalApplication;
+#endif
 
 namespace SmartCon.App;
 
 /// <summary>
 /// SmartCon Revit plugin entry point. Registers the Ribbon panel, DI container,
 /// and handles self-update on startup.
+/// On net8 (Revit 2025+) inherits Nice3point.Revit.Toolkit ExternalApplication so the
+/// plugin runs inside the isolated 'SmartCon' AssemblyLoadContext (ADR-051, Issue #134).
 /// </summary>
-public sealed class App : IExternalApplication
+public sealed partial class App : AppBase
 {
     private static readonly string s_smartConDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SmartCon");
 
+#if NET8_0_OR_GREATER
+    public override void OnStartup()
+    {
+        Result = OnStartupCore(Application);
+    }
+
+    public override void OnShutdown()
+    {
+        OnShutdownCore();
+    }
+#else
     public Result OnStartup(UIControlledApplication application)
+    {
+        return OnStartupCore(application);
+    }
+
+    public Result OnShutdown(UIControlledApplication application)
+    {
+        OnShutdownCore();
+        return Result.Succeeded;
+    }
+#endif
+
+    private static Result OnStartupCore(UIControlledApplication application)
     {
 #if NETFRAMEWORK
         System.Net.ServicePointManager.SecurityProtocol |=
@@ -37,9 +69,16 @@ public sealed class App : IExternalApplication
         RegisterGlobalExceptionHandlers();
         try
         {
+#if NET8_0_OR_GREATER
+            SmartConLogger.Info(
+                $"SmartCon host context: {System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(App).Assembly)?.Name ?? "(unknown)"} " +
+                $"(App assembly: {typeof(App).Assembly.Location})");
+#endif
             ApplyUpdaterSelfUpdate();
             CleanupStalePendingUpdate();
             CleanupLegacyStageFolder();
+            AddinManifestHealer.EnsureCurrent(application);
+            DependencyGuard.ScanLoadedAssemblies();
             ServiceLocator.Initialize(application);
             LanguageManager.Initialize();
             RegisterNativeLibraryResolvers();
@@ -48,15 +87,28 @@ public sealed class App : IExternalApplication
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
 
+            // Explicit eager resolve (adversarial review M2): the notifier's
+            // DI factory subscribes to ViewActivated — the timing of that
+            // subscription must not depend on the transitive pane-resolution
+            // chain above surviving future refactors.
+            _ = ServiceHost.GetService<IActiveDocumentChangeNotifier>();
+
             RibbonBuilder.CreateRibbon(application);
 
             return Result.Succeeded;
         }
         catch (Exception ex)
         {
+            SmartConLogger.Error($"Failed to load SmartCon: {DescribeException(ex)}\n{ex.StackTrace}");
             TaskDialog.Show("SmartCon - Error", $"Failed to load SmartCon:\n{ex.Message}");
             return Result.Failed;
         }
+    }
+
+    private static void OnShutdownCore()
+    {
+        TryLaunchUpdater();
+        ServiceLocator.Dispose();
     }
 
     /// <summary>
@@ -156,8 +208,15 @@ public sealed class App : IExternalApplication
     private static void RegisterGlobalExceptionHandlers()
     {
         var logPath = Path.Combine(Path.GetDirectoryName(typeof(App).Assembly.Location) ?? ".", "assembly-load.log");
-        void Mark(string step) => File.AppendAllText(logPath,
-            "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] RGEH step: " + step + "\n");
+        void Mark(string step)
+        {
+            try
+            {
+                File.AppendAllText(logPath,
+                    "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] RGEH step: " + step + "\n");
+            }
+            catch { /* diagnostics must never throw (read-only add-in dir) */ }
+        }
 
         Mark("1: about to subscribe AppDomain.UnhandledException");
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -167,7 +226,7 @@ public sealed class App : IExternalApplication
                 var ex = args.ExceptionObject as Exception;
                 SmartConLogger.Error(
                     $"[AppDomain.UnhandledException] IsTerminating={args.IsTerminating}, " +
-                    $"Type={ex?.GetType().Name ?? "?"}: {ex?.Message ?? args.ExceptionObject}");
+                    (ex is not null ? DescribeException(ex) : args.ExceptionObject?.ToString()));
                 if (ex?.StackTrace is not null)
                     SmartConLogger.Error($"Stack: {ex.StackTrace}");
             }
@@ -180,7 +239,7 @@ public sealed class App : IExternalApplication
             try
             {
                 SmartConLogger.Error(
-                    $"[TaskScheduler.UnobservedTaskException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+                    $"[TaskScheduler.UnobservedTaskException] {DescribeException(args.Exception)}\n{args.Exception.StackTrace}");
             }
             catch { }
         };
@@ -195,7 +254,7 @@ public sealed class App : IExternalApplication
                 try
                 {
                     SmartConLogger.Error(
-                        $"[Dispatcher.UnhandledException] Type={args.Exception.GetType().Name}: {args.Exception.Message}\n{args.Exception.StackTrace}");
+                        $"[Dispatcher.UnhandledException] {DescribeException(args.Exception)}\n{args.Exception.StackTrace}");
                 }
                 catch { }
                 args.Handled = false;
@@ -212,15 +271,26 @@ public sealed class App : IExternalApplication
         Mark("4: RegisterGlobalExceptionHandlers done");
     }
 
+    /// <summary>
+    /// Formats an exception with its full inner-exception chain — the outer
+    /// exception alone (e.g. XamlParseException) hides the real root cause
+    /// (see Issue #134, R23 ViewBoxModel3D crash: XamlParseException →
+    /// TypeInitializationException → FileLoadException 0x80131044).
+    /// </summary>
+    private static string DescribeException(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var cur = ex; cur != null; cur = cur.InnerException)
+        {
+            if (!ReferenceEquals(cur, ex))
+                sb.Append(" ---> ");
+            sb.Append(cur.GetType().Name).Append(": ").Append(cur.Message);
+        }
+        return sb.ToString();
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]
     private static extern IntPtr LoadLibraryEx(string lpFileName, IntPtr hFile, uint dwFlags);
-
-    public Result OnShutdown(UIControlledApplication application)
-    {
-        TryLaunchUpdater();
-        ServiceLocator.Dispose();
-        return Result.Succeeded;
-    }
 
     private static void ApplyUpdaterSelfUpdate()
     {
@@ -315,50 +385,4 @@ public sealed class App : IExternalApplication
         LegacyStageFolderCleaner.Cleanup(Path.Combine(s_smartConDir, "FamilyManager"));
     }
 
-    private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
-    {
-        var name = new AssemblyName(args.Name).Name;
-        var loaded = AppDomain.CurrentDomain.GetAssemblies()
-            .FirstOrDefault(a => a.GetName().Name == name);
-        if (loaded != null) return loaded;
-        var pluginDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
-        if (pluginDir is null) return null;
-        var path = Path.Combine(pluginDir, name + ".dll");
-        return File.Exists(path) ? Assembly.LoadFrom(path) : null;
-    }
-
-    /// <summary>
-    /// Logs every HelixToolkit/SharpDX/SharpGLTF/Assimp assembly load with a
-    /// minimal stack trace so we can identify WHO and WHEN loads these heavy
-    /// assemblies. HelixToolkit is suspected of hooking the WPF render thread
-    /// on first load (see helix-toolkit issue #1690 D3DImage.Lock() deadlock),
-    /// which can cause subsequent modal dialogs to render white on net48.
-    /// Writes to a SEPARATE file (assembly-load.log) so TruncateMainLog
-    /// cannot eat the log lines.
-    /// </summary>
-    private static void OnAssemblyLoad(object? sender, AssemblyLoadEventArgs args)
-    {
-        try
-        {
-            var name = args.LoadedAssembly.GetName().Name ?? "";
-            if (!name.Contains("HelixToolkit")
-                && !name.Contains("SharpGLTF")
-                && !name.Contains("SharpDX")
-                && !name.Contains("Assimp"))
-                return;
-
-            var stack = new StackTrace(2, false).ToString();
-            if (stack.Length > 2000) stack = stack[..2000] + "...";
-
-            var logDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
-            var asmLogPath = Path.Combine(logDir ?? ".", "assembly-load.log");
-            var line = "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "] thread=" + Environment.CurrentManagedThreadId + " " +
-                       $"LOADED: {name} v{args.LoadedAssembly.GetName().Version}\nStackTrace:\n{stack}\n" +
-                       new string('-', 80) + "\n";
-            File.AppendAllText(asmLogPath, line);
-        }
-        catch
-        {
-        }
-    }
 }

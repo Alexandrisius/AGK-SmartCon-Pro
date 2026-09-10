@@ -8,7 +8,7 @@ module: pipeconnect-interfaces
 
 ## IRevitContext
 
-Доступ к актуальному Document и UIDocument. Не кешировать — запрашивать при каждой операции.
+Доступ к актуальному Document и UIDocument. Не кешировать — запрашивать при каждой операции. `TryGetDocument` (#219) — небросающий вариант для zero-document состояния (стартовая страница: `ActiveUIDocument == null`); `GetDocument()` там падает с `NullReferenceException` — в обходимых местах использовать `TryGetDocument`.
 
 **Файл:** `SmartCon.Core/Services/Interfaces/IRevitContext.cs`
 **Реализация:** `SmartCon.Revit/Context/RevitContext.cs`
@@ -17,6 +17,7 @@ module: pipeconnect-interfaces
 public interface IRevitContext
 {
     Document GetDocument();
+    Document? TryGetDocument();  // null в zero-document состоянии (#219)
     string GetRevitVersion();  // "2025", "2026"
     // UIDocument не экспонируется в Core (I-09). Доступен через RevitContext в Revit-слое.
 }
@@ -304,8 +305,23 @@ public interface IConnectorService
     bool ConnectTo(Document doc,
         ElementId elementId1, int connectorIndex1,
         ElementId elementId2, int connectorIndex2);
+
+    /// Все свободные коннекторы элемента (без ConnectorType.Curve).
+    IReadOnlyList<ConnectorProxy> GetAllFreeConnectors(Document doc, ElementId elementId);
+
+    /// ВСЕ коннекторы элемента — свободные и подключённые (без ConnectorType.Curve).
+    IReadOnlyList<ConnectorProxy> GetAllConnectors(Document doc, ElementId elementId);
 }
 ```
+
+**Гарантия порядка (issue #163):** `GetAllFreeConnectors` / `GetAllConnectors`
+возвращают коннекторы в **детерминированном геометрическом порядке** —
+`ConnectorSet` в Revit API перечисляет коннекторы случайно и этот порядок не должен
+протекать к потребителям. Порядок: X asc → Z desc → Y asc, tie-break по
+`Connector.Id` (см. `ConnectorOrdering` в [models/math-utilities.md](../models/math-utilities.md)).
+Ключ сортировки инвариантен к перемещению/повороту элемента (семейно-локальные
+координаты для `FamilyInstance`, проекция на ось для `MEPCurve`), поэтому порядок
+стабилен между refresh-циклами, пока PipeConnectEditor реалайнит элемент.
 
 ---
 
@@ -598,5 +614,34 @@ public interface IRevitUIContext
 {
     UIDocument GetUIDocument();
     UIApplication GetUIApplication();
+}
+```
+
+---
+
+## IViewNavigationService
+
+Программная навигация вида (зум/пан) без ввода пользователя. Используется блоком
+«Просмотр / ±» PipeConnectEditor: приближает активный коннектор динамического элемента,
+смещая зум так, чтобы точка не оказалась за модальным окном редактора.
+Вызовы UIView.Zoom* не стартуют транзакций — безопасно в modal command context (I-01a).
+
+**Файл:** `SmartCon.Core/Services/Interfaces/IViewNavigationService.cs`
+**Реализация:** `SmartCon.Revit/Navigation/RevitViewNavigationService.cs`
+**Математика:** `SmartCon.Core/Services/PipeConnect/ViewZoomMath.cs` (pure, тестируемая)
+
+```csharp
+public interface IViewNavigationService
+{
+    ZoomToPointResult ZoomToPoint(XYZ point, double radiusFeet, ScreenRect? occludingWindow);
+    ZoomToPointResult ZoomByFactor(double factor, ScreenRect? occludingWindow);
+}
+
+public enum ZoomToPointResult
+{
+    Success,
+    NoActiveGraphicalView,
+    UIViewNotFound,
+    DegenerateViewRect
 }
 ```

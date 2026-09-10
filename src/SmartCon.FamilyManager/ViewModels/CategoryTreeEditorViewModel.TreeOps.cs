@@ -9,30 +9,31 @@ namespace SmartCon.FamilyManager.ViewModels;
 public sealed partial class CategoryTreeEditorViewModel
 {
     [RelayCommand]
-    private void AddRoot()
+    private async Task AddRoot()
     {
         var title = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_AddCategory) ?? "Add Category";
         var prompt = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_CategoryName) ?? "Category name:";
         var name = _dialogService.ShowInputDialog(title, prompt);
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        var sortOrder = RootNodes.Count;
-        var categoryId = Guid.NewGuid().ToString();
-        var vm = new CategoryNodeViewModel(categoryId, name!, null, name!)
+        try
         {
-            SortOrder = sortOrder,
-            OriginalSortOrder = sortOrder,
-            IsNew = true,
-            IsDirty = true
-        };
-        RootNodes.Add(vm);
-        SelectedNode = vm;
-        vm.IsSelected = true;
-        UpdateHasUnsavedChanges();
+            var created = await _categoryRepository.AddAsync(name!, null, RootNodes.Count);
+            var vm = new CategoryNodeViewModel(created);
+            RootNodes.Add(vm);
+            SelectedNode = vm;
+            vm.IsSelected = true;
+            _metadataMediator.RaiseMetadataChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"AddRoot category '{name}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
     }
 
     [RelayCommand]
-    private void AddChild()
+    private async Task AddChild()
     {
         if (SelectedNode is not CategoryNodeViewModel parent) return;
 
@@ -41,25 +42,25 @@ public sealed partial class CategoryTreeEditorViewModel
         var name = _dialogService.ShowInputDialog(title, prompt);
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        var sortOrder = parent.Children.Count;
-        var categoryId = Guid.NewGuid().ToString();
-        var fullPath = $"{parent.FullPath}/{name}";
-        var childVm = new CategoryNodeViewModel(categoryId, name!, parent.CategoryId, fullPath)
+        try
         {
-            SortOrder = sortOrder,
-            OriginalSortOrder = sortOrder,
-            IsNew = true,
-            IsDirty = true
-        };
-        parent.Children.Add(childVm);
-        parent.IsExpanded = true;
-        SelectedNode = childVm;
-        childVm.IsSelected = true;
-        UpdateHasUnsavedChanges();
+            var created = await _categoryRepository.AddAsync(name!, parent.CategoryId, parent.Children.Count);
+            var childVm = new CategoryNodeViewModel(created);
+            parent.Children.Add(childVm);
+            parent.IsExpanded = true;
+            SelectedNode = childVm;
+            childVm.IsSelected = true;
+            _metadataMediator.RaiseMetadataChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"AddChild category '{name}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
     }
 
     [RelayCommand]
-    private void Rename()
+    private async Task Rename()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
 
@@ -68,13 +69,26 @@ public sealed partial class CategoryTreeEditorViewModel
         var newName = _dialogService.ShowInputDialog(title, prompt, node.DisplayName);
         if (string.IsNullOrWhiteSpace(newName) || newName == node.DisplayName) return;
 
-        node.DisplayName = newName!;
-        node.IsDirty = true;
-        UpdateHasUnsavedChanges();
+        try
+        {
+            await _categoryRepository.RenameAsync(node.CategoryId, newName!);
+            // Reload: descendant FullPath values change with the name.
+            var reselectId = node.CategoryId;
+            await LoadTreeAsync();
+            var found = FindNodeById(RootNodes, reselectId);
+            if (found is not null) found.IsSelected = true;
+            SelectedNode = found;
+            _metadataMediator.RaiseMetadataChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Rename category '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
     }
 
     [RelayCommand]
-    private void Delete()
+    private async Task Delete()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
 
@@ -87,25 +101,24 @@ public sealed partial class CategoryTreeEditorViewModel
         var delTitle = LanguageManager.GetString(StringLocalization.Keys.FM_CTE_DeleteCategory) ?? "Delete Category";
         if (!_dialogService.ShowConfirmation(delTitle, message)) return;
 
-        // Remove binding changes for this category and all descendants to prevent FK errors on save
-        var allIds = GetCategoryAndDescendantIds(node);
-        foreach (var id in allIds)
-        {
-            var keysToRemove = _bindingChanges.Keys.Where(k => k.StartsWith(id + ":", StringComparison.Ordinal)).ToList();
-            foreach (var key in keysToRemove)
-                _bindingChanges.Remove(key);
-        }
-
         // Find neighbor (next sibling, or previous sibling, or parent) BEFORE removing the node
         // so the user can keep working with a valid selection (right-click context menu otherwise
         // sees SelectedNode=null and skips the confirmation dialog).
         var neighbor = FindNeighborNode(node);
 
-        node.IsDeleted = true;
-        _pendingCategoryDeletions.Add(node);
-        RemoveNodeFromTree(node.CategoryId);
-        SelectedNode = neighbor;
-        UpdateHasUnsavedChanges();
+        try
+        {
+            await _categoryRepository.DeleteAsync(node.CategoryId);
+            RemoveNodeFromTree(node.CategoryId);
+            if (neighbor is not null) neighbor.IsSelected = true;
+            SelectedNode = neighbor;
+            _metadataMediator.RaiseMetadataChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Delete category '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
     }
 
     private CategoryNodeViewModel? FindNeighborNode(CategoryNodeViewModel node)
@@ -148,17 +161,6 @@ public sealed partial class CategoryTreeEditorViewModel
         return null;
     }
 
-    private static List<string> GetCategoryAndDescendantIds(CategoryNodeViewModel node)
-    {
-        var result = new List<string> { node.CategoryId };
-        foreach (var child in node.Children)
-        {
-            if (child is CategoryNodeViewModel cat)
-                result.AddRange(GetCategoryAndDescendantIds(cat));
-        }
-        return result;
-    }
-
     private void RemoveNodeFromTree(string categoryId)
     {
         for (var i = 0; i < RootNodes.Count; i++)
@@ -189,12 +191,24 @@ public sealed partial class CategoryTreeEditorViewModel
     }
 
     [RelayCommand]
-    private void MoveNode((CategoryNodeViewModel Node, CategoryNodeViewModel? NewParent, int SortOrder) args)
+    private async Task MoveNode((CategoryNodeViewModel Node, CategoryNodeViewModel? NewParent, int SortOrder) args)
     {
         var (node, newParent, sortOrder) = args;
-        node.ParentId = newParent?.CategoryId;
-        node.SortOrder = sortOrder;
-        node.IsDirty = true;
+        try
+        {
+            await _categoryRepository.MoveAsync(node.CategoryId, newParent?.CategoryId, sortOrder);
+            var reselectId = node.CategoryId;
+            await LoadTreeAsync();
+            var found = FindNodeById(RootNodes, reselectId);
+            if (found is not null) found.IsSelected = true;
+            SelectedNode = found;
+            _metadataMediator.RaiseMetadataChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"MoveNode category '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
     }
 
     internal static List<CategoryTreeImportData.CategoryImportItem> BuildExportTree(CategoryTree tree, string? parentId)
@@ -254,6 +268,28 @@ public sealed partial class CategoryTreeEditorViewModel
         return false;
     }
 
+    private static CategoryNodeViewModel? FindNodeById(ObservableCollection<CategoryNodeViewModel> nodes, string categoryId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.CategoryId == categoryId) return node;
+            var found = FindNodeById(node.Children, categoryId);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
+    private static CategoryNodeViewModel? FindNodeById(ObservableCollection<CatalogTreeNodeViewModel> nodes, string categoryId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node is CategoryNodeViewModel cat && cat.CategoryId == categoryId) return cat;
+            var found = FindNodeById(node.Children, categoryId);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
     [RelayCommand]
     private void OnSelectedItemChanged(object? selectedItem)
     {
@@ -261,23 +297,88 @@ public sealed partial class CategoryTreeEditorViewModel
     }
 
     [RelayCommand]
-    private void ContextMenuRename()
+    private async Task ContextMenuRename()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
-        Rename();
+        await Rename();
     }
 
     [RelayCommand]
-    private void ContextMenuAddChild()
+    private async Task ContextMenuAddChild()
     {
         if (SelectedNode is not CategoryNodeViewModel parent) return;
-        AddChild();
+        await AddChild();
     }
 
     [RelayCommand]
-    private void ContextMenuDelete()
+    private async Task ContextMenuDelete()
     {
         if (SelectedNode is not CategoryNodeViewModel node) return;
-        Delete();
+        await Delete();
+    }
+
+    [RelayCommand]
+    private async Task ContextMenuAssignmentRules()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
+    /// <summary>#241: the filter icon on a category node — selects the
+    /// node and opens its assignment rules editor.</summary>
+    [RelayCommand]
+    private async Task OpenAssignmentRulesForNode(CategoryNodeViewModel? node)
+    {
+        if (node is null) return;
+        SelectedNode = node;
+        node.IsSelected = true;
+        await OpenAssignmentRulesEditorAsync();
+    }
+
+    internal async Task OpenAssignmentRulesEditorAsync()
+    {
+        if (SelectedNode is not CategoryNodeViewModel node) return;
+
+        try
+        {
+            var copyFrom = FindNearestAncestorWithRules(node);
+            var vm = _viewModelFactory.CreateAssignmentRulesEditorViewModel(
+                node.CategoryId, node.DisplayName, copyFrom?.CategoryId, copyFrom?.Path);
+            await vm.InitializeAsync();
+            var saved = _dialogService.ShowAssignmentRulesEditor(vm);
+            if (saved == true)
+            {
+                SmartConLogger.Info($"Assignment rules saved for category '{node.DisplayName}'");
+                _metadataMediator.RaiseMetadataChanged();
+                // Refresh the tree icon counts in place (no tree rebuild —
+                // expansion state survives).
+                var (total, disabled) = await LoadAssignmentRuleCountsAsync(CancellationToken.None);
+                ApplyAssignmentRuleCounts(RootNodes, total, disabled);
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"Open assignment rules editor for '{node.DisplayName}' failed: {ex.Message}");
+            StatusMessage = ex.Message;
+        }
+    }
+
+    /// <summary>#241: nearest ancestor with configured rules — the source
+    /// for the editor's «Взять условия родителя» button. Null when no
+    /// ancestor has rules.</summary>
+    internal static (string CategoryId, string Path)? FindNearestAncestorWithRules(CategoryNodeViewModel node)
+    {
+        var current = node.Parent;
+        while (current is not null)
+        {
+            if (current is CategoryNodeViewModel category && category.AssignmentRuleCount > 0)
+            {
+                return (category.CategoryId, category.FullPath);
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 }

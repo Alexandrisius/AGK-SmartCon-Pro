@@ -1,0 +1,187 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.MissingRecordsCleanupView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_Cleanup_Title}"
+        Width="900" Height="480" MinWidth="720" MinHeight="340"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Permanent warning (Issue #133): a temporarily unreachable network
+             drive makes healthy records look "missing" — the user must be
+             aware BEFORE deleting anything. Soft amber palette — readable on
+             the light theme (owner feedback: the bright yellow was harsh). -->
+        <Border Grid.Row="0"
+                Background="#FFF6E5"
+                BorderBrush="#F2DFB3"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="10,6"
+                Margin="0,0,0,8">
+            <TextBlock Text="{loc:Loc FM_Cleanup_Warning}"
+                       Foreground="#7A4E00"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <TextBlock Grid.Row="1"
+                   Text="{Binding StatusText}"
+                   Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   TextWrapping="Wrap"/>
+
+        <DataGrid x:Name="CandidatesGrid"
+                  Grid.Row="2"
+                  ItemsSource="{Binding Rows}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  Style="{DynamicResource CompactDataGrid}"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="False"
+                  SelectionMode="Single"
+                  SelectionUnit="FullRow"
+                  Visibility="{Binding HasRows, Converter={StaticResource BoolToVis}}">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    <Setter Property="Padding" Value="8,6"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <!-- Note: DataGridCell.Padding is ignored by the default WPF cell
+                 template — the horizontal inset comes from Margin in each
+                 column's ElementStyle (8px, matching the header padding). -->
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Width="40" CanUserResize="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Focusable="False"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn x:Name="ColItem" Binding="{Binding ItemName}" Width="2*" MinWidth="180">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Margin" Value="8,4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                            <Setter Property="ToolTip" Value="{Binding ItemName}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColVersion" Binding="{Binding VersionLabel}" Width="80">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Margin" Value="8,4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColRevit" Binding="{Binding RevitVersion}" Width="60">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Margin" Value="8,4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColFile" Binding="{Binding FileName}" Width="2.5*" MinWidth="200">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Margin" Value="8,4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                            <Setter Property="ToolTip" Value="{Binding RelativePath}"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn x:Name="ColReason" Binding="{Binding ReasonText}" Width="1.5*" MinWidth="150">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                            <Setter Property="Margin" Value="8,4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <ProgressBar Grid.Row="3"
+                     Value="{Binding ProgressValue}"
+                     Maximum="{Binding ProgressMaximum}"
+                     Minimum="0"
+                     Height="8"
+                     Margin="0,6,0,0"
+                     Style="{DynamicResource FlatProgressBar}"
+                     Visibility="{Binding IsScanRunning, Converter={StaticResource BoolToVis}}"/>
+
+        <Grid Grid.Row="4" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button Content="{loc:Loc FM_Cleanup_CheckDisk}"
+                        Command="{Binding CheckDiskCommand}"
+                        ToolTip="{loc:Loc FM_Cleanup_CheckDiskTooltip}"
+                        MinWidth="110"
+                        Margin="0,0,8,0"
+                        Style="{DynamicResource SecondaryButton}"/>
+                <Button Content="{loc:Loc FM_Cleanup_SelectAll}"
+                        Command="{Binding SelectAllCommand}"
+                        MinWidth="90"
+                        Margin="0,0,8,0"
+                        Style="{DynamicResource SecondaryButton}"/>
+                <Button Content="{loc:Loc FM_Cleanup_ClearSelection}"
+                        Command="{Binding ClearSelectionCommand}"
+                        MinWidth="90"
+                        Style="{DynamicResource SecondaryButton}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="{loc:Loc FM_DbUpdate_Cancel}"
+                        Command="{Binding CancelScanCommand}"
+                        MinWidth="90"
+                        Margin="0,0,8,0"
+                        Visibility="{Binding IsScanRunning, Converter={StaticResource BoolToVis}}"
+                        Style="{DynamicResource SecondaryButton}"/>
+                <Button Content="{Binding DeleteSelectedButtonText}"
+                        Command="{Binding DeleteSelectedCommand}"
+                        MinWidth="120"
+                        Margin="0,0,8,0"
+                        Style="{DynamicResource SecondaryButton}"/>
+                <Button Content="{loc:Loc FM_Cleanup_DeleteAll}"
+                        Command="{Binding DeleteAllCommand}"
+                        MinWidth="90"
+                        Margin="0,0,8,0"
+                        Style="{DynamicResource SecondaryButton}"/>
+                <Button Content="{loc:Loc FM_Cleanup_Close}"
+                        Command="{Binding CloseCommand}"
+                        IsDefault="True"
+                        MinWidth="90"
+                        Style="{DynamicResource PrimaryButton}"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</controls:DialogWindowBase>

@@ -20,8 +20,15 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <see cref="int"/>. The orchestrator never touches the
 /// <c>Autodesk.Revit.DB</c> enum from <c>SmartCon.Core</c>, so the
 /// ordinal is carried across the boundary as a plain integer.</param>
+/// <param name="FamilyName">Revit system family of the type (Issue #183) —
+/// persisted into <c>family_types.family_name</c> so the sync can match
+/// types by (family, name); null for legacy producers.</param>
+/// <param name="FamilyKey">Locale-invariant family identity (Issue #190,
+/// ADR-064) — persisted into <c>family_types.family_key</c> (V27).</param>
 public sealed record FamilySourceTypeInfo(
     string UniqueId,
     string Name,
     string CategoryName,
-    int CategoryId);
+    int CategoryId,
+    string? FamilyName = null,
+    string? FamilyKey = null);

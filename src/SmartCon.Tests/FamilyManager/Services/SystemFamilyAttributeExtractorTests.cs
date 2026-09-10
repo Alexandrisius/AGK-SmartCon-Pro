@@ -264,13 +264,5 @@ public sealed class SystemFamilyAttributeExtractorTests
             string catalogItemId, int targetRevitVersion, CancellationToken ct = default)
             => Task.FromResult(new FamilyExtractionPrepareResult(
                 false, null, null, Array.Empty<string>(), null));
-
-        public Task MergeMissingValuesAsync(
-            string catalogItemId,
-            FamilyExtractionResult extractionResult,
-            string? versionId,
-            string? fileId,
-            CancellationToken ct = default)
-            => Task.CompletedTask;
     }
 }

@@ -10,16 +10,25 @@
             glossary.md
             models/
                 README.md
-                <module>.md          # pipeconnect, family-manager, ...
+                <module>.md            # pipeconnect, cross-cutting, ...
+                <module>/              # крупные модули разбиваются на подпапку
+                    README.md          # индекс тематических файлов
+                    <topic>.md         # catalog.md, import.md, ...
             interfaces/
                 README.md
                 <module>.md
+                <module>/
+                    README.md
+                    <topic>.md
+
+    Подпапки сканируются рекурсивно. Файл документации не должен превышать
+    1000 строк — за этим следит проверка размера (WARN, не блокирует).
 
     Сканирует ВСЕ .cs файлы в src/SmartCon.Core/ (исключая bin/obj).
     Для каждого файла определяет primary type (по имени файла без .cs)
     и классифицирует:
-        - interface I* -> ожидается в docs/domain/interfaces/<module>.md
-        - иначе (class/record/struct/enum) -> ожидается в docs/domain/models/<module>.md
+        - interface I* -> ожидается в docs/domain/interfaces/
+        - иначе (class/record/struct/enum) -> ожидается в docs/domain/models/
 
     Парсер использует state machine для пропуска содержимого внутри
     code-fence блоков ```...```.
@@ -277,23 +286,27 @@ Write-Host "[2/4] Parsing documentation files..." -ForegroundColor Yellow
 $docHeadings = @()
 $mdFiles = @()
 if (Test-Path -LiteralPath $modelsDir) {
-    $mdFiles += Get-ChildItem -LiteralPath $modelsDir -Filter '*.md' -File -ErrorAction SilentlyContinue
+    $mdFiles += Get-ChildItem -LiteralPath $modelsDir -Filter '*.md' -File -Recurse -ErrorAction SilentlyContinue
 }
 if (Test-Path -LiteralPath $interfacesDir) {
-    $mdFiles += Get-ChildItem -LiteralPath $interfacesDir -Filter '*.md' -File -ErrorAction SilentlyContinue
+    $mdFiles += Get-ChildItem -LiteralPath $interfacesDir -Filter '*.md' -File -Recurse -ErrorAction SilentlyContinue
 }
-# Exclude README.md (index files, not type documentation)
+# Exclude README.md (index files, not type documentation) at any nesting level
 $mdFiles = @($mdFiles | Where-Object { $_.Name -ne 'README.md' })
 
 Write-Host "      Scanning $($mdFiles.Count) .md file(s)..." -ForegroundColor Gray
 
+$domainDirPrefix = (Join-Path $domainDir '')  # ensures trailing separator for relative path calc
 foreach ($file in $mdFiles) {
     $lines = Get-Content -LiteralPath $file.FullName -Encoding UTF8
     $module = Get-FrontmatterModule $lines
     $headings = Get-MdHeadings -FilePath $file.FullName -Module $module
-    $parentDir = Split-Path -Leaf (Split-Path -Parent $file.FullName)
+    # Side = first path segment under docs/domain/ ('models' or 'interfaces'),
+    # works both for flat files and files inside module subfolders
+    $relative = $file.FullName.Substring($domainDirPrefix.Length)
+    $side = ($relative -split '[\\/]')[0]
     foreach ($h in $headings) {
-        $h | Add-Member -NotePropertyName 'Side' -NotePropertyValue $parentDir -Force
+        $h | Add-Member -NotePropertyName 'Side' -NotePropertyValue $side -Force
     }
     $docHeadings += $headings
 }
@@ -374,6 +387,26 @@ if ($orphaned.Count -gt 0) {
     Write-Host "       (a) a nested type in another file, (b) a method not a type," -ForegroundColor Gray
     Write-Host "       (c) hosted in a non-Core assembly like SmartCon.FamilyManager or SmartCon.Revit," -ForegroundColor Gray
     Write-Host "       (d) or the documentation is outdated and should be removed)" -ForegroundColor Gray
+}
+
+# --- 4b. File size check (warnings only) ---
+# Files over $maxDocLines lines must be split into a module subfolder
+# (see docs/domain/README.md "Правило разбиения крупных модулей").
+$maxDocLines = 1000
+$oversized = @()
+foreach ($file in $mdFiles) {
+    $lineCount = (Get-Content -LiteralPath $file.FullName -Encoding UTF8).Count
+    if ($lineCount -gt $maxDocLines) {
+        $relative = $file.FullName.Substring($domainDirPrefix.Length)
+        $oversized += "$relative ($lineCount lines > $maxDocLines)"
+    }
+}
+if ($oversized.Count -gt 0) {
+    Write-Host ""
+    Write-Host "[info] Oversized documentation files (should be split into <module>/<topic>.md):" -ForegroundColor Yellow
+    foreach ($o in ($oversized | Sort-Object -Unique)) {
+        Report-Warn "  $o"
+    }
 }
 
 # --- Summary ---

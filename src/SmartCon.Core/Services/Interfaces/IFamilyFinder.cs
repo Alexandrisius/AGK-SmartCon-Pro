@@ -33,4 +33,13 @@ public interface IFamilyFinder
     /// <see cref="IFamilyManagerAwaitableEvent.RaiseAsync(Action{object}, CancellationToken)"/>.</para>
     /// </remarks>
     ElementId? FindByName(Document doc, string familyName);
+
+    /// <summary>
+    /// Issue #187: collects every loaded family symbol as (family name, type
+    /// name) pairs in ONE collector pass — the data source for the
+    /// project-presence badges of loadable leaves and their type nodes
+    /// (per-item <see cref="FindByName"/> calls would be O(N) scans).
+    /// </summary>
+    /// <remarks>Implementations MUST be called on the Revit main thread only.</remarks>
+    IReadOnlyList<(string FamilyName, string TypeName)> CollectLoadedFamilySymbols(Document doc);
 }

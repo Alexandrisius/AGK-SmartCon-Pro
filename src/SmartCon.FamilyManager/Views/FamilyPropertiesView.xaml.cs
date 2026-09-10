@@ -65,17 +65,26 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     /// </summary>
     private void OnViewport3DXLoaded(object sender, RoutedEventArgs e)
     {
-        SmartConLogger.Info($"FamilyPropertiesView.OnViewport3DXLoaded: enter (ActualWidth={Properties3DViewport.ActualWidth})");
+        SmartConLogger.Info($"FamilyPropertiesView.OnViewport3DXLoaded: enter (ActualWidth={Properties3DViewport.ActualWidth}, ActualHeight={Properties3DViewport.ActualHeight})");
         try
         {
             if (DataContext is FamilyPropertiesViewModel vm)
             {
-                vm.Initialize3DInfrastructure();
+                SmartConLogger.Info(
+                    $"OnViewport3DXLoaded: vm.Selected3DTypeName={vm.Selected3DTypeName ?? "<null>"}, " +
+                    $"EffectsManager3DIsNull={vm.EffectsManager3D is null}");
 
-                // Only add Scene3DRoot when viewport has non-zero size
-                // (render host D3D only starts when ActualWidth > 0)
+                // Only initialize DirectX infrastructure when viewport has
+                // non-zero size. WPF TabControl lazy-renders non-active tabs,
+                // so the viewport's Loaded event fires first with ActualWidth=0
+                // and then again when the 3D tab is selected. Initializing
+                // EffectsManager for a zero-size surface creates a DirectX
+                // device that is not yet attached to a render target and makes
+                // Load3DPreviewForTypeAsync think the viewer is ready.
                 if (Properties3DViewport.ActualWidth > 0 && Properties3DViewport.ActualHeight > 0)
                 {
+                    vm.Initialize3DInfrastructure();
+
                     if (!Properties3DViewport.Items.Contains(vm.Scene3DRoot))
                     {
                         Properties3DViewport.Items.Add(vm.Scene3DRoot);
@@ -123,6 +132,7 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     private void InitializeVersionGridHeaders()
     {
         ColVersionLabel.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Version) ?? "Version";
+        ColVersionFileName.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_FileName) ?? "Family name";
         ColVersionRevit.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Revit) ?? "Revit";
         ColVersionDate.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Date) ?? "Date";
         ColVersionAuthor.Header = LanguageManager.GetString(StringLocalization.Keys.FM_Version_Column_Author) ?? "Author";
@@ -131,16 +141,20 @@ public sealed partial class FamilyPropertiesView : DialogWindowBase
     }
 
     /// <summary>
-    /// PreviewKeyDown for the tag input TextBox. Suppresses the comma key and
-    /// immediately commits the current text as a tag chip (Gmail/GitHub-style).
-    /// PreviewKeyDown is used (not KeyDown) because it fires BEFORE the character
-    /// is inserted into the text — e.Handled=true prevents the comma from appearing.
-    /// This is UI input plumbing (not business logic) — the actual tag validation
-    /// and collection update live in FamilyPropertiesViewModel.AddTagCommand.
+    /// PreviewTextInput for the tag input TextBox. Suppresses the comma character
+    /// and immediately commits the current text as a tag chip (Gmail/GitHub-style).
+    /// PreviewTextInput (not PreviewKeyDown) is used because Key.OemComma is a
+    /// physical key, not a character: on the Russian layout the same key produces
+    /// the letter 'б', so key-based detection swallowed 'б' and created a chip.
+    /// TextCompositionEventArgs.Text carries the layout-translated character, so
+    /// only a real ',' commits the tag. e.Handled=true prevents the comma from
+    /// appearing. Pasted commas never raise TextInput — they are split inside
+    /// FamilyPropertiesViewModel.AddTagCommand. This is UI input plumbing (not
+    /// business logic) — validation and collection update live in the ViewModel.
     /// </summary>
-    private void TagInputBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private void TagInputBox_PreviewTextInput(object sender, System.Windows.Input.TextCompositionEventArgs e)
     {
-        if (e.Key != System.Windows.Input.Key.OemComma) return;
+        if (e.Text != ",") return;
         if (DataContext is not FamilyPropertiesViewModel vm) return;
         e.Handled = true;
         if (!string.IsNullOrWhiteSpace(TagInputBox.Text))

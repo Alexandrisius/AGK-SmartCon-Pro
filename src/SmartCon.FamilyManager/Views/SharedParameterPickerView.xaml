@@ -1,0 +1,167 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.SharedParameterPickerView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_SP_Title}"
+        Width="800" Height="520" MinWidth="620" MinHeight="380"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            <Style x:Key="CenterCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+            <Style x:Key="LeftEllipsisCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                <Setter Property="Margin" Value="4,0,0,0"/>
+                <Setter Property="ToolTip" Value="{Binding Description}"/>
+            </Style>
+            <Style x:Key="PickerColumnHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource CompactDataGridColumnHeader}">
+                <Setter Property="Padding" Value="8,0,0,0"/>
+            </Style>
+        </ui:SingletonResources>
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <TextBox x:Name="PathBox"
+                         Text="{Binding FilePath, Mode=OneWay}"
+                         IsReadOnly="True"
+                         behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=PathPlaceholder}"
+                         Style="{DynamicResource CompactTextBox}"/>
+                <TextBlock x:Name="PathPlaceholder"
+                           Text="{loc:Loc FM_SP_PathPlaceholder}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="8,0,0,0"
+                           IsHitTestVisible="False"/>
+            </Grid>
+
+            <Button Grid.Column="1"
+                    Content="{loc:Loc FM_SP_Browse}"
+                    Command="{Binding BrowseCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="6,0,0,0"/>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,8,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding AvailableFopGroups}"
+                      SelectedItem="{Binding SelectedFopGroup}"
+                      MinWidth="160" Margin="0,0,6,0"
+                      Style="{DynamicResource CompactComboBox}"/>
+
+            <Grid Grid.Column="1">
+                <TextBox x:Name="SearchBox"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=SearchPlaceholder}"
+                         Style="{DynamicResource CompactTextBox}"/>
+                <TextBlock x:Name="SearchPlaceholder"
+                           Text="{loc:Loc FM_SP_Search}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="8,0,0,0"
+                           IsHitTestVisible="False"/>
+            </Grid>
+
+            <Button Grid.Column="2"
+                    Content="{loc:Loc FM_SP_SelectAll}"
+                    Command="{Binding SelectAllCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="6,0,0,0"/>
+            <Button Grid.Column="3"
+                    Content="{loc:Loc FM_SP_DeselectAll}"
+                    Command="{Binding DeselectAllCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    Margin="6,0,0,0"/>
+            <TextBlock Grid.Column="4"
+                       VerticalAlignment="Center"
+                       Margin="10,0,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}">
+                <Run Text="{Binding SelectedCount, Mode=OneWay}"/>
+                <Run Text="/"/>
+                <Run Text="{Binding TotalCount, Mode=OneWay}"/>
+            </TextBlock>
+        </Grid>
+
+        <DataGrid x:Name="ParamsGrid" Grid.Row="2"
+                  ItemsSource="{Binding Items}"
+                  AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                  IsReadOnly="True"
+                  Style="{DynamicResource CompactDataGrid}"
+                  RowStyle="{DynamicResource CompactDataGridRow}"
+                  CellStyle="{DynamicResource CompactDataGridCell}"
+                  ColumnHeaderStyle="{StaticResource PickerColumnHeader}">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Width="36" CanUserResize="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      IsEnabled="{Binding CanSelect}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn x:Name="ColName" Width="300" MinWidth="160">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0">
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" ToolTip="{Binding Name}"/>
+                                <TextBlock Text="{loc:Loc FM_SP_AlreadyExists}"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontStyle="Italic"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Visibility="{Binding AlreadyExists, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn x:Name="ColDescription"
+                                    Binding="{Binding Description}" Width="*" MinWidth="200"
+                                    ElementStyle="{StaticResource LeftEllipsisCell}"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <TextBlock Grid.Row="3" Text="{Binding StatusMessage}"
+                   Margin="0,6,0,0" Foreground="{DynamicResource TextSecondaryBrush}"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{loc:Loc FM_SP_Add}" Command="{Binding OkCommand}"
+                    Style="{DynamicResource PrimaryButton}" Width="100" Height="28" IsDefault="True"/>
+            <Button Content="{loc:Loc Btn_Cancel}" Command="{Binding CancelCommand}"
+                    Style="{DynamicResource SecondaryButton}" Width="80" Height="28" Margin="8,0,0,0" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

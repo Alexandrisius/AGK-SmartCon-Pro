@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace SmartCon.UI.Behaviors;
@@ -157,6 +158,104 @@ public static class TreeViewBehaviors
 
     #endregion
 
+    #region SuppressHorizontalScrollOnBringIntoView
+
+    public static readonly DependencyProperty SuppressHorizontalScrollOnBringIntoViewProperty =
+        DependencyProperty.RegisterAttached(
+            "SuppressHorizontalScrollOnBringIntoView",
+            typeof(bool),
+            typeof(TreeViewBehaviors),
+            new PropertyMetadata(false, OnSuppressHorizontalScrollOnBringIntoViewChanged));
+
+    public static bool GetSuppressHorizontalScrollOnBringIntoView(DependencyObject obj) =>
+        (bool)obj.GetValue(SuppressHorizontalScrollOnBringIntoViewProperty);
+
+    public static void SetSuppressHorizontalScrollOnBringIntoView(DependencyObject obj, bool value) =>
+        obj.SetValue(SuppressHorizontalScrollOnBringIntoViewProperty, value);
+
+    private static void OnSuppressHorizontalScrollOnBringIntoViewChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not TreeViewItem item) return;
+
+        item.RequestBringIntoView -= OnTreeViewItemRequestBringIntoView;
+
+        if ((bool)e.NewValue)
+        {
+            item.RequestBringIntoView += OnTreeViewItemRequestBringIntoView;
+        }
+    }
+
+    private static void OnTreeViewItemRequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        if (sender is not TreeViewItem item) return;
+        if (PresentationSource.FromDependencyObject(item) is null) return;
+
+        var treeView = FindAncestor<TreeView>(item);
+        if (treeView is null) return;
+
+        var scrollViewer = FindTreeViewScrollViewer(treeView);
+        if (scrollViewer is null) return;
+
+        var topLeft = item.TransformToAncestor(treeView).Transform(new Point(0, 0));
+        var itemTop = topLeft.Y;
+
+        if (itemTop < 0
+            || itemTop + item.ActualHeight > scrollViewer.ViewportHeight
+            || item.ActualHeight > scrollViewer.ViewportHeight)
+        {
+            // Item is not fully visible vertically; let default scrolling behavior handle it.
+            return;
+        }
+
+        // Item is already fully visible vertically; prevent horizontal scrolling.
+        e.Handled = true;
+    }
+
+    #endregion
+
+    #region ShiftWheelScrollsHorizontally
+
+    public static readonly DependencyProperty ShiftWheelScrollsHorizontallyProperty =
+        DependencyProperty.RegisterAttached(
+            "ShiftWheelScrollsHorizontally",
+            typeof(bool),
+            typeof(TreeViewBehaviors),
+            new PropertyMetadata(false, OnShiftWheelScrollsHorizontallyChanged));
+
+    public static bool GetShiftWheelScrollsHorizontally(DependencyObject obj) =>
+        (bool)obj.GetValue(ShiftWheelScrollsHorizontallyProperty);
+
+    public static void SetShiftWheelScrollsHorizontally(DependencyObject obj, bool value) =>
+        obj.SetValue(ShiftWheelScrollsHorizontallyProperty, value);
+
+    private static void OnShiftWheelScrollsHorizontallyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not TreeView treeView) return;
+
+        treeView.PreviewMouseWheel -= OnTreeViewPreviewMouseWheelHorizontal;
+
+        if ((bool)e.NewValue)
+        {
+            treeView.PreviewMouseWheel += OnTreeViewPreviewMouseWheelHorizontal;
+        }
+    }
+
+    private static void OnTreeViewPreviewMouseWheelHorizontal(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not TreeView treeView) return;
+        if ((Keyboard.Modifiers & ModifierKeys.Shift) == 0) return;
+
+        var scrollViewer = FindTreeViewScrollViewer(treeView) ?? FindVisualChild<ScrollViewer>(treeView);
+        if (scrollViewer is null) return;
+
+        if (scrollViewer.ExtentWidth <= scrollViewer.ViewportWidth) return;
+
+        scrollViewer.ScrollToHorizontalOffset(scrollViewer.HorizontalOffset - e.Delta);
+        e.Handled = true;
+    }
+
+    #endregion
+
     #region Helpers
 
     private static T? FindAncestor<T>(DependencyObject current) where T : DependencyObject
@@ -165,6 +264,28 @@ public static class TreeViewBehaviors
         {
             if (current is T result) return result;
             current = VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    private static ScrollViewer? FindTreeViewScrollViewer(TreeView treeView)
+    {
+        if (treeView.Template is null) return null;
+
+        return treeView.Template.FindName("_tv_scrollviewer_", treeView) as ScrollViewer;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+
+            var nested = FindVisualChild<T>(child);
+            if (nested is not null) return nested;
         }
 
         return null;

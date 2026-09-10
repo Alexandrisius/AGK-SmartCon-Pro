@@ -32,7 +32,7 @@ Activate this skill when:
 
 ## Debug.* configurations are NOT Debug — know the gotcha
 
-`Microsoft.NET.Sdk` auto-defines `DEBUG;TRACE` only for the **base** `Configuration=Debug`. Our multi-version build uses **named** configurations `Debug.R19` / `Debug.R21` / `Debug.R24` / `Debug.R25` / `Debug.R26` (see `smartcon-build-guide`). These do **not** inherit the `DEBUG` symbol automatically — they look like Debug builds by name, but the compiler falls back to Release semantics:
+`Microsoft.NET.Sdk` auto-defines `DEBUG;TRACE` only for the **base** `Configuration=Debug`. Our multi-version build uses **named** configurations `Debug.R19` / `Debug.R21` / `Debug.R24` / `Debug.R25` / `Debug.R26` / `Debug.R27` (the full list is now R19..R27, see `smartcon-build-guide`). These do **not** inherit the `DEBUG` symbol automatically — they look like Debug builds by name, but the compiler falls back to Release semantics (the mechanics are identical for every `Debug.*` config, including the new net8/net10 ones — `Directory.Build.props` adds `DEBUG;TRACE` to all of them):
 
 | Consequence | Symptom |
 |---|---|

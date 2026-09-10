@@ -20,8 +20,22 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
     [ObservableProperty] private CategoryNodeViewModel? _selectedNode;
     [ObservableProperty] private string _searchText = string.Empty;
     [ObservableProperty] private string _selectedPath = string.Empty;
-    [ObservableProperty] private string? _selectedCategoryId;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SelectCommand))]
+    private string? _selectedCategoryId;
     [ObservableProperty] private bool _allowClear;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSubtitle))]
+    private string _subtitle = string.Empty;
+
+    /// <summary>
+    /// #241: when set, the picker shows ONLY these categories (plus their
+    /// ancestors) — the auto-assignment recommendation mode. The user's
+    /// search still applies within the recommended set.
+    /// </summary>
+    private IReadOnlyCollection<string>? _recommendedCategoryIds;
+
+    public bool HasSubtitle => !string.IsNullOrEmpty(Subtitle);
 
     public event Action<bool?>? RequestClose;
 
@@ -33,6 +47,20 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
+        await LoadTreeAsync(ct);
+    }
+
+    /// <summary>
+    /// #241: recommendation mode — only the listed categories (with their
+    /// ancestors) are shown, under the explaining subtitle.
+    /// </summary>
+    public async Task InitializeRecommendedAsync(
+        IReadOnlyList<string> categoryIds,
+        string subtitle,
+        CancellationToken ct = default)
+    {
+        _recommendedCategoryIds = new HashSet<string>(categoryIds, StringComparer.Ordinal);
+        Subtitle = subtitle;
         await LoadTreeAsync(ct);
     }
 
@@ -50,15 +78,44 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
 
         var tree = new CategoryTree(nodes);
 
-        if (string.IsNullOrWhiteSpace(SearchText))
+        List<CategoryNode>? filter = null;
+        if (_recommendedCategoryIds is not null)
         {
-            RootNodes = BuildNodes(tree, null, null);
+            filter = FilterNodesWithIds(tree, _recommendedCategoryIds);
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                var searchMatches = FilterNodesWithAncestors(tree, SearchText);
+                filter = filter.Where(searchMatches.Contains).ToList();
+            }
         }
-        else
+        else if (!string.IsNullOrWhiteSpace(SearchText))
         {
-            var filtered = FilterNodesWithAncestors(tree, SearchText);
-            RootNodes = BuildNodes(tree, null, filtered);
+            filter = FilterNodesWithAncestors(tree, SearchText);
         }
+
+        RootNodes = BuildNodes(tree, null, filter);
+    }
+
+    /// <summary>#241: the recommended categories plus all their ancestors
+    /// (the tree stays navigable top-down).</summary>
+    internal static List<CategoryNode> FilterNodesWithIds(CategoryTree tree, IReadOnlyCollection<string> categoryIds)
+    {
+        var allNodes = tree.GetAllNodes();
+        var byId = allNodes.ToDictionary(n => n.Id);
+
+        var result = new HashSet<CategoryNode>();
+        foreach (var node in allNodes.Where(n => categoryIds.Contains(n.Id)))
+        {
+            result.Add(node);
+            var parentId = node.ParentId;
+            while (parentId is not null && byId.TryGetValue(parentId, out var parent))
+            {
+                result.Add(parent);
+                parentId = parent.ParentId;
+            }
+        }
+
+        return result.ToList();
     }
 
     internal static List<CategoryNode> FilterNodesWithAncestors(CategoryTree tree, string search)
@@ -131,11 +188,18 @@ public sealed partial class CategoryPickerViewModel : ObservableObject, IObserva
         SelectedNode = selectedItem as CategoryNodeViewModel;
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSelect))]
     private void Select()
     {
         RequestClose?.Invoke(true);
     }
+
+    /// <summary>#241: in the recommendation mode only the RECOMMENDED
+    /// categories are selectable — ancestors are navigation scaffolding,
+    /// picking one would keep the conflict icon lit.</summary>
+    private bool CanSelect() =>
+        _recommendedCategoryIds is null
+        || (SelectedCategoryId is not null && _recommendedCategoryIds.Contains(SelectedCategoryId));
 
     [RelayCommand]
     private void Clear()

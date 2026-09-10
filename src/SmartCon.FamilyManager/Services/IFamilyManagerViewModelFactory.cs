@@ -1,5 +1,6 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.FamilyManager.ViewModels;
+using SmartCon.FamilyManager.ViewModels.ProjectBase;
 
 namespace SmartCon.FamilyManager.Services;
 
@@ -13,10 +14,51 @@ public interface IFamilyManagerViewModelFactory
         string? categoryId, string? categoryPath, IReadOnlyList<string> tags,
         ContentStatus contentStatus, string? versionLabel,
         string? createdAtText, string? updatedAtText,
-        bool isReadOnly = false);
+        string? revitCategory = null,
+        bool isReadOnly = false,
+        string? familySource = null,
+        int? revitCategoryId = null,
+        string? focusRoutingTypeKey = null);
+
+    /// <summary>
+    /// Routing part picker (ADR-072, Phase 3): family + type selection for
+    /// one routing rule, filtered by the group's fitting Revit category and
+    /// part_type ordinals. <paramref name="currentPartName"/> preselects the
+    /// currently assigned part.
+    /// </summary>
+    RoutingPartPickerViewModel CreateRoutingPartPickerViewModel(
+        int fittingCategoryId, IReadOnlyCollection<int> partTypeOrdinals, string? currentPartName,
+        string? contextLabel = null, int preferredJunctionType = -1, int connectorShapeBits = 0,
+        int requiredShapeMask = 0, bool excludeMultiShape = false);
 
     CategoryTreeEditorViewModel CreateCategoryTreeEditorViewModel();
     AttributeLibraryViewModel CreateAttributeLibraryViewModel();
+    SharedParameterPickerViewModel CreateSharedParameterPickerViewModel(IEnumerable<string> existingNames);
     CategoryPickerViewModel CreateCategoryPickerViewModel(bool allowClear = true);
     ProfileViewModel CreateProfileViewModel();
+
+    /// <summary>
+    /// "Очистить недоступные записи" dialog (Issue #133): candidates marked
+    /// RecalculationMissing (-2) plus an optional on-disk scan; deletion goes
+    /// through the actualization engine's purge.
+    /// </summary>
+    MissingRecordsCleanupViewModel CreateMissingRecordsCleanupViewModel();
+
+    ProjectBaseRulesEditorViewModel CreateProjectBaseRulesEditorViewModel(ProjectBaseBinding? existingBinding = null, string currentDocumentPath = "");
+    ValidationReportViewModel CreateValidationReportViewModel(
+        string familyName,
+        string categoryPath,
+        FamilyHealthReport? healthReport,
+        FamilyValidationReport? validationReport,
+        int validationRulesCount);
+    ValidationRulesEditorViewModel CreateValidationRulesEditorViewModel(
+        string bindingId, string attributeName, string categoryPath);
+    AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(
+        string categoryId, string categoryPath, string? copyFromCategoryId = null, string? copyFromCategoryPath = null);
+
+    /// <summary>
+    /// Advanced search dialog (#87): category scope + attribute conditions
+    /// combined with AND. Call InitializeAsync before showing.
+    /// </summary>
+    AdvancedSearchViewModel CreateAdvancedSearchViewModel();
 }

@@ -34,6 +34,12 @@ public sealed record ElementSnapshot
     /// <summary>End point of Location.Curve (MEPCurve only).</summary>
     public XYZ? CurveEnd { get; init; }
 
+    /// <summary>
+    /// Full point path of a FlexPipe (including endpoints and all intermediate
+    /// points). Restored verbatim on rollback — preserves the user's curve shape.
+    /// </summary>
+    public IReadOnlyList<XYZ>? FlexPoints { get; init; }
+
     /// <summary>Origin of the first connector (universal fallback for FlexPipe).</summary>
     public XYZ? FirstConnectorOrigin { get; init; }
 

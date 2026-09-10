@@ -43,6 +43,10 @@ public interface IStaleDetector
     /// <param name="ct">Cancellation token. Honoured between every <c>await</c>
     /// boundary AND between major steps (catalog read, Revit collector, ES read).
     /// Cancellation throws <see cref="OperationCanceledException"/>.</param>
+    /// <param name="progress">Optional per-family progress feed (one
+    /// <see cref="StaleCheckProgress"/> report per verified family, loadable
+    /// items first, then system items). The pane renders it as the bottom
+    /// progress bar; <c>null</c> keeps the caller progress-free.</param>
     /// <remarks>
     /// If two families in the project share a <c>Name</c> (rare — duplicate
     /// loadable variants), the first match is used and a <c>Warn</c> is written
@@ -53,6 +57,23 @@ public interface IStaleDetector
     /// </remarks>
     Task<IReadOnlyList<StaleCheckResult>> CheckCategoryAsync(
         IReadOnlyList<string>? categoryIds,
+        Document doc,
+        CancellationToken ct,
+        IProgress<StaleCheckProgress>? progress = null);
+
+    /// <summary>
+    /// Check a single system family (mini-project catalog item) against the
+    /// catalog (Issue #104). A system item owns N types; the check locates
+    /// the item's types in the project by (type name, category), reads their
+    /// ES markers and aggregates one verdict: the item is stale when ANY of
+    /// its project-loaded types has no marker or a mismatched marker.
+    /// Returns <c>null</c> when none of the item's types exist in the project
+    /// ("not loaded" — same UX as an unloaded loadable family).
+    /// Updates the session snapshot for this item.
+    /// </summary>
+    Task<StaleCheckResult?> CheckSystemFamilyAsync(
+        string catalogItemId,
+        string displayName,
         Document doc,
         CancellationToken ct);
 
@@ -68,8 +89,13 @@ public interface IStaleDetector
     /// are preserved, entries for the same catalog item ID are overwritten by the
     /// fresh result. Used by the VM to update the tree with the COMPLETE picture
     /// of stale markers (not just the ones from the latest Check call).
+    /// <para>
+    /// A cold/invalidated cache is NOT an error (#220): the merge then starts
+    /// from the empty snapshot, so the apply path always recomputes badges —
+    /// the post-DnD tree rebuild must never silently skip them.
+    /// </para>
     /// </summary>
-    FamilyStaleSnapshot? GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
+    FamilyStaleSnapshot GetMergedSnapshot(IReadOnlyList<StaleCheckResult> newResults);
 
     /// <summary>
     /// Removes the given catalog item IDs from the snapshot. Used after a successful
@@ -89,4 +115,42 @@ public interface IStaleDetector
     /// of the snapshot intact.
     /// </summary>
     void InvalidateCache();
+
+    /// <summary>
+    /// Drops ONLY the given catalog item IDs from the snapshot (and their
+    /// per-type verdicts) without touching the rest. Called by the batch
+    /// import executor after writing version markers: the check results
+    /// of the just-imported items are outdated and will be re-evaluated by
+    /// the post-import check, but every other family's stale marker must
+    /// survive (a full <see cref="InvalidateCache"/> here made previously
+    /// flagged families lose their stale badge on the next import).
+    /// </summary>
+    void InvalidateItems(IReadOnlyCollection<string> catalogItemIds);
+
+    /// <summary>
+    /// #187: per-type stale verdicts of one system catalog item
+    /// (typeKey "FAMILY|NAME" upper-invariant → isStale), or null when the
+    /// item was never checked. Feeds the orange presence dot on the exact
+    /// outdated type node in the catalog tree.
+    /// </summary>
+    IReadOnlyDictionary<string, bool>? GetSystemTypeStaleMap(string catalogItemId);
+
+    /// <summary>
+    /// #249 (Phase 2): per-type stale verdicts of one LOADABLE catalog
+    /// item (original type name, ordinal-ignore-case → isStale), or null
+    /// when no per-type proof exists (never content-checked,
+    /// indeterminate verification, or a family-level match). Feeds the
+    /// orange presence dot on the exact drifted type node; a null map
+    /// falls back to the family-level (leaf-scoped) dot — the pre-#249
+    /// behaviour.
+    /// </summary>
+    IReadOnlyDictionary<string, bool>? GetLoadableTypeStaleMap(string catalogItemId);
+
+    /// <summary>
+    /// #187: clears ONE type's stale verdict after its successful sync
+    /// (per-type "Обновить") — the type's ES marker was just rewritten to the
+    /// current catalog version, so its orange dot must clear immediately
+    /// without a full "Проверить".
+    /// </summary>
+    void MarkSystemTypeUpdated(string catalogItemId, string typeKey);
 }

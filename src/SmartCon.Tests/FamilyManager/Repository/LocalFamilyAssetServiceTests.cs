@@ -161,6 +161,126 @@ public sealed class LocalFamilyAssetServiceTests : IDisposable
                 Path.Combine(_fixture.TempDir, "missing.png"), null));
     }
 
+    // --- ADR-047 / issue #131: derived avatar.png ---
+
+    [Fact]
+    public async Task SaveAvatarAsync_CreatesFile_GetAvatarImagePathPrefersIt()
+    {
+        var itemId = await SeedItemAsync("AvatarSave.rfa");
+        var source = CreateFakeAssetFile("crop.png", "CROPPED_PNG");
+
+        await _service.SaveAvatarAsync(itemId, source);
+
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+        Assert.True(File.Exists(avatarPath));
+        Assert.Equal("CROPPED_PNG", File.ReadAllText(avatarPath));
+
+        var resolved = await _service.GetAvatarImagePathAsync(itemId);
+        Assert.Equal(avatarPath, resolved);
+    }
+
+    [Fact]
+    public async Task GetAvatarImagePathAsync_NoAvatarFile_FallsBackToPrimaryImage()
+    {
+        var itemId = await SeedItemAsync("AvatarFallback.rfa");
+        var source = CreateFakeAssetFile("primary.png", "PRIMARY_IMG");
+        var asset = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, source, null);
+        await _service.SetPrimaryAssetAsync(asset.Id);
+
+        var resolved = await _service.GetAvatarImagePathAsync(itemId);
+
+        Assert.NotNull(resolved);
+        Assert.True(File.Exists(resolved));
+        Assert.Equal(await _service.ResolveAssetPathAsync(asset.Id), resolved);
+    }
+
+    [Fact]
+    public async Task GetAvatarImagePathAsync_Nothing_ReturnsNull()
+    {
+        var itemId = await SeedItemAsync("AvatarNone.rfa");
+
+        var resolved = await _service.GetAvatarImagePathAsync(itemId);
+
+        Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task SetPrimaryAssetAsync_DeletesStaleAvatarFile()
+    {
+        var itemId = await SeedItemAsync("AvatarInvalidate.rfa");
+        var crop = CreateFakeAssetFile("old-crop.png", "OLD_CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+        Assert.True(File.Exists(avatarPath));
+
+        var source = CreateFakeAssetFile("new-primary.png", "NEW_IMG");
+        var asset = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, source, null);
+
+        await _service.SetPrimaryAssetAsync(asset.Id);
+
+        Assert.False(File.Exists(avatarPath));
+    }
+
+    [Fact]
+    public async Task ClearAvatarAsync_RemovesFileAndPrimaryFlags()
+    {
+        var itemId = await SeedItemAsync("AvatarClear.rfa");
+        var source = CreateFakeAssetFile("img.png", "IMG");
+        var asset = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, source, null);
+        await _service.SetPrimaryAssetAsync(asset.Id);
+        var crop = CreateFakeAssetFile("clear-crop.png", "CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+
+        await _service.ClearAvatarAsync(itemId);
+
+        Assert.False(File.Exists(_fixture.GetPathResolver().GetAvatarPath(itemId)));
+        Assert.Null(await _service.GetPrimaryImageAsync(itemId));
+        Assert.Null(await _service.GetAvatarImagePathAsync(itemId));
+        // Source image asset itself is kept.
+        var assets = await _service.GetAssetsAsync(itemId);
+        Assert.Single(assets);
+    }
+
+    [Fact]
+    public async Task DeleteAssetAsync_PrimaryImage_AlsoDeletesAvatarFile()
+    {
+        // ADR-047 rev 5: the derived avatar must not survive its deleted source.
+        var itemId = await SeedItemAsync("AvatarDeletePrimary.rfa");
+        var source = CreateFakeAssetFile("primary-src.png", "IMG");
+        var asset = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, source, null);
+        await _service.SetPrimaryAssetAsync(asset.Id);
+        var crop = CreateFakeAssetFile("crop.png", "CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+        Assert.True(File.Exists(avatarPath));
+
+        var deleted = await _service.DeleteAssetAsync(asset.Id);
+
+        Assert.True(deleted);
+        Assert.False(File.Exists(avatarPath));
+        Assert.Null(await _service.GetAvatarImagePathAsync(itemId));
+    }
+
+    [Fact]
+    public async Task DeleteAssetAsync_NonPrimaryImage_KeepsAvatarFile()
+    {
+        var itemId = await SeedItemAsync("AvatarDeleteNonPrimary.rfa");
+        var primarySource = CreateFakeAssetFile("primary.png", "IMG1");
+        var otherSource = CreateFakeAssetFile("other.png", "IMG2");
+        var primary = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, primarySource, null);
+        var other = await _service.AddAssetAsync(itemId, null, FamilyAssetType.Image, otherSource, null);
+        await _service.SetPrimaryAssetAsync(primary.Id);
+        var crop = CreateFakeAssetFile("crop.png", "CROP");
+        await _service.SaveAvatarAsync(itemId, crop);
+        var avatarPath = _fixture.GetPathResolver().GetAvatarPath(itemId);
+
+        var deleted = await _service.DeleteAssetAsync(other.Id);
+
+        Assert.True(deleted);
+        Assert.True(File.Exists(avatarPath));
+        Assert.Equal(avatarPath, await _service.GetAvatarImagePathAsync(itemId));
+    }
+
     public void Dispose()
     {
         _fixture.Dispose();

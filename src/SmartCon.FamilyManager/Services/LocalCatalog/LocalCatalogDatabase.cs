@@ -14,13 +14,14 @@ public sealed class LocalCatalogDatabase
     private string _dbPath;
     private string _connectionString;
     private string _databaseRoot;
+    private bool _canWrite = true;
 
     public LocalCatalogDatabase()
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         _databaseRoot = Path.Combine(appData, "SmartCon", "FamilyManager", "default");
         _dbPath = Path.Combine(_databaseRoot, "catalog.db");
-        _connectionString = BuildConnectionString(_dbPath);
+        _connectionString = BuildConnectionString(_dbPath, canWrite: true);
         Directory.CreateDirectory(_databaseRoot);
         EnsureJournalModeDeleteOnCreation();
     }
@@ -31,7 +32,20 @@ public sealed class LocalCatalogDatabase
 
     public SqliteConnection CreateConnection() => new(_connectionString);
 
-    public SqliteConnection CreateConnectionForPath(string dbFilePath) => new(BuildConnectionString(dbFilePath));
+    public SqliteConnection CreateWritableConnection() => new(BuildConnectionString(_dbPath, canWrite: true));
+
+    public SqliteConnection CreateConnectionForPath(string dbFilePath) => new(BuildConnectionString(dbFilePath, canWrite: true));
+
+    public void SetWriteAccess(bool canWrite)
+    {
+        lock (_switchLock)
+        {
+            if (_canWrite == canWrite)
+                return;
+            _canWrite = canWrite;
+            _connectionString = BuildConnectionString(_dbPath, canWrite);
+        }
+    }
 
     public void SwitchToPath(string databaseRootPath)
     {
@@ -39,10 +53,15 @@ public sealed class LocalCatalogDatabase
         {
             _databaseRoot = databaseRootPath;
             _dbPath = Path.Combine(_databaseRoot, "catalog.db");
-            _connectionString = BuildConnectionString(_dbPath);
+            _canWrite = true;
+            _connectionString = BuildConnectionString(_dbPath, canWrite: true);
+
+            // Must stay inside the lock: EnsureJournalModeDeleteOnCreation
+            // reads _dbPath/_connectionString — outside the lock a concurrent
+            // SwitchToPath could repoint them at the other database.
+            Directory.CreateDirectory(databaseRootPath);
+            EnsureJournalModeDeleteOnCreation();
         }
-        Directory.CreateDirectory(databaseRootPath);
-        EnsureJournalModeDeleteOnCreation();
     }
 
     private void EnsureJournalModeDeleteOnCreation()
@@ -51,7 +70,7 @@ public sealed class LocalCatalogDatabase
         {
             if (!File.Exists(_dbPath))
                 return;
-            using var connection = CreateConnection();
+            using var connection = CreateWritableConnection();
             connection.Open();
             EnsureJournalModeDelete(connection);
         }
@@ -95,8 +114,9 @@ public sealed class LocalCatalogDatabase
         await busyCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    private static string BuildConnectionString(string dbPath)
+    private static string BuildConnectionString(string dbPath, bool canWrite)
     {
-        return $"Data Source={dbPath};Pooling=false;Foreign Keys=True";
+        var mode = canWrite ? string.Empty : ";Mode=ReadOnly";
+        return $"Data Source={dbPath};Pooling=false;Foreign Keys=True{mode}";
     }
 }

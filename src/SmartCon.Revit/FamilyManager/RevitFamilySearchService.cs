@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.FamilyManager;
@@ -18,20 +19,22 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
     public bool IsFamilyLoaded(string familyName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return false;
 
-        var family = new FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family))
-            .Cast<Autodesk.Revit.DB.Family>()
-            .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
+        var family = FindByName(doc, familyName);
+
+        if (family is not null)
+            SmartConLogger.Info($"IsFamilyLoaded('{familyName}'): FOUND — {DescribeFamily(family)}");
+        else
+            SmartConLogger.Info($"IsFamilyLoaded('{familyName}'): not found");
 
         return family is not null;
     }
 
     public IReadOnlyList<string> GetFamilyTypeNames(string familyName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return Array.Empty<string>();
 
         var family = new FilteredElementCollector(doc)
@@ -52,31 +55,34 @@ public sealed class RevitFamilySearchService : IFamilySearchService
 
     public bool HasFamilyType(string familyName, string typeName)
     {
-        var doc = _revitContext.GetDocument();
+        var doc = _revitContext.TryGetDocument();
         if (doc is null) return false;
 
-        var family = new FilteredElementCollector(doc)
-            .OfClass(typeof(Autodesk.Revit.DB.Family))
-            .Cast<Autodesk.Revit.DB.Family>()
-            .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
+        var family = FindByName(doc, familyName);
 
-        if (family is null) return false;
+        if (family is null)
+        {
+            SmartConLogger.Info($"HasFamilyType('{familyName}', '{typeName}'): family not found");
+            return false;
+        }
 
-        return family.GetFamilySymbolIds()
+        var found = family.GetFamilySymbolIds()
             .Select(id => doc.GetElement(id))
             .OfType<FamilySymbol>()
             .Any(s => s.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+
+        SmartConLogger.Info($"HasFamilyType('{familyName}', '{typeName}'): {found} — {DescribeFamily(family)}");
+        return found;
     }
 
-    public IReadOnlyCollection<string> GetAllLoadedFamilyNames()
+    private static Autodesk.Revit.DB.Family? FindByName(Document doc, string familyName)
     {
-        var doc = _revitContext.GetDocument();
-        if (doc is null) return Array.Empty<string>();
-
         return new FilteredElementCollector(doc)
             .OfClass(typeof(Autodesk.Revit.DB.Family))
             .Cast<Autodesk.Revit.DB.Family>()
-            .Select(f => f.Name)
-            .ToHashSet();
+            .FirstOrDefault(f => f.Name.Equals(familyName, StringComparison.OrdinalIgnoreCase));
     }
+
+    internal static string DescribeFamily(Autodesk.Revit.DB.Family family)
+        => $"Family(Name='{family.Name}', Id={family.Id}, UniqueId={family.UniqueId})";
 }

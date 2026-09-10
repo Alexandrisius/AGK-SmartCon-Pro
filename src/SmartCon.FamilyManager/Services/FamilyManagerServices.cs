@@ -43,8 +43,16 @@ public sealed record FamilyManagerServices(
     IFamilyPlacementService FamilyPlacementService,
     IFamilyPlacementDragService PlacementDragService,
     IRevitFileInfoReader FileInfoReader,
+    IFamilyAssetService AssetService,
     IFamilyMetadataExtractionService MetadataService,
     ISystemFamilyPlacementService SystemFamilyPlacementService,
+    /// <summary>
+    /// Issue #104: synchronizes system types in the project with the catalog
+    /// mini-project (create-or-update + ES marker). Backs "Загрузить в
+    /// проект" for system families, the placement fast-path check and the
+    /// system branch of stale update.
+    /// </summary>
+    ISystemTypeSyncOrchestrator SystemSyncOrchestrator,
     ISystemFamilyRevitOperations SystemFamilyRevitOps,
     ISystemFamilyIsolationProjectService SystemFamilyIsolationProject,
     ISystemFamilyAttributeExtractor SystemFamilyAttributeExtractor,
@@ -82,4 +90,116 @@ public sealed record FamilyManagerServices(
     /// leave it in a zombie state on net48 (REVIT-236376 / REVIT-237190).
     /// </summary>
     IUiFreezeRecoveryService FreezeRecovery,
-    FamilyImportPreparationService PreparationService);
+    FamilyImportPreparationService PreparationService,
+    /// <summary>
+    /// Phase 30 / Issue #119: cross-module notifier for "active Revit document
+    /// changed". The VM subscribes in its ctor and un-subscribes in Dispose so
+    /// it can drive project-base auto-activation when the user switches
+    /// between open project files.
+    /// </summary>
+    IActiveDocumentChangeNotifier ActiveDocumentNotifier,
+    /// <summary>
+    /// Phase 30 / Issue #119: pure-C# service that, given the currently
+    /// active Revit file path, picks and switches to the matching project base
+    /// (or falls back to the first general base). Used by the VM in response
+    /// to <see cref="IActiveDocumentChangeNotifier.ActiveDocumentChanged"/>.
+    /// </summary>
+    IProjectBaseActivator ProjectBaseActivator,
+    /// <summary>
+    /// Phase 30 / Issue #119: pure-C# evaluator used by the VM to compute the
+    /// "active base matches current document" flag for gate commands. The VM
+    /// uses it independently from <see cref="ProjectBaseActivator"/> (which
+    /// drives the actual database switch) so that the CanLoad/CanPlace flags
+    /// can be re-evaluated even when no switch happens (e.g. the current doc
+    /// matches the existing active base).
+    /// </summary>
+    IProjectBaseBindingEvaluator ProjectBaseEvaluator,
+    /// <summary>
+    /// Database-update state (docs/architecture/database-migrations.md,
+    /// Issue #126): shared singleton holding "update required / pending /
+    /// running". The main VM refreshes it after init and on every database
+    /// switch and maps it onto the badge/banner UI; write commands across
+    /// the module gate through it (read-only database while pending).
+    /// </summary>
+    IDatabaseUpdateStateService UpdateState,
+    /// <summary>
+    /// ADR-058 (#173): plugin↔database forward-compatibility gate. Refreshed
+    /// on connect/switch/init BEFORE the RBAC role resolution (the access
+    /// service ANDs <see cref="IDatabaseCompatibilityService.IsDatabaseNewerThanPlugin"/>
+    /// into every write-access decision).
+    /// </summary>
+    IDatabaseCompatibilityService CompatibilityService,
+    /// <summary>
+    /// ADR-058 (#173): opens the About dialog (update channel, changelog,
+    /// update check) from the plugin-compatibility banner's
+    /// "Обновить приложение" button.
+    /// </summary>
+    IAboutDialogService AboutDialogService,
+    /// <summary>
+    /// Import Validation Gate: resolves effective validation rules per
+    /// category and evaluates batch-row snapshots (no .rfa re-open).
+    /// Consumed by the batch import dialog's revalidation flow.
+    /// </summary>
+    IFamilyImportValidationService ValidationService,
+    /// <summary>
+    /// #241: evaluates the auto-assignment rule groups against batch-row
+    /// snapshots — new families get their catalog category automatically
+    /// in the batch import dialog.
+    /// </summary>
+    ICategoryAutoAssignService AutoAssignService,
+    /// <summary>
+    /// Import Validation Gate for category change inside the catalog
+    /// (DnD in the tree, category picker in properties): blocks moves
+    /// into rule-protected categories when the family fails the rules.
+    /// </summary>
+    ICategoryChangeGateService CategoryChangeGate,
+    /// <summary>
+    /// Issue #188: ES-based marker distinguishing SmartCon reference
+    /// mini-projects from user work projects. Used by the post-import close
+    /// (#186 — never close an unmarked document) and by the active-document
+    /// notifier in the Revit layer (auto-DB-switch guard).
+    /// </summary>
+    IMiniProjectMarker MiniProjectMarker,
+    /// <summary>
+    /// Issue #187: system type finder for the project-presence badges on
+    /// type nodes (one CollectTypes pass per tree load).
+    /// </summary>
+    ISystemTypeFinder SystemTypeFinder,
+    /// <summary>
+    /// ADR-066 (EPIC #207): parent→child dependency links between catalog
+    /// items (<c>family_dependencies</c>, V29). Consumed by the batch-import
+    /// executor to persist routing-fitting links after import (E1).
+    /// </summary>
+    IFamilyDependencyRepository FamilyDependencyRepository,
+    /// <summary>
+    /// Issue #249 (Phase 4): read access to the stored content analytics
+    /// of catalog versions (section hashes + per-type hashes) — the batch
+    /// dialog's "what changed" diff against the active version.
+    /// </summary>
+    IContentHashAnalyticsRepository ContentHashAnalytics,
+    /// <summary>
+    /// ADR-072 (#254): routing rules of system MEPCurve types as catalog
+    /// data (V34) — consumed by the batch executors to persist routing
+    /// after import (<c>RoutingRuleWriter</c>) and to regenerate
+    /// dependency links from stored rules (plan items 2/5).
+    /// </summary>
+    IFamilyRoutingRuleRepository FamilyRoutingRuleRepository,
+    /// <summary>
+    /// #133: the routing editor service — used by the main VM to detect
+    /// routing phantoms (rules referencing families deleted from the
+    /// catalog) and badge the affected families in the tree.
+    /// </summary>
+    IRoutingEditorService RoutingEditorService,
+    ISegmentSizeRepository SegmentSizeRepository,
+    /// <summary>
+    /// FHV21 (owner decision 2026-09-01): per-version segment routing rules
+    /// — the import executors persist them from the mini extraction
+    /// (<c>SegmentRuleWriter</c>).
+    /// </summary>
+    ISegmentRuleRepository SegmentRuleRepository,
+    /// <summary>
+    /// #259: catalog compliance check («Проверить → Правила») — catalog items
+    /// vs the effective validation rules of their category. Pure SQLite +
+    /// pure engine (no Revit, no open document); session snapshot of verdicts.
+    /// </summary>
+    ICatalogComplianceService ComplianceService);

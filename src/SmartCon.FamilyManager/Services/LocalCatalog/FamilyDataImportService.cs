@@ -1,4 +1,4 @@
-using SmartCon.Core.Logging;
+﻿using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
@@ -96,15 +96,22 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         await _runRepository.CreateRunAsync(run, ct);
 
         var existingTypes = await _typeRepository.GetTypesForItemAsync(catalogItemId, ct);
-        var existingByName = existingTypes
-            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        // #191: match by the full identity (family, name) — the pre-#191
+        // name-only grouping collapsed same-named types of different system
+        // families («Стандарт» in both conduit families) onto ONE descriptor,
+        // reusing its Id twice and sinking the attribute save on a PK
+        // violation. Loadable/legacy rows carry no family token — the key
+        // degrades to "|NAME", preserving the old name-only behaviour.
+        var existingByKey = existingTypes
+            .GroupBy(t => SystemTypeIdentityKey.Build(t.FamilyKey, t.FamilyName, t.Name), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var types = new List<FamilyTypeDescriptor>();
         for (var i = 0; i < extractionResult.Types.Count; i++)
         {
             var t = extractionResult.Types[i];
-            if (existingByName.TryGetValue(t.TypeName, out var existing))
+            var identityKey = SystemTypeIdentityKey.Build(t.FamilyKey, t.FamilyName, t.TypeName);
+            if (existingByKey.TryGetValue(identityKey, out var existing))
             {
                 var reused = existing with { ExtractionRunId = runId, VersionId = versionId, FileId = fileId };
                 types.Add(reused);
@@ -118,11 +125,14 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
                     t.SortOrder,
                     versionId,
                     fileId,
-                    runId));
+                    runId,
+                    UniqueId: null,
+                    FamilyName: t.FamilyName,
+                    FamilyKey: t.FamilyKey));
             }
         }
 
-        var typeIdsByName = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId, types, ct);
+        var typeIdsByKey = await _typeRepository.SyncTypesAsync(catalogItemId, versionId, fileId, runId, types, ct);
 
         var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
         var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
@@ -130,7 +140,11 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
         var values = new List<ExtractedAttributeValue>();
         foreach (var typeData in extractionResult.Types)
         {
-            typeIdsByName.TryGetValue(typeData.TypeName, out var typeId);
+            // #191: lookup by the full identity key — same-named types of
+            // different system families resolve to their OWN type row.
+            typeIdsByKey.TryGetValue(
+                SystemTypeIdentityKey.Build(typeData.FamilyKey, typeData.FamilyName, typeData.TypeName),
+                out var typeId);
             foreach (var val in typeData.Values)
             {
                 attrByName.TryGetValue(val.ParameterName, out var attrDef);
@@ -203,223 +217,5 @@ internal sealed class FamilyDataImportService : IFamilyDataImportService
             foundCount,
             missingCount,
             extractionResult.ErrorMessage);
-    }
-
-    public async Task MergeMissingValuesAsync(
-        string catalogItemId,
-        FamilyExtractionResult extractionResult,
-        string? versionId,
-        string? fileId,
-        CancellationToken ct = default)
-    {
-        var existingTypes = await _typeRepository.GetTypesForItemVersionAsync(catalogItemId, versionId, ct);
-        var existingValues = await _valueRepository.GetValuesForItemAsync(catalogItemId, versionId, ct);
-
-        var typeByName = existingTypes.ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
-        var existingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var v in existingValues)
-        {
-            if (v.TypeId is not null)
-                existingKeys.Add($"{v.TypeId}|{v.ParameterName}");
-        }
-
-        var allAttrs = await _attributeDefRepository.GetAllAsync(ct);
-        var attrByName = allAttrs.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase);
-
-        var runId = Guid.NewGuid().ToString();
-        var now = DateTimeOffset.UtcNow;
-
-        await _runRepository.CreateRunAsync(new FamilyDataImportRun(
-            runId, catalogItemId, versionId, fileId,
-            extractionResult.RevitMajorVersion,
-            FamilyDataImportStatus.Succeeded,
-            0, now, null, null), ct);
-
-        var typeCatalogParams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var v in existingValues)
-            typeCatalogParams.Add(v.ParameterName);
-
-        var matchedTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var valuesToAdd = new List<ExtractedAttributeValue>();
-        var skippedExisting = 0;
-        var unmatchedSharedParams = new List<FamilyExtractionValueResult>();
-        var sharedParams = new List<FamilyExtractionValueResult>();
-
-        foreach (var typeData in extractionResult.Types)
-        {
-            if (!typeByName.TryGetValue(typeData.TypeName, out var existingType))
-            {
-                unmatchedSharedParams.AddRange(typeData.Values);
-                continue;
-            }
-
-            matchedTypeNames.Add(typeData.TypeName);
-
-            foreach (var val in typeData.Values)
-            {
-                var key = $"{existingType.Id}|{val.ParameterName}";
-                if (existingKeys.Contains(key))
-                {
-                    skippedExisting++;
-                    continue;
-                }
-
-                attrByName.TryGetValue(val.ParameterName, out var attrDef);
-                valuesToAdd.Add(new ExtractedAttributeValue(
-                    Guid.NewGuid().ToString(),
-                    catalogItemId,
-                    versionId,
-                    fileId,
-                    existingType.Id,
-                    attrDef?.Id,
-                    null,
-                    val.ParameterName,
-                    val.ParameterScope,
-                    val.StorageType,
-                    val.ValueText,
-                    val.ValueRaw,
-                    val.ValueNumber,
-                    val.UnitTypeId,
-                    val.Status,
-                    val.Message,
-                    runId,
-                    now));
-
-                if (!typeCatalogParams.Contains(val.ParameterName))
-                {
-                    sharedParams.Add(val);
-                }
-            }
-        }
-
-        var otherTypes = existingTypes
-            .Where(t => !matchedTypeNames.Contains(t.Name))
-            .ToList();
-
-        if (otherTypes.Count > 0 && sharedParams.Count > 0)
-        {
-            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "SharedParams"), ("CatalogItemId", catalogItemId));
-            SmartConLogger.Info($"Propagating {sharedParams.Count} shared params to {otherTypes.Count} unmatched catalog types");
-            foreach (var existingType in otherTypes)
-            {
-                foreach (var sp in sharedParams)
-                {
-                    var key = $"{existingType.Id}|{sp.ParameterName}";
-                    if (existingKeys.Contains(key))
-                    {
-                        skippedExisting++;
-                        continue;
-                    }
-
-                    attrByName.TryGetValue(sp.ParameterName, out var attrDef);
-                    valuesToAdd.Add(new ExtractedAttributeValue(
-                        Guid.NewGuid().ToString(),
-                        catalogItemId,
-                        versionId,
-                        fileId,
-                        existingType.Id,
-                        attrDef?.Id,
-                        null,
-                        sp.ParameterName,
-                        sp.ParameterScope,
-                        sp.StorageType,
-                        sp.ValueText,
-                        sp.ValueRaw,
-                        sp.ValueNumber,
-                        sp.UnitTypeId,
-                        sp.Status,
-                        sp.Message,
-                        runId,
-                        now));
-                }
-            }
-        }
-
-        if (existingTypes.Count > 0 && unmatchedSharedParams.Count > 0)
-        {
-            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "UnmatchedShared"), ("CatalogItemId", catalogItemId));
-            SmartConLogger.Info($"Propagating {unmatchedSharedParams.Count} unmatched shared params to {existingTypes.Count} catalog types");
-            foreach (var existingType in existingTypes)
-            {
-                foreach (var val in unmatchedSharedParams)
-                {
-                    var key = $"{existingType.Id}|{val.ParameterName}";
-                    if (existingKeys.Contains(key))
-                    {
-                        skippedExisting++;
-                        continue;
-                    }
-
-                    attrByName.TryGetValue(val.ParameterName, out var attrDef);
-                    valuesToAdd.Add(new ExtractedAttributeValue(
-                        Guid.NewGuid().ToString(),
-                        catalogItemId,
-                        versionId,
-                        fileId,
-                        existingType.Id,
-                        attrDef?.Id,
-                        null,
-                        val.ParameterName,
-                        val.ParameterScope,
-                        val.StorageType,
-                        val.ValueText,
-                        val.ValueRaw,
-                        val.ValueNumber,
-                        val.UnitTypeId,
-                        val.Status,
-                        val.Message,
-                        runId,
-                        now));
-                }
-            }
-        }
-
-        if (extractionResult.UntypedValues is not null && existingTypes.Count > 0)
-        {
-            using var _scope = SmartConLogger.BeginScope("Merge", ("Kind", "UntypedValues"), ("CatalogItemId", catalogItemId));
-            SmartConLogger.Info($"Propagating {extractionResult.UntypedValues.Count} untyped values to {existingTypes.Count} catalog types");
-            foreach (var existingType in existingTypes)
-            {
-                foreach (var val in extractionResult.UntypedValues)
-                {
-                    var key = $"{existingType.Id}|{val.ParameterName}";
-                    if (existingKeys.Contains(key))
-                    {
-                        skippedExisting++;
-                        continue;
-                    }
-
-                    attrByName.TryGetValue(val.ParameterName, out var attrDef);
-                    valuesToAdd.Add(new ExtractedAttributeValue(
-                        Guid.NewGuid().ToString(),
-                        catalogItemId,
-                        versionId,
-                        fileId,
-                        existingType.Id,
-                        attrDef?.Id,
-                        null,
-                        val.ParameterName,
-                        val.ParameterScope,
-                        val.StorageType,
-                        val.ValueText,
-                        val.ValueRaw,
-                        val.ValueNumber,
-                        val.UnitTypeId,
-                        val.Status,
-                        val.Message,
-                        runId,
-                        now));
-                }
-            }
-        }
-
-        using var _result = SmartConLogger.BeginScope("Merge", ("Kind", "Result"), ("CatalogItemId", catalogItemId));
-        SmartConLogger.Info($"RESULT: adding={valuesToAdd.Count}, skipped_existing={skippedExisting}, unmatched_shared={unmatchedSharedParams.Count}");
-        if (valuesToAdd.Count > 0)
-        {
-            await _valueRepository.SaveValuesAsync(valuesToAdd, ct);
-        }
-
-        await _runRepository.UpdateRunAsync(runId, FamilyDataImportStatus.Succeeded, 0, DateTimeOffset.UtcNow, null, ct);
     }
 }

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Implementation;
 using Xunit;
@@ -260,6 +261,82 @@ public sealed class FileNameParserTests
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Blocks, b => b.Field == "status" && !b.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_AllowedValues_TrimmedMatch_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "status", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "status", ValidationMode = ValidationMode.AllowedValues, AllowedValues = ["  S1  "] }
+        };
+
+        var result = _parser.ValidateDetailed("S1", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["AR", "ME"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_CaseInsensitive_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["ar"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_TrimmedSubstrings_ReturnsTrue()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["  AR  "] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ValidateDetailed_ContainsValue_NotFound_ReturnsFalse()
+    {
+        var template = CreateTemplate((0, "discipline", DelimSeg("-", 1)));
+
+        var library = new List<FieldDefinition>
+        {
+            new() { Name = "discipline", ValidationMode = ValidationMode.Contains, AllowedValues = ["ST"] }
+        };
+
+        var result = _parser.ValidateDetailed("AR-MEP", template, library);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Blocks, b => b.Field == "discipline" && !b.IsValid);
     }
 
     [Fact]
@@ -1200,6 +1277,42 @@ public sealed class FileNameParserTests
         var (value, remaining) = FileNameParser.ApplyParseRule("A_B_C_D", Between("_", "_", 1, 2));
         Assert.Equal("B", value);
         Assert.Equal("AC_D", remaining);
+    }
+
+    [Fact]
+    public void ParseBlocks_NullOrEmptyField_SkipsBlockWithoutThrowing()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = "valid", ParseRule = new ParseRule { Mode = ParseMode.Remainder } },
+                new() { Index = 1, Field = null!, ParseRule = new ParseRule { Mode = ParseMode.Remainder } },
+                new() { Index = 2, Field = string.Empty, ParseRule = new ParseRule { Mode = ParseMode.Remainder } }
+            ]
+        };
+        var parser = new FileNameParser();
+        var result = parser.ParseBlocks("anything.rvt", template);
+        Assert.Single(result);
+        Assert.Contains("valid", result.Keys);
+    }
+
+    [Fact]
+    public void ValidateDetailed_EmptyField_MarksBlockInvalid()
+    {
+        var template = new FileNameTemplate
+        {
+            Blocks =
+            [
+                new() { Index = 0, Field = string.Empty, ParseRule = DelimSeg("-", 1) }
+            ]
+        };
+
+        var result = _parser.ValidateDetailed("A-B.rvt", template, []);
+
+        Assert.False(result.IsValid);
+        Assert.Single(result.Blocks);
+        Assert.False(result.Blocks[0].IsValid);
     }
 
     #endregion

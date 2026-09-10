@@ -1,6 +1,6 @@
 # ADR-027: Placed Families v2 — OfClass(FamilyInstance) for Analysis, EditFamily for Extraction Only
 
-**Status:** Accepted (revised 2026-06-08 — see Revision History)
+**Status:** Accepted (revised 2026-07-31 — Phase 2 implemented, see Revision History)
 **Date:** 2026-06-07
 **Deciders:** Architecture
 **Phase:** 22
@@ -19,6 +19,36 @@ The user (a senior MEP engineer) asked: *"у нас в модели могут �
 
 ## Revision History
 
+* **2026-08-04** — **PostCommand-активация sketch-категорий (ручной тест).**
+  `PostRequestForElementTypePlacement` МОЛЧА no-op'ится для sketch-категорий
+  (перекрытия, крыши, лестницы, ограждения): `CanPlaceElementType` = true,
+  запрос принимается, но Revit не входит в режим размещения. Нативная
+  активация для них — `Document.SetDefaultElementTypeId(ElementTypeGroup.X,
+  typeId)` (тип становится дефолтом проекта) + `PostCommand(PostableCommand.Y)`:
+  ArchitecturalFloor / RoofByFootprint / Stair / Railing. Остальные категории
+  — прежний путь (PostRequest; потолки подтверждены работающими нативно).
+  Попутно: пикер «Импорт выделенных элементов» получил guard
+  `Family.IsEditable` (панель витража, #196 — пикер перечисляет семейства
+  сам, фильтр сканера его не покрывал).
+* **2026-08-03** — **Issue #200: railing по линии.**
+  `PlaceRailing` переведён с замкнутого прямоугольника на открытый линейный
+  путь (start→end) — ограждение path-based элемент, одиночный Line валиден
+  для `Railing.IsValidPathForRailing`. Активация размещения из каталога
+  остаётся ТОЛЬКО нативной (`CanPlaceElementType` +
+  `PostRequestForElementTypePlacement`; иначе `LoadedManualPlacementRequired`)
+  — кастомные пикеры геометрии отклонены владельцем (2026-08-03): «Revit
+  всегда должен сам активировать свой PostRequest». Попутно
+  `BuildRectangularLoop(corner1, corner2)` принимает два угла (в staging
+  геометрия ячейки неизменна — вырождение по Y расширяется до 1 м).
+* **2026-07-31** — **Phase 2 implemented.** Все 14 системных категорий (позже +#197/#199 → 16) размещают
+  инстансы в staged мини-проекте (см. §"Phase 2 — implemented" ниже, заменяет
+  прежний §"Phase 2 TODO"). Ключевые решения: handler'ы сами управляют
+  транзакциями (StairsEditScope нельзя внутри активной транзакции); версионный
+  гейт импорта (потолки R22+, ограждения R25+) блокирует категории без
+  placement API с styled-окном; крыша строится `NewExtrusionRoof`, т.к.
+  `NewFootPrintRoof` требует UI-контекст и падает в фоновом документе.
+  Покрытие: 9 интеграционных тестов `SystemCategoryPlacementTests`
+  (R25 72/72, net48 Revit 2023 71+1skip).
 * **2026-06-08** — Two production bugs reported and fixed:
   1. **"Импорт активного файла" предложил загрузить в FM ВСЕ семейства проекта** (вместо только выставленных). Причина: первая версия `LoadableFamilyScanner` использовала `FilteredElementCollector.OfClass(Family)` — это возвращает все загруженные в проект семейства, а не только те, у которых есть хотя бы один `FamilyInstance`. Исправлено: `OfClass(FamilyInstance) + WhereElementIsNotElementType() + GroupBy(fi.Symbol.Family.UniqueId)` (подход Jeremy Tammik'а). In-place семейства также фильтруются на этапе скана.
   2. **Двойной показ batch-диалога в "Импорт выделенных элементов".** Причина: `ImportSelectedElementsAsync` после `BuildSelectedElementsBatchItemsAsync` (staging) показывал `FamilyBatchImportView` локально, а затем передавал `toImport` в `ProcessProjectImportAsync`, который показывал **тот же** диалог повторно. Пользователь видел и заполнял категории в первом показе, и видел уже заполненные категории во втором. Исправлено: dialog показывается **только** в `ProcessProjectImportAsync` (симметрично с `ImportActiveFileAsync`). Локальные `selectedItems`/`toImport` убраны — `ProcessProjectImportAsync` сам фильтрует `Action != Skip`.
@@ -148,68 +178,134 @@ The same `FamilyBatchImportView` shows mixed `system` and `loadable` rows. `Fami
 * **`doc.IsModifiable` check on staging.** `EditFamily` requires the document to be non-modifiable. The existing `ImportActiveFile` flow already operates after any user transactions are committed (the button is in a popup), so we did not re-introduce the defensive `IsModifiable` check that ADR-026 added. If a future caller hits "family is in modifiable state" they will see the underlying Revit exception in the log.
 * **A real progress bar during staging.** Status messages report each phase. A progress bar would require non-trivial refactoring of `StageLoadableFamilyFromProject` to yield; left for a future phase.
 
-## Phase 2 TODO: System categories without placement handler
+## Phase 2 (implemented 2026-07-31): Placement handlers for all 14 system categories
 
-The `SystemCategoryRegistry` in `src/SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`
-exposes **7 categories with a placement handler** (Phase 1, working end-to-end: type copied,
-instance placed on 2×2m grid, attributes extracted):
+The `SystemCategoryRegistry` (now in `src/SmartCon.Revit/FamilyManager/SystemCategoryRegistry.cs`,
+public by `TemplateCollisionResolver` precedent) exposes placement handlers for **all 14
+system categories**. Every staged mini-project now carries placed instances of its types —
+the reference is visually inspectable and the snapshot extractor reads types from instances
+(first branch of `ExtractSystemCategoryFromStagedProject`, not the "all category types" fallback).
 
-| Category | DisplayName | Placement handler | API |
-|---|---|---|---|
-| `OST_PipeCurves` | Трубы | `PlacePipe` | `Pipe.Create` (2 точки) |
-| `OST_FlexPipeCurves` | Гибкие трубы | `PlaceFlexPipe` | `FlexPipe.Create` (2 точки + tangents) |
-| `OST_DuctCurves` | Воздуховоды | `PlaceDuct` | `Duct.Create` (2 точки) |
-| `OST_FlexDuctCurves` | Гибкие воздуховоды | `PlaceFlexDuct` | `FlexDuct.Create` (2 точки + tangents) |
-| `OST_Conduit` | Короба | `PlaceConduit` | reflection-based `Conduit.Create` |
-| `OST_CableTray` | Лотки | `PlaceCableTray` | reflection-based `CableTray.Create` |
-| `OST_Walls` | Стены | `PlaceWall` | `Wall.Create` (Line + height) |
+### Category → API matrix
 
-Six more categories are registered with `PlacementHandler = null` — the type is **copied** to
-the mini-rvt but **no instance is placed**, so the downstream `SystemFamilyAttributeExtractor`
-finds 0 instances and writes 0 attribute records. They are kept in the registry on purpose
-so `AnalyzeActiveProject` and `PickSelectedElements` still surface them in the dialog (the
-user sees the system category in the project) — but they MUST be flagged for follow-up so
-the placeholder type does not silently end up in the catalog with no attributes.
+| Category | Placement API | Versions |
+|---|---|---|
+| `OST_PipeCurves` | `Pipe.Create` | All |
+| `OST_FlexPipeCurves` | `FlexPipe.Create` | All |
+| `OST_DuctCurves` | `Duct.Create` | All |
+| `OST_FlexDuctCurves` | `FlexDuct.Create` | All |
+| `OST_Conduit` | `Conduit.Create` | All |
+| `OST_CableTray` | `CableTray.Create` | All |
+| `OST_Walls` | `Wall.Create` | All |
+| `OST_Floors` | `Floor.Create(CurveLoop)` / legacy `NewFloor` | R22+ / R19–R21 |
+| `OST_Roofs` | `NewExtrusionRoof` (open gable profile) — **not** `NewFootPrintRoof`, see Decisions (Phase 2) #3 below | All |
+| `OST_Ceilings` | `Ceiling.Create(CurveLoop)` | **R22+ only** → version gate |
+| `OST_Stairs` | `StairsEditScope` + `ChangeTypeId` + `StairsRun.CreateStraightRun` | All |
+| `OST_StairsRailing` | `Railing.Create(CurveLoop)` | **R25+ only** → version gate |
+| `OST_PipeInsulations` | programmatic host `Pipe` + `PipeInsulation.Create` | All |
+| `OST_DuctInsulations` | programmatic host `Duct` + `DuctInsulation.Create` | All |
+| `OST_DuctLinings` (#197) | programmatic host `Duct` + `DuctLining.Create` | All |
+| `OST_Wire` (#199) | `Wire.Create(WiringType.Chamfer, …)` + plan view (`ViewPlan.Create` fallback) | All |
 
-| Category | DisplayName | Why deferred | Required API / blocker |
-|---|---|---|---|
-| `OST_Floors` | Перекрытия | Needs `CurveLoop` outline | `Floor.NewFloor(curveLoop, floorType, level, structural)` — requires a closed loop, not 2-point line |
-| `OST_Roofs` | Крыши | Needs `CurveLoop` outline | `Roof.NewRoof(curveLoop, roofType, level, slope)` — also requires footprint, not a single line |
-| `OST_Ceilings` | Потолки | Needs `CurveLoop` outline + level | `Ceiling.Create(curveLoop, ceilingType, level)` — same outline problem |
-| `OST_Stairs` | Лестницы | Multi-level composite, no two-point representation | `Stairs.Create()` + landings + risers — substantially more than a single 2-point placement |
-| `OST_Railings` | Ограждения | Host-element + continuous path | `Railing.Create(host, curve, railingType, level)` — needs a non-empty host reference |
-| `OST_PipeInsulations` | Изоляция труб | Requires host pipe in destination doc | `PipeInsulation.Create(doc, host, insType, thickness)` — no host available in the empty mini-rvt |
-| `OST_DuctInsulations` | Изоляция воздуховодов | Requires host duct in destination doc | `DuctInsulation.Create(doc, host, insType, thickness)` — same host problem |
+> **Railing category correction (Issue #182, 2026-08-03):** railing instances and
+> `RailingType` live in **`OST_StairsRailing`**, not `OST_Railings` (Tammik,
+> tbc/a/0619_retrieve_railings). The registry used `OST_Railings` until 2026-08-03,
+> which made railings unpickable in the element picker and invisible to
+> `AnalyzeActiveProject`. Field databases with the old id cannot exist (the
+> category was unimportable both ways) — no migration needed.
 
-**User decision (2026-06-08):** keep these categories visible in the dialog for awareness,
-do not implement placement now. The user explicitly asked for them to be:
-1. Documented in this ADR (this section).
-2. Called out in code comments at the registry site so the next developer sees them
-   immediately when looking at `SystemCategoryRegistry.BuildEntries()`.
-3. NOT removed from the registry — `AnalyzeActiveProject` must continue to surface
-   these categories in the batch dialog so the user knows the model contains them.
+### Per-Revit support summary (version gates)
 
-**What this means in practice:**
+| Revit | Blocked categories |
+|---|---|
+| 2019–2021 | `OST_Ceilings` (needs 2022+), `OST_StairsRailing` (needs 2025+) |
+| 2022–2024 | `OST_StairsRailing` (needs 2025+) |
+| 2025+ | none — all 16 categories |
 
-* The `copied=N, placed=0` log entry for these categories is **expected**, not a bug.
-* The category will appear in the batch dialog with `Action: IncrementVersion` and a type
-  row. The user can pick it; `IFamilyImportService.ImportBatchAsync` will copy the type
-  to managed storage. The next time the user looks at the catalog, the type is there
-  but its attribute panel is empty.
-* `NormalizeInstanceDimensions` is a no-op for these categories (handler returns empty
-  dictionary at line 263-265).
-* When the time comes to implement Phase 2, the `PlacementHandler` delegate signature
-  is `Func<Document, Element, Level, XYZ, XYZ, Element?>?` — the new handlers will need
-  to take **additional parameters** (e.g. `CurveLoop` for floors, `HostReference` for
-  insulations). This is a signature change to the registry; the `Entry` record will
-  need to evolve. Flagging this in advance.
+### Not supported (tracked as follow-up issues)
 
-**Tracking:** the Phase 2 backlog is tracked as a list of TODOs in
-`SystemCategoryRegistry.BuildEntries()` (`src/SmartCon.Revit/FamilyManager/SystemFamilyRevitOperations.cs`).
-Do not remove the "Копируются, но НЕ размещаются (Phase 2 TODO)" comment block without
-also removing the categories from the registry (and that would break user expectations
-that the dialog still surfaces them).
-* **Hot-path `Document`/`BuiltInCategory` in `ISystemFamilyRevitOperations`.** Pre-existing I-09 violation. Out of scope.
+> **Product decision (2026-08-03):** неподдерживаемая категория скрывается
+> ЦЕЛИКОМ — не предлагается в пикере и не попадает в batch-диалог (источник
+> правды: `SystemCategoryRegistry.Entries` + `SystemCategoryPlacementAvailability`).
+> Type-only режимов и per-category исключений НЕ делаем — категория
+> активируется только когда её можно поддержать end-to-end. Причина
+> фиксируется комментарием в коде со ссылкой на эту таблицу и issue.
+
+| Category | Issue | Reason |
+|---|---|---|
+| `OST_Ramps` (пандусы) | #198 | no public `Ramp.Create` API (verified revitapidocs 2021–2026) — waiting for Revit API; hidden entirely per the product decision above (NO type-only fallback) |
+| `OST_CurtainWallPanels` (панель витража) | #196 | non-editable family — исключена из loadable-импорта сканером (`Family.IsEditable == false`); системный путь (типы панелей) — возможный follow-up |
+
+### Decisions (Phase 2)
+
+1. **Handlers manage their own transactions.** `StairsEditScope` cannot be started inside
+   an active transaction (revitapidocs), so the registry dropped the old
+   "one outer transaction for the whole grid" model: each handler opens its own
+   `ITransactionService.RunInTransaction` (I-03); the stairs handler drives the scope
+   and runs the inner transaction through the service inside it. This was the signature
+   change pre-announced in the old Phase 2 TODO.
+2. **Version gate blocks the import, not just the placement.** Categories whose placement
+   API is missing on the running Revit (ceilings <2022, railings <2025) are excluded from
+   "Импорт активного файла" / "Импорт выделенных элементов" with a styled `ShowInfo`
+   dialog listing each blocked category and its required version: an instance-less
+   mini-project is not a valid reference. Single source of truth:
+   `SystemCategoryPlacementAvailability` (Core, `BuiltInCategory → minVersion`).
+   Sync from an existing reference on an older Revit is NOT gated (CompoundStructure
+   sync works everywhere).
+3. **Roofs are extruded, not footprint.** `NewFootPrintRoof` throws
+   `Autodesk.Revit.Exceptions.ArgumentNullException` in a background document
+   (staged mini-project is never active; verified by probe test in real Revit —
+   the legacy Creation method needs a UI context). `NewExtrusionRoof` with an OPEN
+   profile (closed loops are rejected as "Invalid profile") works in background
+   documents on all versions. `ReferencePlane` is created on the template's first
+   `ViewPlan` (`doc.ActiveView` is null for background documents).
+   **Legacy `NewFloor` (R19–R21) assessed as safe:** unlike the footprint API it
+   was the mainstream floor-creation API for years (2019–2021 docs have no
+   UI-context caveats; batch floor creation in background documents was standard
+   practice). A reflection probe on Revit 2023 is not applicable — the method was
+   removed from the public API surface after 2022. Final confirmation belongs to
+   the manual test matrix on a machine with Revit 2019–2021 (no such Revit on the
+   current dev machine — the integration suite ran via `-p:RevitVersion=2023`,
+   which compiles the `Floor.Create` branch).
+4. **Stairs: `ChangeTypeId` after `StairsEditScope.Start`, railings removed AFTER
+   `scope.Commit`.** `Start` creates an empty stairs with the default type; the handler
+   switches it to the catalog type, adds one straight run sized from
+   `MaxRiserHeight`/`MinTreadDepth` and the level height (an over-long baseline makes
+   Revit pad the run with extra risers past the top level). Default railings
+   materialize only at `scope.Commit` — they are deleted in a follow-up transaction so
+   the reference contains exactly the catalog type.
+5. **Insulation hosts are created programmatically.** `PipeInsulation.Create` /
+    `DuctInsulation.Create` require a host (pipe/duct/fitting/accessory); the mini-project
+    has none, so the handler places a 1m host from the first template type in the same
+    transaction (base system types always exist and cannot be deleted — product invariant).
+    The host is harmless for extraction/hash (they filter by the insulation category).
+    Note: an empty default template has NO insulation types at all (they materialize only
+    on the UI "Add Insulation" click, CF-4720) — integration tests seed from MEP templates
+    (`Systems/Mechanical/Plumbing-Default*.rte` ship PipeIns=2, DuctIns=2).
+
+    **Revision 2026-08-06 (#181 scope correction):** фильтр хостов изоляции при
+    импорте применяется ТОЛЬКО в `AnalyzeActiveProject` («Импорт активного файла»)
+    и ТОЛЬКО для документов с ES-маркером мини-проекта (ADR-062) — хосты в них
+    существуют исключительно для стейджинга типов изоляции и не являются
+    кандидатами на импорт. В обычном рабочем проекте труба/воздуховод с
+    изоляцией — легальный контент: предлагается в batch-диалоге вместе с
+    изоляцией. `PickSelectedElements` («Импорт выделенных») фильтр не применяет
+    никогда: явный выбор пользователя = явное намерение импорта, включая выбор
+    внутри мини-проекта. Первоначальная редакция #181 («исключать в обоих путях
+    везде») признана избыточной.
+6. **`CanPlaceElementType` guard in the active project.** `PostRequestForElementTypePlacement`
+   throws `ArgumentException` for interactively unplaceable types (insulations need a host).
+   `SystemFamilyPlacementService` now checks `UIDocument.CanPlaceElementType` and reports
+   `SystemPlacementResult.LoadedManualPlacementRequired` — the synced type stays in the
+   project and the user is told to place it manually instead of a crashed command.
+
+### Test coverage
+
+`src/SmartCon.IntegrationTests/FamilyManager/SystemCategoryPlacementTests.cs` — 9 tests:
+instance per category with the target type; host↔insulation link (`HostElementId`,
+`GetInsulationIds`); stairs `ChangeTypeId` + run + zero default railings; version-gate
+matrix (registry + Core); staged extraction finds types via placed instances.
+Suite: **R25 72/72, net48 (Revit 2023) 71+1skip** (railing skipped below 2025 by design).
 
 ## Test count
 
@@ -217,3 +313,4 @@ that the dialog still surfaces them).
   * +4 `LoadableFamilyInfoTests` (record equality, field round-trip)
   * Tests for `SelectedElementsAnalysis` were attempted but the record transitively requires `RevitAPI.dll` (`BuiltInCategory` value-type carrier) at construction time, which is excluded from the test bin. Skipped.
 * **1219** tests after 2026-06-08 revision (no new tests — `LoadableFamilyScanner` requires Revit API; refactor is behaviour-equivalent on the contract level, covered by manual Revit tests).
+* **Phase 2 (2026-07-31):** 2525 unit tests + 72 integration tests (R25) / 71+1skip (net48 Revit 2023), all green. `SystemCategoryPlacementAvailability` is not unit-tested for the same `BuiltInCategory`-carrier reason as `SelectedElementsAnalysis` — covered by the integration gate tests.

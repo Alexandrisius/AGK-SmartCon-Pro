@@ -40,11 +40,11 @@
             <DataGrid.Columns>
                 <DataGridTextColumn x:Name="ColFieldName" Binding="{Binding Name}" Width="100"
                                     ElementStyle="{StaticResource CenterCell}"/>
-                <DataGridTextColumn x:Name="ColDisplayName" Binding="{Binding DisplayName}" Width="120"
+                <DataGridTextColumn x:Name="ColDisplayName" Binding="{Binding DisplayName}" Width="140"
                                     ElementStyle="{StaticResource CenterCell}"/>
                 <DataGridTextColumn x:Name="ColDescription" Binding="{Binding Description}" Width="*"
                                     ElementStyle="{StaticResource CenterCell}"/>
-                <DataGridTemplateColumn x:Name="ColValidation" Width="110">
+                <DataGridTemplateColumn x:Name="ColValidation" Width="140">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Button Content="{Binding ValidationModeDisplay}"

@@ -25,7 +25,9 @@ public sealed record CategoryAnalysis(
 
 public sealed record SystemTypeInfo(
     string Name,
-    string UniqueId);
+    string UniqueId,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 ---
@@ -45,7 +47,9 @@ public sealed record SelectedSystemType(
     string UniqueId,
     string Name,
     string CategoryName,
-    BuiltInCategory Category);
+    BuiltInCategory Category,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 ```
 
 | Поле | Тип | Назначение |
@@ -118,4 +122,140 @@ public sealed record SystemFamilyExtractionTask(
     IReadOnlyList<string> TypeNames,
     string? VersionId,
     string? FileId);
+```
+
+---
+
+## SystemTypeSyncResult
+
+Результат синхронизации одного системного типа (Issue #104, ADR-061). `NotConvergedCount` — остаточные расхождения зависимостей (нерезолвленные правила трассировки, неудалимые размеры сегментов), тип при этом считается синхронизированным.
+
+**Файл:** `Models/FamilyManager/SystemTypeSyncResult.cs`
+
+```csharp
+public enum SystemTypeSyncStatus
+{
+    Created, Updated, NotFoundInSource, NoPrototypeType, Failed,
+}
+
+public sealed record SystemTypeSyncResult(
+    string TypeName,
+    SystemTypeSyncStatus Status,
+    int ParametersWritten,
+    int ParametersSkipped,
+    string? ErrorMessage = null,
+    int NotConvergedCount = 0)
+{
+    public bool IsSuccess { get; }
+}
+
+public sealed record SystemFamilySyncResult(
+    string CatalogItemId,
+    IReadOnlyList<SystemTypeSyncResult> TypeResults)
+{
+    public int SuccessCount { get; }
+    public int FailedCount { get; }
+    public bool AllSucceeded { get; }
+    public int TotalNotConverged { get; }
+}
+```
+
+---
+
+## SystemTypeLocation
+
+Локация системного типа (`ElementType`) в документе: имя + ordinal категории + ElementId. Используется batch-сбором `ISystemTypeFinder.CollectTypes` для матчинга stale-detection (ключ `(CategoryOrdinal, Name)` — одинаковые имена в разных категориях не конфликтуют).
+
+**Файл:** `Models/FamilyManager/SystemTypeLocation.cs`
+
+```csharp
+public sealed record SystemTypeLocation(
+    string TypeName,
+    int CategoryOrdinal,
+    ElementId TypeId,
+    string? FamilyName = null,
+    string? FamilyKey = null);
+```
+
+---
+
+## SegmentSnapshot / SegmentSizeSnapshot
+
+Эталонные данные сегмента трубы/воздуховода из мини-проекта (Issue #104): имя + материал + спецификация + шероховатость + таблица размеров. Все диаметры — internal units (feet).
+
+**Файл:** `Models/FamilyManager/SegmentSnapshot.cs`
+
+```csharp
+public sealed record SegmentSnapshot(
+    string Name,
+    string? MaterialName,
+    string? ScheduleName,
+    double Roughness,
+    IReadOnlyList<SegmentSizeSnapshot> Sizes);
+
+public sealed record SegmentSizeSnapshot(
+    double NominalDiameter,
+    double InnerDiameter,
+    double OuterDiameter,
+    bool UsedInSizeLists,
+    bool UsedInSizing);
+```
+
+---
+
+## SegmentSyncResult
+
+Результат синхронизации одного сегмента: разрешённый ElementId + счётчики конвергенции таблицы размеров. `SizesNotConverged` — неудалимые/некорректируемые размеры (используются размещёнными трубами или последний) — попадает в пользовательский счётчик «не приведено к эталону».
+
+**Файл:** `Models/FamilyManager/SegmentSyncResult.cs`
+
+```csharp
+public sealed record SegmentSyncResult(
+    ElementId? SegmentId,
+    int SizesAdded,
+    int SizesRemoved,
+    int SizesNotConverged);
+```
+
+---
+
+## SystemPlacementResult
+
+Результат `ISystemFamilyPlacementService.LoadAndPlaceSystemType` (ADR-027 Phase 2).
+Различает три исхода загрузки+размещения системного типа: успешная активация
+размещения; тип загружен, но интерактивное размещение невозможно
+(`UIDocument.CanPlaceElementType` = false — например, изоляция требует
+существующий host, пользователь размещает вручную); неудача синхронизации.
+
+**Файл:** `Models/FamilyManager/SystemPlacementResult.cs`
+
+```csharp
+public enum SystemPlacementResult
+{
+    Placed,
+    LoadedManualPlacementRequired,
+    Failed,
+}
+```
+
+---
+
+## SystemCategoryPlacementAvailability
+
+Версионный гейт размещения инстансов системных категорий в staged мини-проекте
+(ADR-027 Phase 2). Единый источник правды «категория → минимальная версия Revit»:
+потолки — 2022 (`Ceiling.Create`), ограждения — 2025 (`Railing.Create` по CurveLoop).
+Используется реестром размещения (`SystemCategoryRegistry.GetPlacementHandler`)
+и импортным гейтом UI (`ApplyPlacementVersionGate`): категория, недоступная на
+текущей версии Revit, не импортируется в библиотеку. Категории вне таблицы
+размещаются на всех поддерживаемых версиях.
+
+**Файл:** `Services/FamilyManager/SystemCategoryPlacementAvailability.cs`
+
+```csharp
+public static class SystemCategoryPlacementAvailability
+{
+    public static int? GetMinRevitVersion(BuiltInCategory category);
+    public static bool IsSupported(BuiltInCategory category, int revitMajorVersion);
+}
 ```

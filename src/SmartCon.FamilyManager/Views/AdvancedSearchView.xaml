@@ -1,0 +1,460 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.AdvancedSearchView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_AdvSearch_Title}"
+        Width="1060" Height="620" MinWidth="900" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Шапка: иконка-воронка + заголовок и подсказка о семантике «И». -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <iconPacks:PackIconMaterial Kind="FilterVariant"
+                                        Foreground="{DynamicResource AccentBrush}"
+                                        Width="20" Height="20"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,8,0"/>
+            <StackPanel>
+                <TextBlock Text="{loc:Loc FM_AdvSearch_Title}"
+                           FontWeight="SemiBold"
+                           FontSize="14"/>
+                <TextBlock Text="{loc:Loc FM_AdvSearch_Subtitle}"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Охват по категории: классический пикер-дерево (плоский список
+             не масштабируется на большие каталоги), определяет список
+             доступных атрибутов. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="{loc:Loc FM_AdvSearch_Category}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       Margin="2,0,8,0"/>
+            <!-- Reference implementation: the family properties dialog —
+                 grey read-only field + «...» SecondaryButton NEXT TO it
+                 (not inside), arrow cursor instead of the I-beam. -->
+            <Grid Width="398">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding SelectedCategoryPath, Mode=OneWay}"
+                         IsReadOnly="True"
+                         Padding="4,2"
+                         Style="{DynamicResource CompactTextBox}"
+                         Background="{DynamicResource HoverAltSurfaceBrush}"
+                         Cursor="Arrow"/>
+                <Button Grid.Column="1"
+                        Content="..."
+                        Command="{Binding PickCategoryCommand}"
+                        Width="28" Height="24" Margin="4,0,0,0"
+                        Style="{DynamicResource SecondaryButton}"
+                        Padding="0"
+                        ToolTip="{loc:Loc FM_AdvSearch_PickCategoryTooltip}"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Bordered container for the conditions zone: the «Добавить условие»
+             button below must visibly belong to a region even when the list
+             is empty (same anatomy as the assignment rules editor). -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource BorderAltBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Background="{DynamicResource ZoneSurfaceBrush}"
+                MinHeight="64"
+                Padding="8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Column headers — same column layout as the condition
+                     rows, so they align by construction (26 / source /
+                     field / operator / value / delete). -->
+                <Grid Grid.Row="0" Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="26"/>
+                        <ColumnDefinition Width="1.1*" MinWidth="115"/>
+                        <ColumnDefinition Width="1.7*" MinWidth="170"/>
+                        <ColumnDefinition Width="1.2*" MinWidth="115"/>
+                        <ColumnDefinition Width="2.4*" MinWidth="220"/>
+                        <ColumnDefinition Width="36"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="1" Text="{loc:Loc FM_AssignEditor_ColSource}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="2,0"/>
+                    <TextBlock Grid.Column="2" Text="{loc:Loc FM_AssignEditor_ColField}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
+                    <TextBlock Grid.Column="3" Text="{loc:Loc FM_AdvSearch_ColOperator}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
+                    <TextBlock Grid.Column="4" Text="{loc:Loc FM_RulesEditor_ColValue}"
+                               Foreground="{DynamicResource TextMutedBrush}" FontSize="11" Margin="6,0,0,0"/>
+                </Grid>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <!-- AlternationIndex drives the «И» prefix on all rows
+                         after the first. -->
+                    <ItemsControl ItemsSource="{Binding Conditions}" AlternationCount="1000">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="1.1*" MinWidth="115"/>
+                                        <ColumnDefinition Width="1.7*" MinWidth="170"/>
+                                        <ColumnDefinition Width="1.2*" MinWidth="115"/>
+                                        <ColumnDefinition Width="2.4*" MinWidth="220"/>
+                                        <ColumnDefinition Width="36"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- «И»: все условия объединяются по AND. -->
+                                    <TextBlock Grid.Column="0"
+                                               Text="{loc:Loc FM_AdvSearch_And}"
+                                               FontWeight="Bold"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(ItemsControl.AlternationIndex)}" Value="0">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <!-- Источник: атрибут библиотеки / системное поле. -->
+                                    <ComboBox Grid.Column="1"
+                                              SelectedIndex="{Binding SourceKindIndex, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{DynamicResource CompactComboBox}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,4,0">
+                                        <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceAttribute}"/>
+                                        <ComboBoxItem Content="{loc:Loc FM_AssignEditor_SourceSystem}"/>
+                                    </ComboBox>
+
+                                    <!-- Поле: атрибут (по категории) ИЛИ системное поле. -->
+                                    <ComboBox Grid.Column="2"
+                                              ItemsSource="{Binding DataContext.AvailableAttributes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              SelectedValuePath="AttributeId"
+                                              DisplayMemberPath="Name"
+                                              TextSearch.TextPath="Name"
+                                              SelectedValue="{Binding SelectedAttributeId, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{DynamicResource CompactComboBox}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,4,0"
+                                              Visibility="{Binding IsAttributeSource, Converter={StaticResource BoolToVis}}"/>
+                                    <ComboBox Grid.Column="2"
+                                              ItemsSource="{Binding DataContext.SystemFields, RelativeSource={RelativeSource AncestorType=Window}}"
+                                              SelectedValuePath="Field"
+                                              DisplayMemberPath="DisplayName"
+                                              SelectedValue="{Binding SystemField, UpdateSourceTrigger=PropertyChanged}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,4,0">
+                                        <ComboBox.Style>
+                                            <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsAttributeSource}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ComboBox.Style>
+                                    </ComboBox>
+
+                                    <ComboBox Grid.Column="3"
+                                              ItemsSource="{Binding AvailableOperators}"
+                                              SelectedValuePath="Operator"
+                                              DisplayMemberPath="DisplayName"
+                                              SelectedValue="{Binding Operator, UpdateSourceTrigger=PropertyChanged}"
+                                              Style="{DynamicResource CompactComboBox}"
+                                              VerticalAlignment="Center"
+                                              Margin="0,0,4,0"/>
+
+                                    <!-- Значение: подсказки для атрибута / текст для
+                                         имени / фиксированные пикеры для ординальных
+                                         полей / «—» для заполнено-не заполнено.
+                                         Незаполненное обязательное поле помечается
+                                         КРАСНОЙ РАМКОЙ (звёздочка показалась
+                                         пользователю шумной — итерация 3). -->
+                                    <Grid Grid.Column="4" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <!-- Text input + dropdown in ONE contoured block
+                                             (same look as the ComboBox cells: arrow INSIDE
+                                             the border, not a button outside). -->
+                                        <Grid x:Name="ValueCell" Grid.Column="0"
+                                              Visibility="{Binding ShowSuggestBox, Converter={StaticResource BoolToVis}}">
+                                            <Border CornerRadius="4"
+                                                    BorderThickness="1"
+                                                    Background="White"
+                                                    Height="26">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsValueMissing}" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                                                            </DataTrigger>
+                                                            <!-- Hover behaves like the ComboBox cells: the
+                                                                 contour tints, nothing is flooded. -->
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                            </Trigger>
+                                                            <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=SuggestInput}" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                            </Border>
+                                            <TextBox x:Name="SuggestInput"
+                                                     Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                     BorderThickness="0"
+                                                     Background="Transparent"
+                                                     VerticalContentAlignment="Center"
+                                                     Padding="6,0,22,0"
+                                                     Height="26"/>
+                                            <Path Data="M0,0 L4,4 L8,0 z"
+                                                  Fill="#555"
+                                                  HorizontalAlignment="Right"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,7,0"
+                                                  IsHitTestVisible="False"/>
+                                            <!-- Invisible click zone over the arrow — the
+                                                 default Button chrome would flood and swallow
+                                                 the arrow on hover (user report, iteration 4);
+                                                 transparent template like the CompactComboBox
+                                                 toggle. -->
+                                            <Button HorizontalAlignment="Right"
+                                                    VerticalAlignment="Stretch"
+                                                    Width="20"
+                                                    Cursor="Hand"
+                                                    Focusable="False"
+                                                    Command="{Binding ToggleSuggestionsCommand}"
+                                                    ToolTip="{loc:Loc FM_AdvSearch_SuggestionsTooltip}">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="Transparent"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Popup IsOpen="{Binding IsSuggestionsOpen, Mode=TwoWay}"
+                                                   StaysOpen="False"
+                                                   AllowsTransparency="True"
+                                                   Placement="Bottom"
+                                                   PlacementTarget="{Binding ElementName=ValueCell}">
+                                                <Border Background="White"
+                                                        CornerRadius="6"
+                                                        Margin="0,1,0,0"
+                                                        BorderBrush="{DynamicResource BorderAltBrush}"
+                                                        BorderThickness="1"
+                                                        Padding="4"
+                                                        MinWidth="{Binding ActualWidth, ElementName=ValueCell}"
+                                                        MaxWidth="420">
+                                                    <Grid>
+                                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                            <ListBox ItemsSource="{Binding FilteredSuggestions}"
+                                                                     SelectedItem="{Binding SelectedSuggestion, Mode=TwoWay}"
+                                                                     Style="{DynamicResource CompactListBox}"
+                                                                     BorderThickness="0"
+                                                                     MaxHeight="200">
+                                                                <ListBox.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/>
+                                                                    </DataTemplate>
+                                                                </ListBox.ItemTemplate>
+                                                            </ListBox>
+                                                        </ScrollViewer>
+                                                        <TextBlock Text="{loc:Loc FM_AdvSearch_NoSuggestions}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="8,6"
+                                                                   TextWrapping="Wrap"
+                                                                   Visibility="{Binding HasNoFilteredSuggestions, Converter={StaticResource BoolToVis}}"/>
+                                                    </Grid>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+
+                                        <!-- FamilyName: same contoured look, no arrow. -->
+                                        <Grid Visibility="{Binding ShowTextBox, Converter={StaticResource BoolToVis}}">
+                                            <Border CornerRadius="4"
+                                                    BorderThickness="1"
+                                                    Background="White"
+                                                    Height="26">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderAltBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsValueMissing}" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                                                            </DataTrigger>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                            </Trigger>
+                                                            <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=NameInput}" Value="True">
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                            </Border>
+                                            <TextBox x:Name="NameInput"
+                                                     Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                     BorderThickness="0"
+                                                     Background="Transparent"
+                                                     VerticalContentAlignment="Center"
+                                                     Padding="6,0,0,0"
+                                                     Height="26"/>
+                                        </Grid>
+
+                                        <ComboBox ItemsSource="{Binding DataContext.RevitCategories, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  SelectedValuePath="Key"
+                                                  DisplayMemberPath="Label"
+                                                  TextSearch.TextPath="Label"
+                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalAlignment="Center"
+                                                  Visibility="{Binding ShowCategoryPicker, Converter={StaticResource BoolToVis}}">
+                                            <ComboBox.Style>
+                                                <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsValueMissing}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ComboBox.Style>
+                                        </ComboBox>
+
+                                        <ComboBox ItemsSource="{Binding DataContext.PartTypes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                  SelectedValuePath="Key"
+                                                  DisplayMemberPath="Label"
+                                                  TextSearch.TextPath="Label"
+                                                  SelectedValue="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalAlignment="Center"
+                                                  Visibility="{Binding ShowPartTypePicker, Converter={StaticResource BoolToVis}}">
+                                            <ComboBox.Style>
+                                                <Style TargetType="ComboBox" BasedOn="{StaticResource CompactComboBox}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsValueMissing}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ComboBox.Style>
+                                        </ComboBox>
+
+                                        <TextBlock Text="—"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="6,0"
+                                                   Visibility="{Binding ShowNoValuePlaceholder, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+
+                                    <Button Grid.Column="5"
+                                            Command="{Binding DataContext.DeleteConditionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{DynamicResource FlatIconButton}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                        <iconPacks:PackIconMaterial Kind="Close"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"
+                                                                    Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Empty state: explains the zone and the way out — the
+                     «Добавить условие» button below never floats in the air. -->
+                <TextBlock Text="{loc:Loc FM_AdvSearch_Empty}"
+                           Grid.Row="1"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Visibility="{Binding HasNoConditions, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+        </Border>
+
+        <!-- Canonical dialog anatomy (MS Win32 UX Guide: control-scoped
+             commands group with their control, never in the commit row):
+             content commands under the list they extend, commit buttons
+             alone on the bottom row. -->
+        <Button Grid.Row="3"
+                Command="{Binding AddConditionCommand}"
+                Style="{DynamicResource SecondaryButton}"
+                HorizontalAlignment="Left"
+                Margin="0,6,0,0"
+                Content="{loc:Loc FM_AdvSearch_AddCondition}"/>
+
+        <Grid Grid.Row="4" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <!-- Сбросить — away from the commit pair: it clears everything
+                 and closes applying the empty filter. -->
+            <Button Grid.Column="0"
+                    Command="{Binding ResetCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    HorizontalAlignment="Left"
+                    Content="{loc:Loc FM_AdvSearch_Reset}"/>
+            <Button Grid.Column="1"
+                    Content="{loc:Loc FM_AdvSearch_Apply}"
+                    Command="{Binding ApplyCommand}"
+                    IsDefault="True"
+                    MinWidth="90"
+                    Style="{DynamicResource PrimaryButton}"
+                    ToolTip="{loc:Loc FM_AdvSearch_ApplyIncomplete}"/>
+            <Button Grid.Column="2"
+                    Content="{loc:Loc FM_RulesEditor_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"
+                    MinWidth="90"
+                    Margin="8,0,0,0"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </Grid>
+    </Grid>
+</controls:DialogWindowBase>

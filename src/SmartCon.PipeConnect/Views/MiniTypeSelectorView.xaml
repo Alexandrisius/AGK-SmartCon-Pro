@@ -9,7 +9,6 @@
         WindowStartupLocation="Manual"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 
     <Window.Resources>

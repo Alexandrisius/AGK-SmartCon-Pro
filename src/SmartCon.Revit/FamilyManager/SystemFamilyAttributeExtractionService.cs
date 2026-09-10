@@ -5,6 +5,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Context;
+using SmartCon.Revit.Util;
 
 namespace SmartCon.Revit.FamilyManager;
 
@@ -39,6 +40,8 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             {
                 return new FamilyExtractionResult(false, [], null, "Document is a family, not a project", revitMajorVersion);
             }
+
+            ParameterUnitDiagnostics.LogDocumentUnits(rvtDoc, "SystemRvt");
 
             return ExtractTypeParametersFromProject(rvtDoc, typeNames, revitMajorVersion);
         }
@@ -81,10 +84,17 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             ? new HashSet<string>(requestedTypeNames, StringComparer.OrdinalIgnoreCase)
             : null;
 
+        var isPhantom = RevitSystemTypeFinder.CreatePhantomFilter(projectDoc);
         var typeCollector = new FilteredElementCollector(projectDoc)
             .OfClass(typeof(ElementType))
             .Cast<ElementType>()
             .Where(et => et.Category is not null)
+            // Electrical settings-graph types (WireMaterialType/
+            // TemperatureRatingType/InsulationType) share name/family/
+            // category with the real WireType and are never catalog types
+            // (manual test 2026-08-04); on 2026+ the filter also covers the
+            // Conductor* replacements (#233).
+            .Where(et => !isPhantom(et))
             .ToList();
 
         SmartConLogger.Info($"Project contains {typeCollector.Count} element types. Filter: {requestedSet?.Count.ToString() ?? "none"}");
@@ -104,14 +114,22 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 continue;
             }
 
-            var values = ExtractTypeParameters(elementType);
+            var values = ExtractTypeParameters(elementType, projectDoc);
 
-            types.Add(new FamilyExtractionTypeValues(typeName, 0, values));
+            // #191: the family identity must travel with the extraction —
+            // without it a keyed family_types row never matches and the
+            // save would duplicate/collapse types (see ADR-064). Loadable
+            // symbols (FamilySymbol) keep null identity — their family is
+            // implied by the catalog item itself.
+            types.Add(new FamilyExtractionTypeValues(
+                typeName, 0, values,
+                elementType is FamilySymbol ? null : elementType.FamilyName,
+                elementType is FamilySymbol ? null : SystemFamilyKeyResolver.Resolve(elementType)));
         }
 
         var sorted = types
             .OrderBy(t => t.TypeName, StringComparer.OrdinalIgnoreCase)
-            .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values))
+            .Select((t, i) => new FamilyExtractionTypeValues(t.TypeName, i, t.Values, t.FamilyName, t.FamilyKey))
             .ToList();
 
         if (requestedSet is not null)
@@ -120,7 +138,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             var missing = requestedSet.Except(foundNames).ToList();
             if (missing.Count > 0)
             {
-                SmartConLogger.Warn($"{missing.Count} requested types not found in rvt: {string.Join(", ", missing)}");
+                SmartConLogger.Warn($"{missing.Count} requested types not found in rvt: {string.Join(", ", missing)} [Action: check the type names in the staged mini-project]");
             }
         }
 
@@ -129,7 +147,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         return new FamilyExtractionResult(true, sorted, null, null, revitMajorVersion);
     }
 
-    private static List<FamilyExtractionValueResult> ExtractTypeParameters(ElementType elementType)
+    private static List<FamilyExtractionValueResult> ExtractTypeParameters(ElementType elementType, Document unitsSource)
     {
         var result = new List<FamilyExtractionValueResult>();
 
@@ -151,7 +169,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
             try
             {
                 value = param.HasValue
-                    ? ReadValue(param)
+                    ? ReadValue(param, unitsSource)
                     : new FamilyExtractionValueResult(
                         parameterName, scope, param.StorageType.ToString(),
                         null, null, null, null,
@@ -171,7 +189,7 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
         return result;
     }
 
-    private static FamilyExtractionValueResult ReadValue(Parameter param)
+    private static FamilyExtractionValueResult ReadValue(Parameter param, Document unitsSource)
     {
         const AttributeScope scope = AttributeScope.Type;
         var storageType = param.StorageType.ToString();
@@ -190,7 +208,8 @@ public sealed class SystemFamilyAttributeExtractionService : ISystemFamilyAttrib
                 var dbl = param.AsDouble();
                 valueNumber = dbl;
                 valueRaw = FormattableString.Invariant($"{dbl}");
-                valueText = param.AsValueString();
+                valueText = Compatibility.RevitUnitsCompat.FormatDisplayValue(unitsSource, param, dbl)
+                    ?? Core.Services.Implementation.UnitSymbolFixup.Correct(param.AsValueString());
                 break;
             case StorageType.Integer:
                 var intVal = param.AsInteger();

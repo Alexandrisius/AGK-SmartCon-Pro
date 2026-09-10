@@ -30,13 +30,21 @@
                    Foreground="{DynamicResource TextPrimaryBrush}"
                    TextWrapping="Wrap"/>
 
-        <TextBox Grid.Row="1"
-                 Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                 Margin="0,0,0,16"
-                 Padding="6,4"
-                  Style="{DynamicResource CompactTextBox}"
-                  behaviors:FocusBehavior.FocusOnLoad="True"
-                  x:Name="InputTextBox"/>
+        <Grid Grid.Row="1" Margin="0,0,0,16">
+            <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                     Padding="6,4"
+                     Style="{DynamicResource CompactTextBox}"
+                     Background="Transparent"
+                     behaviors:FocusBehavior.FocusOnLoad="True"
+                     behaviors:TextBoxBehaviors.Placeholder="{Binding ElementName=InputPlaceholder}"
+                     x:Name="InputTextBox"/>
+            <TextBlock x:Name="InputPlaceholder"
+                       Text="{Binding PlaceholderText}"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       Margin="8,0,6,0"
+                       IsHitTestVisible="False"/>
+        </Grid>
 
         <StackPanel Grid.Row="2"
                     Orientation="Horizontal"

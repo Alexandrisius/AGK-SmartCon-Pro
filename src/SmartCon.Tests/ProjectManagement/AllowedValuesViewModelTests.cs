@@ -34,9 +34,9 @@ public sealed class AllowedValuesViewModelTests
         var vm = new AllowedValuesViewModel(item);
 
         Assert.Equal(3, vm.Values.Count);
-        Assert.Equal("S0", vm.Values[0]);
-        Assert.Equal("S1", vm.Values[1]);
-        Assert.Equal("S2", vm.Values[2]);
+        Assert.Equal("S0", vm.Values[0].Value);
+        Assert.Equal("S1", vm.Values[1].Value);
+        Assert.Equal("S2", vm.Values[2].Value);
     }
 
     [Fact]
@@ -52,29 +52,17 @@ public sealed class AllowedValuesViewModelTests
     }
 
     [Fact]
-    public void AddValueCommand_AddsTrimmedValue()
+    public void AddValueCommand_AddsEditableItemAndSetsFocusItem()
     {
         var item = CreateItem();
         var vm = new AllowedValuesViewModel(item);
 
-        vm.NewValue = "  S0  ";
         vm.AddValueCommand.Execute(null);
 
         Assert.Single(vm.Values);
-        Assert.Equal("S0", vm.Values[0]);
-        Assert.Equal(string.Empty, vm.NewValue);
-    }
-
-    [Fact]
-    public void AddValueCommand_IgnoresWhitespace()
-    {
-        var item = CreateItem();
-        var vm = new AllowedValuesViewModel(item);
-
-        vm.NewValue = "   ";
-        vm.AddValueCommand.Execute(null);
-
-        Assert.Empty(vm.Values);
+        Assert.NotNull(vm.SelectedValue);
+        Assert.Equal(vm.Values[0], vm.SelectedValue);
+        Assert.Equal(vm.Values[0], vm.FocusItem);
     }
 
     [Fact]
@@ -83,33 +71,21 @@ public sealed class AllowedValuesViewModelTests
         var item = CreateItem(ValidationMode.AllowedValues, allowedValues: ["S0", "S1", "S2"]);
         var vm = new AllowedValuesViewModel(item);
 
-        vm.SelectedIndex = 1;
+        vm.SelectedValue = vm.Values[1];
         vm.RemoveValueCommand.Execute(null);
 
         Assert.Equal(2, vm.Values.Count);
-        Assert.Equal("S0", vm.Values[0]);
-        Assert.Equal("S2", vm.Values[1]);
+        Assert.Equal("S0", vm.Values[0].Value);
+        Assert.Equal("S2", vm.Values[1].Value);
     }
 
     [Fact]
-    public void RemoveValueCommand_NegativeIndex_DoesNothing()
+    public void RemoveValueCommand_NullSelectedValue_DoesNothing()
     {
         var item = CreateItem(ValidationMode.AllowedValues, allowedValues: ["S0"]);
         var vm = new AllowedValuesViewModel(item);
 
-        vm.SelectedIndex = -1;
-        vm.RemoveValueCommand.Execute(null);
-
-        Assert.Single(vm.Values);
-    }
-
-    [Fact]
-    public void RemoveValueCommand_OutOfRange_DoesNothing()
-    {
-        var item = CreateItem(ValidationMode.AllowedValues, allowedValues: ["S0"]);
-        var vm = new AllowedValuesViewModel(item);
-
-        vm.SelectedIndex = 5;
+        vm.SelectedValue = null;
         vm.RemoveValueCommand.Execute(null);
 
         Assert.Single(vm.Values);
@@ -119,6 +95,16 @@ public sealed class AllowedValuesViewModelTests
     public void ShowValuesList_TrueForAllowedValues()
     {
         var item = CreateItem(ValidationMode.AllowedValues);
+        var vm = new AllowedValuesViewModel(item);
+
+        Assert.True(vm.ShowValuesList);
+        Assert.False(vm.ShowLengthFields);
+    }
+
+    [Fact]
+    public void ShowValuesList_TrueForContains()
+    {
+        var item = CreateItem(ValidationMode.Contains);
         var vm = new AllowedValuesViewModel(item);
 
         Assert.True(vm.ShowValuesList);
@@ -148,10 +134,24 @@ public sealed class AllowedValuesViewModelTests
     }
 
     [Fact]
-    public void ApplyTo_CopiesAllProperties()
+    public void ValidationModeChanged_ToContains_UpdatesFlags()
+    {
+        var item = CreateItem(ValidationMode.None);
+        var vm = new AllowedValuesViewModel(item);
+
+        vm.ValidationMode = ValidationMode.Contains;
+
+        Assert.True(vm.ShowValuesList);
+        Assert.False(vm.ShowLengthFields);
+    }
+
+    [Fact]
+    public void ApplyTo_CopiesAllPropertiesAndTrimsValues()
     {
         var source = CreateItem(ValidationMode.AllowedValues, allowedValues: ["A", "B"]);
         var vm = new AllowedValuesViewModel(source);
+        vm.Values[0].Value = "  A  ";
+        vm.Values[1].Value = "B";
         vm.MinLength = 1;
         vm.MaxLength = 3;
 
@@ -162,6 +162,33 @@ public sealed class AllowedValuesViewModelTests
         Assert.Equal(1, target.MinLength);
         Assert.Equal(3, target.MaxLength);
         Assert.Equal(["A", "B"], target.AllowedValues);
+    }
+
+    [Fact]
+    public void MoveUpCommand_MovesSelectedValueUp()
+    {
+        var item = CreateItem(ValidationMode.AllowedValues, allowedValues: ["A", "B", "C"]);
+        var vm = new AllowedValuesViewModel(item);
+
+        vm.SelectedValue = vm.Values[1];
+        vm.MoveUpCommand.Execute(null);
+
+        Assert.Equal("B", vm.Values[0].Value);
+        Assert.Equal("A", vm.Values[1].Value);
+    }
+
+    [Fact]
+    public void MoveDownCommand_MovesSelectedValueDown()
+    {
+        var item = CreateItem(ValidationMode.AllowedValues, allowedValues: ["A", "B", "C"]);
+        var vm = new AllowedValuesViewModel(item);
+
+        vm.SelectedValue = vm.Values[1];
+        vm.MoveDownCommand.Execute(null);
+
+        Assert.Equal("A", vm.Values[0].Value);
+        Assert.Equal("C", vm.Values[1].Value);
+        Assert.Equal("B", vm.Values[2].Value);
     }
 
     [Fact]

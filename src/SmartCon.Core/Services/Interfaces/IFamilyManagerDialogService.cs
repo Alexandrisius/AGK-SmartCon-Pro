@@ -34,8 +34,16 @@ public interface IFamilyManagerDialogService
     /// <summary>Show error message.</summary>
     void ShowError(string title, string message);
 
+    /// <summary>
+    /// Show an informational message in the styled dialog with a single
+    /// "Понятно" button (the OK-only variant of the confirmation dialog).
+    /// Prefer this over <see cref="ShowWarning"/> for gate/explanation
+    /// dialogs in FamilyManager — the system MessageBox looks foreign.
+    /// </summary>
+    void ShowInfo(string title, string message);
+
     /// <summary>Show simple input dialog and return entered text, or null if cancelled.</summary>
-    string? ShowInputDialog(string title, string prompt, string defaultText = "");
+    string? ShowInputDialog(string title, string prompt, string defaultText = "", string placeholderText = "");
 
     /// <summary>Show Yes/No confirmation dialog. Returns true if user clicked Yes.</summary>
     bool ShowConfirmation(string title, string message);
@@ -45,11 +53,38 @@ public interface IFamilyManagerDialogService
     /// <summary>Show category tree editor dialog.</summary>
     bool? ShowCategoryTreeEditor(object viewModel);
 
+    /// <summary>
+    /// Show the project-base rules editor dialog (see #119). Returns
+    /// <c>true</c> if the user clicked OK and the binding is valid,
+    /// <c>false</c> if the user cancelled or closed the dialog, or
+    /// <c>null</c> if the dialog presenter returned an unexpected value.
+    /// </summary>
+    bool? ShowProjectBaseRulesEditor(object viewModel);
+
+    /// <summary>Show the parse-rule editor sub-dialog.</summary>
+    bool? ShowParseRuleEditor(object viewModel);
+
+    /// <summary>Show the field-library editor sub-dialog.</summary>
+    bool? ShowFieldLibrary(object viewModel);
+
+    /// <summary>Show the allowed-values editor sub-dialog.</summary>
+    bool? ShowAllowedValues(object viewModel);
+
     /// <summary>Show category picker dialog and return selected category ID, or null if cancelled.</summary>
     string? ShowCategoryPicker(object viewModel);
 
     /// <summary>Show open file dialog filtered for .json files.</summary>
     string? ShowOpenJsonDialog(string title, string? initialDirectory = null);
+
+    /// <summary>Show open file dialog filtered for .txt files (shared parameters file).</summary>
+    string? ShowOpenTextFileDialog(string title, string? initialDirectory = null);
+
+    /// <summary>
+    /// Show the shared-parameter picker dialog (import attributes from a ФОП
+    /// file). Returns true when the user confirmed the selection — read the
+    /// selected entries from the view model afterwards.
+    /// </summary>
+    bool? ShowSharedParameterPicker(object viewModel);
 
     /// <summary>Show save file dialog for .json files.</summary>
     string? ShowSaveJsonDialog(string title, string? defaultFileName = null);
@@ -66,6 +101,78 @@ public interface IFamilyManagerDialogService
 
     /// <summary>Show batch import dialog with file list and action selection.</summary>
     bool? ShowBatchImportDialog(object viewModel);
+
+    /// <summary>
+    /// Show the validation report dialog (import validation gate): the
+    /// read-only detail of why a batch row passed/failed — health issues
+    /// and rule violations. Returns when the user closes it.
+    /// </summary>
+    bool? ShowValidationReport(object viewModel);
+
+    /// <summary>
+    /// Show the status details dialog (#210, clickable status badges): the
+    /// read-only list of a batch row's / tree node's active status notices
+    /// with full explanations and optional follow-up actions. Returns when
+    /// the user closes it.
+    /// </summary>
+    bool? ShowStatusDetails(object viewModel);
+
+    /// <summary>
+    /// Show the validation rules editor for one category-attribute
+    /// binding. Returns true when the user saved the rules.
+    /// </summary>
+    bool? ShowValidationRulesEditor(object viewModel);
+
+    /// <summary>
+    /// Show the auto-assignment rules editor for one category (#241).
+    /// Returns true when the user saved the rules.
+    /// </summary>
+    bool? ShowAssignmentRulesEditor(object viewModel);
+
+    /// <summary>
+    /// Show the advanced search dialog (#87): category scope + attribute
+    /// conditions. Returns true when the user applied (or reset) the filter
+    /// — read the resulting AdvancedSearchFilter from the view model.
+    /// </summary>
+    bool? ShowAdvancedSearch(object viewModel);
+
+    /// <summary>
+    /// Show the batch import dialog as a modeless window (Issue #127): the
+    /// dialog stays open during the import and drives progress/cancellation
+    /// through its view model. Returns immediately; the caller awaits the
+    /// view model's completion task.
+    /// </summary>
+    void ShowModelessBatchImportDialog(object viewModel);
+
+    /// <summary>
+    /// Show the unified database update dialog (ADR-054) as a modeless
+    /// window (ADR-048 pattern): ONE dialog runs the actualization engine
+    /// over every pending family. Returns immediately; the caller runs the
+    /// update via the view model and awaits its completion.
+    /// </summary>
+    void ShowDatabaseUpdateProgressDialog(object viewModel);
+
+    /// <summary>
+    /// Show the "Очистить недоступные записи" dialog (Issue #133) as a
+    /// modeless window (ADR-048 pattern). Returns immediately; the caller
+    /// loads the candidates via the view model and awaits its completion.
+    /// </summary>
+    void ShowMissingRecordsCleanupDialog(object viewModel);
+
+    /// <summary>
+    /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a
+    /// CropAvatarViewModel; returns true when the user applied the crop — read
+    /// ResultPath from the viewModel in that case.
+    /// </summary>
+    bool? ShowAvatarCropper(object viewModel);
+
+    /// <summary>
+    /// Show the routing part picker (ADR-072, Phase 3): family + type
+    /// selection from the catalog for one routing rule. The viewModel must
+    /// be a RoutingPartPickerViewModel; returns true when the user confirmed
+    /// — read Result from the viewModel in that case.
+    /// </summary>
+    bool? ShowRoutingPartPicker(object viewModel);
 
     /// <summary>
     /// Show dialog asking the user how to load a single shared nested family

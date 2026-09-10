@@ -6,12 +6,11 @@
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc Title_EditorSetup}"
-        Width="480" Height="Auto" MinHeight="280"
+        Width="540" Height="Auto" MinHeight="280"
         SizeToContent="Height"
         ResizeMode="NoResize"
-        WindowStartupLocation="CenterScreen"
+        WindowStartupLocation="Manual"
         ShowInTaskbar="True"
-        Topmost="True"
         Background="{DynamicResource BackgroundBrush}">
 
     <Window.Resources>
@@ -23,6 +22,8 @@
     <Border Style="{DynamicResource CardBorder}" Margin="6">
         <Grid Margin="10">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="10"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="10"/>
                 <RowDefinition Height="Auto"/>
@@ -45,8 +46,31 @@
                        Style="{DynamicResource HeadingText}"
                        HorizontalAlignment="Center"/>
 
+            <!-- Текущий элемент (динамик) -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource SurfaceBrush}" CornerRadius="4"
+                    BorderBrush="{DynamicResource BorderAltBrush}" BorderThickness="1"
+                    Padding="10,4"
+                    Height="52">
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc Label_CurrentElement}"
+                               FontSize="10"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <!-- Fixed two-line height: the banner must not resize when the
+                         dynamic element name changes, otherwise the +/− buttons
+                         jump and the user has to re-aim every click -->
+                    <TextBlock Text="{Binding DynamicElementTitle}"
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               TextWrapping="Wrap"
+                               TextTrimming="CharacterEllipsis"
+                               Height="30"
+                               ToolTip="{Binding DynamicElementTitle}"/>
+                </StackPanel>
+            </Border>
+
             <!-- Поворот -->
-            <Grid Grid.Row="2" HorizontalAlignment="Center">
+            <Grid Grid.Row="4" HorizontalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
@@ -83,19 +107,31 @@
                          ToolTip="{loc:Loc Tip_RotateCW}"/>
             </Grid>
 
-            <!-- Изменить соединение -->
-            <Button Grid.Row="4"
-                    Height="28"
-                    Padding="16,3"
-                    HorizontalAlignment="Center"
-                    Command="{Binding CycleConnectorCommand}"
-                    ToolTip="{loc:Loc Tip_ChangeConnection}"
-                    Style="{DynamicResource PrimaryButton}">
-                <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
-            </Button>
+            <!-- Изменить соединение / Сбросить угол поворота -->
+            <Grid Grid.Row="6" HorizontalAlignment="Center" Width="360">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Height="28"
+                        Padding="16,3"
+                        Command="{Binding CycleConnectorCommand}"
+                        ToolTip="{loc:Loc Tip_ChangeConnection}"
+                        Style="{DynamicResource PrimaryButton}">
+                    <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ChangeConnection}"/>
+                </Button>
+                <Button Grid.Column="2" Height="28"
+                        Padding="16,3"
+                        Command="{Binding ZeroRotationCommand}"
+                        ToolTip="{Binding ZeroRotationHint}"
+                        Style="{DynamicResource PrimaryButton}">
+                    <TextBlock TextAlignment="Center" FontSize="12" Text="{loc:Loc Btn_ResetRotation}"/>
+                </Button>
+            </Grid>
 
             <!-- Размер dynamic -->
-            <StackPanel Grid.Row="6">
+            <StackPanel Grid.Row="8">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -128,7 +164,7 @@
             </StackPanel>
 
             <!-- Фитинг -->
-            <Grid Grid.Row="8">
+            <Grid Grid.Row="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="4"/>
@@ -158,7 +194,7 @@
             </Grid>
 
             <!-- Переходник (reducer) -->
-            <Grid Grid.Row="9" Margin="0,2,0,0"
+            <Grid Grid.Row="11" Margin="0,2,0,0"
                   Visibility="{Binding IsReducerVisible, Converter={StaticResource BoolToVisibility}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -189,7 +225,7 @@
             </Grid>
 
             <!-- Глубина цепочки -->
-            <Grid Grid.Row="11" Margin="0,2,0,0"
+            <Grid Grid.Row="13" Margin="0,2,0,0"
                   Visibility="{Binding HasChain, Converter={StaticResource BoolToVisibility}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -198,6 +234,8 @@
                     <ColumnDefinition Width="4"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{loc:Loc Label_Network}"
@@ -212,14 +250,14 @@
                          ToolTip="{loc:Loc Tip_ChainIncrement}"/>
                 <Button Grid.Column="6"
                         Content="{loc:Loc Btn_ConnectAll}" Height="28"
-                        Padding="10,0"
+                        Padding="14,0"
                         Command="{Binding ConnectAllChainCommand}"
                         Style="{DynamicResource PrimaryButton}"
                         ToolTip="{loc:Loc Tip_ConnectAll}"/>
             </Grid>
 
             <!-- Статус -->
-            <Border Grid.Row="12"
+            <Border Grid.Row="14"
                     Style="{DynamicResource StatusBarBorder}"
                     Margin="0,8,0,0">
                 <TextBlock Text="{Binding StatusMessage}"
@@ -228,48 +266,53 @@
             </Border>
 
             <!-- Нижняя панель -->
-            <Grid Grid.Row="13" Margin="0,10,0,0">
+            <Grid Grid.Row="15" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="8" Height="8" Margin="0,0,4,0">
-                        <Ellipse.Style>
-                            <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="{DynamicResource SuccessBrush}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                        <Setter Property="Fill" Value="{DynamicResource WarningBrush}"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding IsSessionActive}" Value="False">
-                                        <Setter Property="Fill" Value="{DynamicResource InactiveBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Ellipse.Style>
-                    </Ellipse>
-                    <TextBlock VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="{loc:Loc Status_Active}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                            <Setter Property="Text" Value="{loc:Loc Status_Processing}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsSessionActive}" Value="False">
-                                            <Setter Property="Text" Value="{loc:Loc Status_SessionEnded}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
+                <Button Grid.Column="0"
+                        Content="&#x2212;" FontSize="14" Padding="0"
+                        Width="28" Height="28"
+                        Style="{DynamicResource IconButton}"
+                        Command="{Binding ZoomOutCommand}"
+                        ToolTip="{loc:Loc Tip_ZoomOut}"/>
 
-                <Button Grid.Column="1"
+                <Button Grid.Column="2"
+                        Content="{loc:Loc Btn_Inspect}"
+                        Width="90" Height="28"
+                        Padding="0"
+                        Command="{Binding InspectCommand}"
+                        ToolTip="{loc:Loc Tip_Inspect}"
+                        Style="{DynamicResource SecondaryButton}"/>
+
+                <Button Grid.Column="4"
+                        Content="+" FontSize="14" Padding="0"
+                        Width="28" Height="28"
+                        Style="{DynamicResource IconButton}"
+                        Command="{Binding ZoomInCommand}"
+                        ToolTip="{loc:Loc Tip_ZoomIn}"/>
+
+                <CheckBox Grid.Column="6"
+                          IsChecked="{Binding LockNetwork}"
+                          IsEnabled="{Binding IsSessionActive}"
+                          VerticalAlignment="Center"
+                          ToolTip="{loc:Loc Tip_LockNetwork}">
+                    <TextBlock Text="{loc:Loc Label_LockNetwork}" FontSize="12"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </CheckBox>
+
+                <Button Grid.Column="8"
                         Content="{loc:Loc Btn_Connect}"
                         Width="80" Height="28"
                         Padding="0"
@@ -279,7 +322,7 @@
                         ToolTip="{loc:Loc Tip_Connect}"
                         Style="{DynamicResource AccentButton}"/>
 
-                <Button Grid.Column="3"
+                <Button Grid.Column="10"
                         Content="{loc:Loc Btn_Cancel}"
                         Width="80" Height="28"
                         Padding="0"

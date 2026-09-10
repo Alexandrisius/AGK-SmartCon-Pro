@@ -6,11 +6,12 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using SmartCon.Core.Logging;
 using SmartCon.UI.DragDrop;
 
 namespace SmartCon.UI.Behaviors;
 
-public static class TreeViewDragDropBehavior
+public static partial class TreeViewDragDropBehavior
 {
     #region Attached Properties
 
@@ -48,6 +49,41 @@ public static class TreeViewDragDropBehavior
             typeof(ICommand),
             typeof(TreeViewDragDropBehavior),
             new PropertyMetadata(null, OnCommandPropertyChanged));
+
+    public static readonly DependencyProperty AutoScrollEnabledProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollEnabled",
+            typeof(bool),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(true));
+
+    public static readonly DependencyProperty AutoScrollEdgeToleranceProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollEdgeTolerance",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(40.0));
+
+    public static readonly DependencyProperty AutoScrollMaxSpeedProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollMaxSpeed",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(300.0));
+
+    public static readonly DependencyProperty AutoScrollIntervalProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollInterval",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(16.0));
+
+    public static readonly DependencyProperty AutoScrollTopInsetProperty =
+        DependencyProperty.RegisterAttached(
+            "AutoScrollTopInset",
+            typeof(double),
+            typeof(TreeViewDragDropBehavior),
+            new FrameworkPropertyMetadata(0.0));
 
     private static readonly DependencyProperty DragDropStateProperty =
         DependencyProperty.RegisterAttached(
@@ -90,6 +126,36 @@ public static class TreeViewDragDropBehavior
     public static void SetPlacementDragCommand(DependencyObject obj, ICommand? value)
         => obj.SetValue(PlacementDragCommandProperty, value);
 
+    public static bool GetAutoScrollEnabled(DependencyObject obj)
+        => (bool)obj.GetValue(AutoScrollEnabledProperty);
+
+    public static void SetAutoScrollEnabled(DependencyObject obj, bool value)
+        => obj.SetValue(AutoScrollEnabledProperty, value);
+
+    public static double GetAutoScrollEdgeTolerance(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollEdgeToleranceProperty);
+
+    public static void SetAutoScrollEdgeTolerance(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollEdgeToleranceProperty, value);
+
+    public static double GetAutoScrollMaxSpeed(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollMaxSpeedProperty);
+
+    public static void SetAutoScrollMaxSpeed(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollMaxSpeedProperty, value);
+
+    public static double GetAutoScrollInterval(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollIntervalProperty);
+
+    public static void SetAutoScrollInterval(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollIntervalProperty, value);
+
+    public static double GetAutoScrollTopInset(DependencyObject obj)
+        => (double)obj.GetValue(AutoScrollTopInsetProperty);
+
+    public static void SetAutoScrollTopInset(DependencyObject obj, double value)
+        => obj.SetValue(AutoScrollTopInsetProperty, value);
+
     private static DragDropState? GetDragDropState(DependencyObject obj)
         => (DragDropState?)obj.GetValue(DragDropStateProperty);
 
@@ -105,8 +171,13 @@ public static class TreeViewDragDropBehavior
     private sealed class DragDropState
     {
         public Point DragStartPoint;
+        public bool IsDragPressValid;
+        public Point LastDragOverPosition;
         public bool IsDragging;
         public DispatcherTimer? ExpandTimer;
+        public DispatcherTimer? AutoScrollTimer;
+        public EventHandler? AutoScrollTickHandler;
+        public DateTimeOffset LastAutoScrollTick;
         public TreeViewItem? HoverItem;
         public DragAdorner? DragAdorner;
         public DropTargetAdorner? DropAdorner;
@@ -138,8 +209,10 @@ public static class TreeViewDragDropBehavior
         if (GetDragDropState(treeView) is not null) return;
 
         treeView.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+        treeView.PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
         treeView.PreviewMouseMove += OnPreviewMouseMove;
         treeView.PreviewDragOver += OnPreviewDragOver;
+        treeView.PreviewDragLeave += OnPreviewDragLeave;
         treeView.Drop += OnDrop;
         treeView.GiveFeedback += OnGiveFeedback;
 
@@ -149,8 +222,10 @@ public static class TreeViewDragDropBehavior
     private static void Detach(TreeView treeView)
     {
         treeView.PreviewMouseLeftButtonDown -= OnPreviewMouseLeftButtonDown;
+        treeView.PreviewMouseLeftButtonUp -= OnPreviewMouseLeftButtonUp;
         treeView.PreviewMouseMove -= OnPreviewMouseMove;
         treeView.PreviewDragOver -= OnPreviewDragOver;
+        treeView.PreviewDragLeave -= OnPreviewDragLeave;
         treeView.Drop -= OnDrop;
         treeView.GiveFeedback -= OnGiveFeedback;
 
@@ -163,404 +238,4 @@ public static class TreeViewDragDropBehavior
 
     #endregion
 
-    #region Event Handlers
-
-    private static void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        var treeView = (TreeView)sender;
-        if (GetDragDropState(treeView) is not { } state) return;
-
-        state.DragStartPoint = e.GetPosition(null);
-    }
-
-    private static void OnPreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed) return;
-
-        var treeView = (TreeView)sender;
-        if (GetDragDropState(treeView) is not { } state) return;
-        if (state.IsDragging) return;
-
-        var position = e.GetPosition(null);
-        var diff = state.DragStartPoint - position;
-        if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
-            return;
-
-        // Determine the dragged item by hit-testing the TreeViewItem under the cursor,
-        // not by treeView.SelectedItem. Two reasons:
-        //   1. The search pipeline rebuilds TreeNodes on every keystroke (debounced 300ms),
-        //      so SelectedItem may point at a VM that is no longer in the new collection —
-        //      FindParentOf() then fails and CanExecute returns false → drag never starts.
-        //   2. Highlighted Runs inside SearchHighlightConverter's TextBlock have a non-null
-        //      Background and absorb hit-test results; SelectedItem may stay null even after
-        //      a click because the click never reaches the TreeViewItem's chrome.
-        // Falling back to SelectedItem keeps existing behaviour for non-search flows.
-        var draggedItem = GetDraggedItemUnderCursor(treeView) ?? treeView.SelectedItem;
-        if (draggedItem is null) return;
-        if (IsMouseOverScrollbar(treeView, e.GetPosition(treeView))) return;
-
-        var placementCommand = GetPlacementDragCommand(treeView);
-        if (placementCommand?.CanExecute(draggedItem) == true)
-        {
-            state.IsDragging = true;
-            try
-            {
-                placementCommand.Execute(draggedItem);
-            }
-            finally
-            {
-                state.IsDragging = false;
-                Cleanup(state);
-            }
-            return;
-        }
-
-        var command = GetStartDragCommand(treeView);
-        if (command?.CanExecute(draggedItem) != true) return;
-
-        state.IsDragging = true;
-
-        try
-        {
-            command.Execute(draggedItem);
-
-            var dragData = new DataObject(DragFormat, draggedItem);
-            System.Windows.DragDrop.DoDragDrop(treeView, dragData, DragDropEffects.Move);
-        }
-        finally
-        {
-            state.IsDragging = false;
-            Cleanup(state);
-        }
-    }
-
-    /// <summary>
-    /// Hit-tests the TreeView at the current cursor position and walks up the visual
-    /// tree until the enclosing <see cref="TreeViewItem"/> is found. Returns its
-    /// DataContext (the VM the user is actually dragging from). Returns null when
-    /// the cursor is over a non-item area (scrollbar, padding, chrome) so the caller
-    /// can fall back to <c>treeView.SelectedItem</c>.
-    /// </summary>
-    private static object? GetDraggedItemUnderCursor(TreeView treeView)
-    {
-        var pt = Mouse.GetPosition(treeView);
-        var hit = VisualTreeHelper.HitTest(treeView, pt);
-        var current = hit?.VisualHit as DependencyObject;
-        while (current is not null && current is not TreeViewItem)
-        {
-            current = VisualTreeHelper.GetParent(current);
-        }
-        return (current as TreeViewItem)?.DataContext;
-    }
-
-    private static void OnPreviewDragOver(object sender, DragEventArgs e)
-    {
-        var treeView = (TreeView)sender;
-        if (GetDragDropState(treeView) is not { } state) return;
-        if (!e.Data.GetDataPresent(DragFormat)) return;
-
-        var draggedItem = e.Data.GetData(DragFormat);
-        var command = GetDropCommand(treeView);
-        var targetItem = GetTargetTreeViewItem(e.OriginalSource as DependencyObject);
-        var dropInfo = new TreeViewDropInfo(draggedItem, targetItem?.DataContext);
-
-        state.LastDragOverTime = DateTimeOffset.UtcNow;
-
-        var resolvedItem = targetItem;
-        var resolvedDropInfo = dropInfo;
-
-        if (command?.CanExecute(dropInfo) != true && GetResolveParentDropTarget(treeView))
-        {
-            var current = targetItem;
-            while (current is not null)
-            {
-                var parent = GetParentTreeViewItem(current);
-                if (parent is null) break;
-                var parentDropInfo = new TreeViewDropInfo(draggedItem, parent.DataContext);
-                if (command?.CanExecute(parentDropInfo) == true)
-                {
-                    resolvedItem = parent;
-                    resolvedDropInfo = parentDropInfo;
-                    break;
-                }
-                current = parent;
-            }
-        }
-
-        if (command?.CanExecute(resolvedDropInfo) == true)
-        {
-            e.Effects = DragDropEffects.Move;
-            e.Handled = true;
-            state.IsOverValidDropTarget = true;
-
-            if (state.LastValidTarget != resolvedItem)
-            {
-                RemoveDropAdorner(state);
-                state.LastValidTarget = resolvedItem;
-                if (resolvedItem != null)
-                    AddDropAdorner(state, resolvedItem);
-            }
-
-            AutoScroll(treeView, e);
-
-            if (resolvedItem is not null && !resolvedItem.IsExpanded)
-            {
-                if (state.HoverItem != resolvedItem)
-                {
-                    state.HoverItem = resolvedItem;
-                    state.ExpandTimer ??= CreateExpandTimer(treeView, state);
-                    state.ExpandTimer.Stop();
-                    state.ExpandTimer.Start();
-                }
-            }
-            else
-            {
-                CancelExpandTimer(state);
-            }
-        }
-        else
-        {
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
-            state.IsOverValidDropTarget = false;
-            RemoveDropAdorner(state);
-            state.LastValidTarget = null;
-            CancelExpandTimer(state);
-        }
-    }
-
-    private static void OnDrop(object sender, DragEventArgs e)
-    {
-        var treeView = (TreeView)sender;
-        if (GetDragDropState(treeView) is not { } state) return;
-        if (!e.Data.GetDataPresent(DragFormat)) return;
-
-        var draggedItem = e.Data.GetData(DragFormat);
-        var command = GetDropCommand(treeView);
-        var targetItem = GetTargetTreeViewItem(e.OriginalSource as DependencyObject);
-        var dropInfo = new TreeViewDropInfo(draggedItem, targetItem?.DataContext);
-
-        if (command?.CanExecute(dropInfo) != true && GetResolveParentDropTarget(treeView))
-        {
-            var current = targetItem;
-            while (current is not null)
-            {
-                var parent = GetParentTreeViewItem(current);
-                if (parent is null) break;
-                var parentDropInfo = new TreeViewDropInfo(draggedItem, parent.DataContext);
-                if (command?.CanExecute(parentDropInfo) == true)
-                {
-                    dropInfo = parentDropInfo;
-                    break;
-                }
-                current = parent;
-            }
-        }
-
-        if (command?.CanExecute(dropInfo) == true)
-        {
-            command.Execute(dropInfo);
-            e.Effects = DragDropEffects.Move;
-            e.Handled = true;
-        }
-        else
-        {
-            e.Effects = DragDropEffects.None;
-            e.Handled = true;
-        }
-
-        Cleanup(state);
-    }
-
-    private static void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
-    {
-        var treeView = (TreeView)sender;
-        if (GetDragDropState(treeView) is not { } state) return;
-        
-        var elapsed = DateTimeOffset.UtcNow - state.LastDragOverTime;
-        if (elapsed.TotalMilliseconds > 50)
-        {
-            e.UseDefaultCursors = false;
-            Mouse.SetCursor(Cursors.No);
-        }
-        else if (state.IsOverValidDropTarget)
-        {
-            e.UseDefaultCursors = true;
-        }
-        else
-        {
-            e.UseDefaultCursors = false;
-            Mouse.SetCursor(Cursors.No);
-        }
-        
-        if (state.DragAdorner is null)
-        {
-            var source = PresentationSource.FromVisual(treeView);
-            if (source?.RootVisual is UIElement root)
-            {
-                var layer = AdornerLayer.GetAdornerLayer(root);
-                if (layer != null)
-                {
-                    state.DragAdorner = new DragAdorner(root, GetDisplayText(treeView.SelectedItem));
-                    layer.Add(state.DragAdorner);
-                }
-            }
-        }
-
-        if (state.DragAdorner != null)
-        {
-            var pos = Mouse.GetPosition(state.DragAdorner.AdornedElement);
-            state.DragAdorner.UpdatePosition(pos);
-        }
-        
-        e.Handled = true;
-    }
-
-    #endregion
-
-    #region Helpers
-
-    private static void Cleanup(DragDropState state)
-    {
-        CancelExpandTimer(state);
-        RemoveDropAdorner(state);
-        state.LastValidTarget = null;
-        state.IsOverValidDropTarget = false;
-        
-        if (state.DragAdorner != null)
-        {
-            var layer = AdornerLayer.GetAdornerLayer(state.DragAdorner.AdornedElement);
-            layer?.Remove(state.DragAdorner);
-            state.DragAdorner = null;
-        }
-        
-        Mouse.OverrideCursor = null;
-    }
-
-    private static string? GetDisplayText(object? item)
-    {
-        if (item is null) return null;
-        var prop = item.GetType().GetProperty("DisplayName");
-        return prop?.GetValue(item)?.ToString() ?? item.ToString();
-    }
-
-    private static void AddDropAdorner(DragDropState state, TreeViewItem targetItem)
-    {
-        if (state.DropAdorner != null) return;
-        var adornerLayer = AdornerLayer.GetAdornerLayer(targetItem);
-        if (adornerLayer == null) return;
-        state.DropAdorner = new DropTargetAdorner(targetItem);
-        adornerLayer.Add(state.DropAdorner);
-    }
-
-    private static void RemoveDropAdorner(DragDropState state)
-    {
-        if (state.DropAdorner == null) return;
-        var adornerLayer = AdornerLayer.GetAdornerLayer(state.DropAdorner.AdornedElement);
-        adornerLayer?.Remove(state.DropAdorner);
-        state.DropAdorner = null;
-    }
-
-    private static DispatcherTimer CreateExpandTimer(TreeView treeView, DragDropState state)
-    {
-        var delay = GetAutoExpandDelayMilliseconds(treeView);
-        var timer = new DispatcherTimer(DispatcherPriority.Background, treeView.Dispatcher)
-        {
-            Interval = TimeSpan.FromMilliseconds(delay)
-        };
-
-        timer.Tick += (_, _) =>
-        {
-            timer.Stop();
-            if (state.HoverItem is not null && !state.HoverItem.IsExpanded)
-                state.HoverItem.IsExpanded = true;
-
-            state.HoverItem = null;
-        };
-
-        return timer;
-    }
-
-    private static void CancelExpandTimer(DragDropState state)
-    {
-        state.ExpandTimer?.Stop();
-        state.HoverItem = null;
-    }
-
-    private static bool IsMouseOverScrollbar(Visual visual, Point mousePosition)
-    {
-        var hit = VisualTreeHelper.HitTest(visual, mousePosition);
-        if (hit is null) return false;
-
-        var dObj = hit.VisualHit;
-        while (dObj is not null)
-        {
-            if (dObj is ScrollBar) return true;
-            if (dObj is Visual || dObj is System.Windows.Media.Media3D.Visual3D)
-                dObj = VisualTreeHelper.GetParent(dObj);
-            else
-                dObj = LogicalTreeHelper.GetParent(dObj);
-        }
-
-        return false;
-    }
-
-    private static TreeViewItem? GetTargetTreeViewItem(DependencyObject? current)
-    {
-        while (current is not null)
-        {
-            if (current is TreeViewItem item) return item;
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        return null;
-    }
-
-    private static TreeViewItem? GetParentTreeViewItem(TreeViewItem current)
-    {
-        var currentObj = (DependencyObject)current;
-        while (currentObj is not null)
-        {
-            currentObj = VisualTreeHelper.GetParent(currentObj);
-            if (currentObj is TreeViewItem item) return item;
-        }
-
-        return null;
-    }
-
-    private static ScrollViewer? GetScrollViewer(DependencyObject obj)
-    {
-        if (obj is ScrollViewer sv) return sv;
-
-        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(obj); i++)
-        {
-            var child = VisualTreeHelper.GetChild(obj, i);
-            var result = GetScrollViewer(child);
-            if (result != null) return result;
-        }
-
-        return null;
-    }
-
-    private static void AutoScroll(TreeView treeView, DragEventArgs e)
-    {
-        var scrollViewer = GetScrollViewer(treeView);
-        if (scrollViewer is null) return;
-
-        const double tolerance = 30.0;
-        const double offset = 15.0;
-        var position = e.GetPosition(treeView);
-
-        if (position.Y < tolerance)
-        {
-            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - offset);
-        }
-        else if (position.Y > treeView.ActualHeight - tolerance)
-        {
-            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + offset);
-        }
-    }
-
-    #endregion
 }

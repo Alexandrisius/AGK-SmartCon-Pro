@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
 
@@ -25,6 +26,11 @@ public sealed class RevitModelPurgeService : IModelPurgeService
         ArgumentNullException.ThrowIfNull(keepViewNames);
 #endif
         var totalDeleted = 0;
+        // Failure counters are captured and logged AFTER the transaction —
+        // logging (file I/O) inside a transaction callback is a known WPF
+        // freeze factor (transaction-callback-freeze.md).
+        var ungroupFailed = 0;
+        var disassembleFailed = 0;
 
         _transactionService.RunInTransaction("ShareProject: Purge", purgeDoc =>
         {
@@ -33,7 +39,7 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 foreach (var g in new FilteredElementCollector(purgeDoc)
                              .OfClass(typeof(Group)).Cast<Group>())
                 {
-                    try { g.UngroupMembers(); } catch { }
+                    try { g.UngroupMembers(); } catch { ungroupFailed++; }
                 }
             }
 
@@ -42,7 +48,7 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 foreach (var a in new FilteredElementCollector(purgeDoc)
                              .OfClass(typeof(AssemblyInstance)).Cast<AssemblyInstance>())
                 {
-                    try { a.Disassemble(); } catch { }
+                    try { a.Disassemble(); } catch { disassembleFailed++; }
                 }
             }
 
@@ -82,12 +88,17 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 .Select(vp => vp.ViewId)
                 .ToHashSet();
 
+            // ViewSheet/ViewSchedule наследуются от View — общий свип обязан
+            // уважать флаги категорий, иначе PurgeSheets=false/PurgeSchedules=false
+            // не сохраняют листы и ведомости (Issue #176).
             var viewsToDelete = new FilteredElementCollector(purgeDoc)
                 .OfClass(typeof(View))
                 .Cast<View>()
                 .Where(v => !v.IsTemplate)
                 .Where(v => !keepViewNames.Contains(v.Name))
                 .Where(v => !viewports.Contains(v.Id))
+                .Where(v => options.PurgeSheets || v is not ViewSheet)
+                .Where(v => options.PurgeSchedules || v is not ViewSchedule)
                 .Select(v => v.Id)
                 .ToList();
             pass2Ids.AddRange(viewsToDelete);
@@ -158,6 +169,19 @@ public sealed class RevitModelPurgeService : IModelPurgeService
                 totalDeleted += PurgeUnusedElements(purgeDoc);
             }
         });
+
+        if (ungroupFailed > 0)
+        {
+            SmartConLogger.Warn(
+                $"Purge: {ungroupFailed} group(s) could not be ungrouped " +
+                "[Action: эти группы останутся в share-файле — разгруппируйте их вручную при необходимости]");
+        }
+        if (disassembleFailed > 0)
+        {
+            SmartConLogger.Warn(
+                $"Purge: {disassembleFailed} assembly(s) could not be disassembled " +
+                "[Action: эти сборки останутся в share-файле — разберите их вручную при необходимости]");
+        }
 
         return totalDeleted;
     }

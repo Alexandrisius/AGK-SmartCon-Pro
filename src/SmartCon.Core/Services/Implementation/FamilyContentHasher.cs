@@ -12,15 +12,33 @@ namespace SmartCon.Core.Services.Implementation;
 /// <see cref="SystemFamilySnapshot"/>. Builds a deterministic canonical
 /// string (sorted, invariant culture, format-version prefixed) and hashes
 /// it with SHA-256. No Revit API calls — entirely deterministic and
-/// stable across SaveAs, rename, and Revit upgrade.
+/// stable across SaveAs, rename, Revit upgrade and UI locale.
 /// </summary>
-public sealed class FamilyContentHasher : IFamilyContentHasher
+/// <remarks>
+/// FHV3 (ADR-056, Issue #159): category ordinal replaces the
+/// locale-dependent display name; new sections FACTS (Part Type), FLAGS
+/// (behavior flags), CONN (connectors), STRUCT/ROUTING for system types;
+/// geometry gains bounding box + surface area; string values are escaped
+/// (<c>%</c> → <c>%25</c>, <c>|</c> → <c>%7C</c>) so the field separator
+/// cannot collide with content.
+/// Issue #249 (Phase 1): the monolithic canonical builders are decomposed
+/// into per-section builders (<see cref="ContentSectionHash"/>). The full
+/// canonical string is the concatenation of all sections in canonical
+/// order — byte-identical to the pre-refactor format, so there is NO FHV
+/// bump and NO database migration. Sections are an analytics layer
+/// (per-section diff, change classification, per-type hashes); the single
+/// identity hash is unchanged.
+/// </remarks>
+public sealed partial class FamilyContentHasher : IFamilyContentHasher
 {
     private const string NullElementMarker = "NULLELEMENT";
     private const string NullFormulaMarker = "NOFORMULA";
     private const string NullGuidMarker = "NOGUID";
     private const string NullBuiltInMarker = "NOBUILTIN";
     private const string NullSubcatMarker = "NOSUBCAT";
+    private const string NullMaterialMarker = "NOMATERIAL";
+    internal const string NullPartMarker = "NOPART";
+    private const string AbsentMarker = "-";
 
     public FamilyContentHash? ComputeForLoadable(FamilySnapshot snapshot)
     {
@@ -36,8 +54,9 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("ParamCount", snapshot.Parameters.Count),
             ("TypeCount", snapshot.Types.Count),
             ("FormCount", snapshot.Geometry.TotalFormCount),
+            ("ConnectorCount", snapshot.Connectors?.Count ?? 0),
             ("Hash", hex));
-        SmartConLogger.Info($"Loadable hash computed: {hex} ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms)");
+        SmartConLogger.Info($"Loadable hash computed ({snapshot.Parameters.Count} params, {snapshot.Types.Count} types, {snapshot.Geometry.TotalFormCount} forms, {snapshot.Connectors?.Count ?? 0} connectors)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;
@@ -47,6 +66,11 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             HexString: hex,
             FormatVersion: FamilyContentHashFormat.CurrentVersion,
             SourceKind: "loadable");
+    }
+
+    public string? BuildLoadableCanonicalStringForDiagnostics(FamilySnapshot snapshot)
+    {
+        return snapshot is null ? null : BuildLoadableCanonicalString(snapshot);
     }
 
     public FamilyContentHash? ComputeForSystem(SystemFamilySnapshot snapshot)
@@ -72,7 +96,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             ("Category", snapshot.CategoryName),
             ("TypeCount", snapshot.Types.Count),
             ("Hash", hex));
-        SmartConLogger.Info($"System hash computed: {hex} ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
+        SmartConLogger.Info($"System hash computed ({snapshot.CategoryName}, {snapshot.Types.Count} types)");
         var preview = canonical.Length > 200
             ? canonical[..200] + "…[truncated]"
             : canonical;
@@ -84,150 +108,126 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             SourceKind: "system");
     }
 
-    /// <summary>
-    /// Build the canonical string for a loadable family snapshot.
-    /// Format: FHV1|LOADABLE|{name}|{cat}|PARAMS|...|TYPES|...|GEOM|...|NESTED|...
-    /// </summary>
-    internal static string BuildLoadableCanonicalString(FamilySnapshot snapshot)
+    /// <inheritdoc/>
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForLoadable(FamilySnapshot snapshot)
     {
-        var sb = new StringBuilder(512);
-        sb.Append("FHV1|LOADABLE|");
-        sb.Append(StripRfaExtension(snapshot.FamilyName) ?? string.Empty);
+        return snapshot is null ? null : BuildLoadableSections(snapshot);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<ContentSectionHash>? ComputeSectionsForSystem(SystemFamilySnapshot snapshot)
+    {
+        if (snapshot is null || snapshot.Types.Count == 0)
+            return null;
+        return BuildSystemSections(snapshot);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyDictionary<string, string>? ComputePerTypeHashesForLoadable(FamilySnapshot snapshot)
+    {
+        if (snapshot is null)
+            return null;
+
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in snapshot.Types)
+        {
+            map[t.Name] = ComputeSha256Hex(BuildLoadableTypeSubstring(t));
+        }
+        return map;
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<SystemTypeContentHash>? ComputePerTypeHashesForSystem(SystemFamilySnapshot snapshot)
+    {
+        if (snapshot is null || snapshot.Types.Count == 0)
+            return null;
+
+        var list = new List<SystemTypeContentHash>(snapshot.Types.Count);
+        foreach (var t in snapshot.Types)
+        {
+            list.Add(new SystemTypeContentHash(
+                t.Name,
+                t.FamilyKey,
+                t.FamilyName,
+                ComputeSha256Hex(BuildSystemTypeBody(t))));
+        }
+        return list;
+    }
+
+    private static void AppendNullableNumber(StringBuilder sb, double? value)
+    {
+        if (value.HasValue)
+            sb.Append(value.Value.ToString("0.######", CultureInfo.InvariantCulture));
+        else
+            sb.Append(NullPartMarker);
         sb.Append('|');
-        sb.Append(snapshot.Category ?? string.Empty);
+    }
+
+    private static void AppendNullableInt(StringBuilder sb, int? value)
+    {
+        if (value.HasValue)
+            sb.Append(value.Value);
+        else
+            sb.Append(NullPartMarker);
         sb.Append('|');
-
-        sb.Append("PARAMS|");
-        var sortedParams = snapshot.Parameters
-            .OrderBy(p => p.Name, StringComparer.Ordinal)
-            .ThenBy(p => p.StorageType, StringComparer.Ordinal);
-        foreach (var p in sortedParams)
-        {
-            sb.Append(p.Name).Append('|');
-            sb.Append(p.StorageType).Append('|');
-            sb.Append(p.ParameterGroup ?? string.Empty).Append('|');
-            sb.Append(p.IsInstance ? 'I' : 'T').Append('|');
-            sb.Append(p.IsShared ? 'S' : 'P').Append('|');
-            sb.Append(p.Formula ?? NullFormulaMarker).Append('|');
-            sb.Append(p.IsDeterminedByFormula ? 'F' : 'N').Append('|');
-            sb.Append(p.IsReporting ? 'R' : 'N').Append('|');
-            sb.Append(p.SharedParamGuid ?? NullGuidMarker).Append('|');
-            sb.Append(p.BuiltInParameterId ?? NullBuiltInMarker).Append('|');
-        }
-
-        sb.Append("TYPES|");
-        var sortedTypes = snapshot.Types
-            .OrderBy(t => t.Name, StringComparer.Ordinal);
-        foreach (var t in sortedTypes)
-        {
-            sb.Append(t.Name).Append('|');
-            var sortedValues = t.Values
-                .OrderBy(v => v.ParameterName, StringComparer.Ordinal);
-            foreach (var v in sortedValues)
-            {
-                if (IsBlankValue(v.HasValue, v.ValueText)) continue;
-                if (IsAutoGeneratedParameter(v.ParameterName)) continue;
-                sb.Append(v.ParameterName).Append('|');
-                sb.Append(v.StorageType).Append('|');
-                sb.Append('V').Append('|');
-                if (v.ValueNumber.HasValue)
-                    sb.Append(v.ValueNumber.Value.ToString("0.######", CultureInfo.InvariantCulture));
-                else
-                    sb.Append(v.ValueText ?? string.Empty);
-                sb.Append('|');
-                sb.Append(v.ResolvedElementName ?? NullElementMarker).Append('|');
-            }
-        }
-
-        sb.Append("GEOM|");
-        sb.Append(snapshot.Geometry.TotalFormCount).Append('|');
-        var sortedForms = snapshot.Geometry.Forms
-            .OrderBy(f => f.FormKind, StringComparer.Ordinal)
-            .ThenBy(f => f.IsSolid)
-            .ThenBy(f => f.Volume);
-        foreach (var f in sortedForms)
-        {
-            sb.Append(f.FormKind).Append('|');
-            sb.Append(f.IsSolid ? "S" : "V").Append('|');
-            sb.Append(f.Volume.ToString("0.######", CultureInfo.InvariantCulture)).Append('|');
-            sb.Append(f.FaceCount).Append('|');
-            sb.Append(f.EdgeCount).Append('|');
-            sb.Append(f.SubcategoryName ?? NullSubcatMarker).Append('|');
-        }
-
-        sb.Append("GEOM2D|");
-        sb.Append(snapshot.Geometry.SymbolicCurveCount).Append('|');
-        sb.Append(snapshot.Geometry.DetailCurveCount).Append('|');
-        sb.Append(snapshot.Geometry.ModelCurveCount).Append('|');
-        sb.Append(snapshot.Geometry.TextNoteCount).Append('|');
-        sb.Append(snapshot.Geometry.ReferencePlaneCount).Append('|');
-        sb.Append(snapshot.Geometry.DimensionCount).Append('|');
-
-        sb.Append("NESTED|");
-        var sortedNested = snapshot.SharedNestedFamilyNames
-            .OrderBy(n => n, StringComparer.Ordinal);
-        foreach (var n in sortedNested)
-        {
-            sb.Append(n).Append('|');
-        }
-
-        return sb.ToString();
     }
 
     /// <summary>
-    /// Build the canonical string for a system family snapshot.
-    /// Format: FHV1|SYSTEM|{catName}|{catId}|TYPES|...
+    /// Escape the two characters with structural meaning in the canonical
+    /// string: <c>%</c> first (escape introducer), then the field
+    /// separator <c>|</c>. Applied to every content string (names, values,
+    /// resolved element names, descriptions) so user content can never
+    /// shift field boundaries (ADR-049 known limitation, fixed in v3).
     /// </summary>
-    internal static string BuildSystemCanonicalString(SystemFamilySnapshot snapshot)
+    internal static string Escape(string value)
     {
-        var sb = new StringBuilder(256);
-        sb.Append("FHV1|SYSTEM|");
-        sb.Append(snapshot.CategoryName ?? string.Empty);
-        sb.Append('|');
-        sb.Append(snapshot.CategoryId).Append('|');
-
-        sb.Append("TYPES|");
-        var sortedTypes = snapshot.Types
-            .OrderBy(t => t.Name, StringComparer.Ordinal);
-        foreach (var t in sortedTypes)
-        {
-            sb.Append(t.Name).Append('|');
-            var sortedValues = t.Values
-                .OrderBy(v => v.ParameterName, StringComparer.Ordinal);
-            foreach (var v in sortedValues)
-            {
-                if (IsBlankValue(v.HasValue, v.ValueText)) continue;
-                if (IsAutoGeneratedParameter(v.ParameterName)) continue;
-                sb.Append(v.ParameterName).Append('|');
-                sb.Append(v.StorageType).Append('|');
-                sb.Append('V').Append('|');
-                if (v.ValueNumber.HasValue)
-                    sb.Append(v.ValueNumber.Value.ToString("0.######", CultureInfo.InvariantCulture));
-                else
-                    sb.Append(v.ValueText ?? string.Empty);
-                sb.Append('|');
-                sb.Append(v.ResolvedElementName ?? NullElementMarker).Append('|');
-            }
-        }
-
-        return sb.ToString();
+        if (value.Length == 0) return value;
+        if (value.IndexOf('%') < 0 && value.IndexOf('|') < 0) return value;
+        return value.Replace("%", "%25").Replace("|", "%7C");
     }
 
     /// <summary>
     /// A parameter value is "blank" (should not affect the hash) when it
-    /// has no value, or has a value that carries no meaningful content:
-    /// empty string, INVALID (ElementId with no element), UNSUPPORTED
-    /// (unknown storage type), READERROR (failed to read).
-    /// Numeric zero IS meaningful (e.g. IFC=0) and is NOT blank.
+    /// has no value, or has a value that carries no meaningful content.
+    /// Marker strings are storage-type scoped (v3) so a user's literal
+    /// "INVALID"/"UNSUPPORTED" text parameter still participates:
+    /// <c>INVALID</c> is produced by the extractor only for ElementId
+    /// storage, <c>UNSUPPORTED</c> only for unknown storage types.
+    /// <c>READERROR</c> is blank for any storage type (accepted residual
+    /// risk: a user literally typing "READERROR" in a text parameter —
+    /// documented in ADR-056). Numeric zero IS meaningful and NOT blank.
     /// </summary>
-    private static bool IsBlankValue(bool hasValue, string? valueText)
+    internal static bool IsBlankValue(bool hasValue, string? valueText, string storageType)
     {
         if (!hasValue) return true;
         if (valueText is null) return false;
-        return valueText.Length == 0
-            || valueText == "INVALID"
-            || valueText == "UNSUPPORTED"
-            || valueText == "READERROR";
+        if (valueText.Length == 0) return true;
+        if (valueText == "READERROR") return true;
+        if (valueText == "INVALID")
+            return string.Equals(storageType, "ElementId", StringComparison.Ordinal);
+        if (valueText == "UNSUPPORTED")
+            return storageType is not ("Double" or "Integer" or "String" or "ElementId");
+        return false;
+    }
+
+    /// <summary>
+    /// Appends one parameter value entry to the canonical string (shared by
+    /// the TYPES and FHV9 PHANTOM sections). Blank and auto-generated
+    /// values are skipped.
+    /// </summary>
+    private static void AppendParameterValue(StringBuilder sb, FamilyParameterValue v)
+    {
+        if (IsBlankValue(v.HasValue, v.ValueText, v.StorageType)) return;
+        if (IsAutoGeneratedParameter(v.ParameterName)) return;
+        sb.Append(Escape(v.ParameterName)).Append('|');
+        sb.Append(v.StorageType).Append('|');
+        sb.Append('V').Append('|');
+        if (v.ValueNumber.HasValue)
+            sb.Append(v.ValueNumber.Value.ToString("0.######", CultureInfo.InvariantCulture));
+        else
+            sb.Append(Escape(v.ValueText ?? string.Empty));
+        sb.Append('|');
+        sb.Append(Escape(v.ResolvedElementName ?? NullElementMarker)).Append('|');
     }
 
     /// <summary>
@@ -247,6 +247,60 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
             || ContainsOrdinalIgnoreCase(parameterName, "IFC GUID");
     }
 
+    private static string FormatFlag(bool? value)
+        => value.HasValue ? (value.Value ? "1" : "0") : AbsentMarker;
+
+    private static string FormatSize(double? value)
+        => value.HasValue
+            ? value.Value.ToString("0.######", CultureInfo.InvariantCulture)
+            : AbsentMarker;
+
+    /// <summary>
+    /// Coordinates (connector origins, bounding boxes) are rounded to
+    /// 1e-4 ft (~0.03 mm) — fine enough to catch hand-moved connectors,
+    /// coarse enough to absorb regen noise across Revit versions.
+    /// Internal: shared with <c>FamilyPreviewHasher</c> (VIEW3D) so both
+    /// quantize identically. FHV16 (#249): values formatting to "-0"
+    /// (IEEE -0.0 or small negatives rounding to zero) canonicalize to
+    /// "0" — regen noise flipped the sign of a zero coordinate between
+    /// extractions and produced phantom GEOM diffs on symmetric families.
+    /// </summary>
+    internal static string FormatCoord(double value)
+    {
+        var formatted = value.ToString("0.####", CultureInfo.InvariantCulture);
+        return formatted == "-0" ? "0" : formatted;
+    }
+
+    /// <summary>
+    /// FHV18 (#251): appends the resolved per-face color histogram of a
+    /// form — buckets sorted by RGBA, each <c>R,G,B,A:count</c>,
+    /// comma-joined; <c>-</c> when the form produced no colored faces.
+    /// Internal: shared with <c>FamilyPreviewHasher</c> (VIEW3D) so GEOM
+    /// and the preview hash bucket identically.
+    /// </summary>
+    internal static void AppendFaceColors(StringBuilder sb, IReadOnlyList<FaceColorCount>? faceColors)
+    {
+        if (faceColors is not { Count: > 0 })
+        {
+            sb.Append('-');
+            return;
+        }
+        var first = true;
+        foreach (var bucket in faceColors
+            .OrderBy(b => b.Color.R)
+            .ThenBy(b => b.Color.G)
+            .ThenBy(b => b.Color.B)
+            .ThenBy(b => b.Color.A))
+        {
+            if (!first) sb.Append(',');
+            sb.Append(bucket.Color.R).Append(',');
+            sb.Append(bucket.Color.G).Append(',');
+            sb.Append(bucket.Color.B).Append(',');
+            sb.Append(bucket.Color.A).Append(':').Append(bucket.Count);
+            first = false;
+        }
+    }
+
     private static bool ContainsOrdinalIgnoreCase(string haystack, string needle)
     {
 #if NET8_0_OR_GREATER
@@ -256,7 +310,7 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
 #endif
     }
 
-    private static string ComputeSha256Hex(string input)
+    internal static string ComputeSha256Hex(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(input);
 #if NET8_0_OR_GREATER
@@ -267,21 +321,5 @@ public sealed class FamilyContentHasher : IFamilyContentHasher
         var hash = sha256.ComputeHash(bytes);
         return BitConverter.ToString(hash).Replace("-", string.Empty);
 #endif
-    }
-
-    /// <summary>
-    /// Strips a trailing <c>.rfa</c> extension (case-insensitive) from the
-    /// family name. <c>Document.Title</c> may or may not include the
-    /// extension depending on how the family document was opened
-    /// (<c>EditFamily</c> from a project includes it; opening a managed
-    /// <c>.rfa</c> file directly does not). Stripping here is a defensive
-    /// measure so the hash is stable regardless of the source path.
-    /// </summary>
-    private static string StripRfaExtension(string? name)
-    {
-        if (name is null || name.Length == 0) return string.Empty;
-        if (name.EndsWith(".rfa", StringComparison.OrdinalIgnoreCase))
-            return name.Substring(0, name.Length - 4);
-        return name;
     }
 }

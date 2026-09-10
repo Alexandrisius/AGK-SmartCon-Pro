@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services.LocalCatalog;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Repository;
@@ -39,6 +40,12 @@ public sealed class LocalCatalogMigratorTests
         Assert.Contains("family_data_import_runs", tables);
         Assert.Contains("extracted_attribute_values", tables);
         Assert.Contains("db_users", tables);
+        Assert.Contains("family_nested_shared_families", tables);
+        Assert.Contains("family_facts", tables);
+        Assert.Contains("family_dependencies", tables);
+        Assert.Contains("category_validation_rules", tables);
+        Assert.Contains("category_assignment_rule_groups", tables);
+        Assert.Contains("category_assignment_conditions", tables);
     }
 
     [Fact]
@@ -68,7 +75,511 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("38", version);
+    }
+
+    [Fact]
+    public async Task Migrate_V26_AddsFamilyNameAndPreservesRows()
+    {
+        // V26 (#183): family_types gets family_name ('' default for legacy
+        // rows) and the UNIQUE becomes (item, version, family, name).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedFamilyTypeRowAsync(fixture, itemId, "Стандарт", familyName: "Conduit without Fittings");
+
+        await RewindFamilyTypesToV25Async(fixture);
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('family_types') WHERE name='family_name'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // Legacy row migrated with '' family_name (never NULL).
+            rowCmd.CommandText = "SELECT type_name, family_name FROM family_types WHERE catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", itemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("Стандарт", reader.GetString(0));
+            Assert.Equal(string.Empty, reader.GetString(1));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V27_AddsFamilyKeyAndPreservesRows()
+    {
+        // V27 (#190, ADR-064): family_types gets family_key ('' default for
+        // legacy rows); family_name and the UNIQUE identity are untouched.
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedFamilyTypeRowAsync(fixture, itemId, "Стандарт", familyName: "Conduit without Fittings");
+
+        using (var rewindConn = fixture.GetDatabase().CreateConnection())
+        {
+            await rewindConn.OpenAsync();
+            using var rewindCmd = rewindConn.CreateCommand();
+            rewindCmd.CommandText = """
+                ALTER TABLE family_types DROP COLUMN family_key;
+                UPDATE schema_info SET value = '26' WHERE key='schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('family_types') WHERE name='family_key'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // Legacy row migrated with '' family_key (never NULL); the
+            // family_name value survives the migration.
+            rowCmd.CommandText = "SELECT type_name, family_name, family_key FROM family_types WHERE catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", itemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("Стандарт", reader.GetString(0));
+            Assert.Equal("Conduit without Fittings", reader.GetString(1));
+            Assert.Equal(string.Empty, reader.GetString(2));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V28_AddsEsMarkerVersionAndPreservesRows()
+    {
+        // V28 (#189, ADR-062): catalog_versions gets es_marker_version
+        // (0 = pending default) — the detection column of the
+        // mini-project-marker-v1 task.
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, 5);
+
+        using (var rewindConn = fixture.GetDatabase().CreateConnection())
+        {
+            await rewindConn.OpenAsync();
+            using var rewindCmd = rewindConn.CreateCommand();
+            rewindCmd.CommandText = """
+                ALTER TABLE catalog_versions DROP COLUMN es_marker_version;
+                UPDATE schema_info SET value = '27' WHERE key='schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('catalog_versions') WHERE name='es_marker_version'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // The existing version row survives with the default 0 (pending).
+            rowCmd.CommandText = "SELECT content_hash, hash_format_version, es_marker_version FROM catalog_versions WHERE catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", itemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("ABCD", reader.GetString(0));
+            Assert.Equal(5, reader.GetInt32(1));
+            Assert.Equal(0, reader.GetInt32(2));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V29_AddsFamilyDependenciesTableAndPreservesRows()
+    {
+        // V29 (#207, ADR-066): family_dependencies — parent→child dependency
+        // links (routing fittings / shared nested). Rewind drops the table;
+        // after re-migration the fresh table must accept link rows (FK chain
+        // intact) and the version bumps to 29.
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var parentItemId = await SeedCatalogItemAsync(fixture);
+        var childItemId = await SeedCatalogItemAsync(fixture);
+        var versionId = await SeedVersionReturningIdAsync(fixture, parentItemId);
+
+        using (var rewindConn = fixture.GetDatabase().CreateConnection())
+        {
+            await rewindConn.OpenAsync();
+            using var rewindCmd = rewindConn.CreateCommand();
+            rewindCmd.CommandText = """
+                DROP TABLE IF EXISTS family_dependencies;
+                UPDATE schema_info SET value = '28' WHERE key='schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var tableCmd = connection.CreateCommand())
+        {
+            tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_dependencies'";
+            Assert.NotNull(await tableCmd.ExecuteScalarAsync());
+        }
+
+        using (var insCmd = connection.CreateCommand())
+        {
+            insCmd.CommandText = """
+                INSERT INTO family_dependencies
+                    (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind, part_name, ordinal)
+                VALUES (@parentId, @versionId, @childId, 'routing', 'ADSK_Отвод:Стандарт', 0)
+                """;
+            insCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@parentId", parentItemId));
+            insCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@versionId", versionId));
+            insCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@childId", childItemId));
+            await insCmd.ExecuteNonQueryAsync();
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            rowCmd.CommandText = """
+                SELECT child_catalog_item_id, dependency_kind, part_name, ordinal
+                FROM family_dependencies WHERE parent_catalog_item_id = @id
+                """;
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", parentItemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(childItemId, reader.GetString(0));
+            Assert.Equal("routing", reader.GetString(1));
+            Assert.Equal("ADSK_Отвод:Стандарт", reader.GetString(2));
+            Assert.Equal(0, reader.GetInt32(3));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V30_AddsChildVersionLabelAndPreservesRows()
+    {
+        // V30 (E2, #209): family_dependencies gets child_version_label —
+        // the embedded child version for dependency-drift detection.
+        // Rewind drops the column; after re-migration the existing link row
+        // must survive with NULL (unknown — never drifted).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var parentItemId = await SeedCatalogItemAsync(fixture);
+        var childItemId = await SeedCatalogItemAsync(fixture);
+        var versionId = await SeedVersionReturningIdAsync(fixture, parentItemId);
+
+        using (var seedConn = fixture.GetDatabase().CreateConnection())
+        {
+            await seedConn.OpenAsync();
+            using var seedCmd = seedConn.CreateCommand();
+            seedCmd.CommandText = """
+                INSERT INTO family_dependencies
+                    (parent_catalog_item_id, parent_version_id, child_catalog_item_id, dependency_kind, part_name, ordinal)
+                VALUES (@parentId, @versionId, @childId, 'routing', 'ADSK_Отвод:Стандарт', 0)
+                """;
+            seedCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@parentId", parentItemId));
+            seedCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@versionId", versionId));
+            seedCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@childId", childItemId));
+            await seedCmd.ExecuteNonQueryAsync();
+        }
+
+        using (var rewindConn = fixture.GetDatabase().CreateConnection())
+        {
+            await rewindConn.OpenAsync();
+            using var rewindCmd = rewindConn.CreateCommand();
+            rewindCmd.CommandText = """
+                ALTER TABLE family_dependencies DROP COLUMN child_version_label;
+                UPDATE schema_info SET value = '29' WHERE key='schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var colCmd = connection.CreateCommand())
+        {
+            colCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('family_dependencies') WHERE name='child_version_label'";
+            Assert.Equal(1L, (long)(await colCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var rowCmd = connection.CreateCommand())
+        {
+            // The existing V29 link row survives with NULL embedded label.
+            rowCmd.CommandText = "SELECT child_catalog_item_id, child_version_label FROM family_dependencies WHERE parent_catalog_item_id = @id";
+            rowCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", parentItemId));
+            using var reader = await rowCmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(childItemId, reader.GetString(0));
+            Assert.True(await reader.IsDBNullAsync(1));
+        }
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+        }
+    }
+
+    private static async Task<string> SeedVersionReturningIdAsync(TempCatalogFixture fixture, string catalogItemId)
+    {
+        var versionId = Guid.NewGuid().ToString();
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        var fileId = Guid.NewGuid().ToString();
+        using (var fileCmd = conn.CreateCommand())
+        {
+            fileCmd.CommandText = """
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES (@id, 'files/x.rfa', 'x.rfa', 2025, '2026-08-06T00:00:00Z')
+                """;
+            fileCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", fileId));
+            await fileCmd.ExecuteNonQueryAsync();
+        }
+
+        using var versionCmd = conn.CreateCommand();
+        versionCmd.CommandText = """
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+            VALUES (@id, @itemId, @fileId, 'v1', 2025, '2026-08-06T00:00:00Z')
+            """;
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", versionId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", catalogItemId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fileId", fileId));
+        await versionCmd.ExecuteNonQueryAsync();
+        return versionId;
+    }
+
+    private static async Task SeedFamilyTypeRowAsync(
+        TempCatalogFixture fixture, string catalogItemId, string typeName, string familyName)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, family_name)
+            VALUES (@id, @itemId, @name, 0, @family)
+            """;
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", catalogItemId));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@name", typeName));
+        cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@family", familyName));
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Simulates the pre-V26 schema: recreates family_types with the V18-V25
+    /// structure (no family_name, UNIQUE(item, version, name)) and rewinds
+    /// schema_version to 25.
+    /// </summary>
+    private static async Task RewindFamilyTypesToV25Async(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        using (var fkOff = conn.CreateCommand())
+        {
+            fkOff.CommandText = "PRAGMA foreign_keys=OFF";
+            await fkOff.ExecuteNonQueryAsync();
+        }
+
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                DROP TABLE IF EXISTS family_types_v25;
+
+                CREATE TABLE family_types_v25 (
+                    id TEXT PRIMARY KEY,
+                    catalog_item_id TEXT NOT NULL,
+                    type_name TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    version_id TEXT,
+                    file_id TEXT,
+                    extraction_run_id TEXT,
+                    type_unique_id TEXT,
+                    FOREIGN KEY (catalog_item_id) REFERENCES catalog_items(id) ON DELETE CASCADE,
+                    FOREIGN KEY (version_id) REFERENCES catalog_versions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (file_id) REFERENCES family_files(id) ON DELETE SET NULL,
+                    UNIQUE(catalog_item_id, version_id, type_name)
+                );
+
+                INSERT INTO family_types_v25 (id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id)
+                SELECT id, catalog_item_id, type_name, sort_order, version_id, file_id, extraction_run_id, type_unique_id
+                FROM family_types;
+
+                DROP TABLE family_types;
+                ALTER TABLE family_types_v25 RENAME TO family_types;
+
+                CREATE INDEX IF NOT EXISTS ix_family_types_item ON family_types (catalog_item_id);
+                CREATE INDEX IF NOT EXISTS ix_family_types_name ON family_types (type_name);
+                CREATE INDEX IF NOT EXISTS ix_family_types_version_id ON family_types (version_id) WHERE version_id IS NOT NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS ix_family_types_orchestrator_unique
+                ON family_types (catalog_item_id, type_name)
+                WHERE version_id IS NULL;
+
+                UPDATE schema_info SET value = '25' WHERE key='schema_version';
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+        finally
+        {
+            using var fkOn = conn.CreateCommand();
+            fkOn.CommandText = "PRAGMA foreign_keys=ON";
+            await fkOn.ExecuteNonQueryAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V24_AddsMinPluginVersionColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('database_meta') WHERE name='min_plugin_version'";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.Equal(1L, count);
+    }
+
+    [Fact]
+    public async Task Migrate_V24_BackfillsMinPluginVersion_WhenFhv3HashesPresent()
+    {
+        // ADR-058 (#173): a database that already carries FHV3 hashes must be
+        // retro-gated to the first FHV3-capable plugin release. Simulate the
+        // pre-V24 state (rewind pattern from Migrate_FromV13_DropsSha256Columns).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, hashFormatVersion: 3);
+
+        await RewindToV23Async(fixture);
+        await fixture.MigrateAsync();
+
+        // V24 backfills the HISTORICAL FHV3 floor ('2.0.1-beta.5'); the FHV4
+        // actualization task (hash-v6) raises the floor to
+        // DbCompatibility.CurrentMinPluginVersion at runtime, after the
+        // rehash — v4 rows exist only then, so a schema migration cannot
+        // key on them (ADR-065).
+        Assert.Equal("2.0.1-beta.5", await ReadMinPluginVersionAsync(fixture));
+    }
+
+    [Fact]
+    public async Task Migrate_V24_LeavesMinPluginVersionNull_WhenNoFhv3Hashes()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+        var itemId = await SeedCatalogItemAsync(fixture);
+        await SeedVersionWithHashFormatAsync(fixture, itemId, hashFormatVersion: 2);
+
+        await RewindToV23Async(fixture);
+        await fixture.MigrateAsync();
+
+        Assert.Null(await ReadMinPluginVersionAsync(fixture));
+    }
+
+    private static async Task SeedVersionWithHashFormatAsync(TempCatalogFixture fixture, string catalogItemId, int hashFormatVersion)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        var fileId = Guid.NewGuid().ToString();
+        using (var fileCmd = conn.CreateCommand())
+        {
+            fileCmd.CommandText = """
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES (@id, 'files/x.rfa', 'x.rfa', 2025, '2026-07-28T00:00:00Z')
+                """;
+            fileCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", fileId));
+            await fileCmd.ExecuteNonQueryAsync();
+        }
+
+        using (var metaCmd = conn.CreateCommand())
+        {
+            metaCmd.CommandText = """
+                INSERT INTO database_meta (id, name, created_at_utc, schema_version)
+                VALUES ('db1', 'Test DB', '2026-07-28T00:00:00Z', 2)
+                """;
+            await metaCmd.ExecuteNonQueryAsync();
+        }
+
+        using var versionCmd = conn.CreateCommand();
+        versionCmd.CommandText = """
+            INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, content_hash, hash_format_version, published_at_utc)
+            VALUES (@id, @itemId, @fileId, 'v1', 2025, 'ABCD', @fmt, '2026-07-28T00:00:00Z')
+            """;
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", Guid.NewGuid().ToString()));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@itemId", catalogItemId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fileId", fileId));
+        versionCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@fmt", hashFormatVersion));
+        await versionCmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RewindToV23Async(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+
+        using (var drop = conn.CreateCommand())
+        {
+            drop.CommandText = "ALTER TABLE database_meta DROP COLUMN min_plugin_version";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        using var rewind = conn.CreateCommand();
+        rewind.CommandText = "UPDATE schema_info SET value = '23' WHERE key='schema_version'";
+        await rewind.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> ReadMinPluginVersionAsync(TempCatalogFixture fixture)
+    {
+        using var conn = fixture.GetDatabase().CreateConnection();
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT min_plugin_version FROM database_meta LIMIT 1";
+        var value = await cmd.ExecuteScalarAsync();
+        return value is null or DBNull ? null : (string?)value;
     }
 
     [Fact]
@@ -118,7 +629,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("38", version);
 
         using var tableCmd = verify.CreateCommand();
         tableCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='family_nested_shared_families'";
@@ -127,6 +638,110 @@ public sealed class LocalCatalogMigratorTests
         using var idxCmd = verify.CreateCommand();
         idxCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND name='ix_nested_shared_version'";
         Assert.NotNull(await idxCmd.ExecuteScalarAsync());
+    }
+
+    [Fact]
+    public async Task Migrate_V20_AddsBaseTypeColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+
+        Assert.Contains("base_type", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V21_AddsProjectBindingJsonColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+
+        Assert.Contains("project_binding_json", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V21_FromV20_AddsProjectBindingJsonColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '20' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        var version = (string?)await versionCmd.ExecuteScalarAsync();
+        Assert.Equal("38", version);
+
+        using var cmd = verify.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+        Assert.Contains("project_binding_json", columns);
+    }
+
+    [Fact]
+    public async Task Migrate_V20_FromV19_AddsBaseTypeColumn()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '19' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        var version = (string?)await versionCmd.ExecuteScalarAsync();
+        Assert.Equal("38", version);
+
+        using var cmd = verify.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(database_meta)";
+        var columns = new List<string>();
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(1));
+        Assert.Contains("base_type", columns);
     }
 
     [Fact]
@@ -181,7 +796,7 @@ public sealed class LocalCatalogMigratorTests
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await cmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("38", version);
     }
 
     [Fact]
@@ -450,7 +1065,7 @@ public sealed class LocalCatalogMigratorTests
         using var versionCmd = verify.CreateCommand();
         versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
         var version = (string?)await versionCmd.ExecuteScalarAsync();
-        Assert.Equal("19", version);
+        Assert.Equal("38", version);
 
         foreach (var (table, column) in new[]
         {
@@ -477,6 +1092,334 @@ public sealed class LocalCatalogMigratorTests
             cmd.CommandText = $"SELECT name FROM sqlite_master WHERE type='index' AND name='{index}'";
             var result = await cmd.ExecuteScalarAsync();
             Assert.Null(result);
+        }
+    }
+
+    /// <summary>
+    /// Regression for the "FOREIGN KEY constraint failed" connect failure on
+    /// legacy databases: pre-FK-enforcement databases can carry orphan rows in
+    /// EVERY FK column of the rebuilt tables (not just the ones the original
+    /// cleanups covered). The V15/V17/V18 rebuilds must clean orphans by all
+    /// FK columns and let the database connect.
+    /// </summary>
+    [Fact]
+    public async Task Migrate_LegacyDatabaseWithOrphanRows_CleansAllFkColumns()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        // Seed: one valid entity graph + orphan rows in every FK column the
+        // rebuilds cover. Test connections default to foreign_keys=OFF, so
+        // orphan inserts succeed (exactly how legacy databases got them).
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+
+            // The pooled physical connection inherits foreign_keys=ON from
+            // the migrator — disable it explicitly so the orphan inserts
+            // succeed (exactly how legacy databases got their orphans).
+            using (var fkOff = connection.CreateCommand())
+            {
+                fkOff.CommandText = "PRAGMA foreign_keys=OFF";
+                await fkOff.ExecuteNonQueryAsync();
+            }
+
+            using (var seed = connection.CreateCommand())
+            {
+                seed.CommandText = """
+                    INSERT INTO catalog_items (id, name, normalized_name, family_source, created_at_utc, updated_at_utc)
+                    VALUES ('item1', 'FamA', 'fama', 'loadable', '2024-01-01', '2024-01-01');
+                    INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                    VALUES ('file1', 'files/item1/v1/FamA.rfa', 'FamA.rfa', 2021, '2024-01-01');
+                    INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                    VALUES ('ver1', 'item1', 'file1', 'v1', 2021, '2024-01-01');
+                    INSERT INTO attribute_definitions (id, name, is_active, created_at_utc)
+                    VALUES ('attr1', 'ParamA', 1, '2024-01-01');
+                    INSERT INTO family_data_import_runs (id, catalog_item_id, revit_major_version, started_at_utc)
+                    VALUES ('run1', 'item1', 2021, '2024-01-01');
+
+                    -- valid rows that MUST survive the rebuilds
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ok', 'item1', 'T1', 0, 'ver1', 'file1');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, version_id, file_id, type_id, attribute_id,
+                                                          parameter_name, storage_type, value_text, status,
+                                                          extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ok', 'item1', 'ver1', 'file1', 'type-ok', 'attr1',
+                            'ParamA', 'String', 'X', 'Found', 'run1', '2024-01-01');
+
+                    -- orphan rows: every FK column, one per violation kind
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-item', 'ghost-item', 'T2', 0, 'ver1', 'file1');
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-file', 'item1', 'T3', 0, 'ver1', 'ghost-file');
+                    INSERT INTO family_types (id, catalog_item_id, type_name, sort_order, version_id, file_id)
+                    VALUES ('type-ghost-ver', 'item1', 'T4', 0, 'ghost-ver', 'file1');
+
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-item', 'ghost-item', 'P1', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, type_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-type', 'item1', 'ghost-type', 'P2', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, attribute_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-attr', 'item1', 'ghost-attr', 'P3', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, version_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-ver', 'item1', 'ghost-ver', 'P4', 'run1', '2024-01-01');
+                    INSERT INTO extracted_attribute_values (id, catalog_item_id, parameter_name, extraction_run_id, extracted_at_utc)
+                    VALUES ('eav-ghost-run', 'item1', 'P5', 'ghost-run', '2024-01-01');
+                    """;
+                await seed.ExecuteNonQueryAsync();
+            }
+
+            // Rewind to v14 so V15..V21 re-run against the dirty data.
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '14' WHERE key='schema_version'";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        // Must not throw — previously failed with "FOREIGN KEY constraint failed".
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using var versionCmd = verify.CreateCommand();
+        versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+        Assert.Equal("38", (string?)await versionCmd.ExecuteScalarAsync());
+
+        // Orphans are gone from both rebuilt tables.
+        foreach (var (table, ghostId) in new[]
+        {
+            ("family_types", "type-ghost-item"),
+            ("family_types", "type-ghost-file"),
+            ("family_types", "type-ghost-ver"),
+            ("extracted_attribute_values", "eav-ghost-item"),
+            ("extracted_attribute_values", "eav-ghost-type"),
+            ("extracted_attribute_values", "eav-ghost-attr"),
+            ("extracted_attribute_values", "eav-ghost-ver"),
+            ("extracted_attribute_values", "eav-ghost-run"),
+        })
+        {
+            using var cmd = verify.CreateCommand();
+            cmd.CommandText = $"SELECT COUNT(*) FROM {table} WHERE id = '{ghostId}'";
+            Assert.Equal(0L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+
+        // Valid rows survived the rebuilds.
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM family_types WHERE id = 'type-ok'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM extracted_attribute_values WHERE id = 'eav-ok'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+
+        // No FK violations remain anywhere in the database.
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA foreign_key_check";
+            using var reader = await cmd.ExecuteReaderAsync();
+            Assert.False(await reader.ReadAsync(), "foreign_key_check must find no violations after migration");
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V25_FromV24_CreatesValidationRulesTableAndIndex()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewind = connection.CreateCommand();
+            rewind.CommandText = "UPDATE schema_info SET value = '24' WHERE key='schema_version'; DROP TABLE IF EXISTS category_validation_rules";
+            await rewind.ExecuteNonQueryAsync();
+        }
+
+        await fixture.GetMigrator().MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using (var versionCmd = verify.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            var version = (string?)await versionCmd.ExecuteScalarAsync();
+            Assert.Equal("38", version);
+        }
+
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='category_validation_rules'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+
+        using (var cmd = verify.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='ix_validation_rules_binding'";
+            Assert.Equal(1L, (long)(await cmd.ExecuteScalarAsync() ?? 0L));
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V31_CreatesAssignmentTablesWithCheckConstraint()
+    {
+        // V31 (#241): assignment tables exist on a fresh schema and the
+        // CHECK constraint rejects a condition without attribute_id
+        // (valid category id — the FK must NOT be what fires).
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        var categoryRepository = new SmartCon.FamilyManager.Services.LocalCatalog.LocalCategoryRepository(fixture.GetDatabase());
+        var category = await categoryRepository.AddAsync("CHECK-test", null, 0);
+
+        using var connection = fixture.GetDatabase().CreateConnection();
+        await connection.OpenAsync();
+
+        using (var versionCmd = connection.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)(await versionCmd.ExecuteScalarAsync()));
+        }
+
+        using (var checkCmd = connection.CreateCommand())
+        {
+            checkCmd.CommandText = """
+                INSERT INTO category_assignment_rule_groups (id, category_id) VALUES ('g1', @categoryId);
+                INSERT INTO category_assignment_conditions (id, group_id, source_kind, attribute_id, system_key, operator)
+                VALUES ('c1', 'g1', 'attribute', NULL, NULL, 'Equals')
+                """;
+            checkCmd.Parameters.Add(new SqliteParameter("@categoryId", category.Id));
+            await Assert.ThrowsAsync<SqliteException>(() => checkCmd.ExecuteNonQueryAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V31_RewindFromV30_RecreatesTables()
+    {
+        using var fixture = new TempCatalogFixture();
+        await fixture.MigrateAsync();
+
+        using (var connection = fixture.GetDatabase().CreateConnection())
+        {
+            await connection.OpenAsync();
+            using var rewindCmd = connection.CreateCommand();
+            rewindCmd.CommandText = """
+                DROP TABLE category_assignment_conditions;
+                DROP TABLE category_assignment_rule_groups;
+                UPDATE schema_info SET value = '30' WHERE key = 'schema_version';
+                """;
+            await rewindCmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using (var versionCmd = verify.CreateCommand())
+        {
+            versionCmd.CommandText = "SELECT value FROM schema_info WHERE key='schema_version'";
+            Assert.Equal("38", (string?)(await versionCmd.ExecuteScalarAsync()));
+        }
+
+        using (var tableCmd = verify.CreateCommand())
+        {
+            tableCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('category_assignment_rule_groups','category_assignment_conditions')";
+            Assert.Equal(2L, (long)(await tableCmd.ExecuteScalarAsync())!);
+        }
+    }
+
+    [Fact]
+    public async Task Migrate_V36_CreatesSegmentSizesTable_WithRepositoryRoundtrip()
+    {
+        using var fixture = new TempCatalogFixture();
+
+        using (var seed = fixture.GetDatabase().CreateConnection())
+        {
+            await seed.OpenAsync();
+            using var itemCmd = seed.CreateCommand();
+            itemCmd.CommandText = """
+                INSERT INTO catalog_items (id, name, normalized_name, content_status, current_version_label, family_source, revit_category_id, created_at_utc, updated_at_utc)
+                VALUES ('item-v36', 'Pipes', 'PIPES', 'Active', 'v1', 'system', -2008044, '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z');
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES ('file-v36', 'files/x.rvt', 'x.rvt', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                VALUES ('ver-v36', 'item-v36', 'file-v36', 'v1', 2025, '2026-08-29T00:00:00Z');
+                """;
+            await itemCmd.ExecuteNonQueryAsync();
+        }
+
+        var repo = new LocalSegmentSizeRepository(fixture.GetDatabase());
+        await repo.ReplaceForVersionAsync("ver-v36",
+        [
+            new SegmentSizeRecord("Seg A", 0.164, 0.1, 0.12, true, true, 0),
+            new SegmentSizeRecord("Seg A", 0.328, 0.2, 0.24, true, false, 1),
+        ]);
+
+        var nominals = await repo.ReadDistinctNominalsAsync("ver-v36");
+        Assert.Equal([0.164, 0.328], nominals);
+
+        var rows = await repo.ReadForVersionAsync("ver-v36");
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("Seg A", rows[0].SegmentName);
+        Assert.True(rows[0].UsedInSizeLists);
+        Assert.False(rows[1].UsedInSizing);
+    }
+
+    [Fact]
+    public async Task Migrate_V37_CopiesCurrentVersionRouting_ToItemTables()
+    {
+        using var fixture = new TempCatalogFixture();
+
+        using (var seed = fixture.GetDatabase().CreateConnection())
+        {
+            await seed.OpenAsync();
+            using var cmd = seed.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO catalog_items (id, name, normalized_name, content_status, current_version_label, family_source, revit_category_id, created_at_utc, updated_at_utc)
+                VALUES ('item-v37', 'Pipes', 'PIPES', 'Active', 'v2', 'system', -2008044, '2026-08-29T00:00:00Z', '2026-08-29T00:00:00Z');
+                INSERT INTO family_files (id, relative_path, file_name, revit_major_version, imported_at_utc)
+                VALUES ('file-v37', 'files/x.rvt', 'x.rvt', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO catalog_versions (id, catalog_item_id, file_id, version_label, revit_major_version, published_at_utc)
+                VALUES ('ver-v37-archived', 'item-v37', 'file-v37', 'v1', 2025, '2026-08-28T00:00:00Z'),
+                       ('ver-v37-current', 'item-v37', 'file-v37', 'v2', 2025, '2026-08-29T00:00:00Z');
+                INSERT INTO family_routing_rules
+                    (catalog_item_id, catalog_version_id, family_key, type_name, group_key, rule_order, part_name, description, criteria_json)
+                VALUES ('item-v37', 'ver-v37-archived', 'Single', 'Type A', 'Elbows', 0, 'Old:X', '', '[]'),
+                       ('item-v37', 'ver-v37-current', 'Single', 'Type A', 'Elbows', 0, 'New:Y', '', '[]');
+                INSERT INTO family_routing_type_settings (catalog_version_id, family_key, type_name, preferred_junction_type)
+                VALUES ('ver-v37-archived', 'Single', 'Type A', 1),
+                       ('ver-v37-current', 'Single', 'Type A', 0);
+                UPDATE schema_info SET value = '36' WHERE key = 'schema_version';
+                """;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await fixture.MigrateAsync();
+
+        using var verify = fixture.GetDatabase().CreateConnection();
+        await verify.OpenAsync();
+
+        using (var ruleCmd = verify.CreateCommand())
+        {
+            ruleCmd.CommandText = "SELECT part_name FROM item_routing_rules WHERE catalog_item_id = 'item-v37'";
+            var part = (string?)(await ruleCmd.ExecuteScalarAsync());
+            Assert.Equal("New:Y", part);
+        }
+
+        using (var countCmd = verify.CreateCommand())
+        {
+            countCmd.CommandText = "SELECT COUNT(*) FROM item_routing_rules WHERE catalog_item_id = 'item-v37'";
+            Assert.Equal(1L, (long)(await countCmd.ExecuteScalarAsync())!);
+        }
+
+        using (var settingCmd = verify.CreateCommand())
+        {
+            settingCmd.CommandText = "SELECT preferred_junction_type FROM item_routing_type_settings WHERE catalog_item_id = 'item-v37'";
+            Assert.Equal(0L, (long)(await settingCmd.ExecuteScalarAsync())!);
         }
     }
 }

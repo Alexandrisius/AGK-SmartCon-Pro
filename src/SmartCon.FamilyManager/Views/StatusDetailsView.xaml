@@ -1,0 +1,178 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.StatusDetailsView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        Title="{loc:Loc FM_StatusDetails_Title}"
+        Width="520" MinWidth="440" MinHeight="220" MaxHeight="560"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="14,12,14,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- Notices take ALL spare height — otherwise the button row
+                 floats mid-window (or clips) when the user resizes the dialog
+                 taller than the content (manual test 2026-08-13). -->
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: family/node name (+ optional subtitle). No icon —
+             the content carries the meaning, not decorative glyphs.
+             Long names WRAP (never clip mid-word); the tooltip always
+             carries the full text (WPF dialogs best practice). -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="{Binding Title}"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       TextWrapping="Wrap"
+                       ToolTip="{Binding Title}"/>
+            <TextBlock Text="{Binding Subtitle}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       FontSize="11"
+                       TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Subtitle}"
+                       Visibility="{Binding HasSubtitle, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
+
+        <!-- Notices: semibold title, bullet list of family names (semibold),
+             short guidance. Capped height with scroll for the rare long case. -->
+        <ScrollViewer Grid.Row="1"
+                      MaxHeight="400"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Notices}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,10">
+                            <TextBlock Text="{Binding Title}"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"/>
+                            <ItemsControl ItemsSource="{Binding Items}"
+                                          Margin="0,3,0,0"
+                                          Visibility="{Binding HasItems, Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <!-- Grid (не StackPanel): горизонтальный StackPanel меряет
+                                             текст бесконечной шириной и Wrap никогда не срабатывает —
+                                             длинные имена обрезались по правому краю окна. -->
+                                        <Grid Margin="0,1,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="•"
+                                                       Margin="2,0,6,0"
+                                                       VerticalAlignment="Top"/>
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding}"
+                                                       FontWeight="SemiBold"
+                                                       TextWrapping="Wrap"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{Binding Explanation}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,3,0,0"
+                                       Visibility="{Binding HasExplanation, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Buttons: update actions (direct / dropdown «Обновить ▾») + safe
+             Close. The dropdown repeats the project's canonical pattern
+             (DbTools / ImportSplit): ToggleButton ⇄ Popup IsOpen TwoWay,
+             StaysOpen=False — LMB opens below the button, no ContextMenu. -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <!-- Single action → direct button -->
+            <Button Content="{Binding SingleAction.Label, TargetNullValue=''}"
+                    Command="{Binding RunActionCommand}"
+                    CommandParameter="{Binding SingleAction}"
+                    Style="{DynamicResource SecondaryButton}"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Visibility="{Binding HasSingleAction, Converter={StaticResource BoolToVis}}"/>
+            <!-- Multiple actions → toggle opening the popup below -->
+            <Grid Visibility="{Binding HasActionMenu, Converter={StaticResource BoolToVis}}">
+                <ToggleButton x:Name="ActionsToggle"
+                              IsChecked="{Binding IsOpen, ElementName=ActionsPopup, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{DynamicResource SecondaryToggleButton}"
+                              Padding="10,3"
+                              MinWidth="90"
+                              Margin="0,0,8,0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding ActionsMenuLabel}" VerticalAlignment="Center"/>
+                        <Path Data="M 0,0 L 4,4 L 8,0"
+                              Stroke="{DynamicResource TextPrimaryBrush}"
+                              StrokeThickness="1.2"
+                              Width="8" Height="6"
+                              Stretch="Uniform"
+                              Margin="8,1,0,0"
+                              VerticalAlignment="Center"/>
+                    </StackPanel>
+                </ToggleButton>
+                <Popup x:Name="ActionsPopup"
+                       StaysOpen="False"
+                       PlacementTarget="{Binding ElementName=ActionsToggle}"
+                       Placement="Bottom"
+                       AllowsTransparency="True">
+                    <Border Background="White"
+                            BorderBrush="{DynamicResource BorderAltBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4">
+                        <ItemsControl ItemsSource="{Binding Actions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding Label}"
+                                            Command="{Binding DataContext.RunActionCommand,
+                                                              RelativeSource={RelativeSource AncestorType=controls:DialogWindowBase}}"
+                                            CommandParameter="{Binding}"
+                                            MinWidth="160"
+                                            HorizontalContentAlignment="Left"
+                                            Padding="10,6"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Cursor="Hand">
+                                        <i:Interaction.Triggers>
+                                            <i:EventTrigger EventName="Click">
+                                                <i:ChangePropertyAction TargetObject="{Binding ElementName=ActionsPopup}"
+                                                                        PropertyName="IsOpen" Value="False"/>
+                                            </i:EventTrigger>
+                                        </i:Interaction.Triggers>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                </Popup>
+            </Grid>
+            <Button Content="{loc:Loc FM_ValidationReport_Close}"
+                    Command="{Binding CloseCommand}"
+                    IsDefault="True"
+                    IsCancel="True"
+                    MinWidth="90"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

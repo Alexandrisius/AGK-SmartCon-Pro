@@ -1,7 +1,7 @@
 # SmartCon — SSOT (Single Source of Truth)
 
-> **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2026 / .NET Framework 4.8 + .NET 8 / C# 12 / WPF
-> **Последнее обновление:** 2026-05-20
+> **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2027 / .NET Framework 4.8 + .NET 8 + .NET 10 / C# 12 / WPF
+> **Последнее обновление:** 2026-09-10
 > **Pre-release:** Поддержка beta-версий через SemVer + GitHub pre-release (ADR-021)
 
 Этот файл — **единая точка входа** в документацию проекта SmartCon.
@@ -28,8 +28,9 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`architecture/solution-structure.md`](architecture/solution-structure.md) | Проекты, папки, файлы каждого слоя | Всегда при создании/перемещении файлов |
-| [`architecture/dependency-rule.md`](architecture/dependency-rule.md) | Правило зависимостей между слоями | Всегда |
+| [`architecture/dependency-rule.md`](architecture/dependency-rule.md) | Правило зависимостей, карта проектов, конвенции файлов (размер, partial) | Всегда |
+| [`architecture/dependency-injection.md`](architecture/dependency-injection.md) | DI-контейнер, ServiceRegistrar, Constructor Injection | При добавлении сервиса/ViewModel |
+| [`architecture/database-migrations.md`](architecture/database-migrations.md) | Паттерн миграций catalog.db (badge + «Обновить базу» + load gate) | При любом изменении данных/схемы БД FamilyManager |
 | [`architecture/tech-stack.md`](architecture/tech-stack.md) | Стек технологий, версии, NuGet-пакеты | При настройке проекта или добавлении зависимостей |
 
 ### Домен
@@ -45,10 +46,10 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`pipeconnect/state-machine.md`](pipeconnect/state-machine.md) | Диаграмма состояний, переходы, правила | При работе с логикой PipeConnect |
+| [`pipeconnect/README.md`](pipeconnect/README.md) | Индекс модуля, обязательные ADR, инварианты | При любой работе с PipeConnect |
+| [`pipeconnect/state-machine.md`](pipeconnect/state-machine.md) | Диаграмма состояний, переходы, кейсы, матрица решений | При работе с логикой PipeConnect |
 | [`pipeconnect/algorithms.md`](pipeconnect/algorithms.md) | Алгоритмы: выравнивание, параметры, фитинги, цепочки | При реализации алгоритмов |
 | [`pipeconnect/ui-spec.md`](pipeconnect/ui-spec.md) | Спецификация UI: окна, layout, MVVM-паттерны | При работе с UI |
-| [`pipeconnect/business-cases.md`](pipeconnect/business-cases.md) | Бизнес-кейсы: логика при разных сценариях коннекта, reducer, размеры | При реализации логики соединения |
 
 ### ProjectManagement (модуль шаринга проектов)
 
@@ -63,8 +64,15 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД | При любой работе с FamilyManager |
-| [`family-manager/00-strategy/02-familymanager-systemfamilies-case.md`](family-manager/00-strategy/02-familymanager-systemfamilies-case.md) | Концепция System Families: проект как семейство | При планировании архитектуры модулей |
+| [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД, миграции, фазы | При любой работе с FamilyManager |
+
+### FloorHeating (модуль тёплого пола, в разработке)
+
+| Документ | Описание | Когда загружать |
+|---|---|---|
+| [`floorheating/product-brief.md`](floorheating/product-brief.md) | Что строим и зачем (изменчивый) | При уточнении scope |
+| [`floorheating/kernel-spec.md`](floorheating/kernel-spec.md) | Математическая спецификация ядра (стабильная) | При любой работе с ядром |
+| [`floorheating/KNOWLEDGE-CAPSULE.md`](floorheating/KNOWLEDGE-CAPSULE.md) | Архив уроков 3 попыток (read-only) | Перед архитектурными решениями |
 
 ### Правила и решения
 
@@ -100,7 +108,8 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
 | SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
-| SmartCon.Tests | ✅ 1379+ тестов, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.Tests | ✅ 3284 теста, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
+| SmartCon.IntegrationTests | ✅ ~250 тестов в реальном Revit | TUnit + Nice3point: граница SmartCon ↔ Revit API (net48/net8/net10), см. AGENTS.md |
 
 **Phase 11 (ProjectManagement) завершена (2026-04-25):** Share Project, Field Library, FileNameParser с валидацией, 12-категорийная очистка модели, 716 тестов.
 
@@ -126,4 +135,25 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 **Phase 26 (FamilyManager Type Catalog Bake-in — Issue #74) завершена (2026-06-22):** ADR-033 заменил simulation на **bake-in** — при импорте `.rfa` с `.txt` каталогом типы запекаются прямо в managed storage. `IFamilyTypeCatalogBaker.BakeAsync(sourceRfaPath, catalog, managedRfaPath)` открывает исходный `.rfa` один раз, создаёт все типы из `.txt`, восстанавливает формулы в топологическом порядке, делает `SaveAs` в managed storage. **BAKE-006..009 (commit `19e220e`)**: парсер сохраняет `##TYPE##UNITS` annotation через `TypeCatalogColumn` record, `RevitUnitsCompat.CatalogCellToInternalUnits(raw, annotation, param)` конвертирует mm/cm/in/ft/deg/rad → Revit internal units с валидацией `UnitUtils.IsValidUnit(targetSpec, sourceUnit)`. Pure normalization через `TypeCatalogUnitAlias.Normalize` в `SmartCon.Core` (15 unit-тестов). R21+ использует `FamilyParameter.GetUnitTypeId()` + `SpecTypeId`, R19-R20 — `DisplayUnitType`. Freeze workaround через `RevitBalloonNudge.Nudge` после каждого `Close` (REVIT-236376 / REVIT-237190). Build R19/R21/R25, 1379+ тестов pass.
 
-**Phase 28 (FamilyManager Active Version Management — ADR-041) завершена (2026-06-30):** Введена возможность переключать активную версию семейства на любую из истории (откат) и удалять неактивные версии. V17 миграция добавляет FK `version_id` ON DELETE CASCADE на `family_types` и `extracted_attribute_values`. Новая вкладка «Версии» в окне свойств с таблицей всех версий, кнопками «Сделать активной» (двухшаговый предпросмотр→подтверждение) и «Удалить». Batch-опция `MakeActive` в batch-диалоге для строк со статусом `Duplicate` (переключает активную, не сохраняя файл). Stale detection, OverwriteCurrent, LoadToProject, ES-маркеры автоматически начинают использовать новую активную версию через `catalog_items.current_version_label`. Build R19/R21/R24/R25, 1669 тестов pass. Активная версия не может быть удалена (инвариант FM-041-INV-01).
+**Phase 27 (FamilyManager v2.0.0 Cleanup) завершена (2026-06-29):** ADR-034, 035, 036, 037, 038, 039. Shared nested persist fallback, удаление temp-логики, Sync типов, Tree expand/collapse, sticky category headers, snapshot-driven commit. Schema v14: drop SHA-256/size columns. Build R19/R21/R24/R25, 1669 тестов pass.
+
+**Phase 29 (FamilyManager 3D Preview) завершена (2026-07-01):** ADR-042, GLB extraction через SharpGLTF, HelixToolkit.Wpf.SharpDX viewer, `mc:AlternateContent` для net48/net8 совместимости. Build R19/R21/R24/R25.
+
+**Phase 30 (FamilyManager Avatar Crop — Issue #131) завершена (2026-07-16):** ADR-047. Универсальный диалог кадрирования аватарки (рамка 4:3 + zoom/pan + затемнение) из ★/«Сменить»/первичной загрузки изображения. Производный `avatar.png` 560×420 на семейство с инвалидацией при смене primary; единое превью 280×210 в свойствах и tooltip через `GetAvatarImagePathAsync` (avatar.png → primary image). Pure math `CropViewportMath` в Core, WPF-free `CropAvatarViewModel`, `WpfAvatarCropService` с капом декода 4096px. Build R19/R21/R24/R25, 1900 тестов pass.
+
+**Phase 31 (FamilyManager Batch Import Live Progress — Issue #127) завершена (2026-07-16):** ADR-048. Batch-диалог стал modeless (`IDialogPresenter.ShowModeless`) и не закрывается при Import: живой прогресс «X из Y» по строкам (иконки Check/Close/TimerSand), пауза «Остановить» → «Продолжить»/«Закрыть» (`PauseGate`), summary-экран, X во время импорта = пауза. Поэлементный pipeline stage → import → extract через `IFamilyBatchImportExecutor` (pure C#, юнит-тестируемый) + Revit-bound staging за швом `IFileFamilyStagingService`/`IProjectFamilyStagingService` для UC-1 и UC-3/UC-4. Оркестраторы и `ImportBatchAsync` не изменены (per-item вызовы). Build R19/R21/R24/R25, 1940 тестов pass.
+
+**Phase 32 (FamilyManager Content Hash v2 — Issue #126) завершена (2026-07-17):** ADR-049, ADR-050. Rename-invariant дедупликация: имя исключено из loadable canonical string (`FHV2`), дедуп стал hash-first (поиск по всем версиям каталога независимо от имени, индекс `ix_catalog_versions_content_hash`), cross-name дубликаты показывают ⚠ с tooltip. Имя айтема следует за именем файла активной версии (`SetActiveVersionAsync` обновляет `name`+`normalized_name`). Миграция БД пользователей — user-initiated data repair с modeless прогресс-диалогом (ADR-048 паттерн): system families — мгновенный UPDATE флага, loadable — open→extract→close по одному файлу, один файл на version_label для всех Revit-вариантов, chunked commits по 10 файлов (I-14, без WAL), маркировка `-1` для нечитаемых, purge недоступных по подтверждению, фильтр по версии Revit. Precomputer получил `forcedCatalogItemId` для hash-matched строк; staging пропускает MakeActive (фикс orphan SaveAs). Breaking change 3.0.0 без DDL-миграции. 11 новых тестов миграции + обновлённые hasher/dedup/versions тесты.
+
+**Phase 33 (Database Actualization Engine — ADR-054) завершена (2026-07-21):** фреймворк миграций переработан в **единый движок актуализации БД**: задачи `IDatabaseActualizationTask` (`hash-v2` critical, `attributes-v1`/`glb-v1` optional) вместо миграций-стадий. «Хэш устарел / нет атрибутов / нет 3D» — единая модель «не хватает артефактов из файла»: движок union'ит детекты задач (SQL по «пустоте колонок»), открывает каждую pending-семью **ровно один раз** (snapshot+геометрия в одной сессии) и применяет только pending-задачи. UX: ОДНА команда «Обновить базу» (critical — все роли, optional — Owner/BimMaster) → ОДИН modeless диалог с единым прогрессом и сводкой + purge. Critical pending → баннер + красная точка + read-only гейт. Движок чинит хвост #151/#152/#153 (READERROR, unit_type_id NULL, 0 типов) без переимпорта. Новая фича со старыми данными = один класс-задача + строка в DI. ADR-050 помечен superseded (механика hash-задачи сохранена). Инструмент ручного теста: `tools/damage-catalog-db.ps1`. Build R19/R21/R24/R25, 2094 теста pass.
+
+**Phase 34 (Content Hash v3 — Issue #159) завершена (2026-07-23):** ADR-056. FHV3 закрывает ложные дубликаты FHV2: категория — локале-инвариантный ordinal (RU/EN Revit дают один хэш); новые секции FACTS (Part Type — «Отвод»≠«Тройник»), FLAGS (Shared/WorkPlaneBased/AlwaysVertical/CutWithVoids), CONN (коннекторы: domain/профиль/размеры/SystemClassification/Origin 1e-4 ft/linked-связи), STRUCT (слои CompoundStructure для стен/перекрытий/крыш/потолков), ROUTING (правила трассировки PipeType/DuctType/CableTrayType/ConduitType + PreferredJunctionType); геометрия + BoundingBox/SurfaceArea/длины 2D-кривых; non-shared nested; экранирование `|`; blank-маркеры сужены по storage type. Критическая задача `hash-v3` (заменила `hash-v2`): system-группы — полный пересчёт из staged `.rvt` с trim типов до `family_types` (file-free re-flag невозможен). Детект покрывает v1/v2/NULL → v3. Build R19/R21/R24/R25, 2265 тестов pass.
+
+**Phase 35 (FamilyManager #180 + единый хэш FHV10) завершена (2026-08-12):** ADR-068 §A1. «Проверить» стала контентной (вариант B #180): нет маркера → доказательство контентом + heal маркера; маркер устарел → stale без открытий; маркер совпал → пере-проверка, локальные правки = новый `StaleReason.ContentDrift` («Обновить» возвращает каталог). Работает и в семействе-документе (embedded), и в проекте. Два зонда-контракта: группы параметров не переносит НИКАКОЙ merge (вкл. poke + doc-to-doc), а embedded EditFamily-документ НЕ загрязняется хостом (ассоциации живут на экземплярах) — поэтому двухгрейдовая схема упразднена: **единый хэш FHV10** (группы не хэшируются нигде; `ComputeForEmbeddedVerification` удалён). Batch-диалог помечает версии, резолвленные маркером вопреки хэшу («— маркер» + тултип; при FHV10 — спящий индикатор краевых случаев). Критическая задача `hash-v10`, floor `2.0.1-beta.8` (первая бета, выпускающая форматы FHV8+; v8/v9-хэши не шипились). Build R19/R21/R24/R25, unit 2702, интеграционные R25 178/178 + net48 166/11 skip.
+
+**Phase 36 (FamilyManager #210 E3 — кликабельные статус-бэйджи) завершена (2026-08-13):** ADR-066 §6 (E3 as-built). Единый паттерн `StatusNotice` (title + буллет-список имён + guidance) + диалог `StatusDetailsView`: зоопарк из 5 некликабельных значков в batch-диалоге и пассивные бэйджи дерева заменены кликабельными (`StatusBadgeButton`, Generic.xaml) с разделением на два диалога — problem (warning/error + действия) и info (связи, без действий). Действия обновления — сплит-кнопка «Обновить ▾» по канону DbTools (ToggleButton⇄Popup; стили `ModernContextMenu`/`ModernMenuItem`/`SecondaryToggleButton` подняты в Generic.xaml) с CanExecute-гардами команд. Presence-точка типа = третий способ размещения (`PlaceTypeFromIndicator` → selection-independent `PlaceTypeCoreAsync`; оранжевая = обновить+разместить со сторожем «никогда не размещать stale»; #221 — включая безтиповые семейства через виртуальный сентинел). DnD stale-типа перезагружает из каталога (`FamilyPlacementDragData.IsStaleInProject`). Интеграционный wall-тест переработан в DecisiveOutcome (ADR-068 §A2 — «стена» raw reload'а group-only-diff специфична). Ручной тест владельца пройден. Build R19/R21/R24/R25 0/0, unit 2725, интеграционные R25 178/178.
+
+
+**Phase 37 (FamilyManager #254 — routing как данные каталога + FHV21) ЗАВЕРШЁН (2026-09-01):** ADR-072 (Фазы 0-3), ADR-073. Ручной staging мини-проектов MEPCurve без CopyElements (дубли материалов Revit 2024+), routing — данные каталога: item-level связи фитингов (V37, World B, вне хэша) редактируются вкладкой «Трассировка» в свойствах семейства (multi-rule группы pipe/duct с критериями размеров, param-строки flex/conduit/tray, preferred junction, пикер с part_type/connector_shape фильтрами — host-биты, required-маска для переходов переменной формы, исключение мультиформенных из обычных «Переходов»). FHV21 (ADR-073): сегментная конфигурация трубы (набор + диапазоны + порядок) — версионный контент мини-проекта: диапазоны в хэше (META FHV11, CurrentVersion=21), per-version таблица `family_segment_rules` (V38), откат версии восстанавливает СВОЮ конфигурацию и живо обновляет вкладку, строка «Сегменты» — read-only view реальных критериев. Миграции `hash-v21` (critical) + `segment-rules-v1` (backfill). Локализация форм коннекторов (`ConnectorShapeLabelMap`: «Круглый и Прямоугольный», «Нет коннекторов» для маски 0), перенос строки фактов шапки (WrapPanel). Два стресс-теста владельца: 12 багов исправлены (no-op save, мгновенный stale-пересчёт, пикер по preferred junction, корзина-иконки, «из каталога», shared-параметры). Build R19/R21/R25 0/0, unit 3149, интеграционные R25 238/250 (12 skip — библиотека владельца) + net48 236/249 (13 skip).
+
+**Phase 38 (FamilyManager #259 — комплаенс-проверка каталога «Проверить → Правила») ЗАВЕРШЕНА (2026-09-08):** ADR-074. «Проверить» — подменю двух независимых команд: «Актуальность» (stale, проект vs каталог, без изменений) и «Правила» (НОВОЕ: каталог vs effective-правила категории — pure SQLite + pure engine, без открытого проекта, миллисекунды/элемент). `ICatalogComplianceService`/`CatalogComplianceService` поверх швов ADR-059 (`GetEffectiveRulesAsync` с кэшем на категорию + `ValidateCatalogItemAsync`), вердикты Pass/Fail/CannotVerify в сессионном снимке `CatalogComplianceSnapshot` (без миграции схемы; автоинвалидация при смене категории по CategoryId-матчу, инвалидация на MetadataChanged/смену БД/«Обновить базу»/реимпорт). Бэйджи по канону #210: Fail = Error-notice + красный щит (ShieldAlertOutline/DangerBrush) у листа и roll-up у категории, CannotVerify = Warning на существующем оранжевом треугольнике; отчёт — действие «Открыть отчёт о проверке» в «Деталях статуса» → существующий ValidationReportViewModel. `StaleReason` не расширялся — вердикты не смешиваются («Обновить» не лечит нарушение правила). Build R19/R21/R24/R25 0/0, unit 3174, интеграционные не требуются (Revit-boundary не изменялась). Ручной тест владельца пройден, лог валидирован.

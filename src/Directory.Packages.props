@@ -6,10 +6,13 @@
   <ItemGroup>
     <!-- MVVM Toolkit — работает на обоих TFM (netstandard2.0) -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageVersion Include="CommunityToolkit.Common" Version="8.3.2" />
+    <PackageVersion Include="CommunityToolkit.Diagnostics" Version="8.3.2" />
 
     <!-- DI — НЕ ОБНОВЛЯТЬ выше 8.x! Версии 9.0+ дропнули net48.
          При апгрейде убедиться что новая версия поддерживает net48 -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
 
     <!-- C# polyfill для net48 (атрибуты: record, init, required и т.д.) -->
     <PackageVersion Include="PolySharp" Version="1.15.0" />
@@ -17,16 +20,14 @@
     <!-- Тестирование -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
 
-    <!-- JSON — заморожен на 8.0.6 (используется во всём проекте через System.Text.Json).
-         ВНИМАНИЕ: SharpGLTF.Toolkit 1.0.4 (и выше) требует System.Text.Json >= 9.0.4 — но
-         обновление JSON до 9.x/10.x ломает net48 (CS1739 AppendFormatted —
-         DefaultInterpolatedStringHandler changes). Поэтому SharpGLTF Toolkit скомпонован
-         только для net8.0-windows (Revit 2025+) через Condition в SmartCon.FamilyManager.csproj.
-         В net48 (Revit 2019-2024) 3D preview недоступен — pipeline silent no-op. -->
+    <!-- JSON — заморожен на 8.0.6 (используется в других модулях проекта через System.Text.Json).
+         Обновление System.Text.Json до 9.x/10.x ломает net48 (CS1739 AppendFormatted —
+         DefaultInterpolatedStringHandler changes). GLB writer теперь zero-dependency и не
+         использует System.Text.Json. -->
     <PackageVersion Include="System.Text.Json" Version="8.0.6" />
 
     <!-- Frozen polyfill versions (ADR-042): HelixToolkit.Wpf.SharpDX 3.1.2 transitively
@@ -42,7 +43,10 @@
     <PackageVersion Include="System.Net.Http" Version="4.3.4" />
 
     <!-- WPF Behaviors — MVVM event-to-command binding (net48 + net8.0) -->
-    <PackageVersion Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.142" />
+    <PackageVersion Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.158" />
+
+    <!-- Material Design Icons via MahApps.Metro.IconPacks (net48 + net8.0) -->
+    <PackageVersion Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
 
     <!-- SQLite — version frozen at 8.x (9.0+ may break net48). Compatible with net8.0-windows and net48 (.NET Standard 2.0).
          SQLitePCLRaw.* are pinned in Directory.Build.props via top-level PackageReference on SmartCon.App
@@ -51,8 +55,8 @@
          during `dotnet publish` for net48. Microsoft.Data.Sqlite 8.0.28 declares a hard transitive
          dependency on SQLitePCLRaw.bundle_e_sqlite3 2.1.6 in its NuGet metadata, and CPM alone does
          not override that nested dep. See dependabot bump c321226 for historical context. -->
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.28" />
-    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.11" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.30" />
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
 
     <!-- CodePages encoding provider для Windows-1251 и других ANSI кодировок (не встроены в .NET Core) -->
     <PackageVersion Include="System.Text.Encoding.CodePages" Version="8.0.0" />
@@ -60,23 +64,15 @@
     <!-- Universal charset detector (Mozilla algorithm) для автоопределения кодировок Type Catalog -->
     <PackageVersion Include="UTF.Unknown" Version="2.6.0" />
 
-    <!--
-      SharpGLTF.Core — low-level GLB writer/reader (ADR-042). netstandard2.0 → работает на net48 + net8.
+    <!-- Пины для merged SmartCon.Dependencies (net48, ADR-051): версии = текущее resolved-состояние,
+         чтобы merge не менял фактические версии. Microsoft.Bcl.AsyncInterfaces 10.0.1 уже
+         развёртывается в проде (тянет CommunityToolkit.Mvvm 8.4.2) — см. Issue #134. -->
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.1" />
+    <PackageVersion Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+    <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
+    <PackageVersion Include="System.Numerics.Vectors" Version="4.6.1" />
+    <PackageVersion Include="ILRepack.Lib.MSBuild.Task" Version="2.0.46" />
 
-      SharpGLTF.Toolkit (SceneBuilder/MeshBuilder/MaterialBuilder fluent API) заменён на
-      SharpGLTF.Core (Schema2 low-level API: ModelRoot.CreateModel → CreateBuffer →
-      CreateAccessor → SetVertexData/SetIndexData → CreateMesh → CreatePrimitive →
-      SetVertexAccessor/SetIndexAccessor → SaveGLB).
-
-      Причина замены: SharpGLTF.Toolkit 1.0.4 транзитивно тянет System.Text.Json >= 9.0.4,
-      который ломает net48 (CS1739 AppendFormatted — DefaultInterpolatedStringHandler changes).
-      SharpGLTF.Core 1.0.3 — последняя версия, зависящая от System.Text.Json 8.0.5
-      (совместима с нашим замороженным 8.0.6 → работает на обоих TFM).
-
-      v1.0.4 bump'нул System.Text.Json до 9.0.4 → ломает net48. v1.0.3 — единственная
-      stable версия Core без System.Text.Json 9.x зависимости. Все Schema2 API
-      (ModelRoot, CreateMesh, CreateAccessor, SetVertexData, etc.) идентичны v1.0.4. -->
-    <PackageVersion Include="SharpGLTF.Core" Version="1.0.3" />
 
     <!-- HelixToolkit.Wpf.SharpDX — DirectX 11 WPF 3D viewer (ADR-042). net48 + net8.0-windows7.0.
          HelixToolkit.Toolkit.Wpf.SharpDX транситивно тянет HelixToolkit.Maths, HelixToolkit.SharpDX,

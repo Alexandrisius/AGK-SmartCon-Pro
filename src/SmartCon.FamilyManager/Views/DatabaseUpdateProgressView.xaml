@@ -1,0 +1,82 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.DatabaseUpdateProgressView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_DbUpdate_Title}"
+        Width="520" MinWidth="520" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0"
+                    Visibility="{Binding IsSummaryVisible, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+            <TextBlock Text="{Binding StatusText}"
+                       Margin="0,0,0,8"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+            <ProgressBar Value="{Binding ProgressValue}"
+                         Maximum="{Binding ProgressMaximum}"
+                         Minimum="0"
+                         Height="8"
+                         Style="{DynamicResource FlatProgressBar}"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="1"
+                   Text="{Binding SummaryText}"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextPrimaryBrush}"
+                   Visibility="{Binding IsSummaryVisible, Converter={StaticResource BoolToVis}}"/>
+
+        <Button Grid.Row="2"
+                 Content="{Binding PurgeButtonText}"
+                 Command="{Binding PurgeMissingCommand}"
+                 Style="{DynamicResource SecondaryButton}"
+                 HorizontalAlignment="Left"
+                 Margin="0,10,0,0"
+                 MinWidth="80"
+                 Height="28"
+                 Padding="10,0"
+                 Visibility="{Binding IsPurgeVisible, Converter={StaticResource BoolToVis}}"/>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,14,0,0">
+            <Button Content="{loc:Loc FM_DbUpdate_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    Style="{DynamicResource SecondaryButton}"
+                    MinWidth="80"
+                    Height="28"
+                    Margin="0,0,8,0"
+                    Visibility="{Binding IsSummaryVisible, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+            <Button Content="{loc:Loc FM_DbUpdate_Close}"
+                    Command="{Binding CloseCommand}"
+                    Style="{DynamicResource PrimaryButton}"
+                    MinWidth="80"
+                    Height="28"
+                    IsDefault="True"
+                    Visibility="{Binding IsSummaryVisible, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

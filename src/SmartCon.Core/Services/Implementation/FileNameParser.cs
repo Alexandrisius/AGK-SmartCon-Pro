@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services.Interfaces;
@@ -95,7 +96,9 @@ public sealed class FileNameParser : IFileNameParser
 
             if (string.IsNullOrEmpty(block.Field))
             {
-                blockResults.Add(new BlockValidation(block.Index, block.Field, value, false, "Block field is not selected."));
+                var emptyFieldError = "Block field is not selected.";
+                errors.Add(emptyFieldError);
+                blockResults.Add(new BlockValidation(block.Index, block.Field, value, false, emptyFieldError));
                 continue;
             }
 
@@ -137,6 +140,11 @@ public sealed class FileNameParser : IFileNameParser
 
         foreach (var block in template.Blocks.OrderBy(b => b.Index))
         {
+            if (string.IsNullOrEmpty(block.Field))
+            {
+                continue;
+            }
+
             var (value, newRemaining) = ApplyParseRule(remaining, block.ParseRule);
             result[block.Field] = value;
             remaining = newRemaining;
@@ -255,29 +263,53 @@ public sealed class FileNameParser : IFileNameParser
         if (mode == ValidationMode.None)
             return (true, string.Empty);
 
+        var normalizedValue = NormalizeValue(value);
+
         if (mode == ValidationMode.AllowedValues)
         {
             if (fieldDef.AllowedValues.Count > 0)
             {
-                var found = fieldDef.AllowedValues.Any(av =>
-                    string.Equals(av, value, StringComparison.OrdinalIgnoreCase));
+                var found = fieldDef.AllowedValues
+                    .Select(NormalizeValue)
+                    .Any(av => string.Equals(av, normalizedValue, StringComparison.OrdinalIgnoreCase));
                 if (!found)
                 {
-                    var allowedStr = string.Join(", ", fieldDef.AllowedValues);
+                    var allowedStr = string.Join(", ", fieldDef.AllowedValues.Select(NormalizeValue));
                     return (false, $"Value '{value}' is not allowed for field '{fieldDef.Name}'. Expected: {allowedStr}");
+                }
+            }
+        }
+
+        if (mode == ValidationMode.Contains)
+        {
+            if (fieldDef.AllowedValues.Count > 0)
+            {
+                var found = fieldDef.AllowedValues
+                    .Select(NormalizeValue)
+#if NET8_0_OR_GREATER
+                    .Any(av => normalizedValue.Contains(av, StringComparison.OrdinalIgnoreCase));
+#else
+                    .Any(av => normalizedValue.IndexOf(av, StringComparison.OrdinalIgnoreCase) >= 0);
+#endif
+                if (!found)
+                {
+                    var substrings = string.Join(", ", fieldDef.AllowedValues.Select(NormalizeValue));
+                    return (false, $"Value '{value}' for field '{fieldDef.Name}' does not contain any of: {substrings}");
                 }
             }
         }
 
         if (mode == ValidationMode.CharCount)
         {
-            if (fieldDef.MinLength.HasValue && value.Length < fieldDef.MinLength.Value)
-                return (false, $"Value '{value}' for field '{fieldDef.Name}' is too short. Min: {fieldDef.MinLength.Value}, actual: {value.Length}");
+            if (fieldDef.MinLength.HasValue && normalizedValue.Length < fieldDef.MinLength.Value)
+                return (false, $"Value '{value}' for field '{fieldDef.Name}' is too short. Min: {fieldDef.MinLength.Value}, actual: {normalizedValue.Length}");
 
-            if (fieldDef.MaxLength.HasValue && value.Length > fieldDef.MaxLength.Value)
-                return (false, $"Value '{value}' for field '{fieldDef.Name}' is too long. Max: {fieldDef.MaxLength.Value}, actual: {value.Length}");
+            if (fieldDef.MaxLength.HasValue && normalizedValue.Length > fieldDef.MaxLength.Value)
+                return (false, $"Value '{value}' for field '{fieldDef.Name}' is too long. Max: {fieldDef.MaxLength.Value}, actual: {normalizedValue.Length}");
         }
 
         return (true, string.Empty);
     }
+
+    private static string NormalizeValue(string value) => value.Trim();
 }

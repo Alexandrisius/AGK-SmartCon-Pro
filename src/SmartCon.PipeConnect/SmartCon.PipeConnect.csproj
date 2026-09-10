@@ -8,8 +8,10 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
+  <!-- ADR-051: merged deps (обе TFM — CT.Mvvm и toolkit сшиты в SmartCon.Dependencies;
+       ExcludeAssets пакетов — централизованно в Directory.Build.targets) -->
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
   <!-- RevitAPI + RevitAPIUI: ExcludeAssets=runtime — DLL не копируется в output -->

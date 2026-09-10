@@ -15,9 +15,12 @@ public sealed partial class PipeConnectEditorViewModel
 
     private bool InsertReducerCore(FittingCardItem reducer, bool moveDynamic)
     {
-        SmartConLogger.Info($"START reducer={reducer.DisplayName}");
+        SmartConLogger.Info($"START reducer={reducer.DisplayName}, " +
+            $"dynamic={_activeDynamic?.OwnerElementId.GetValue()}:{_activeDynamic?.ConnectorIndex}, point={_activePointIndex}");
         var primary = reducer.PrimaryFitting;
         if (primary is null) return false;
+
+        UnsealIfSealed("вставка переходника");
 
         _activeFittingRule = reducer.Rule;
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
@@ -27,7 +30,9 @@ public sealed partial class PipeConnectEditorViewModel
 
         ConnectorProxy? alignTarget = _currentFittingId is not null && _activeFittingConn2 is not null
             ? _activeFittingConn2
-            : _ctx.StaticConnector;
+            : ActiveUpstreamConnector;
+
+        SmartConLogger.Info($"Reducer alignTarget={alignTarget.OwnerElementId.GetValue()}:{alignTarget.ConnectorIndex}");
 
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertReducer"), doc =>
         {
@@ -43,7 +48,7 @@ public sealed partial class PipeConnectEditorViewModel
                 doc, primary.FamilyName, primary.SymbolName, alignTarget.Origin);
             if (insertedId is null)
             {
-                SmartConLogger.Warn("InsertFitting returned null");
+                SmartConLogger.Warn("InsertFitting returned null [Action: проверьте, что семейство фитинга загружено в проект и mapping указывает на существующий тип]");
                 return;
             }
 
@@ -67,7 +72,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -112,7 +118,7 @@ public sealed partial class PipeConnectEditorViewModel
                 StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFound"), primary.FamilyName);
             }
         }
-        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -120,12 +126,14 @@ public sealed partial class PipeConnectEditorViewModel
     {
         if (!_virtualCtcStore.SwapCtcForElement(elemId)) return;
 
+        UnsealIfSealed("отражение CTC");
+
         var overrides = _virtualCtcStore.GetOverridesForElement(elemId);
         var dynCtc = ResolveDynamicTypeFromRule(_activeFittingRule);
 
         var upstreamTarget = (isReducer && _currentFittingId is not null && _activeFittingConn2 is not null)
             ? _activeFittingConn2
-            : _ctx.StaticConnector;
+            : ActiveUpstreamConnector;
 
         ConnectorProxy? reorientedConn2 = null;
 
@@ -146,7 +154,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - dynProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -166,7 +175,8 @@ public sealed partial class PipeConnectEditorViewModel
                             ?? _activeDynamic;
                         var offset = sizedConn2.OriginVec3 - dynProxy.OriginVec3;
                         if (!VectorUtils.IsZero(offset))
-                            _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                            PipeAbsorptionApplier.MoveOrAbsorb(
+                                doc, _transformSvc, _activeDynamic.OwnerElementId, dynProxy.OriginVec3, offset);
                         doc.Regenerate();
                     });
                 }
@@ -189,7 +199,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReflectElementCtc(_currentFittingId, isReducer: false);
         }
-        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -202,7 +212,7 @@ public sealed partial class PipeConnectEditorViewModel
         {
             ReflectElementCtc(_primaryReducerId, isReducer: true);
         }
-        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
+        catch (Exception ex) { SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}"); StatusMessage = string.Format(LocalizationService.GetString("Error_General"), ex.Message); }
         finally { IsBusy = false; }
     }
 
@@ -222,7 +232,7 @@ public sealed partial class PipeConnectEditorViewModel
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Failed: {ex.Message}");
+            SmartConLogger.Error($"Failed: {ex.Message}\n{ex.StackTrace}");
             StatusMessage = string.Format(LocalizationService.GetString("Error_Insert"), ex.Message);
         }
         finally
@@ -233,7 +243,10 @@ public sealed partial class PipeConnectEditorViewModel
 
     private void InsertFittingSilent(FittingCardItem fitting, bool adjustDynamicToFit = true)
     {
-        SmartConLogger.Info($"START fitting={fitting.DisplayName}, adjustDynamic={adjustDynamicToFit}");
+        SmartConLogger.Info($"START fitting={fitting.DisplayName}, adjustDynamic={adjustDynamicToFit}, " +
+            $"dynamic={_activeDynamic?.OwnerElementId.GetValue()}:{_activeDynamic?.ConnectorIndex}, point={_activePointIndex}");
+
+        UnsealIfSealed("вставка фитинга");
 
         if (fitting.IsDirectConnect)
         {
@@ -265,7 +278,9 @@ public sealed partial class PipeConnectEditorViewModel
         ConnectorProxy? alignTarget = isReducerFittingTopology && _primaryReducerId is not null
             ? GetReducerConn2()
             : null;
-        ConnectorProxy? upstreamTarget = alignTarget ?? _ctx.StaticConnector;
+        ConnectorProxy? upstreamTarget = alignTarget ?? ActiveUpstreamConnector;
+
+        SmartConLogger.Info($"Fitting upstreamTarget={upstreamTarget.OwnerElementId.GetValue()}:{upstreamTarget.ConnectorIndex}");
 
         _groupSession!.RunInTransaction(LocalizationService.GetString("Tx_InsertFitting"), doc =>
         {
@@ -310,7 +325,8 @@ public sealed partial class PipeConnectEditorViewModel
 
                 var offset = fitConn2.OriginVec3 - activeProxy.OriginVec3;
                 if (!VectorUtils.IsZero(offset))
-                    _transformSvc.MoveElement(doc, _activeDynamic.OwnerElementId, offset);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        doc, _transformSvc, _activeDynamic.OwnerElementId, activeProxy.OriginVec3, offset);
             }
 
             doc.Regenerate();
@@ -318,7 +334,8 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (insertedId is null)
         {
-            SmartConLogger.Warn("InsertFitting returned null — family not found");
+            SmartConLogger.Warn("InsertFitting returned null — family not found " +
+                "[Action: проверьте, что семейство фитинга загружено в проект и mapping указывает на существующий тип]");
             StatusMessage = string.Format(LocalizationService.GetString("Status_FamilyNotFoundInProject"), primary.FamilyName);
             return;
         }
@@ -333,7 +350,9 @@ public sealed partial class PipeConnectEditorViewModel
 
         if (_activeFittingConn2 is not null && _activeDynamic is not null)
         {
-            var fitConn2ForCheck = _connSvc.RefreshConnector(
+            // RefreshWithCtcOverride: virtual CTC фитинга (Reflect/мини-селектор) учитывается —
+            // иначе EnsureReducersForFittingPair ищет правило по CTC=0 и список переходов пуст.
+            var fitConn2ForCheck = _ctcManager.RefreshWithCtcOverride(
                 _doc, _activeFittingConn2.OwnerElementId, _activeFittingConn2.ConnectorIndex)
                 ?? _activeFittingConn2;
             bool needsReducer = PipeConnectSizeHandler.DetectReducerNeededAfterFitting(
@@ -354,7 +373,8 @@ public sealed partial class PipeConnectEditorViewModel
                 else
                 {
                     SmartConLogger.Warn("Reducer needed but no reducer families found in mapping " +
-                        $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value}");
+                        $"for pair fitConn2_CTC={fitConn2ForCheck.ConnectionTypeCode.Value} ↔ dyn_CTC={_activeDynamic.ConnectionTypeCode.Value} " +
+                        "[Action: добавьте семейство редуктора в mapping (Настройки → Правила)]");
                     _needsPrimaryReducer = true;
                     IsReducerVisible = true;
                 }

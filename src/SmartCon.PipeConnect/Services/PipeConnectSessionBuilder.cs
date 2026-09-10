@@ -187,7 +187,7 @@ public sealed class PipeConnectSessionBuilder(
 
         if (element is MEPCurve or FlexPipe)
         {
-            txService.RunInTransaction("SetConnectorType", txDoc =>
+            txService.RunInTransaction(LocalizationService.GetString("Tx_SetConnectorType"), txDoc =>
             {
                 familyConnSvc.SetConnectorTypeCode(
                     txDoc, proxy.OwnerElementId, proxy.ConnectorIndex, selected);
@@ -295,35 +295,12 @@ public sealed class PipeConnectSessionBuilder(
             double nearestDn = System.Math.Round(nearest * 2.0 * FeetToMm);
             SmartConLogger.Debug($"  nearest={nearest:F6} ft = DN{nearestDn} (with constraints)");
 
-            if (lookupConstraints.Count > 0)
-            {
-                SmartConLogger.Debug("  → Pass 2: search WITHOUT constraints...");
-                double nearestUnconstrained = lookupSvc.GetNearestAvailableRadius(doc, dynId, connIdx, staticRadius, constraints: null);
-                double nearestUncDn = System.Math.Round(nearestUnconstrained * 2.0 * FeetToMm);
-                SmartConLogger.Debug($"  nearestUnconstrained={nearestUnconstrained:F6} ft = DN{nearestUncDn}");
-
-                double deltaConstrained = System.Math.Abs(nearest - staticRadius);
-                double deltaUnconstrained = System.Math.Abs(nearestUnconstrained - staticRadius);
-                SmartConLogger.Debug($"  delta_constrained={deltaConstrained * FeetToMm:F2}mm, delta_unconstrained={deltaUnconstrained * FeetToMm:F2}mm");
-
-                if (deltaUnconstrained < deltaConstrained - eps)
-                {
-                    SmartConLogger.Debug($"  → Pass 2 BETTER: using unconstrained result DN{nearestUncDn}");
-                    SmartConLogger.Info($"Pass 2 (unconstrained): DN{staticDn} → nearest=DN{nearestUncDn} (other connectors will change)");
-
-                    bool exactUnc = deltaUnconstrained < eps;
-                    return new ParameterResolutionPlan(
-                        Skip: false, TargetRadius: nearestUnconstrained,
-                        ExpectNeedsAdapter: !exactUnc,
-                        WarningMessage: exactUnc
-                            ? null
-                            : string.Format(LocalizationService.GetString("Warn_SizeNotExactUnconstrained"), staticDn, nearestUncDn),
-                        LookupConstraints: []);
-                }
-            }
+            // See #138: unconstrained fallback (бывший "Pass 2") выбирал радиус из одной колонки
+            // без учёта комбинации DN всех коннекторов и ломал семейство (комбинация вне таблицы).
+            // Разрешены только валидные строки таблицы — constrained-результат.
 
             SmartConLogger.Debug($"  → Pass 1 result: DN{nearestDn} (constraints={lookupConstraints.Count})");
-            SmartConLogger.Warn($"LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter)");
+            SmartConLogger.Warn($"LookupTable: DN{staticDn} not found, nearest=DN{nearestDn} (NeedsAdapter) [Action: an adapter fitting is required — extend the size_lookup table with this DN to avoid adapters]");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: nearest,
                 ExpectNeedsAdapter: true,
@@ -334,7 +311,7 @@ public sealed class PipeConnectSessionBuilder(
         if (dep is null)
         {
             SmartConLogger.Debug("  → No table and no dep → Plan(NeedsAdapter=true, warning)");
-            SmartConLogger.Warn("No table, dep=null — S4 failed (NeedsAdapter)");
+            SmartConLogger.Warn("No table, dep=null — S4 failed (NeedsAdapter) [Action: an adapter fitting is required — define a size_lookup table for this family]");
             return new ParameterResolutionPlan(
                 Skip: false, TargetRadius: staticRadius,
                 ExpectNeedsAdapter: true,

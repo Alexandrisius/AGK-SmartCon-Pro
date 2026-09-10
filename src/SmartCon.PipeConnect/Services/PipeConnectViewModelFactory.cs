@@ -24,7 +24,8 @@ public sealed class PipeConnectViewModelFactory(
     INetworkMover networkMover,
     ChainOperationHandler chainOpHandler,
     PipeConnectRotationHandler rotationHandler,
-    DynamicSizeLoader sizeLoader) : IPipeConnectViewModelFactory
+    DynamicSizeLoader sizeLoader,
+    IViewNavigationService viewNavigation) : IPipeConnectViewModelFactory
 {
     public PipeConnectSessionBuilder CreateSessionBuilder() => new(
         selectionSvc, connectorSvc, mappingRepo, familyConnSvc,
@@ -35,5 +36,5 @@ public sealed class PipeConnectViewModelFactory(
         sessionCtx, doc, txService, connectorSvc, transformSvc, alignmentSvc,
         fittingInsertSvc, paramResolver, sizeResolver, networkMover,
         mappingRepo, dialogSvc, familyConnSvc, fittingMapper,
-        chainOpHandler, rotationHandler, sizeLoader);
+        chainOpHandler, rotationHandler, sizeLoader, viewNavigation);
 }

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
+using SmartCon.FamilyManager.Services;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
@@ -30,9 +31,16 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     public FamilyImportSource? Source { get; }
 
     /// <summary>
+    /// ADR-066: parent links when this row is a dependency of another row
+    /// (routing fitting of a system category in E1). <c>null</c> for
+    /// top-level rows. Read-only — links are decided at Phase-1 prepare and
+    /// ride through the dialog unchanged into Phase 3.
+    /// </summary>
+    public IReadOnlyList<FamilyDependencyLink>? DependencyLinks { get; }
+
+    /// <summary>
     /// v2.0.0: precomputed canonical managed path the VM allocated up
-    /// front in <c>BuildSystemFamilyBatchRowVirtualAsync</c> /
-    /// <c>BuildLoadableFamilyBatchRowVirtualAsync</c>. The staging
+    /// front in <c>MapPreparedItemsToBatchItemsAsync</c>. The staging
     /// helper writes the staged file at this exact path (so the
     /// managed-path invariant
     /// <c>family_files.relative_path = "{dbRoot}/files/&lt;catalogItemId&gt;/&lt;versionLabel&gt;/&lt;name&gt;"</c>
@@ -89,12 +97,105 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     private int? _hashFormatVersion;
 
     /// <summary>
+    /// Issue #249 (Phase 2): per-type content hashes computed at Prepare.
+    /// Read-only — never changes during the dialog lifetime, so a plain
+    /// get-only property is enough (no INPC needed). Written to
+    /// <c>family_type_hashes</c> by the import transaction.
+    /// </summary>
+    public IReadOnlyList<FamilyTypeHashEntry>? PerTypeHashes { get; }
+
+    /// <summary>
+    /// Issue #249 (Phase 4): canonical content sections from Prepare.
+    /// Read-only like <see cref="PerTypeHashes"/>. Written to
+    /// <c>catalog_versions.section_hashes/section_strings</c> by the
+    /// import transaction; also the INCOMING side of the "what changed"
+    /// diff against the active version.
+    /// </summary>
+    public IReadOnlyList<ContentSectionHash>? Sections { get; }
+
+    /// <summary>
     /// Phase 27: version label that the content hash matched (e.g. "v2").
     /// Displayed in the dialog as "Duplicate (v2)". Null when status is
     /// not Duplicate.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    [NotifyPropertyChangedFor(nameof(IsOutdatedNested))]
+    [NotifyPropertyChangedFor(nameof(OutdatedNestedTooltip))]
+    [NotifyPropertyChangedFor(nameof(MarkerResolvedTooltip))]
     private string? _matchedVersionLabel;
+
+    /// <summary>
+    /// #180 (2026-08-12): <c>true</c> when <see cref="MatchedVersionLabel"/>
+    /// came from the verified ES marker override, not from content-hash
+    /// dedup (the embedded identity hash disagrees or has no match —
+    /// expected after a nested update: a merge never propagates parameter
+    /// groups, so the identity hash keeps matching the OLD version). The
+    /// status column annotates the version as marker-resolved so
+    /// "Duplicate (v2)" is not misread as "content-identical to v2".
+    /// Display-only flag — never consumed by import logic.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MarkerResolvedTooltip))]
+    private bool _isMarkerResolvedVersion;
+
+    /// <summary>Localized explanation shown on a marker-resolved version label.</summary>
+    public string? MarkerResolvedTooltip
+    {
+        get
+        {
+            if (!IsMarkerResolvedVersion)
+            {
+                return null;
+            }
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_MarkerResolved_Tooltip)
+                ?? "Version {0} was resolved by the verification marker (content verified during update). The embedded copy's content hash matches a different version: parameter groups never propagate on merge — this is expected.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                MatchedVersionLabel ?? string.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Issue #126: <c>true</c> when the content hash matched a catalog
+    /// item whose name differs from this row's file name (the file was
+    /// renamed). The status column renders a warning icon with
+    /// <see cref="CrossNameDuplicateTooltip"/> for such rows.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    private bool _isCrossNameDuplicate;
+
+    /// <summary>
+    /// Issue #126: display name of the catalog item whose version
+    /// matched the content hash. Used by <see cref="CrossNameDuplicateTooltip"/>.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CrossNameDuplicateTooltip))]
+    private string? _matchedItemName;
+
+    /// <summary>
+    /// Issue #126: localized explanation shown as the warning icon's
+    /// tooltip for cross-name duplicates. Empty when not applicable.
+    /// </summary>
+    public string CrossNameDuplicateTooltip
+    {
+        get
+        {
+            if (!IsCrossNameDuplicate)
+                return string.Empty;
+            var format = SmartCon.UI.LanguageManager.GetString(
+                SmartCon.UI.StringLocalization.Keys.FM_BatchImport_CrossNameDuplicate_Tooltip)
+                ?? "Content matches family \"{0}\" ({1}) although the file name differs.";
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                format,
+                MatchedItemName ?? string.Empty,
+                MatchedVersionLabel ?? string.Empty);
+        }
+    }
 
     [ObservableProperty]
     private int? _typeCount;
@@ -123,52 +224,27 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
     /// </summary>
     public SystemFamilySnapshot? SystemSnapshot { get; }
 
-    /// <summary>
-    /// VM-owned selection state. Bound to <c>DataGridRow.IsSelected</c> in
-    /// XAML so that the selection survives clicks on inline editors
-    /// (ComboBox dropdown, "…" Button) — those clicks collapse
-    /// <c>DataGrid.SelectedItems</c> but the row stays visually selected
-    /// because <c>IsSelected</c> is driven by this property.
-    /// </summary>
-    [ObservableProperty]
-    private bool _isSelected;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanImport))]
-    [NotifyPropertyChangedFor(nameof(AvailableActions))]
-    private FamilyBatchImportAction _action;
-
-    [ObservableProperty]
-    private string? _targetCategoryId;
-
-    [ObservableProperty]
-    private string _targetCategoryPath = string.Empty;
+    /// <summary>ADR-072 World B (audit M11): the snapshot routing is the
+    /// UNsubstituted slim mini state — the import must not seed it as
+    /// item-level catalog truth.</summary>
+    public bool UnsubstitutedMiniRouting { get; }
 
     /// <summary>
-    /// v2.0.1: tracks whether the user has manually picked a category
-    /// in the picker. <c>false</c> when the category was inherited from
-    /// the dialog-build time lookup (ExistingCatalogItemId.CategoryId),
-    /// <c>true</c> after the picker assigns a value. Used by the rename
-    /// handler to decide whether to clobber the category when the row
-    /// status flips Existing ↔ New.
+    /// Display-ready type names for the Types-column tooltip, resolved from
+    /// the same Prepare payloads that feed <see cref="TypeCount"/>
+    /// (<see cref="Services.SnapshotExtractionMapper.ResolveTypeNames"/>), so
+    /// the tooltip always matches the number in the column. The synthetic
+    /// "&lt;default&gt;" marker is shown under the current <see cref="FileName"/>
+    /// — renaming the row re-resolves the substitution.
+    /// Empty when Prepare failed or produced no snapshot.
     /// </summary>
-    [ObservableProperty]
-    private bool _targetCategoryIsManual;
+    public IReadOnlyList<string> TypeNames =>
+        Services.SnapshotExtractionMapper.ResolveTypeNames(
+            LoadableSnapshot, SystemSnapshot, SourceTypes, FileName) ?? [];
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(AvailableActions))]
-    private string _fileName = string.Empty;
-
-    [ObservableProperty]
-    private FamilyBatchImportStatus _status;
-
-    [ObservableProperty]
-    private string? _existingCatalogItemId;
-
-    [ObservableProperty]
-    private string? _existingVersionLabel;
-
-    public bool CanImport => Action != FamilyBatchImportAction.Skip;
+    /// <summary><c>true</c> when <see cref="TypeNames"/> is non-empty —
+    /// drives <c>ToolTipService.IsEnabled</c> on the Types cell.</summary>
+    public bool HasTypeNames => TypeNames.Count > 0;
 
     [ObservableProperty]
     private IReadOnlyList<FamilyBatchImportAction> _availableActions;
@@ -180,9 +256,12 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         RevitMajorVersion = item.RevitMajorVersion;
         FamilySource = item.FamilySource;
         Source = item.Source;
+        DependencyLinks = item.DependencyLinks;
         SourceTypes = item.SourceTypes;
         LoadableSnapshot = item.LoadableSnapshot;
         SystemSnapshot = item.SystemSnapshot;
+        UnsubstitutedMiniRouting = item.UnsubstitutedMiniRouting;
+        HealthReport = item.HealthReport;
         _typeCount = item.TypeCount;
         RevitCategory = item.RevitCategory;
         Status = item.Status;
@@ -196,9 +275,15 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _precomputedManagedPath = item.PrecomputedManagedPath;
         _precomputedContentHash = item.ContentHash;
         _hashFormatVersion = item.HashFormatVersion;
+        PerTypeHashes = item.PerTypeHashes;
+        Sections = item.Sections;
         _matchedVersionLabel = item.MatchedVersionLabel;
+        _isMarkerResolvedVersion = item.IsMarkerResolvedVersion;
+        _isCrossNameDuplicate = item.IsCrossNameDuplicate;
+        _matchedItemName = item.MatchedItemName;
         _action = item.Action;
         _targetCategoryId = item.TargetCategoryId;
+        _clearCategoryOnImport = item.ClearCategoryOnImport;
         // Display rule for the category cell:
         //   * TargetCategoryId is set   → a real category is assigned; show its
         //                                 path (or "Без категории" placeholder
@@ -219,7 +304,24 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _targetCategoryPath = !string.IsNullOrWhiteSpace(item.TargetCategoryId)
             ? (string.IsNullOrWhiteSpace(item.TargetCategoryName) ? "Без категории" : item.TargetCategoryName!)
             : "Без категории";
+        _existingCategoryId = item.ExistingCategoryId;
+        _existingCategoryPath = item.ExistingCategoryPath;
         _availableActions = BuildAvailableActions(item.Status);
+        // Initial gate state from the Prepare health check: errors block
+        // immediately; warnings surface as Warning; rule check runs later
+        // (on category assignment) via the parent view-model.
+        _gateStatus = HealthReport?.IsHealthy == false
+            ? FamilyRowGateStatus.Failed
+            : HealthReport is not null && HealthReport.Issues.Count > 0
+                ? FamilyRowGateStatus.Warning
+                : FamilyRowGateStatus.NotChecked;
+        if (_gateStatus == FamilyRowGateStatus.Failed)
+        {
+            _availableActions = [FamilyBatchImportAction.Skip];
+            _action = FamilyBatchImportAction.Skip;
+        }
+
+        RebuildNotices();
     }
 
     private static IReadOnlyList<FamilyBatchImportAction> BuildAvailableActions(FamilyBatchImportStatus status) => status switch
@@ -235,63 +337,69 @@ public sealed partial class FamilyBatchImportRow : ObservableObject
         _ => [FamilyBatchImportAction.Skip]
     };
 
-    partial void OnActionChanged(FamilyBatchImportAction value)
+    [RelayCommand]
+    private void OpenValidationReport()
     {
-        ActionChanged?.Invoke(this, value);
+        OpenValidationReportRequested?.Invoke(this);
     }
 
-    partial void OnStatusChanged(FamilyBatchImportStatus value)
-    {
-        // v2.0.1 hotfix: recompute AvailableActions when Status flips so
-        // OverwriteCurrent appears for Existing and disappears for New.
-        // Previously the list was built once in the constructor, so a
-        // rename Existing → New kept OverwriteCurrent (or vice versa).
-        AvailableActions = BuildAvailableActions(value);
+    public event Action<FamilyBatchImportRow>? OpenValidationReportRequested;
 
-        // Phase 27: Duplicate defaults to Skip (no point creating a new
-        // version with identical content). User can manually switch to
-        // IncrementVersion if they want to force a new version.
-        if (value == FamilyBatchImportStatus.Duplicate)
+    /// <summary>
+    /// #210: opens the PROBLEM view for this row (warning/error notices +
+    /// follow-up actions) — fired by the problem triangle.
+    /// </summary>
+    [RelayCommand]
+    private void OpenStatusDetails()
+    {
+        OpenStatusDetailsRequested?.Invoke(this, false);
+    }
+
+    /// <summary>
+    /// #210: opens the RELATED-ELEMENTS view for this row (info notices
+    /// only — dependency parents, marker origin — NO warnings and NO
+    /// actions). Fired by the paperclip and the muted info badge: these
+    /// badges are about relationships, problems live behind the triangle.
+    /// </summary>
+    [RelayCommand]
+    private void OpenInfoDetails()
+    {
+        OpenStatusDetailsRequested?.Invoke(this, true);
+    }
+
+    /// <summary>(row, infoOnly) — infoOnly: только info-заметки без действий.</summary>
+    public event Action<FamilyBatchImportRow, bool>? OpenStatusDetailsRequested;
+
+    /// <summary>
+    /// #249 (Phase 4): shows the "what changed" diff badge — only for
+    /// rows whose content differs from the active catalog version
+    /// (Existing). New and Duplicate rows have no meaningful diff (New
+    /// has no active version; Duplicate is content-identical).
+    /// </summary>
+    public bool ShowDiffBadge => Status == FamilyBatchImportStatus.Existing;
+
+    /// <summary>
+    /// #249 (Phase 4): opens the "what changed" diff against the active
+    /// version (change class + changed sections + per-type lists) —
+    /// fired by the diff badge.
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenDiffDetails()
+    {
+        var handler = OpenDiffDetailsRequested;
+        if (handler is null) return;
+        try
         {
-            Action = FamilyBatchImportAction.Skip;
-            return;
+            await handler(this);
         }
-
-        // Validate current Action against the new available set; if the
-        // user previously selected OverwriteCurrent and the row became
-        // New (or the row became Existing but Action was set during New
-        // phase), reset to IncrementVersion. This keeps the combo box
-        // bound to Action from ever holding an invalid value.
-        if (!AvailableActions.Contains(Action))
+        catch (Exception ex)
         {
-            Action = AvailableActions.Contains(FamilyBatchImportAction.IncrementVersion)
-                ? FamilyBatchImportAction.IncrementVersion
-                : FamilyBatchImportAction.Skip;
+            SmartConLogger.Error($"OpenDiffDetails failed for '{FileName}': {ex.GetType().Name}: {ex.Message} [Action: закройте batch dialog и повторите, проверьте логи smartcon.log]");
         }
     }
 
-    partial void OnFileNameChanged(string value)
-    {
-        // v2.0.0 hotfix: notify the parent view-model so it can re-resolve
-        // the catalog status (New/Existing) when the user renames the row.
-        // Without this, the Status column would stay "Existing" even after
-        // the user typed a unique name, leaving the dialog visually
-        // inconsistent with what would actually happen on import.
-        NameChanged?.Invoke(this, value);
-    }
-
-    partial void OnTargetCategoryPathChanged(string value)
-    {
-        // Fire only on path change so we always have a consistent (Id, Path)
-        // pair. Picker flow sets Id first, then Path, so this fires after
-        // both values are in place.
-        CategoryChanged?.Invoke(this, (TargetCategoryId, value));
-    }
-
-    partial void OnIsSelectedChanged(bool value)
-    {
-        SelectionChanged?.Invoke(this, value);
-    }
+    /// <summary>#249 (Phase 4): async diff request (DB analytics read).</summary>
+    public event Func<FamilyBatchImportRow, Task>? OpenDiffDetailsRequested;
 
     [RelayCommand]
     private async Task PickCategory()

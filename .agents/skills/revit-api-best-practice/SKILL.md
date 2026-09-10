@@ -138,6 +138,7 @@ private void OpenDialog()
 |---|---|---|
 | 2019-2024 | net48 | Use `ValueTuple` package |
 | 2025-2026 | net8.0-windows | Native `ValueTuple`, C# 12 |
+| 2027 | net10.0-windows | Native `ValueTuple`, production code stays C# 12. API 2027 removes `ConnectorType.MasterSurface` (deprecated in 2026) — use `MainSurface` under `#if REVIT2027_OR_GREATER` (`MainSurface` does not exist in API 2021, hence 2027+). When building R27, check removed APIs (revitapidocs /2027/news) |
 
 ## Resources
 
@@ -171,7 +172,7 @@ private void OpenDialog()
 
 ### WPF DockablePane Freeze in net48 — `FireAndForget` + null `Application.Current?.Dispatcher`
 
-**Affected:** Revit 2019-2024 (net48) when a `FireAndForget` (`Task.Run + ConfigureAwait(false)`) lambda updates the WPF TreeView after a save. **Does not** affect Revit 2025-2026 (net8.0-windows) because `Application.Current` is non-null there.
+**Affected:** Revit 2019-2024 (net48) when a `FireAndForget` (`Task.Run + ConfigureAwait(false)`) lambda updates the WPF TreeView after a save. **Does not** affect Revit 2025+ (net8.0-windows / net10.0-windows, Revit 2025-2027) because `Application.Current` is non-null there.
 
 **Symptoms:** After triggering an import (or any FireAndForget that updates the tree), the **LMB does not respond** on the tree, drag-select is broken, the freeze **resolves on right-click** until the next operation. In Revit 2025 (net8) the same code works fine.
 
@@ -220,3 +221,18 @@ result = _loadService.LoadFamilyAsync(resolved, options, _onStatusMessage, ct).G
 ```
 **Decision rule:** `AsyncBridge.RunSync` is SAFE only for true async I/O (SQLite, file, HTTP). It is DANGEROUS for any method that internally calls Revit API. See `AsyncBridge.cs` XML doc for the full SAFE/DANGEROUS table.  
 **Details:** [Async & Threading](references/async-threading-patterns.md) (Mistake 1)
+
+### Verified API Traps (from #104 system type sync — all proven in real Revit via integration tests)
+
+1. **`CopyElements` auto-renames on name collision even with `DuplicateTypeAction.UseDestinationTypes`.** The destination type is NOT overwritten, but the incoming type is NOT skipped either — it lands as `"Name 2"`. If you need source names preserved, rename colliding destination types away BEFORE the copy.
+2. **`Transaction.Commit()` can return `TransactionStatus.RolledBack` without throwing** (unhandled error-severity failure, e.g. deleting the last type of a system family). ALWAYS check the return status; in a UI session the same failure is a modal dialog instead. (#178)
+3. **Deleting the last type of a system family is forbidden.** Also: when a wall type is copied between documents, Revit remaps its `FamilyName` to the canonical "Basic Wall" — a renamed original can end up alone in its original family and thus undeletable.
+4. **`Document.LoadFamily` (Document overload) throws `InvalidOperationException` when the target document is modifiable** (open transaction). Resolve family dependencies BEFORE opening your transaction.
+5. **`Parameter.ClearValue()` works only on shared parameters.** For plain string parameters use `Set(string.Empty)` as the canonical "no value" fallback.
+6. **Wall wrapping is NOT a parameter in modern Revit.** Legacy `WRAPPING_AT_INSERTS_PARAM`/`WRAPPING_AT_ENDS_PARAM` exist only in older versions (and only when the wall has shell layers). The version-safe source is `CompoundStructure.EndCap` / `OpeningWrapping` (+ per-layer `LayerCapFlag` / `SetParticipatesInWrapping`).
+7. **`Segment.RemoveSize` throws only on the LAST size** — Revit does not check size usage. Check usage yourself (pipes: `RBS_PIPE_SEGMENT_PARAM` + `RBS_PIPE_DIAMETER_PARAM`); duct/conduit segments expose no usage API — don't remove their sizes. Duct segments also cannot be created via API (only `PipeSegment.Create`).
+8. **`PipeScheduleType : ElementType`** — its own `.Id` goes into `PipeSegment.Create(scheduleId)`. The popular forum snippet using `.GetTypeId()` yields `InvalidElementId` and is wrong.
+9. **Never copy materials between documents** (Revit 2024+ duplicates them even on name match — "Материал 1"). Match by name, update in place, create via `Duplicate()` of a prototype (API-created materials have no appearance asset). Before editing appearance/physical assets, detach shared ones (`AppearanceAssetElement.Duplicate`, exclusive `PropertySetElement`) or sibling materials get silently re-colored.
+10. **`Autodesk.Revit.Exceptions.ArgumentException` does NOT derive from `System.ArgumentException`** — `catch (ArgumentException)` misses it. Catch the Revit type (or check both).
+
+**Full decision record with code:** [ADR-061](../../docs/adr/061-system-family-sync.md)

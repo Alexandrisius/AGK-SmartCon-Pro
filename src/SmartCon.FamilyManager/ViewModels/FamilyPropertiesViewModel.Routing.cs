@@ -1,0 +1,481 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.UI;
+
+namespace SmartCon.FamilyManager.ViewModels;
+
+/// <summary>
+/// Routing editor tab (ADR-072, World B): per-type editing of the item-level
+/// routing links (V37 tables). Visible only for system MEPCurve items
+/// (pipe/duct/flex/conduit/cable tray). Routing is a catalog-family link,
+/// NOT file content: the save goes through <see cref="IRoutingEditorService"/>
+/// and edits the links IN PLACE — no version is created, no hash is touched.
+/// Rule edits are kept per type, so switching types in the selector never
+/// loses pending changes; a save persists every touched type at once.
+/// </summary>
+public sealed partial class FamilyPropertiesViewModel
+{
+    private IRoutingEditorService? _routingEditorService;
+    private int _routingHostCategoryId;
+    private RoutingEditorData? _routingData;
+
+    /// <summary>Per-type edit state (key = familyKey|typeName) — survives type switches.</summary>
+    private readonly Dictionary<string, RoutingTypeEditState> _routingEdits = new(StringComparer.Ordinal);
+    /// <summary>Original fingerprints for dirty detection (key = familyKey|typeName).</summary>
+    private readonly Dictionary<string, string> _routingOriginals = new(StringComparer.Ordinal);
+    /// <summary>Dropdown source: «Все» + segment nominal diameters (mm).</summary>
+    private IReadOnlyList<string> _routingSizeOptions = [];
+
+    [ObservableProperty] private bool _isRoutingTabVisible;
+    [ObservableProperty] private bool _isRoutingBusy;
+    [ObservableProperty] private string? _routingStatusMessage;
+    [ObservableProperty] private ObservableCollection<RoutingTypeItem> _routingTypes = [];
+    [ObservableProperty] private RoutingTypeItem? _selectedRoutingType;
+    [ObservableProperty] private ObservableCollection<RoutingGroupRowViewModel> _routingGroups = [];
+    [ObservableProperty] private bool _showPreferredJunction;
+    [ObservableProperty] private RoutingJunctionOption? _selectedPreferredJunction;
+
+    /// <summary>
+    /// Only PIPES carry size ranges in routing (owner decision 2026-08-30) —
+    /// the fixed Min/Max column headers hide for every other category.
+    /// </summary>
+    [ObservableProperty] private bool _routingHasSizeCriteria;
+
+    /// <summary>
+    /// Manager categories (pipe/duct) have multi-rule groups with reorder /
+    /// delete buttons — the header keeps the trailing action columns.
+    /// Param categories (flex/conduit/tray) collapse them to zero, exactly
+    /// like their rows do (owner stress test 2026-09-01).
+    /// </summary>
+    [ObservableProperty] private bool _routingHasRuleActions;
+
+    /// <summary>
+    /// Set when a routing save actually persisted — the main view model runs
+    /// an immediate stale re-check of the family after the dialog closes
+    /// (the catalog links changed, so loaded project types drift right away).
+    /// </summary>
+    public bool RoutingLinksChanged { get; private set; }
+
+    public IReadOnlyList<RoutingJunctionOption> PreferredJunctionOptions { get; private set; } = [];
+
+    /// <summary>
+    /// Display options of the preferred junction combo. Pipe/duct store the
+    /// <c>PreferredJunctionType</c> ENUM int (Tee=0, Tap=1 — revitapidocs);
+    /// flex types store the raw <c>RBS_CURVETYPE_PREFERRED_BRANCH_PARAM</c>
+    /// int, whose convention is INVERTED (0=Tap, 1=Tee — Autodesk DevBlog
+    /// "Set New Pipe Type Properties"; own probe: the template flex type
+    /// shows «Тройник» while the parameter reads 1). Storage keeps the raw
+    /// value on both paths (extract→DB→sync round-trip is stable) — only
+    /// the display mapping differs per category (audit H3).
+    /// </summary>
+    internal static IReadOnlyList<RoutingJunctionOption> BuildPreferredJunctionOptions(int hostCategoryId)
+    {
+        var tee = LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Junction_Tee) ?? "Tee";
+        var tap = LanguageManager.GetString(StringLocalization.Keys.FM_Routing_Junction_Tap) ?? "Tap";
+        var flexRaw = hostCategoryId is RoutingGroupCatalog.FlexPipeCurvesCategoryId
+            or RoutingGroupCatalog.FlexDuctCurvesCategoryId;
+        return flexRaw
+            ? [new RoutingJunctionOption(0, tap), new RoutingJunctionOption(1, tee)]
+            : [new RoutingJunctionOption(0, tee), new RoutingJunctionOption(1, tap)];
+    }
+
+    /// <summary>Routing editing is enabled (the host dialog is not read-only).</summary>
+    public bool CanEditRouting => !IsReadOnly;
+
+    /// <summary>Status line visibility.</summary>
+    public bool HasRoutingStatusMessage => !string.IsNullOrEmpty(RoutingStatusMessage);
+
+    partial void OnRoutingStatusMessageChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasRoutingStatusMessage));
+    }
+
+    /// <summary>Any type's current edit state differs from the stored rules.</summary>
+    public bool HasRoutingChanges
+    {
+        get
+        {
+            if (!IsRoutingTabVisible)
+                return false;
+            foreach (var pair in _routingEdits)
+            {
+                if (!_routingOriginals.TryGetValue(pair.Key, out var original)
+                    || !string.Equals(original, pair.Value.Fingerprint(), StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private void NotifyRoutingChanged()
+    {
+        OnPropertyChanged(nameof(HasRoutingChanges));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    partial void OnSelectedRoutingTypeChanged(RoutingTypeItem? value)
+    {
+        RebuildRoutingGroups();
+    }
+
+    partial void OnSelectedPreferredJunctionChanged(RoutingJunctionOption? value)
+    {
+        if (value is null || SelectedRoutingType is null)
+            return;
+        var state = GetRoutingEditState(SelectedRoutingType);
+        if (state.PreferredJunctionType != value.Value)
+        {
+            state.PreferredJunctionType = value.Value;
+            NotifyRoutingChanged();
+        }
+
+        // The junctions group relabels (Тройники/Врезки) and re-greys its
+        // rules of the non-preferred part type (Revit routing dialog).
+        foreach (var group in RoutingGroups)
+            group.RefreshJunctionState(value.Value);
+    }
+
+    private void InitializeRoutingTab(string? familySource, int? revitCategoryId)
+    {
+        IsRoutingTabVisible =
+            string.Equals(familySource, "system", StringComparison.Ordinal)
+            && RoutingGroupCatalog.IsMepCurveCategory(revitCategoryId)
+            && _routingEditorService is not null;
+        _routingHostCategoryId = revitCategoryId ?? 0;
+        ShowPreferredJunction = IsRoutingTabVisible
+            && RoutingGroupCatalog.HasPreferredJunction(_routingHostCategoryId);
+        PreferredJunctionOptions = BuildPreferredJunctionOptions(_routingHostCategoryId);
+        SmartConLogger.Info(
+            $"InitializeRoutingTab (ADR-072 F3): familySource='{familySource ?? "<null>"}', " +
+            $"revitCategoryId={revitCategoryId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "<null>"}, " +
+            $"service={_routingEditorService is not null}, visible={IsRoutingTabVisible}");
+    }
+
+    private async Task LoadRoutingAsync(CancellationToken ct)
+    {
+        if (!IsRoutingTabVisible || _routingEditorService is null)
+            return;
+
+        IsRoutingBusy = true;
+        try
+        {
+            _routingData = await _routingEditorService.LoadAsync(_catalogItemId, ct).ConfigureAwait(true);
+            if (_routingData is null)
+            {
+                IsRoutingTabVisible = false;
+                return;
+            }
+
+            RoutingHasSizeCriteria = RoutingGroupCatalog.HasSizeCriteria(_routingHostCategoryId);
+            RoutingHasRuleActions = RoutingGroupCatalog.IsManagerBased(_routingHostCategoryId);
+
+            _routingEdits.Clear();
+            _routingOriginals.Clear();
+            _routingSizeOptions = BuildSizeOptions(_routingData.SizeNominalsFeet);
+            var multiFamily = _routingData.Types
+                .Select(t => t.FamilyName)
+                .Distinct(StringComparer.Ordinal)
+                .Count() > 1;
+            RoutingTypes = new ObservableCollection<RoutingTypeItem>(
+                _routingData.Types.Select(t => new RoutingTypeItem(t, multiFamily)));
+            foreach (var type in _routingData.Types)
+            {
+                var state = BuildRoutingEditState(type);
+                _routingEdits[RoutingTypeItem.KeyOf(type.TypeName, type.FamilyKey)] = state;
+                _routingOriginals[RoutingTypeItem.KeyOf(type.TypeName, type.FamilyKey)] = state.Fingerprint();
+            }
+            SelectedRoutingType = RoutingTypes.FirstOrDefault(t =>
+                    string.Equals(RoutingTypeItem.KeyOf(t.TypeName, t.FamilyKey), FocusRoutingTypeKey, StringComparison.Ordinal))
+                ?? RoutingTypes.FirstOrDefault();
+
+            // #133 deep-link (routing-phantom badge): land directly on the
+            // Routing tab focused at the broken type. Done HERE (not in
+            // InitializeRoutingTab) — that runs in the constructor, before
+            // the factory's object-initializer sets FocusRoutingTab.
+            if (FocusRoutingTab && IsRoutingTabVisible)
+            {
+                SelectedTabIndex = RoutingTabIndex;
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"LoadRoutingAsync failed: {ex.Message} [Action: закройте и откройте свойства снова; вкладка трассировки будет скрыта]");
+            IsRoutingTabVisible = false;
+        }
+        finally
+        {
+            IsRoutingBusy = false;
+        }
+    }
+
+    private RoutingTypeEditState BuildRoutingEditState(RoutingEditorTypeData type)
+    {
+        var descriptors = RoutingGroupCatalog.GetGroups(_routingHostCategoryId, type.WithFittings);
+        var missing = new HashSet<string>(_routingData!.MissingPartFamilies, StringComparer.Ordinal);
+        var state = new RoutingTypeEditState(
+            _routingData.Settings
+                .FirstOrDefault(s => s.TypeName == type.TypeName && s.FamilyKey == type.FamilyKey)
+                ?.PreferredJunctionType ?? 0);
+
+        foreach (var descriptor in descriptors)
+        {
+            var group = new RoutingGroupEditState(descriptor);
+            var storedRules = _routingData.Rules
+                .Where(r => r.TypeName == type.TypeName
+                    && r.FamilyKey == type.FamilyKey
+                    && r.GroupKey == descriptor.GroupKey)
+                .OrderBy(r => r.RuleOrder);
+            foreach (var rule in storedRules)
+            {
+                var row = RoutingRuleEditState.FromStored(rule, missing);
+                NormalizeMixedSizePair(row);
+                row.PartTypeOrdinal = PartTypeOrdinalOf(rule.PartName);
+                group.Rules.Add(row);
+            }
+            // Param groups hold exactly one value row («Нет» when unset).
+            // The pipe Segments row (manager type, single-rule) shows only
+            // what is actually stored — a synthetic «Нет» row there would
+            // let the user set a criterion for a nonexistent segment rule
+            // (owner stress test 2026-09-01).
+            if (descriptor.ManagerGroupType is null && !descriptor.AllowMultipleRules && group.Rules.Count == 0)
+            {
+                group.Rules.Add(RoutingRuleEditState.Empty());
+            }
+            state.Groups.Add(group);
+        }
+        return state;
+    }
+
+    /// <summary>
+    /// Stored rules may carry one unbounded side next to a concrete bound
+    /// (0..150); the editor forbids that mix — the unbounded side reads as
+    /// the extreme available size instead of «Все». Normalized HERE (before
+    /// the dirty-baseline fingerprint is captured in LoadRoutingAsync) so
+    /// merely opening the tab never marks the type edited and a later save
+    /// cannot silently narrow the criterion (audit M2).
+    /// </summary>
+    private void NormalizeMixedSizePair(RoutingRuleEditState row)
+    {
+        if (_routingSizeOptions.Count < 2)
+            return;
+        var smallest = _routingSizeOptions[1];
+        var largest = _routingSizeOptions[_routingSizeOptions.Count - 1];
+        if (IsAllSizesText(row.MinSizeText) && !IsAllSizesText(row.MaxSizeText))
+            row.MinSizeText = smallest;
+        else if (IsAllSizesText(row.MaxSizeText) && !IsAllSizesText(row.MinSizeText))
+            row.MaxSizeText = largest;
+    }
+
+    private static bool IsAllSizesText(string value)
+        => string.Equals((value ?? string.Empty).Trim(), RoutingTypeEditState.AllSizesDisplay,
+            StringComparison.OrdinalIgnoreCase);
+
+    private RoutingTypeEditState GetRoutingEditState(RoutingTypeItem type)
+        => _routingEdits[RoutingTypeItem.KeyOf(type.TypeName, type.FamilyKey)];
+
+    /// <summary>«Все» + the stored segment nominal diameters in mm, ascending.</summary>
+    private static IReadOnlyList<string> BuildSizeOptions(IReadOnlyList<double> nominalsFeet)
+    {
+        var options = new List<string>(nominalsFeet.Count + 1)
+        {
+            LanguageManager.GetString(StringLocalization.Keys.FM_Routing_AllSizes) ?? "All",
+        };
+        options.AddRange(nominalsFeet.Select(f => RoutingTypeEditState.FormatSize(f, isMax: false)));
+        return options;
+    }
+
+    private void RebuildRoutingGroups()
+    {
+        if (SelectedRoutingType is null)
+        {
+            RoutingGroups = [];
+            return;
+        }
+        var state = GetRoutingEditState(SelectedRoutingType);
+        RoutingGroups = new ObservableCollection<RoutingGroupRowViewModel>(
+            state.Groups.Select(g => new RoutingGroupRowViewModel(this, g, _routingSizeOptions, state.PreferredJunctionType)));
+        SelectedPreferredJunction = PreferredJunctionOptions
+            .FirstOrDefault(o => o.Value == state.PreferredJunctionType);
+    }
+
+    [RelayCommand]
+    private void AddRoutingRule(RoutingGroupRowViewModel? group)
+    {
+        if (group is null || IsRoutingReadOnly)
+            return;
+        group.State.Rules.Add(RoutingRuleEditState.Empty(isFresh: true));
+        group.RefreshRules();
+        NotifyRoutingChanged();
+    }
+
+    [RelayCommand]
+    private void RemoveRoutingRule(RoutingRuleRowViewModel? row)
+    {
+        if (row?.Group is null || IsRoutingReadOnly)
+            return;
+        row.Group.State.Rules.Remove(row.State);
+        row.Group.RefreshRules();
+        NotifyRoutingChanged();
+    }
+
+    [RelayCommand]
+    private void MoveRoutingRuleUp(RoutingRuleRowViewModel? row) => MoveRoutingRule(row, -1);
+
+    [RelayCommand]
+    private void MoveRoutingRuleDown(RoutingRuleRowViewModel? row) => MoveRoutingRule(row, +1);
+
+    private void MoveRoutingRule(RoutingRuleRowViewModel? row, int delta)
+    {
+        if (row?.Group is null || IsRoutingReadOnly)
+            return;
+        var rules = row.Group.State.Rules;
+        var index = rules.IndexOf(row.State);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= rules.Count)
+            return;
+        (rules[index], rules[target]) = (rules[target], rules[index]);
+        row.Group.RefreshRules();
+        NotifyRoutingChanged();
+    }
+
+    [RelayCommand]
+    private async Task PickRoutingPartAsync(RoutingRuleRowViewModel? row)
+    {
+        if (row?.Group is null || IsRoutingReadOnly || _routingEditorService is null)
+            return;
+        var descriptor = row.Group.State.Descriptor;
+        try
+        {
+            // Junctions picker filters tee/tap candidates by the type's
+            // preferred junction (owner stress test 2026-09-01) — the Revit
+            // routing dialog never applies the non-preferred kind either.
+            var preferredJunction = RoutingGroupCatalog.IsJunctionsManagerGroup(descriptor.ManagerGroupType)
+                && SelectedRoutingType is { } selectedType
+                ? GetRoutingEditState(selectedType).PreferredJunctionType
+                : -1;
+            // Connector-shape filter (баг 8): a round flex duct never offers
+            // rectangular-only fittings; multi-shape transitions match on
+            // either end (their fact carries both bits). Multi-shape
+            // transition ROWS additionally require ALL their bits — a
+            // rect-to-round row never offers a purely rectangular
+            // transition; the plain Transitions row does the opposite and
+            // hides multi-shape parts (owner stress test 2026-09-01).
+            var shapeBits = SelectedRoutingType is { } hostType
+                ? HostConnectorShapeBits(hostType.FamilyKey)
+                : 0;
+            var pickerVm = _viewModelFactory.CreateRoutingPartPickerViewModel(
+                descriptor.FittingCategoryId, descriptor.PartTypeOrdinals, row.State.PartName,
+                row.Group.Label, preferredJunction, shapeBits,
+                descriptor.RequiredConnectorShapeMask, descriptor.ExcludeMultiShapeParts);
+            // The scope covers only the candidate load — the modal dialog
+            // stays outside so user thinking time never pollutes the
+            // scope's elapsed metric.
+            using (var _scope = SmartConLogger.BeginScope("RoutingEditor",
+                ("Method", nameof(PickRoutingPartAsync)),
+                ("Group", descriptor.GroupKey),
+                ("FittingCategory", descriptor.FittingCategoryId)))
+            {
+                await pickerVm.InitializeAsync();
+            }
+            if (_dialogService.ShowRoutingPartPicker(pickerVm) == true && pickerVm.Result is { } partName)
+            {
+                row.State.PartName = partName;
+                row.State.HasPresenceIssue = false;
+                row.State.PartTypeOrdinal = PartTypeOrdinalOf(partName);
+                row.Refresh();
+                NotifyRoutingChanged();
+                SmartConLogger.Info($"Part picked: '{partName}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error($"PickRoutingPartAsync FAILED: {ex.GetType().Name}: {ex.Message}");
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Tab_Routing) ?? "Routing",
+                ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void ClearRoutingPart(RoutingRuleRowViewModel? row)
+    {
+        if (row?.Group is null || IsRoutingReadOnly)
+            return;
+        row.State.PartName = null;
+        row.State.HasPresenceIssue = false;
+        row.State.PartTypeOrdinal = null;
+        row.Refresh();
+        NotifyRoutingChanged();
+    }
+
+    /// <summary>Part-type ordinal of a rule part family («family:type» prefix),
+    /// or null when the catalog carries no part_type fact for it.</summary>
+    private int? PartTypeOrdinalOf(string? partName)
+    {
+        if (partName is null)
+            return null;
+        var separator = partName.IndexOf(':');
+        var family = separator > 0 ? partName.Substring(0, separator) : partName;
+        return _routingData?.PartTypesByFamily is { } map
+            && map.TryGetValue(family, out var ordinal)
+            ? ordinal
+            : null;
+    }
+
+    /// <summary>
+    /// Host connector-profile bitmask for the picker shape filter (баг 8):
+    /// Round=1, Rectangular=2, Oval=4 from the type's family key; 0 = no
+    /// filter (pipes/conduit/trays — their fittings are shape-uniform, and
+    /// unknown keys degrade to the legacy unfiltered picker).
+    /// </summary>
+    internal static int HostConnectorShapeBits(string familyKey)
+        => familyKey switch
+        {
+            SystemFamilyKeys.DuctRound or SystemFamilyKeys.FlexDuctRound => RoutingGroupCatalog.ShapeRound,
+            SystemFamilyKeys.DuctRectangular or SystemFamilyKeys.FlexDuctRectangular => RoutingGroupCatalog.ShapeRectangular,
+            SystemFamilyKeys.DuctOval => RoutingGroupCatalog.ShapeOval,
+            _ => 0,
+        };
+
+    internal void NotifyRoutingRuleEdited() => NotifyRoutingChanged();
+
+    private bool IsRoutingReadOnly => IsReadOnly;
+
+}
+
+/// <summary>Type selector row of the routing tab.</summary>
+public sealed class RoutingTypeItem
+{
+    public RoutingTypeItem(RoutingEditorTypeData type, bool multiFamily)
+    {
+        TypeName = type.TypeName;
+        FamilyKey = type.FamilyKey;
+        FamilyName = type.FamilyName;
+        WithFittings = type.WithFittings;
+        DisplayName = multiFamily && FamilyName.Length > 0
+            ? TypeName + "  (" + FamilyName + ")"
+            : TypeName;
+    }
+
+    public string TypeName { get; }
+    public string FamilyKey { get; }
+    public string FamilyName { get; }
+    public bool WithFittings { get; }
+    public string DisplayName { get; }
+    public override string ToString() => DisplayName;
+
+    public static string KeyOf(string typeName, string familyKey) => familyKey + "|" + typeName;
+}
+
+/// <summary>Preferred-junction combo row (Tee=0 / Tap=1 — frozen enum ordinals).</summary>
+public sealed record RoutingJunctionOption(int Value, string Label)
+{
+    public override string ToString() => Label;
+}

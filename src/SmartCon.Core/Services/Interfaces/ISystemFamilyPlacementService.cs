@@ -1,6 +1,28 @@
+using SmartCon.Core.Models.FamilyManager;
+
 namespace SmartCon.Core.Services.Interfaces;
 
 public interface ISystemFamilyPlacementService
 {
-    void LoadAndPlaceSystemType(string catalogItemId, string typeName, int targetRevitVersion);
+    /// <summary>
+    /// Synchronize the system type with the catalog (when its ES marker is
+    /// not current) and activate placement. The caller uses the result to
+    /// prune the stale snapshot entry (the just-synced type carries a fresh
+    /// marker) and to phrase the status message: a type whose category
+    /// cannot be placed interactively (<c>CanPlaceElementType</c> = false)
+    /// returns <see cref="SystemPlacementResult.LoadedManualPlacementRequired"/>
+    /// — the type IS in the project, the user places it manually.
+    /// </summary>
+    /// <param name="familyName">Issue #183: Revit system family of the type —
+    /// the sync and the placement lookup are restricted to it; null keeps
+    /// the legacy first-name-match behaviour.</param>
+    /// <param name="familyKey">Issue #190 (ADR-064): locale-invariant family
+    /// key — preferred over <paramref name="familyName"/> when present.</param>
+    /// <param name="notConvergedCount">Settings that did not converge to the
+    /// reference during the sync (ADR-065 residue) — 0 when the type was
+    /// already current. The caller must surface this to the user (the
+    /// <see cref="SystemTypeSyncResult.NotConvergedCount"/> contract).</param>
+    SystemPlacementResult LoadAndPlaceSystemType(
+        string catalogItemId, string typeName, int targetRevitVersion, out int notConvergedCount,
+        string? familyName = null, string? familyKey = null);
 }

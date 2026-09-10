@@ -1,0 +1,105 @@
+using System.Linq;
+using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
+using SmartCon.Core.Services.Interfaces;
+
+namespace SmartCon.Core.Services.Implementation;
+
+/// <summary>
+/// Default <see cref="IProjectBaseActivator"/>. Picks the most specific
+/// database for the currently active Revit document according to decision A2
+/// of #119: first project-scoped base whose binding matches becomes active.
+/// If no project base matches, the fallback to the first general base is
+/// applied ONLY when there is no active base or the active base is a
+/// project-scoped one that no longer matches (failed validation). When the
+/// user is already working on a general base, that manual selection is
+/// preserved — with several general bases the first one must NOT steal
+/// activation on every document switch. If neither kind has any candidate,
+/// the active database is left untouched (the UI will then show a "project
+/// mismatch" lock on the current project base).
+/// </summary>
+public sealed class ProjectBaseActivator : IProjectBaseActivator
+{
+    private readonly IDatabaseManager _dbManager;
+    private readonly IProjectBaseBindingEvaluator _evaluator;
+
+    public ProjectBaseActivator(IDatabaseManager dbManager, IProjectBaseBindingEvaluator evaluator)
+    {
+        _dbManager = dbManager;
+        _evaluator = evaluator;
+    }
+
+    public async Task<string?> ActivateForDocumentAsync(string currentFilePath, CancellationToken ct = default)
+    {
+        using var _scope = SmartConLogger.BeginScope("FMProjectBase",
+            ("Method", nameof(ActivateForDocumentAsync)),
+            ("FilePath", System.IO.Path.GetFileName(currentFilePath)));
+
+        var connections = _dbManager.ListConnections();
+        if (connections.Count == 0)
+        {
+            SmartConLogger.Debug("No connections registered — skipping activation");
+            return null;
+        }
+
+        var active = _dbManager.GetActiveConnection();
+
+        if (string.IsNullOrEmpty(currentFilePath))
+        {
+            // #174: an unsaved document has no path and can match nothing —
+            // skip project matching and fall through to the general fallback
+            // instead of leaving a stale project base active.
+            SmartConLogger.Info("Active document has no file path (unsaved) — project bases blocked, falling back to general");
+        }
+        else
+        {
+            foreach (var conn in connections)
+            {
+                if (conn.Kind != BaseType.Project) continue;
+                if (conn.ProjectBinding is null) continue;
+
+                var match = _evaluator.Evaluate(conn.ProjectBinding, currentFilePath);
+                if (match.Kind == ProjectBaseMatchKind.Match)
+                {
+                    SmartConLogger.Info($"Project base '{conn.Name}' matches the active document");
+                    if (active is null || active.Id != conn.Id)
+                    {
+                        await _dbManager.SwitchDatabaseAsync(conn.Id, ct);
+                    }
+                    return conn.Id;
+                }
+                SmartConLogger.Debug($"Project base '{conn.Name}' did not match: {match.Reason ?? "no reason"}");
+            }
+        }
+
+        // No project base matched. Keep the user's manual selection when it
+        // is a general base: with multiple general bases, auto-switching to
+        // the FIRST general on every document activation destroys the user's
+        // choice (Issue: "каждый раз когда переключаюсь на любой проект
+        // выбирается первая общая база"). The fallback to the first general
+        // applies only when nothing is active or the active base is a
+        // project-scoped one whose binding failed validation for this file.
+        if (active is not null && active.Kind == BaseType.General)
+        {
+            SmartConLogger.Info(
+                $"No project base matched — keeping current general base '{active.Name}' (manual selection preserved)");
+            return active.Id;
+        }
+
+        var general = connections.FirstOrDefault(c => c.Kind == BaseType.General);
+        if (general is not null)
+        {
+            SmartConLogger.Info($"No project base matched — falling back to general '{general.Name}'");
+            if (active is null || active.Id != general.Id)
+            {
+                await _dbManager.SwitchDatabaseAsync(general.Id, ct);
+            }
+            return general.Id;
+        }
+
+        SmartConLogger.Warn(
+            "No project base matched and no general base available — active database left unchanged. " +
+            "[Action: Register at least one General base, or add a project base whose template matches this file]");
+        return null;
+    }
+}

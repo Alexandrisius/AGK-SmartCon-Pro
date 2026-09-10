@@ -7,8 +7,11 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
+  <!-- CommunityToolkit.Mvvm: на обеих TFM — внутри merged SmartCon.Dependencies (ADR-051).
+       Source-генераторы работают: analyzers текут транзитивно (ExcludeAssets с сохранением
+       analyzers — централизованно в Directory.Build.targets). -->
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
   <ItemGroup>

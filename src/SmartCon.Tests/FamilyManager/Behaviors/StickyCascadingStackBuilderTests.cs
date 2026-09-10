@@ -1,7 +1,7 @@
-namespace SmartCon.Tests.FamilyManager.Behaviors;
-
 using SmartCon.FamilyManager.Behaviors;
 using Xunit;
+
+namespace SmartCon.Tests.FamilyManager.Behaviors;
 
 public sealed class StickyCascadingStackBuilderTests
 {
@@ -44,16 +44,30 @@ public sealed class StickyCascadingStackBuilderTests
     }
 
     [Fact]
-    public void BuildCascadingStack_SiblingComesUp_IncludesSibling()
+    public void BuildCascadingStack_SiblingsScrolledOff_KeepsOnlyDeepestVisibleSibling()
     {
-        // Root and A scrolled off and pinned; B (sibling of A) now comes up under them.
+        // Root and both siblings A and B are scrolled off. Only one sibling can be in the stack.
         var tops = new[] { -50.0, -80.0, -100.0 };
         var heights = new[] { 24.0, 24.0, 24.0 };
         var parents = new[] { -1, 0, 0 };
 
         var result = StickyCascadingStackBuilder.BuildCascadingStack(tops, heights, parents, viewportHeight: 200);
 
-        // Root pinned first, then A, then B pushes A? Actually Root+A+root path for B = [0] already, add [2].
+        // Root pinned, then A (closer to viewport than B) pinned; B is a sibling and not added.
+        Assert.Equal(new[] { 0, 1 }, result);
+    }
+
+    [Fact]
+    public void BuildCascadingStack_DeeperPathUnderSibling_PinsDeeperChild()
+    {
+        // Root -> A -> A1 are all scrolled off; B is sibling of A.
+        // The stack should follow the deepest visible path, not include sibling B.
+        var tops = new[] { -50.0, -80.0, -100.0, -90.0 };
+        var heights = new[] { 24.0, 24.0, 24.0, 24.0 };
+        var parents = new[] { -1, 0, 1, 0 };
+
+        var result = StickyCascadingStackBuilder.BuildCascadingStack(tops, heights, parents, viewportHeight: 200);
+
         Assert.Equal(new[] { 0, 1, 2 }, result);
     }
 

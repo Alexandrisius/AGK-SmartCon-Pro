@@ -8,6 +8,25 @@
     <DefineConstants>$(DefineConstants);NET8_0;REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER</DefineConstants>
   </PropertyGroup>
 
+  <!-- net10.0-windows (Revit 2027): SDK сам определяет NET10_0 и цепочку NET*_OR_GREATER
+       (включая NET8_0_OR_GREATER) — добавляем только кастомные REVIT-символы -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows'">
+    <DefineConstants>$(DefineConstants);REVIT2021_OR_GREATER;REVIT2022_OR_GREATER;REVIT2023_OR_GREATER;REVIT2024_OR_GREATER;REVIT2025_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Revit 2026+: поверх цепочки добавляем REVIT2026_OR_GREATER (electrical Conductor* model и др.).
+       Символ определён и для RevitVersion=2027 (TFM net10) — API Conductor* в 2027 идентичен 2026
+       (revitapidocs), код #233 компилируется для обеих версий одним #if.
+       Условие только по RevitVersion: props гарантируют 2026→net8, 2027→net10. -->
+  <PropertyGroup Condition="'$(RevitVersion)' == '2026' Or '$(RevitVersion)' == '2027'">
+    <DefineConstants>$(DefineConstants);REVIT2026_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Revit 2027: собственный символ цепочки (пока не использован в коде — объявлен для будущих API-отличий) -->
+  <PropertyGroup Condition="'$(RevitVersion)' == '2027'">
+    <DefineConstants>$(DefineConstants);REVIT2027_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
   <!-- net48 + конкретная версия Revit -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019'">
     <!-- Нет OR_GREATER символов — компилируем для самого старого API (Revit 2019) -->
@@ -30,7 +49,7 @@
   <!-- ============================================================ -->
 
   <!-- net48: R19 использует RevitAPI 2020 (пакет 2019 deprecated), покрывает Revit 2019+2020 -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '2019' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
     <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
                       VersionOverride="2020.*" />
     <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
@@ -38,7 +57,7 @@
   </ItemGroup>
 
   <!-- net48: версия задаётся через RevitVersion (2021–2024) -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019'">
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
     <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
                       VersionOverride="$(RevitVersion).*" />
     <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
@@ -46,25 +65,106 @@
   </ItemGroup>
 
   <!-- Fallback: RevitVersion не указан → restore не падает, ValidateRevitVersion выдаёт понятную ошибку -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == '' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="2021.*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="2021.*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(RevitVersion)' != '' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="$(RevitVersion).*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="$(RevitVersion).*" />
+    <PackageReference Update="Nice3point.Revit.Toolkit"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
+
+  <!-- SmartCon.Dependencies: net8-таргет собирается для Revit 2025/2026 (per-version
+        бинарники R25/R26 с #233-инфраструктуры; Revit 2027 = net10, его потребители
+        легитимно резолвят net8-срез Dependencies — TFM forward-compatibility, net10-TFM
+        этому проекту не нужен). Toolkit пинут на 2025.2.0 осознанно: его собственный
+        AddinLoadContext удалён из NuGet-сборок 2025.1.0+ (миграция на нативную изоляцию
+        Revit 2026), поэтому мы НЕ полагаемся на ALC toolkit вообще — изоляция на net8/net10
+        достигается ILRepack-merge конфликтных пакетов в SmartCon.Dependencies (ADR-051).
+        НЕ понижать до 2025.0.3: его API несовместим (Application типа ApplicationServices). -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(MSBuildProjectName)' == 'SmartCon.Dependencies'">
+    <PackageReference Update="Nice3point.Revit.Toolkit"
+                      VersionOverride="2025.2.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' == '' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
+                      VersionOverride="2025.*" />
+    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+                      VersionOverride="2025.*" />
+    <PackageReference Update="Nice3point.Revit.Toolkit"
+                      VersionOverride="2025.*" />
+  </ItemGroup>
+
+  <!-- ============================================================ -->
+  <!-- Wildcard VersionOverride для Nice3point.TUnit.Revit            -->
+  <!-- (только SmartCon.IntegrationTests). Пакет публикуется per-Revit -->
+  <!-- годом (2021.*–2027.*), как и RevitAPI — зеркалим схему выше.   -->
+  <!-- Пакета 2019/2020 не существует: R19 не поддерживается           -->
+  <!-- (csproj проекта выдаёт явную ошибку для RevitVersion < 2021).   -->
+  <!-- Update без Include в других проектах — no-op.                   -->
+  <!-- ============================================================ -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019'">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="$(RevitVersion).*" />
+  </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == ''">
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
-                      VersionOverride="2021.*" />
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+    <PackageReference Update="Nice3point.TUnit.Revit"
                       VersionOverride="2021.*" />
   </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' != ''">
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
-                      VersionOverride="$(RevitVersion).*" />
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
+  <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(RevitVersion)' != ''">
+    <PackageReference Update="Nice3point.TUnit.Revit"
                       VersionOverride="$(RevitVersion).*" />
   </ItemGroup>
+  <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(RevitVersion)' == ''">
+    <PackageReference Update="Nice3point.TUnit.Revit"
+                      VersionOverride="2025.*" />
+  </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows' And '$(RevitVersion)' == ''">
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPI"
-                      VersionOverride="2025.*" />
-    <PackageReference Update="Nice3point.Revit.Api.RevitAPIUI"
-                      VersionOverride="2025.*" />
+  <!-- ============================================================ -->
+  <!-- ADR-051 (Issue #134): на net48 merge-список (7 пакетов) сшивается -->
+  <!-- ILRepack в SmartCon.Dependencies.dll. Любые ТРАНЗИТИВНЫЕ пути этих  -->
+  <!-- пакетов в потребителях (HelixToolkit → CommunityToolkit.Mvvm и т.д.) -->
+  <!-- обязаны быть обрезаны, иначе CS0433 + сырые dll в output.          -->
+  <!-- CT.Mvvm — с сохранением analyzers (source-генераторы).             -->
+  <!-- Loose-зависимости (Common/Diagnostics/Memory/Buffers/CodePages...) -->
+  <!-- НЕ обрезаются: они поставляются как подписанные оригиналы.         -->
+  <!-- Держать синхронно с SmartCon.Dependencies/ILRepack.targets         -->
+  <!-- ============================================================ -->
+  <!-- SmartCon.IntegrationTests исключён из обрезки: это standalone test host,
+       а не плагин — ILRepack-изоляция ADR-051 на него не распространяется.
+       TUnit.Core требует реальный System.Text.Json >= 9.0.0 в output. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(MSBuildProjectName)' != 'SmartCon.Dependencies' And '$(MSBuildProjectName)' != 'SmartCon.IntegrationTests'">
+    <PackageReference Include="CommunityToolkit.Mvvm" ExcludeAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" ExcludeAssets="all" />
+    <PackageReference Include="System.Text.Json" ExcludeAssets="all" />
+    <PackageReference Include="System.Text.Encodings.Web" ExcludeAssets="all" />
+    <PackageReference Include="UTF.Unknown" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.Sqlite" ExcludeAssets="all" />
+  </ItemGroup>
+
+  <!-- net8/net10 merge-список (ADR-051): те же типы сшиты в SmartCon.Dependencies —
+       обрезаем транзитив у потребителей, иначе CS0433. STJ/Bcl.AsyncInterfaces/
+       CodePages не трогаем: на net8+ их предоставляет shared-фреймворк.
+       M.E.DI.Abstractions: compile обрезаем (типы теперь из SmartCon.Dependencies),
+       но runtime СОХРАНЯЕМ — loose-копия нужна как name-fallback для
+       Logging.Abstractions (HelixToolkit ссылается на неё по имени, ILoggingBuilder).
+       net10 (Revit 2027) потребляет net8-сборку SmartCon.Dependencies (forward-
+       совместимость TFM) — trimming идентичен net8. -->
+  <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(MSBuildProjectName)' != 'SmartCon.Dependencies'">
+    <PackageReference Include="CommunityToolkit.Mvvm" ExcludeAssets="compile;runtime;contentFiles;build;buildTransitive;native" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" ExcludeAssets="compile;contentFiles;build;buildTransitive;native;analyzers" />
+    <PackageReference Include="UTF.Unknown" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.Data.Sqlite" ExcludeAssets="all" />
   </ItemGroup>
 
   <!-- Валидация: RevitVersion обязателен для net48 + проверка поддерживаемых значений -->

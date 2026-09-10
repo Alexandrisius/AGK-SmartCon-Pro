@@ -88,6 +88,22 @@ public interface IFamilyLoadService
     /// loaded in the project (fresh load — no types to preserve) or when no
     /// loaded symbols can be enumerated.
     /// </para>
+    /// <para>
+    /// Family-document context (#209): when the active document IS a family
+    /// (.rfa in the Family Editor), the semantics are replaced entirely —
+    /// a plain overwrite <c>Document.LoadFamily(path, IFamilyLoadOptions)</c>
+    /// reloads the HOISTED definition of the nested family at ANY nesting
+    /// depth (the preserve-types <c>LoadFamilySymbol</c> path is a silent
+    /// no-op there; <paramref name="onSharedDecision"/> and
+    /// <paramref name="nestedSharedNames"/> are ignored). The hoisted
+    /// definition is what reaches projects when the edited family is loaded;
+    /// an intermediate family's internal EditFamily view keeps a stale
+    /// embedded copy — cosmetic, unreachable from projects (integration
+    /// contracts: NestedFamilyReloadTests, 2026-08-10). Fails fast when the
+    /// target is not nested in the document or is open in the Family Editor;
+    /// the caller post-verifies the reloaded content hash before trusting
+    /// the result.
+    /// </para>
     /// </remarks>
     /// <param name="file">Resolved family file (path + catalog ids).</param>
     /// <param name="overwriteParameterValues">
@@ -96,11 +112,36 @@ public interface IFamilyLoadService
     /// параметры" mode), existing parameter values are preserved.</param>
     /// <param name="onStatusMessage">Optional status callback (see LoadFamilyAsync).</param>
     /// <param name="onSharedDecision">Optional shared-nested decision callback (see LoadFamilyAsync).</param>
+    /// <param name="nestedSharedNames">
+    /// Optional pre-resolved shared nested family names (see LoadFamilyAsync).
+    /// Callers that block synchronously on this method inside an ExternalEvent
+    /// callback (e.g. Stale Update via <c>.GetAwaiter().GetResult()</c>) MUST
+    /// pre-resolve and pass this list: it removes the only asynchronous
+    /// (SQLite) await from the method, guaranteeing the whole call completes
+    /// synchronously on the Revit main thread. When null, the service
+    /// resolves the list from the catalog DB itself (safe only for true
+    /// async callers).
+    /// </param>
+    /// <param name="overwriteOperations">
+    /// Issue #239: optional post-pass plan (per-type parameter values of the
+    /// update target version, built from the catalog's extracted attribute
+    /// values — no extra file opens). Revit's per-symbol
+    /// <c>LoadFamilySymbol</c> merge overwrites parameter values ONLY for the
+    /// first requested symbol; the 2nd..Nth calls are no-ops (probe-proven).
+    /// When provided together with <paramref name="overwriteParameterValues"/>=true,
+    /// the implementation applies these operations to every loaded symbol
+    /// inside the same <c>TransactionGroup</c> (single Undo), so ALL types
+    /// receive the catalog values. Ignored when
+    /// <paramref name="overwriteParameterValues"/> is false, on the fresh-load
+    /// fallback path and in the family-document (nested) context.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     Task<FamilyLoadResult> ReloadFamilyPreservingLoadedTypesAsync(
         FamilyResolvedFile file,
         bool overwriteParameterValues,
         Action<string>? onStatusMessage = null,
         Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        IReadOnlyList<string>? nestedSharedNames = null,
+        IReadOnlyList<TypeParameterOverwriteOperation>? overwriteOperations = null,
         CancellationToken ct = default);
 }

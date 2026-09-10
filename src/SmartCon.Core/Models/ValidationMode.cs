@@ -4,5 +4,6 @@ public enum ValidationMode
 {
     None,
     AllowedValues,
+    Contains,
     CharCount
 }

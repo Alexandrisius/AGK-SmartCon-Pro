@@ -91,7 +91,8 @@ internal sealed class LocalCategoryAttributeBindingService : ICategoryAttributeB
                     binding.SortOrder,
                     binding.IsEnabled,
                     isInherited,
-                    ancestorId);
+                    ancestorId,
+                    binding.Id);
             }
         }
 

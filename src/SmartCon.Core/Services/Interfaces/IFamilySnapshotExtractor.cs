@@ -18,11 +18,24 @@ public interface IFamilySnapshotExtractor
     /// Call <c>Document.Regenerate()</c> before calling this method if the
     /// document was just modified (e.g. after bake-in) so geometry and
     /// formula values are up to date.
+    /// FHV15 (#249): the type-DEPENDENT sections (GEOM metrics, DEF
+    /// offsets, CONN positions) are measured at a deterministic reference
+    /// type — the first (Ordinal) name of <paramref name="preferredTypeNames"/>
+    /// intersected with the document's named types, or the document's
+    /// first named type by default — inside a rolled-back transaction, so
+    /// the user's current-type choice never shifts the content hash.
     /// </summary>
     /// <param name="familyDoc">Open family document (from
     /// <c>OpenDocumentFile</c> or <c>EditFamily</c> or the active family
     /// editor document).</param>
-    FamilySnapshot ExtractFromFamilyDocument(Document familyDoc);
+    /// <param name="preferredTypeNames">Optional preferred reference-type
+    /// names (the verifier's type-set rule: a partially loaded embedded
+    /// copy compares against a restricted file snapshot — pass the
+    /// restriction set so both sides measure at the same intersection
+    /// type). <c>null</c> = the document's first named type.</param>
+    FamilySnapshot ExtractFromFamilyDocument(
+        Document familyDoc,
+        IReadOnlyCollection<string>? preferredTypeNames = null);
 
     /// <summary>
     /// Extract a <see cref="SystemFamilySnapshot"/> (category + types +
@@ -38,6 +51,40 @@ public interface IFamilySnapshotExtractor
         Document projectDoc,
         IReadOnlyList<string> typeUniqueIds,
         BuiltInCategory builtInCategory);
+
+    /// <summary>
+    /// Extract a <see cref="SystemFamilySnapshot"/> from a staged
+    /// mini-project (.rvt) during database actualization (ADR-056).
+    /// Type discovery: placed instances first (domain truth for placed
+    /// categories); when nothing is placed (Phase-2 categories copied
+    /// without placement) ALL types of the category are collected —
+    /// the caller trims them to the catalog's authoritative type list.
+    /// </summary>
+    /// <param name="stagedDoc">Open staged mini-project document.</param>
+    /// <param name="builtInCategory">The system category to extract.</param>
+    SystemFamilySnapshot ExtractSystemCategoryFromStagedProject(
+        Document stagedDoc,
+        BuiltInCategory builtInCategory);
+
+    /// <summary>
+    /// Extract a single <see cref="SystemTypeSnapshot"/> (parameters,
+    /// compound structure, routing preferences) for one system type in an
+    /// open project document. Used by the system-type synchronizer
+    /// (Issue #104) to read the reference data of a type from the catalog
+    /// mini-project before writing it into the active project.
+    /// </summary>
+    /// <param name="projectDoc">Open project document (.rvt) containing the
+    /// type.</param>
+    /// <param name="typeId">Element id of the <c>ElementType</c> to extract.</param>
+    SystemTypeSnapshot ExtractSingleSystemType(Document projectDoc, ElementId typeId);
+
+    /// <summary>
+    /// Lightweight routing-only read of one system type (ADR-072 World B):
+    /// the routing drift probe (stale check / placement dialog) needs just
+    /// the routing preferences — manager- or parameter-based — without the
+    /// full parameter/structure extraction. <c>null</c> for non-MEP types.
+    /// </summary>
+    RoutingPreferencesSnapshot? ExtractSystemTypeRouting(Document projectDoc, ElementId typeId);
 
     /// <summary>
     /// Extracts 3D tessellated geometry for EACH family type by iterating

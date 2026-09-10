@@ -17,10 +17,18 @@ public sealed record FamilyExtractionValueResult(
     AttributeValueStatus Status,
     string? Message);
 
+/// <summary>
+/// Extracted values of one type. For SYSTEM families the type identity
+/// includes the family (Issue #191): two families in one category can
+/// carry a same-named type («Стандарт» in both conduit families) — the
+/// attribute pipeline must not collapse them.
+/// </summary>
 public sealed record FamilyExtractionTypeValues(
     string TypeName,
     int SortOrder,
-    IReadOnlyList<FamilyExtractionValueResult> Values);
+    IReadOnlyList<FamilyExtractionValueResult> Values,
+    string? FamilyName = null,
+    string? FamilyKey = null);
 
 public sealed record FamilyExtractionResult(
     bool Success,

@@ -57,7 +57,7 @@ public sealed class FamilySymbolSizeExtractor
 
                     var cm = inst.MEPModel?.ConnectorManager;
                     var conn = cm?.FindByIndex(connectorIndex);
-                    if (conn is not null)
+                    if (conn is not null && conn.IsRoundSafe())
                     {
                         radii.Add(conn.Radius);
                         SmartConLogger.Debug($"  symbol '{sym?.Name}': radius={conn.Radius * FeetToMm:F2} mm");
@@ -109,6 +109,7 @@ public sealed class FamilySymbolSizeExtractor
                     foreach (Connector c in cm.Connectors)
                     {
                         if (c.ConnectorType == ConnectorType.Curve) continue;
+                        if (!c.IsRoundSafe()) continue;
                         connectorRadii[(int)c.Id] = c.Radius;
                     }
 

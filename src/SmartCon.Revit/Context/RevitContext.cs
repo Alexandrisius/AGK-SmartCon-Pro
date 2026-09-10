@@ -35,6 +35,15 @@ public sealed class RevitContext : IRevitContext, IRevitContextWriter, IRevitUIC
         return _uiApplication!.ActiveUIDocument.Document;
     }
 
+    public Document? TryGetDocument()
+    {
+        // Zero-document state (start page): ActiveUIDocument is null — this is
+        // a normal situation, not an error, so no EnsureInitialized here
+        // (#219: callers polling from a dockable panel hit this path before
+        // any document is opened).
+        return _uiApplication?.ActiveUIDocument?.Document;
+    }
+
     /// <summary>
     /// Доступ к UIDocument для Revit-слоя (selection, PickObject).
     /// НЕ экспонируется через Core-интерфейс IRevitContext (I-09).

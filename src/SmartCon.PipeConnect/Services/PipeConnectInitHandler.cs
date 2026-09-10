@@ -1,4 +1,5 @@
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Math;
@@ -80,7 +81,8 @@ public sealed class PipeConnectInitHandler(
                 {
                     SmartConLogger.Info($"SizeAdj: Position correction after size change: " +
                         $"dist={VectorUtils.Length(posCorrection) * FeetToMm:F3}mm");
-                    transformSvc.MoveElement(d, dynId, posCorrection);
+                    PipeAbsorptionApplier.MoveOrAbsorb(
+                        d, transformSvc, dynId, refreshedAfterSize.OriginVec3, posCorrection);
                     d.Regenerate();
                 }
             }
@@ -129,9 +131,25 @@ public sealed class PipeConnectInitHandler(
 
             if (!VectorUtils.IsZero(alignResult.InitialOffset))
             {
-                SmartConLogger.Info($"Align: Move offset=({alignResult.InitialOffset.X * FeetToMm:F2}," +
-                    $"{alignResult.InitialOffset.Y * FeetToMm:F2},{alignResult.InitialOffset.Z * FeetToMm:F2})mm");
-                transformSvc.MoveElement(doc, dynId, alignResult.InitialOffset);
+                // ADR-052 addendum: если динамик — прямая/гибкая труба и выравнивание
+                // чисто поступательное, меняем её геометрию (длину/путь) вместо
+                // жёсткого сдвига — дальний конец остаётся на сети, сеть не дёргается.
+                bool absorbed = alignResult.BasisZRotation is null
+                    && alignResult.BasisXSnap is null
+                    && PipeAbsorptionApplier.TryApply(
+                        doc, dynId, ctx.DynamicConnector.OriginVec3, alignResult.InitialOffset);
+
+                if (!absorbed)
+                {
+                    SmartConLogger.Info($"Align: Move offset=({alignResult.InitialOffset.X * FeetToMm:F2}," +
+                        $"{alignResult.InitialOffset.Y * FeetToMm:F2},{alignResult.InitialOffset.Z * FeetToMm:F2})mm");
+                    transformSvc.MoveElement(doc, dynId, alignResult.InitialOffset);
+                }
+                else
+                {
+                    SmartConLogger.Info($"Align: Absorbed by pipe geometry " +
+                        $"offset={VectorUtils.Length(alignResult.InitialOffset) * FeetToMm:F1}mm (network untouched)");
+                }
             }
 
             if (alignResult.BasisZRotation is { } bzRot)

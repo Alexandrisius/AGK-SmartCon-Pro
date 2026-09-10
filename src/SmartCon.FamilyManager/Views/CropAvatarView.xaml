@@ -1,0 +1,258 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.CropAvatarView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.FamilyManager.Behaviors"
+        xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        Title="{loc:Loc FM_Crop_Title}"
+        Width="824"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Window.Resources>
+        <ui:SingletonResources>
+            <converters:PathToBitmapImageConverter x:Key="PathToBitmapImageConverter"/>
+            <!-- Accent slider in the SmartCon style, scoped to this dialog only -->
+            <Style x:Key="CompactSlider" TargetType="Slider">
+                <Setter Property="Height" Value="24"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Slider">
+                            <Grid>
+                                <Border Height="4" VerticalAlignment="Center"
+                                        CornerRadius="2"
+                                        Background="{DynamicResource BorderAltBrush}"/>
+                                <Track Name="PART_Track">
+                                    <Track.Thumb>
+                                        <Thumb Width="14" Height="14">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Ellipse Fill="{DynamicResource AccentBrush}"
+                                                             Stroke="White" StrokeThickness="1.5"/>
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <!-- Corner resize handle of the crop frame -->
+            <Style x:Key="FrameCornerHandle" TargetType="Thumb">
+                <Setter Property="Width" Value="14"/>
+                <Setter Property="Height" Value="14"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border Background="{DynamicResource AccentBrush}"
+                                    BorderBrush="White"
+                                    BorderThickness="1.5"
+                                    CornerRadius="2"/>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ui:SingletonResources>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Viewport: zoom (wheel) + pan (drag) on the image, drag on the frame Thumb -->
+            <Border Grid.Row="0"
+                    Width="600" Height="450"
+                    ClipToBounds="True"
+                    CornerRadius="6"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource BorderAltBrush}"
+                    Background="{DynamicResource HoverAltSurfaceBrush}">
+                <i:Interaction.Behaviors>
+                    <behaviors:CropPanZoomBehavior/>
+                </i:Interaction.Behaviors>
+
+                <Canvas Width="600" Height="450">
+                    <Image Source="{Binding ImagePath, Converter={StaticResource PathToBitmapImageConverter}, ConverterParameter=2048}"
+                           Width="{Binding ImageDisplayWidth}"
+                           Height="{Binding ImageDisplayHeight}"
+                           Canvas.Left="{Binding ImageLeft}"
+                           Canvas.Top="{Binding ImageTop}"
+                           Stretch="Fill"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+
+                    <!-- Dimmed area outside the crop frame -->
+                    <Path Fill="#99000000" IsHitTestVisible="False">
+                        <i:Interaction.Behaviors>
+                            <behaviors:CropDimmingBehavior
+                                FrameX="{Binding FrameX}" FrameY="{Binding FrameY}"
+                                FrameWidth="{Binding FrameWidth}" FrameHeight="{Binding FrameHeight}"/>
+                        </i:Interaction.Behaviors>
+                    </Path>
+
+                    <!-- Crop frame, draggable; corner handles resize it freely (any aspect) -->
+                    <Thumb Width="{Binding FrameWidth}" Height="{Binding FrameHeight}"
+                           Canvas.Left="{Binding FrameX}"
+                           Canvas.Top="{Binding FrameY}"
+                           Cursor="SizeAll">
+                        <i:Interaction.Behaviors>
+                            <behaviors:CropFrameDragBehavior/>
+                        </i:Interaction.Behaviors>
+                        <Thumb.Template>
+                            <ControlTemplate TargetType="Thumb">
+                                <Grid Background="#01FFFFFF">
+                                    <Border BorderBrush="{DynamicResource AccentBrush}"
+                                            BorderThickness="2"/>
+                                    <Thumb Style="{StaticResource FrameCornerHandle}"
+                                           Cursor="SizeNWSE"
+                                           HorizontalAlignment="Left" VerticalAlignment="Top"
+                                           Margin="-7,-7,0,0">
+                                        <i:Interaction.Behaviors>
+                                            <behaviors:CropFrameResizeBehavior Corner="TopLeft"/>
+                                        </i:Interaction.Behaviors>
+                                    </Thumb>
+                                    <Thumb Style="{StaticResource FrameCornerHandle}"
+                                           Cursor="SizeNESW"
+                                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                                           Margin="0,-7,-7,0">
+                                        <i:Interaction.Behaviors>
+                                            <behaviors:CropFrameResizeBehavior Corner="TopRight"/>
+                                        </i:Interaction.Behaviors>
+                                    </Thumb>
+                                    <Thumb Style="{StaticResource FrameCornerHandle}"
+                                           Cursor="SizeNESW"
+                                           HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                           Margin="-7,0,0,-7">
+                                        <i:Interaction.Behaviors>
+                                            <behaviors:CropFrameResizeBehavior Corner="BottomLeft"/>
+                                        </i:Interaction.Behaviors>
+                                    </Thumb>
+                                    <Thumb Style="{StaticResource FrameCornerHandle}"
+                                           Cursor="SizeNWSE"
+                                           HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                           Margin="0,0,-7,-7">
+                                        <i:Interaction.Behaviors>
+                                            <behaviors:CropFrameResizeBehavior Corner="BottomRight"/>
+                                        </i:Interaction.Behaviors>
+                                    </Thumb>
+                                </Grid>
+                            </ControlTemplate>
+                        </Thumb.Template>
+                    </Thumb>
+                </Canvas>
+            </Border>
+
+            <!-- Zoom slider -->
+            <Grid Grid.Row="1" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{loc:Loc FM_Crop_Zoom}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="11"
+                           Margin="0,0,8,0"/>
+                <Slider Grid.Column="1"
+                        Minimum="{Binding MinZoom}"
+                        Maximum="{Binding MaxZoom}"
+                        Value="{Binding Zoom, Mode=TwoWay}"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource CompactSlider}"/>
+                <TextBlock Grid.Column="2"
+                           Text="{Binding ZoomText}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="11"
+                           Width="40"
+                           TextAlignment="Right"
+                           Margin="8,0,0,0"/>
+            </Grid>
+
+            <!-- Buttons (FamilyManager dialog standard: 80×28) -->
+            <Grid Grid.Row="2" Margin="0,16,0,0">
+                <Button Content="{loc:Loc FM_Crop_Reset}"
+                        Command="{Binding ResetCommand}"
+                        HorizontalAlignment="Left"
+                        Style="{DynamicResource GhostButton}"
+                        FontSize="11" Padding="8,2"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{loc:Loc FM_Crop_Apply}"
+                            Command="{Binding ApplyCommand}"
+                            Width="80" Height="28"
+                            Margin="0,0,8,0"
+                            IsDefault="True"
+                            Style="{DynamicResource PrimaryButton}"/>
+                    <Button Content="{loc:Loc FM_Crop_Cancel}"
+                            Command="{Binding CancelCommand}"
+                            Width="80" Height="28"
+                            IsCancel="True"
+                            Style="{DynamicResource SecondaryButton}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- Live output preview: exactly what the 4:3 avatar will look like -->
+        <StackPanel Grid.Column="2" VerticalAlignment="Top">
+            <TextBlock Text="{loc:Loc FM_Crop_Preview}"
+                       FontSize="11"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       Margin="0,0,0,6"/>
+            <Border Width="140" Height="105"
+                    CornerRadius="6"
+                    BorderBrush="{DynamicResource BorderAltBrush}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    Background="{DynamicResource HoverAltSurfaceBrush}">
+                <!-- Live preview (rev 6): the Image's Source is a CroppedBitmap of
+                     exactly the selection (PreviewCropImageBehavior) — pixel-identical
+                     to the renderer's crop+contain output, no bleed possible -->
+                <Canvas Width="140" Height="105">
+                    <Image Width="{Binding PreviewViewWidth}"
+                           Height="{Binding PreviewViewHeight}"
+                           Canvas.Left="{Binding PreviewViewLeft}"
+                           Canvas.Top="{Binding PreviewViewTop}"
+                           Stretch="Fill"
+                           RenderOptions.BitmapScalingMode="HighQuality">
+                        <i:Interaction.Behaviors>
+                            <behaviors:PreviewCropImageBehavior
+                                ImagePath="{Binding ImagePath}"
+                                NativeWidth="{Binding SourcePixelWidth}"
+                                NativeHeight="{Binding SourcePixelHeight}"
+                                RectX="{Binding PreviewRectX}"
+                                RectY="{Binding PreviewRectY}"
+                                RectWidth="{Binding PreviewRectWidth}"
+                                RectHeight="{Binding PreviewRectHeight}"/>
+                        </i:Interaction.Behaviors>
+                    </Image>
+                </Canvas>
+            </Border>
+            <TextBlock Text="{loc:Loc FM_Crop_CoverHint}"
+                       FontSize="10"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       TextWrapping="Wrap"
+                       Width="140"
+                       Margin="0,6,0,0"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

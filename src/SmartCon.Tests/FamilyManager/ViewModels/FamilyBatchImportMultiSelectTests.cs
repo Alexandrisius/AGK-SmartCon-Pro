@@ -192,7 +192,7 @@ public sealed class FamilyBatchImportMultiSelectTests
     {
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var items = new[] { MakeItem("orig") };
@@ -247,7 +247,7 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(existing);
 
         var items = new[] { MakeItem("orig") };
@@ -463,8 +463,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == "existingfamily"
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -478,8 +478,10 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string displayName, string ext, CancellationToken _) =>
+            .ReturnsAsync((string displayName, string ext, string _, string? _, CancellationToken __) =>
                 new PrecomputedImportTriple(
                     CatalogItemId: Guid.NewGuid().ToString("N"),
                     VersionLabel: "v1",
@@ -562,8 +564,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == "renamed target"
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -573,6 +575,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PrecomputedImportTriple(
                 CatalogItemId: existingId,
@@ -677,8 +681,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == "existingwithcategory"
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -728,8 +732,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == "existingwithcategory2"
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -742,7 +746,7 @@ public sealed class FamilyBatchImportMultiSelectTests
 
         row.TargetCategoryId = "cat-plumbing";
         row.TargetCategoryPath = "Plumbing";
-        row.TargetCategoryIsManual = true;
+        row.CategoryProvenance = CategoryProvenance.Manual;
 
         row.FileName = "ExistingWithCategory2";
 
@@ -785,8 +789,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             UpdatedAtUtc: DateTimeOffset.UtcNow);
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((normalized, _) =>
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string?, CancellationToken>((normalized, _, _) =>
                 normalized == "renamedtarget"
                     ? Task.FromResult<FamilyCatalogItem?>(existing)
                     : Task.FromResult<FamilyCatalogItem?>(null));
@@ -803,7 +807,7 @@ public sealed class FamilyBatchImportMultiSelectTests
         // flag so a subsequent rename can re-categorize by name.
         row.TargetCategoryId = null;
         row.TargetCategoryPath = "Без категории";
-        row.TargetCategoryIsManual = false;
+        row.CategoryProvenance = CategoryProvenance.None;
         Assert.Null(row.TargetCategoryId);
 
         row.FileName = "RenamedTarget";
@@ -829,7 +833,7 @@ public sealed class FamilyBatchImportMultiSelectTests
     {
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.Existing) };
@@ -866,7 +870,7 @@ public sealed class FamilyBatchImportMultiSelectTests
     {
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var items = new[] { MakeItem("Original", status: FamilyBatchImportStatus.Existing) };
@@ -877,7 +881,7 @@ public sealed class FamilyBatchImportMultiSelectTests
 
         row.TargetCategoryId = "cat-plumbing";
         row.TargetCategoryPath = "Plumbing";
-        row.TargetCategoryIsManual = true;
+        row.CategoryProvenance = CategoryProvenance.Manual;
 
         row.FileName = "TotallyUniqueName";
 
@@ -903,7 +907,7 @@ public sealed class FamilyBatchImportMultiSelectTests
     {
         var catalogMock = new Mock<IFamilyCatalogProvider>();
         catalogMock
-            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.FindByNormalizedNameAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((FamilyCatalogItem?)null);
 
         var precomputerMock = new Mock<IFamilyImportPrecomputer>();
@@ -911,6 +915,8 @@ public sealed class FamilyBatchImportMultiSelectTests
             .Setup(p => p.BuildPrecomputedTripleAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((PrecomputedImportTriple?)null);
 

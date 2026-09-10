@@ -1,6 +1,6 @@
 ---
 name: smartcon-testing
-description: Unit + integration testing patterns for SmartCon Revit plugin. xUnit + Moq, .NET 8 / net48 multi-version. Covers Revit API mocking limitations, test seams, fake implementations, Moq gotchas with async/generic, integration test frameworks, Jeremy Tammik recommendations. Use when writing, updating, or running tests for SmartCon.
+description: Unit + integration testing patterns for SmartCon Revit plugin. xUnit + Moq + TUnit, net48 / .NET 8 / .NET 10 multi-version. Covers Revit API mocking limitations, test seams, fake implementations, Moq gotchas with async/generic, integration test frameworks, Jeremy Tammik recommendations. Use when writing, updating, or running tests for SmartCon.
 ---
 
 # SmartCon Testing
@@ -14,16 +14,20 @@ tests — Revit API has unique limitations (sealed native types) that make gener
 | What you test | Approach | Tool |
 |---|---|---|
 | Pure logic (no Revit types in SUT) | xUnit + Moq for interfaces | `dotnet test` |
-| `Document`/`ElementId`/`Family` touched by SUT | **Cannot unit-test the SUT** | Refactor to abstraction OR use integration test |
-| `FilteredElementCollector` inline call | **Cannot unit-test** | Refactor to `IFamilyFinder` (seam) |
+| `Document`/`ElementId`/`Family` touched by SUT | **Integration test** (ранее — нельзя было вообще) | `SmartCon.IntegrationTests` (TUnit + Nice3point.TUnit.Revit) |
+| `FilteredElementCollector` inline call | Integration test OR refactor to `IFamilyFinder` (seam) | `SmartCon.IntegrationTests` |
 | POCO / records / enums | xUnit equality/value tests | `dotnet test` |
 | WPF ViewModel | xUnit + Moq for IExternalEventService | `dotnet test` |
-| End-to-end with running Revit | `[RevitFact]` style | ricaun.RevitTest or RevitXunit.TestAdapter (see [integration-testing.md](references/integration-testing.md)) |
+| Boundary SmartCon ↔ Revit API (`SmartCon.Revit` services) | Integration test inside real Revit | `SmartCon.IntegrationTests` — см. [integration-testing.md](references/integration-testing.md) |
+| WPF UI / picking / dialogs (E2E) | Ручной тест + валидация логов | `smartcon.log` |
 
 **Rule of thumb:** if your SUT's constructor takes `IFamilyVersionStore`,
 `IRevitContext`, or `IFamilyFinder` — you CANNOT unit-test the SUT directly. See
 [revit-mocking.md](references/revit-mocking.md) § "What cannot be mocked" and
 `docs/testing/stale-detection-coverage-gaps.md` for the real example.
+**Since 2026-07 such SUTs are covered by `SmartCon.IntegrationTests`** — tests
+running inside a real Revit process (see
+[integration-testing.md](references/integration-testing.md)).
 
 ## Critical rules
 
@@ -84,6 +88,20 @@ src/SmartCon.Tests/
 `{MethodUnderTest}_{StateUnderTest}_{ExpectedBehavior}` (e.g.
 `MergeInto_NullExisting_StartsEmpty`).
 
+```
+src/SmartCon.IntegrationTests/      # Тесты ВНУТРИ реального Revit (TUnit + Nice3point.TUnit.Revit)
+├── TestsConfiguration.cs           # RevitThreadExecutor + NotInParallel (обязательно!)
+├── Support/                        # StubRevitContext, ModelSeed, SampleFiles, PipeModelFixture, ProjectViewsFixture
+├── PipeConnect/                    # ConnectorWrapper/ConnectorService/ChainIterator/Mapping/Resolver/CTC
+├── FamilyManager/                  # VersionStore/LoadService/DataExtraction/SnapshotExtractor (FHV3)
+├── ProjectManagement/              # ModelPurge/ViewRepository/ShareSettings (ES)
+└── *Tests.cs (root)                # canary + RevitTransactionService (I-03)
+```
+
+**Новый интеграционный тест пишется по образцу соседнего класса модуля.**
+Перед написанием прочитай [integration-testing.md](references/integration-testing.md) —
+9 жёстких правил (lazy-поля, NotInParallel, запрет RevitAPIUI, skip-гарды) и ранбук итераций (точечный прогон → ОДИН полный; имена упавших — из того же запуска, НЕ перезапуском; treenode-filter: класс `/*/*/*ClassName*/*`).
+
 ## Test seam patterns
 
 ### Constructor null-checks (Theory)
@@ -142,11 +160,15 @@ public class IntegrationTests { }
 | Test passes locally, fails in CI | Test depends on `DateTimeOffset.UtcNow` | Use `TestDoubles/FakeClock` with fixed value |
 | `Assert.Equal` on `StaleBatchUpdateResult` fails despite same data | Record equality compares `IReadOnlyList<T>` by reference | Compare `.TotalRequested`/`.SuccessCount`/`.FailedCount` element-by-element |
 | `xUnit1031` warning on `.GetAwaiter().GetResult()` | xUnit prefers `async Task` | Make test async OR `#pragma warning disable xUnit1031` with justification comment |
+| 91×CS0121 on `IsEqualTo`/`IsNotEqualTo` when building `SmartCon.IntegrationTests` under R27 (net10) | TUnit 1.44 disambiguates the overloads via `[OverloadResolutionPriority]`, honored only by C# 13+ (thomhurst/TUnit#5765/#6282); global `LangVersion=12` on net10 | Keep the `LangVersion=latest` pin for net10.0-windows in `SmartCon.IntegrationTests.csproj` — do NOT remove it; production code stays on C# 12 |
 
 ## Project-specific conventions
 
 - **Multi-version tests**: only `SmartCon.Tests.csproj` targets `net8.0-windows`
-  (Revit 2025). R24/R21/R19 are .NET Framework 4.x and don't run unit tests.
+  (Revit 2025) — the project is pinned there; do NOT build it under R27
+  (net10 → NU1201/NU1202; in the sln its R27 configurations are mapped to R25, and the
+  mapping is honored only in VS). R24/R21/R19 are .NET Framework 4.x and don't run
+  unit tests. Integration tests run on all three platforms (net48 / net8 / net10).
   Build: `dotnet build src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25`.
 - **Run tests**: `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
   --filter "FullyQualifiedName~Stale"` (or no filter for all).
@@ -160,7 +182,8 @@ public class IntegrationTests { }
 - [revit-mocking.md](references/revit-mocking.md) — What CANNOT be mocked, why, workarounds
 - [test-fakes.md](references/test-fakes.md) — Existing fakes + how to write new ones
 - [moq-patterns.md](references/moq-patterns.md) — Moq patterns: Callback, Returns, Verify, Sequences
-- [integration-testing.md](references/integration-testing.md) — ricaun.RevitTest, RevitXunit.TestAdapter
+- [integration-testing.md](references/integration-testing.md) — **SmartCon.IntegrationTests** (Nice3point.TUnit.Revit): запуск, правила, структура, паттерн «зонд»
+- [autonomous-loop.md](references/autonomous-loop.md) — **Автономная разработка DB-уровня**: петля «тест ↔ лог ↔ фикс» без человека, контракт петли, стоп-условия, adversarial review
 - [project-conventions.md](references/project-conventions.md) — Multi-version build, DEBUG symbol gotcha, net48/ThrowIfNull
 - [jeremy-tammik.md](references/jeremy-tammik.md) — Jeremy Tammik recommendations
 - [open-source.md](references/open-source.md) — GitHub examples: Speckle, ricaun, Scotec, Onbox

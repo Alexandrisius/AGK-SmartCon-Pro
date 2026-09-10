@@ -21,12 +21,16 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
     private readonly IFamilyVersionStore _versionStore;
     private readonly IStaleDetector _staleDetector;
     private readonly IClock _clock;
+    private readonly ISharedNestedFamilyRepository? _nestedSharedRepository;
+    private readonly IFamilyDependencyRepository? _dependencyRepository;
+    private readonly IFamilyCatalogProvider? _catalogProvider;
     private readonly int _targetRevitVersion;
     private readonly Action? _onCompleted;
     private readonly Action<string>? _onError;
     private readonly Action<string>? _onSuccess;
     private readonly Action<string>? _onStatusMessage;
     private readonly Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? _onSharedDecision;
+    private readonly Action<FamilyPlacementDragData>? _onSystemTypePlaced;
 
     public FamilyPlacementDropHandler(
         IFamilySearchService searchService,
@@ -42,7 +46,11 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         Action<string>? onError = null,
         Action<string>? onSuccess = null,
         Action<string>? onStatusMessage = null,
-        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null)
+        Func<SharedFamilyDecisionRequest, SharedFamiliesLoadChoice>? onSharedDecision = null,
+        ISharedNestedFamilyRepository? nestedSharedRepository = null,
+        Action<FamilyPlacementDragData>? onSystemTypePlaced = null,
+        IFamilyDependencyRepository? dependencyRepository = null,
+        IFamilyCatalogProvider? catalogProvider = null)
     {
         _searchService = searchService;
         _fileResolver = fileResolver;
@@ -58,6 +66,10 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         _onSuccess = onSuccess;
         _onStatusMessage = onStatusMessage;
         _onSharedDecision = onSharedDecision;
+        _nestedSharedRepository = nestedSharedRepository;
+        _onSystemTypePlaced = onSystemTypePlaced;
+        _dependencyRepository = dependencyRepository;
+        _catalogProvider = catalogProvider;
     }
 
     public void Execute(UIDocument document, object data)
@@ -73,12 +85,49 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (dragData.FamilySource == "system" || !string.IsNullOrEmpty(dragData.UniqueId))
             {
                 SmartConLogger.Info($"System family: '{dragData.FamilyName}', type: '{dragData.TypeName}' (FamilySource='{dragData.FamilySource}', UniqueId='{dragData.UniqueId}')");
-                _systemFamilyPlacementService.LoadAndPlaceSystemType(
+                var result = _systemFamilyPlacementService.LoadAndPlaceSystemType(
                     dragData.CatalogItemId,
                     dragData.TypeName,
-                    dragData.TargetRevitVersion);
+                    dragData.TargetRevitVersion,
+                    out var notConvergedCount,
+                    dragData.SystemFamilyName,
+                    dragData.SystemFamilyKey);
 
-                _onSuccess?.Invoke($"Системный тип '{dragData.TypeName}' скопирован и активирован");
+                // ADR-072 World B: the user declined the routing overwrite —
+                // silent cancel: no stale clear, no success/error status.
+                if (result == Core.Models.FamilyManager.SystemPlacementResult.Cancelled)
+                {
+                    _onCompleted?.Invoke();
+                    return;
+                }
+
+                if (result != Core.Models.FamilyManager.SystemPlacementResult.Failed)
+                {
+                    // Issue #104 + audit fix: the just-synced type carries a
+                    // fresh ES marker. Only ITS stale verdict may clear —
+                    // MarkUpdated here would wipe the per-type verdicts of
+                    // the item's OTHER (still stale) types. The VM handles
+                    // the per-type clear + item badge re-eval (#202 pattern)
+                    // via the SystemTypePlaced event.
+                    if (_onSystemTypePlaced is not null)
+                    {
+                        _onSystemTypePlaced.Invoke(dragData);
+                    }
+                    else
+                    {
+                        _staleDetector.MarkUpdated([dragData.CatalogItemId]);
+                    }
+                    var notConvergedNote = notConvergedCount > 0
+                        ? $"; {notConvergedCount} настроек не сошлись с эталоном — см. лог"
+                        : string.Empty;
+                    _onSuccess?.Invoke(result == Core.Models.FamilyManager.SystemPlacementResult.Placed
+                        ? $"Системный тип '{dragData.TypeName}' синхронизирован и активирован{notConvergedNote}"
+                        : $"Системный тип '{dragData.TypeName}' синхронизирован с проектом — разместите его вручную (например, изоляция применяется к существующей трубе/воздуховоду). Обновить позже: «Обновить» на узле типа{notConvergedNote}");
+                }
+                else
+                {
+                    _onError?.Invoke($"Не удалось синхронизировать системный тип '{dragData.TypeName}'");
+                }
                 _onCompleted?.Invoke();
                 return;
             }
@@ -91,18 +140,70 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             var isTypeLoaded = isFamilyLoaded && _searchService.HasFamilyType(familyName, typeName);
             SmartConLogger.Info($"Family '{familyName}' loaded: {isFamilyLoaded}, Type '{typeName}' loaded: {isTypeLoaded}");
 
-            if (!isFamilyLoaded || !isTypeLoaded)
+            if (isFamilyLoaded)
             {
+                var projectFamily = FindFamilyByName(document.Document, familyName);
+                if (projectFamily is not null)
+                {
+                    var marker = _versionStore.ReadFromLoadedFamily(document.Document, projectFamily.Id);
+                    var markerCatalogItemId = marker?.CatalogItemId ?? "<none>";
+                    var catalogMatch = string.Equals(markerCatalogItemId, dragData.CatalogItemId, StringComparison.OrdinalIgnoreCase);
+                    SmartConLogger.Info(
+                        $"Drop identity check: {RevitFamilySearchService.DescribeFamily(projectFamily)}, " +
+                        $"dragCatalogItemId='{dragData.CatalogItemId}', markerCatalogItemId='{markerCatalogItemId}', " +
+                        $"markerVersionLabel='{marker?.VersionLabel ?? "<none>"}', catalogMatch={catalogMatch}");
+                }
+            }
+
+            // #210: freshness-on-place — a stale type takes the reload path
+            // even though it is already in the project (the skip below would
+            // otherwise place the outdated copy).
+            if (!isFamilyLoaded || !isTypeLoaded || dragData.IsStaleInProject)
+            {
+                if (dragData.IsStaleInProject && isTypeLoaded)
+                {
+                    SmartConLogger.Info(
+                        $"Type '{typeName}' is stale in the project — refreshing from the catalog before placement");
+                }
+
                 resolved = AsyncBridge.RunSync(() => _fileResolver
                     .ResolveForLoadAsync(dragData.CatalogItemId, _targetRevitVersion, CancellationToken.None));
 
-                if (string.IsNullOrEmpty(resolved.AbsolutePath))
+                SmartConLogger.Info(
+                    $"Drop resolved file: path='{resolved?.AbsolutePath}', versionLabel='{resolved?.VersionLabel}', " +
+                    $"catalogItemId='{dragData.CatalogItemId}', isVirtual={dragData.IsVirtual}");
+
+                if (resolved is null || string.IsNullOrEmpty(resolved.AbsolutePath))
                 {
-                    SmartConLogger.Warn($"No file resolved for '{familyName}'");
+                    SmartConLogger.Warn($"No file resolved for '{familyName}' [Action: проверьте, что для этой версии Revit в каталоге есть файл семейства; при необходимости выполните миграцию данных]");
                     return;
                 }
 
                 FamilyLoadResult result;
+                // Pre-resolve shared-nested names via AsyncBridge (pure SQLite —
+                // SAFE per AsyncBridge docs) BEFORE the blocking load calls.
+                // Execute() runs on the Revit main thread and blocks on
+                // .GetAwaiter().GetResult(); passing pre-resolved names removes
+                // the internal SQLite await from LoadFamilyAsync /
+                // LoadFamilySymbolAsync so the whole load completes
+                // synchronously (latent-deadlock hardening, same as
+                // StaleFamilyUpdater).
+                IReadOnlyList<string>? nestedNames = null;
+                if (_nestedSharedRepository is not null)
+                {
+                    try
+                    {
+                        nestedNames = AsyncBridge.RunSync(() => _nestedSharedRepository
+                            .GetNamesForCurrentVersionAsync(dragData.CatalogItemId, CancellationToken.None));
+                    }
+                    catch (Exception ex)
+                    {
+                        SmartConLogger.Warn(
+                            $"Failed to pre-resolve nested names for '{dragData.CatalogItemId}': {ex.Message} " +
+                            "[Action: continuing without fallback names — dialog may show placeholder in Revit 2023/2024.2]");
+                    }
+                }
+
                 if (dragData.IsVirtual)
                 {
                     var options = FamilyLoadOptions.Default with { PreferredName = familyName };
@@ -111,6 +212,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                         options,
                         onStatusMessage: _onStatusMessage,
                         onSharedDecision: _onSharedDecision,
+                        nestedSharedNames: nestedNames,
                         ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
                 else
@@ -120,6 +222,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                         typeName,
                         onStatusMessage: _onStatusMessage,
                         onSharedDecision: _onSharedDecision,
+                        nestedSharedNames: nestedNames,
                         catalogItemId: dragData.CatalogItemId,
                         ct: CancellationToken.None).GetAwaiter().GetResult();
                 }
@@ -127,7 +230,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
                 if (!result.Success)
                 {
                     var errorMsg = $"Failed to load '{familyName}': {result.ErrorMessage}";
-                    SmartConLogger.Warn(errorMsg);
+                    SmartConLogger.Warn($"{errorMsg} [Action: check the managed .rfa file and retry the drag-drop]");
                     _onError?.Invoke(errorMsg);
                     return;
                 }
@@ -139,7 +242,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (!placementSuccess)
             {
                 var errorMsg = $"Failed to activate type '{typeName}' for placement";
-                SmartConLogger.Warn(errorMsg);
+                SmartConLogger.Warn($"{errorMsg} [Action: verify the type exists in the family]");
                 _onError?.Invoke(errorMsg);
                 return;
             }
@@ -147,6 +250,7 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
             if (resolved is not null)
             {
                 WriteVersionMarker(document.Document, dragData, resolved);
+                WriteNestedDependencyMarkers(document.Document, dragData);
                 _onSuccess?.Invoke($"Семейство '{familyName}' загружено и активировано для размещения");
             }
             else
@@ -187,7 +291,55 @@ public sealed class FamilyPlacementDropHandler : IDropHandler
         }
         catch (Exception ex)
         {
-            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message}");
+            SmartConLogger.Warn($"FamilyPlacementDropHandler: Failed to write FamilyVersion marker — {ex.Message} [Action: placement succeeded but stale detection may misreport — re-run the staleness check later]");
+        }
+    }
+
+    /// <summary>
+    /// E2 (#209): after a parent family loads via DnD, every dependency
+    /// child of its current version gets the ES marker of the EMBEDDED
+    /// version (the copies the load planted into the project ARE that
+    /// content) — the nested families join the stale cycle. Mirrors
+    /// <c>NestedDependencyMarkerWriter</c> (SmartCon.FamilyManager is not
+    /// referenceable from this layer — the logic stays tiny by design).
+    /// SQLite reads go through AsyncBridge (sanctioned for pure-SQLite
+    /// awaits on the Revit thread — see the nestedNames pre-resolve above).
+    /// Non-fatal: an unmarked nested family is invisible to the stale check
+    /// until its next explicit load.
+    /// </summary>
+    private void WriteNestedDependencyMarkers(Document document, FamilyPlacementDragData dragData)
+    {
+        if (_dependencyRepository is null || _catalogProvider is null) return;
+
+        try
+        {
+            var links = AsyncBridge.RunSync(() => _dependencyRepository
+                .GetForCurrentVersionAsync(dragData.CatalogItemId, CancellationToken.None));
+
+            foreach (var link in links)
+            {
+                if (string.IsNullOrEmpty(link.ChildVersionLabel)) continue;
+
+                var childName = AsyncBridge.RunSync(() => _catalogProvider
+                    .GetItemAsync(link.ChildCatalogItemId, CancellationToken.None))?.Name;
+                if (string.IsNullOrEmpty(childName)) continue;
+
+                var childFamily = FindFamilyByName(document, childName!);
+                if (childFamily is null) continue;
+
+                _versionStore.WriteToLoadedFamily(document, childFamily.Id, new FamilyVersion(
+                    SchemaVersion: FamilyVersion.CurrentSchemaVersion,
+                    CatalogItemId: link.ChildCatalogItemId,
+                    VersionLabel: link.ChildVersionLabel!,
+                    LoadedAtUtc: _clock.UtcNow,
+                    SourceRevitVersion: _targetRevitVersion));
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"FamilyPlacementDropHandler: nested dependency markers failed — {ex.Message} " +
+                "[Action: вложенные семейства в проекте останутся без маркеров — Проверить покажет их stale только после явной загрузки]");
         }
     }
 

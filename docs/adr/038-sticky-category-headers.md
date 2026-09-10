@@ -48,15 +48,20 @@ TreeView.
 
 ```
 occupiedTop = 0
+lastPinned = -1
 while occupiedTop < viewportHeight:
-    candidate = категория с max(top) среди тех, у которых top < occupiedTop
+    candidate = прямой ребёнок lastPinned (или корень, если lastPinned = -1)
+                с max(top) среди тех, у кого top < occupiedTop
     if candidate == -1: break
-    добавить путь от candidate до root в стек
-    occupiedTop += sum of heights newly added
+    добавить candidate в стек (его предки уже в стеке)
+    lastPinned = candidate
+    occupiedTop += height(candidate)
 ```
 
 Это даёт «каскад» — следующий sticky-header прилипает к низу предыдущего, как в
-iOS section headers.
+iOS section headers. В дереве стек всегда представляет один путь от корня к текущей
+глубокой категории; сиблинги одного родителя не добавляются одновременно, чтобы
+их порядок не менялся при скролле.
 
 ### 3. Чистые pure-функции для тестирования
 

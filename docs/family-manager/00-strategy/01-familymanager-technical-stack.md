@@ -91,7 +91,7 @@ FamilyManager нужно проектировать как `net8-first` моду
 Как использовать:
 
 - хранить БД в `%APPDATA%\AGK\SmartCon\FamilyManager\familymanager.db`;
-- включить WAL mode;
+- использовать `journal_mode=DELETE` универсально (I-14) — WAL **запрещён**: он не работает поверх сетевых ФС (SMB), а БД может лежать на сетевом диске (см. ADR-050);
 - создать таблицы `schema_info`, `catalog_items`, `catalog_versions`, `family_files`, `family_types`, `family_parameters`, `catalog_tags`, `attachments`, `project_usage`, `previews`;
 - файлы `.rfa` и превью хранить не в БД, а в content-addressed file cache;
 - metadata хранить в нормализованных таблицах, а raw extracted metadata можно хранить отдельным JSON-полем.
