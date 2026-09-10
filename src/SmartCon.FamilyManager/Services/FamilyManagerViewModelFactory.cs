@@ -159,6 +159,13 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             _dialogService, copyFromCategoryId, copyFromCategoryPath);
     }
 
+    public AdvancedSearchViewModel CreateAdvancedSearchViewModel()
+    {
+        return new AdvancedSearchViewModel(
+            _categoryRepository, _bindingService, _attributeDefRepository, _valueRepository,
+            _revitCategoryLabels, _dialogService);
+    }
+
     public AttributeLibraryViewModel CreateAttributeLibraryViewModel()
     {
         return new AttributeLibraryViewModel(

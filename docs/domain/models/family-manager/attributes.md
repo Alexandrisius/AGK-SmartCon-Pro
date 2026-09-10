@@ -237,3 +237,47 @@ public sealed record ExtractedAttributeValue(
     AttributeValueStatus Status,
     DateTimeOffset ExtractedAtUtc);
 ```
+
+---
+
+## AttributeFilterCondition
+
+Одно условие расширенного поиска FamilyManager (#87): источник (атрибут библиотеки или системное поле — словарь #241) + оператор + значение. Переиспользует `ValidationRuleOperator` и `AssignmentSystemField`. Условия объединяются по «И» и на уровне SQL (`LocalCatalogQueryBuilder`): атрибуты — EXISTS по `extracted_attribute_values` активной версии; системные поля — `ci.name` / `ci.revit_category_id` / факт `part_type` из `family_facts`.
+
+**Файл:** `AttributeFilterCondition.cs`
+
+```csharp
+public sealed record AttributeFilterCondition(
+    AssignmentConditionSourceKind SourceKind,
+    string? AttributeId,
+    string? AttributeName,
+    AssignmentSystemField? SystemField,
+    ValidationRuleOperator Operator,
+    string? Value)
+{
+    public static readonly IReadOnlyList<ValidationRuleOperator> AttributeOperators;    // Equals/NotEquals/Contains/NotContains/HasValue/IsEmpty
+    public static readonly IReadOnlyList<ValidationRuleOperator> SystemTextOperators;   // Equals/NotEquals/Contains/NotContains
+    public static readonly IReadOnlyList<ValidationRuleOperator> SystemOrdinalOperators; // Equals/NotEquals/HasValue/IsEmpty
+    public static IReadOnlyList<ValidationRuleOperator> OperatorsFor(
+        AssignmentConditionSourceKind sourceKind, AssignmentSystemField? systemField);
+    public static bool RequiresValue(ValidationRuleOperator op);
+}
+```
+
+---
+
+## AdvancedSearchFilter
+
+Снимок расширенного поиска (#87): категория-охват (поддерево каталога, null = все категории) + условия по атрибутам. Комбинируется с обычным поиском по имени по «И»; хранится только в памяти сессии и сбрасывается при смене активной БД каталога.
+
+**Файл:** `AdvancedSearchFilter.cs`
+
+```csharp
+public sealed record AdvancedSearchFilter(
+    string? CategoryId,
+    IReadOnlyList<AttributeFilterCondition> Conditions)
+{
+    public static AdvancedSearchFilter Empty { get; }
+    public bool IsEmpty { get; } // нет категории и нет условий
+}
+```

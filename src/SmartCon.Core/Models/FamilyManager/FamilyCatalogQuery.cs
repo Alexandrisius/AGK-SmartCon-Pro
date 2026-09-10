@@ -10,4 +10,5 @@ public sealed record FamilyCatalogQuery(
     int Limit,
     bool IncludeUncategorized = false,
     IReadOnlyList<string>? CategoryIdsFilter = null,
-    bool ExcludeUncategorized = false);
+    bool ExcludeUncategorized = false,
+    IReadOnlyList<AttributeFilterCondition>? AttributeFilters = null);

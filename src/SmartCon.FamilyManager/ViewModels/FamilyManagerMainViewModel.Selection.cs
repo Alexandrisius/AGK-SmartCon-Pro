@@ -35,6 +35,11 @@ public sealed partial class FamilyManagerMainViewModel
 
         _lastSearchActive = isSearchNow;
 
+        // #87: counter/placeholder react to the plain search too.
+        OnPropertyChanged(nameof(IsAnyFilterActive));
+        OnPropertyChanged(nameof(ItemCountDisplay));
+        OnPropertyChanged(nameof(NoResultsText));
+
         // DIAG-DUMP (Issue: net48 tree-expand after search).
         // Tracks the lifecycle of the search box so we can correlate the user
         // typing a term with the eventual TreeViewItem.IsExpanded state.

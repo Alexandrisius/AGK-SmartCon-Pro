@@ -97,11 +97,229 @@ internal static class LocalCatalogQueryBuilder
             }
         }
 
+        AddAttributeFilterConditions(query, conditions, parameters, ref paramIndex);
+
         var where = conditions.Count > 0
             ? "WHERE " + string.Join(" AND ", conditions)
             : "";
 
         return (where, parameters);
+    }
+
+    // ── Advanced attribute search (#87) ────────────────────────────────
+    // Every condition becomes one AND-ed EXISTS/NOT EXISTS predicate over
+    // extracted_attribute_values of the item's ACTIVE version (the same
+    // rows the properties dialog's ATTRIBUTES tab shows — resolved via
+    // catalog_items.current_version_label). Version-less rows
+    // (version_id IS NULL) are legacy item-level facts and match too.
+
+    private static void AddAttributeFilterConditions(
+        FamilyCatalogQuery query,
+        List<string> conditions,
+        List<SqliteParameter> parameters,
+        ref int paramIndex)
+    {
+        if (query.AttributeFilters is not { Count: > 0 })
+        {
+            return;
+        }
+
+        foreach (var filter in query.AttributeFilters)
+        {
+            if (filter.SourceKind == AssignmentConditionSourceKind.System)
+            {
+                if (filter.SystemField is null)
+                {
+                    continue;
+                }
+            }
+            else if (string.IsNullOrEmpty(filter.AttributeId) && string.IsNullOrEmpty(filter.AttributeName))
+            {
+                continue;
+            }
+
+            conditions.Add(BuildAttributePredicate(filter, parameters, ref paramIndex));
+        }
+    }
+
+    private static string BuildAttributePredicate(
+        AttributeFilterCondition filter,
+        List<SqliteParameter> parameters,
+        ref int paramIndex)
+    {
+        if (filter.SourceKind == AssignmentConditionSourceKind.System && filter.SystemField is { } field)
+        {
+            return BuildSystemFieldPredicate(field, filter.Operator, filter.Value, parameters, ref paramIndex);
+        }
+
+        var attrIdParam = $"@attrId_{paramIndex++}";
+        parameters.Add(new SqliteParameter(attrIdParam, filter.AttributeId));
+        var attrNameParam = $"@attrName_{paramIndex++}";
+        parameters.Add(new SqliteParameter(attrNameParam, filter.AttributeName));
+
+        var matchPredicate = $"""
+                    av.attribute_id = {attrIdParam}
+                    OR (av.attribute_id IS NULL AND av.parameter_name = {attrNameParam})
+            """;
+
+        return filter.Operator switch
+        {
+            ValidationRuleOperator.HasValue => BuildExists(matchPredicate, "av.status = 'Found' AND TRIM(COALESCE(av.value_text, '')) != ''"),
+            ValidationRuleOperator.IsEmpty => "NOT " + BuildExists(matchPredicate, "av.status = 'Found' AND TRIM(COALESCE(av.value_text, '')) != ''"),
+            ValidationRuleOperator.Equals => BuildExists(matchPredicate, BuildValueEqualsPredicate(filter.Value, parameters, ref paramIndex)),
+            ValidationRuleOperator.NotEquals => "NOT " + BuildExists(matchPredicate, BuildValueEqualsPredicate(filter.Value, parameters, ref paramIndex)),
+            ValidationRuleOperator.Contains => BuildExists(matchPredicate, BuildValueContainsPredicate(filter.Value, parameters, ref paramIndex)),
+            ValidationRuleOperator.NotContains => "NOT " + BuildExists(matchPredicate, BuildValueContainsPredicate(filter.Value, parameters, ref paramIndex)),
+            _ => throw new ArgumentOutOfRangeException(nameof(filter), filter.Operator, "Unsupported attribute filter operator"),
+        };
+    }
+
+    /// <summary>
+    /// System-field conditions (#87, vocabulary of #241): family name is
+    /// plain text on catalog_items; Revit category compares the stored
+    /// BuiltInCategory ordinal; Part Type lives in family_facts (PK
+    /// catalog_item_id + fact_key — at most one row per item).
+    /// NotEquals is the exact complement of Equals (an absent value counts
+    /// as "not equal"), consistent with the attribute conditions.
+    /// </summary>
+    private static string BuildSystemFieldPredicate(
+        AssignmentSystemField field,
+        ValidationRuleOperator op,
+        string? value,
+        List<SqliteParameter> parameters,
+        ref int paramIndex)
+    {
+        return field switch
+        {
+            AssignmentSystemField.FamilyName => op switch
+            {
+                ValidationRuleOperator.Equals => BuildNameEquals(value, parameters, ref paramIndex, negate: false),
+                ValidationRuleOperator.NotEquals => BuildNameEquals(value, parameters, ref paramIndex, negate: true),
+                ValidationRuleOperator.Contains => BuildNameContains(value, parameters, ref paramIndex, negate: false),
+                ValidationRuleOperator.NotContains => BuildNameContains(value, parameters, ref paramIndex, negate: true),
+                _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported family-name filter operator"),
+            },
+            AssignmentSystemField.RevitCategory => op switch
+            {
+                ValidationRuleOperator.Equals => $"ci.revit_category_id = {AddOrdinalParam(value, parameters, ref paramIndex)}",
+                ValidationRuleOperator.NotEquals => $"(ci.revit_category_id IS NULL OR ci.revit_category_id != {AddOrdinalParam(value, parameters, ref paramIndex)})",
+                ValidationRuleOperator.HasValue => "ci.revit_category_id IS NOT NULL",
+                ValidationRuleOperator.IsEmpty => "ci.revit_category_id IS NULL",
+                _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported Revit category filter operator"),
+            },
+            AssignmentSystemField.PartType => BuildPartTypePredicate(op, value, parameters, ref paramIndex),
+            _ => throw new ArgumentOutOfRangeException(nameof(field), field, "Unsupported system field in advanced search"),
+        };
+    }
+
+    private static string BuildNameEquals(string? value, List<SqliteParameter> parameters, ref int paramIndex, bool negate)
+    {
+        var param = $"@name_{paramIndex++}";
+        parameters.Add(new SqliteParameter(param, value ?? string.Empty));
+        var predicate = $"ci.name = {param} COLLATE NOCASE";
+        return negate ? $"NOT ({predicate})" : predicate;
+    }
+
+    private static string BuildNameContains(string? value, List<SqliteParameter> parameters, ref int paramIndex, bool negate)
+    {
+        var param = $"@name_{paramIndex++}";
+        parameters.Add(new SqliteParameter(param, $"%{EscapeLikePattern(value ?? string.Empty)}%"));
+        var predicate = $"ci.name LIKE {param} ESCAPE '\\'";
+        return negate ? $"NOT ({predicate})" : predicate;
+    }
+
+    private static string AddOrdinalParam(string? value, List<SqliteParameter> parameters, ref int paramIndex)
+    {
+        var param = $"@ordinal_{paramIndex++}";
+        var parsed = long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var ordinal)
+            ? ordinal
+            : (long?)null;
+        parameters.Add(new SqliteParameter(param, (object?)parsed ?? DBNull.Value));
+        return param;
+    }
+
+    private static string BuildPartTypePredicate(
+        ValidationRuleOperator op, string? value, List<SqliteParameter> parameters, ref int paramIndex)
+    {
+        var keyParam = $"@factKey_{paramIndex++}";
+        parameters.Add(new SqliteParameter(keyParam, FamilyFactRuleSet.PartTypeFactKey));
+
+        var withValue = op is ValidationRuleOperator.Equals or ValidationRuleOperator.NotEquals;
+        var valueClause = string.Empty;
+        if (withValue)
+        {
+            var valueParam = $"@factValue_{paramIndex++}";
+            parameters.Add(new SqliteParameter(valueParam, value ?? string.Empty));
+            valueClause = $" AND ff.value_key = {valueParam}";
+        }
+
+        var exists = $"EXISTS (SELECT 1 FROM family_facts ff WHERE ff.catalog_item_id = ci.id AND ff.fact_key = {keyParam}{valueClause})";
+        return op is ValidationRuleOperator.NotEquals or ValidationRuleOperator.IsEmpty
+            ? $"NOT {exists}"
+            : exists;
+    }
+
+    private static string BuildExists(string matchPredicate, string valuePredicate) => $"""
+        EXISTS (
+            SELECT 1 FROM extracted_attribute_values av
+            WHERE av.catalog_item_id = ci.id
+              AND (
+                  av.version_id IS NULL
+                  OR av.version_id = (
+                      SELECT cv.id FROM catalog_versions cv
+                      WHERE cv.catalog_item_id = ci.id
+                        AND cv.version_label = ci.current_version_label
+                      LIMIT 1
+                  )
+              )
+              AND ({matchPredicate})
+              AND {valuePredicate}
+        )
+        """;
+
+    /// <summary>
+    /// Equals matches the display text (ASCII-case-insensitive, LIKE the
+    /// search-by-name path) or the numeric column when the typed value
+    /// parses as a number — covering both string and Double attributes.
+    /// </summary>
+    private static string BuildValueEqualsPredicate(string? value, List<SqliteParameter> parameters, ref int paramIndex)
+    {
+        var textParam = $"@val_{paramIndex++}";
+        parameters.Add(new SqliteParameter(textParam, value ?? string.Empty));
+        var numberParam = $"@valNum_{paramIndex++}";
+        parameters.Add(new SqliteParameter(numberParam, (object?)ParseNumberOrNull(value) ?? DBNull.Value));
+
+        return $"(av.value_text = {textParam} COLLATE NOCASE OR av.value_number = {numberParam})";
+    }
+
+    private static string BuildValueContainsPredicate(string? value, List<SqliteParameter> parameters, ref int paramIndex)
+    {
+        var textParam = $"@val_{paramIndex++}";
+        var escaped = EscapeLikePattern(value ?? string.Empty);
+        parameters.Add(new SqliteParameter(textParam, $"%{escaped}%"));
+
+        return $"av.value_text LIKE {textParam} ESCAPE '\\'";
+    }
+
+    /// <summary>SQLite LIKE wildcards must be escaped in user input.</summary>
+    private static string EscapeLikePattern(string input) =>
+        input.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
+
+    private static double? ParseNumberOrNull(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var invariant))
+        {
+            return invariant;
+        }
+
+        return double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out var current)
+            ? current
+            : null;
     }
 
     public static string BuildOrderBy(FamilyCatalogSort sort) => sort switch

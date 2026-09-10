@@ -96,6 +96,9 @@ public sealed partial class FamilyManagerMainViewModel
         DetachTreeStateTracking();
         AttachTreeStateTracking();
         RecomputeTreeExpandedState();
+        // #87: empty-tree placeholder depends on the node count.
+        OnPropertyChanged(nameof(ShowNoResultsPlaceholder));
+        OnPropertyChanged(nameof(NoResultsText));
     }
 
     private void AttachTreeStateTracking()

@@ -98,6 +98,7 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowValidationRulesEditor(object viewModel) => throw new NotImplementedException();
     public bool? ShowAssignmentRulesEditor(object viewModel) => throw new NotImplementedException();
+    public bool? ShowAdvancedSearch(object viewModel) => throw new NotImplementedException();
     public void ShowModelessBatchImportDialog(object viewModel) => throw new NotImplementedException();
 
     public int CleanupDialogCalls { get; private set; }

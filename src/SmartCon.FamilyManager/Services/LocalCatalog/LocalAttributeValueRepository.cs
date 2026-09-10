@@ -196,6 +196,34 @@ internal sealed class LocalAttributeValueRepository : IAttributeValueRepository
         return result is long l ? (int)l : 0;
     }
 
+    public async Task<IReadOnlyList<string>> GetDistinctValueTextsAsync(string attributeId, string attributeName, int limit = 100, CancellationToken ct = default)
+    {
+        var result = new List<string>();
+
+        using var connection = _database.CreateConnection();
+        await connection.OpenAsync(ct);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT DISTINCT av.value_text
+            FROM extracted_attribute_values av
+            WHERE (av.attribute_id = @attributeId OR (av.attribute_id IS NULL AND av.parameter_name = @attributeName))
+              AND av.status = 'Found'
+              AND av.value_text IS NOT NULL
+              AND TRIM(av.value_text) != ''
+            ORDER BY av.value_text
+            LIMIT @limit
+            """;
+        cmd.Parameters.Add(new SqliteParameter("@attributeId", attributeId));
+        cmd.Parameters.Add(new SqliteParameter("@attributeName", attributeName));
+        cmd.Parameters.Add(new SqliteParameter("@limit", limit > 0 ? limit : 100));
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add(reader.GetString(0));
+
+        return result.AsReadOnly();
+    }
+
     private static ExtractedAttributeValue ReadValue(SqliteDataReader reader)
     {
         return new ExtractedAttributeValue(

@@ -86,6 +86,9 @@ public sealed partial class FamilyManagerMainViewModel
         _staleDetector.InvalidateCache();
         // #259: compliance verdicts are per-DB too (other items, other rules).
         _complianceService.InvalidateCache();
+        // #87: advanced-search conditions belong to the previous catalog
+        // (category ids + attribute values) — reset before the tree reload.
+        ResetAdvancedFilter();
         RecomputeActiveBaseMatch();
         RefreshConnections();
         _ = RefreshTreeViaExternalEventAsync();

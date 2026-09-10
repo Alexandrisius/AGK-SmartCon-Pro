@@ -162,6 +162,7 @@ public static class ServiceRegistrar
             presenter.Register<StatusDetailsViewModel>(vm => new StatusDetailsView(vm));
             presenter.Register<ValidationRulesEditorViewModel>(vm => new ValidationRulesEditorView(vm));
             presenter.Register<AssignmentRulesEditorViewModel>(vm => new AssignmentRulesEditorView(vm));
+            presenter.Register<AdvancedSearchViewModel>(vm => new AdvancedSearchView(vm));
             presenter.Register<SharedFamiliesLoadModeDialogViewModel>(vm => new SharedFamiliesLoadModeDialogView(vm));
             presenter.Register<DatabaseUpdateProgressViewModel>(vm => new DatabaseUpdateProgressView(vm));
             presenter.Register<MissingRecordsCleanupViewModel>(vm => new MissingRecordsCleanupView(vm));

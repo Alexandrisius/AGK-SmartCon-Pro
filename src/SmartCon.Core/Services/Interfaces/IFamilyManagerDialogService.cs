@@ -130,6 +130,13 @@ public interface IFamilyManagerDialogService
     bool? ShowAssignmentRulesEditor(object viewModel);
 
     /// <summary>
+    /// Show the advanced search dialog (#87): category scope + attribute
+    /// conditions. Returns true when the user applied (or reset) the filter
+    /// — read the resulting AdvancedSearchFilter from the view model.
+    /// </summary>
+    bool? ShowAdvancedSearch(object viewModel);
+
+    /// <summary>
     /// Show the batch import dialog as a modeless window (Issue #127): the
     /// dialog stays open during the import and drives progress/cancellation
     /// through its view model. Returns immediately; the caller awaits the

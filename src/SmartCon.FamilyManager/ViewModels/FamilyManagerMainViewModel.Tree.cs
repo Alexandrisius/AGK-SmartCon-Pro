@@ -35,9 +35,12 @@ public sealed partial class FamilyManagerMainViewModel
 
             var tree = new CategoryTree(categories);
 
+            // #87: расширенный поиск — категория-охват + условия по атрибутам;
+            // комбинируется с текстовым поиском по «И» на уровне SQL.
+            var advancedFilter = AdvancedSearchFilter;
             var query = new FamilyCatalogQuery(
                 SearchText: string.IsNullOrWhiteSpace(SearchText) ? null : SearchText,
-                CategoryFilter: null,
+                CategoryFilter: advancedFilter?.CategoryId,
                 StatusFilter: null,
                 Tags: null,
                 Sort: FamilyCatalogSort.NameAsc,
@@ -46,10 +49,14 @@ public sealed partial class FamilyManagerMainViewModel
                 // Import Validation Gate: the "Без категории" quarantine
                 // zone is hidden from read-only roles (Engineer) — only
                 // editors see and distribute quarantined families.
-                ExcludeUncategorized: !_accessControl.IsEditorRole);
+                ExcludeUncategorized: !_accessControl.IsEditorRole,
+                AttributeFilters: advancedFilter?.Conditions);
 
             stageSw.Restart();
             var results = await _catalogProvider.SearchAsync(query, ct);
+            // #87: counter bottom-right — families currently visible in the
+            // tree (with search/advanced filter applied).
+            VisibleItemCount = results.Count;
             SmartConLogger.Freeze($"LoadTreeAsync: SearchAsync took {stageSw.ElapsedMilliseconds}ms, results={results.Count}");
             // #187 (M1): gates the presence refresh on document switches
             // that do NOT reload the tree (OnActiveDocumentChanged).
@@ -57,16 +64,19 @@ public sealed partial class FamilyManagerMainViewModel
 
             stageSw.Restart();
             TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
+            OnPropertyChanged(nameof(ItemCountDisplay));
+            OnPropertyChanged(nameof(ItemCountTooltip));
             SmartConLogger.Freeze($"LoadTreeAsync: GetItemCountAsync took {stageSw.ElapsedMilliseconds}ms, totalItemCount={TotalItemCount}");
 
             var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
-            var expandAll = !string.IsNullOrWhiteSpace(SearchText);
+            var expandAll = !string.IsNullOrWhiteSpace(SearchText) || advancedFilter is not null;
 
             // DIAG-DUMP (Issue: net48 tree-expand after search).
             // Logs the search-vs-restore decision BEFORE building root nodes so
             // we can correlate with the per-category IsExpanded outcome below.
             SmartConLogger.Info(
                 $"FMTree.LoadTreeAsync.begin: searchText='{SearchText}' expandAll={expandAll} " +
+                $"advancedFilter={advancedFilter is not null} advancedConditions={advancedFilter?.Conditions.Count ?? 0} " +
                 $"savedCatIds={_savedExpandedCategoryIds.Count} " +
                 $"savedFamIds={_savedExpandedFamilyIds.Count}");
 

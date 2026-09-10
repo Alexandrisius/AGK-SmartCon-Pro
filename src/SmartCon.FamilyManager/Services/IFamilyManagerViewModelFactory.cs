@@ -55,4 +55,10 @@ public interface IFamilyManagerViewModelFactory
         string bindingId, string attributeName, string categoryPath);
     AssignmentRulesEditorViewModel CreateAssignmentRulesEditorViewModel(
         string categoryId, string categoryPath, string? copyFromCategoryId = null, string? copyFromCategoryPath = null);
+
+    /// <summary>
+    /// Advanced search dialog (#87): category scope + attribute conditions
+    /// combined with AND. Call InitializeAsync before showing.
+    /// </summary>
+    AdvancedSearchViewModel CreateAdvancedSearchViewModel();
 }

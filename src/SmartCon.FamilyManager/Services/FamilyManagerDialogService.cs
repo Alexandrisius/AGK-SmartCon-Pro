@@ -224,6 +224,8 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
 
     public bool? ShowAssignmentRulesEditor(object viewModel) => _presenter.ShowDialog(viewModel);
 
+    public bool? ShowAdvancedSearch(object viewModel) => _presenter.ShowDialog(viewModel);
+
     /// <inheritdoc/>
     public void ShowModelessBatchImportDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
