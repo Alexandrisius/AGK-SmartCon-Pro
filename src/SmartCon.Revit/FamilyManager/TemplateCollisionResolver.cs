@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.Revit.FamilyManager;

@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 
-namespace SmartCon.Core.Compatibility;
+namespace SmartCon.Revit.Compatibility;
 
 /// <summary>
 /// Абстракция над <see cref="Category"/> для совместимости Revit 2019-2022 и 2023+.

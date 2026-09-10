@@ -192,20 +192,22 @@ public interface ISystemFamilyPlacementService
 
 ---
 
-## CategoryCompat (Core/Compatibility)
+## CategoryCompat (SmartCon.Revit/Compatibility)
 
-Кросс-TFM абстракция `Category → BuiltInCategory`:
-- **Revit 2022+** — канонический `Category.BuiltInCategory` (корректно для standard, INVALID для custom sub-category).
-- **Revit 2019–2021** — guarded cast `(BuiltInCategory)(int)catId.GetValue()` через
+Кросс-TFM абстракция `Category → BuiltInCategory` (аудит 2.1: перенесена из
+`SmartCon.Core/Compatibility` — вызывала `Category.BuiltInCategory`, т.е. нарушала
+I-11 «единственный RevitAPI-зависимый класс в Core — ElementIdCompat»):
+- **Revit 2023+** — канонический `Category.BuiltInCategory` (корректно для standard, INVALID для custom sub-category).
+- **Revit 2019–2022** — guarded cast `(BuiltInCategory)(int)catId.GetValue()` через
   `ElementIdCompat.GetValue()`.
 
-**Файл:** `SmartCon.Core/Compatibility/CategoryCompat.cs`
+**Файл:** `SmartCon.Revit/Compatibility/CategoryCompat.cs`
 
 ```csharp
 public static class CategoryCompat
 {
-    public static BuiltInCategory GetBuiltInCategory(Category? category); // Revit 2022+
-    // или guarded cast fallback для Revit 2019–2021
+    public static BuiltInCategory GetBuiltInCategory(Category? category); // Revit 2023+
+    // или guarded cast fallback для Revit 2019–2022
 }
 ```
 
