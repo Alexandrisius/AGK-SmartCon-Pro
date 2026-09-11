@@ -61,6 +61,15 @@ public sealed class CloudCatalogApiClient : IDisposable
         return dto;
     }
 
+    /// <summary>GET /v1/catalogs/{slug} — карточка каталога (человеческое имя для подписной копии).</summary>
+    public async Task<CloudCatalogDto> GetCatalogAsync(string slug, CancellationToken ct = default)
+    {
+        using var response = await SendAuthorizedAsync(HttpMethod.Get, $"/v1/catalogs/{slug}", ct: ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
+        return await ReadJsonAsync<CloudCatalogDto>(response, ct).ConfigureAwait(false)
+            ?? throw new CloudApiException((int)response.StatusCode, null, "пустой ответ /v1/catalogs/{slug}");
+    }
+
     /// <summary>GET /v1/catalogs/{slug}/manifest/latest. 404 → null (ещё нет публикаций).</summary>
     public async Task<CloudManifestLatestDto?> GetLatestManifestAsync(string slug, CancellationToken ct = default)
     {

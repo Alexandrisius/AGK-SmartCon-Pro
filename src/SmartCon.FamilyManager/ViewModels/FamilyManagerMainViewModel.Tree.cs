@@ -47,9 +47,11 @@ public sealed partial class FamilyManagerMainViewModel
                 Sort: FamilyCatalogSort.NameAsc,
                 Offset: 0,
                 Limit: int.MaxValue,
-                // Import Validation Gate: the "Без категории" quarantine
-                // zone is hidden from read-only roles (Engineer) — only
-                // editors see and distribute quarantined families.
+                // Import Validation Gate: the "Без категории" quarantine zone is
+                // hidden from read-only roles (Engineer) — only editors see and
+                // distribute quarantined families. В облако такие item'ы тоже
+                // не публикуются (builder фильтрует) — подписчик карантин
+                // автора не получает вовсе.
                 ExcludeUncategorized: !_accessControl.IsEditorRole,
                 AttributeFilters: advancedFilter?.Conditions);
 
@@ -66,16 +68,22 @@ public sealed partial class FamilyManagerMainViewModel
             // that do NOT reload the tree (OnActiveDocumentChanged).
             _treeLoadedOnce = true;
 
-            using (var _stageMs = SmartConLogger.Measure("LoadTree.GetItemCountAsync"))
-            {
-                TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
-                OnPropertyChanged(nameof(ItemCountDisplay));
-                OnPropertyChanged(nameof(ItemCountTooltip));
-                SmartConLogger.Freeze($"LoadTreeAsync: GetItemCountAsync took {(long)_stageMs.GetElapsedMilliseconds()}ms, totalItemCount={TotalItemCount}");
-            }
-
             var rootNodes = new ObservableCollection<CatalogTreeNodeViewModel>();
             var expandAll = !string.IsNullOrWhiteSpace(SearchText) || advancedFilter is not null;
+
+            // «Доступно семейств»: тот же фильтр видимости, что и дерево —
+            // иначе Quarantine-зона («Без категории», скрыта у read-only ролей
+            // и не публикуется в облако) давала счётчик > видимых узлов.
+            if (expandAll)
+            {
+                TotalItemCount = await _catalogProvider.GetItemCountAsync(ct);
+            }
+            else
+            {
+                TotalItemCount = results.Count;
+            }
+            OnPropertyChanged(nameof(ItemCountDisplay));
+            OnPropertyChanged(nameof(ItemCountTooltip));
 
             // DIAG-DUMP (Issue: net48 tree-expand after search).
             // Logs the search-vs-restore decision BEFORE building root nodes so
@@ -139,7 +147,9 @@ public sealed partial class FamilyManagerMainViewModel
             var noCatLabel = LanguageManager.GetString(StringLocalization.Keys.FM_NoCategory) ?? "No category";
             // Import Validation Gate: quarantine zone — the node exists
             // only for editor roles; read-only roles neither see the node
-            // nor receive uncategorized rows (query filter above).
+            // nor receive uncategorized rows (query filter above). В облако
+            // карантин не публикуется (builder фильтрует) — подписчику узел
+            // не нужен вовсе.
             if (_accessControl.IsEditorRole)
             {
             _noCategoryNode = new CategoryNodeViewModel(

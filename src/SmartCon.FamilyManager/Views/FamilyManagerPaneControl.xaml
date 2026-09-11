@@ -133,14 +133,14 @@
                 </StackPanel>
             </DataTemplate>
 
-            <!-- Cloud §7.3.12: облачная база — ТОЛЬКО облачко (как у проектной — только папка),
-                 направление отличает Published↑ от Subscribed↓, тултип поясняет роль. -->
+            <!-- Cloud §7.3.12: своя облачная база — ПРОСТО облако; подключённая по
+                 приглашению — облако со стрелкой (решение владельца 2026-09-11). -->
             <DataTemplate x:Key="DbCloudTemplate" DataType="{x:Type selectors:DatabaseListItem}">
                 <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
                     <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
                         <iconPacks:PackIconMaterial Width="24" Height="24"
                                                        Foreground="{DynamicResource TextMutedBrush}"
-                                                       Kind="CloudUpload">
+                                                       Kind="Cloud">
                             <iconPacks:PackIconMaterial.Style>
                                 <Style TargetType="{x:Type iconPacks:PackIconMaterial}">
                                     <Style.Triggers>

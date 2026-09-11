@@ -32,6 +32,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -64,7 +65,51 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="0,0,0,8"
+        <!-- Облачный аккаунт: единственное место жизни cloud-сессии (§7.3.10) -->
+        <Border Grid.Row="1" Background="{DynamicResource SurfaceBrush}"
+                CornerRadius="6" BorderBrush="{DynamicResource BorderAltBrush}"
+                BorderThickness="1" Margin="0,0,0,12" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="{loc:Loc FM_ProfileCloudTitle}"
+                               FontWeight="SemiBold" FontSize="12"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <!-- Вход выполнен -->
+                    <StackPanel Visibility="{Binding IsCloudLoggedIn, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding CloudDisplayName}" FontSize="12"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding CloudEmail}" FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock Text="{Binding CloudEndpoint}" FontSize="11"
+                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                    <!-- Вход не выполнен -->
+                    <TextBlock Text="{loc:Loc FM_ProfileCloudNone}" FontSize="11" Margin="0,4,0,0"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               Visibility="{Binding IsCloudLoggedIn, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                </StackPanel>
+
+                <Button Grid.Column="1"
+                        Content="{loc:Loc FM_ProfileCloudSignOut}"
+                        Command="{Binding CloudSignOutCommand}"
+                        Width="80" Height="26" VerticalAlignment="Center"
+                        Style="{DynamicResource SecondaryButton}"
+                        Visibility="{Binding IsCloudLoggedIn, Converter={StaticResource BoolToVis}}"/>
+                <Button Grid.Column="1"
+                        Content="{loc:Loc FM_ProfileCloudSignIn}"
+                        Command="{Binding CloudSignInCommand}"
+                        Width="80" Height="26" VerticalAlignment="Center"
+                        Style="{DynamicResource PrimaryButton}"
+                        Visibility="{Binding IsCloudLoggedIn, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8"
               Visibility="{Binding IsOwner, Converter={StaticResource BoolToVis}}">
             <StackPanel>
                 <TextBlock Text="{loc:Loc FM_ProfileUsers}"
@@ -75,7 +120,7 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
             <ScrollViewer VerticalScrollBarVisibility="Auto"
                           Visibility="{Binding IsOwner, Converter={StaticResource BoolToVis}}">
                 <ItemsControl ItemsSource="{Binding Users}">
@@ -170,7 +215,7 @@
             </StackPanel>
         </Grid>
 
-        <Button Grid.Row="3"
+        <Button Grid.Row="4"
                 Command="{Binding CloseCommand}"
                 Content="{loc:Loc Btn_Close}"
                 IsCancel="True"

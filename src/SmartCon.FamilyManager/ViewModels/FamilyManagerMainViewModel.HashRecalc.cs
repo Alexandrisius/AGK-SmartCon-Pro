@@ -215,6 +215,15 @@ public sealed partial class FamilyManagerMainViewModel
             _updateState.Reset();
             return;
         }
+        // ADR-075 §7 (cloud §7.4): actualization engine is DISABLED on a
+        // Subscribed copy — no amber/red update indicators there (e.g. the
+        // optional glb-v1 pending after a manifest apply); the only badge a
+        // subscriber sees is the cloud-updates one. Copy state = manifest.
+        if (_databaseManager.GetActiveConnection()?.CloudLink?.Role == CloudLinkRole.Subscribed)
+        {
+            _updateState.Reset();
+            return;
+        }
         if (CurrentRevitVersion <= 0)
         {
             SmartConLogger.Debug(

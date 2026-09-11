@@ -16,6 +16,7 @@ public sealed partial class ProfileViewModel : ObservableObject, SmartCon.Core.S
     private readonly IDbAccessControlService _accessControl;
     private readonly IUserIdentityService _identityService;
     private readonly IFamilyManagerDialogService _dialogService;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudAuthService? _cloudAuth;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
 
     [ObservableProperty] private DbUser? _currentUser;
@@ -29,18 +30,58 @@ public sealed partial class ProfileViewModel : ObservableObject, SmartCon.Core.S
     [ObservableProperty] private DbUserRole _currentRole;
     [ObservableProperty] private ObservableCollection<DbUserItem> _users = [];
 
+    // ── Cloud account (срез v1 §7.3.10: единственное место жизни облачного аккаунта) ──
+    [ObservableProperty] private bool _isCloudLoggedIn;
+    [ObservableProperty] private string _cloudDisplayName = string.Empty;
+    [ObservableProperty] private string _cloudEmail = string.Empty;
+    [ObservableProperty] private string _cloudEndpoint = string.Empty;
+
     public event Action<bool?>? RequestClose;
 
     public ProfileViewModel(
         IDbUserRepository userRepo,
         IDbAccessControlService accessControl,
         IUserIdentityService identityService,
-        IFamilyManagerDialogService dialogService)
+        IFamilyManagerDialogService dialogService,
+        SmartCon.FamilyManager.Services.Cloud.CloudAuthService? cloudAuth = null)
     {
         _userRepo = userRepo;
         _accessControl = accessControl;
         _identityService = identityService;
         _dialogService = dialogService;
+        _cloudAuth = cloudAuth;
+        RefreshCloudAccount();
+    }
+
+    private void RefreshCloudAccount()
+    {
+        var account = _cloudAuth?.CurrentAccount;
+        IsCloudLoggedIn = account is not null;
+        CloudDisplayName = account?.DisplayName ?? string.Empty;
+        CloudEmail = account?.Email ?? string.Empty;
+        CloudEndpoint = account?.Endpoint ?? string.Empty;
+    }
+
+    [RelayCommand]
+    private void CloudSignIn()
+    {
+        if (_cloudAuth is null) return;
+        var vm = new SmartCon.FamilyManager.ViewModels.Cloud.CloudLoginViewModel(_cloudAuth);
+        _dialogService.ShowCloudLogin(vm);
+        RefreshCloudAccount();
+    }
+
+    [RelayCommand]
+    private async Task CloudSignOutAsync(CancellationToken ct)
+    {
+        if (_cloudAuth is null || !_cloudAuth.IsLoggedIn) return;
+        var confirmed = _dialogService.ShowConfirmation(
+            LanguageManager.GetString(StringLocalization.Keys.FM_ProfileCloudTitle) ?? "Облачный аккаунт",
+            LanguageManager.GetString(StringLocalization.Keys.FM_ProfileCloudSignOutConfirm)
+                ?? "Выйти из облачного аккаунта? Подписки и локальные копии сохранятся.");
+        if (!confirmed) return;
+        await _cloudAuth.LogoutAsync(ct).ConfigureAwait(true);
+        RefreshCloudAccount();
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)

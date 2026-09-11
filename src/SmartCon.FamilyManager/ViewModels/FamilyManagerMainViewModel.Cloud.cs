@@ -105,11 +105,15 @@ public sealed partial class FamilyManagerMainViewModel
 
         await _cloudApi.SubscribeAsync(invite.Slug, ct).ConfigureAwait(true);
 
+        // Человеческое имя каталога (slug — только URL-id): «Облачная база», а не oblachnaya-baza.
+        var catalog = await _cloudApi.GetCatalogAsync(invite.Slug, ct).ConfigureAwait(true);
+        var displayName = string.IsNullOrWhiteSpace(catalog.Name) ? invite.Slug : catalog.Name;
+
         var targetRoot = CloudPaths.SubscriptionRoot(invite.Slug);
         var (status, failed) = await RunCloudOperationAsync(
             LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PullTitle) ?? "Обновление из облака",
             (progress, token) => _cloudSync.SyncAsync(
-                new CloudSyncRequest(invite.Slug, targetRoot, invite.Slug), progress, token),
+                new CloudSyncRequest(invite.Slug, targetRoot, displayName), progress, token),
             result => string.Format(
                 LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_WizardSubscribed)
                     ?? "Подключено к каталогу «{0}»: получено {1} семейств.",
@@ -163,6 +167,27 @@ public sealed partial class FamilyManagerMainViewModel
         {
             if (!await EnsureLoggedInAsync(link.Endpoint, ct).ConfigureAwait(true)) return;
 
+            // Import Validation Gate: карантин «Без категории» не публикуется
+            // (валидация привязана к категориям) — автор должен знать это ДО
+            // публикации, а не из пустого дерева подписчика.
+            var quarantined = await _catalogProvider.SearchAsync(
+                new FamilyCatalogQuery(SearchText: null, CategoryFilter: null, StatusFilter: null, Tags: null, Sort: FamilyCatalogSort.NameAsc, Offset: 0, Limit: int.MaxValue, IncludeUncategorized: true), ct).ConfigureAwait(true);
+            if (quarantined.Count > 0)
+            {
+                var names = string.Join(Environment.NewLine, quarantined.Take(5).Select(q => $"• {q.Name}"));
+                if (quarantined.Count > 5)
+                    names += Environment.NewLine + "…";
+                var totalRest = await _catalogProvider.GetItemCountAsync(ct).ConfigureAwait(true) - quarantined.Count;
+                var confirmed = _dialogService.ShowConfirmation(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PublishQuarantinedTitle)
+                        ?? "Семейства без категории",
+                    string.Format(
+                        LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PublishQuarantinedBody)
+                            ?? "{0}\r\nОпубликовать остальные ({1})?",
+                        names, Math.Max(0, totalRest)));
+                if (!confirmed) return;
+            }
+
             var publishedSeq = 0L;
             var (_, failed) = await RunCloudOperationAsync(
                 LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PublishTitle) ?? "Публикация в облако",
@@ -214,7 +239,8 @@ public sealed partial class FamilyManagerMainViewModel
             var (status, failed) = await RunCloudOperationAsync(
                 LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PullTitle) ?? "Обновление из облака",
                 (progress, token) => _cloudSync.SyncAsync(
-                    new CloudSyncRequest(link.Slug, targetRoot, link.Slug), progress, token),
+                    // Имя базы сохраняем человеческое (не slug) — иначе apply переименует копию.
+                    new CloudSyncRequest(link.Slug, targetRoot, connection.Name), progress, token),
                 result => result.Updated
                     ? string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PullDone)

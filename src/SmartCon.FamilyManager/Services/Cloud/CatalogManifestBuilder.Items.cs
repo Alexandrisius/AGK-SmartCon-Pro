@@ -37,6 +37,28 @@ public sealed partial class CatalogManifestBuilder
             }
         }
 
+        // Import Validation Gate: «Без категории» — карантинная зона (валидация
+        // привязана к категориям). Непровалидированный контент подписчику не
+        // публикуется ВООБЩЕ — прятать его на стороне подписчика нельзя
+        // («доступно 1, дерево пустое»), поэтому фильтруем на границе сборки.
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT COUNT(*) FROM catalog_items ci
+                WHERE ci.category_id IS NULL
+                  AND EXISTS (SELECT 1 FROM catalog_versions cv
+                              WHERE cv.catalog_item_id = ci.id AND cv.version_label = ci.current_version_label)
+                """;
+            var quarantined = (long)(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
+            if (quarantined > 0)
+            {
+                SmartConLogger.Warn(
+                    $"{quarantined} item(s) in the «Без категории» quarantine zone are NOT published — " +
+                    "category-bound validation never ran for them. " +
+                    "[Action: назначьте семействам категорию (ПКМ → категория) и повторите публикацию]");
+            }
+        }
+
         var items = new List<ManifestItemV1>();
         var byId = new Dictionary<string, ManifestItemV1>(StringComparer.Ordinal);
         var versionRows = new Dictionary<string, ManifestVersionV1>(StringComparer.Ordinal);
@@ -56,6 +78,7 @@ public sealed partial class CatalogManifestBuilder
                 JOIN catalog_versions cv
                     ON cv.catalog_item_id = ci.id AND cv.version_label = ci.current_version_label
                 JOIN family_files ff ON ff.id = cv.file_id
+                WHERE ci.category_id IS NOT NULL
                 ORDER BY ci.normalized_name, cv.revit_major_version
                 """;
             using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);

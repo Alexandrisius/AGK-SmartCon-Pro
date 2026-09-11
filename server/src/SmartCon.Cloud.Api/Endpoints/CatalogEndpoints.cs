@@ -47,6 +47,20 @@ public static class CatalogEndpoints
             return Results.Json(new CatalogDto(catalog.Id, catalog.Slug, catalog.Name, catalog.CurrentPublishSeq), statusCode: 201);
         }).RequireAuthorization();
 
+        // GET каталога по slug: подписчик берёт ЧЕЛОВЕЧЕСКОЕ имя (slug — только URL-идентификатор,
+        // как во web-приложениях: красивое название + автогенерируемый slug).
+        app.MapGet("/v1/catalogs/{slug}", async (
+            string slug,
+            CloudDbContext db,
+            CancellationToken ct) =>
+        {
+            var catalog = await db.Catalogs.FirstOrDefaultAsync(c => c.Slug == slug, ct);
+            // 404-антиоракул (ADR-076 §4): «нет такого» и «нет доступа» неотличимы.
+            return catalog is null
+                ? Results.NotFound(new { code = "not_found", error = "каталог не найден" })
+                : Results.Ok(new CatalogDto(catalog.Id, catalog.Slug, catalog.Name, catalog.CurrentPublishSeq));
+        }).RequireAuthorization();
+
         // Срез: publish = { manifest } (полная дельта-модель basePublishSeq/changes/kind — C1, §6.2/§6.3).
         app.MapPost("/v1/catalogs/{slug}/publish", async (
             string slug,

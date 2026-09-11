@@ -107,6 +107,19 @@ public sealed class CatalogManifestBuilderTests : IDisposable
     }
 
     [Fact]
+    public async Task BuildAsync_QuarantinedUncategorizedItem_ExcludedFromManifest()
+    {
+        // Import Validation Gate: карантин «Без категории» не публикуется —
+        // подписчик не должен получать непровалидированный контент.
+        // null = явный карантин (сид-хелпер иначе подставляет дефолтную категорию).
+        await CatalogSeedHelper.SeedBareLoadableAsync(_fixture, "Карантин", "v1", categoryId: null);
+
+        var manifest = await _builder.BuildAsync(Options());
+
+        Assert.Empty(manifest.Items);
+    }
+
+    [Fact]
     public async Task BuildAsync_NestedCategory_PathUsesSeparator()
     {
         var parentId = Guid.NewGuid().ToString();

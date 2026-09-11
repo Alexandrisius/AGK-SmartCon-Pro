@@ -29,7 +29,7 @@ internal static class CatalogSeedHelper
         string? revitCategory = null,
         int? revitCategoryId = null,
         int? glbState = null,
-        string? categoryId = null)
+        string? categoryId = "")
     {
         var itemId = Guid.NewGuid().ToString("N");
         var versionId = Guid.NewGuid().ToString();
@@ -47,6 +47,13 @@ internal static class CatalogSeedHelper
 
         using var conn = fixture.GetDatabase().CreateConnection();
         await conn.OpenAsync();
+
+        // Manifest builder публикует ТОЛЬКО категоризированные item'ы (карантин
+        // «Без категории» не едет подписчику) — дефолт для сидов тестов:
+        // одна категория на базу, чтобы items без явного categoryId всё
+        // равно попадали в манифест (прежнее поведение builder-тестов).
+        if (categoryId is null) { /* карантин «Без категории» — явно } */ }
+        else if (categoryId.Length == 0) categoryId = await EnsureDefaultCategoryAsync(conn);
         using var tx = conn.BeginTransaction();
 
         using (var cmd = conn.CreateCommand())
@@ -80,7 +87,7 @@ internal static class CatalogSeedHelper
             cmd.Parameters.Add(new SqliteParameter("@revitCategory", (object?)revitCategory ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@revitCategoryId", (object?)revitCategoryId ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@fmt", (object?)hashFormatVersion ?? DBNull.Value));
-            cmd.Parameters.Add(new SqliteParameter("@categoryId", (object?)categoryId ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@categoryId", categoryId is null ? DBNull.Value : categoryId));
             cmd.Parameters.Add(new SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
             await cmd.ExecuteNonQueryAsync();
         }
@@ -328,5 +335,29 @@ internal static class CatalogSeedHelper
             ],
             Geometry: new GeometryMetrics(1, [new FormMetrics("Extrusion", true, 1250.0, 6, 12, null)]),
             SharedNestedFamilyNames: ["SharedNestedA"]);
+    }
+
+    /// <summary>
+    /// Единственная категория по умолчанию для сидов (idempotent). Нужна
+    /// потому, что manifest builder не публикует карантин «Без категории».
+    /// </summary>
+    private static async Task<string> EnsureDefaultCategoryAsync(Microsoft.Data.Sqlite.SqliteConnection conn)
+    {
+        const string categoryName = "Seed";
+        using (var find = conn.CreateCommand())
+        {
+            find.CommandText = "SELECT id FROM categories WHERE name = @n LIMIT 1";
+            find.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@n", categoryName));
+            var existing = await find.ExecuteScalarAsync();
+            if (existing is string id) return id;
+        }
+        var newId = Guid.NewGuid().ToString();
+        using var insert = conn.CreateCommand();
+        insert.CommandText = "INSERT INTO categories (id, name, parent_id, sort_order, created_at_utc) VALUES (@id, @n, NULL, 0, @t)";
+        insert.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@id", newId));
+        insert.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@n", categoryName));
+        insert.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@t", DateTimeOffset.UtcNow.ToString("o")));
+        await insert.ExecuteNonQueryAsync();
+        return newId;
     }
 }

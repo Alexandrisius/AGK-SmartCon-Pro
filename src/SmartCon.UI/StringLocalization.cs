@@ -586,6 +586,12 @@ public static class StringLocalization
         // ── Cloud Catalog (срез v1): мастер «Облачная база», логин, publish/pull, бейджи ──
         public const string FM_PBase_CreateCloudDatabase = "FM_PBase_CreateCloudDatabase";
         public const string FM_Cloud_LoginTitle = "FM_Cloud_LoginTitle";
+        public const string FM_ProfileCloudTitle = "FM_ProfileCloudTitle";
+        public const string FM_ProfileCloudSignIn = "FM_ProfileCloudSignIn";
+        public const string FM_ProfileCloudSignOut = "FM_ProfileCloudSignOut";
+        public const string FM_ProfileCloudNone = "FM_ProfileCloudNone";
+        public const string FM_ProfileCloudServer = "FM_ProfileCloudServer";
+        public const string FM_ProfileCloudSignOutConfirm = "FM_ProfileCloudSignOutConfirm";
         public const string FM_Cloud_LoginEndpoint = "FM_Cloud_LoginEndpoint";
         public const string FM_Cloud_LoginEndpointPlaceholder = "FM_Cloud_LoginEndpointPlaceholder";
         public const string FM_Cloud_LoginEmail = "FM_Cloud_LoginEmail";
@@ -615,6 +621,8 @@ public static class StringLocalization
         public const string FM_Cloud_PublishTitle = "FM_Cloud_PublishTitle";
         public const string FM_Cloud_PublishDone = "FM_Cloud_PublishDone";
         public const string FM_Cloud_PublishFailed = "FM_Cloud_PublishFailed";
+        public const string FM_Cloud_PublishQuarantinedTitle = "FM_Cloud_PublishQuarantinedTitle";
+        public const string FM_Cloud_PublishQuarantinedBody = "FM_Cloud_PublishQuarantinedBody";
         public const string FM_Cloud_CopyInvite = "FM_Cloud_CopyInvite";
         public const string FM_Cloud_InviteCopied = "FM_Cloud_InviteCopied";
         public const string FM_Cloud_UpdateAvailableBadge = "FM_Cloud_UpdateAvailableBadge";

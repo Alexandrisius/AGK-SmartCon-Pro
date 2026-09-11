@@ -38,6 +38,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
     private readonly IRoutingEditorService _routingEditorService;
     private readonly SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? _cloudGate;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudAuthService? _cloudAuth;
     private readonly ICatalogActualizationService _actualization;
 
     public FamilyManagerViewModelFactory(
@@ -72,7 +73,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IRevitCategoryLabelService revitCategoryLabels,
         IRoutingEditorService routingEditorService,
         ICatalogActualizationService actualization,
-        SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? cloudGate = null)
+        SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? cloudGate = null,
+        SmartCon.FamilyManager.Services.Cloud.CloudAuthService? cloudAuth = null)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -105,6 +107,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _revitCategoryLabels = revitCategoryLabels;
         _routingEditorService = routingEditorService;
         _cloudGate = cloudGate;
+        _cloudAuth = cloudAuth;
         _actualization = actualization;
     }
 
@@ -188,7 +191,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
 
     public ProfileViewModel CreateProfileViewModel()
     {
-        return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService);
+        return new ProfileViewModel(_userRepo, _accessControl, _identityService, _dialogService, _cloudAuth);
     }
 
     public MissingRecordsCleanupViewModel CreateMissingRecordsCleanupViewModel()
