@@ -191,6 +191,10 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand]
     private async Task RefreshTree()
     {
+        // §7.3.3 (канон владельца 2026-09-11): «Обновить» = всегда только pull.
+        // Кнопка обновления панели: на активной подписной базе СПЕРВА тихий
+        // облачный pull (если есть новая публикация), затем дерево. Никогда push.
+        await PullSubscribedCloudIfAvailableAsync();
         await RefreshTreeViaExternalEventAsync();
     }
 }

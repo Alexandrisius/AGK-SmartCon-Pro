@@ -28,19 +28,24 @@ public sealed partial class FamilyManagerMainViewModel
     public bool IsSelectedCloudSubscribed =>
         SelectedConnection?.Connection.CloudLink?.Role == CloudLinkRole.Subscribed;
 
-    /// <summary>Видимость единой команды «Обновить»: актуализация ИЛИ облачный pull (§7.3.3).</summary>
-    public bool ShowUpdateDatabaseCommand => HasAnyDatabaseUpdate || HasCloudUpdates;
+    /// <summary>Тултип кнопки ↻: базовый текст + приписка о доступных облачных обновлениях.</summary>
+    public string RefreshButtonTooltip
+    {
+        get
+        {
+            var baseText = LanguageManager.GetString(StringLocalization.Keys.FM_RefreshTooltip) ?? "Обновить дерево";
+            if (!HasCloudUpdates) return baseText;
+            return baseText + (LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_RefreshBadgeSuffix) ?? string.Empty);
+        }
+    }
 
     private void NotifyCloudSelectionChanged()
     {
         OnPropertyChanged(nameof(IsSelectedCloudPublished));
         OnPropertyChanged(nameof(IsSelectedCloudSubscribed));
-        OnPropertyChanged(nameof(ShowUpdateDatabaseCommand));
         PublishCloudChangesCommand.NotifyCanExecuteChanged();
         CopyCloudInviteCommand.NotifyCanExecuteChanged();
     }
-
-    partial void OnHasCloudUpdatesChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateDatabaseCommand));
 
     // ── Мастер «Облачная база…» (§7.3.1) ────────────────────────────────
 
@@ -225,7 +230,44 @@ public sealed partial class FamilyManagerMainViewModel
 
     // ── «Обновить» = только pull (§7.3.3) ───────────────────────────────
 
-    /// <summary>Вызывается из UpdateDatabaseAsync для Subscribed-баз (маршрутизация §7.3.3).</summary>
+    /// <summary>
+    /// Тихий pull для активной подписной базы перед перезагрузкой дерева
+    /// (кнопка ↻ панели): без сессии/сервера — просто дерево; без новой
+    /// публикации — ничего не показывает; при наличии — modeless-прогресс и
+    /// итог «Обновлено до #N». Никогда push.
+    /// </summary>
+    private async Task PullSubscribedCloudIfAvailableAsync()
+    {
+        if (IsCloudBusy) return;
+        var active = _databaseManager.GetActiveConnection();
+        if (active?.CloudLink is not { Role: CloudLinkRole.Subscribed } link) return;
+        if (!_cloudAuth.IsLoggedIn
+            || !string.Equals(_cloudAuth.CurrentAccount?.Endpoint, link.Endpoint, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            var remoteSeq = await _cloudSync.GetRemotePublishSeqAsync(link.Slug).ConfigureAwait(true);
+            var localSeq = ReadLocalPublishSeq(link.Slug);
+            if (remoteSeq is null || (localSeq is not null && remoteSeq <= localSeq))
+            {
+                HasCloudUpdates = false;
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Сервер недоступен — обновление дерева не должно падать (§7.3.10).
+            SmartConLogger.Debug($"Cloud update check on refresh failed: {ex.Message}");
+            return;
+        }
+
+        await UpdateSubscribedCloudAsync(active, CancellationToken.None).ConfigureAwait(true);
+    }
+
+    /// <summary>Pull подписной базы с modeless-прогрессом (кнопка ↻ панели, §7.3.3).</summary>
     private async Task<bool> UpdateSubscribedCloudAsync(DatabaseConnection connection, CancellationToken ct)
     {
         if (connection.CloudLink is not { } link) return false;
@@ -350,6 +392,8 @@ public sealed partial class FamilyManagerMainViewModel
             return null;
         }
     }
+
+    partial void OnHasCloudUpdatesChanged(bool value) => OnPropertyChanged(nameof(RefreshButtonTooltip));
 
     private void SetHasCloudUpdatesOnUiThread(bool value)
     {

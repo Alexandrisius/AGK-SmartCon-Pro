@@ -249,16 +249,10 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanUpdateDatabase))]
     private async Task UpdateDatabaseAsync()
     {
-        // §7.3.3 (cloud catalog v1): «Обновить» на Subscribed-базе — только
-        // pull из облака, actualization engine на подписной копии отключён
-        // (ADR-075 §7).
-        var selected = SelectedConnection?.Connection;
-        if (selected?.CloudLink?.Role == CloudLinkRole.Subscribed)
-        {
-            await UpdateSubscribedCloudAsync(selected, CancellationToken.None).ConfigureAwait(true);
-            return;
-        }
-
+        // Actualization engine — только локальные базы. Облачный pull живёт на
+        // кнопке обновления панели (↻, §7.3.3 канона владельца), эта команда
+        // к облачному каталогу отношения не имеет. На Subscribed-копии движок
+        // отключён (ADR-075 §7) и точка актуализации не показывается.
         if (CurrentRevitVersion <= 0)
         {
             DetectRevitVersion();

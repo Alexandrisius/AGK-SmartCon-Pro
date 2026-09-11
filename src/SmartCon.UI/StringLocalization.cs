@@ -626,6 +626,7 @@ public static class StringLocalization
         public const string FM_Cloud_CopyInvite = "FM_Cloud_CopyInvite";
         public const string FM_Cloud_InviteCopied = "FM_Cloud_InviteCopied";
         public const string FM_Cloud_UpdateAvailableBadge = "FM_Cloud_UpdateAvailableBadge";
+        public const string FM_Cloud_RefreshBadgeSuffix = "FM_Cloud_RefreshBadgeSuffix";
         public const string FM_Cloud_PullTitle = "FM_Cloud_PullTitle";
         public const string FM_Cloud_PullDone = "FM_Cloud_PullDone";
         public const string FM_Cloud_UpToDate = "FM_Cloud_UpToDate";

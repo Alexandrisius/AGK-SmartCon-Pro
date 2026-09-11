@@ -442,6 +442,7 @@
                         </Grid>
                     </Viewbox>
                 </ToggleButton>
+                <!-- Cloud §7.3.4: янтарно-красная точка актуализации остаётся здесь. -->
                 <Border Width="6" Height="6"
                         CornerRadius="3"
                         HorizontalAlignment="Right" VerticalAlignment="Top"
@@ -459,15 +460,6 @@
                         </Style>
                     </Border.Style>
                 </Border>
-                <!-- Cloud §7.3.4: бейдж «доступны обновления из облака» (Subscribed) -->
-                <Border Width="6" Height="6"
-                        CornerRadius="3"
-                        HorizontalAlignment="Left" VerticalAlignment="Top"
-                        Margin="2,2,0,0"
-                        Background="{DynamicResource AccentBrush}"
-                        IsHitTestVisible="False"
-                        ToolTip="{loc:Loc FM_Cloud_UpdateAvailableBadge}"
-                        Visibility="{Binding HasCloudUpdates, Converter={StaticResource BoolToVis}}"/>
             </Grid>
 
             <Popup x:Name="DbToolsPopup"
@@ -522,7 +514,7 @@
                                 BorderThickness="0"
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
-                                Visibility="{Binding ShowUpdateDatabaseCommand, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding HasAnyDatabaseUpdate, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
@@ -729,19 +721,31 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Cloud §7.3.4: бейдж «доступны обновления из облака» — на кнопке
+                 обновления слева (всегда видна), у шестерёнки остаётся только
+                 красно-янтарная точка актуализации. -->
             <Button Grid.Column="0"
                     Command="{Binding RefreshTreeCommand}"
                     Margin="0,0,2,0"
                     Width="28"
                     Style="{DynamicResource SecondaryButton}"
                     Padding="0"
-                    ToolTip="{loc:Loc FM_RefreshTooltip}">
-                <TextBlock Text="&#x21BB;"
-                           FontSize="14"
-                           Foreground="{DynamicResource TextPrimaryBrush}"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Margin="0,-1,0,0"/>
+                    ToolTip="{Binding RefreshButtonTooltip}">
+                <Grid>
+                    <TextBlock Text="&#x21BB;"
+                               FontSize="14"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Margin="0,-1,0,0"/>
+                    <Border Width="6" Height="6"
+                            CornerRadius="3"
+                            HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,-3,-3,0"
+                            Background="{DynamicResource AccentBrush}"
+                            IsHitTestVisible="False"
+                            Visibility="{Binding HasCloudUpdates, Converter={StaticResource BoolToVis}}"/>
+                </Grid>
             </Button>
 
             <Grid Grid.Column="1">
