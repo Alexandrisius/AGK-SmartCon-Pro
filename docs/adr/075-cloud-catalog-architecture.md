@@ -71,7 +71,9 @@ git: `publish` = push, `subscribe` = clone + pull. Весь UI и логика F
 per-catalog) + неизменяемый **манифест** `smartcon.cloud.catalog-manifest`
 (formatVersion=1) — полный сериализованный образ каталога: категории/атрибуты/
 правила (совместимо с metadata package v4, ADR-070), items, versions (с
-`content_hash`/`hash_format_version`), types, extracted attributes, facts,
+`content_hash`/`hash_format_version`) — **по одной активной версии на item**
+(`currentVersionLabel`; локальная история черновиков не публикуется — план §5,
+решение владельца 2026-09-11), types, extracted attributes, facts,
 dependencies (ADR-066), ссылки на файлы по SHA-256. Каждая версия несёт
 `fileKind` (`rfa` для loadable, `stagedRvt` для system) и `sourceRevitVersion`;
 карточка каталога агрегирует диапазон `sourceRevitVersion` — подписчик заранее
