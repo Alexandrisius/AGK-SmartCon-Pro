@@ -17,6 +17,7 @@
     <!-- C# polyfill для net48 (атрибуты: record, init, required и т.д.) -->
     <PackageVersion Include="PolySharp" Version="1.15.0" />
 
+
     <!-- Тестирование -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

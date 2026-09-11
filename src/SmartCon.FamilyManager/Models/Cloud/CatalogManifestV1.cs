@@ -251,10 +251,6 @@ public sealed class ManifestFileRefV1
 
 public sealed class ManifestTypeV1
 {
-    /// <summary>Id строки family_types — стабилен, апликер переносит как есть.</summary>
-    [JsonPropertyName("id")]
-    public string Id { get; init; } = string.Empty;
-
     [JsonPropertyName("typeName")]
     public string TypeName { get; init; } = string.Empty;
 

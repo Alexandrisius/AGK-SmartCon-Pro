@@ -196,6 +196,10 @@ public static class ServiceRegistrar
         // Cloud Catalog (ADR-075, срез v1): сборка манифеста активного каталога — чистый SQLite, без Revit.
         services.AddSingleton<CatalogManifestBuilder>();
         services.AddSingleton<CatalogManifestApplier>();
+        // Cloud Catalog: auth (refresh-токен в Windows Credential Manager, ADR-076 §2) + REST-клиент.
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.ICloudCredentialStore, SmartCon.FamilyManager.Services.Cloud.Win32CredentialStore>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudAuthService>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
