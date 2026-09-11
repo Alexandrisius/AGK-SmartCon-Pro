@@ -26,9 +26,22 @@ namespace SmartCon.Core.Logging;
 /// </summary>
 public static class SmartConLogger
 {
-    private static readonly string LogDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "AGK", "SmartCon");
+    // Log dir can be redirected via SMARTCON_LOG_DIR (same convention as
+    // SMARTCON_LOG_LEVEL below). Critical for unit tests: without it every
+    // `dotnet test` run TRUNCATES the operator's real
+    // %APPDATA%\AGK\SmartCon\smartcon.log — a manual Revit test log was lost
+    // this way (2026-09-11). SmartCon.Tests redirects via ModuleInitializer.
+    private static readonly string LogDir = InitializeLogDir();
+
+    private static string InitializeLogDir()
+    {
+        var redirect = Environment.GetEnvironmentVariable("SMARTCON_LOG_DIR");
+        return string.IsNullOrWhiteSpace(redirect)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "AGK", "SmartCon")
+            : redirect;
+    }
 
     private static readonly string LogPath = Path.Combine(LogDir, "smartcon.log");
     private static readonly string FormulaLogPath = Path.Combine(LogDir, "formula-diagnostic.log");

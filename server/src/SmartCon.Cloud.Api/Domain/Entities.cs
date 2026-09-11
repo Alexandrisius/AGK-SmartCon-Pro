@@ -70,3 +70,15 @@ public sealed class Subscription
     public Guid UserId { get; set; }
     public DateTime ActivatedAtUtc { get; set; } = DateTime.UtcNow;
 }
+
+/// <summary>
+/// Tombstone снятого с публикации каталога: подписчик, знающий slug, получает
+/// 410 catalog_unpublished (отличимо от «сервер недоступен»), а не безмолвный
+/// 404. Полный sunsetting-цикл 30 дней (E6) — C3; срез: tombstone снимается
+/// при повторном занятии slug новым каталогом (GitHub-модель).
+/// </summary>
+public sealed class UnpublishedSlug
+{
+    public string Slug { get; set; } = string.Empty;
+    public DateTime UnpublishedAtUtc { get; set; } = DateTime.UtcNow;
+}

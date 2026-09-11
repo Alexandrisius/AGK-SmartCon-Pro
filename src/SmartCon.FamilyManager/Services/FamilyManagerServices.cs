@@ -213,4 +213,6 @@ public sealed record FamilyManagerServices(
     SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient CloudApi,
     SmartCon.FamilyManager.Services.Cloud.CloudPublishService CloudPublish,
     SmartCon.FamilyManager.Services.Cloud.CloudSyncService CloudSync,
+    /// <summary>Точка «есть локальные непубликованные изменения» на шестерёнке (дайджест последней публикации).</summary>
+    SmartCon.FamilyManager.Services.Cloud.CloudPublishStateService CloudPublishState,
     SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate CloudGate);

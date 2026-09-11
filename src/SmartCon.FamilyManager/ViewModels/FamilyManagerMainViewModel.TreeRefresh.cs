@@ -166,6 +166,10 @@ public sealed partial class FamilyManagerMainViewModel
         try
         {
             await RefreshAccessAndLoadTreeAsync();
+            // Точка «есть локальные непубликованные изменения» на шестерёнке:
+            // дерево только что перезагрузилось — контент мог измениться (импорт,
+            // правки) или сменилась активная база.
+            _ = RefreshUnpublishedCloudChangesAsync();
         }
         catch (DbAccessDeniedException ex)
         {

@@ -62,6 +62,13 @@ public sealed class FileSystemObjectStorage : IObjectStorage
         return Task.FromResult(info.Exists ? info.Length : -1);
     }
 
+    public Task DeleteAsync(string sha256, CancellationToken ct)
+    {
+        var path = PathOf(sha256);
+        if (File.Exists(path)) File.Delete(path);
+        return Task.CompletedTask;
+    }
+
     private string PathOf(string sha256)
     {
         // Path-traversal guard + канонизация: CAS принимает только hex-хэши, хранит в lowercase

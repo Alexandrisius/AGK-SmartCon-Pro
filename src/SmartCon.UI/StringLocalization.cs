@@ -617,6 +617,16 @@ public static class StringLocalization
         public const string FM_Connect_FolderLabel = "FM_Connect_FolderLabel";
         public const string FM_Connect_Browse = "FM_Connect_Browse";
         public const string FM_Connect_Ok = "FM_Connect_Ok";
+        public const string FM_Cloud_UnpublishCommand = "FM_Cloud_UnpublishCommand";
+        public const string FM_Cloud_UnpublishTooltip = "FM_Cloud_UnpublishTooltip";
+        public const string FM_Cloud_UnpublishTitle = "FM_Cloud_UnpublishTitle";
+        public const string FM_Cloud_UnpublishBody = "FM_Cloud_UnpublishBody";
+        public const string FM_Cloud_UnpublishDone = "FM_Cloud_UnpublishDone";
+        public const string FM_Cloud_CatalogGone = "FM_Cloud_CatalogGone";
+        public const string FM_Cloud_DeletePublishedTitle = "FM_Cloud_DeletePublishedTitle";
+        public const string FM_Cloud_DeletePublishedBody = "FM_Cloud_DeletePublishedBody";
+        public const string FM_Cloud_DeleteUnpublishFailedTitle = "FM_Cloud_DeleteUnpublishFailedTitle";
+        public const string FM_Cloud_DeleteUnpublishFailedBody = "FM_Cloud_DeleteUnpublishFailedBody";
         public const string FM_Cloud_WizardCreated = "FM_Cloud_WizardCreated";
         public const string FM_Cloud_WizardSubscribed = "FM_Cloud_WizardSubscribed";
         public const string FM_Cloud_PublishCommand = "FM_Cloud_PublishCommand";

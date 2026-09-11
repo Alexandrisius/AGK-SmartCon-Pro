@@ -54,7 +54,17 @@ for (var attempt = 1; ; attempt++)
     try
     {
         using (var scope = app.Services.CreateScope())
-            scope.ServiceProvider.GetRequiredService<CloudDbContext>().Database.EnsureCreated();
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CloudDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            // EnsureCreated не меняет схему существующей БД: tombstone-таблица
+            // (появилась после первых деплоев) добирается идемпотентным DDL.
+            // Имена колонок — PascalCase как в EF-маппинге (существующие таблицы тоже PascalCase).
+            await db.Database.ExecuteSqlRawAsync(
+                "CREATE TABLE IF NOT EXISTS unpublished_slugs (" +
+                "\"Slug\" character varying(64) NOT NULL PRIMARY KEY, " +
+                "\"UnpublishedAtUtc\" timestamp with time zone NOT NULL DEFAULT now())");
+        }
         break;
     }
     catch (Npgsql.NpgsqlException) when (attempt < 30)

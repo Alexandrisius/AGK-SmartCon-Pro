@@ -132,9 +132,11 @@ public sealed class SmartConLoggerScopeTests
             System.Threading.Thread.Sleep(5);
         }
 
-        var logPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "AGK", "SmartCon", "smartcon.log");
+        // Тесты перенаправляют лог через SMARTCON_LOG_DIR (TestLogIsolation) —
+        // читаем по тому же правилу, что и SmartConLogger.
+        var logDir = Environment.GetEnvironmentVariable("SMARTCON_LOG_DIR")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AGK", "SmartCon");
+        var logPath = Path.Combine(logDir, "smartcon.log");
         var tail = ReadTail(logPath, maxBytes: 4096);
         Assert.Contains("Op=MeasureE2E", tail);
         Assert.Contains("END elapsed=", tail);

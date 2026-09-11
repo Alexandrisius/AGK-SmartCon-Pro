@@ -98,6 +98,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     private readonly SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient _cloudApi;
     private readonly SmartCon.FamilyManager.Services.Cloud.CloudPublishService _cloudPublish;
     private readonly SmartCon.FamilyManager.Services.Cloud.CloudSyncService _cloudSync;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudPublishStateService _cloudPublishState;
 
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
@@ -297,6 +298,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _cloudApi = services.CloudApi;
         _cloudPublish = services.CloudPublish;
         _cloudSync = services.CloudSync;
+        _cloudPublishState = services.CloudPublishState;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();

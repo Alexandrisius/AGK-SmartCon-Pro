@@ -11,7 +11,8 @@ public sealed record CloudOperationProgress(string Stage, int Current, int Total
 
 public sealed record CloudPublishRequest(string Slug, string CatalogId, string? MinPluginVersion = null);
 
-public sealed record CloudPublishResult(long PublishSeq, int ItemsCount, int UploadedFiles);
+/// <summary>Manifest нужен вызывающему: дайджест уходит в CloudPublishStateService (точка «не забудь опубликовать»).</summary>
+public sealed record CloudPublishResult(long PublishSeq, int ItemsCount, int UploadedFiles, CatalogManifestV1 Manifest);
 
 /// <summary>
 /// «Опубликовать изменения» (ADR-077 §2): pull-before-push (manifest/latest) →
@@ -83,7 +84,7 @@ public sealed class CloudPublishService
             {
                 var seq = await _api.PublishAsync(request.Slug, manifest, ct).ConfigureAwait(false);
                 SmartConLogger.Info($"Published #{seq}: {manifest.Items.Count} item(s), {uploaded} file(s) uploaded");
-                return new CloudPublishResult(seq, manifest.Items.Count, uploaded);
+                return new CloudPublishResult(seq, manifest.Items.Count, uploaded, manifest);
             }
             catch (CloudApiException ex) when (ex.StatusCode == 422
                 && string.Equals(ex.Code, "missing_objects", StringComparison.Ordinal))

@@ -43,6 +43,10 @@ public static class CatalogEndpoints
 
             var catalog = new Catalog { Id = Guid.NewGuid(), OwnerUserId = user.Id, Slug = slug, Name = body.Name.Trim() };
             db.Catalogs.Add(catalog);
+            // Slug занят заново после unpublish — tombstone снимается (GitHub-модель):
+            // подписчики старого каталога уже увидели 410, новый каталог — другой субъект.
+            var tombstone = await db.UnpublishedSlugs.FirstOrDefaultAsync(u => u.Slug == slug, ct);
+            if (tombstone is not null) db.UnpublishedSlugs.Remove(tombstone);
             await db.SaveChangesAsync(ct);
             return Results.Json(new CatalogDto(catalog.Id, catalog.Slug, catalog.Name, catalog.CurrentPublishSeq), statusCode: 201);
         }).RequireAuthorization();
@@ -55,10 +59,15 @@ public static class CatalogEndpoints
             CancellationToken ct) =>
         {
             var catalog = await db.Catalogs.FirstOrDefaultAsync(c => c.Slug == slug, ct);
-            // 404-антиоракул (ADR-076 §4): «нет такого» и «нет доступа» неотличимы.
-            return catalog is null
-                ? Results.NotFound(new { code = "not_found", error = "каталог не найден" })
-                : Results.Ok(new CatalogDto(catalog.Id, catalog.Slug, catalog.Name, catalog.CurrentPublishSeq));
+            if (catalog is null)
+            {
+                // 410 отличим от 404 для тех, кто знал каталог (подписчики) — E6.
+                var gone = await IsUnpublishedAsync(slug, db, ct);
+                if (gone is not null) return gone;
+                // 404-антиоракул (ADR-076 §4): «нет такого» и «нет доступа» неотличимы.
+                return Results.NotFound(new { code = "not_found", error = "каталог не найден" });
+            }
+            return Results.Ok(new CatalogDto(catalog.Id, catalog.Slug, catalog.Name, catalog.CurrentPublishSeq));
         }).RequireAuthorization();
 
         // Срез: publish = { manifest } (полная дельта-модель basePublishSeq/changes/kind — C1, §6.2/§6.3).
@@ -142,7 +151,13 @@ public static class CatalogEndpoints
             CancellationToken ct) =>
         {
             var catalog = await db.Catalogs.FirstOrDefaultAsync(c => c.Slug == slug, ct);
-            if (catalog is null || catalog.CurrentPublishSeq == 0) return NotFound(slug);
+            if (catalog is null)
+            {
+                var gone = await IsUnpublishedAsync(slug, db, ct);
+                if (gone is not null) return gone;
+                return NotFound(slug);
+            }
+            if (catalog.CurrentPublishSeq == 0) return NotFound(slug);
 
             var point = await db.PublishPoints
                 .Where(p => p.CatalogId == catalog.Id && p.Seq == catalog.CurrentPublishSeq)
@@ -162,7 +177,12 @@ public static class CatalogEndpoints
             if (user is null) return Results.Unauthorized();
 
             var catalog = await db.Catalogs.FirstOrDefaultAsync(c => c.Slug == slug, ct);
-            if (catalog is null) return NotFound(slug);
+            if (catalog is null)
+            {
+                var gone = await IsUnpublishedAsync(slug, db, ct);
+                if (gone is not null) return gone;
+                return NotFound(slug);
+            }
 
             var existing = await db.Subscriptions.FirstOrDefaultAsync(s => s.CatalogId == catalog.Id && s.UserId == user.Id, ct);
             if (existing is not null) return Results.Ok(new { subscriptionId = existing.Id, restored = true });
@@ -171,6 +191,54 @@ public static class CatalogEndpoints
             db.Subscriptions.Add(subscription);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { subscriptionId = subscription.Id, restored = false });
+        }).RequireAuthorization();
+
+        // Снять с публикации (владелец): каталог удаляется вместе с публикациями,
+        // подписками и ставится tombstone → подписчики видят 410 catalog_unpublished
+        // (E6; sunsetting-окно 30 дней — C3, срез: tombstone до реюза slug).
+        app.MapDelete("/v1/catalogs/{slug}", async (
+            string slug,
+            ClaimsPrincipal principal,
+            CloudDbContext db,
+            Cas.IObjectStorage storage,
+            CancellationToken ct) =>
+        {
+            var user = await ResolveUserAsync(db, principal, ct);
+            if (user is null) return Results.Unauthorized();
+
+            var catalog = await db.Catalogs.FirstOrDefaultAsync(c => c.Slug == slug, ct);
+            if (catalog is null)
+            {
+                var alreadyGone = await IsUnpublishedAsync(slug, db, ct);
+                if (alreadyGone is not null) return Results.Ok(new { unpublished = true, removedObjects = 0 }); // идемпотентность
+                return NotFound(slug);
+            }
+            if (catalog.OwnerUserId != user.Id)
+                return Results.Problem(statusCode: 403, title: "снять с публикации может только владелец каталога",
+                    extensions: new Dictionary<string, object?> { ["code"] = "not_owner" });
+
+            // GC CAS: объекты этого каталога, не используемые другими каталогами (дедуп).
+            var catalogHashes = await db.PublishPointFiles
+                .Where(f => f.CatalogId == catalog.Id).Select(f => f.Sha256).Distinct().ToListAsync(ct);
+            var otherHashes = await db.PublishPointFiles
+                .Where(f => f.CatalogId != catalog.Id).Select(f => f.Sha256).Distinct().ToListAsync(ct);
+            var orphans = catalogHashes.Except(otherHashes, StringComparer.OrdinalIgnoreCase).ToList();
+
+            db.PublishPointFiles.RemoveRange(db.PublishPointFiles.Where(f => f.CatalogId == catalog.Id));
+            db.PublishPoints.RemoveRange(db.PublishPoints.Where(p => p.CatalogId == catalog.Id));
+            db.Subscriptions.RemoveRange(db.Subscriptions.Where(s => s.CatalogId == catalog.Id));
+            db.CasObjects.RemoveRange(db.CasObjects.Where(o => orphans.Contains(o.Sha256)));
+            db.Catalogs.Remove(catalog);
+            db.UnpublishedSlugs.Add(new UnpublishedSlug { Slug = slug, UnpublishedAtUtc = DateTime.UtcNow });
+            await db.SaveChangesAsync(ct);
+
+            var failedDeletes = 0;
+            foreach (var hash in orphans)
+            {
+                try { await storage.DeleteAsync(hash, ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failedDeletes++; }
+            }
+            return Results.Ok(new { unpublished = true, removedObjects = orphans.Count, failedFileDeletes = failedDeletes });
         }).RequireAuthorization();
 
         return app;
@@ -186,6 +254,16 @@ public static class CatalogEndpoints
     private static IResult NotFound(string slug) =>
         Results.Problem(statusCode: 404, title: "каталог не существует",
             detail: $"'{slug}' не найден (404-анти-оракул: для чужих приватных каталогов ответ тот же, ADR-076 §4)");
+
+    /// <summary>410 Gone для снятых с публикации каталогов (tombstone) — подписчик,
+    /// знающий slug, отличает «снята с публикации» от «сервер недоступен» (E6).</summary>
+    private static async Task<IResult?> IsUnpublishedAsync(string slug, CloudDbContext db, CancellationToken ct)
+    {
+        if (!await db.UnpublishedSlugs.AnyAsync(u => u.Slug == slug, ct)) return null;
+        return Results.Problem(statusCode: 410, title: "каталог снят с публикации",
+            detail: $"каталог '{slug}' снят с публикации автором — обновления недоступны",
+            extensions: new Dictionary<string, object?> { ["code"] = "catalog_unpublished" });
+    }
 
     /// <summary>Кириллица → латиница (транслит без внешних пакетов). Пустые значения
     /// ('ъ','ь') схлопываются соседними '-'/буквами.</summary>

@@ -463,6 +463,16 @@
                         </Style>
                     </Border.Style>
                 </Border>
+                <!-- Cloud: янтарная точка слева — у активной Published-базы есть
+                     локальные изменения, не отправленные публикацией (владелец
+                     2026-09-11: «не забывать публиковать после локальных»). -->
+                <Border Width="6" Height="6"
+                        CornerRadius="3"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="2,2,0,0"
+                        IsHitTestVisible="False"
+                        Background="{DynamicResource WarningBrush}"
+                        Visibility="{Binding HasUnpublishedCloudChanges, Converter={StaticResource BoolToVis}}"/>
             </Grid>
 
             <Popup x:Name="DbToolsPopup"
@@ -501,6 +511,22 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Cursor="Hand"
+                                Visibility="{Binding IsSelectedCloudPublished, Converter={StaticResource BoolToVis}}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_Cloud_UnpublishCommand}"
+                                Command="{Binding UnpublishCloudDatabaseCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="{loc:Loc FM_Cloud_UnpublishTooltip}"
                                 Visibility="{Binding IsSelectedCloudPublished, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">

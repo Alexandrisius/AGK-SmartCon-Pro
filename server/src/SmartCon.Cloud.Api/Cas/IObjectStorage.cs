@@ -17,4 +17,7 @@ public interface IObjectStorage
     Task<Stream> OpenReadAsync(string sha256, CancellationToken ct);
 
     Task<long> SizeOfAsync(string sha256, CancellationToken ct);
+
+    /// <summary>Удаляет объект (GC каталога при unpublish). Отсутствие файла — не ошибка.</summary>
+    Task DeleteAsync(string sha256, CancellationToken ct);
 }

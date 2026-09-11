@@ -1,5 +1,3 @@
-using System.IO;
-using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
@@ -21,6 +19,7 @@ public sealed partial class FamilyManagerMainViewModel
 {
     [ObservableProperty] private bool _hasCloudUpdates;
     [ObservableProperty] private bool _isCloudBusy;
+    [ObservableProperty] private bool _hasUnpublishedCloudChanges;
 
     public bool IsSelectedCloudPublished =>
         SelectedConnection?.Connection.CloudLink?.Role == CloudLinkRole.Published;
@@ -45,6 +44,7 @@ public sealed partial class FamilyManagerMainViewModel
         OnPropertyChanged(nameof(IsSelectedCloudSubscribed));
         PublishCloudChangesCommand.NotifyCanExecuteChanged();
         CopyCloudInviteCommand.NotifyCanExecuteChanged();
+        UnpublishCloudDatabaseCommand.NotifyCanExecuteChanged();
     }
 
     // ── Мастер «Создать облачную базу» (§7.3.1) ─────────────────────────
@@ -216,6 +216,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
 
             var publishedSeq = 0L;
+            Models.Cloud.CatalogManifestV1? publishedManifest = null;
             var (_, failed) = await RunCloudOperationAsync(
                 LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PublishTitle) ?? "Публикация в облако",
                 async (progress, token) =>
@@ -223,6 +224,7 @@ public sealed partial class FamilyManagerMainViewModel
                     var result = await _cloudPublish.PublishAsync(
                         new CloudPublishRequest(link.Slug, link.CatalogId), progress, token).ConfigureAwait(false);
                     publishedSeq = result.PublishSeq;
+                    publishedManifest = result.Manifest;
                     return result;
                 },
                 result => string.Format(
@@ -232,6 +234,11 @@ public sealed partial class FamilyManagerMainViewModel
                 ct).ConfigureAwait(true);
             // Отмена публикации (publishedSeq == 0) — CloudLink не трогаем.
             if (failed || publishedSeq == 0) return;
+
+            // Дайджест опубликованного контента — для точки «есть непубликованные
+            // изменения» на шестерёнке (владелец 2026-09-11: «не забывать публиковать»).
+            _cloudPublishState.RecordPublished(link.Slug, publishedManifest!);
+            HasUnpublishedCloudChanges = false;
 
             // Последний seq публикации уезжает в CloudLink (registry + database_meta).
             var fresh = _databaseManager.ListConnections().FirstOrDefault(c => c.Id == connection.Id);
@@ -247,6 +254,109 @@ public sealed partial class FamilyManagerMainViewModel
         {
             IsCloudBusy = false;
             PublishCloudChangesCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    // ── «Снять с публикации» (§7.3.2, срез: tombstone без sunsetting-окна) ─
+
+    private bool CanUnpublishCloudDatabase => IsSelectedCloudPublished && !IsCloudBusy;
+
+    [RelayCommand(CanExecute = nameof(CanUnpublishCloudDatabase))]
+    private async Task UnpublishCloudDatabaseAsync(CancellationToken ct)
+    {
+        var connection = SelectedConnection?.Connection;
+        if (connection?.CloudLink is not { } link) return;
+
+        var confirmed = _dialogService.ShowConfirmation(
+            LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UnpublishTitle) ?? "Снять с публикации",
+            string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UnpublishBody)
+                    ?? "Каталог «{1}» будет удалён с сервера.",
+                connection.Name, link.Slug));
+        if (!confirmed) return;
+
+        IsCloudBusy = true;
+        UnpublishCloudDatabaseCommand.NotifyCanExecuteChanged();
+        try
+        {
+            if (!await EnsureLoggedInAsync(link.Endpoint, ct).ConfigureAwait(true)) return;
+
+            using var _scope = SmartConLogger.BeginScope("CloudUI",
+                ("Method", nameof(UnpublishCloudDatabaseAsync)),
+                ("Slug", link.Slug));
+            await _cloudApi.UnpublishCatalogAsync(link.Slug, ct).ConfigureAwait(true);
+            await _databaseManager.SetCloudLinkAsync(connection.Id, null, ct).ConfigureAwait(true);
+            _cloudPublishState.Clear(link.Slug);
+            SmartConLogger.Info($"Catalog unpublished: '{link.Slug}' — local base stays, link cleared");
+
+            RefreshConnections();
+            SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == connection.Id);
+            HasCloudUpdates = false;
+            HasUnpublishedCloudChanges = false;
+            NotifyCloudSelectionChanged();
+            StatusMessage = string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UnpublishDone)
+                    ?? "База «{0}» снята с публикации. Локальная база осталась — теперь она обычная.",
+                connection.Name);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Unpublish failed: {ex.GetType().Name}: {ex.Message} [Action: проверьте подключение к серверу и повторите]");
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UnpublishTitle) ?? "Снять с публикации",
+                ex.Message);
+        }
+        finally
+        {
+            IsCloudBusy = false;
+            UnpublishCloudDatabaseCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    /// <summary>
+    /// Авто-снятие с публикации при удалении локальной Published-базы (решение
+    /// владельца 2026-09-11): без него удаление оставляет orphan-каталог на
+    /// сервере — slug занят навсегда, подписчики продолжают получать копию.
+    /// true = можно удалять локальную базу; false = пользователь отменил.
+    /// </summary>
+    private async Task<bool> TryUnpublishBeforeLocalDeleteAsync(DatabaseConnection connection)
+    {
+        if (connection.CloudLink is not { Role: CloudLinkRole.Published } link)
+            return true;
+
+        var confirmed = _dialogService.ShowConfirmation(
+            LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeletePublishedTitle) ?? "База опубликована в облаке",
+            string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeletePublishedBody)
+                    ?? "База «{0}» опубликована как каталог «{1}».",
+                connection.Name, link.Slug));
+        if (!confirmed) return false;
+
+        using var _scope = SmartConLogger.BeginScope("CloudUI",
+            ("Method", nameof(TryUnpublishBeforeLocalDeleteAsync)),
+            ("Slug", link.Slug));
+        try
+        {
+            if (!await EnsureLoggedInAsync(link.Endpoint, CancellationToken.None).ConfigureAwait(true))
+                return false;
+            await _cloudApi.UnpublishCatalogAsync(link.Slug, CancellationToken.None).ConfigureAwait(true);
+            _cloudPublishState.Clear(link.Slug);
+            SmartConLogger.Info($"Catalog auto-unpublished before local delete: '{link.Slug}'");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Auto-unpublish before delete failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: проверьте сервер; каталог останется на сервере, если продолжить]");
+            return _dialogService.ShowConfirmation(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeleteUnpublishFailedTitle)
+                    ?? "Не удалось снять базу с публикации",
+                string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeleteUnpublishFailedBody)
+                        ?? "{0}\r\n\r\nКаталог останется на сервере. Всё равно удалить локальную базу?",
+                    ex.Message));
         }
     }
 
@@ -273,11 +383,20 @@ public sealed partial class FamilyManagerMainViewModel
         {
             var remoteSeq = await _cloudSync.GetRemotePublishSeqAsync(link.Slug).ConfigureAwait(true);
             var localSeq = ReadLocalPublishSeq(link.Slug);
+            SmartConLogger.Debug($"Cloud update check on refresh: slug={link.Slug} remoteSeq={remoteSeq?.ToString() ?? "null"} localSeq={localSeq?.ToString() ?? "null"}");
             if (remoteSeq is null || (localSeq is not null && remoteSeq <= localSeq))
             {
                 HasCloudUpdates = false;
                 return;
             }
+        }
+        catch (CloudApiException ex) when (IsCatalogGone(ex))
+        {
+            // Каталог снят с публикации автором (410, tombstone): подписчик должен
+            // узнать об этом с ↻, а не молча не получать обновления (владелец 2026-09-11).
+            HasCloudUpdates = false;
+            NotifyCatalogGone(active.Name, link.Slug);
+            return;
         }
         catch (Exception ex)
         {
@@ -369,6 +488,42 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
+    // ── Точка «есть локальные непубликованные изменения» (шестерёнка) ──
+
+    /// <summary>
+    /// Контент активной Published-базы отличается от последней публикации →
+    /// янтарная точка на шестерёнке (владелец 2026-09-11: «не забывать
+    /// публиковать изменения после локальных изменений»). Дайджест манифеста;
+    /// «с этой машины не публиковали» — точка тоже горит.
+    /// </summary>
+    private async Task RefreshUnpublishedCloudChangesAsync()
+    {
+        try
+        {
+            var active = _databaseManager.GetActiveConnection();
+            if (active?.CloudLink is not { Role: CloudLinkRole.Published } link)
+            {
+                SetHasUnpublishedOnUiThread(false);
+                return;
+            }
+            var hasChanges = await _cloudPublishState.HasUnpublishedChangesAsync(link.Slug, link.CatalogId)
+                .ConfigureAwait(true);
+            SetHasUnpublishedOnUiThread(hasChanges);
+        }
+        catch (Exception ex)
+        {
+            // Локальная проверка не должна мешать панели (§7.3.10).
+            SmartConLogger.Debug($"Unpublished-changes check failed: {ex.Message}");
+            SetHasUnpublishedOnUiThread(false);
+        }
+    }
+
+    private void SetHasUnpublishedOnUiThread(bool value)
+    {
+        if (_dispatcher.CheckAccess()) HasUnpublishedCloudChanges = value;
+        else _dispatcher.Invoke(() => HasUnpublishedCloudChanges = value);
+    }
+
     // ── Бейдж «доступны обновления» ─────────────────────────────────────
 
     /// <summary>Фоновый check для Subscribed-баз: серверный seq vs sync-state.json копии.</summary>
@@ -390,6 +545,15 @@ public sealed partial class FamilyManagerMainViewModel
             var hasUpdates = remoteSeq is not null && (localSeq is null || remoteSeq > localSeq);
             SetHasCloudUpdatesOnUiThread(hasUpdates);
         }
+        catch (CloudApiException ex) when (IsCatalogGone(ex))
+        {
+            SetHasCloudUpdatesOnUiThread(false);
+            var name = SelectedConnection?.Connection.Name ?? link.Slug;
+            if (_dispatcher.CheckAccess())
+                NotifyCatalogGone(name, link.Slug);
+            else
+                _dispatcher.Invoke(() => NotifyCatalogGone(name, link.Slug));
+        }
         catch (Exception ex)
         {
             // Сервер недоступен — бейдж молча скрыт (§7.3.10: контент работает).
@@ -398,22 +562,26 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
-    private static long? ReadLocalPublishSeq(string slug)
+    /// <summary>410 catalog_unpublished — каталог снят с публикации автором (tombstone сервера).</summary>
+    private static bool IsCatalogGone(CloudApiException ex) =>
+        ex.StatusCode == 410 && string.Equals(ex.Code, "catalog_unpublished", StringComparison.Ordinal);
+
+    /// <summary>Уведомление подписчику о снятии каталога с публикации (строка статуса панели).</summary>
+    private void NotifyCatalogGone(string databaseName, string slug)
     {
-        try
-        {
-            var path = CloudPaths.SyncStatePath(CloudPaths.SubscriptionRoot(slug));
-            if (!File.Exists(path)) return null;
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            return doc.RootElement.TryGetProperty("publishSeq", out var seq) && seq.TryGetInt64(out var value)
-                ? value
-                : null;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException)
-        {
-            return null;
-        }
+        StatusMessage = string.Format(
+            LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_CatalogGone)
+                ?? "Каталог «{1}» снят с публикации автором — обновления базы «{0}» недоступны.",
+            databaseName, slug);
     }
+
+    /// <summary>
+    /// Локальный seq подписной копии — через CloudSyncService (тот же
+    /// сериализатор sync-state.json, что пишет pull). Ручной парсинг JSON тут
+    /// словил расхождение camelCase/PascalCase ключа → вечный бейдж.
+    /// </summary>
+    private long? ReadLocalPublishSeq(string slug) =>
+        _cloudSync.ReadLocalPublishSeq(CloudPaths.SubscriptionRoot(slug));
 
     partial void OnHasCloudUpdatesChanged(bool value) => OnPropertyChanged(nameof(RefreshButtonTooltip));
 

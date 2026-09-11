@@ -104,6 +104,17 @@ public sealed class CloudCatalogApiClient : IDisposable
         await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// DELETE /v1/catalogs/{slug} — снять с публикации (только владелец): сервер
+    /// удаляет публикации/подписки/CAS-объекты и ставит tombstone (подписчики
+    /// видят 410 catalog_unpublished). Идемпотентен.
+    /// </summary>
+    public async Task UnpublishCatalogAsync(string slug, CancellationToken ct = default)
+    {
+        using var response = await SendAuthorizedAsync(HttpMethod.Delete, $"/v1/catalogs/{slug}", ct: ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
+    }
+
     /// <summary>PUT /v1/files/{sha256} — потоковая загрузка CAS-объекта (upload до publish).</summary>
     public async Task UploadFileAsync(string sha256, Stream content, CancellationToken ct = default)
     {
@@ -179,7 +190,9 @@ public sealed class CloudCatalogApiClient : IDisposable
         IReadOnlyList<string>? missing = null;
         try
         {
-            if (response.Content.Headers.ContentType?.MediaType == "application/json")
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            // problem+json несёт code/detail в extensions (410 catalog_unpublished и т.п.)
+            if (mediaType is "application/json" or "application/problem+json")
             {
 #if NET8_0_OR_GREATER
                 var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
@@ -190,6 +203,10 @@ public sealed class CloudCatalogApiClient : IDisposable
                 if (doc.RootElement.TryGetProperty("code", out var c)) code = c.GetString();
                 if (doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
                     message = e.GetString() ?? message;
+                else if (doc.RootElement.TryGetProperty("detail", out var d) && d.ValueKind == JsonValueKind.String)
+                    message = d.GetString() ?? message;
+                else if (doc.RootElement.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String)
+                    message = t.GetString() ?? message;
                 if (string.Equals(code, "missing_objects", StringComparison.Ordinal)
                     && doc.RootElement.TryGetProperty("missing", out var m)
                     && m.ValueKind == JsonValueKind.Array)

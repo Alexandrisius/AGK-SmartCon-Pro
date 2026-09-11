@@ -282,6 +282,11 @@ public sealed partial class FamilyManagerMainViewModel
 
         if (confirm != SelectedConnection.Name) return;
 
+        // Опубликованная база: перед удалением локальной копии каталог снимается
+        // с публикации на сервере — иначе orphan-каталог занимает slug навсегда
+        // (решение владельца 2026-09-11).
+        if (!await TryUnpublishBeforeLocalDeleteAsync(SelectedConnection.Connection)) return;
+
         IsLoading = true;
         try
         {

@@ -15,6 +15,7 @@ public sealed class CloudDbContext(DbContextOptions<CloudDbContext> options)
     public DbSet<PublishPointFile> PublishPointFiles => Set<PublishPointFile>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<UnpublishedSlug> UnpublishedSlugs => Set<UnpublishedSlug>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -59,6 +60,13 @@ public sealed class CloudDbContext(DbContextOptions<CloudDbContext> options)
             e.ToTable("subscriptions");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.CatalogId, x.UserId }).IsUnique();
+        });
+
+        b.Entity<UnpublishedSlug>(e =>
+        {
+            e.ToTable("unpublished_slugs");
+            e.HasKey(x => x.Slug);
+            e.Property(x => x.Slug).HasMaxLength(64);
         });
     }
 }

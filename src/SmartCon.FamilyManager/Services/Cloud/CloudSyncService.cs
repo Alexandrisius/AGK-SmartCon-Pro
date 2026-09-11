@@ -46,6 +46,15 @@ public sealed class CloudSyncService
         return latest?.PublishSeq;
     }
 
+    /// <summary>
+    /// Локальный seq подписной копии (sync-state.json, формат того же
+    /// сериализатора, что пишет <see cref="SyncAsync"/>). null = копия ещё не
+    /// синкалась. Единственный источник для бейджа «доступны обновления» и
+    /// guard-проверки pull: ad-hoc парсинг JSON в VM словил расхождение
+    /// camelCase/PascalCase ключа и вечно показывал «есть обновления».
+    /// </summary>
+    public long? ReadLocalPublishSeq(string targetRoot) => ReadSyncState(targetRoot)?.PublishSeq;
+
     public async Task<CloudSyncResult> SyncAsync(
         CloudSyncRequest request,
         IProgress<CloudOperationProgress>? progress = null,
