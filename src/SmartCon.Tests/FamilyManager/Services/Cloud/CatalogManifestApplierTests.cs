@@ -196,7 +196,7 @@ public sealed class CatalogManifestApplierTests : IDisposable
 
         Assert.Equal(0, result.Items);
         Assert.True(File.Exists(Path.Combine(targetRoot, "catalog.db")));
-        Assert.Equal(38L, await ReadSchemaVersionAsync(targetRoot));
+        Assert.Equal(39L, await ReadSchemaVersionAsync(targetRoot));
     }
 
     [Fact]

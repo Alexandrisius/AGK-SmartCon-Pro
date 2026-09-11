@@ -31,7 +31,7 @@ public sealed class LocalCatalogV17MigrationTests : IDisposable
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT value FROM schema_info WHERE key = 'schema_version'";
         var result = await cmd.ExecuteScalarAsync();
-        Assert.Equal("38", result?.ToString());
+        Assert.Equal("39", result?.ToString());
     }
 
     [Fact]

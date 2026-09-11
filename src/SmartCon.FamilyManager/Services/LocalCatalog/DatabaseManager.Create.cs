@@ -121,6 +121,7 @@ internal sealed partial class DatabaseManager
         await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
 
         _catalogDatabase.SwitchToPath(dbRoot);
+        _cloudGate.Update(connection);
         ActiveDatabaseChanged?.Invoke(this, id);
         return connection;
     }

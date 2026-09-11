@@ -65,7 +65,8 @@ internal sealed partial class DatabaseManager
             CurrentUserRole: c.CurrentUserRole,
             OwnerIdentity: c.OwnerIdentity,
             Kind: c.Kind,
-            ProjectBinding: c.ProjectBinding);
+            ProjectBinding: c.ProjectBinding,
+            CloudLink: c.CloudLink);
     }
 
     private void SaveRegistry(DatabaseConnectionRegistry registry)
@@ -87,7 +88,8 @@ internal sealed partial class DatabaseManager
                     CurrentUserRole = c.CurrentUserRole,
                     OwnerIdentity = c.OwnerIdentity,
                     Kind = c.Kind,
-                    ProjectBinding = c.ProjectBinding
+                    ProjectBinding = c.ProjectBinding,
+                    CloudLink = c.CloudLink
                 })
                 .ToList()
         };
@@ -171,5 +173,7 @@ internal sealed partial class DatabaseManager
         public BaseType Kind { get; set; } = BaseType.General;
         /// <summary>Project-binding template + field library. NULL for <see cref="BaseType.General"/> connections.</summary>
         public ProjectBaseBinding? ProjectBinding { get; set; }
+        /// <summary>Cloud catalog link (master plan §7.3.1): Published / Subscribed. NULL for purely local databases.</summary>
+        public CloudLink? CloudLink { get; set; }
     }
 }

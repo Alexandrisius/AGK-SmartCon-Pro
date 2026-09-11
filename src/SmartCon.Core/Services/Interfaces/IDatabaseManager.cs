@@ -72,6 +72,21 @@ public interface IDatabaseManager
     /// <summary>Register an existing database at the specified path.</summary>
     Task<DatabaseConnection> ConnectDatabaseAsync(string path, CancellationToken ct = default);
 
+    /// <summary>
+    /// Attach, replace or clear the cloud catalog link of a connection (cloud
+    /// catalog, master plan §7.3.1). Updates <c>registry.json</c> and, for a
+    /// <see cref="CloudLinkRole.Published"/> link (writable local database),
+    /// duplicates it into <c>catalog.db.database_meta.remote_source_json</c>
+    /// for registry self-heal. For <see cref="CloudLinkRole.Subscribed"/>
+    /// copies the database side is written by the manifest applier during
+    /// sync — only the registry entry is touched here.
+    /// Returns the updated connection, or null if the id is unknown.
+    /// </summary>
+    Task<DatabaseConnection?> SetCloudLinkAsync(
+        string connectionId,
+        CloudLink? link,
+        CancellationToken ct = default);
+
     /// <summary>Switch to the specified database connection.</summary>
     Task<bool> SwitchDatabaseAsync(string connectionId, CancellationToken ct = default);
 

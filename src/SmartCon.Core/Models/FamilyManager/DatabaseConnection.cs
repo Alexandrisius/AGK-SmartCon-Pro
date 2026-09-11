@@ -12,6 +12,7 @@ namespace SmartCon.Core.Models.FamilyManager;
 /// <param name="OwnerIdentity">Optional identity of the DB owner. Persisted in <c>database_meta.owner_identity</c>; cached on the connection for quick RBAC checks.</param>
 /// <param name="Kind">Whether this is a generic library (<see cref="BaseType.General"/>) or a project-scoped one (<see cref="BaseType.Project"/>) — see #119. Defaults to <see cref="BaseType.General"/> for backward compatibility with legacy <c>registry.json</c> entries.</param>
 /// <param name="ProjectBinding">Required only when <see cref="Kind"/> == <see cref="BaseType.Project"/>. Holds the file-name template + field library used to match the active Revit document against this base.</param>
+/// <param name="CloudLink">Optional cloud catalog link (master plan §7.3.1): <c>Published</c> — this base publishes to a server catalog, <c>Subscribed</c> — this base is a read-only local copy. Orthogonal to <see cref="Kind"/>; null for purely local databases.</param>
 public sealed record DatabaseConnection(
     string Id,
     string Name,
@@ -20,4 +21,5 @@ public sealed record DatabaseConnection(
     DbUserRole? CurrentUserRole = null,
     string? OwnerIdentity = null,
     BaseType Kind = BaseType.General,
-    ProjectBaseBinding? ProjectBinding = null);
+    ProjectBaseBinding? ProjectBinding = null,
+    CloudLink? CloudLink = null);

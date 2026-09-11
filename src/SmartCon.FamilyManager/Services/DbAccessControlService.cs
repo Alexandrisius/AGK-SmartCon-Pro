@@ -1,5 +1,6 @@
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Cloud;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 
 namespace SmartCon.FamilyManager.Services;
@@ -10,6 +11,7 @@ public sealed class DbAccessControlService : IDbAccessControlService
     private readonly IUserIdentityService _identityService;
     private readonly LocalCatalogDatabase _database;
     private readonly IDatabaseCompatibilityService _compatibility;
+    private readonly CloudDatabaseGate _cloudGate;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private volatile DbUser? _cachedUser;
 
@@ -17,21 +19,32 @@ public sealed class DbAccessControlService : IDbAccessControlService
         IDbUserRepository userRepo,
         IUserIdentityService identityService,
         LocalCatalogDatabase database,
-        IDatabaseCompatibilityService compatibility)
+        IDatabaseCompatibilityService compatibility,
+        CloudDatabaseGate? cloudGate = null)
     {
         _userRepo = userRepo;
         _identityService = identityService;
         _database = database;
         _compatibility = compatibility;
+        // Optional for unit tests (detached gate = never blocks); DI injects
+        // the process-wide singleton updated by DatabaseManager.
+        _cloudGate = cloudGate ?? new CloudDatabaseGate();
     }
+
+    /// <summary>
+    /// ADR-075 §7: a Subscribed cloud copy is read-only regardless of role —
+    /// sync is the only writer. ANDs into every write capability.
+    /// </summary>
+    public bool IsCloudReadOnly => _cloudGate.IsWriteBlocked;
 
     // ADR-058 (#173): every write capability ANDs the plugin-compat gate —
     // a database upgraded by a newer SmartCon is read-only for this plugin
     // regardless of role (tiered model: catalog writes blocked, loads allowed
-    // via CanLoadToProject which stays role-only).
-    public bool CanImport => IsEditorRole && !_compatibility.IsDatabaseNewerThanPlugin;
+    // via CanLoadToProject which stays role-only). ADR-075 §7: the cloud
+    // Subscribed gate ANDs in the same way.
+    public bool CanImport => IsEditorRole && !_compatibility.IsDatabaseNewerThanPlugin && !IsCloudReadOnly;
 
-    public bool CanEdit => IsEditorRole && !_compatibility.IsDatabaseNewerThanPlugin;
+    public bool CanEdit => IsEditorRole && !_compatibility.IsDatabaseNewerThanPlugin && !IsCloudReadOnly;
 
     public bool CanManageUsers
     {
@@ -40,7 +53,8 @@ public sealed class DbAccessControlService : IDbAccessControlService
             var snapshot = _cachedUser;
             return snapshot?.Status != DbUserStatus.Banned
                 && snapshot?.Role == DbUserRole.Owner
-                && !_compatibility.IsDatabaseNewerThanPlugin;
+                && !_compatibility.IsDatabaseNewerThanPlugin
+                && !IsCloudReadOnly;
         }
     }
 
@@ -96,6 +110,11 @@ public sealed class DbAccessControlService : IDbAccessControlService
         // Revit API: должен выполняться на UI-потоке. Не переносить за await!
         var identity = _identityService.GetCurrentUser();
 
+        // ADR-075 §7: auto-register db_users is disabled on a Subscribed copy
+        // (sync is the only writer) — every local user is a read-only Engineer.
+        if (IsCloudReadOnly)
+            return CloudSubscriberUser(identity);
+
         await _refreshLock.WaitAsync(ct);
         try
         {
@@ -119,6 +138,14 @@ public sealed class DbAccessControlService : IDbAccessControlService
         // Revit API: должен выполняться на UI-потоке. Не переносить за await!
         var identity = _identityService.GetCurrentUser();
 
+        // ADR-075 §7: no db_users writes on a Subscribed copy (see GetCurrentUserAsync).
+        if (IsCloudReadOnly)
+        {
+            _cachedUser = CloudSubscriberUser(identity);
+            _database.SetWriteAccess(false);
+            return;
+        }
+
         await _refreshLock.WaitAsync(ct);
         try
         {
@@ -135,17 +162,26 @@ public sealed class DbAccessControlService : IDbAccessControlService
     public void InvalidateCache()
     {
         _cachedUser = null;
-        _database.SetWriteAccess(true);
+        // ADR-075 §7: no blanket write re-enable — the Subscribed gate ANDs in.
+        _database.SetWriteAccess(!IsCloudReadOnly);
+    }
+
+    private static DbUser CloudSubscriberUser(UserIdentity identity)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new DbUser(identity.UserId, identity.DisplayName, DbUserRole.Engineer, DbUserStatus.Active, now, now);
     }
 
     private void ApplyWriteAccess(DbUser user)
     {
         // ADR-058 (#173): a database upgraded by a newer plugin is read-only
         // for this plugin regardless of role — the compat flag ANDs into
-        // every role-based write decision.
+        // every role-based write decision. ADR-075 §7: so does the cloud
+        // Subscribed gate (sync is the only writer of the copy).
         var canWrite = user.Status != DbUserStatus.Banned
             && user.Role is DbUserRole.Owner or DbUserRole.BimMaster
-            && !_compatibility.IsDatabaseNewerThanPlugin;
+            && !_compatibility.IsDatabaseNewerThanPlugin
+            && !IsCloudReadOnly;
         _database.SetWriteAccess(canWrite);
     }
 }

@@ -68,6 +68,7 @@ public sealed class DatabaseUpdateStateServiceTests
         public bool IsEditorRole => CanEdit;
         public bool IsOwner => false;
         public bool IsBanned => false;
+        public bool IsCloudReadOnly => false;
         public Task<SmartCon.Core.Models.FamilyManager.DbUserRole> GetCurrentUserRoleAsync(CancellationToken ct = default)
             => Task.FromResult(CanEdit ? SmartCon.Core.Models.FamilyManager.DbUserRole.Owner : SmartCon.Core.Models.FamilyManager.DbUserRole.Engineer);
         public Task<SmartCon.Core.Models.FamilyManager.DbUser> GetCurrentUserAsync(CancellationToken ct = default)

@@ -17,6 +17,14 @@ public sealed class CatalogManifestApplyOptions
 
     /// <summary>Display name базы у подписчика (имя каталога/slug из приглашения).</summary>
     public string DatabaseName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// JSON-дубль CloudLink для database_meta.remote_source_json (V39): аплаер —
+    /// единственный writer подписной копии, поэтому источник self-heal пишется
+    /// здесь, в момент сборки копии. Заполняет CloudSyncService (endpoint из
+    /// аккаунта + slug/catalogId из запроса).
+    /// </summary>
+    public string? RemoteSourceJson { get; init; }
 }
 
 public sealed class CatalogManifestApplyResult
@@ -119,8 +127,8 @@ internal sealed partial class CatalogManifestApplier
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = """
-            INSERT INTO database_meta (id, name, description, created_at_utc, schema_version, min_plugin_version)
-            VALUES (@id, @name, NULL, @now, 2, @minPlugin)
+            INSERT INTO database_meta (id, name, description, created_at_utc, schema_version, min_plugin_version, remote_source_json)
+            VALUES (@id, @name, NULL, @now, 2, @minPlugin, @remoteSource)
             """;
         cmd.Parameters.Add(new SqliteParameter("@id", Guid.NewGuid().ToString("N")));
         cmd.Parameters.Add(new SqliteParameter("@name",
@@ -128,6 +136,8 @@ internal sealed partial class CatalogManifestApplier
         cmd.Parameters.Add(new SqliteParameter("@now", now.ToString("o")));
         cmd.Parameters.Add(new SqliteParameter("@minPlugin",
             (object?)manifest.MinPluginVersion ?? DbCompatibility.CurrentMinPluginVersion));
+        cmd.Parameters.Add(new SqliteParameter("@remoteSource",
+            (object?)options.RemoteSourceJson ?? DBNull.Value));
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 

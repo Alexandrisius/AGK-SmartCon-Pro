@@ -48,9 +48,9 @@ public sealed partial class LocalCatalogMigrator : ILocalCatalogMigrator
         }
 
         var initialVersion = await GetSchemaVersionAsync(connection, ct);
-        if (initialVersion < 37)
+        if (initialVersion < 39)
         {
-            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v37");
+            SmartConLogger.Info($"Schema migration starting: current=v{initialVersion}, target=v39");
         }
 
         await RunMigrationAsync(connection, 2, MigrateV2Async, ct);
@@ -95,6 +95,7 @@ public sealed partial class LocalCatalogMigrator : ILocalCatalogMigrator
         await RunMigrationAsync(connection, 36, MigrateV36Async, ct);
         await RunMigrationAsync(connection, 37, MigrateV37Async, ct);
         await RunMigrationAsync(connection, 38, MigrateV38Async, ct);
+        await RunMigrationAsync(connection, 39, MigrateV39Async, ct);
 
         // V8 may need to recreate extracted_attribute_values; disable FK enforcement during the swap.
         try

@@ -250,6 +250,47 @@ public sealed partial class LocalCatalogMigrator
     }
 
     /// <summary>
+    /// V39 (cloud catalog, master plan §7.3.1):
+    /// <c>database_meta.remote_source_json</c> — duplicate of the registry
+    /// cloudLink marker inside the database (self-heal source). Plain ADD
+    /// COLUMN, safe default NULL.
+    /// </summary>
+    private static async Task MigrateV39Async(SqliteConnection connection, CancellationToken ct)
+    {
+        var currentVersion = await GetSchemaVersionAsync(connection, ct);
+        if (currentVersion >= 39) return;
+
+        using var tx = connection.BeginTransaction();
+        try
+        {
+            var columnAdded = false;
+            if (!await ColumnExistsAsync(connection, "database_meta", "remote_source_json", ct))
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = FamilyCatalogSql.MigrateV39AddRemoteSourceJson;
+                await cmd.ExecuteNonQueryAsync(ct);
+                columnAdded = true;
+            }
+
+            using var versionCmd = connection.CreateCommand();
+            versionCmd.Transaction = tx;
+            versionCmd.CommandText = "UPDATE schema_info SET value = '39' WHERE key = 'schema_version'";
+            await versionCmd.ExecuteNonQueryAsync(ct);
+
+            tx.Commit();
+            SmartConLogger.Info(columnAdded
+                ? "Migration v39: database_meta +remote_source_json (cloud catalog self-heal)"
+                : "Migration v39: remote_source_json already present — version bumped to 39");
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// V37 (ADR-072 World B): item-level routing link tables + copy of the
     /// current version's V34 rows (curated links survive the upgrade).
     /// </summary>

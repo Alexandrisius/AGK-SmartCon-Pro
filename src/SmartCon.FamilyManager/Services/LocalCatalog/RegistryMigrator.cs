@@ -9,21 +9,19 @@ namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
 /// <summary>
 /// Default <see cref="IRegistryMigrator"/>. Operates on
-/// <c>%AppData%\SmartCon\FamilyManager\registry.json</c>. The v0→v1 migration
-/// is purely additive: a v0 file has no <c>schemaVersion</c> key and no
-/// per-connection <c>kind</c> / <c>projectBinding</c> keys — we just patch the
-/// JSON tree in place with the new keys set to their #119 defaults (<see cref="BaseType.General"/>
-/// and <c>null</c> binding), bump <c>schemaVersion</c> to <c>1</c> and write
-/// the result atomically. See #119 decision A12.
+/// <c>%AppData%\SmartCon\FamilyManager\registry.json</c>. Migrations are
+/// purely additive and patch the JSON tree in place. v0→v1 (#119): add
+/// per-connection <c>kind</c> / <c>projectBinding</c> keys. v1→v2 (cloud
+/// catalog, master plan §7.3.1): add per-connection <c>cloudLink</c> key.
+/// Each step is idempotent so the migrator is safe to call on every launch.
 /// </summary>
 /// <remarks>
 /// Future schema versions can chain on top of this method by branching on
-/// the loaded <c>schemaVersion</c> and patching successively. Each step is
-/// idempotent so the migrator is safe to call on every launch.
+/// the loaded <c>schemaVersion</c> and patching successively.
 /// </remarks>
 internal sealed class RegistryMigrator : IRegistryMigrator
 {
-    private const int LatestSchemaVersion = 1;
+    private const int LatestSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -101,10 +99,15 @@ internal sealed class RegistryMigrator : IRegistryMigrator
                 foreach (var connNode in conns)
                 {
                     if (connNode is not JsonObject conn) continue;
-                    if (!conn.ContainsKey("kind"))
-                        conn["kind"] = nameof(BaseType.General);
-                    if (!conn.ContainsKey("projectBinding"))
-                        conn["projectBinding"] = null;
+                    if (currentVersion < 1)
+                    {
+                        if (!conn.ContainsKey("kind"))
+                            conn["kind"] = nameof(BaseType.General);
+                        if (!conn.ContainsKey("projectBinding"))
+                            conn["projectBinding"] = null;
+                    }
+                    if (currentVersion < 2 && !conn.ContainsKey("cloudLink"))
+                        conn["cloudLink"] = null;
                 }
             }
 

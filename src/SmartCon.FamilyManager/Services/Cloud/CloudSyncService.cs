@@ -87,8 +87,21 @@ internal sealed class CloudSyncService
         try
         {
             progress?.Report(new CloudOperationProgress("Apply", 0, 1));
+            // remote_source_json (V39): аплаер — единственный writer копии, поэтому
+            // дубль CloudLink для self-heal пишется в момент сборки.
+            var remoteSource = new CloudLink(
+                CloudLinkRole.Subscribed,
+                _api.CurrentAccount!.Endpoint,
+                latest.Manifest.CatalogId,
+                request.Slug,
+                latest.PublishSeq);
             var applyResult = await _applier.ApplyAsync(latest.Manifest, objects,
-                new CatalogManifestApplyOptions { DatabaseRootPath = stagingRoot, DatabaseName = request.DatabaseName },
+                new CatalogManifestApplyOptions
+                {
+                    DatabaseRootPath = stagingRoot,
+                    DatabaseName = request.DatabaseName,
+                    RemoteSourceJson = CloudLinkJson.Serialize(remoteSource)
+                },
                 ct).ConfigureAwait(false);
 
             SwapDirectories(request.TargetRoot, stagingRoot);

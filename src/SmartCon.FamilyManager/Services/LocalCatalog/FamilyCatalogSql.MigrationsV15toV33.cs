@@ -477,4 +477,17 @@ internal static partial class FamilyCatalogSql
     public const string MigrateV28AddEsMarkerVersionColumn = """
         ALTER TABLE catalog_versions ADD COLUMN es_marker_version INTEGER NOT NULL DEFAULT 0
         """;
+
+    /// <summary>
+    /// V39 (cloud catalog, master plan §7.3.1): adds
+    /// <c>remote_source_json TEXT</c> to <c>database_meta</c> — duplicate of
+    /// the registry <c>cloudLink</c> marker (role/endpoint/catalogId/slug/
+    /// lastSyncedPublishSeq) inside the database itself, for self-heal when
+    /// an older plugin rewrites registry.json without the unknown field.
+    /// Both roles write it (Published — at link attach, Subscribed — by the
+    /// manifest applier). Plain ADD COLUMN, safe default NULL.
+    /// </summary>
+    public const string MigrateV39AddRemoteSourceJson = """
+        ALTER TABLE database_meta ADD COLUMN remote_source_json TEXT
+        """;
 }

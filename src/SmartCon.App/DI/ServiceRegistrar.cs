@@ -202,6 +202,8 @@ public static class ServiceRegistrar
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient>();
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudPublishService>();
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudSyncService>();
+        // Cloud Catalog §7.3.1: CloudLink-гейт активной базы (Subscribed = read-only, ADR-075 §7).
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());

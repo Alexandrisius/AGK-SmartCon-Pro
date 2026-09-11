@@ -19,6 +19,12 @@ public interface IDbAccessControlService
     bool IsEditorRole { get; }
     bool IsOwner { get; }
     bool IsBanned { get; }
+    /// <summary>
+    /// The active database is a Subscribed cloud copy (ADR-075 §7): writes are
+    /// blocked regardless of role — sync is the only writer. ANDs into every
+    /// write capability; UI uses it to disable write commands with a tooltip.
+    /// </summary>
+    bool IsCloudReadOnly { get; }
     Task RefreshCurrentUserAsync(CancellationToken ct = default);
     void InvalidateCache();
 }

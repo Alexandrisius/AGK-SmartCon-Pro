@@ -6,13 +6,14 @@ using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.FamilyManager.Services.Cloud;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.Services.LocalCatalog;
 
 internal sealed partial class DatabaseManager : IDatabaseManager
 {
-    private const int LatestRegistrySchemaVersion = 1;
+    private const int LatestRegistrySchemaVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -25,6 +26,7 @@ internal sealed partial class DatabaseManager : IDatabaseManager
     private readonly IUserIdentityService _identityService;
     private readonly ILocalCatalogMigrator _migrator;
     private readonly IRegistryMigrator _registryMigrator;
+    private readonly CloudDatabaseGate _cloudGate;
     private readonly string _registryPath;
     private readonly string _bakPath;
     private readonly string _tempPath;
@@ -43,12 +45,16 @@ internal sealed partial class DatabaseManager : IDatabaseManager
         LocalCatalogDatabase catalogDatabase,
         IUserIdentityService identityService,
         ILocalCatalogMigrator migrator,
-        IRegistryMigrator registryMigrator)
+        IRegistryMigrator registryMigrator,
+        Services.Cloud.CloudDatabaseGate? cloudGate = null)
     {
         _catalogDatabase = catalogDatabase;
         _identityService = identityService;
         _migrator = migrator;
         _registryMigrator = registryMigrator;
+        // Optional for unit tests (a detached gate instance is a no-op); DI
+        // injects the process-wide singleton shared with DbAccessControlService.
+        _cloudGate = cloudGate ?? new Services.Cloud.CloudDatabaseGate();
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var fmDir = Path.Combine(appData, "SmartCon", "FamilyManager");
         Directory.CreateDirectory(fmDir);
@@ -64,6 +70,7 @@ internal sealed partial class DatabaseManager : IDatabaseManager
             if (active is not null)
             {
                 _catalogDatabase.SwitchToPath(active.Path);
+                _cloudGate.Update(active);
             }
         }
     }
@@ -85,6 +92,11 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 {
                     _catalogDatabase.SwitchToPath(active.Path);
                     await _migrator.MigrateAsync(ct);
+                    // E27 self-heal: the active DB is migrated (V39 column
+                    // guaranteed) — restore a cloudLink wiped by a downgrade.
+                    var connections = registry.Connections.ToList();
+                    active = await HealCloudLinkAsync(connections, active, ct);
+                    _cloudGate.Update(active);
                 }
             }
         }
@@ -153,6 +165,7 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 {
                     await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections), ct);
                     _catalogDatabase.SwitchToPath(fullPath);
+                    _cloudGate.Update(existing);
                     ActiveDatabaseChanged?.Invoke(this, existing.Id);
                 }
                 return existing;
@@ -203,6 +216,7 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 connections.Add(connection);
                 await SaveRegistryAsync(new DatabaseConnectionRegistry(id, connections), ct);
 
+                _cloudGate.Update(connection);
                 ActiveDatabaseChanged?.Invoke(this, id);
                 return connection;
             }
@@ -239,6 +253,12 @@ internal sealed partial class DatabaseManager : IDatabaseManager
 
             await _migrator.MigrateAsync(ct);
 
+            // E27 self-heal: this DB is migrated (V39 column guaranteed) —
+            // restore a cloudLink wiped from the registry by a downgrade.
+            var connections = registry.Connections.ToList();
+            conn = await HealCloudLinkAsync(connections, conn, ct);
+            _cloudGate.Update(conn);
+
             ActiveDatabaseChanged?.Invoke(this, connectionId);
             return true;
         }
@@ -267,6 +287,7 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 newActiveId = other?.Id;
                 if (other is not null)
                     _catalogDatabase.SwitchToPath(other.Path);
+                _cloudGate.Update(other);
             }
 
             await SaveRegistryAsync(new DatabaseConnectionRegistry(newActiveId, connections), ct);
