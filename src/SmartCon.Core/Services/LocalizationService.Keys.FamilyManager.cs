@@ -1109,8 +1109,8 @@ public static partial class LocalizationService
         ru["FM_PBase_ParseRule_ClosingN"] = "закрывающий #{0}";
         en["FM_PBase_ParseRule_ClosingN"] = "closing #{0}";
 
-        ru["FM_PBase_CreateCloudDatabase"] = "Облачная база";
-        en["FM_PBase_CreateCloudDatabase"] = "Cloud database";
+        ru["FM_PBase_CreateCloudDatabase"] = "Создать облачную базу";
+        en["FM_PBase_CreateCloudDatabase"] = "Create cloud database";
         ru["FM_Cloud_LoginTitle"] = "Облачный аккаунт SmartCon";
         en["FM_Cloud_LoginTitle"] = "SmartCon Cloud Account";
         ru["FM_Cloud_LoginEndpoint"] = "Сервер";
