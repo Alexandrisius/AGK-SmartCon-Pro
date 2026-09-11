@@ -1,32 +1,64 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SmartCon.Core.Logging;
 using SmartCon.FamilyManager.Models.Cloud;
 
 namespace SmartCon.FamilyManager.Services.Cloud;
 
 /// <summary>
-/// Контент-дайджест манифеста: волатильные поля publish-точки (seq, время,
-/// автор, minPluginVersion) исключены — дайджест меняется только при изменении
-/// контента каталога. Основа точки «есть локальные непубликованные изменения».
+/// Контент-дайджест манифеста. Из дайджеста исключено всё волатильное:
+/// поля publish-точки (seq, время, автор, minPluginVersion) И битовый блок
+/// <c>file</c> (sha256/sizeBytes/fileName) — Revit пересохраняет .rfa
+/// рандомно БЕЗ изменения содержимого, поэтому детекция изменений ведётся по
+/// FHV contentHash из БД (владелец 2026-09-11). Битовый sha остаётся только
+/// адресом CAS-объекта на хранении/транспорте. Основа точки «есть локальные
+/// непубликованные изменения» и дельты sync.
 /// </summary>
 internal static class CatalogManifestFingerprint
 {
     public static string Compute(CatalogManifestV1 manifest)
     {
-        var content = new
+        var root = JsonNode.Parse(JsonSerializer.Serialize(manifest, CatalogManifestJson.WriteCompact));
+        // Волатильные поля publish-точки: publish-time build (seq=N, автор,
+        // время) и check-time build (seq=0, пустой автор) одного контента
+        // обязаны давать одинаковый дайджест.
+        if (root is JsonObject top)
         {
-            format = manifest.Format,
-            formatVersion = manifest.FormatVersion,
-            catalogId = manifest.CatalogId,
-            hashFormatVersion = manifest.HashFormatVersion,
-            revitVersionRange = manifest.RevitVersionRange,
-            meta = manifest.Meta,
-            items = manifest.Items,
-            removed = manifest.Removed,
-        };
-        return ComputeHash(JsonSerializer.Serialize(content, CatalogManifestJson.WriteCompact));
+            top.Remove("publishSeq");
+            top.Remove("publishedAtUtc");
+            top.Remove("publishedBy");
+            top.Remove("minPluginVersion");
+        }
+        StripByteLevelFileRefs(root);
+        return ComputeHash(root!.ToJsonString(CatalogManifestJson.WriteCompact));
+    }
+
+    /// <summary>Per-item дайджест для дельты sync (тот же контент-вид, что у Compute).</summary>
+    public static string ComputeItemDigest(ManifestItemV1 item)
+    {
+        var root = JsonNode.Parse(JsonSerializer.Serialize(item, CatalogManifestJson.WriteCompact));
+        StripByteLevelFileRefs(root);
+        return ComputeHash(root!.ToJsonString(CatalogManifestJson.WriteCompact));
+    }
+
+    /// <summary>Рекурсивно вырезает свойство "file" (битовый sha/размер/имя файла)
+    /// — контент версии решает contentHash. Обходит и объекты, и массивы.</summary>
+    private static void StripByteLevelFileRefs(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                obj.Remove("file");
+                foreach (var child in obj.ToList())
+                    StripByteLevelFileRefs(child.Value);
+                break;
+            case JsonArray array:
+                foreach (var element in array.ToList())
+                    StripByteLevelFileRefs(element);
+                break;
+        }
     }
 
     /// <summary>SHA-256 hex (lowercase) строки. Convert.ToHexStringLower — только .NET 9+; плагин — net8/net48.</summary>

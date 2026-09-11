@@ -245,7 +245,7 @@ public sealed class CloudPublishSyncFlowTests : IDisposable
             CatalogManifestJson.WriteCompact);
     }
 
-    private static ManifestItemV1 Item(string id, string name, string sha, int sizeBytes, string label = "v1") => new()
+    private static ManifestItemV1 Item(string id, string name, string sha, int sizeBytes, string label = "v1", string? contentHash = null) => new()
     {
         Id = id,
         Name = name,
@@ -256,6 +256,9 @@ public sealed class CloudPublishSyncFlowTests : IDisposable
             new ManifestVersionV1
             {
                 VersionLabel = label,
+                // Контентная идентичность — FHV contentHash из БД; битовый file-sha
+                // в детекции изменений не участвует (Revit пересохраняет .rfa рандомно).
+                ContentHash = contentHash ?? "FHV-" + name + "-" + label,
                 SourceRevitVersion = 2025,
                 File = new ManifestFileRefV1 { Sha256 = sha, SizeBytes = sizeBytes, FileName = name + ".rfa" },
             },
@@ -324,18 +327,46 @@ public sealed class CloudPublishSyncFlowTests : IDisposable
         var id = Guid.NewGuid().ToString("N");
 
         var targetRoot = Path.Combine(_workDir, "cloud", "otvody");
-        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1, Item(id, "Отвод", v1Sha, v1.Length))));
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1, Item(id, "Отвод", v1Sha, v1.Length, contentHash: "FHV-1"))));
         _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(v1) });
         await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
 
-        // Новая версия (изменился контент/хэш) того же item'а: добавлено 0, обновлено 1.
-        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(id, "Отвод", v2Sha, v2.Length, label: "v2"))));
+        // Изменился КОНТЕНТ (FHV) и файл: добавлено 0, обновлено 1.
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(id, "Отвод", v2Sha, v2.Length, label: "v2", contentHash: "FHV-2"))));
         _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(v2) });
         var second = await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
 
         Assert.True(second.Updated);
         Assert.Equal(0, second.AddedCount);
         Assert.Equal(1, second.UpdatedCount);
+        Assert.Equal(0, second.RemovedCount);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ByteDriftOnly_NotReportedAsUpdate()
+    {
+        // Владелец 2026-09-11: Revit пересохраняет .rfa без изменения содержимого —
+        // битовый sha меняется, FHV contentHash нет. Контент-дайджесты равны →
+        // «обновлено 0» (файл перекачается молча, копия консистентна).
+        await LoginAsync();
+        var bytes1 = Encoding.UTF8.GetBytes("BYTES-ONE");
+        var sha1 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes1)).ToLowerInvariant();
+        var bytes2 = Encoding.UTF8.GetBytes("BYTES-TWO-SAME-CONTENT");
+        var sha2 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes2)).ToLowerInvariant();
+        var id = Guid.NewGuid().ToString("N");
+
+        var targetRoot = Path.Combine(_workDir, "cloud", "otvody");
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1, Item(id, "Отвод", sha1, bytes1.Length, contentHash: "FHV-SAME"))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes1) });
+        await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(id, "Отвод", sha2, bytes2.Length, contentHash: "FHV-SAME"))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes2) });
+        var second = await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        Assert.True(second.Updated); // seq вырос — копия пересобрана с новым блобом
+        Assert.Equal(0, second.AddedCount);
+        Assert.Equal(0, second.UpdatedCount);
         Assert.Equal(0, second.RemovedCount);
     }
 

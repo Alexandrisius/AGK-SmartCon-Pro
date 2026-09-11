@@ -118,4 +118,37 @@ public sealed class CloudPublishStateTests : IDisposable
             CatalogManifestFingerprint.Compute(first),
             CatalogManifestFingerprint.Compute(second));
     }
+
+    [Fact]
+    public void Fingerprint_IgnoresByteLevelFileHash()
+    {
+        // Владелец 2026-09-11: Revit пересохраняет .rfa без изменения содержимого —
+        // битовый sha/размер меняются, FHV contentHash нет. Детекция изменений
+        // (точка «не забудь опубликовать» + дельта) обязана молчать.
+        ManifestItemV1 Item(string fileSha, long size, string name) => new()
+        {
+            Id = "a",
+            Name = "Отвод",
+            Versions =
+            [
+                new ManifestVersionV1
+                {
+                    VersionLabel = "v1",
+                    ContentHash = "FHV-SAME",
+                    SourceRevitVersion = 2025,
+                    File = new ManifestFileRefV1 { Sha256 = fileSha, SizeBytes = size, FileName = name },
+                },
+            ],
+        };
+
+        var first = new CatalogManifestV1 { CatalogId = "cid", PublishSeq = 1, Items = [Item("aa", 100, "a.rfa")] };
+        var second = new CatalogManifestV1 { CatalogId = "cid", PublishSeq = 2, Items = [Item("bb", 200, "b.rfa")] };
+
+        Assert.Equal(
+            CatalogManifestFingerprint.Compute(first),
+            CatalogManifestFingerprint.Compute(second));
+        Assert.Equal(
+            CatalogManifestFingerprint.ComputeItemDigest(first.Items[0]),
+            CatalogManifestFingerprint.ComputeItemDigest(second.Items[0]));
+    }
 }

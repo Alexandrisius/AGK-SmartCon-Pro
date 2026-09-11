@@ -238,16 +238,15 @@ public sealed class CloudSyncService
     }
 
     /// <summary>
-    /// Per-item дайджесты манифеста: id → SHA-256 сериализованного item'а.
-    /// LocalPath-поля в манифесте [JsonIgnore] — дайджест зависит только от
-    /// контента (версии/файлы/метаданные item'а), не от путей машины.
+    /// Per-item дайджесты манифеста: id → контент-дайджест (тот же вид, что у
+    /// CatalogManifestFingerprint.Compute: битовый file-блок вырезан — контент
+    /// решает FHV contentHash; Revit пересохраняет .rfa без изменения содержимого).
     /// </summary>
     private static IReadOnlyDictionary<string, string> BuildItemDigests(CatalogManifestV1 manifest)
     {
         var digests = new Dictionary<string, string>(manifest.Items.Count, StringComparer.Ordinal);
         foreach (var item in manifest.Items)
-            digests[item.Id] = CatalogManifestFingerprint.ComputeHash(
-                JsonSerializer.Serialize(item, CatalogManifestJson.WriteCompact));
+            digests[item.Id] = CatalogManifestFingerprint.ComputeItemDigest(item);
         return digests;
     }
 
