@@ -6,6 +6,8 @@
 #   PostgreSQL: 127.0.0.1:5433  (HOST_PG_PORT)
 # Быстрый цикл разработки: `docker compose up -d postgres` + `dotnet run` (API локально).
 #
+name: smartcon-cloud
+
 services:
   postgres:
     image: postgres:18-alpine
