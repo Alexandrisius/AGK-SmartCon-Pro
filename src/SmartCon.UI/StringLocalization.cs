@@ -623,6 +623,10 @@ public static class StringLocalization
         public const string FM_Cloud_UnpublishBody = "FM_Cloud_UnpublishBody";
         public const string FM_Cloud_UnpublishDone = "FM_Cloud_UnpublishDone";
         public const string FM_Cloud_CatalogGone = "FM_Cloud_CatalogGone";
+        public const string FM_Cloud_DeltaAdded = "FM_Cloud_DeltaAdded";
+        public const string FM_Cloud_DeltaUpdated = "FM_Cloud_DeltaUpdated";
+        public const string FM_Cloud_DeltaRemoved = "FM_Cloud_DeltaRemoved";
+        public const string FM_Cloud_DeltaNone = "FM_Cloud_DeltaNone";
         public const string FM_Cloud_DeletePublishedTitle = "FM_Cloud_DeletePublishedTitle";
         public const string FM_Cloud_DeletePublishedBody = "FM_Cloud_DeletePublishedBody";
         public const string FM_Cloud_DeleteUnpublishFailedTitle = "FM_Cloud_DeleteUnpublishFailedTitle";

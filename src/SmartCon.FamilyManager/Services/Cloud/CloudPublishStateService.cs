@@ -26,13 +26,17 @@ internal static class CatalogManifestFingerprint
             items = manifest.Items,
             removed = manifest.Removed,
         };
-        var json = JsonSerializer.Serialize(content, CatalogManifestJson.WriteCompact);
-        // Convert.ToHexStringLower — только .NET 9+; плагин — net8/net48.
+        return ComputeHash(JsonSerializer.Serialize(content, CatalogManifestJson.WriteCompact));
+    }
+
+    /// <summary>SHA-256 hex (lowercase) строки. Convert.ToHexStringLower — только .NET 9+; плагин — net8/net48.</summary>
+    public static string ComputeHash(string text)
+    {
 #if NET8_0_OR_GREATER
-        return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+        return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 #else
         using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(json));
+        var hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(text));
         var sb = new System.Text.StringBuilder(hash.Length * 2);
         foreach (var b in hash) sb.Append(b.ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
         return sb.ToString();
@@ -76,7 +80,8 @@ public sealed class CloudPublishStateService
     {
         try
         {
-            File.Delete(Path.Combine(_stateDir, slug + ".fingerprint"));
+            var path = Path.Combine(_stateDir, slug + ".fingerprint");
+            if (File.Exists(path)) File.Delete(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -85,14 +90,15 @@ public sealed class CloudPublishStateService
     }
 
     /// <summary>
-    /// true = контент активной базы отличается от последней публикации (или
-    /// никогда не публиковали с этой машины). Работает по АКТИВНОЙ базе —
-    /// builder читает текущий каталог.
+    /// true = контент активной базы отличается от последней публикации. Работает
+    /// по АКТИВНОЙ базе — builder читает текущий каталог. Никогда не
+    /// публиковали: точка горит только если публиковать ЕСТЬ что (пустой
+    /// каталог владельца 2026-09-11: точка на пустой базе — шум). Публикованный
+    /// каталог, опустевший локально, — честное «есть изменения» (было 8 → 0).
     /// </summary>
     public async Task<bool> HasUnpublishedChangesAsync(string slug, string catalogId, CancellationToken ct = default)
     {
         var stored = TryReadFingerprint(slug);
-        if (stored is null) return true;
 
         var manifest = await _builder.BuildAsync(new CatalogManifestBuildOptions
         {
@@ -100,6 +106,13 @@ public sealed class CloudPublishStateService
             PublishSeq = 0,
             PublishedBy = string.Empty,
         }, ct).ConfigureAwait(false);
+
+        // Пустой каталог без публикаций — публиковать нечего.
+        if (stored is null && manifest.Items.Count == 0)
+            return false;
+        if (stored is null)
+            return true;
+
         return !string.Equals(CatalogManifestFingerprint.Compute(manifest), stored, StringComparison.Ordinal);
     }
 

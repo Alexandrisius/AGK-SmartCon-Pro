@@ -232,6 +232,113 @@ public sealed class CloudPublishSyncFlowTests : IDisposable
             CatalogManifestJson.WriteCompact);
     }
 
+    private static string LatestJson(long seq, params ManifestItemV1[] items)
+    {
+        var manifest = new CatalogManifestV1
+        {
+            CatalogId = "catalog-1",
+            PublishSeq = seq,
+            PublishedBy = "Автор",
+            Items = [.. items],
+        };
+        return JsonSerializer.Serialize(new { publishSeq = seq, manifestSizeBytes = 100, manifest },
+            CatalogManifestJson.WriteCompact);
+    }
+
+    private static ManifestItemV1 Item(string id, string name, string sha, int sizeBytes, string label = "v1") => new()
+    {
+        Id = id,
+        Name = name,
+        NormalizedName = name.ToLowerInvariant(),
+        CurrentVersionLabel = label,
+        Versions =
+        [
+            new ManifestVersionV1
+            {
+                VersionLabel = label,
+                SourceRevitVersion = 2025,
+                File = new ManifestFileRefV1 { Sha256 = sha, SizeBytes = sizeBytes, FileName = name + ".rfa" },
+            },
+        ],
+    };
+
+    [Fact]
+    public async Task SyncAsync_OwnerDeletesItem_ReportsRemovalNotFullCount()
+    {
+        // Стресс-тест 2026-09-11: подписчик видел «добавлено 8» при удалении одного
+        // семейства — дельта обязана быть per-item, а не полным размером манифеста.
+        await LoginAsync();
+        var contentA = Encoding.UTF8.GetBytes("DELTA-A");
+        var shaA = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(contentA)).ToLowerInvariant();
+        var contentB = Encoding.UTF8.GetBytes("DELTA-B");
+        var shaB = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(contentB)).ToLowerInvariant();
+        var idA = Guid.NewGuid().ToString("N");
+        var idB = Guid.NewGuid().ToString("N");
+
+        var targetRoot = Path.Combine(_workDir, "cloud", "otvody");
+
+        // sync #1: два семейства.
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1,
+            Item(idA, "Отвод", shaA, contentA.Length), Item(idB, "Тройник", shaB, contentB.Length))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(contentA) });
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(contentB) });
+        var first = await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        Assert.True(first.Updated);
+        Assert.Equal(2, first.AddedCount);
+        Assert.Equal(0, first.RemovedCount);
+
+        // sync #2 (владелец удалил Тройник и опубликовал): кэш уже имеет оба
+        // файла — докачки нет, дельта = удалено 1.
+        var requestCountBefore = _handler.Requests.Count;
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(idA, "Отвод", shaA, contentA.Length))));
+        var second = await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        Assert.True(second.Updated);
+        Assert.Equal(0, second.AddedCount);
+        Assert.Equal(0, second.UpdatedCount);
+        Assert.Equal(1, second.RemovedCount);
+        Assert.Equal(1, second.ItemsCount);
+        // Файл удалённого семейства исчез из копии, оставшийся — на месте.
+        Assert.False(File.Exists(Path.Combine(targetRoot, "files", idB, "v1", "Тройник.rfa")));
+        Assert.True(File.Exists(Path.Combine(targetRoot, "files", idA, "v1", "Отвод.rfa")));
+        // Объект удалённого семейства остался в общем CAS-кэше (E1/E20: кэш
+        // переживает sync, чистки в срезе нет) — файл НЕ перекачивается.
+        Assert.True(File.Exists(Path.Combine(_workDir, "cache", shaB[..2], shaB)));
+        for (var i = requestCountBefore; i < _handler.Requests.Count; i++)
+        {
+            Assert.False(_handler.Requests[i].Method == HttpMethod.Get
+                && _handler.Requests[i].RequestUri!.PathAndQuery.StartsWith("/v1/files/"),
+                "повторный sync не должен перекачивать закэшированные файлы");
+        }
+    }
+
+    [Fact]
+    public async Task SyncAsync_ItemContentChanged_ReportsUpdatedDelta()
+    {
+        await LoginAsync();
+        var v1 = Encoding.UTF8.GetBytes("CONTENT-V1");
+        var v1Sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(v1)).ToLowerInvariant();
+        var v2 = Encoding.UTF8.GetBytes("CONTENT-V2-CHANGED");
+        var v2Sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(v2)).ToLowerInvariant();
+        var id = Guid.NewGuid().ToString("N");
+
+        var targetRoot = Path.Combine(_workDir, "cloud", "otvody");
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1, Item(id, "Отвод", v1Sha, v1.Length))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(v1) });
+        await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        // Новая версия (изменился контент/хэш) того же item'а: добавлено 0, обновлено 1.
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(id, "Отвод", v2Sha, v2.Length, label: "v2"))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(v2) });
+        var second = await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        Assert.True(second.Updated);
+        Assert.Equal(0, second.AddedCount);
+        Assert.Equal(1, second.UpdatedCount);
+        Assert.Equal(0, second.RemovedCount);
+    }
+
     private async Task<string> ReadFileShaAsync()
     {
         var file = Directory.GetFiles(_source.GetDatabaseRoot(), "*.rfa", SearchOption.AllDirectories).Single();

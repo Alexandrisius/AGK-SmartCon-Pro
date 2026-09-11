@@ -337,6 +337,12 @@ public sealed partial class FamilyManagerMainViewModel
             IsLoading = false;
             SmartConLogger.Freeze($"LoadTreeAsync: TOTAL took {(long)_totalMs.GetElapsedMilliseconds()}ms, thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
             SmartConLogger.Debug($"LoadTreeAsync: finally thread={Environment.CurrentManagedThreadId} treeNodes={TreeNodes.Count} treeRef={System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(TreeNodes)}");
+            // Точка «есть локальные непубликованные изменения»: LoadTreeAsync —
+            // общий финал любой мутации контента (импорт/удаление/переименование
+            // перезагружают дерево напрямую, НЕ через RefreshTreeOnUiThreadAsync —
+            // стресс-тест 2026-09-11: после реимпорта v2 точка не загоралась).
+            // Троттл внутри, чтобы поиск не гонял пересчёт на каждый кадр.
+            _ = RefreshUnpublishedCloudChangesAsync();
         }
     }
 

@@ -141,10 +141,15 @@ public sealed partial class FamilyManagerMainViewModel
             LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PullTitle) ?? "Обновление из облака",
             (progress, token) => _cloudSync.SyncAsync(
                 new CloudSyncRequest(invite.Slug, targetRoot, displayName), progress, token),
-            result => string.Format(
-                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_WizardSubscribed)
-                    ?? "Подключено к каталогу «{0}»: получено {1} семейств.",
-                invite.Slug, result.ItemsCount),
+            result => result.Updated
+                ? string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_WizardSubscribed)
+                        ?? "Подключено к каталогу «{0}»: получено {1} семейств.",
+                    invite.Slug, result.AddedCount)
+                : string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UpToDate)
+                        ?? "База актуальна (публикация #{0})",
+                    result.PublishSeq),
             ct).ConfigureAwait(true);
         // Валидатор Ф5-6 P2: отмена (FinalStatus == null) — тихий выход,
         // без ConnectDatabaseAsync к недособранной копии.
@@ -396,6 +401,7 @@ public sealed partial class FamilyManagerMainViewModel
             // узнать об этом с ↻, а не молча не получать обновления (владелец 2026-09-11).
             HasCloudUpdates = false;
             NotifyCatalogGone(active.Name, link.Slug);
+            await ConvertGoneCopyToLocalAsync(active).ConfigureAwait(true);
             return;
         }
         catch (Exception ex)
@@ -427,8 +433,8 @@ public sealed partial class FamilyManagerMainViewModel
                 result => result.Updated
                     ? string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PullDone)
-                            ?? "Обновлено до публикации #{0}: {1} семейств.",
-                        result.PublishSeq, result.ItemsCount)
+                            ?? "Обновлено до публикации #{0}: {1}.",
+                        result.PublishSeq, FormatSyncDelta(result))
                     : string.Format(
                         LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_UpToDate)
                             ?? "База актуальна (публикация #{0})",
@@ -468,6 +474,32 @@ public sealed partial class FamilyManagerMainViewModel
         }
     }
 
+    /// <summary>
+    /// Человекочитаемая дельта синхронизации: «добавлено 2, обновлено 1, удалено 3»
+    /// (только ненулевые части; 0/0/0 при изменившемся seq = правки настроек каталога).
+    /// Стресс-тест 2026-09-11: полный счётчик выдавал «добавлено 8» при удалении.
+    /// </summary>
+    private static string FormatSyncDelta(CloudSyncResult result)
+    {
+        var parts = new List<string>(3);
+        if (result.AddedCount > 0)
+            parts.Add(string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeltaAdded) ?? "добавлено {0}",
+                result.AddedCount));
+        if (result.UpdatedCount > 0)
+            parts.Add(string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeltaUpdated) ?? "обновлено {0}",
+                result.UpdatedCount));
+        if (result.RemovedCount > 0)
+            parts.Add(string.Format(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeltaRemoved) ?? "удалено {0}",
+                result.RemovedCount));
+        if (parts.Count == 0)
+            return LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_DeltaNone)
+                ?? "изменения в настройках каталога";
+        return string.Join(", ", parts);
+    }
+
     // ── Приглашение (копирование) ───────────────────────────────────────
 
     private bool CanCopyCloudInvite => IsSelectedCloudPublished;
@@ -494,12 +526,25 @@ public sealed partial class FamilyManagerMainViewModel
     /// Контент активной Published-базы отличается от последней публикации →
     /// янтарная точка на шестерёнке (владелец 2026-09-11: «не забывать
     /// публиковать изменения после локальных изменений»). Дайджест манифеста;
-    /// «с этой машины не публиковали» — точка тоже горит.
+    /// «с этой машины не публиковали» — точка тоже горит (кроме пустого
+    /// каталога). Вызывается из LoadTreeAsync (общий финал любой мутации
+    /// контента) — троттл 3с + in-flight guard, чтобы поиск не гонял
+    /// пересчёт на каждое дерево.
     /// </summary>
+    private int _unpublishedCheckInFlight;
+    private int _lastUnpublishedCheckMs;
+
     private async Task RefreshUnpublishedCloudChangesAsync()
     {
+        if (System.Threading.Interlocked.CompareExchange(ref _unpublishedCheckInFlight, 1, 0) != 0)
+            return;
         try
         {
+            var nowMs = Environment.TickCount;
+            if (nowMs - System.Threading.Volatile.Read(ref _lastUnpublishedCheckMs) < 3000)
+                return;
+            System.Threading.Volatile.Write(ref _lastUnpublishedCheckMs, nowMs);
+
             var active = _databaseManager.GetActiveConnection();
             if (active?.CloudLink is not { Role: CloudLinkRole.Published } link)
             {
@@ -508,6 +553,7 @@ public sealed partial class FamilyManagerMainViewModel
             }
             var hasChanges = await _cloudPublishState.HasUnpublishedChangesAsync(link.Slug, link.CatalogId)
                 .ConfigureAwait(true);
+            SmartConLogger.Debug($"Unpublished-changes check: slug={link.Slug} hasChanges={hasChanges}");
             SetHasUnpublishedOnUiThread(hasChanges);
         }
         catch (Exception ex)
@@ -515,6 +561,10 @@ public sealed partial class FamilyManagerMainViewModel
             // Локальная проверка не должна мешать панели (§7.3.10).
             SmartConLogger.Debug($"Unpublished-changes check failed: {ex.Message}");
             SetHasUnpublishedOnUiThread(false);
+        }
+        finally
+        {
+            System.Threading.Volatile.Write(ref _unpublishedCheckInFlight, 0);
         }
     }
 
@@ -529,7 +579,8 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>Фоновый check для Subscribed-баз: серверный seq vs sync-state.json копии.</summary>
     private async Task CheckCloudUpdatesAsync()
     {
-        var link = SelectedConnection?.Connection.CloudLink;
+        var connection = SelectedConnection?.Connection;
+        var link = connection?.CloudLink;
         if (link?.Role != CloudLinkRole.Subscribed
             || !_cloudAuth.IsLoggedIn
             || !string.Equals(_cloudAuth.CurrentAccount?.Endpoint, link.Endpoint, StringComparison.OrdinalIgnoreCase))
@@ -548,11 +599,15 @@ public sealed partial class FamilyManagerMainViewModel
         catch (CloudApiException ex) when (IsCatalogGone(ex))
         {
             SetHasCloudUpdatesOnUiThread(false);
-            var name = SelectedConnection?.Connection.Name ?? link.Slug;
+            var name = connection?.Name ?? link.Slug;
             if (_dispatcher.CheckAccess())
                 NotifyCatalogGone(name, link.Slug);
             else
                 _dispatcher.Invoke(() => NotifyCatalogGone(name, link.Slug));
+            // Текст уведомления обещает конвертацию — конвертируем и здесь
+            // (SetCloudLinkAsync по id безопасен и для не-активной базы).
+            if (connection is not null)
+                _ = ConvertGoneCopyToLocalAsync(connection);
         }
         catch (Exception ex)
         {
@@ -565,6 +620,36 @@ public sealed partial class FamilyManagerMainViewModel
     /// <summary>410 catalog_unpublished — каталог снят с публикации автором (tombstone сервера).</summary>
     private static bool IsCatalogGone(CloudApiException ex) =>
         ex.StatusCode == 410 && string.Equals(ex.Code, "catalog_unpublished", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Подписная копия осиротела (каталог снят с публикации): конвертируем в
+    /// обычную локальную базу — CloudLink очищается и в registry, и в
+    /// database_meta копии (иначе self-heal воскресит связь при следующем
+    /// «Подключить базу»), гейт записи снимается, значок перестаёт быть
+    /// облачным (владелец 2026-09-11: «не смущать облаком»).
+    /// </summary>
+    private async Task ConvertGoneCopyToLocalAsync(DatabaseConnection connection)
+    {
+        using var _scope = SmartConLogger.BeginScope("CloudUI",
+            ("Method", nameof(ConvertGoneCopyToLocalAsync)),
+            ("Slug", connection.CloudLink?.Slug ?? ""));
+        try
+        {
+            await _databaseManager.SetCloudLinkAsync(connection.Id, null).ConfigureAwait(true);
+            SmartConLogger.Info("Subscribed copy converted to local: catalog unpublished on the server (410)");
+
+            RefreshConnections();
+            SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == connection.Id);
+            HasUnpublishedCloudChanges = false;
+            NotifyCloudSelectionChanged();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Convert gone copy to local failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: перезапустите Revit — копия останется облачной до следующего ↻]");
+        }
+    }
 
     /// <summary>Уведомление подписчику о снятии каталога с публикации (строка статуса панели).</summary>
     private void NotifyCatalogGone(string databaseName, string slug)

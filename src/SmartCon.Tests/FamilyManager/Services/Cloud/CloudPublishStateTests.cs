@@ -52,10 +52,18 @@ public sealed class CloudPublishStateTests : IDisposable
     [Fact]
     public async Task NoFingerprintFile_HasUnpublishedChangesTrue()
     {
-        // Никогда не публиковали с этой машины — точка горит.
+        // Никогда не публиковали с этой машины — точка горит (если есть что публиковать).
         await CatalogSeedHelper.SeedBareLoadableAsync(_source, "Отвод", "v1");
 
         Assert.True(await _state.HasUnpublishedChangesAsync("demo", "cid"));
+    }
+
+    [Fact]
+    public async Task EmptyCatalog_NeverPublished_NoDot()
+    {
+        // Пустая база без публикаций — публиковать нечего, точка не горит
+        // (стресс-тест 2026-09-11: точка на только что созданной пустой базе = шум).
+        Assert.False(await _state.HasUnpublishedChangesAsync("demo", "cid"));
     }
 
     [Fact]

@@ -9,7 +9,20 @@ namespace SmartCon.FamilyManager.Services.Cloud;
 
 public sealed record CloudSyncRequest(string Slug, string TargetRoot, string DatabaseName);
 
-public sealed record CloudSyncResult(long PublishSeq, int ItemsCount, bool Updated, string DatabaseRoot);
+/// <summary>
+/// Дельта синхронизации против предыдущей (стесс-тест 2026-09-11: счётчик
+/// «получено N семейств» всегда показывал ПОЛНЫЙ размер манифеста — удаление
+/// одного семейства выглядело как «добавлено 8»). Первая синхронизация
+/// (нет прошлого состояния) — всё считается добавленным.
+/// </summary>
+public sealed record CloudSyncResult(
+    long PublishSeq,
+    int ItemsCount,
+    int AddedCount,
+    int UpdatedCount,
+    int RemovedCount,
+    bool Updated,
+    string DatabaseRoot);
 
 /// <summary>
 /// «Обновить» = только pull (решение владельца 2026-09-11): manifest/latest → докачка
@@ -77,8 +90,13 @@ public sealed class CloudSyncService
         if (state is not null && state.PublishSeq == latest.PublishSeq)
         {
             SmartConLogger.Info($"Already up to date: seq={latest.PublishSeq}");
-            return new CloudSyncResult(latest.PublishSeq, latest.Manifest.Items.Count, Updated: false, request.TargetRoot);
+            return new CloudSyncResult(latest.PublishSeq, latest.Manifest.Items.Count, 0, 0, 0,
+                Updated: false, request.TargetRoot);
         }
+
+        // Дельта против прошлого состояния: per-item дайджесты (id → sha контента).
+        var newDigests = BuildItemDigests(latest.Manifest);
+        var (added, updated, removed) = ComputeDelta(state?.ItemDigests, newDigests);
 
         // E7-гейт: hash-эпоха манифеста опережает плагин — refuse с баннером обновления.
         if (latest.Manifest.HashFormatVersion is { } fhv && fhv > FamilyContentHashFormat.CurrentVersion)
@@ -114,10 +132,12 @@ public sealed class CloudSyncService
                 ct).ConfigureAwait(false);
 
             SwapDirectories(request.TargetRoot, stagingRoot);
-            WriteSyncState(request.TargetRoot, latest.PublishSeq);
+            WriteSyncState(request.TargetRoot, latest.PublishSeq, newDigests);
             SmartConLogger.Info(
-                $"Synced #{latest.PublishSeq}: {applyResult.Items} item(s) → '{Path.GetFileName(request.TargetRoot)}'");
-            return new CloudSyncResult(latest.PublishSeq, applyResult.Items, Updated: true, request.TargetRoot);
+                $"Synced #{latest.PublishSeq}: {applyResult.Items} item(s) " +
+                $"[+{added} new, ~{updated} changed, -{removed} removed] → '{Path.GetFileName(request.TargetRoot)}'");
+            return new CloudSyncResult(latest.PublishSeq, applyResult.Items, added, updated, removed,
+                Updated: true, request.TargetRoot);
         }
         catch
         {
@@ -211,15 +231,56 @@ public sealed class CloudSyncService
         }
     }
 
-    private void WriteSyncState(string targetRoot, long publishSeq)
+    private void WriteSyncState(string targetRoot, long publishSeq, IReadOnlyDictionary<string, string> itemDigests)
     {
         File.WriteAllText(Path.Combine(targetRoot, SyncStateFileName),
-            JsonSerializer.Serialize(new SyncState(publishSeq, _clock.UtcNow)));
+            JsonSerializer.Serialize(new SyncState(publishSeq, _clock.UtcNow, itemDigests)));
+    }
+
+    /// <summary>
+    /// Per-item дайджесты манифеста: id → SHA-256 сериализованного item'а.
+    /// LocalPath-поля в манифесте [JsonIgnore] — дайджест зависит только от
+    /// контента (версии/файлы/метаданные item'а), не от путей машины.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> BuildItemDigests(CatalogManifestV1 manifest)
+    {
+        var digests = new Dictionary<string, string>(manifest.Items.Count, StringComparer.Ordinal);
+        foreach (var item in manifest.Items)
+            digests[item.Id] = CatalogManifestFingerprint.ComputeHash(
+                JsonSerializer.Serialize(item, CatalogManifestJson.WriteCompact));
+        return digests;
+    }
+
+    private static (int Added, int Updated, int Removed) ComputeDelta(
+        IReadOnlyDictionary<string, string>? oldDigests,
+        IReadOnlyDictionary<string, string> newDigests)
+    {
+        if (oldDigests is null || oldDigests.Count == 0)
+            return (newDigests.Count, 0, 0); // первая синхронизация — всё новое
+
+        var added = 0;
+        var updated = 0;
+        // net48: у KeyValuePair нет Deconstruct — классический перебор.
+        foreach (var entry in newDigests)
+        {
+            if (!oldDigests.TryGetValue(entry.Key, out var old)) added++;
+            else if (!string.Equals(old, entry.Value, StringComparison.Ordinal)) updated++;
+        }
+        var removed = oldDigests.Count(kv => !newDigests.ContainsKey(kv.Key));
+        return (added, updated, removed);
     }
 
     private const string SyncStateFileName = "sync-state.json";
 
-    private sealed record SyncState(long PublishSeq, DateTimeOffset SyncedAtUtc);
+    /// <summary>
+    /// sync-state.json подписной копии. ItemDigests появились позже первых
+    /// версий — старые файлы десериализуются с null (дельта считается «всё
+    /// новое», одна лишняя самоисцеляющая синхронизация).
+    /// </summary>
+    private sealed record SyncState(
+        long PublishSeq,
+        DateTimeOffset SyncedAtUtc,
+        IReadOnlyDictionary<string, string>? ItemDigests = null);
 }
 
 /// <summary>
