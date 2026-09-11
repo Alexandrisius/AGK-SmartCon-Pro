@@ -55,7 +55,6 @@
                  Padding="6,4"
                  Margin="0,0,0,10"
                  Style="{DynamicResource CompactTextBox}"
-                 Background="Transparent"
                  behaviors:FocusBehavior.FocusOnLoad="True"/>
 
         <TextBlock Grid.Row="3"
@@ -67,7 +66,7 @@
                  Padding="6,4"
                  Margin="0,0,0,10"
                  Style="{DynamicResource CompactTextBox}"
-                 Background="Transparent"/>
+                 />
 
         <TextBlock Grid.Row="5"
                    Text="{loc:Loc FM_Cloud_LoginPassword}"
@@ -75,6 +74,7 @@
                    Foreground="{DynamicResource TextMutedBrush}"/>
         <PasswordBox Grid.Row="6"
                      behaviors:PasswordBoxBehaviors.BindPassword="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{DynamicResource FormPasswordBox}"
                      Padding="6,4"
                      Margin="0,0,0,10"/>
 
@@ -86,7 +86,7 @@
             <TextBox Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4"
                      Style="{DynamicResource CompactTextBox}"
-                     Background="Transparent"/>
+                     />
         </StackPanel>
 
         <TextBlock Grid.Row="8"

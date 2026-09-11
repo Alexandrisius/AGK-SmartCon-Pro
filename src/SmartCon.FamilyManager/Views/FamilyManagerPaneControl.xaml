@@ -101,72 +101,66 @@
                 </Setter>
             </Style>
 
-            <!-- Cloud Catalog §7.3.12: значок-облачко Published↑/Subscribed↓ — оверлей на иконке базы -->
-            <Style x:Key="CloudBadgeOverlay" TargetType="{x:Type iconPacks:PackIconMaterial}">
-                <Setter Property="Width" Value="9"/>
-                <Setter Property="Height" Value="9"/>
-                <Setter Property="HorizontalAlignment" Value="Right"/>
-                <Setter Property="VerticalAlignment" Value="Bottom"/>
-                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
-                <Setter Property="Visibility" Value="Collapsed"/>
-                <Style.Triggers>
-                    <DataTrigger Binding="{Binding CloudBadge}" Value="published">
-                        <Setter Property="Visibility" Value="Visible"/>
-                        <Setter Property="Kind" Value="CloudUpload"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding CloudBadge}" Value="subscribed">
-                        <Setter Property="Visibility" Value="Visible"/>
-                        <Setter Property="Kind" Value="CloudDownload"/>
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
-
             <DataTemplate x:Key="DbGeneralTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
-                    <Grid Width="16" Height="14" Margin="0,0,6,0">
-                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
-                            <iconPacks:PackIconMaterial Kind="Database"
-                                                           Width="24" Height="24"
-                                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                        </Viewbox>
-                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
-                    </Grid>
+                <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <iconPacks:PackIconMaterial Kind="Database"
+                                                       Width="24" Height="24"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                 </StackPanel>
             </DataTemplate>
 
             <DataTemplate x:Key="DbProjectMatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
-                    <Grid Width="16" Height="14" Margin="0,0,6,0">
-                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
-                            <Path Data="{StaticResource FolderIconGeometry}"
-                                  Fill="{DynamicResource TextMutedBrush}"/>
-                        </Viewbox>
-                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
-                    </Grid>
+                <StackPanel Orientation="Horizontal">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <Path Data="{StaticResource FolderIconGeometry}"
+                              Fill="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                 </StackPanel>
             </DataTemplate>
 
             <DataTemplate x:Key="DbProjectMismatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal">
-                    <Grid Width="16" Height="14" Margin="0,0,6,0" ToolTip="{Binding MismatchReason}">
-                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
-                            <iconPacks:PackIconMaterial Kind="Lock"
-                                                           Width="24" Height="24"
-                                                           Foreground="{DynamicResource TextMutedBrush}"/>
-                        </Viewbox>
-                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
-                    </Grid>
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"
-                               ToolTip="{Binding CloudBadgeTooltip}"/>
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding MismatchReason}">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <iconPacks:PackIconMaterial Kind="Lock"
+                                                       Width="24" Height="24"
+                                                       Foreground="{DynamicResource TextMutedBrush}"/>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                </StackPanel>
+            </DataTemplate>
+
+            <!-- Cloud §7.3.12: облачная база — ТОЛЬКО облачко (как у проектной — только папка),
+                 направление отличает Published↑ от Subscribed↓, тултип поясняет роль. -->
+            <DataTemplate x:Key="DbCloudTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
+                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
+                        <iconPacks:PackIconMaterial Width="24" Height="24"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       Kind="CloudUpload">
+                            <iconPacks:PackIconMaterial.Style>
+                                <Style TargetType="{x:Type iconPacks:PackIconMaterial}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CloudBadge}" Value="subscribed">
+                                            <Setter Property="Kind" Value="CloudDownload"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </iconPacks:PackIconMaterial.Style>
+                        </iconPacks:PackIconMaterial>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                 </StackPanel>
             </DataTemplate>
 
             <selectors:DatabaseListItemIconSelector x:Key="DbItemTemplateSelector"
                 GeneralTemplate="{StaticResource DbGeneralTemplate}"
                 ProjectMatchTemplate="{StaticResource DbProjectMatchTemplate}"
-                ProjectMismatchTemplate="{StaticResource DbProjectMismatchTemplate}"/>
+                ProjectMismatchTemplate="{StaticResource DbProjectMismatchTemplate}"
+                CloudTemplate="{StaticResource DbCloudTemplate}"/>
 
         </ResourceDictionary>
     </UserControl.Resources>

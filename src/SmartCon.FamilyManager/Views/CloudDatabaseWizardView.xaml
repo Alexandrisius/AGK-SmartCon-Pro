@@ -51,7 +51,6 @@
             <TextBox Text="{Binding DatabaseName, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4"
                      Style="{DynamicResource CompactTextBox}"
-                     Background="Transparent"
                      behaviors:FocusBehavior.FocusOnLoad="True"/>
         </StackPanel>
 
@@ -63,7 +62,6 @@
             <TextBox Text="{Binding InviteString, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4"
                      Style="{DynamicResource CompactTextBox}"
-                     Background="Transparent"
                      TextWrapping="Wrap"
                      AcceptsReturn="False"/>
             <TextBlock Text="{loc:Loc FM_Cloud_WizardInviteInvalid}"

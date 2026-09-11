@@ -8,19 +8,25 @@ namespace SmartCon.FamilyManager.Selectors;
 
 /// <summary>
 /// Picks the <see cref="DataTemplate"/> for a <see cref="DatabaseListItem"/>
-/// according to its <see cref="DatabaseListItem.MatchStatus"/> so the
-/// ComboBox shows the right Path icon (general / project-match / project-mismatch).
-/// See #119 — three variants, no font dependency.
+/// according to its cloud link / project-base match status so the ComboBox
+/// shows the right icon: cloud bases get a CLOUD-only icon (like project
+/// bases get a folder-only icon, owner decision 2026-09-11), local bases —
+/// general / project-match / project-mismatch. See #119 + cloud §7.3.12.
 /// </summary>
 public sealed class DatabaseListItemIconSelector : DataTemplateSelector
 {
     public DataTemplate? GeneralTemplate { get; set; }
     public DataTemplate? ProjectMatchTemplate { get; set; }
     public DataTemplate? ProjectMismatchTemplate { get; set; }
+    public DataTemplate? CloudTemplate { get; set; }
 
     public override DataTemplate? SelectTemplate(object? item, DependencyObject container)
     {
         if (item is not DatabaseListItem dli) return base.SelectTemplate(item, container);
+
+        // Облачная база — всегда только облачко (Published↑ / Subscribed↓),
+        // ортогонально Kind (General/Project) и match-статусу.
+        if (dli.Connection.CloudLink is not null) return CloudTemplate;
 
         if (dli.Kind == BaseType.General) return GeneralTemplate;
         return dli.MatchStatus switch

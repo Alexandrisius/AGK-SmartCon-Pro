@@ -51,8 +51,14 @@ public sealed class CloudCatalogApiClient : IDisposable
         using var response = await SendAuthorizedAsync(HttpMethod.Post, "/v1/catalogs",
             jsonBody: JsonSerializer.Serialize(new { name }), ct: ct).ConfigureAwait(false);
         await EnsureSuccessAsync(response, ct).ConfigureAwait(false);
-        var dto = await ReadJsonAsync<CloudCatalogDto>(response, ct).ConfigureAwait(false);
-        return dto ?? throw new CloudApiException((int)response.StatusCode, null, "пустой ответ /v1/catalogs");
+        var dto = await ReadJsonAsync<CloudCatalogDto>(response, ct).ConfigureAwait(false)
+            ?? throw new CloudApiException((int)response.StatusCode, null, "пустой ответ /v1/catalogs");
+        // Пустой slug = мёртвый каталог (все пути 404). Например, старый сервер
+        // без транслитерации для кириллических имён. Линк с ним не создаём.
+        if (string.IsNullOrWhiteSpace(dto.Slug) || string.IsNullOrWhiteSpace(dto.Id))
+            throw new CloudApiException((int)response.StatusCode, "empty_slug",
+                "сервер вернул каталог без slug/id. [Action: обновите сервер SmartCon.Cloud до версии с транслитерацией имён]");
+        return dto;
     }
 
     /// <summary>GET /v1/catalogs/{slug}/manifest/latest. 404 → null (ещё нет публикаций).</summary>

@@ -23,9 +23,23 @@ public static class CatalogEndpoints
             if (string.IsNullOrWhiteSpace(body.Name) || body.Name.Trim().Length > 200)
                 return Results.BadRequest(new { code = "validation", error = "name обязателен (≤200 символов)" });
 
+            // Slug: транслитерация кириллицы + уникализация суффиксом -2/-3/…
+            // (ASCII-only фильтр порождал ПУСТОЙ slug для русских имён — каталог
+            // становился недостижим, 404 на всех путях; GitHub-модель name-2).
             var slug = Slugify(body.Name);
             if (await db.Catalogs.AnyAsync(c => c.Slug == slug, ct))
-                return Results.Conflict(new { code = "slug_taken", error = $"slug '{slug}' занят (slug immutable, ADR-075/E18)" });
+            {
+                for (var i = 2; ; i++)
+                {
+                    var candidate = $"{slug}-{i}";
+                    if (!await db.Catalogs.AnyAsync(c => c.Slug == candidate, ct))
+                    {
+                        slug = candidate;
+                        break;
+                    }
+                    if (i > 99) return Results.Conflict(new { code = "slug_taken", error = $"slug '{slug}' занят (slug immutable, ADR-075/E18)" });
+                }
+            }
 
             var catalog = new Catalog { Id = Guid.NewGuid(), OwnerUserId = user.Id, Slug = slug, Name = body.Name.Trim() };
             db.Catalogs.Add(catalog);
@@ -159,13 +173,41 @@ public static class CatalogEndpoints
         Results.Problem(statusCode: 404, title: "каталог не существует",
             detail: $"'{slug}' не найден (404-анти-оракул: для чужих приватных каталогов ответ тот же, ADR-076 §4)");
 
+    /// <summary>Кириллица → латиница (транслит без внешних пакетов). Пустые значения
+    /// ('ъ','ь') схлопываются соседними '-'/буквами.</summary>
+    private static readonly Dictionary<char, string> Translit = new()
+    {
+        ['а'] = "a", ['б'] = "b", ['в'] = "v", ['г'] = "g", ['д'] = "d", ['е'] = "e", ['ё'] = "e",
+        ['ж'] = "zh", ['з'] = "z", ['и'] = "i", ['й'] = "y", ['к'] = "k", ['л'] = "l", ['м'] = "m",
+        ['н'] = "n", ['о'] = "o", ['п'] = "p", ['р'] = "r", ['с'] = "s", ['т'] = "t", ['у'] = "u",
+        ['ф'] = "f", ['х'] = "h", ['ц'] = "ts", ['ч'] = "ch", ['ш'] = "sh", ['щ'] = "sch",
+        ['ъ'] = "", ['ы'] = "y", ['ь'] = "", ['э'] = "e", ['ю'] = "yu", ['я'] = "ya",
+    };
+
     private static string Slugify(string name)
     {
-        var chars = name.Trim().ToLowerInvariant().Select(c =>
-            char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray();
-        var slug = new string(chars).Trim('-');
+        var sb = new System.Text.StringBuilder();
+        foreach (var raw in name.Trim().ToLowerInvariant())
+        {
+            var c = raw;
+            if (char.IsAsciiLetterOrDigit(c))
+            {
+                sb.Append(c);
+                continue;
+            }
+            if (Translit.TryGetValue(c, out var latin))
+            {
+                sb.Append(latin);
+                continue;
+            }
+            sb.Append('-');
+        }
+        var slug = sb.ToString();
+        // Схлопнуть '-'- серии и обрезать по краям (в т.ч. от пустых транслит-значений).
         while (slug.Contains("--")) slug = slug.Replace("--", "-");
-        return slug.Length > 48 ? slug[..48].Trim('-') : slug;
+        slug = slug.Trim('-');
+        if (slug.Length > 48) slug = slug[..48].Trim('-');
+        return slug.Length == 0 ? "catalog" : slug;
     }
 
     /// <summary>Рекурсивно собирает все значения свойств "sha256" (срез: манифест принимается как есть;
