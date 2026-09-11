@@ -246,7 +246,7 @@ internal sealed class CacheObjectSource : ICloudObjectSource
     /// <summary>64-hex гвард: недопустимый хэш никогда не попадает в путь (path traversal).</summary>
     private string PathOf(string sha256)
     {
-        if (string.IsNullOrEmpty(sha256) || sha256.Length != 64 || sha256.All(IsAsciiHexDigit))
+        if (string.IsNullOrEmpty(sha256) || sha256.Length != 64 || !sha256.All(IsAsciiHexDigit))
             throw new ArgumentException($"Invalid sha256: '{sha256}'", nameof(sha256));
         var normalized = sha256.ToLowerInvariant();
         return Path.Combine(_cacheDirectory, normalized[..2], normalized);
