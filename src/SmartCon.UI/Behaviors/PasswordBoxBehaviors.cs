@@ -7,50 +7,52 @@ namespace SmartCon.UI.Behaviors;
 /// MVVM binding for <see cref="PasswordBox"/> (I-10: no code-behind). The
 /// control exposes no bindable password property by design — this attached
 /// behavior mirrors <c>PasswordBox.Password</c> into a VM string property
-/// two-way. The plain-text string lives in the VM only for the duration of
-/// the login request; it is never logged and never persisted.
+/// two-way. Input pushes via <see cref="SetCurrentValue"/>: a plain
+/// <c>SetValue</c> from the handler would REPLACE the BindingExpression
+/// (local value precedence) and silently kill the binding — the exact bug
+/// behind the permanently gray login button. The plain-text string lives in
+/// the VM only for the duration of the login request; it is never logged
+/// and never persisted.
 /// </summary>
 public static class PasswordBoxBehaviors
 {
+    // ВАЖНО: default = null, а НЕ "". Callback вызывается только при ИЗМЕНЕНИИ
+    // эффективного значения: с default "" активация биндинга (source == "")
+    // не меняет значение → callback не зовётся → подписка на PasswordChanged
+    // не ставится → ввод никогда не доезжает до VM (серая кнопка логина).
     public static readonly DependencyProperty BindPasswordProperty =
         DependencyProperty.RegisterAttached(
             "BindPassword",
             typeof(string),
             typeof(PasswordBoxBehaviors),
             new FrameworkPropertyMetadata(
-                string.Empty,
+                null,
                 FrameworkPropertyMetadataOptions.BindsTwoWayByDefault | FrameworkPropertyMetadataOptions.Journal,
                 OnBindPasswordChanged));
 
     public static string GetBindPassword(DependencyObject obj)
-        => (string)obj.GetValue(BindPasswordProperty);
+        => (string?)obj.GetValue(BindPasswordProperty) ?? string.Empty;
 
     public static void SetBindPassword(DependencyObject obj, string value)
         => obj.SetValue(BindPasswordProperty, value);
-
-    private static readonly DependencyProperty IsUpdatingProperty =
-        DependencyProperty.RegisterAttached(
-            "IsUpdating",
-            typeof(bool),
-            typeof(PasswordBoxBehaviors),
-            new PropertyMetadata(false));
 
     private static void OnBindPasswordChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not PasswordBox box) return;
 
         box.PasswordChanged -= OnPasswordChanged;
-        if (!Equals(e.NewValue, box.Password))
+        var newValue = (string?)e.NewValue ?? string.Empty;
+        if (!Equals(newValue, box.Password))
         {
-            var isUpdating = (bool)box.GetValue(IsUpdatingProperty);
-            box.SetValue(IsUpdatingProperty, true);
+            // source → target (VM очистила пароль и т.п.)
+            box.PasswordChanged -= OnPasswordChanged;
             try
             {
-                box.Password = (string?)e.NewValue ?? string.Empty;
+                box.Password = newValue;
             }
             finally
             {
-                box.SetValue(IsUpdatingProperty, isUpdating);
+                box.PasswordChanged += OnPasswordChanged;
             }
         }
         box.PasswordChanged += OnPasswordChanged;
@@ -59,16 +61,10 @@ public static class PasswordBoxBehaviors
     private static void OnPasswordChanged(object? sender, RoutedEventArgs e)
     {
         if (sender is not PasswordBox box) return;
-        if ((bool)box.GetValue(IsUpdatingProperty)) return;
 
-        box.SetValue(IsUpdatingProperty, true);
-        try
-        {
-            SetBindPassword(box, box.Password);
-        }
-        finally
-        {
-            box.SetValue(IsUpdatingProperty, false);
-        }
+        // НЕ SetValue: он заменит BindingExpression локальным значением и
+        // убьёт биндинг. SetCurrentValue меняет только эффективное значение —
+        // expression остаётся владельцем и (UST=PropertyChanged) пушит в source.
+        box.SetCurrentValue(BindPasswordProperty, box.Password);
     }
 }

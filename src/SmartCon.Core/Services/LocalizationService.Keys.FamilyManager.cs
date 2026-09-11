@@ -1127,6 +1127,10 @@ public static partial class LocalizationService
         en["FM_Cloud_LoginModeToggle_Register"] = "Create a new account";
         ru["FM_Cloud_LoginModeToggle_Login"] = "У меня есть аккаунт";
         en["FM_Cloud_LoginModeToggle_Login"] = "I have an account";
+ru["FM_Cloud_LoginModeHeader_Login"] = "Вход в аккаунт";
+        en["FM_Cloud_LoginModeHeader_Login"] = "Sign in";
+        ru["FM_Cloud_LoginModeHeader_Register"] = "Регистрация";
+        en["FM_Cloud_LoginModeHeader_Register"] = "Create account";
         ru["FM_Cloud_LoginButton"] = "Войти";
         en["FM_Cloud_LoginButton"] = "Sign in";
         ru["FM_Cloud_RegisterButton"] = "Зарегистрироваться";

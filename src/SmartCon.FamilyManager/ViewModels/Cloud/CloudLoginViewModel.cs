@@ -26,6 +26,8 @@ public sealed partial class CloudLoginViewModel : ObservableObject, SmartCon.Cor
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoginMode))]
     [NotifyPropertyChangedFor(nameof(ActionButtonText))]
+    [NotifyPropertyChangedFor(nameof(ModeHeaderText))]
+    [NotifyPropertyChangedFor(nameof(ModeToggleText))]
     private bool _isRegisterMode;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _errorText;
@@ -37,6 +39,19 @@ public sealed partial class CloudLoginViewModel : ObservableObject, SmartCon.Cor
     public string ActionButtonText => LanguageManager.GetString(IsRegisterMode
         ? StringLocalization.Keys.FM_Cloud_RegisterButton
         : StringLocalization.Keys.FM_Cloud_LoginButton) ?? (IsRegisterMode ? "Зарегистрироваться" : "Войти");
+
+    /// <summary>Заголовок режима над полями: «Вход в аккаунт» / «Регистрация».</summary>
+    public string ModeHeaderText => LanguageManager.GetString(IsRegisterMode
+        ? StringLocalization.Keys.FM_Cloud_LoginModeHeader_Register
+        : StringLocalization.Keys.FM_Cloud_LoginModeHeader_Login) ?? "Вход в аккаунт";
+
+    /// <summary>Текст кнопки-переключателя — всегда ДЕЙСТВИЕ перехода, не текущее состояние.</summary>
+    public string ModeToggleText => LanguageManager.GetString(IsRegisterMode
+        ? StringLocalization.Keys.FM_Cloud_LoginModeToggle_Login
+        : StringLocalization.Keys.FM_Cloud_LoginModeToggle_Register) ?? "Создать новый аккаунт";
+
+    [RelayCommand]
+    private void ToggleMode() => IsRegisterMode = !IsRegisterMode;
 
     public bool Success { get; private set; }
 

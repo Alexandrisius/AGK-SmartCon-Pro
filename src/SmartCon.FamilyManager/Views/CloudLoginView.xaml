@@ -36,13 +36,21 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <TextBlock Grid.Row="0"
+                   Text="{Binding ModeHeaderText}"
+                   Margin="0,0,0,10"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+
+        <TextBlock Grid.Row="1"
                    Text="{loc:Loc FM_Cloud_LoginEndpoint}"
                    Margin="0,0,0,2"
                    Foreground="{DynamicResource TextMutedBrush}"/>
-        <TextBox Grid.Row="1"
+        <TextBox Grid.Row="2"
                  Text="{Binding Endpoint, UpdateSourceTrigger=PropertyChanged}"
                  Padding="6,4"
                  Margin="0,0,0,10"
@@ -50,27 +58,27 @@
                  Background="Transparent"
                  behaviors:FocusBehavior.FocusOnLoad="True"/>
 
-        <TextBlock Grid.Row="2"
+        <TextBlock Grid.Row="3"
                    Text="{loc:Loc FM_Cloud_LoginEmail}"
                    Margin="0,0,0,2"
                    Foreground="{DynamicResource TextMutedBrush}"/>
-        <TextBox Grid.Row="3"
+        <TextBox Grid.Row="4"
                  Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}"
                  Padding="6,4"
                  Margin="0,0,0,10"
                  Style="{DynamicResource CompactTextBox}"
                  Background="Transparent"/>
 
-        <TextBlock Grid.Row="4"
+        <TextBlock Grid.Row="5"
                    Text="{loc:Loc FM_Cloud_LoginPassword}"
                    Margin="0,0,0,2"
                    Foreground="{DynamicResource TextMutedBrush}"/>
-        <PasswordBox Grid.Row="5"
+        <PasswordBox Grid.Row="6"
                      behaviors:PasswordBoxBehaviors.BindPassword="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4"
                      Margin="0,0,0,10"/>
 
-        <StackPanel Grid.Row="6" Margin="0,0,0,10"
+        <StackPanel Grid.Row="7" Margin="0,0,0,10"
                     Visibility="{Binding IsRegisterMode, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="{loc:Loc FM_Cloud_LoginDisplayName}"
                        Margin="0,0,0,2"
@@ -81,24 +89,24 @@
                      Background="Transparent"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="7"
+        <TextBlock Grid.Row="8"
                    Text="{Binding ErrorText}"
                    Margin="0,0,0,8"
                    TextWrapping="Wrap"
                    Foreground="{DynamicResource DangerBrush}"
                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"/>
 
-        <StackPanel Grid.Row="8"
-                    Orientation="Horizontal"
-                    Margin="0,0,0,12">
-            <ToggleButton Content="{loc:Loc FM_Cloud_LoginModeToggle_Register}"
-                          IsChecked="{Binding IsRegisterMode}"
-                          Style="{DynamicResource SecondaryToggleButton}"
-                          Padding="8,4"
-                          Cursor="Hand"/>
-        </StackPanel>
+        <Button Grid.Row="9"
+                Content="{Binding ModeToggleText}"
+                Command="{Binding ToggleModeCommand}"
+                Margin="0,0,0,12"
+                Padding="0,2"
+                HorizontalAlignment="Left"
+                Background="Transparent"
+                BorderThickness="0"
+                Cursor="Hand"/>
 
-        <StackPanel Grid.Row="9"
+        <StackPanel Grid.Row="10"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">
             <Button Content="{Binding ActionButtonText}"

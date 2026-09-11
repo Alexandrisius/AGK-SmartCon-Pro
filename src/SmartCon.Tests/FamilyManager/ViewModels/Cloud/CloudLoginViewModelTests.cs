@@ -86,4 +86,22 @@ public sealed class CloudLoginViewModelTests
         // Аккаунта нет → dev-endpoint среза v1.
         Assert.Equal(CloudLoginViewModel.DefaultEndpoint, vm.Endpoint);
     }
+
+    [Fact]
+    public void ToggleMode_SwitchesRegister_And_ToggleTextShowsAction()
+    {
+        var (vm, _) = MakeVm();
+
+        // Режим входа: заголовок «Вход в аккаунт», кнопка-переключатель предлагает регистрацию.
+        Assert.Contains("Вход", vm.ModeHeaderText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Создать", vm.ModeToggleText, StringComparison.OrdinalIgnoreCase);
+
+        vm.ToggleModeCommand.Execute(null);
+
+        Assert.True(vm.IsRegisterMode);
+        Assert.Contains("Регистрац", vm.ModeHeaderText, StringComparison.OrdinalIgnoreCase);
+        // В режиме регистрации переключатель предлагает вернуться ко входу.
+        Assert.Contains("аккаунт", vm.ModeToggleText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Создать нов", vm.ModeToggleText, StringComparison.OrdinalIgnoreCase);
+    }
 }

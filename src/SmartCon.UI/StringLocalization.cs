@@ -593,6 +593,8 @@ public static class StringLocalization
         public const string FM_Cloud_LoginDisplayName = "FM_Cloud_LoginDisplayName";
         public const string FM_Cloud_LoginModeToggle_Register = "FM_Cloud_LoginModeToggle_Register";
         public const string FM_Cloud_LoginModeToggle_Login = "FM_Cloud_LoginModeToggle_Login";
+        public const string FM_Cloud_LoginModeHeader_Login = "FM_Cloud_LoginModeHeader_Login";
+        public const string FM_Cloud_LoginModeHeader_Register = "FM_Cloud_LoginModeHeader_Register";
         public const string FM_Cloud_LoginButton = "FM_Cloud_LoginButton";
         public const string FM_Cloud_RegisterButton = "FM_Cloud_RegisterButton";
         public const string FM_Cloud_LoginFailed = "FM_Cloud_LoginFailed";
