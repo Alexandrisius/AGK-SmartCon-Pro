@@ -20,6 +20,7 @@ module: family-manager-index
 | [`stale-detection.md`](stale-detection.md) | Stale Detection v2: `FamilyVersion`, `StaleCheckResult`, `FamilyStaleSnapshot`, `StaleSnapshotLogic`, `LoadableMarkerLogic` |
 | [`content-hash.md`](content-hash.md) | Content Hash и дедупликация: `FamilyContentHash`, `ContentHashMatch`, `ContentHashDedupResult`, `PreparedFamilyItem`, `CategoryProvenance`, `FamilyContentHasher` |
 | [`actualization.md`](actualization.md) | Миграции и актуализация БД (ADR-054): `DatabaseMigrationProgress`, `ActualizationVariant`, `FamilyActualizationContext`, `FamilyMigrationExtractResult` |
+| [`cloud.md`](cloud.md) | Облачный каталог (срез v1, ADR-075/076/077): `CloudLink`, `CloudLinkRole` |
 | [`geometry.md`](geometry.md) | Снапшоты (`FamilySnapshot`, `SystemFamilySnapshot`, `ConnectorSnapshot`, `CompoundStructureSnapshot`, `RoutingPreferencesSnapshot`), геометрия и 3D-превью (`GeometryMetrics`, `MeshData`, `FamilyGeometryPreview`) |
 | [`family-facts.md`](family-facts.md) | Family Facts подсистема (ADR-055): `FamilyFact`, `FamilyFactsData`, `FamilyFactRule`, `FamilyFactRuleSet`, `PartTypeLabelMap` |
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `ValidationRule`, `ValidationRuleOperator`, health-check (`FamilyHealthReport`), гейт-статусы (`FamilyRowGateStatus`), нормализованные входы (`FamilyValidationInput`), отчёты (`FamilyValidationReport`, `RuleViolation`), `FamilyValidationEngine`, `DisplayValueParser` |

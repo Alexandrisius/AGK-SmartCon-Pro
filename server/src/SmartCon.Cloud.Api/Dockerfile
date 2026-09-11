@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
+# server/global.json пинит SDK 10.0.101 (host); в контейнере образ sdk:10.0
+# даёт свой (другой feature band) — пин несовместим, убираем.
+RUN rm -f global.json
 RUN dotnet restore src/SmartCon.Cloud.Api/SmartCon.Cloud.Api.csproj
 RUN dotnet publish src/SmartCon.Cloud.Api/SmartCon.Cloud.Api.csproj -c Release -o /app /p:UseAppHost=false
 
