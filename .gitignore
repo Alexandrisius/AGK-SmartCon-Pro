@@ -51,3 +51,10 @@ desktop.ini
 .kilo/
 .local/
 skills-lock.json
+
+# SmartCon.Cloud server (deploy dev secrets)
+server/deploy/.env
+server/src/SmartCon.Cloud.Api/cas-data/
+
+# SmartCon.Cloud dev artifacts
+server/src/SmartCon.Cloud.Api/api-dev.log

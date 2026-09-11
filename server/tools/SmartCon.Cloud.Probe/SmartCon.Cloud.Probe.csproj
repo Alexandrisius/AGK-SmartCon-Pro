@@ -1,0 +1,11 @@
+<!-- SPDX-License-Identifier: Business Source License 1.1 (see server/LICENSE); converts to Apache-2.0 after Change Date -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SmartCon.Cloud.Probe</RootNamespace>
+    <!-- net8.0 = целевой рантайм плагина R25/R26: срез обязан доказать работу контракта на клиентском TFM -->
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+</Project>

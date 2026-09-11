@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Business Source License 1.1 (see server/LICENSE); converts to Apache-2.0 after Change Date
+**/bin/
+**/obj/
+**/cas-data/
+deploy/.env
+**/*.log
+.git/

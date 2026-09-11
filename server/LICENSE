@@ -1,0 +1,61 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:             Александр Климович (AGK)
+Licensed Work:        SmartCon.Cloud server (the contents of this server/ directory)
+Additional Use Grant: none
+Change Date:          2029-09-11 (36 months from the first release date)
+Change License:       Apache License 2.0; a copy is available at
+                      https://www.apache.org/licenses/LICENSE-2.0
+
+Terms
+
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant set forth above. All additional uses
+granted to you by the Licensor above are considered your additional usages for
+the purpose of this license. You can only use the Licensed Work in accordance
+with the terms and conditions of this License, including any Additional Use
+Grant.
+
+The Licensor hereby grants you the right to use, reproduce, publicly perform,
+display, relay, or broadcast the Licensed Work if that Licensed Work, in whole
+or in part, contains or is derived from the Licensed Work or from an
+Additional Work. You must comply with the terms and conditions of this License
+in doing so.
+
+In accordance with the terms of this License, the Licensed Work may only be
+used, and any derivative works of the Licensed Work may only be produced,
+hosted, or distributed, for non-production purposes or as expressly permitted
+by the Licensor (including for personal, internal, evaluation, or testing
+purposes). Any commercial hosting of the Licensed Work or derivative works as
+a competing cloud catalog service is prohibited without a separate written
+license from the Licensor.
+
+Any production use of the Licensed Work, or hosting or distribution of the
+Licensed Work or derivative works as a service to third parties, requires a
+separate written enterprise license from the Licensor.
+
+If you modify the Licensed Work, you must produce and publish a Material
+Change Record (a document describing the changes made to the Licensed Work)
+in a public repository or other public location designated by the Licensor.
+
+The Licensor may terminate your license under this License if you violate any
+of its terms and conditions.
+
+The Licensed Work is provided "as is", without warranty of any kind, express
+or implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose, and noninfringement.
+
+This License does not grant you any rights in or to any trademarks, service
+marks, or trade names of the Licensor.
+
+Interpretation
+
+For the avoidance of doubt, this License does not, and shall not be construed
+to, confer any rights upon you by implication, estoppel, or otherwise, other
+than those expressly granted herein.
+
+The original text of the Business Source License 1.1 is available at
+https://mariadb.com/bsl11/.

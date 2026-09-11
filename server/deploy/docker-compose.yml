@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Business Source License 1.1 (see server/LICENSE); converts to Apache-2.0 after Change Date
+#
+# Вертикальный срез Cloud Catalog. Порты наружу ТОЛЬКО на 127.0.0.1 и не пересекаются
+# с типичными локальными сервисами (проверено: 3000-3002, 5432, 6379, 8000, 9000-9001 заняты Docker-стеком nodus/ksr).
+#   API:        127.0.0.1:8787  (HOST_API_PORT)
+#   PostgreSQL: 127.0.0.1:5433  (HOST_PG_PORT)
+# Быстрый цикл разработки: `docker compose up -d postgres` + `dotnet run` (API локально).
+#
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: smartcon-cloud-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smartcon_cloud
+      POSTGRES_USER: smartcon
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-smartcon_dev}
+    ports:
+      - "127.0.0.1:${HOST_PG_PORT:-5433}:5432"
+    volumes:
+      # postgres:18+ — единый маунт на /var/lib/postgresql (major-version subdirs, docker-library/postgres#1259)
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartcon -d smartcon_cloud"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: src/SmartCon.Cloud.Api/Dockerfile
+    container_name: smartcon-cloud-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Pg: Host=postgres;Port=5432;Database=smartcon_cloud;Username=smartcon;Password=${PG_PASSWORD:-smartcon_dev}
+      Jwt__Issuer: ${JWT_ISSUER:-https://cloud.smartcon.local}
+      Jwt__Audience: ${JWT_AUDIENCE:-smartcon-plugin}
+      Jwt__SigningKeyHex: ${JWT_SIGNING_KEY_HEX:?set in .env (64 hex chars, keep secret)}
+      Cas__Root: /data/cas
+    ports:
+      - "127.0.0.1:${HOST_API_PORT:-8787}:8080"
+    volumes:
+      - casdata:/data/cas
+
+volumes:
+  pgdata:
+  casdata:

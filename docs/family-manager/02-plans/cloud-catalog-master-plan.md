@@ -555,6 +555,8 @@ Pull-before-push; дельта с `basePublishSeq`; per-item курсоры на
 
 ### C0. Спайк инфраструктуры (1–2 нед)
 
+> **Статус (2026-09-11):** вертикальный срез (pre-C0) выполнен — `server/` (ASP.NET Core 10 minimal API: Identity-аккаунты, JWT+refresh rotation, каталоги, publish с транзакционным seq-гейтом, CAS со streaming SHA-256, manifest/latest, resolve/download) + `tools/SmartCon.Cloud.Probe` (полный позитивный/негативный сценарий, СРЕЗ ПРОЙДЕН). Отступления среза от плана зафиксированы в `server/README.md` (dev-CAS на ФС вместо R2 — `IObjectStorage` точка подмены). Оставшееся C0: R2-presigned round-trip из net48, туннель, замер манифеста реальной базы, прокси-тест.
+
 **Сделать:** compose (api «hello» + PG + cloudflared + uptime-kuma) на домашнем ПК; домен/поддомен в Cloudflare; R2 бакет; консольный probe-клиент (net48 и net8): login-stub → получить presigned GET → скачать файл; presigned PUT + `x-amz-checksum-sha256` → залить. **Проверить gotcha AWSSDK.S3 + R2: `AWSConfigsS3.UseSignatureVersion4=true`, `AmazonS3Config{ ServiceURL=…, SignatureVersion="v4", ForcePathStyle=true }`** (StackOverflow 2025-08, верифицировано 2026-08-25).
 **Обязательные артефакты C0:**
 1. Замер размера манифеста реальной базы владельца (несжатый/gzip, на семейство) — вход для решения о двухчастном манифесте (§5) до заморозки формата.
@@ -770,7 +772,9 @@ services:
   postgres:
     image: postgres:18.6-alpine            # пин минорной версии
     restart: unless-stopped
-    volumes: [pgdata:/var/lib/postgresql/data]
+    # postgres:18+ — единый маунт на /var/lib/postgresql (major-version subdirs,
+    # docker-library/postgres#1259; /data-маунт = ошибка старта контейнера)
+    volumes: [pgdata:/var/lib/postgresql]
     environment:
       POSTGRES_PASSWORD: ${PG_PASSWORD}
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U smartcon"], interval: 10s }
