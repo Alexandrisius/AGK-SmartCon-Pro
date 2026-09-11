@@ -68,9 +68,7 @@
         <PasswordBox Grid.Row="5"
                      behaviors:PasswordBoxBehaviors.BindPassword="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
                      Padding="6,4"
-                     Margin="0,0,0,10"
-                     Style="{DynamicResource CompactTextBox}"
-                     Background="Transparent"/>
+                     Margin="0,0,0,10"/>
 
         <StackPanel Grid.Row="6" Margin="0,0,0,10"
                     Visibility="{Binding IsRegisterMode, Converter={StaticResource BoolToVis}}">

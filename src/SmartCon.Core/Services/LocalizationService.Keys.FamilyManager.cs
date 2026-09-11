@@ -1137,8 +1137,8 @@ public static partial class LocalizationService
         en["FM_Cloud_RegisterFailed"] = "Sign-up failed: {0}";
         ru["FM_Cloud_WizardTitle"] = "Облачная база";
         en["FM_Cloud_WizardTitle"] = "Cloud database";
-        ru["FM_Cloud_WizardModeCreate"] = "Создать облачную базу";
-        en["FM_Cloud_WizardModeCreate"] = "Create a cloud database";
+        ru["FM_Cloud_WizardModeCreate"] = "Создать новую";
+        en["FM_Cloud_WizardModeCreate"] = "Create new";
         ru["FM_Cloud_WizardModeSubscribe"] = "Подключиться по приглашению";
         en["FM_Cloud_WizardModeSubscribe"] = "Connect by invitation";
         ru["FM_Cloud_WizardNameLabel"] = "Название базы данных";

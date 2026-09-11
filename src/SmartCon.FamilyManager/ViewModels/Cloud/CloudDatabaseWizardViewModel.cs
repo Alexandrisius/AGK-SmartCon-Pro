@@ -40,8 +40,29 @@ public sealed partial class CloudDatabaseWizardViewModel : ObservableObject, Sma
     /// <summary>Распарсенное приглашение (валидно только в режиме подписки).</summary>
     public CloudInvite.InviteData? Invite => CloudInvite.TryParse(InviteString);
 
-    public bool IsCreateMode => Mode == WizardMode.CreateEmpty;
-    public bool IsSubscribeMode => Mode == WizardMode.SubscribeByInvite;
+    /// <summary>
+    /// RadioButton-обёртки с СЕТТЕРАМИ: TwoWay-биндинг на get-only свойство
+    /// умирает при инициализации (ни одна кнопка не выбрана) и не пушит
+    /// клики в Mode. Set по клику меняет Mode; галку снимает сама группа.
+    /// </summary>
+    public bool IsCreateMode
+    {
+        get => Mode == WizardMode.CreateEmpty;
+        set
+        {
+            if (value) Mode = WizardMode.CreateEmpty;
+        }
+    }
+
+    public bool IsSubscribeMode
+    {
+        get => Mode == WizardMode.SubscribeByInvite;
+        set
+        {
+            if (value) Mode = WizardMode.SubscribeByInvite;
+        }
+    }
+
     public bool HasInviteError => IsSubscribeMode
         && !string.IsNullOrWhiteSpace(InviteString)
         && Invite is null;

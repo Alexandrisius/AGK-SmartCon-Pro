@@ -64,6 +64,35 @@ public sealed class CloudInviteTests
 public sealed class CloudDatabaseWizardViewModelTests
 {
     [Fact]
+    public void Ctor_CreateModeSelectedByDefault()
+    {
+        // UX: «Создать новую» предвыбран — RadioButtons биндятся на эти флаги.
+        var vm = new CloudDatabaseWizardViewModel();
+
+        Assert.True(vm.IsCreateMode);
+        Assert.False(vm.IsSubscribeMode);
+        Assert.Equal(CloudDatabaseWizardViewModel.WizardMode.CreateEmpty, vm.Mode);
+    }
+
+    [Fact]
+    public void RadioSetters_SwitchMode()
+    {
+        var vm = new CloudDatabaseWizardViewModel();
+
+        vm.IsSubscribeMode = true;
+        Assert.Equal(CloudDatabaseWizardViewModel.WizardMode.SubscribeByInvite, vm.Mode);
+        Assert.False(vm.IsCreateMode);
+
+        vm.IsCreateMode = true;
+        Assert.Equal(CloudDatabaseWizardViewModel.WizardMode.CreateEmpty, vm.Mode);
+        Assert.False(vm.IsSubscribeMode);
+
+        // Снятие галки группой не должно сбрасывать Mode (сеттер игнорирует false).
+        vm.IsCreateMode = false;
+        Assert.Equal(CloudDatabaseWizardViewModel.WizardMode.CreateEmpty, vm.Mode);
+    }
+
+    [Fact]
     public void CreateMode_EmptyName_OkDisabled()
     {
         var vm = new CloudDatabaseWizardViewModel { Mode = CloudDatabaseWizardViewModel.WizardMode.CreateEmpty };
