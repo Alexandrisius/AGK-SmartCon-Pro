@@ -4,6 +4,7 @@
 [![Revit 2019–2026](https://img.shields.io/badge/Revit-2019--2026-green)](https://www.autodesk.com/products/revit/)
 [![C# 12](https://img.shields.io/badge/C%23-12-purple)](https://learn.microsoft.com/en-us/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: BSL 1.1](https://img.shields.io/badge/server-BSL_1.1-orange)](server/LICENSE)
 [![Tests: 1500+](https://img.shields.io/badge/Tests-1500%2B%20pass-brightgreen)]()
 [![Build](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml/badge.svg)](https://github.com/Alexandrisius/AGK-SmartCon-Pro/actions/workflows/build.yml)
 
@@ -335,7 +336,19 @@ Multi-version shipping-артефакты:
 
 ## Лицензия
 
-MIT License — см. [LICENSE](LICENSE).
+Проект лицензируется **по зонам кода**:
+
+| Зона | Лицензия | Текст |
+|---|---|---|
+| Плагин (`src/`) | **MIT** | [LICENSE](LICENSE) |
+| Облачный сервер (`server/`) | **BSL 1.1** (Business Source License; Change Date 2029-09-11, после — Apache-2.0) | [server/LICENSE](server/LICENSE) |
+
+`server/` — **не** open source в смысле MIT: копирование, модификация и особенно
+коммерческое (конкурирующее) хостинг-развертывание сервера регулируются условиями
+BSL 1.1 и требуют отдельного разрешения автора. Self-hosted использование для
+собственных нужд допускается, публичный коммерческий хостинг — нет.
+Клиентский протокол синхронизации (манифест v1 + REST-контракт) открыт и лицензией
+BSL не ограничен.
 
 ## Автор
 
