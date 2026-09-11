@@ -13,7 +13,8 @@ docs/family-manager/
 │   └── 00-familymanager-concept-roadmap.md   # продуктовая стратегия
 │   └── 01-familymanager-technical-stack.md     # технический стек
 └── 02-plans/
-    └── phase-24-stale-detection-v2.md          # детальный план Phase 24
+    ├── cloud-catalog-master-plan.md            # Облачный каталог: мастер-план (ADR-075/076/077)
+    └── familymanager-capabilities-baseline.md  # свод возможностей модуля (база для ревью плана)
 ```
 
 ## Зафиксированные решения
@@ -117,5 +118,9 @@ ExtensibleStorage остаётся паттерном существующих �
 - [ADR-030](../adr/030-phase-24-stale-detection-v2.md) — Stale Detection v2 + ES exception
 - [ADR-033](../adr/033-bakein-type-catalog.md) — Type Catalog Bake-in
 - [ADR-041](../adr/041-active-version-management.md) — Active Version Management
+- [ADR-075](../adr/075-cloud-catalog-architecture.md) — Cloud Catalog Architecture (proposed)
+- [ADR-076](../adr/076-cloud-catalog-security.md) — Cloud Security & Credentials (proposed)
+- [ADR-077](../adr/077-cloud-catalog-multi-author-sync.md) — Cloud Multi-Author Sync (proposed)
+- [Мастер-план Облачного каталога](02-plans/cloud-catalog-master-plan.md) — publish/subscribe sync, маркетплейс, фазы C0–C6
 - [docs/domain/models/family-manager/](../domain/models/family-manager/README.md)
 - [docs/domain/interfaces/family-manager/](../domain/interfaces/family-manager/README.md)
