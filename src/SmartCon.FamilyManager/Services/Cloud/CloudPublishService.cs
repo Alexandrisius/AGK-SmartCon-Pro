@@ -22,6 +22,9 @@ public sealed record CloudPublishResult(long PublishSeq, int ItemsCount, int Upl
 /// </summary>
 internal sealed class CloudPublishService
 {
+    /// <summary>Максимальное число циклов «422 → upload → publish» (валидатор Фазы 4, P3).</summary>
+    private const int MaxUploadRounds = 3;
+
     private readonly CloudCatalogApiClient _api;
     private readonly CatalogManifestBuilder _builder;
     private readonly IClock _clock;
@@ -70,8 +73,9 @@ internal sealed class CloudPublishService
 
         // Publish → при 422 missing_objects: докачиваем недостающие из локального
         // каталога и повторяем (файлы иммутабельны — повторный upload идемпотентен).
+        // Лимит раундов страхует от сервера, стабильно отвергающего уже залитое.
         var uploaded = 0;
-        while (true)
+        for (var round = 1; ; round++)
         {
             ct.ThrowIfCancellationRequested();
             CloudApiException publishError;
@@ -85,6 +89,13 @@ internal sealed class CloudPublishService
                 && string.Equals(ex.Code, "missing_objects", StringComparison.Ordinal))
             {
                 publishError = ex;
+            }
+
+            if (round >= MaxUploadRounds)
+            {
+                throw new CloudApiException(422, "upload_rounds_exceeded",
+                    $"сервер продолжает требовать объекты после {MaxUploadRounds} раундов загрузки. " +
+                    "[Action: проверьте целостность локального каталога и повторите публикацию позже]");
             }
 
             var missing = publishError.MissingObjects ?? [];

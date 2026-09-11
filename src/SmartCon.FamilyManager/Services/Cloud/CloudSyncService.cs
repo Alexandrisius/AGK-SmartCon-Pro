@@ -147,7 +147,7 @@ internal sealed class CloudSyncService
                 Directory.Move(stagingRoot, targetRoot);
                 TryDeleteDirectory(backupRoot);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Новый не встал — возвращаем старый на место (копия не теряется).
                 if (Directory.Exists(targetRoot)) TryDeleteDirectory(targetRoot);
@@ -167,7 +167,7 @@ internal sealed class CloudSyncService
         {
             if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             SmartConLogger.Warn(
                 $"Cannot delete leftover directory '{Path.GetFileName(path)}' ({ex.GetType().Name}). " +
@@ -223,12 +223,36 @@ internal sealed class CacheObjectSource : ICloudObjectSource
         if (File.Exists(path)) return;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         using var source = await _api.DownloadFileAsync(sha256, ct).ConfigureAwait(false);
-        var tempPath = path + ".tmp";
-        using (var target = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+        // Уникальный temp: два параллельных download одного объекта не столкнутся
+        // на общем .tmp; Move без overwrite → объект либо наш, либо уже скачанный
+        // конкурентом (контент одинаковый по определению CAS).
+        var tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
         {
-            await source.CopyToAsync(target, 81920, ct).ConfigureAwait(false);
+            using (var target = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await source.CopyToAsync(target, 81920, ct).ConfigureAwait(false);
+            }
+            try
+            {
+                File.Move(tempPath, path);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // Кто-то ещё положил объект первым — наш temp лишний.
+            }
         }
-        File.Move(tempPath, path);
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+            catch (IOException)
+            {
+                // temp-мусор в кэше не критичен
+            }
+        }
     }
 
     public Task<Stream> OpenReadAsync(string sha256, CancellationToken ct = default)
