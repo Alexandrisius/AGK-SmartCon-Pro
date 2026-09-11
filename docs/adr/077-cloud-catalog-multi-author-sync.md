@@ -1,6 +1,6 @@
 # ADR-077: Cloud Catalog Multi-Author Sync — pull-before-push с per-item optimistic concurrency
 
-**Date:** 2026-08-25  
+**Date:** 2026-08-25 (актуализировано 2026-09-11 — примеры миграций приведены к FHV22)  
 **Status:** proposed  
 **Related:** ADR-075 (Cloud Architecture), ADR-076 (Security), ADR-015 (single-writer SMB — контраст), ADR-022 (роли), ADR-040 (OverwriteCurrent), ADR-041 (Active Version Management)  
 **Детальный план:** [`docs/family-manager/02-plans/cloud-catalog-master-plan.md`](../family-manager/02-plans/cloud-catalog-master-plan.md)
@@ -99,12 +99,13 @@ Auto-merge на сервере запрещён (сервер не судит с
 (правило действует и на `OverwriteCurrent`, выполненный после первой
 публикации).
 
-### 3c. Hash epoch: миграция формата хэша (FHV11 → FHV12…)
+### 3c. Hash epoch: миграция формата хэша (FHV22 → FHV23…)
 
 Правило §3b имеет **единственное исключение** — смена формата хэша: при ней
 `content_hash` каждой версии меняется при неизменном контенте и неизменном
 label (локально это critical-задача actualization, ADR-054/056/069; формат
-менялся уже 11 раз — recurring-процесс, не гипотетика). Без явной механики
+менялся уже 22 раза, включая волну FHV12–FHV22 в v2.0.1–v2.1.0 —
+recurring-процесс, не гипотетика). Без явной механики
 каталог не смог бы мигрировать формат, не ломая item id у подписчиков.
 
 **Операция `rehash`:** publish point может быть помечен `kind: "rehash"` и

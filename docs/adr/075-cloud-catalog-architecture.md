@@ -1,8 +1,8 @@
 # ADR-075: Cloud Catalog Architecture — publish/subscribe sync поверх локальных каталогов
 
-**Date:** 2026-08-25  
+**Date:** 2026-08-25 (актуализировано 2026-09-11 — факты приведены к v2.1.0: FHV22, схема V38, routing вне хэша)  
 **Status:** proposed  
-**Related:** ADR-015 (Published Storage), ADR-016 (ReadOnly files), ADR-022 (RBAC), ADR-045 (project binding в БД), ADR-049/056/069 (content hash FHV), ADR-054 (Actualization Engine), ADR-058 (min_plugin_version), ADR-076 (Security), ADR-077 (Multi-author sync), I-09, I-14, I-16  
+**Related:** ADR-015 (Published Storage), ADR-016 (ReadOnly files), ADR-022 (RBAC), ADR-045 (project binding в БД), ADR-049/056/069 (content hash FHV), ADR-054 (Actualization Engine), ADR-058 (min_plugin_version), ADR-071/072/073 (content-hash hierarchy / World B routing / FHV21 segments — v2.1.0), ADR-076 (Security), ADR-077 (Multi-author sync), I-09, I-14, I-16  
 **Implements:** roadmap `docs/family-manager/00-strategy/00-familymanager-concept-roadmap.md` §12 (Server strategy), Phase 5 (Remote Provider); backlog ADR-FM-006 «Provider abstraction»  
 **Детальный план:** [`docs/family-manager/02-plans/cloud-catalog-master-plan.md`](../family-manager/02-plans/cloud-catalog-master-plan.md)
 
@@ -24,8 +24,14 @@ storage, single-writer, offline-first. Следующая продуктовая
    нет ни локально, ни в облаке. **Тип файла зависит от `family_source`:**
    loadable → `.rfa`; **system → staged мини-проект `.rvt`** (ADR-027/062).
    Манифест обязан различать эти случаи явно (`fileKind`).
-2. **FHV11 content hash** уже решает дедупликацию и детект изменений контента
-   (rename-invariant, ADR-049).
+2. **FHV22 content hash** уже решает дедупликацию и детект изменений контента
+   (rename-invariant, ADR-049). С v2.1.0 хэш иерархичен (ADR-071): 13
+   loadable-секций с построчными `section_hashes/section_strings` (V33) и
+   per-type хэши `family_type_hashes` (V32) — контентный diff читается из БД
+   без открытия Revit. Routing с FHV20 в хэш не входит (World B, ADR-072/073):
+   трассировка — item-level данные каталога (`item_routing_rules` V37,
+   `family_segment_rules` V38), дедуп по `content_hash` означает «файл без
+   трассировки».
 3. **Write-путь жёстко локальный:** импорт-pipeline пишет через
    `LocalCatalogDatabase` + `StoragePathResolver`; `IWritableFamilyCatalogProvider`
    оперирует локальными путями. «Удалённый writable provider» потребовал бы
@@ -75,6 +81,8 @@ dependencies (ADR-066), ссылки на файлы по SHA-256. Каждая 
 Подписчик строит локальную `catalog.db` из манифеста детерминированным импортом.
 Хэш всей базы не нужен: diff гранулярен — `(publish_seq)` для «есть ли
 изменения», `(item id, version label, content_hash)` для «что именно изменилось».
+Перенос v2.1.0-данных (routing World B V36–V38, per-type/section хэши V32/V33)
+в манифесте — открытый вопрос план §13.19, решение до C2.
 
 ### 3. Content-Addressable Storage (CAS) для файлов
 
@@ -212,5 +220,6 @@ per-item optimistic concurrency — детально ADR-077.
 ## Verification
 
 Заполняется по завершении фаз (см. мастер-план §11): спайк C0 (docker compose +
-туннель + R2 presigned round-trip из net48-клиента), билды R19/R21/R24/R25,
-unit + integration сьюты, ручной тест владельца на двух машинах.
+туннель + R2 presigned round-trip из net48-клиента), билды всех поддерживаемых
+конфигураций R19–R27 (2019–2024 net48, 2025–2026 net8, 2027 net10 — матрица
+AGENTS.md), unit + integration сьюты, ручной тест владельца на двух машинах.

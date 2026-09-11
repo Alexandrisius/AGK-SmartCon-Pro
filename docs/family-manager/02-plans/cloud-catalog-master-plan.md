@@ -1,7 +1,8 @@
 # Cloud Catalog — мастер-план реализации
 
 > **Статус:** draft → pending validation | **Дата:** 2026-08-25
-> **ADR:** [071](../../adr/075-cloud-catalog-architecture.md) (архитектура), [072](../../adr/076-cloud-catalog-security.md) (безопасность), [073](../../adr/077-cloud-catalog-multi-author-sync.md) (мульти-автор)
+> **Актуализировано:** 2026-09-11 — ветка rebase на v2.1.0; факты приведены к текущему коду main (FHV22, схема V38, routing вне хэша — World B, Revit 2019–2027). ADR перенумерованы 071/072/073 → 075/076/077 (номера заняты в main решениями v2.1.0).
+> **ADR:** [075](../../adr/075-cloud-catalog-architecture.md) (архитектура), [076](../../adr/076-cloud-catalog-security.md) (безопасность), [077](../../adr/077-cloud-catalog-multi-author-sync.md) (мульти-автор)
 > **Исполнитель:** один ИИ-агент. Документ написан как полное ТЗ: контекст, контракты, файлы, фазы, критерии приёмки, запреты.
 > **Реализует:** roadmap `../00-strategy/00-familymanager-concept-roadmap.md` Phase 5 (Remote Provider) + Phase 7 (marketplace, частично).
 
@@ -10,7 +11,7 @@
 ## 0. Как читать этот документ (для исполнителя)
 
 1. До старта любой фазы исполнитель обязан загрузить: `AGENTS.md`, `docs/invariants.md`, `docs/architecture/dependency-rule.md`, `docs/family-manager/README.md`, ADR-075/076/077, skill `smartcon-build-guide`, skill `smartcon-logging`, skill `smartcon-testing`.
-2. Нумерация «C-фаз» (C0–C6) продолжает продуктовый roadmap; это НЕ Phase 37+ основной линии. Каждая фаза завершается: сборка R19/R21/R24/R25 (0/0), unit-тесты зелёные, валидация субагентом `general`, ручной тест владельца (для UI), changelog-кандидат.
+2. Нумерация «C-фаз» (C0–C6) продолжает продуктовый roadmap; это НЕ Phase 37+ основной линии. Каждая фаза завершается: сборка всех поддерживаемых конфигураций R19–R27 (0/0; 2019–2024 net48, 2025–2026 net8, 2027 net10 — матрица AGENTS.md), unit-тесты зелёные, валидация субагентом `general`, ручной тест владельца (для UI), changelog-кандидат.
 3. Любое отступление от плана — через вопрос владельцу (`question` tool), не молча.
 4. Имена интерфейсов/классов в плане — **канонические**: исполнитель использует их как есть. Если по ходу выясняется, что имя конфликтует с существующим — согласовать переименование.
 
@@ -62,7 +63,7 @@
 
 | Компонент | Где | Использование в Cloud |
 |---|---|---|
-| FHV11 content hash | `SmartCon.Core/.../FamilyContentHasher.cs` | Идентичность контента версии в манифесте и diff |
+| FHV22 content hash (ADR-071: 13 loadable-секций, per-type `family_type_hashes` V32, `section_hashes/section_strings` V33) | `SmartCon.Core/.../FamilyContentHasher.cs` | Идентичность контента версии в манифесте и diff; секционные/per-type хэши — кандидат в манифест (§13.19) |
 | `IFamilyCatalogProvider` + `CatalogProviderKind.Remote/Corporate/PublicReadOnly` | Core | Read-контракт; enum-значения уже зарезервированы — НЕ добавлять новые |
 | `LocalCatalogDatabase`, `SetWriteAccess`, DELETE journal | FamilyManager | Локальная копия подписчика (I-14): read-only вне sync |
 | `StoragePathResolver`, flat `.rfa` layout | FamilyManager | Структура файлов локальной копии = структуре любой БД |
@@ -74,8 +75,17 @@
 | StatusNotice / StatusDetailsView (ADR-066) | FamilyManager/UI | Диалоги «доступны обновления», отчёт о sync, конфликты публикации |
 | RBAC локальная (ADR-022) | FamilyManager | Не меняется; облачные роли — отдельная модель (ADR-076 §1) |
 | GLB pipeline (ADR-042), avatar (ADR-047) | FamilyManager | Ленивая локальная генерация превью на подписанной копии |
+| CAS-пул 3D-превью `files/_shared/models/{shard2}/{view3dHash}.glb` (v2.1.0, #249) | FamilyManager | Паттерн иммутабельного шаринга GLB между семействами/типами; при opt-in публикации превью (store, C7) серверный `files/resolve` обязан учитывать кросс-item переиспользование объектов пула |
+| Комплаенс-проверка каталога (ADR-074, #259) | FamilyManager | Pure SQLite без Revit и открытого документа — работает на read-only Subscribed-копии без изменений; ещё один «читающий» сервис для аудит-чеклиста C2 |
 
 **Важный факт (подтверждён владельцем 2026-08-25, уточнён ревью):** на версию семейства хранится **ровно один файл**: `.rfa` для loadable, **staged мини-проект `.rvt`** для system families (ADR-027/062; `CatalogActualizationService`, `FamilyBatchImportViewModel`: `"system" => ".rvt"`). Строки `catalog_versions` с разными `revit_major_version` на один label — legacy-read наследие (schema `UNIQUE(catalog_item_id, version_label, revit_major_version)`, `GetRevitFileDirectory`, doc-comment «multi-Revit labels» в `IFamilyCatalogProvider`). **Техдолг (отдельная маленькая задача до C2):** пометить в комментариях кода, что multi-Revit — legacy-read only, чтобы агенты не проектировали от него. Манифест несёт `sourceRevitVersion` одной версии как факт происхождения + явный `fileKind` (`rfa`|`stagedRvt`), без массива файлов per-Revit.
+
+**Изменения v2.1.0, которые план обязан учитывать (актуализация 2026-09-11):**
+
+1. **Routing покинул content-хэш (FHV20, World B — ADR-072):** трассировка — item-level данные каталога (`item_routing_rules`/`item_routing_type_settings` V37; legacy-канал `family_routing_rules` V34 заморожен), а **сегментная конфигурация мини-проекта версионирована** (`family_segment_rules` V38, входит в SEGMENTS-секцию хэша — FHV21/ADR-073). Манифест обязан переносить обе группы данных (см. §13.19).
+2. **Staging мини-проектов ручной** (ADR-072): без `CopyElements`, мини без фитингов; рассуждения старого текста плана о RoutingPreferences-фантомах в staged-файле устарели — источником правды о трассировке является БД (`SegmentRuleComposition`).
+3. **Схема локальной БД — V38** (на момент написания плана была V31): V32 `family_type_hashes`, V33 `section_hashes/section_strings`, V34–V38 — routing/segments-таблицы World B. Новые cloud-миграции нумеруются с V39.
+4. **Revit 2027 / .NET 10** в матрице клиента (R27; `SmartCon.Tests` на net8 — не собирать под R27, см. AGENTS.md); новый серверный код под BSL обязан не конфликтовать с ALC-изоляцией зависимостей (ADR-051).
 
 ---
 
@@ -117,7 +127,7 @@
   "publishedAtUtc": "2026-08-25T12:00:00Z",
   "publishedBy": "BIM-отдел ВентПроект",   // displayName, НЕ email (PII, ADR-076 §4)
   "minPluginVersion": "2.1.0",        // семвер; гейт ADR-058 у подписчика
-  "hashFormatVersion": 11,            // FHV11; несовпадение → sync отклонён с баннером
+  "hashFormatVersion": 22,            // FHV22; несовпадение → sync отклонён с баннером
   "revitVersionRange": { "min": 2021, "max": 2025 },  // агрегат по sourceRevitVersion — гейт совместимости (ниже)
   "meta": {                           // metadata-слой = metadata package v4 как есть
     "categories": [ /* v4 */ ], "attributes": [ /* v4 */ ],
@@ -135,6 +145,7 @@
     "versions": [{
       "versionLabel": "v3",
       "contentHash": "A1B2…",                 // FHV{hashFormatVersion}
+      "sectionHashes": { "META": "…", "GEOM": "…" },  // V33 (ADR-071) — кандидат в v1, см. §13.19
       "sourceRevitVersion": 2023,              // факт происхождения (один файл!)
       "fileKind": "rfa",                       // "rfa" (loadable) | "stagedRvt" (system)
       "typesCount": 12, "parametersCount": 40,
@@ -181,6 +192,7 @@ load-флоу системных семейств (isolation project, ADR-061/06
 Правила сериализации:
 - Значения параметров — в **internal units + исходный `unit_type_id`/spec** (как `extracted_attribute_values` в SQLite), конвертация — на клиенте (I-02).
 - Имена категорий/атрибутов — строками (переносимо между базами, как в пакете v4); id внутри манифеста стабильны в пределах каталога.
+- **Routing-данные World B (v2.1.0):** item-level трассировка (`item_routing_rules`/`item_routing_type_settings`, V37), per-version сегментные правила (`family_segment_rules`, V38) и таблицы размеров сегментов (`family_segment_sizes`, V36) — контент каталога, без которого подписчик теряет вкладку «Трассировка» и загрузку системных семейств с конфигурацией; включаются в item/version-секции манифеста (детали — §13.19, решение до C2).
 - **PII-фильтр:** `publishedBy` — только `displayName`; email, `user@machine` локальной RBAC, локальные пути — запрещены в манифесте (ADR-076 §4). `CatalogManifestBuilder` содержит явный whitelist-сериализатор, а не «сериализуем всю строку БД».
 - Манифест сжимается gzip на проводе (`Content-Encoding`). **Размер — эмпирический вопрос:** `types[].parameters[]` доминируют (сотни КБ на item с богатыми атрибутами), оценка «50 МБ / 5–10 тыс. семейств» занижена и пересматривается по замеру реальной базы владельца — **обязательный артефакт спайка C0**: замер несжатого/сжатого размера манифеста. Если замер показывает >100 МБ несжатого на целевых базах — формат v1 до C2 расширяется двухчастным манифестом (index: items+hashes для check/diff; payload: types/parameters на sync), это дешевле до заморозки, чем после.
 - `formatVersion` bump при ломающих изменениях; читатель обязан отклонять неизвестную мажорную версию с баннером обновления (та же UX-механика ADR-058).
@@ -513,7 +525,7 @@ Pull-before-push; дельта с `basePublishSeq`; per-item курсоры на
 | E35 | Закрытие Revit посреди первой публикации 1 ГБ | Publish-диалог ставит паузу; повторный запуск — prepare вычисляет недостающие заново (идемпотентность E2), докачка продолжается; `last_manifest` обновляется только после commit |
 | E36 | Подписчику отозвали доступ (suspend/revoke) | При следующем sync: понятный текст «Доступ к каталогу отозван. Локальная копия продолжает работать; обновления недоступны. [Action: обратитесь к автору каталога]»; копия НЕ удаляется |
 | E6 | Каталог снят с публикации | **Sunsetting 30 дней:** `manifest/latest` → `{finalSeq, sunsetUntilUtc}` → подписчики делают финальный pull в окне (защита покупателя). После окна → 410 → **Subscribed**: копия «заморожена» (значок, sync отключён, контент доступен); **Published (свой каталог)**: конвертация в обычную локальную базу (CloudLink снимается, база остаётся read-write) |
-| E7 | FHV-формат сменился (FHV12) у автора, подписчик на старом плагине | `minPluginVersion`/`hashFormatVersion` в манифесте → баннер «обновите SmartCon» (ADR-058), sync отклонён, копия read-only доступна |
+| E7 | FHV-формат сменился (FHV23) у автора, подписчик на старом плагине | `minPluginVersion`/`hashFormatVersion` в манифесте → баннер «обновите SmartCon» (ADR-058), sync отклонён, копия read-only доступна |
 | E8 | Подписчик офлайн 40 дней, платный каталог, check-in 30 | Sync заблокирован до онлайн-валидации; контент работает; Warn `[Action: подключитесь к интернету]` |
 | E9 | Переезд сервера дом→VPS | Endpoint тот же (туннель/DNS) → клиенты не замечают; токены валидны |
 | E10 | Переименование семейства автором | `normalized_name`/имя меняются в манифесте, content_hash (rename-invariant FHV) тот же → подписчик видит rename, не «новое семейство» |
@@ -532,14 +544,14 @@ Pull-before-push; дельта с `basePublishSeq`; per-item курсоры на
 | E23 | Pull system family на подписанной копии | `fileKind=stagedRvt` → staged `.rvt` в storage копии → загрузка в проект через существующую isolation-project цепочку (ADR-061/062); обязательный интеграционный тест C2 |
 | E24 | Подписчик на Revit 2021, каталог содержит файлы Revit 2025 | При subscribe — предупреждение по `revitVersionRange`; в дереве такие семейства помечены недоступными (бейдж), load команда объясняет причину |
 | E25 | Подписчик имеет и свою локальную базу с тем же семейством | ES-маркер `SmartCon_FamilyVersion_v1` хранит только CatalogItemId и резолвится против **активной** БД (pre-existing поведение multi-DB, облако делает массовым): при переключении базы маркер другой базы — «осиротевший» (#218-обработчик). Item id глобально уникальны (guid автора), коллизий между базами нет. DB-scope в маркере — отдельный ADR, не C2 |
-| E26 | FHV-миграция (FHV11→FHV12) у автора опубликованного каталога | Hash-epoch `rehash` publish point (ADR-077 §3c): item id сохраняются, файлы не меняются; подписчики на старом плагине — E7-гейт, остаются на предыдущем publish point |
+| E26 | FHV-миграция (FHV22→FHV23) у автора опубликованного каталога | Hash-epoch `rehash` publish point (ADR-077 §3c): item id сохраняются, файлы не меняются; подписчики на старом плагине — E7-гейт, остаются на предыдущем publish point |
 | E27 | Даунгрейд плагина после подключения облачной базы | Старый плагин видит базу как локальную (skip-unknown); при записи registry.json теряет `cloudLink` → новая версия self-heal'ит CloudLink из `database_meta.remote_source_json` (обе роли пишут дубль-связку) |
 
 ---
 
 ## 11. Фазы и критерии приёмки
 
-> Каждая фаза: build R19/R21/R24/R25 0/0 (клиент), `dotnet test` сервера, валидация `general`-субагентом, changelog-кандидат. Клиентские UI-фазы — ручной тест владельца + лог-валидация. Серверные фазы — Postman/HTTP-коллекция + xUnit (Testcontainers PG).
+> Каждая фаза: build всех поддерживаемых конфигураций R19–R27 0/0 (клиент), `dotnet test` сервера, валидация `general`-субагентом, changelog-кандидат. Клиентские UI-фазы — ручной тест владельца + лог-валидация. Серверные фазы — Postman/HTTP-коллекция + xUnit (Testcontainers PG).
 
 ### C0. Спайк инфраструктуры (1–2 нед)
 
@@ -633,13 +645,13 @@ Self-hosted compose + SeaweedFS, OIDC/SSO, организации/простра
 ## 12. Требования к реализации (жёстко)
 
 1. **Инварианты I-01…I-17** без исключений. Особо: I-09 (Core — только контракты/DTO; HTTP и Credential Manager — вне Core), I-14 (копия подписчика — DELETE journal, `LocalCatalogDatabase`, read-only вне sync), I-16 (скачанные файлы — read-only атрибут, verify SHA-256), I-10 (MVVM), I-01 (sync не трогает Revit API — документы не открываются при publish/sync; единственное исключение C4-опция: ленивая генерация GLB — через существующий `IFamilyManagerAwaitableEvent`).
-2. **Multi-version:** клиент собирается R19/R21/R24/R25; новые NuGet в клиент — только после проверки net48-совместимости и ILRepack/ALC (ADR-051): Meziantou CredentialManager — CPM-пин в `src/Directory.Packages.props` + строка в **оба** ItemGroup `SmartCon.Dependencies.csproj` (net48 merge — Meziantou strong-named, re-sign нашим snk допустим по правилу csproj; net8 — после проверки ALC-изоляции). `ServicePointManager.ReusePort` поднять в startup (`App.cs`, рядом с SecurityProtocol) — `CloudCatalogApiClient` может инициализироваться раньше `GitHubUpdateService`. Форматные спецификаторы в interpolated strings — запрет #97 (файлы с HelixToolkit не трогаем, но правило помним).
+2. **Multi-version:** клиент собирается R19–R27 (2019–2024 net48, 2025–2026 net8, 2027 net10; `SmartCon.Tests` — net8, под R27 не собирать — AGENTS.md); новые NuGet в клиент — только после проверки net48-совместимости и ILRepack/ALC (ADR-051): Meziantou CredentialManager — CPM-пин в `src/Directory.Packages.props` + строка в **оба** ItemGroup `SmartCon.Dependencies.csproj` (net48 merge — Meziantou strong-named, re-sign нашим snk допустим по правилу csproj; net8 — после проверки ALC-изоляции). `ServicePointManager.ReusePort` поднять в startup (`App.cs`, рядом с SecurityProtocol) — `CloudCatalogApiClient` может инициализироваться раньше `GitHubUpdateService`. Форматные спецификаторы в interpolated strings — запрет #97 (файлы с HelixToolkit не трогаем, но правило помним).
 3. **Логирование:** skill `smartcon-logging`: `BeginScope("Cloud", …)`, OpId-цепочки publish/sync, Warn + `[Action: …]`, `Path.GetFileName()` в scope, без внешних scope на долгих операциях (C15: sync-цикл — точки логирования на этапах, не один scope на весь pull).
 4. **Тесты:** skill `smartcon-testing`. Unit — diff/build/apply/conflict (pure). Integration — через SmartCon.IntegrationTests для Revit-boundary частей (apply → открыть семейство в Revit). Сервер — xUnit + Testcontainers. 9 жёстких правил интеграционных тестов соблюдать.
 5. **Документация:** новые доменные модели → `docs/domain/models/family-manager/cloud.md`; интерфейсы → `docs/domain/interfaces/family-manager/cloud.md`; глоссарий §2 → `docs/domain/glossary.md`; обновить `docs/family-manager/README.md` (провайдеры, статус фаз), `docs/README.md` (статусы), этот план — статусы фаз.
 6. **Локализация:** все строки UI — через LanguageManager/`LocExtension` (ADR-020), RU/EN.
 7. **Запреты:** S3 SDK в клиенте; plaintext токены; `new SqliteConnection` вне `LocalCatalogDatabase`; WAL; MinIO; quick-tunnels; real-time sync (WebSocket) в MVP; EF Core в клиенте; хранение `.rfa` нескольких Revit-версий на одну версию семейства (legacy-read only).
-8. **Миграции локальной схемы:** `database_meta.remote_source_json` — по существующему паттерну `LocalCatalogMigrator` (V32+), с actualization-задачей если нужен backfill (skill `smartcon-db-actualization`). `CloudLink` в `registry.json` — через `RegistryMigrator` (отдельный механизм, НЕ путать с мигратором catalog.db).
+8. **Миграции локальной схемы:** `database_meta.remote_source_json` — по существующему паттерну `LocalCatalogMigrator` (V39+; текущая схема main — V38), с actualization-задачей если нужен backfill (skill `smartcon-db-actualization`). `CloudLink` в `registry.json` — через `RegistryMigrator` (отдельный механизм, НЕ путать с мигратором catalog.db).
 9. **Performance-бюджеты (проверяются в ручных тестах C2/C3):** фоновый check обновлений — < 2 c и < 10 КБ на базу; **десятки облачных баз (магазин C7): poll батчится одним запросом** (`GET /v1/catalogs/subscriptions` возвращает hasUpdates по всем) — не N запросов за цикл; sync 5 изменённых семейств — < 1 мин на 10 МБит/с; первый pull 1 ГБ — фоновый, без блокировки панели, с прогрессом и докачкой; открытие панели с cloud-базой — без сетевых вызовов на UI-потоке (всё через кэш/фон); publish 100 семейств — modeless, без блокировки Revit. Домашний сервер фазы 0: 20 подписчиков × poll 4/час — нагрузка пренебрежима (JSON-килобайты).
 
 ---
@@ -664,6 +676,7 @@ Self-hosted compose + SeaweedFS, OIDC/SSO, организации/простра
 16. ~~Открытость кода сервера~~ **РЕШЕНО (владелец, 2026-08-26):** репозиторий НЕ разделяем. Один публичный репозиторий `AGK-SmartCon-Pro`: плагин остаётся под **MIT** (корень, существующий LICENSE не трогаем), папка **`server/` — под BSL 1.1** (свой `server/LICENSE`: запрет конкурирующего коммерческого хостинга, конвертация в Apache-2.0 через 36 месяцев с даты релиза; модель Sentry/HashiCorp; mono-repo с двумя лицензиями — модель GitLab `ee/`). Обязательная маркировка: `server/README.md` с явным блоком лицензии, шапка в каждом файле сервера, корневой README получает абзац «Лицензии: плагин — MIT, server/ — BSL». Форк плагина без сервера = плагин без облака; clean-room сервер по открытому протоколу — принятый риск (§8.0).
 17. **Endpoint/domain migration** (ревью L6): смена домена сервера осиротевает CloudLink/приглашения/Credential Manager targets. Минимум: серверный `308` с новым endpoint → клиент обновляет CloudLink и re-login. Точная механика — отдельный ADR, когда появится спрос (переезд домена платформы маловероятен до C5).
 18. **Known limitation (ревью L6):** файл >100 МБ для клиента за прокси, блокирующим R2, недоступен ни напрямую, ни через API-фолбэк (лимит free-прокси туннеля, §14) — диагностика с `[Action: разрешите *.r2.cloudflarestorage.com]`. На VPS с публичным IP лимит снимается (фолбэк не через Cloudflare-прокси).
+19. **Перенос v2.1.0-данных через манифест (актуализация 2026-09-11, решение до C2):** план писался до World B и ADR-071. Три группы данных теперь живут в каталоге, но не описаны в манифесте v1 явно: (а) **routing World B** — `item_routing_rules`/`item_routing_type_settings` (V37), `family_segment_rules` (V38), `family_segment_sizes` (V36): без них у подписчика пустая вкладка «Трассировка» и деградирует загрузка системных семейств; (б) **per-type хэши** `family_type_hashes` (V32) и **section-хэши** `section_hashes/section_strings` (V33): на Subscribed-копии actualization отключена (ADR-075 §7) → бэкфилл-задачи (`type-hashes-v1`, `section-hashes-v1`) не могут наполнить эти колонки, единственный источник — манифест (иначе per-type stale-карта и diff-окно на подписанных копиях неработоспособны); (в) **правила автоназначения** — уже в metadata v4 (`assignmentRules`, #241), мета-слой манифеста переносит их автоматически. Кандидат-решение: секции manifest v1 для (а) и (б) (данные уже лежат в БД автора, сериализация по образцу V33-JSON); включение в golden-образец `server/contracts/manifest-v1.sample.json` — обязательно.
 
 ---
 
@@ -684,6 +697,19 @@ Self-hosted compose + SeaweedFS, OIDC/SSO, организации/простра
 | Ключи доступа (модель) | Индустриальный паттерн: activate → токен → periodic validation → offline grace → revoke прекращает обновления | Keygen docs, Lemon Squeezy license API, Gumroad licenses |
 | Конкурентная рамка | Kinship Collections (internal/external share, point-in-time copy при unshare), UNIFI/Content Catalog (Revit-version insert), BIMobject (производители платят за публикацию) — наша дифференциация: публикация в 1 клик из локальной базы + валидация качества | kinship.io docs/blog, unifilabs.com, bimobject.com |
 | Delta-sync паттерны | casync/OSTree/bsdiff-чаны отложены: `.rfa` маленькие, CAS per-file достаточен | systemd/casync, ostree docs, koder RFC-001 |
+
+### Повторная верификация (2026-09-11, после rebase ветки на v2.1.0)
+
+| Решение | Подтверждение |
+|---|---|
+| .NET 10 LTS | Поддержка до 2028-11-14 (dotnet.microsoft.com, текущий патч 10.0.11 от 2026-08-11); .NET 8 истекает 2026-11-10 — решение «не начинать на .NET 8» верное |
+| MinIO запрещён | Подтверждено: репозиторий ARCHIVED (финально 2026-04), binary/Docker source-only с 2025-10; SeaweedFS (Apache 2.0) — валидная замена для C6 |
+| Cloudflare R2 | Egress $0 подтверждён (docs 2026-08 + community); presigned GET/PUT через AWSSDK.S3 работают, SigV4-gotcha актуален (`UseSignatureVersion4=true`, `SignatureVersion="v4"`, `ForcePathStyle=true`; для серверных streaming-операций — `DisablePayloadSigning`/`DisableDefaultChecksumValidation`) |
+| Cloudflare Tunnel | Лимит 100 МБ — только на **upload**-тело (Free/Pro; Business 200 МБ, Enterprise 500 МБ); на download лимита нет — ограничение затрагивает только upload-фолбэк C4, download-фолбэк C2 шире, чем считал план |
+| Npgsql / EF Core | Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3 (2026-07), таргет .NET 10, поддержка PG18 (virtual generated columns, uuidv7) |
+| Meziantou CredentialManager | Линия 3.0.x жива (3.0.1); net462+net8+net10 |
+
+Источники: dotnet.microsoft.com/platform/support/policy, github.com/minio/minio (README archived), glukhov.org (MinIO timeline), developers.cloudflare.com/r2 (presigned-urls, aws-sdk-net), community.cloudflare.com (upload limits, 100mb tunnel limit), nuget.org (Npgsql EFCore.PG, Meziantou), postgresql.org (PG18 release).
 
 ---
 

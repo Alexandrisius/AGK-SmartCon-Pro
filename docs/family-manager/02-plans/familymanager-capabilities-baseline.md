@@ -2,7 +2,9 @@
 
 > **Назначение:** единая точка входа для ревьюеров мастер-плана Облачного каталога (ADR-075/076/077, `cloud-catalog-master-plan.md`). Фиксирует, что модуль уже умеет на момент 2026-08-25, чтобы аудит плана вёлся от фактов, а не от изучения кода.
 >
-> **Источники:** `docs/changelogs/v1.1.0 … v2.0.1-beta.9` (37 файлов), `docs/family-manager/README.md` (фазы, миграции V1–V31), заголовки ADR-014…073. Код `src/` намеренно не использовался.
+> **Актуализировано 2026-09-11:** ветка rebase на v2.1.0 — ключевые числа (§3) приведены к текущему коду, дельта v2.1.0 против beta.9 вынесена в §4, поверхности интеграции (§2) дополнены трассировкой и комплаенсом.
+>
+> **Источники:** `docs/changelogs/v1.1.0 … v2.0.1-beta.9` (37 файлов), `docs/family-manager/README.md` (фазы, миграции V1–V31), заголовки ADR-014…073. Код `src/` намеренно не использовался. Дополнение §4 — по `docs/changelogs/v2.0.1-beta.10.md`, `v2.1.0.md`, ADR-071…074 и коду main (da7bf78).
 
 ---
 
@@ -115,7 +117,7 @@
 - Modeless-диалоги с прогрессом: batch import (ADR-048), миграции/актуализация (ADR-050/054). Подтверждение закрытия при несохранённых изменениях (`ISaveableViewModel`+`DialogCloseHelper`, v1.9.3-beta.4). Комбо с подтверждением, единые OK/Cancel Enter/Escape.
 - Локализация RU/EN — единый SSOT, модульная декомпозиция, LocExtension (net48-фикс ContextMenu/Popup), ADR-020.
 
-### 1.16 Multi-version (R19–R26)
+### 1.16 Multi-version (R19–R27; срез 2026-08-25 — до R26, v2.1.0 добавила R27)
 
 - Поддержка Revit 2019–2026: net48 (2019–2024) + net8.0-windows (2025–2026); конфигурации R19/R21/R24/R25(/R26). Изоляция зависимостей (ADR-051): ILRepack → `SmartCon.Dependencies` на net48 и R25, самовосстанавливающийся `.addin`. Кросс-версионные хелперы: `RevitUnitsCompat`, `ElementId` по версиям, условный `AdWindows.dll` (`NO_ADWINDOWS`), рефлексия для `GetSpecTypeId`/`GetDataType`.
 
@@ -133,6 +135,7 @@
 | Удаление семейства / категории (Dependency Guard) | Строки БД + managed-файлы (fail-fast: сначала файлы) |
 | Редактор категорий (full-immediate), привязки атрибутов | Категории, bindings — сразу, без OK |
 | Редакторы правил: validation (ADR-059), auto-assignment (ADR-070) | `category_validation_rules`, `category_assignment_*` |
+| Вкладка «Трассировка» / редактор трассировки из каталога (v2.1.0, ADR-072/073) | `item_routing_rules`, `item_routing_type_settings` (V37), `family_segment_rules` (V38), `family_segment_sizes` (V36) |
 | Свойства семейства (Save): имя/статус/теги/описание, переименование файла | `catalog_items`, managed-файл (rename) |
 | Assets: добавить/удалить/сделать основным/привязать к версии; Avatar crop | `family_assets`, файлы assets, производный `avatar.png` |
 | «Обновить базу» (actualization engine), миграции хэшей | Любые колонки/таблицы + пересчёт хэшей, GLB, маркеры |
@@ -145,7 +148,7 @@
 
 ### Только читают (безопасны для read-only копии)
 
-Дерево/поиск/теги, свойства (просмотр), вкладки Версии/Атрибуты/Содержимое, 3D-просмотр существующего GLB, тултипы/аватары, «Найти в каталоге», StatusDetails-диалоги, «Проверить» (сверка проект↔каталог), metadata package **экспорт**, профиль (просмотр).
+Дерево/поиск/теги, свойства (просмотр), вкладки Версии/Атрибуты/Содержимое, 3D-просмотр существующего GLB, тултипы/аватары, «Найти в каталоге», StatusDetails-диалоги, «Проверить» (сверка проект↔каталог), metadata package **экспорт**, профиль (просмотр), комплаенс-проверка «Проверить → Правила» (v2.1.0, ADR-074 — pure SQLite, без Revit и открытого документа, работает на read-only БД).
 
 **Существующие гейты, на которые облако должно опереться:** RBAC CanExecute, read-only при pending critical-актуализации (жёлтый баннер + `IDatabaseUpdateStateService`), forward-compat гейт `min_plugin_version` (ADR-058), Engineer `Mode=ReadOnly` SQLite, Dependency Guard, stale-сторож «никогда не размещать stale».
 
@@ -153,14 +156,14 @@
 
 ## 3. Ключевые числа
 
-| Метрика | Значение |
-|---|---|
-| Схема БД | **v31** (миграции V1→V31, `category_assignment_rule_groups/conditions` — последняя, ADR-070) |
-| Unit-тесты | **2725** (Phase 36, 2026-08-13); рост: 936 (v1.6.0) → 1505 (2.0.0-beta.3) → 2725 |
-| Интеграционные тесты (реальный Revit) | **178/178** на R25 (Phase 36) |
-| Revit-версии | 2019, 2020, 2021, 2022, 2023, 2024 (net48), 2025, 2026 (net8) |
-| Формат хэша | FHV11 (с учётом lookup-таблиц), задача `hash-v3` critical |
-| Managed storage | `%APPDATA%\SmartCon\FamilyManager\databases\{id}\`, read-only файлы (I-16), `.trash` для занятых |
+| Метрика | Значение (v2.0.1-beta.9, срез 2026-08-25) | Значение (v2.1.0, 2026-09-11) |
+|---|---|---|
+| Схема БД | v31 (`category_assignment_rule_groups/conditions`, ADR-070) | **v38** (`family_type_hashes` V32, `section_hashes` V33, routing World B V34–V38) |
+| Unit-тесты | 2725 (Phase 36) | **3174** (Phase 38, 2026-09-08) |
+| Интеграционные тесты (реальный Revit) | 178/178 на R25 (Phase 36) | **~250** (Phase 37: R25 238/250 + net48 236/249, 12–13 skip — пропуски по окружению) |
+| Revit-версии | 2019–2026 (net48 + net8) | **2019–2027** (net48 + net8 + **net10 для 2027**) |
+| Формат хэша | FHV11 (lookup-таблицы в хэше) | **FHV22** (13 секций + per-type, ROUTING вне хэша с FHV20) |
+| Managed storage | `%APPDATA%\SmartCon\FamilyManager\databases\{id}\`, read-only файлы (I-16), `.trash` для занятых | то же + CAS-пул превью `files/_shared/models/{shard2}/{view3dHash}.glb` (#249) |
 
 ### Ломающие изменения и как выкатывались
 
@@ -170,4 +173,38 @@
 
 ---
 
-*Дата генерации: 2026-08-25. Сгенерировано из changelogs v1.1.0–v2.0.1-beta.9 + docs/family-manager/README.md + заголовки ADR.*
+---
+
+## 4. Дополнение: дельта v2.1.0 против beta.9 (актуализация 2026-09-11)
+
+> Для ревьюеров облачного плана: всё, что появилось в модуле после среза 2026-08-25 и влияет на Cloud Catalog. Источники: `docs/changelogs/v2.0.1-beta.10.md`, `v2.1.0.md`, ADR-071…074, код main (da7bf78).
+
+### 4.1 Content-хэш: FHV11 → FHV22 + иерархия (ADR-071, #249/#251)
+
+- **FHV12–FHV17** (вышли одним пересчётом `hash-v18`): DEF-секция + усиленная GEOM (12); изоляция sketch-кривых, только labeled-размеры (13); автономия секций DEF/GEOM2D (14); детерминированный **reference-тип** — type-зависимые секции измеряются на первом именованном типе в откатываемой транзакции (15); канонизация IEEE `-0.0` → `"0"` (16); канонический порядок мультиэлементных секций по полной канонической строке (17).
+- **FHV18** (#251): per-face цветовая гистограмма в GEOM и VIEW3D.
+- **FHV19** (#254): параметрический routing (flex pipe/duct, conduit, cable tray — без RoutingPreferenceManager): BIP уходят из VALUES в ROUTING со строковыми ключами `Param:<BIP>`.
+- **FHV20** (ADR-072, World B): секция ROUTING **удалена** из системной канонической строки — трассировка стала данными каталога (равенство routing обслуживает отдельный `RoutingFingerprint`).
+- **FHV21** (ADR-073): критерий диапазона размеров (Мин/Макс) входит в SEGMENTS-секцию мини-проекта; фитинговые правила остаются вне хэша; critical-задача `hash-v21`.
+- **FHV22** (#233): Revit 2026 заменил граф ElectricalSetting на плоскую модель `Conductor*` — порт резолвит проводники по имени через Conductor*-статики; на ≤2025 хэш байт-идентичен FHV21; fleet-wide задача `hash-v22`.
+- **Иерархия хэша (ADR-071):** 13 loadable-секций с построчными `catalog_versions.section_hashes/section_strings` (V33, JSON-словари) + per-type хэши `family_type_hashes` (V32) — контентный diff, per-type stale-карта и окно «что изменилось» читаются из БД без открытия Revit (`IContentHashAnalyticsRepository`). Бэкфилл — опциональные задачи `section-hashes-v1`/`type-hashes-v1`.
+- **CAS-пул 3D-превью:** `files/_shared/models/{shard2}/{view3dHash}.glb` — иммутабельные GLB, шарящиеся между типами/семействами (SHA-256 VIEW3D-хэша, имена не входят), refcount-удаление `SharedPreviewPoolCleanup`, атомарная запись через temp+rename.
+
+### 4.2 Мини-проекты и трассировка (ADR-072/073, #254)
+
+- **Ручной staging** MEP-мини без `CopyElements` (устраняет класс материал-дублей «Имя1» Revit 2024+); мини без фитингов.
+- **Владение разделено:** мини-проект — сегментная конфигурация (V38 `family_segment_rules`, per-version, откат версии восстанавливает конфигурацию); вкладка «Трассировка» — фитинги/критерии/preferred junction как item-level данные (`item_routing_rules`/`item_routing_type_settings` V37; legacy `family_routing_rules` V34 заморожен). Чтение — только через `SegmentRuleComposition` (item + per-version + legacy-fallback).
+- Редактирование трассировки не создаёт версий и не инкрементирует хэш (World B).
+
+### 4.3 Прочее, влияющее на облако
+
+- **Точечное (per-type) устаревание + честная контент-проверка** (#249/#253/#180/#187): трёхцветные точки присутствия, окно сравнения версий — на подписанных копиях зависит от V32/V33-колонок (см. мастер-план §13.19).
+- **Комплаенс-проверка** (ADR-074, #259): «Проверить → Правила» — каталог vs effective-правила, pure SQLite без Revit; подходит read-only копиям.
+- **Проектные базы** (#119/#168): привязка базы к `.rvt` по шаблону имени, автоактивация, конвертация General↔Project; `BaseType` ортогонален облачному `CloudLink` (подтверждено кодом `DatabaseConnection`).
+- **Единая команда «Обновить базу»** вместо цепочки миграций (база read-only на время).
+- **Revit 2027 / .NET 10** (R27): per-version бинарники обязательны (#233 — в API 2026 сменились типы `WireType`); `ConnectorType.MasterSurface` → `MainSurface` в 2027.
+- **Изоляция зависимостей от чужих адд-инов** (критический фикс #134/#177) — новый cloud-код в клиенте обязан вписаться в ADR-051 (`SmartCon.Dependencies`, ILRepack на net48, ALC на net8).
+
+---
+
+*Дата генерации: 2026-08-25. Сгенерировано из changelogs v1.1.0–v2.0.1-beta.9 + docs/family-manager/README.md + заголовки ADR. Актуализировано 2026-09-11 — v2.1.0 (числа §3, §4; код main da7bf78).*
