@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.UI;
 
@@ -239,6 +240,16 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand(CanExecute = nameof(CanUpdateDatabase))]
     private async Task UpdateDatabaseAsync()
     {
+        // §7.3.3 (cloud catalog v1): «Обновить» на Subscribed-базе — только
+        // pull из облака, actualization engine на подписной копии отключён
+        // (ADR-075 §7).
+        var selected = SelectedConnection?.Connection;
+        if (selected?.CloudLink?.Role == CloudLinkRole.Subscribed)
+        {
+            await UpdateSubscribedCloudAsync(selected, CancellationToken.None).ConfigureAwait(true);
+            return;
+        }
+
         if (CurrentRevitVersion <= 0)
         {
             DetectRevitVersion();

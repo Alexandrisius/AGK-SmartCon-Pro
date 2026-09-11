@@ -295,4 +295,87 @@ public sealed partial class FamilyGeometryPipeline : IFamilyGeometryPipeline
         }
     }
 
+    /// <summary>
+    /// Cloud catalog v1 (ADR-075 §7): extract per-type GLBs into the shared
+    /// preview cache OUTSIDE the copy — no DB writes (a Subscribed copy is
+    /// read-only). Path is deterministic by (item, version, type) so the
+    /// viewer resolves it without knowing the extraction result.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, string>> ExtractToPreviewCacheAsync(
+        string managedRfaPath,
+        string familyName,
+        string catalogItemId,
+        string versionLabel,
+        CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrEmpty(managedRfaPath) || !File.Exists(managedRfaPath))
+        {
+            SmartConLogger.Warn(
+                $"Preview cache extraction skipped: managed .rfa not found for '{familyName}' v{versionLabel} " +
+                "[Action: 3D preview remains unavailable for this version on the subscribed copy]");
+            return result;
+        }
+
+        using var _scope = SmartConLogger.BeginScope("Geo3DPipeline",
+            ("Method", nameof(ExtractToPreviewCacheAsync)),
+            ("CatalogItemId", catalogItemId),
+            ("VersionLabel", versionLabel),
+            ("FilePath", Path.GetFileName(managedRfaPath)));
+
+        IReadOnlyList<FamilyGeometryPerType>? extracted = null;
+        await _awaitableEvent.RaiseAsyncTask(
+            async _ => extracted = await _extractor.ExtractAsync(managedRfaPath, familyName, ct).ConfigureAwait(false),
+            ct).ConfigureAwait(false);
+
+        if (extracted is null || extracted.Count == 0)
+        {
+            SmartConLogger.Warn(
+                $"Preview cache extraction: no geometry extracted for '{familyName}' v{versionLabel} " +
+                "[Action: verify the family has visible 3D solids]");
+            return result;
+        }
+
+        foreach (var gpt in extracted)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (gpt.IsEmpty) continue;
+
+            var targetPath = SmartCon.FamilyManager.Services.Cloud.CloudPaths.PreviewCacheFilePath(
+                catalogItemId, versionLabel, gpt.TypeName);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+
+            // Атомарно: temp в той же папке → Move (обрыв не оставляет половину файла).
+            var tempPath = targetPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                var preview = new FamilyGeometryPreview(
+                    catalogItemId, versionLabel,
+                    string.IsNullOrEmpty(gpt.TypeName) ? gpt.FamilyName : $"{gpt.FamilyName} [{gpt.TypeName}]",
+                    gpt.Meshes);
+                if (await _glbWriter.WriteAsync(preview, tempPath, ct).ConfigureAwait(false))
+                {
+                    File.Move(tempPath, targetPath);
+                    result[gpt.TypeName] = targetPath;
+                }
+                else
+                {
+                    SmartConLogger.Warn(
+                        $"Preview cache write failed for type '{gpt.TypeName}' of '{familyName}' v{versionLabel} " +
+                        "[Action: 3D preview remains unavailable for this type]");
+                }
+            }
+            finally
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                catch (IOException) { }
+            }
+        }
+
+        SmartConLogger.Info(
+            $"Preview cache extraction finished: family='{familyName}', v='{versionLabel}', " +
+            $"cached={result.Count} of {extracted.Count} type(s)");
+        return result;
+    }
+
 }

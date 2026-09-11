@@ -172,6 +172,10 @@ public static class ServiceRegistrar
             presenter.Register<FmFieldLibraryViewModel>(vm => new FmFieldLibraryView(vm));
             presenter.Register<FmAllowedValuesViewModel>(vm => new FmAllowedValuesView(vm));
             presenter.Register<RoutingPartPickerViewModel>(vm => new RoutingPartPickerView(vm));
+            // Cloud Catalog (срез v1): логин, мастер «Облачная база», modeless-прогресс publish/pull.
+            presenter.Register<SmartCon.FamilyManager.ViewModels.Cloud.CloudLoginViewModel>(vm => new SmartCon.FamilyManager.Views.CloudLoginView(vm));
+            presenter.Register<SmartCon.FamilyManager.ViewModels.Cloud.CloudDatabaseWizardViewModel>(vm => new SmartCon.FamilyManager.Views.CloudDatabaseWizardView(vm));
+            presenter.Register<SmartCon.FamilyManager.ViewModels.Cloud.CloudOperationProgressViewModel>(vm => new SmartCon.FamilyManager.Views.CloudOperationProgressView(vm));
             return presenter;
         });
         services.AddSingleton<IDialogPresenter>(sp => sp.GetRequiredService<WpfDialogPresenter>());

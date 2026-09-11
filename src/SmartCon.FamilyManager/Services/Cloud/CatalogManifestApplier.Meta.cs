@@ -5,7 +5,7 @@ using SmartCon.FamilyManager.Models.Metadata;
 namespace SmartCon.FamilyManager.Services.Cloud;
 
 /// <summary>Вставка meta-слоя (metadata package v4): категории, атрибуты, биндинги, assignment rules.</summary>
-internal sealed partial class CatalogManifestApplier
+public sealed partial class CatalogManifestApplier
 {
     /// <summary>Возвращает map «полный путь категории → id» для ремапа catalog_items.category_id.</summary>
     private static async Task<Dictionary<string, string>> InsertMetaAsync(

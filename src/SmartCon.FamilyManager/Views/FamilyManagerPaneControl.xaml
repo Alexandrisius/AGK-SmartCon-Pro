@@ -101,35 +101,65 @@
                 </Setter>
             </Style>
 
+            <!-- Cloud Catalog §7.3.12: значок-облачко Published↑/Subscribed↓ — оверлей на иконке базы -->
+            <Style x:Key="CloudBadgeOverlay" TargetType="{x:Type iconPacks:PackIconMaterial}">
+                <Setter Property="Width" Value="9"/>
+                <Setter Property="Height" Value="9"/>
+                <Setter Property="HorizontalAlignment" Value="Right"/>
+                <Setter Property="VerticalAlignment" Value="Bottom"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                <Setter Property="Visibility" Value="Collapsed"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding CloudBadge}" Value="published">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Setter Property="Kind" Value="CloudUpload"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding CloudBadge}" Value="subscribed">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Setter Property="Kind" Value="CloudDownload"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
             <DataTemplate x:Key="DbGeneralTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal">
-                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
-                        <iconPacks:PackIconMaterial Kind="Database"
-                                                       Width="24" Height="24"
-                                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Viewbox>
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
+                    <Grid Width="16" Height="14" Margin="0,0,6,0">
+                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
+                            <iconPacks:PackIconMaterial Kind="Database"
+                                                           Width="24" Height="24"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                        </Viewbox>
+                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
+                    </Grid>
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                 </StackPanel>
             </DataTemplate>
 
             <DataTemplate x:Key="DbProjectMatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal">
-                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
-                        <Path Data="{StaticResource FolderIconGeometry}"
-                              Fill="{DynamicResource TextMutedBrush}"/>
-                    </Viewbox>
+                <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
+                    <Grid Width="16" Height="14" Margin="0,0,6,0">
+                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
+                            <Path Data="{StaticResource FolderIconGeometry}"
+                                  Fill="{DynamicResource TextMutedBrush}"/>
+                        </Viewbox>
+                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
+                    </Grid>
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                 </StackPanel>
             </DataTemplate>
 
             <DataTemplate x:Key="DbProjectMismatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
-                <StackPanel Orientation="Horizontal" ToolTip="{Binding MismatchReason}">
-                    <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
-                        <iconPacks:PackIconMaterial Kind="Lock"
-                                                       Width="24" Height="24"
-                                                       Foreground="{DynamicResource TextMutedBrush}"/>
-                    </Viewbox>
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <StackPanel Orientation="Horizontal">
+                    <Grid Width="16" Height="14" Margin="0,0,6,0" ToolTip="{Binding MismatchReason}">
+                        <Viewbox Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Left">
+                            <iconPacks:PackIconMaterial Kind="Lock"
+                                                           Width="24" Height="24"
+                                                           Foreground="{DynamicResource TextMutedBrush}"/>
+                        </Viewbox>
+                        <iconPacks:PackIconMaterial Style="{StaticResource CloudBadgeOverlay}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}"
+                               ToolTip="{Binding CloudBadgeTooltip}"/>
                 </StackPanel>
             </DataTemplate>
 
@@ -348,6 +378,20 @@
                                 </i:EventTrigger>
                             </i:Interaction.Triggers>
                         </Button>
+                        <Button Content="{loc:Loc FM_PBase_CreateCloudDatabase}"
+                                Command="{Binding OpenCloudDatabaseWizardCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=CreateDbPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                     </StackPanel>
                 </Border>
             </Popup>
@@ -421,6 +465,15 @@
                         </Style>
                     </Border.Style>
                 </Border>
+                <!-- Cloud §7.3.4: бейдж «доступны обновления из облака» (Subscribed) -->
+                <Border Width="6" Height="6"
+                        CornerRadius="3"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="2,2,0,0"
+                        Background="{DynamicResource AccentBrush}"
+                        IsHitTestVisible="False"
+                        ToolTip="{loc:Loc FM_Cloud_UpdateAvailableBadge}"
+                        Visibility="{Binding HasCloudUpdates, Converter={StaticResource BoolToVis}}"/>
             </Grid>
 
             <Popup x:Name="DbToolsPopup"
@@ -435,6 +488,37 @@
                         CornerRadius="6"
                         Padding="4">
                     <StackPanel>
+                        <Button Content="{loc:Loc FM_Cloud_PublishCommand}"
+                                Command="{Binding PublishCloudChangesCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                ToolTip="{loc:Loc FM_Cloud_PublishTooltip}"
+                                Visibility="{Binding IsSelectedCloudPublished, Converter={StaticResource BoolToVis}}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
+                        <Button Content="{loc:Loc FM_Cloud_CopyInvite}"
+                                Command="{Binding CopyCloudInviteCommand}"
+                                MinWidth="180"
+                                HorizontalContentAlignment="Left"
+                                Padding="10,6"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Visibility="{Binding IsSelectedCloudPublished, Converter={StaticResource BoolToVis}}">
+                            <i:Interaction.Triggers>
+                                <i:EventTrigger EventName="Click">
+                                    <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>
+                                </i:EventTrigger>
+                            </i:Interaction.Triggers>
+                        </Button>
                         <Button Content="{loc:Loc FM_PBase_UpdateDatabase}"
                                 Command="{Binding UpdateDatabaseCommand}"
                                 MinWidth="180"
@@ -444,7 +528,7 @@
                                 BorderThickness="0"
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_PBase_UpdateDatabaseTooltip}"
-                                Visibility="{Binding HasAnyDatabaseUpdate, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowUpdateDatabaseCommand, Converter={StaticResource BoolToVis}}">
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>

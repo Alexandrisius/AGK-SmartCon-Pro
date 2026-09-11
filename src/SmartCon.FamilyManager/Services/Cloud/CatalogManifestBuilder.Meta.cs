@@ -6,7 +6,7 @@ using SmartCon.FamilyManager.Models.Metadata;
 namespace SmartCon.FamilyManager.Services.Cloud;
 
 /// <summary>Meta-слой манифеста: категории/атрибуты/биндинги/assignment rules — структуры metadata package v4.</summary>
-internal sealed partial class CatalogManifestBuilder
+public sealed partial class CatalogManifestBuilder
 {
     private sealed record CategoryRow(string Id, string Name, string? ParentId, int SortOrder);
 

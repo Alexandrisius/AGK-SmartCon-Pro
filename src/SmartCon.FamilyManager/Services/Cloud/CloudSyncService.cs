@@ -17,7 +17,7 @@ public sealed record CloudSyncResult(long PublishSeq, int ItemsCount, bool Updat
 /// временную папку → атомарный swap целевой cloud-копии. Идемпотентен: seq не изменился —
 /// копия не пересобирается.
 /// </summary>
-internal sealed class CloudSyncService
+public sealed class CloudSyncService
 {
     private readonly CloudCatalogApiClient _api;
     private readonly CatalogManifestApplier _applier;

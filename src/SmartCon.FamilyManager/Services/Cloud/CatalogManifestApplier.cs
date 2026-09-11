@@ -42,7 +42,7 @@ public sealed class CatalogManifestApplyResult
 /// LocalCatalogDatabase (активная база) не затрагивается — применяется
 /// через приватный экземпляр на целевом корне.
 /// </summary>
-internal sealed partial class CatalogManifestApplier
+public sealed partial class CatalogManifestApplier
 {
     private readonly IClock _clock;
 

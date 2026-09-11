@@ -29,7 +29,7 @@ public sealed class CatalogManifestBuildOptions
 /// Предполагает, что LocalCatalogDatabase уже указывает на корень нужной базы
 /// (SwitchToPath выполнен вызывающим кодом).
 /// </summary>
-internal sealed partial class CatalogManifestBuilder
+public sealed partial class CatalogManifestBuilder
 {
     private readonly LocalCatalogDatabase _database;
     private readonly StoragePathResolver _pathResolver;

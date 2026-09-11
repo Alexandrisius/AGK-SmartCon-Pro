@@ -20,7 +20,7 @@ public sealed record CloudPublishResult(long PublishSeq, int ItemsCount, int Upl
 /// seq-гейт сервера: конкурентная публикация другого автора → 409 stale_base_seq
 /// с подсказкой повторить.
 /// </summary>
-internal sealed class CloudPublishService
+public sealed class CloudPublishService
 {
     /// <summary>Максимальное число циклов «422 → upload → publish» (валидатор Фазы 4, P3).</summary>
     private const int MaxUploadRounds = 3;

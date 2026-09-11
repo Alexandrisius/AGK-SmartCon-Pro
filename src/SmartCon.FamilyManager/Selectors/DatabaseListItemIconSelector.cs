@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.Selectors;
 
@@ -52,6 +53,25 @@ public sealed class DatabaseListItem
         MatchStatus = matchStatus;
         MismatchReason = mismatchReason;
     }
+
+    // ── Cloud catalog (срез v1, §7.3.12): значок-облачко Published↑/Subscribed↓ ──
+
+    /// <summary>"published" / "subscribed" / "" — DataTrigger-ключ для оверлея в шаблонах.</summary>
+    public string CloudBadge => Connection.CloudLink?.Role switch
+    {
+        CloudLinkRole.Published => "published",
+        CloudLinkRole.Subscribed => "subscribed",
+        _ => string.Empty
+    };
+
+    public string? CloudBadgeTooltip => Connection.CloudLink?.Role switch
+    {
+        CloudLinkRole.Published => LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_PublishedIconTooltip)
+            ?? "Облачная база — публикуется на сервер",
+        CloudLinkRole.Subscribed => LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_SubscribedIconTooltip)
+            ?? "Облачная база — подписка (только чтение)",
+        _ => null
+    };
 
     public static implicit operator DatabaseConnection(DatabaseListItem dli) => dli.Connection;
 }

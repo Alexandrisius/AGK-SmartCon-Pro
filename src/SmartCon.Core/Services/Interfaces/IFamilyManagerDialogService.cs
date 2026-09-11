@@ -160,6 +160,27 @@ public interface IFamilyManagerDialogService
     void ShowMissingRecordsCleanupDialog(object viewModel);
 
     /// <summary>
+    /// Show the cloud account login/registration dialog (cloud catalog v1,
+    /// §7.3.1 — the mandatory account step of the cloud wizards). Modal.
+    /// Returns true when signed in (read Success from the viewModel).
+    /// </summary>
+    bool? ShowCloudLogin(object viewModel);
+
+    /// <summary>
+    /// Show the «Облачная база» wizard (create empty / connect by invitation,
+    /// §7.3.1). Modal. Returns true when the user accepted — read the chosen
+    /// mode/name/invite from the viewModel.
+    /// </summary>
+    bool? ShowCloudDatabaseWizard(object viewModel);
+
+    /// <summary>
+    /// Show the cloud operation progress dialog (publish/pull) as a modeless
+    /// window (ADR-048 pattern). Returns immediately; the caller runs the
+    /// operation via the view model and awaits its completion.
+    /// </summary>
+    void ShowCloudOperationProgressDialog(object viewModel);
+
+    /// <summary>
     /// Show the avatar crop dialog (issue #131, ADR-047). The viewModel must be a
     /// CropAvatarViewModel; returns true when the user applied the crop — read
     /// ResultPath from the viewModel in that case.

@@ -50,6 +50,11 @@ public sealed class GlbPreviewActualizationTaskTests : IDisposable
             Calls.Add(new PipelineCall(geometryPerType, managedRfaPath, catalogItemId, versionId, versionLabel, familyName));
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyDictionary<string, string>> ExtractToPreviewCacheAsync(
+            string managedRfaPath, string familyName, string catalogItemId, string versionLabel,
+            CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(new Dictionary<string, string>());
     }
 
     [Fact]

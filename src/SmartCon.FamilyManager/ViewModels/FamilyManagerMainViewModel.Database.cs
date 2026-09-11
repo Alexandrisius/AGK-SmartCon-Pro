@@ -23,6 +23,7 @@ public sealed partial class FamilyManagerMainViewModel
             Connections = new ObservableCollection<DatabaseListItem>(items);
             SelectedConnection = Connections.FirstOrDefault(c => c.Connection.Id == active?.Id);
             HasActiveDatabase = active is not null;
+            NotifyCloudSelectionChanged();
         }
         finally
         {
@@ -100,6 +101,8 @@ public sealed partial class FamilyManagerMainViewModel
     partial void OnSelectedConnectionChanged(DatabaseListItem? value)
     {
         DeleteDatabaseCommand.NotifyCanExecuteChanged();
+        NotifyCloudSelectionChanged();
+        _ = CheckCloudUpdatesAsync();
         if (value is null) return;
         if (_suppressConnectionChanged) return;
         var active = _databaseManager.GetActiveConnection();

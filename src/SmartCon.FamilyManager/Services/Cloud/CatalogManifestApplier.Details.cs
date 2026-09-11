@@ -8,7 +8,7 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Cloud;
 
 /// <summary>Вставка детальных таблиц item/version: types, параметры, хэши, routing, зависимости, ассеты.</summary>
-internal sealed partial class CatalogManifestApplier
+public sealed partial class CatalogManifestApplier
 {
     private static async Task InsertVersionDetailsAsync(
         SqliteConnection connection, SqliteTransaction tx,

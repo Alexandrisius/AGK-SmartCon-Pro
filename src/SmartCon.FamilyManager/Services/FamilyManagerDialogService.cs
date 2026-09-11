@@ -236,6 +236,15 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public void ShowMissingRecordsCleanupDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>
+    public bool? ShowCloudLogin(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    /// <inheritdoc/>
+    public bool? ShowCloudDatabaseWizard(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    /// <inheritdoc/>
+    public void ShowCloudOperationProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
+
+    /// <inheritdoc/>
     public bool? ShowAvatarCropper(object viewModel) => _presenter.ShowDialog(viewModel);
 
     /// <inheritdoc/>

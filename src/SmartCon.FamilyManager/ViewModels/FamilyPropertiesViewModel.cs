@@ -31,6 +31,9 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
     private readonly IFamilyFileResolver _fileResolver;
     private readonly IAvatarCropService _avatarCropService;
     private readonly IDatabaseUpdateStateService _updateState;
+    /// <summary>Cloud catalog v1: Subscribed-копия — GLB извлекаются в кэш
+    /// вне копии (ADR-075 §7). null = обычная локальная база.</summary>
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? _cloudGate;
     private readonly IFamilyFactRepository _factRepository;
     private readonly ICategoryChangeGateService _categoryChangeGate;
 
@@ -271,7 +274,8 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         ICategoryChangeGateService categoryChangeGate,
         string? familySource = null,
         int? revitCategoryId = null,
-        IRoutingEditorService? routingEditorService = null)
+        IRoutingEditorService? routingEditorService = null,
+        SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? cloudGate = null)
     {
         SmartConLogger.Info($"FamilyPropertiesViewModel ctor: start for itemId={catalogItemId} name='{name}'");
         _catalogItemId = catalogItemId;
@@ -292,6 +296,7 @@ public sealed partial class FamilyPropertiesViewModel : ObservableObject, IObser
         _fileResolver = fileResolver;
         _avatarCropService = avatarCropService;
         _updateState = updateState;
+        _cloudGate = cloudGate;
         _factRepository = factRepository;
         _categoryChangeGate = categoryChangeGate;
 

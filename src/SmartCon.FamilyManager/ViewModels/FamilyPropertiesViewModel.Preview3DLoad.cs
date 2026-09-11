@@ -98,7 +98,33 @@ public sealed partial class FamilyPropertiesViewModel
                 && a.Description.StartsWith(AutoExtractedPreviewPrefix, System.StringComparison.Ordinal)
                 && string.Equals(a.VersionLabel, VersionLabel, System.StringComparison.Ordinal));
 
-            if (autoAsset is null)
+            string? glbPath = null;
+            if (autoAsset is not null)
+            {
+                glbPath = await _assetService.ResolveAssetPathAsync(autoAsset.Id, ct).ConfigureAwait(true);
+                if (string.IsNullOrEmpty(glbPath))
+                {
+                    SmartConLogger.Warn(
+                        $"GLB asset '{autoAsset.FileName}' resolved to null path " +
+                        "[Action: re-import the family to regenerate the GLB, or check managed storage]");
+                }
+            }
+
+            // Cloud §7.4 (ADR-075 §7): подписная копия не содержит GLB (пул
+            // превью исключён из манифеста) — резолвер проверяет кэш превью
+            // вне копии первым; попадание грузится напрямую.
+            if (glbPath is null && !string.IsNullOrEmpty(VersionLabel))
+            {
+                var cachePath = Services.Cloud.CloudPaths.PreviewCacheFilePath(
+                    _catalogItemId, VersionLabel!, typeSuffix);
+                if (File.Exists(cachePath))
+                {
+                    glbPath = cachePath;
+                    SmartConLogger.Debug($"3D preview resolved from cloud preview cache: '{Path.GetFileName(cachePath)}'");
+                }
+            }
+
+            if (glbPath is null)
             {
                 Has3DPreview = false;
                 Preview3DStatusMessage = LanguageManager.GetString(
@@ -117,22 +143,10 @@ public sealed partial class FamilyPropertiesViewModel
                 return;
             }
 
-            var glbPath = await _assetService.ResolveAssetPathAsync(autoAsset.Id, ct).ConfigureAwait(true);
-            if (string.IsNullOrEmpty(glbPath))
-            {
-                Has3DPreview = false;
-                Preview3DStatusMessage = LanguageManager.GetString(
-                    StringLocalization.Keys.FM_3D_NoPreview) ?? "No 3D preview for this version";
-                SmartConLogger.Warn(
-                    $"GLB asset '{autoAsset.FileName}' resolved to null path " +
-                    "[Action: re-import the family to regenerate the GLB, or check managed storage]");
-                return;
-            }
-
             // Offload I/O + Assimp parse to ThreadPool (keeps UI responsive
             // for large meshes; Assimp is C++/P-Invoke so ThreadPool-safe).
             var scene = await Task.Run(
-                () => GlbSceneLoader.LoadScene(glbPath!),
+                () => GlbSceneLoader.LoadScene(glbPath),
                 ct).ConfigureAwait(true);
 
             if (scene is null)
@@ -252,6 +266,19 @@ public sealed partial class FamilyPropertiesViewModel
 
             SmartConLogger.Info(
                 $"TryExtract3DPreviewOnDemandAsync: running geometry pipeline for '{Path.GetFileName(resolved.AbsolutePath)}'");
+
+            // Cloud §7.4 (ADR-075 §7): на Subscribed-копии запись в БД
+            // запрещена — GLB извлекаются в кэш превью вне копии.
+            if (_cloudGate?.IsWriteBlocked == true)
+            {
+                var cached = await _geometryPipeline.ExtractToPreviewCacheAsync(
+                    resolved.AbsolutePath, Name, _catalogItemId, VersionLabel!, ct).ConfigureAwait(true);
+                if (cached.Count > 0)
+                {
+                    await Load3DPreviewForTypeAsync(typeName, ct).ConfigureAwait(true);
+                }
+                return;
+            }
 
             await _geometryPipeline.RunAsync(
                 null,

@@ -202,4 +202,15 @@ public sealed record FamilyManagerServices(
     /// vs the effective validation rules of their category. Pure SQLite +
     /// pure engine (no Revit, no open document); session snapshot of verdicts.
     /// </summary>
-    ICatalogComplianceService ComplianceService);
+    ICatalogComplianceService ComplianceService,
+    /// <summary>
+    /// Cloud Catalog (срез v1): login/session (refresh-токен в Credential
+    /// Manager), REST-клиент, publish/sync-флоу и гейт CloudLink активной
+    /// базы. Мастер «Облачная база», ПКМ-команды publish/pull и бейдж
+    /// обновлений живут в FamilyManagerMainViewModel.Cloud.cs.
+    /// </summary>
+    SmartCon.FamilyManager.Services.Cloud.CloudAuthService CloudAuth,
+    SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient CloudApi,
+    SmartCon.FamilyManager.Services.Cloud.CloudPublishService CloudPublish,
+    SmartCon.FamilyManager.Services.Cloud.CloudSyncService CloudSync,
+    SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate CloudGate);

@@ -10,7 +10,7 @@ using SmartCon.FamilyManager.Services.LocalCatalog;
 namespace SmartCon.FamilyManager.Services.Cloud;
 
 /// <summary>Чтение items/версий/типов/ассетов и хеширование файлов managed storage.</summary>
-internal sealed partial class CatalogManifestBuilder
+public sealed partial class CatalogManifestBuilder
 {
     private sealed record ActiveRow(
         string ItemId, string VersionId, string FileId, string RelativePath);

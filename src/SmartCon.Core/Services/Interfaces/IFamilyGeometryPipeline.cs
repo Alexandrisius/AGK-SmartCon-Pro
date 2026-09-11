@@ -65,4 +65,19 @@ public interface IFamilyGeometryPipeline
         string familyName,
         IReadOnlyDictionary<string, string>? overwriteBaselineSectionHashes = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Cloud catalog v1 (ADR-075 §7): extract per-type GLBs from the managed
+    /// .rfa into the shared preview cache OUTSIDE the database copy
+    /// (<c>cloud-cache\previews\</c>) — no DB writes, no asset rows. Used on
+    /// a Subscribed (read-only) copy where <see cref="RunAsync"/> cannot
+    /// register assets. Returns typeName → absolute GLB path (types with
+    /// empty geometry are skipped).
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> ExtractToPreviewCacheAsync(
+        string managedRfaPath,
+        string familyName,
+        string catalogItemId,
+        string versionLabel,
+        CancellationToken ct = default);
 }

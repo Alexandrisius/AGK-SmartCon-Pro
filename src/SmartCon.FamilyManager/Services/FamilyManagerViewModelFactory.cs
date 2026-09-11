@@ -37,6 +37,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
     private readonly IAssignmentRuleRepository _assignmentRuleRepository;
     private readonly IRevitCategoryLabelService _revitCategoryLabels;
     private readonly IRoutingEditorService _routingEditorService;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? _cloudGate;
     private readonly ICatalogActualizationService _actualization;
 
     public FamilyManagerViewModelFactory(
@@ -70,7 +71,8 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         IAssignmentRuleRepository assignmentRuleRepository,
         IRevitCategoryLabelService revitCategoryLabels,
         IRoutingEditorService routingEditorService,
-        ICatalogActualizationService actualization)
+        ICatalogActualizationService actualization,
+        SmartCon.FamilyManager.Services.Cloud.CloudDatabaseGate? cloudGate = null)
     {
         _writableProvider = writableProvider;
         _catalogProvider = catalogProvider;
@@ -102,6 +104,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
         _assignmentRuleRepository = assignmentRuleRepository;
         _revitCategoryLabels = revitCategoryLabels;
         _routingEditorService = routingEditorService;
+        _cloudGate = cloudGate;
         _actualization = actualization;
     }
 
@@ -123,7 +126,7 @@ public sealed class FamilyManagerViewModelFactory : IFamilyManagerViewModelFacto
             _writableProvider, _catalogProvider, _categoryRepository, _assetService, _presetService, _dialogService,
             _bindingService, _valueRepository, _runRepository, _typeRepository, _attributeDefRepository, this, _renameService,
             _geometryPipeline, _fileResolver, _avatarCropService, _updateState, _factRepository, _categoryChangeGate,
-            familySource, revitCategoryId, _routingEditorService)
+            familySource, revitCategoryId, _routingEditorService, _cloudGate)
         {
             IsReadOnly = isReadOnly,
             // #133 deep-link (routing-phantom badge): the presence of a

@@ -93,6 +93,12 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
     /// <summary>#133: routing-phantom detector (rules referencing families that left the catalog).</summary>
     private readonly IRoutingEditorService _routingEditorService;
 
+    // ── Cloud Catalog (срез v1): мастер «Облачная база», publish/pull, бейдж ──
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudAuthService _cloudAuth;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient _cloudApi;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudPublishService _cloudPublish;
+    private readonly SmartCon.FamilyManager.Services.Cloud.CloudSyncService _cloudSync;
+
     private string? _currentActiveDocumentPath;
     private bool _activeBaseCompatibleWithCurrentDoc = true;
     private ProjectBaseMatch? _activeBaseMatch;
@@ -287,6 +293,10 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _contentHashAnalytics = services.ContentHashAnalytics;
         _complianceService = services.ComplianceService;
         _routingEditorService = services.RoutingEditorService;
+        _cloudAuth = services.CloudAuth;
+        _cloudApi = services.CloudApi;
+        _cloudPublish = services.CloudPublish;
+        _cloudSync = services.CloudSync;
 
         _updateState.StateChanged += OnDatabaseUpdateStateChanged;
         SyncDatabaseUpdateState();
@@ -295,6 +305,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeDocumentNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
         _activeDocumentNotifier.ActiveDocumentPathChanged += OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged += OnLanguageChanged;
+        _cloudAuth.AccountChanged += OnCloudAccountChanged;
         _placementDragService.PlacementCompleted += OnPlacementCompleted;
         _placementDragService.SystemTypePlaced += OnSystemTypePlaced;
         _placementDragService.PlacementFailed += OnPlacementFailed;
@@ -378,6 +389,7 @@ public sealed partial class FamilyManagerMainViewModel : ObservableObject, IDisp
         _activeDocumentNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
         _activeDocumentNotifier.ActiveDocumentPathChanged -= OnActiveDocumentPathChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _cloudAuth.AccountChanged -= OnCloudAccountChanged;
         _placementDragService.PlacementCompleted -= OnPlacementCompleted;
         _placementDragService.SystemTypePlaced -= OnSystemTypePlaced;
         _placementDragService.PlacementFailed -= OnPlacementFailed;
