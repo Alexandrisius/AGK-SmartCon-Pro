@@ -116,6 +116,7 @@ internal sealed partial class CatalogManifestBuilder
                         Sha256 = fileHash.Value.Sha256,
                         SizeBytes = fileHash.Value.SizeBytes,
                         FileName = reader.GetString(reader.GetOrdinal("file_name")),
+                        LocalPath = filePath,
                     },
                 };
                 item.Versions.Add(version);
@@ -307,6 +308,7 @@ internal sealed partial class CatalogManifestBuilder
                     IsPrimary = reader.GetInt32(reader.GetOrdinal("is_primary")) != 0,
                     VersionLabel = GetStringOrNull(reader, "version_label"),
                     Description = GetStringOrNull(reader, "description") ?? string.Empty,
+                    LocalPath = Path.Combine(_pathResolver.GetDatabaseRoot(), relativePath),
                 });
             }
         }
@@ -322,6 +324,7 @@ internal sealed partial class CatalogManifestBuilder
                 Sha256 = avatarHash.Value.Sha256,
                 SizeBytes = avatarHash.Value.SizeBytes,
                 FileName = StoragePathResolver.AvatarFileName,
+                LocalPath = avatarPath,
             };
         }
 

@@ -215,16 +215,24 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<HttpResponseMessage> _responses = new();
     private readonly List<HttpRequestMessage> _requests = [];
+    private readonly List<string?> _bodies = [];
 
     public IReadOnlyList<HttpRequestMessage> Requests => _requests;
 
+    /// <summary>Тела запросов по индексу Requests (content живёт дольше request-объекта).</summary>
+    public IReadOnlyList<string?> Bodies => _bodies;
+
     public void Enqueue(HttpResponseMessage response) => _responses.Enqueue(response);
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        string? body = null;
+        if (request.Content is not null)
+            body = await request.Content.ReadAsStringAsync(cancellationToken);
         _requests.Add(request);
+        _bodies.Add(body);
         if (_responses.Count == 0)
             throw new InvalidOperationException("FakeHttpMessageHandler: очередь ответов пуста");
-        return Task.FromResult(_responses.Dequeue());
+        return _responses.Dequeue();
     }
 }

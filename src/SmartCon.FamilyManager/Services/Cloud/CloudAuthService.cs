@@ -55,8 +55,8 @@ public sealed class CloudAuthService : IDisposable
     /// <summary>POST /v1/auth/login. false = неверный email/пароль (401).</summary>
     public async Task<bool> LoginAsync(string endpoint, string email, string password, CancellationToken ct = default)
     {
-        var response = await PostJsonAsync($"{NormalizeEndpoint(endpoint)}/v1/auth/login",
-            new { email = email.Trim(), password }, authenticated: false, ct).ConfigureAwait(false);
+        using var response = await PostJsonAsync($"{NormalizeEndpoint(endpoint)}/v1/auth/login",
+            new { email = email.Trim(), password }, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized) return false;
@@ -72,8 +72,8 @@ public sealed class CloudAuthService : IDisposable
     public async Task<bool> RegisterAsync(
         string endpoint, string email, string password, string displayName, CancellationToken ct = default)
     {
-        var response = await PostJsonAsync($"{NormalizeEndpoint(endpoint)}/v1/auth/register",
-            new { email = email.Trim(), password, displayName = displayName.Trim() }, authenticated: false, ct).ConfigureAwait(false);
+        using var response = await PostJsonAsync($"{NormalizeEndpoint(endpoint)}/v1/auth/register",
+            new { email = email.Trim(), password, displayName = displayName.Trim() }, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return false;
@@ -99,7 +99,7 @@ public sealed class CloudAuthService : IDisposable
             try
             {
                 await PostJsonAsync($"{NormalizeEndpoint(account.Endpoint)}/v1/auth/logout",
-                    new { refreshToken }, authenticated: false, ct).ConfigureAwait(false);
+                    new { refreshToken }, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is HttpRequestException or CloudApiException)
             {
@@ -132,7 +132,7 @@ public sealed class CloudAuthService : IDisposable
             }
 
             using var response = await PostJsonAsync($"{NormalizeEndpoint(_account.Endpoint)}/v1/auth/refresh",
-                new { refreshToken }, authenticated: false, ct).ConfigureAwait(false);
+                new { refreshToken }, ct).ConfigureAwait(false);
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 // Refresh отозван (rotating + reuse-детект E16) или истёк: сессия мертва —
@@ -242,7 +242,7 @@ public sealed class CloudAuthService : IDisposable
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync(
-        string url, object body, bool authenticated, CancellationToken ct)
+        string url, object body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {

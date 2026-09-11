@@ -247,6 +247,10 @@ public sealed class ManifestFileRefV1
 
     [JsonPropertyName("fileName")]
     public string FileName { get; init; } = string.Empty;
+
+    /// <summary>Локальный путь объекта у АВТОРА (publish-флоу ищет файлы для upload). Не сериализуется.</summary>
+    [JsonIgnore]
+    public string? LocalPath { get; set; }
 }
 
 public sealed class ManifestTypeV1
@@ -438,6 +442,10 @@ public sealed class ManifestAssetV1
 
     [JsonPropertyName("description")]
     public string Description { get; init; } = string.Empty;
+
+    /// <summary>Локальный путь ассета у автора (upload). Не сериализуется.</summary>
+    [JsonIgnore]
+    public string? LocalPath { get; set; }
 }
 
 public sealed class ManifestFactV1

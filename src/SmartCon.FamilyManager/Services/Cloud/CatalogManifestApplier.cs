@@ -260,7 +260,7 @@ internal sealed partial class CatalogManifestApplier
                 (object?)SerializeDictionary(version.SectionHashes) ?? DBNull.Value));
             cmd.Parameters.Add(new SqliteParameter("@sectionStrings",
                 (object?)SerializeDictionary(version.SectionStrings) ?? DBNull.Value));
-            cmd.Parameters.Add(new SqliteParameter("@backfilled", (object?)version.RoutingBackfilled ?? DBNull.Value));
+            cmd.Parameters.Add(new SqliteParameter("@backfilled", version.RoutingBackfilled ?? 0)); // V35 NOT NULL DEFAULT 0
             cmd.Parameters.Add(new SqliteParameter("@publishedAt",
                 (version.PublishedAtUtc ?? now).ToString("o")));
             cmd.Parameters.Add(new SqliteParameter("@publishedBy", (object?)version.PublishedBy ?? DBNull.Value));

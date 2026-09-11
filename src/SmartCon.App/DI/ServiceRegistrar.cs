@@ -200,6 +200,8 @@ public static class ServiceRegistrar
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.ICloudCredentialStore, SmartCon.FamilyManager.Services.Cloud.Win32CredentialStore>();
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudAuthService>();
         services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudCatalogApiClient>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudPublishService>();
+        services.AddSingleton<SmartCon.FamilyManager.Services.Cloud.CloudSyncService>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());

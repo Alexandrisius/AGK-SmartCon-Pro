@@ -42,6 +42,9 @@ public sealed class CloudCatalogApiClient : IDisposable
 
     public string? Endpoint => _auth.CurrentAccount?.Endpoint;
 
+    /// <summary>Текущий аккаунт облака (display name нужен publish-флоу для PII-safe publishedBy).</summary>
+    public CloudAccount? CurrentAccount => _auth.CurrentAccount;
+
     /// <summary>POST /v1/catalogs — создать каталог (режим б §7.3.1: пустая облачная база).</summary>
     public async Task<CloudCatalogDto> CreateCatalogAsync(string name, CancellationToken ct = default)
     {
@@ -89,7 +92,9 @@ public sealed class CloudCatalogApiClient : IDisposable
     /// <summary>PUT /v1/files/{sha256} — потоковая загрузка CAS-объекта (upload до publish).</summary>
     public async Task UploadFileAsync(string sha256, Stream content, CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"/v1/files/{sha256}")
+        var endpoint = _auth.CurrentAccount?.Endpoint
+            ?? throw new CloudApiException(401, "no_session", "нет активной облачной сессии — войдите в систему");
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{endpoint}/v1/files/{sha256}")
         {
             Content = new StreamContent(content),
         };
@@ -156,6 +161,7 @@ public sealed class CloudCatalogApiClient : IDisposable
         if (response.IsSuccessStatusCode) return;
         var code = (string?)null;
         var message = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
+        IReadOnlyList<string>? missing = null;
         try
         {
             if (response.Content.Headers.ContentType?.MediaType == "application/json")
@@ -169,13 +175,22 @@ public sealed class CloudCatalogApiClient : IDisposable
                 if (doc.RootElement.TryGetProperty("code", out var c)) code = c.GetString();
                 if (doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
                     message = e.GetString() ?? message;
+                if (string.Equals(code, "missing_objects", StringComparison.Ordinal)
+                    && doc.RootElement.TryGetProperty("missing", out var m)
+                    && m.ValueKind == JsonValueKind.Array)
+                {
+                    missing = m.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => x.GetString()!)
+                        .ToList();
+                }
             }
         }
         catch (JsonException)
         {
             // не-JSON тело — стандартная HTTP-строка
         }
-        throw new CloudApiException((int)response.StatusCode, code, message);
+        throw new CloudApiException((int)response.StatusCode, code, message, missing);
     }
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
