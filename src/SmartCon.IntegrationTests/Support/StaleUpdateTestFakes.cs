@@ -296,6 +296,9 @@ internal sealed class NullFamilyManagerDialogService : IFamilyManagerDialogServi
     public bool? ShowAttributeLibrary(object viewModel) => null;
     public bool? ShowProfile(object viewModel) => null;
     public bool? ShowBatchImportDialog(object viewModel) => null;
+    public bool? ShowCloudLogin(object viewModel) => null;
+    public bool? ShowCloudDatabaseWizard(object viewModel) => null;
+    public void ShowCloudOperationProgressDialog(object viewModel) { }
     public bool? ShowValidationReport(object viewModel) => null;
     public bool? ShowStatusDetails(object viewModel) => null;
     public bool? ShowRoutingPartPicker(object viewModel) => null;

@@ -115,7 +115,9 @@ public sealed partial class FamilyManagerMainViewModel
                     ?? "Подключено к каталогу «{0}»: получено {1} семейств.",
                 invite.Slug, result.ItemsCount),
             ct).ConfigureAwait(true);
-        if (failed) return;
+        // Валидатор Ф5-6 P2: отмена (FinalStatus == null) — тихий выход,
+        // без ConnectDatabaseAsync к недособранной копии.
+        if (failed || status is null) return;
 
         // Копия собрана (или уже была актуальна) — регистрируем и подключаем связь.
         var connection = _databaseManager.ListConnections()
@@ -176,7 +178,8 @@ public sealed partial class FamilyManagerMainViewModel
                         ?? "Опубликовано #{0}: {1} семейств, новых файлов: {2}.",
                     result.PublishSeq, result.ItemsCount, result.UploadedFiles),
                 ct).ConfigureAwait(true);
-            if (failed) return;
+            // Отмена публикации (publishedSeq == 0) — CloudLink не трогаем.
+            if (failed || publishedSeq == 0) return;
 
             // Последний seq публикации уезжает в CloudLink (registry + database_meta).
             var fresh = _databaseManager.ListConnections().FirstOrDefault(c => c.Id == connection.Id);
@@ -222,11 +225,14 @@ public sealed partial class FamilyManagerMainViewModel
                             ?? "База актуальна (публикация #{0})",
                         result.PublishSeq),
                 ct).ConfigureAwait(true);
-            if (failed) return true;
+            if (failed || status is null) return true; // отмена — seq не записываем
 
             HasCloudUpdates = false;
 
-            var remoteSeq = await _cloudSync.GetRemotePublishSeqAsync(link.Slug, ct).ConfigureAwait(false);
+            // Валидатор Ф5-6 P2: хвост метода остаётся на UI-потоке —
+            // RefreshAccessAndLoadTreeAsync зовёт GetCurrentUser() (Revit API,
+            // контракт «не переносить за await»).
+            var remoteSeq = await _cloudSync.GetRemotePublishSeqAsync(link.Slug, ct).ConfigureAwait(true);
             var fresh = _databaseManager.ListConnections().FirstOrDefault(c => c.Id == connection.Id);
             if (fresh?.CloudLink is { } freshLink)
                 await _databaseManager.SetCloudLinkAsync(connection.Id,
@@ -351,8 +357,21 @@ public sealed partial class FamilyManagerMainViewModel
         if (!accepted) return false;
 
         // endpoint приглашения мог отличаться от аккаунта, под которым вошли.
-        return endpoint is null
-            || string.Equals(_cloudAuth.CurrentAccount?.Endpoint, endpoint, StringComparison.OrdinalIgnoreCase);
+        if (endpoint is not null
+            && !string.Equals(_cloudAuth.CurrentAccount?.Endpoint, endpoint, StringComparison.OrdinalIgnoreCase))
+        {
+            // Валидатор Ф5-6 P3: тихий отказ непонятен пользователю.
+            SmartConLogger.Warn(
+                $"Cloud account endpoint mismatch after login: expected '{endpoint}'. " +
+                "[Action: войдите в аккаунт сервера, указанного в приглашении]");
+            _dialogService.ShowWarning(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_OperationFailedTitle) ?? "Облачная операция",
+                string.Format(
+                    LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_LoginFailed) ?? "Операция не выполнена: {0}",
+                    endpoint));
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Modeless-прогресс ADR-048: показать → запустить → дождаться закрытия.</summary>
