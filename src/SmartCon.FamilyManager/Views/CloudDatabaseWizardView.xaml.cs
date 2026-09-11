@@ -1,10 +1,14 @@
+using SmartCon.FamilyManager.ViewModels.Cloud;
+using SmartCon.UI.Controls;
+
 namespace SmartCon.FamilyManager.Views;
 
-public sealed partial class CloudDatabaseWizardView
+public sealed partial class CloudDatabaseWizardView : DialogWindowBase
 {
-    public CloudDatabaseWizardView(ViewModels.Cloud.CloudDatabaseWizardViewModel viewModel)
+    public CloudDatabaseWizardView(CloudDatabaseWizardViewModel viewModel)
     {
         InitializeComponent();
         DataContext = viewModel;
+        BindCloseRequest(viewModel);
     }
 }

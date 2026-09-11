@@ -1109,8 +1109,8 @@ public static partial class LocalizationService
         ru["FM_PBase_ParseRule_ClosingN"] = "закрывающий #{0}";
         en["FM_PBase_ParseRule_ClosingN"] = "closing #{0}";
 
-        ru["FM_PBase_CreateCloudDatabase"] = "Облачная база…";
-        en["FM_PBase_CreateCloudDatabase"] = "Cloud database…";
+        ru["FM_PBase_CreateCloudDatabase"] = "Облачная база";
+        en["FM_PBase_CreateCloudDatabase"] = "Cloud database";
         ru["FM_Cloud_LoginTitle"] = "Облачный аккаунт SmartCon";
         en["FM_Cloud_LoginTitle"] = "SmartCon Cloud Account";
         ru["FM_Cloud_LoginEndpoint"] = "Сервер";
@@ -1137,14 +1137,14 @@ public static partial class LocalizationService
         en["FM_Cloud_RegisterFailed"] = "Sign-up failed: {0}";
         ru["FM_Cloud_WizardTitle"] = "Облачная база";
         en["FM_Cloud_WizardTitle"] = "Cloud database";
-        ru["FM_Cloud_WizardModeCreate"] = "Создать пустую облачную базу";
-        en["FM_Cloud_WizardModeCreate"] = "Create an empty cloud database";
+        ru["FM_Cloud_WizardModeCreate"] = "Создать облачную базу";
+        en["FM_Cloud_WizardModeCreate"] = "Create a cloud database";
         ru["FM_Cloud_WizardModeSubscribe"] = "Подключиться по приглашению";
         en["FM_Cloud_WizardModeSubscribe"] = "Connect by invitation";
-        ru["FM_Cloud_WizardNameLabel"] = "Имя базы";
+        ru["FM_Cloud_WizardNameLabel"] = "Название базы данных";
         en["FM_Cloud_WizardNameLabel"] = "Database name";
-        ru["FM_Cloud_WizardNamePlaceholder"] = "Например: Отводы компании";
-        en["FM_Cloud_WizardNamePlaceholder"] = "E.g.: Company Fittings";
+        ru["FM_Cloud_WizardNamePlaceholder"] = "Название базы данных";
+        en["FM_Cloud_WizardNamePlaceholder"] = "Database name";
         ru["FM_Cloud_WizardInviteLabel"] = "Строка приглашения";
         en["FM_Cloud_WizardInviteLabel"] = "Invitation string";
         ru["FM_Cloud_WizardInvitePlaceholder"] = "smartcon-cloud:subscribe:…";
