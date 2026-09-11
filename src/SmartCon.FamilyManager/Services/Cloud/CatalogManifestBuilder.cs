@@ -58,6 +58,24 @@ internal sealed partial class CatalogManifestBuilder
         var items = await LoadItemsAsync(connection, categoryPaths, ct).ConfigureAwait(false);
         var meta = await BuildMetaAsync(connection, categoryPaths, ct).ConfigureAwait(false);
 
+        // family_dependencies.child_catalog_item_id — FK: ребёнок, не попавший в манифест
+        // (битый файл, исключён выше), делает apply невозможным на реальных каталогах.
+        // Dangling-зависимости отбрасываем — подписчик получит консистентное подмножество.
+        var knownIds = items.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var item in items)
+        {
+            foreach (var version in item.Versions)
+            {
+                if (version.Dependencies.Count == 0) continue;
+                var dangling = version.Dependencies.Where(d => !knownIds.Contains(d.ChildItemId)).ToList();
+                if (dangling.Count == 0) continue;
+                foreach (var dependency in dangling) version.Dependencies.Remove(dependency);
+                SmartConLogger.Warn(
+                    $"{dangling.Count} dangling dependency(ies) of '{item.Name}' dropped — " +
+                    "child item not part of the manifest. [Action: восстановите/удалите битый дочерний item и опубликуйте повторно]");
+            }
+        }
+
         int? hashFormatVersion = null;
         var revitMin = int.MaxValue;
         var revitMax = int.MinValue;

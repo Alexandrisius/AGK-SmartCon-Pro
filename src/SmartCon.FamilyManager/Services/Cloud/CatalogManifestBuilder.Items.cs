@@ -157,12 +157,14 @@ internal sealed partial class CatalogManifestBuilder
     private async Task LoadTypesAndParametersAsync(
         SqliteConnection connection, Dictionary<string, ManifestVersionV1> versionRows, CancellationToken ct)
     {
+        // Id строк family_types в wire-формат не входит (параметры привязаны вложенностью);
+        // локальный словарь нужен только для матчинга extracted_attribute_values.type_id.
         var typesByVersion = new Dictionary<string, List<ManifestTypeV1>>(StringComparer.Ordinal);
+        var typeById = new Dictionary<string, ManifestTypeV1>(StringComparer.Ordinal);
         using (var cmd = connection.CreateCommand())
         {
             cmd.CommandText = """
-                SELECT ft.id, ft.catalog_item_id, ft.version_id, ft.type_name, ft.family_name,
-                       ft.family_key, ft.sort_order
+                SELECT ft.id, ft.version_id, ft.type_name, ft.family_name, ft.family_key, ft.sort_order
                 FROM family_types ft
                 WHERE ft.version_id IN (
                     SELECT cv.id FROM catalog_versions cv
@@ -176,21 +178,17 @@ internal sealed partial class CatalogManifestBuilder
                 if (!versionRows.TryGetValue(versionId, out var version)) continue;
                 var type = new ManifestTypeV1
                 {
-                    Id = reader.GetString(reader.GetOrdinal("id")),
                     TypeName = reader.GetString(reader.GetOrdinal("type_name")),
                     FamilyName = reader.GetString(reader.GetOrdinal("family_name")),
                     FamilyKey = reader.GetString(reader.GetOrdinal("family_key")),
                     SortOrder = reader.GetInt32(reader.GetOrdinal("sort_order")),
                 };
+                typeById[reader.GetString(reader.GetOrdinal("id"))] = type;
                 if (!typesByVersion.TryGetValue(versionId, out var list))
                     typesByVersion[versionId] = list = [];
                 list.Add(type);
             }
         }
-
-        var typesById = typesByVersion.Values
-            .SelectMany(v => v)
-            .ToDictionary(t => t.Id, t => t, StringComparer.Ordinal);
 
         using (var cmd = connection.CreateCommand())
         {
@@ -207,7 +205,7 @@ internal sealed partial class CatalogManifestBuilder
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
                 var typeId = GetStringOrNull(reader, "type_id");
-                if (typeId is null || !typesById.TryGetValue(typeId, out var type)) continue;
+                if (typeId is null || !typeById.TryGetValue(typeId, out var type)) continue;
                 type.Parameters.Add(new ManifestParameterV1
                 {
                     ParameterName = reader.GetString(reader.GetOrdinal("parameter_name")),

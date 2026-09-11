@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using SmartCon.Core.Logging;
 using SmartCon.FamilyManager.Models.Cloud;
 using SmartCon.FamilyManager.Models.Metadata;
 
@@ -131,6 +132,15 @@ internal sealed partial class CatalogManifestBuilder
                 });
             }
         }
+
+        // Порядок детерминирован (CategoryPath, AttributeName): applier генерирует новые
+        // category id — сортировка по id давала бы разный порядок между базами автора
+        // и подписчика и ложную метадата-дельту при каждом sync.
+        meta.Bindings.Sort((a, b) =>
+        {
+            var byPath = string.CompareOrdinal(a.CategoryPath, b.CategoryPath);
+            return byPath != 0 ? byPath : string.CompareOrdinal(a.AttributeName, b.AttributeName);
+        });
     }
 
     private static async Task LoadAssignmentRulesAsync(
@@ -189,19 +199,40 @@ internal sealed partial class CatalogManifestBuilder
         foreach (var group in groups)
         {
             if (!categoryPaths.TryGetValue(group.CategoryId, out var categoryPath)) continue;
+            conditions.TryGetValue(group.Id, out var groupConditions);
+            groupConditions ??= [];
+
+            // Условие с неразрешимым атрибутом (неактивная definition) нельзя ни перенести
+            // (CHECK V31 упадёт на apply), ни отбросить поодиночке (AND-группа изменит смысл —
+            // станет срабатывать там, где у автора не срабатывала). Группа отбрасывается целиком.
+            if (groupConditions.Any(c =>
+                    string.Equals(c.SourceKind, "attribute", StringComparison.Ordinal) && c.AttributeName is null))
+            {
+                SmartConLogger.Warn(
+                    $"Assignment group '{categoryPath}' #{group.SortOrder} dropped — its attribute condition " +
+                    "references an inactive/deleted attribute definition. " +
+                    "[Action: реактивируйте атрибут или удалите правило в редакторе категорий]");
+                continue;
+            }
+
             var existing = meta.AssignmentRules.FirstOrDefault(r => r.CategoryPath == categoryPath);
             if (existing is null)
             {
                 existing = new MetadataExportAssignmentRule { CategoryPath = categoryPath };
                 meta.AssignmentRules.Add(existing);
             }
-            conditions.TryGetValue(group.Id, out var groupConditions);
             existing.Groups.Add(new MetadataExportAssignmentGroup
             {
                 SortOrder = group.SortOrder,
                 IsEnabled = group.IsEnabled,
-                Conditions = groupConditions ?? [],
+                Conditions = groupConditions,
             });
         }
+
+        // Детерминированный порядок по CategoryPath (новые category id у подписчика
+        // иначе дают другой порядок и ложную метадата-дельту); группы — по SortOrder.
+        meta.AssignmentRules.Sort((a, b) => string.CompareOrdinal(a.CategoryPath, b.CategoryPath));
+        foreach (var rule in meta.AssignmentRules)
+            rule.Groups.Sort((a, b) => a.SortOrder.CompareTo(b.SortOrder));
     }
 }
