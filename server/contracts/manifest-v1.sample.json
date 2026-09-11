@@ -1,0 +1,82 @@
+{
+  "format": "smartcon.cloud.catalog-manifest",
+  "formatVersion": 1,
+  "catalogId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "publishSeq": 5,
+  "publishedAtUtc": "2026-09-11T12:00:00+00:00",
+  "publishedBy": "BIM-отдел ВентПроект",
+  "minPluginVersion": "2.1.0",
+  "hashFormatVersion": 22,
+  "revitVersionRange": {
+    "min": 2023,
+    "max": 2023
+  },
+  "meta": {
+    "categories": [],
+    "attributes": [],
+    "bindings": [],
+    "assignmentRules": []
+  },
+  "items": [
+    {
+      "id": "36999a09cc2c4bad879a23a3fe73ea7c",
+      "name": "Отвод 90° стальной",
+      "normalizedName": "отвод 90° стальной",
+      "description": null,
+      "categoryPath": "",
+      "contentStatus": "Active",
+      "familySource": "loadable",
+      "revitCategory": "Трубы",
+      "revitCategoryId": -2008055,
+      "familyKey": null,
+      "currentVersionLabel": "v3",
+      "tags": [
+        "сталь"
+      ],
+      "versions": [
+        {
+          "versionLabel": "v3",
+          "contentHash": "A1B2C3D4E5F6",
+          "sectionHashes": null,
+          "sectionStrings": null,
+          "sourceRevitVersion": 2023,
+          "fileKind": "rfa",
+          "typesCount": null,
+          "parametersCount": null,
+          "publishedAtUtc": "2026-09-11T11:24:39.1516623+00:00",
+          "publishedBy": null,
+          "glbState": null,
+          "routingBackfilled": 0,
+          "nestedSharedFamilies": [],
+          "file": {
+            "sha256": "a152d9568d84788386ed06560799f7b0f2220051af3399d2aa78862c556eabcb",
+            "sizeBytes": 4,
+            "fileName": "Отвод 90° стальной.rfa"
+          },
+          "types": [
+            {
+              "id": "fb899a88-4b6d-484d-af9d-1d6b6c78ec86",
+              "typeName": "DN50",
+              "familyName": "Отвод 90°",
+              "familyKey": "",
+              "sortOrder": 0,
+              "parameters": []
+            }
+          ],
+          "typeHashes": [],
+          "segmentSizes": [],
+          "segmentRules": [],
+          "versionRoutingRules": [],
+          "versionRoutingTypeSettings": [],
+          "dependencies": []
+        }
+      ],
+      "assets": [],
+      "avatar": null,
+      "routingRules": [],
+      "routingTypeSettings": [],
+      "facts": []
+    }
+  ],
+  "removed": []
+}

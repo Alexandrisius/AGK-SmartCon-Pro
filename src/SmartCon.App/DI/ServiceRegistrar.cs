@@ -8,6 +8,7 @@ using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager;
 using SmartCon.FamilyManager.Events;
 using SmartCon.FamilyManager.Services;
+using SmartCon.FamilyManager.Services.Cloud;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services.Validation;
 using SmartCon.FamilyManager.ViewModels;
@@ -192,6 +193,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IIdGenerator, GuidIdGenerator>();
         services.AddSingleton<IDispatcher, SmartCon.FamilyManager.UI.WpfDispatcher>();
         services.AddSingleton<StoragePathResolver>();
+        // Cloud Catalog (ADR-075, срез v1): сборка манифеста активного каталога — чистый SQLite, без Revit.
+        services.AddSingleton<CatalogManifestBuilder>();
         services.AddSingleton<LocalCatalogProvider>();
         services.AddSingleton<IFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
         services.AddSingleton<IWritableFamilyCatalogProvider>(sp => sp.GetRequiredService<LocalCatalogProvider>());
