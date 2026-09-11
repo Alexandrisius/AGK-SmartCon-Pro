@@ -1,0 +1,104 @@
+<controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.ConnectDatabaseView"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
+        xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
+        xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+        xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
+        Title="{loc:Loc FM_PBase_ConnectDatabase}"
+        Width="480" MinWidth="480" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <controls:DialogWindowBase.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:SingletonResources/>
+            </ResourceDictionary.MergedDictionaries>
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </controls:DialogWindowBase.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <RadioButton Content="{loc:Loc FM_Connect_ModeLocal}"
+                         IsChecked="{Binding IsLocalMode, Mode=TwoWay}"
+                         Margin="0,0,0,6"
+                         Cursor="Hand"/>
+            <RadioButton Content="{loc:Loc FM_Connect_ModeCloud}"
+                         IsChecked="{Binding IsCloudMode, Mode=TwoWay}"
+                         Cursor="Hand"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,8"
+                    Visibility="{Binding IsLocalMode, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{loc:Loc FM_Connect_FolderLabel}"
+                       Margin="0,0,0,2"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding FolderPath, UpdateSourceTrigger=PropertyChanged}"
+                         Padding="6,4"
+                         Margin="0,0,8,0"
+                         VerticalContentAlignment="Center"
+                         Style="{DynamicResource CompactTextBox}"
+                         behaviors:FocusBehavior.FocusOnLoad="True"/>
+                <Button Grid.Column="1"
+                        Content="{loc:Loc FM_Connect_Browse}"
+                        Command="{Binding BrowseCommand}"
+                        MinWidth="110" Height="28"
+                        Style="{DynamicResource SecondaryButton}"/>
+            </Grid>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Margin="0,0,0,4"
+                    Visibility="{Binding IsCloudMode, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{loc:Loc FM_Cloud_WizardInviteLabel}"
+                       Margin="0,0,0,2"
+                       Foreground="{DynamicResource TextMutedBrush}"/>
+            <TextBox Text="{Binding InviteString, UpdateSourceTrigger=PropertyChanged}"
+                     Padding="6,4"
+                     Style="{DynamicResource CompactTextBox}"
+                     TextWrapping="Wrap"
+                     AcceptsReturn="False"/>
+            <TextBlock Text="{loc:Loc FM_Cloud_WizardInviteInvalid}"
+                       Margin="0,4,0,0"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource DangerBrush}"
+                       Visibility="{Binding HasInviteError, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
+
+        <Rectangle Grid.Row="3" Height="1" Fill="{DynamicResource BorderAltBrush}" Margin="0,10,0,10"/>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="{loc:Loc FM_Connect_Ok}"
+                    Command="{Binding OkCommand}"
+                    MinWidth="110" Height="28"
+                    Margin="0,0,8,0"
+                    IsDefault="True"
+                    Style="{DynamicResource PrimaryButton}"/>
+            <Button Content="{loc:Loc Btn_Cancel}"
+                    Command="{Binding CancelCommand}"
+                    Width="80" Height="28"
+                    IsCancel="True"
+                    Style="{DynamicResource SecondaryButton}"/>
+        </StackPanel>
+    </Grid>
+</controls:DialogWindowBase>

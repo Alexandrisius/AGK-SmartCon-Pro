@@ -237,6 +237,82 @@ public sealed class DatabaseManagerCloudLinkTests
         await fixture.Manager.SetCloudLinkAsync(conn.Id, null);
         Assert.False(fixture.Gate.IsWriteBlocked);
     }
+
+    [Fact]
+    public async Task DisconnectThenConnect_PublishedLink_SurvivesFromRemoteSource()
+    {
+        // Репро владельца 2026-09-11: отключил свою облачную базу и подключил
+        // заново через «Подключить базу» — ссылка обязана выжить из
+        // database_meta.remote_source_json, как Kind и project-binding.
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn = await fixture.Manager.CreateDatabaseAsync("CloudDB", dbPath);
+        await fixture.Manager.SetCloudLinkAsync(conn.Id, MakeLink(CloudLinkRole.Published, 5));
+
+        await fixture.Manager.DisconnectDatabaseAsync(conn.Id);
+        Assert.Empty(fixture.Manager.ListConnections());
+
+        var reconnected = await fixture.Manager.ConnectDatabaseAsync(conn.Path);
+
+        Assert.NotEqual(conn.Id, reconnected.Id);
+        Assert.NotNull(reconnected.CloudLink);
+        Assert.Equal(CloudLinkRole.Published, reconnected.CloudLink.Role);
+        Assert.Equal("otvody", reconnected.CloudLink.Slug);
+        Assert.Equal(5, reconnected.CloudLink.LastSyncedPublishSeq);
+        var listed = fixture.Manager.ListConnections().Single(c => c.Id == reconnected.Id);
+        Assert.Equal("otvody", listed.CloudLink?.Slug);
+        Assert.Equal("otvody", fixture.Gate.ActiveLink?.Slug);
+    }
+
+    [Fact]
+    public async Task DisconnectThenConnect_SubscribedCopy_RestoresReadOnlyGate()
+    {
+        // Подписная копия: remote_source_json пишет аплаер; после переподключения
+        // связь восстанавливается и гейт записи снова активен.
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn = await fixture.Manager.CreateDatabaseAsync("SubCopy", dbPath);
+        await WriteRemoteSourceAsync(fixture.Database, conn.Path,
+            CloudLinkJson.Serialize(MakeLink(CloudLinkRole.Subscribed, 2)));
+        await fixture.Manager.SetCloudLinkAsync(conn.Id, MakeLink(CloudLinkRole.Subscribed, 2));
+
+        await fixture.Manager.DisconnectDatabaseAsync(conn.Id);
+        Assert.False(fixture.Gate.IsWriteBlocked);
+
+        var reconnected = await fixture.Manager.ConnectDatabaseAsync(conn.Path);
+
+        Assert.Equal(CloudLinkRole.Subscribed, reconnected.CloudLink?.Role);
+        Assert.True(fixture.Gate.IsWriteBlocked);
+        Assert.Equal("otvody", fixture.Gate.ActiveLink?.Slug);
+    }
+
+    [Fact]
+    public async Task Connect_ExistingEntryWithoutLink_HealsWithoutLosingIt()
+    {
+        // Запись уже в реестре (подключена старой сборкой, без cloudLink) —
+        // повторное подключение лечит связь и не затирает реестр.
+        using var fixture = new TempDbManagerFixture();
+        var dbPath = Path.Combine(fixture.TempDir, "dbs");
+        var conn = await fixture.Manager.CreateDatabaseAsync("CloudDB", dbPath);
+        await WriteRemoteSourceAsync(fixture.Database, conn.Path,
+            CloudLinkJson.Serialize(MakeLink(CloudLinkRole.Published, 9)));
+        // Симулируем «старую» запись: cloudLink отсутствует в реестре.
+        var registryPath = (string)typeof(DatabaseManager).GetField("_registryPath", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(fixture.Manager)!;
+        var root = JsonNode.Parse(await File.ReadAllTextAsync(registryPath))!;
+        foreach (var node in root["connections"]!.AsArray())
+        {
+            ((JsonObject)node!).Remove("cloudLink");
+        }
+        await File.WriteAllTextAsync(registryPath, root.ToJsonString());
+
+        var connected = await fixture.Manager.ConnectDatabaseAsync(conn.Path);
+
+        Assert.Equal(conn.Id, connected.Id);
+        Assert.NotNull(connected.CloudLink);
+        Assert.Equal("otvody", connected.CloudLink.Slug);
+        var listed = fixture.Manager.ListConnections().Single(c => c.Id == conn.Id);
+        Assert.Equal("otvody", listed.CloudLink?.Slug);
+    }
 }
 
 /// <summary>RegistryMigrator v1→v2: пер-коннекшен ключ cloudLink + bump schemaVersion.

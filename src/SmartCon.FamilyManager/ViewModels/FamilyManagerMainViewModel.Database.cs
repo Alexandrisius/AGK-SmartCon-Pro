@@ -170,8 +170,20 @@ public sealed partial class FamilyManagerMainViewModel
     [RelayCommand]
     private async Task ConnectDatabaseAsync()
     {
-        var path = _dialogService.ShowFolderBrowserDialog(
-            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Select database folder");
+        // Диалог-развилка (решение владельца 2026-09-11): локальная база из
+        // папки или облачная по строке приглашения — в одной команде.
+        var vm = new ConnectDatabaseViewModel(() => _dialogService.ShowFolderBrowserDialog(
+            LanguageManager.GetString(StringLocalization.Keys.FM_DbSelectPath) ?? "Выберите папку"));
+        if (_dialogService.ShowConnectDatabase(vm) != true || !vm.Accepted)
+            return;
+
+        if (vm.Mode == ConnectDatabaseViewModel.ConnectMode.CloudInvite)
+        {
+            await ConnectByInviteAsync(vm.Invite!);
+            return;
+        }
+
+        var path = vm.FolderPath;
         if (string.IsNullOrWhiteSpace(path)) return;
 
         IsLoading = true;

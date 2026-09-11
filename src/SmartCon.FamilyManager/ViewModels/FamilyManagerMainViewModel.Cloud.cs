@@ -47,7 +47,7 @@ public sealed partial class FamilyManagerMainViewModel
         CopyCloudInviteCommand.NotifyCanExecuteChanged();
     }
 
-    // ── Мастер «Облачная база…» (§7.3.1) ────────────────────────────────
+    // ── Мастер «Создать облачную базу» (§7.3.1) ─────────────────────────
 
     [RelayCommand]
     private async Task OpenCloudDatabaseWizardAsync(CancellationToken ct)
@@ -57,14 +57,10 @@ public sealed partial class FamilyManagerMainViewModel
             return;
 
         using var _scope = SmartConLogger.BeginScope("CloudUI",
-            ("Method", nameof(OpenCloudDatabaseWizardAsync)),
-            ("Mode", wizard.Mode.ToString()));
+            ("Method", nameof(OpenCloudDatabaseWizardAsync)));
         try
         {
-            if (wizard.Mode == CloudDatabaseWizardViewModel.WizardMode.CreateEmpty)
-                await CreateEmptyCloudDatabaseAsync(wizard.DatabaseName.Trim(), ct).ConfigureAwait(true);
-            else
-                await SubscribeByInviteAsync(wizard.Invite!, ct).ConfigureAwait(true);
+            await CreateEmptyCloudDatabaseAsync(wizard.DatabaseName.Trim(), ct).ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -73,6 +69,32 @@ public sealed partial class FamilyManagerMainViewModel
         {
             SmartConLogger.Warn(
                 $"Cloud wizard failed: {ex.GetType().Name}: {ex.Message} [Action: проверьте адрес сервера и подключение к сети]");
+            _dialogService.ShowError(
+                LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_OperationFailedTitle) ?? "Облачная операция",
+                ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// «Подключить базу» → облачная ветка: приглашение → subscribe → первый
+    /// pull → регистрация копии. Ошибки сети — диалогом, как у мастера.
+    /// </summary>
+    private async Task ConnectByInviteAsync(CloudInvite.InviteData invite)
+    {
+        using var _scope = SmartConLogger.BeginScope("CloudUI",
+            ("Method", nameof(ConnectByInviteAsync)),
+            ("Slug", invite.Slug));
+        try
+        {
+            await SubscribeByInviteAsync(invite, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                $"Connect by invite failed: {ex.GetType().Name}: {ex.Message} [Action: проверьте строку приглашения, адрес сервера и сеть]");
             _dialogService.ShowError(
                 LanguageManager.GetString(StringLocalization.Keys.FM_Cloud_OperationFailedTitle) ?? "Облачная операция",
                 ex.Message);

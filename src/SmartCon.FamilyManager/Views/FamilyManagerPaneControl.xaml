@@ -133,19 +133,22 @@
                 </StackPanel>
             </DataTemplate>
 
-            <!-- Cloud §7.3.12: своя облачная база — ПРОСТО облако; подключённая по
-                 приглашению — облако со стрелкой (решение владельца 2026-09-11). -->
+            <!-- Cloud §7.3.12: своя облачная база — КОНТУРНОЕ облако без заливки;
+                 подключённая по приглашению — контурное облако со стрелкой (решение
+                 владельца 2026-09-11). Kind по умолчанию живёт в Style.Setter —
+                 локальное значение на элементе перебивает Style.Triggers (приоритеты
+                 WPF), и стрелка у подписной базы никогда не появлялась. -->
             <DataTemplate x:Key="DbCloudTemplate" DataType="{x:Type selectors:DatabaseListItem}">
                 <StackPanel Orientation="Horizontal" ToolTip="{Binding CloudBadgeTooltip}">
                     <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
                         <iconPacks:PackIconMaterial Width="24" Height="24"
-                                                       Foreground="{DynamicResource TextMutedBrush}"
-                                                       Kind="Cloud">
+                                                       Foreground="{DynamicResource TextMutedBrush}">
                             <iconPacks:PackIconMaterial.Style>
                                 <Style TargetType="{x:Type iconPacks:PackIconMaterial}">
+                                    <Setter Property="Kind" Value="CloudOutline"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding CloudBadge}" Value="subscribed">
-                                            <Setter Property="Kind" Value="CloudDownload"/>
+                                            <Setter Property="Kind" Value="CloudDownloadOutline"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>

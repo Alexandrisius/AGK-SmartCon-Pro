@@ -104,6 +104,7 @@ public sealed class FakeFamilyManagerDialogService : IFamilyManagerDialogService
     // Cloud catalog v1: окна по умолчанию «отклонены».
     public bool? ShowCloudLogin(object viewModel) => false;
     public bool? ShowCloudDatabaseWizard(object viewModel) => false;
+    public bool? ShowConnectDatabase(object viewModel) => false;
     public void ShowCloudOperationProgressDialog(object viewModel) { }
 
     public int CleanupDialogCalls { get; private set; }

@@ -242,6 +242,9 @@ public sealed class FamilyManagerDialogService : IFamilyManagerDialogService
     public bool? ShowCloudDatabaseWizard(object viewModel) => _presenter.ShowDialog(viewModel);
 
     /// <inheritdoc/>
+    public bool? ShowConnectDatabase(object viewModel) => _presenter.ShowDialog(viewModel);
+
+    /// <inheritdoc/>
     public void ShowCloudOperationProgressDialog(object viewModel) => _presenter.ShowModeless(viewModel);
 
     /// <inheritdoc/>

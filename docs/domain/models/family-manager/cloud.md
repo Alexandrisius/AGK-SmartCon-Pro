@@ -46,9 +46,9 @@ public enum CloudLinkRole
 
 Cloud-срез не добавлял новых интерфейсов в Core — расширенные члены существующих контрактов:
 
-- `IDatabaseManager.SetCloudLinkAsync(connectionId, link, ct)` — attach/replace/clear связи: registry + `database_meta.remote_source_json` (для Published; подписной копии базу пишет аплаер манифеста).
+- `IDatabaseManager.SetCloudLinkAsync(connectionId, link, ct)` — attach/replace/clear связи: registry + `database_meta.remote_source_json` (для Published; подписной копии базу пишет аплаер манифеста). Self-heal связи из `remote_source_json`: при init/switch (даунгрейд-перезапись реестра) и при `ConnectDatabaseAsync` (disconnect/connect — ссылка переживает переподключение, как Kind/project-binding).
 - `IDbAccessControlService.IsCloudReadOnly` — активная база является Subscribed-копией: AND-ится во все write-решения; auto-register `db_users` отключён (синтетический Engineer).
 - `IFamilyGeometryPipeline.ExtractToPreviewCacheAsync(...)` — извлечение GLB в общий кэш `cloud-cache\previews\` ВНЕ копии (подписная копия read-only, ADR-075 §7).
-- `IFamilyManagerDialogService.ShowCloudLogin/ShowCloudDatabaseWizard` (модальные), `ShowCloudOperationProgressDialog` (modeless, ADR-048).
+- `IFamilyManagerDialogService.ShowCloudLogin/ShowCloudDatabaseWizard` (модальные; wizard — только создание), `ShowConnectDatabase` (модальный диалог «Подключить базу»: радио локальная папка / облачная по строке приглашения), `ShowCloudOperationProgressDialog` (modeless, ADR-048).
 
 Реализации (FamilyManager-слой, не Core): `CloudAuthService` (JWT + refresh-ротация в Windows Credential Manager через P/Invoke), `CloudCatalogApiClient` (REST, retry-once на 401), `CloudPublishService` (pull-before-push), `CloudSyncService` (идемпотентный pull с CAS-кэшем и атомарным swap), `CatalogManifestBuilder/Applier` (манифест v1, round-trip ≡), `CloudInvite` (строка приглашения `smartcon-cloud:subscribe:{base64url}`), `CloudDatabaseGate` (снапшот CloudLink активной базы для гейта).

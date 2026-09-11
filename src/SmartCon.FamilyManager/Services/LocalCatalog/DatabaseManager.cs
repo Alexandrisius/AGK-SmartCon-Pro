@@ -161,12 +161,27 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 using var _scope = SmartConLogger.BeginScope("DatabaseManager",
                     ("FileName", Path.GetFileName(fullPath)), ("ExistingName", existing.Name));
                 SmartConLogger.Info($"Database '{Path.GetFileName(fullPath)}' already connected as '{existing.Name}', activating");
-                if (existingRegistry.ActiveConnectionId != existing.Id)
+                // Reconnect self-heal: запись могла быть создана без cloudLink
+                // (подключена старой сборкой) — восстанавливаем из database_meta.
+                // Heal мутирует переданный список и сохраняет реестр — работаем
+                // дальше с этим же списком, чтобы не перезаписать heal стацией.
+                var healedRegistry = existingRegistry;
+                if (existing.CloudLink is null)
                 {
-                    await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, existingRegistry.Connections), ct);
+                    var healedConnections = existingRegistry.Connections.ToList();
+                    existing = await HealCloudLinkAsync(healedConnections, existing, ct);
+                    healedRegistry = new DatabaseConnectionRegistry(existingRegistry.ActiveConnectionId, healedConnections);
+                }
+                if (healedRegistry.ActiveConnectionId != existing.Id)
+                {
+                    await SaveRegistryAsync(new DatabaseConnectionRegistry(existing.Id, healedRegistry.Connections), ct);
                     _catalogDatabase.SwitchToPath(fullPath);
                     _cloudGate.Update(existing);
                     ActiveDatabaseChanged?.Invoke(this, existing.Id);
+                }
+                else
+                {
+                    _cloudGate.Update(existing);
                 }
                 return existing;
             }
@@ -189,10 +204,11 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                 await _migrator.MigrateAsync(ct);
 
                 using var metaCmd = conn.CreateCommand();
-                metaCmd.CommandText = "SELECT base_type, project_binding_json FROM database_meta LIMIT 1";
+                metaCmd.CommandText = "SELECT base_type, project_binding_json, remote_source_json FROM database_meta LIMIT 1";
                 using var reader = await metaCmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 BaseType kind = BaseType.General;
                 ProjectBaseBinding? binding = null;
+                CloudLink? cloudLink = null;
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     var baseTypeValue = reader.GetValue(0);
@@ -207,9 +223,24 @@ internal sealed partial class DatabaseManager : IDatabaseManager
                     {
                         binding = DeserializeBinding(reader.GetString(1));
                     }
+
+                    // Kind и binding переживают disconnect/connect из database_meta —
+                    // облачная ссылка (remote_source_json, V39) должна выживать так же.
+                    if (!reader.IsDBNull(2))
+                        cloudLink = CloudLinkJson.TryDeserialize(reader.GetString(2));
                 }
 
-                var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow, null, null, kind, binding);
+                if (cloudLink is not null)
+                {
+                    using var _healScope = SmartConLogger.BeginScope("DatabaseManager",
+                        ("Method", nameof(ConnectDatabaseAsync)),
+                        ("BaseName", name),
+                        ("Slug", cloudLink.Slug));
+                    SmartConLogger.Info(
+                        $"CloudLink restored from database_meta.remote_source_json on connect (role={cloudLink.Role}, slug={cloudLink.Slug})");
+                }
+
+                var connection = new DatabaseConnection(id, name, fullPath, DateTimeOffset.UtcNow, null, null, kind, binding, cloudLink);
 
                 var registry = await LoadRegistryAsync(ct);
                 var connections = registry.Connections.ToList();

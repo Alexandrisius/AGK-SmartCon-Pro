@@ -167,11 +167,19 @@ public interface IFamilyManagerDialogService
     bool? ShowCloudLogin(object viewModel);
 
     /// <summary>
-    /// Show the «Облачная база» wizard (create empty / connect by invitation,
-    /// §7.3.1). Modal. Returns true when the user accepted — read the chosen
-    /// mode/name/invite from the viewModel.
+    /// Show the «Создать облачную базу» wizard (§7.3.1, create-empty only).
+    /// Modal. Returns true when the user accepted — read DatabaseName from
+    /// the viewModel.
     /// </summary>
     bool? ShowCloudDatabaseWizard(object viewModel);
+
+    /// <summary>
+    /// Show the «Подключить базу» dialog: radio local-folder / cloud-by-
+    /// invitation (cloud catalog v1, owner decision 2026-09-11). Modal.
+    /// Returns true when the user accepted — read Mode/FolderPath/Invite
+    /// from the viewModel.
+    /// </summary>
+    bool? ShowConnectDatabase(object viewModel);
 
     /// <summary>
     /// Show the cloud operation progress dialog (publish/pull) as a modeless

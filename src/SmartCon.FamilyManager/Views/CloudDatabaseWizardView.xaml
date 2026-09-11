@@ -4,7 +4,6 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         Title="{loc:Loc FM_Cloud_WizardTitle}"
         Width="460" MinWidth="460" SizeToContent="Height"
@@ -19,7 +18,6 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:SingletonResources/>
             </ResourceDictionary.MergedDictionaries>
-            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
         </ResourceDictionary>
     </controls:DialogWindowBase.Resources>
 
@@ -28,23 +26,9 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <RadioButton Content="{loc:Loc FM_Cloud_WizardModeCreate}"
-                         IsChecked="{Binding IsCreateMode, Mode=TwoWay}"
-                         Margin="0,0,0,6"
-                         Cursor="Hand"/>
-            <RadioButton Content="{loc:Loc FM_Cloud_WizardModeSubscribe}"
-                         IsChecked="{Binding IsSubscribeMode, Mode=TwoWay}"
-                         Cursor="Hand"/>
-        </StackPanel>
-
-        <StackPanel Grid.Row="1" Margin="0,0,0,8"
-                    Visibility="{Binding IsCreateMode, Converter={StaticResource BoolToVis}}">
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock Text="{loc:Loc FM_Cloud_WizardNameLabel}"
                        Margin="0,0,0,2"
                        Foreground="{DynamicResource TextMutedBrush}"/>
@@ -54,29 +38,10 @@
                      behaviors:FocusBehavior.FocusOnLoad="True"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Margin="0,0,0,4"
-                    Visibility="{Binding IsSubscribeMode, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{loc:Loc FM_Cloud_WizardInviteLabel}"
-                       Margin="0,0,0,2"
-                       Foreground="{DynamicResource TextMutedBrush}"/>
-            <TextBox Text="{Binding InviteString, UpdateSourceTrigger=PropertyChanged}"
-                     Padding="6,4"
-                     Style="{DynamicResource CompactTextBox}"
-                     TextWrapping="Wrap"
-                     AcceptsReturn="False"/>
-            <TextBlock Text="{loc:Loc FM_Cloud_WizardInviteInvalid}"
-                       Margin="0,4,0,0"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource DangerBrush}"
-                       Visibility="{Binding HasInviteError, Converter={StaticResource BoolToVis}}"/>
-        </StackPanel>
-
-        <Rectangle Grid.Row="3" Height="1" Fill="{DynamicResource BorderAltBrush}" Margin="0,10,0,10"/>
-
-        <StackPanel Grid.Row="5"
+        <StackPanel Grid.Row="2"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
-                    Margin="0,4,0,0">
+                    Margin="0,12,0,0">
             <Button Content="{loc:Loc FM_Cloud_WizardOk}"
                     Command="{Binding OkCommand}"
                     MinWidth="100" Height="28"
