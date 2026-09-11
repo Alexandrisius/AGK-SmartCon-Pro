@@ -131,7 +131,20 @@ public sealed class CloudSyncService
                 },
                 ct).ConfigureAwait(false);
 
-            SwapDirectories(request.TargetRoot, stagingRoot);
+            try
+            {
+                SwapDirectories(request.TargetRoot, stagingRoot);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                TryDeleteDirectory(stagingRoot);
+                // Ретест 2026-09-11: семейство, загруженное из копии в проект, держит
+                // файл — Directory.Move копии падает сырым IOException. Сводка диалога
+                // показывает ex.Message: даём оператору внятный следующий шаг.
+                throw new CloudApiException(409, "copy_locked",
+                    "файлы подписной копии заняты (семейство загружено в Revit или открыто в другом приложении). " +
+                    "[Action: закройте семейство/документ, использующий базу, и повторите обновление]");
+            }
             WriteSyncState(request.TargetRoot, latest.PublishSeq, newDigests);
             SmartConLogger.Info(
                 $"Synced #{latest.PublishSeq}: {applyResult.Items} item(s) " +

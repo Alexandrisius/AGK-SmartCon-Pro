@@ -487,8 +487,7 @@
                         CornerRadius="6"
                         Padding="4">
                     <StackPanel>
-                        <Button Content="{loc:Loc FM_Cloud_PublishCommand}"
-                                Command="{Binding PublishCloudChangesCommand}"
+                        <Button Command="{Binding PublishCloudChangesCommand}"
                                 MinWidth="180"
                                 HorizontalContentAlignment="Left"
                                 Padding="10,6"
@@ -497,6 +496,18 @@
                                 Cursor="Hand"
                                 ToolTip="{loc:Loc FM_Cloud_PublishTooltip}"
                                 Visibility="{Binding IsSelectedCloudPublished, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Та же оранжевая точка, что на шестерёнке: непубликованные
+                                     локальные изменения — очевидно, куда нажимать (владелец
+                                     2026-09-11: «так много команд, что непонятно куда нажимать»). -->
+                                <Border Width="6" Height="6"
+                                        CornerRadius="3"
+                                        Margin="0,0,6,0"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource WarningBrush}"
+                                        Visibility="{Binding HasUnpublishedCloudChanges, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="{loc:Loc FM_Cloud_PublishCommand}"/>
+                            </StackPanel>
                             <i:Interaction.Triggers>
                                 <i:EventTrigger EventName="Click">
                                     <i:ChangePropertyAction TargetObject="{Binding ElementName=DbToolsPopup}" PropertyName="IsOpen" Value="False"/>

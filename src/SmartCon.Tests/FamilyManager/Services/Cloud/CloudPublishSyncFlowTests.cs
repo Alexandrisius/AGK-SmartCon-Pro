@@ -370,6 +370,41 @@ public sealed class CloudPublishSyncFlowTests : IDisposable
         Assert.Equal(0, second.RemovedCount);
     }
 
+    [Fact]
+    public async Task SyncAsync_CopyFileLockedByRevit_FriendlyCopyLockedError()
+    {
+        // Ретест 2026-09-11: семейство, загруженное из копии в проект, держит файл —
+        // swap копии падает. Оператор обязан увидеть внятный код/шаг, а не сырой
+        // IOException «The process cannot access the file».
+        await LoginAsync();
+        var content = Encoding.UTF8.GetBytes("LOCKED-RFA");
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant();
+        var id = Guid.NewGuid().ToString("N");
+
+        var targetRoot = Path.Combine(_workDir, "cloud", "otvody");
+        _handler.Enqueue(FakeHttp.JsonOk(LatestJson(1, Item(id, "Отвод", sha, content.Length))));
+        _handler.Enqueue(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) });
+        await _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X"));
+
+        // Держим файл копии открытым (эмуляция загруженного в Revit семейства).
+        var lockedFile = File.Open(Path.Combine(targetRoot, "files", id, "v1", "Отвод.rfa"),
+            FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            _handler.Enqueue(FakeHttp.JsonOk(LatestJson(2, Item(id, "Отвод", sha, content.Length, label: "v2", contentHash: "FHV-2"))));
+            var ex = await Assert.ThrowsAsync<CloudApiException>(
+                () => _sync.SyncAsync(new CloudSyncRequest("otvody", targetRoot, "X")));
+
+            Assert.Equal("copy_locked", ex.Code);
+            Assert.Contains("заняты", ex.Message);
+            Assert.True(Directory.Exists(targetRoot), "старая копия обязана остаться на месте (restore)");
+        }
+        finally
+        {
+            lockedFile.Dispose();
+        }
+    }
+
     private async Task<string> ReadFileShaAsync()
     {
         var file = Directory.GetFiles(_source.GetDatabaseRoot(), "*.rfa", SearchOption.AllDirectories).Single();

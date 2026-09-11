@@ -742,6 +742,14 @@ public sealed partial class FamilyManagerMainViewModel
             ct).ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Modeless-прогресс ADR-048: показать → запустить → дождаться ОПЕРАЦИИ.
+    /// Диалог сводки может оставаться открытым (пользователь читает) — управление
+    /// возвращается сразу по завершении операции, чтобы IsCloudBusy не держал
+    /// publish/unpublish серыми, пока открыт диалог (ретест 2026-09-11: pull падал
+    /// на заблокированном семействе, диалог сводки ждал клика, «Снять с публикации»
+    /// был недоступен). Dispose — фоновой цепочкой после закрытия окна.
+    /// </summary>
     private async Task<(string? Status, bool Failed)> RunCloudOperationCoreAsync(
         string title,
         Func<IProgress<CloudOperationProgress>, CancellationToken, Task<string>> operation,
@@ -749,12 +757,18 @@ public sealed partial class FamilyManagerMainViewModel
     {
         var vm = new CloudOperationProgressViewModel(title, operation);
         _dialogService.ShowCloudOperationProgressDialog(vm);
+        await vm.RunAsync().ConfigureAwait(true);
+        if (!vm.Failed && vm.FinalStatus is not null) StatusMessage = vm.FinalStatus;
+        var result = (vm.FinalStatus, vm.Failed);
+        _ = DisposeWhenClosedAsync(vm);
+        return result;
+    }
+
+    private static async Task DisposeWhenClosedAsync(CloudOperationProgressViewModel vm)
+    {
         try
         {
-            await vm.RunAsync().ConfigureAwait(true);
-            await vm.DialogCompletion.ConfigureAwait(true);
-            if (!vm.Failed && vm.FinalStatus is not null) StatusMessage = vm.FinalStatus;
-            return (vm.FinalStatus, vm.Failed);
+            await vm.DialogCompletion.ConfigureAwait(false);
         }
         finally
         {
