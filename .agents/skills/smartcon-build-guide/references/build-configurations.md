@@ -92,10 +92,12 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
 3. **При переходе между разными TFM (net8 ↔ net48 ↔ net10) — ВСЕГДА делай
    `dotnet restore` с `-p:Configuration=...` перед сборкой, ИЛИ используй `dotnet build`
    без `--no-restore`**
-4. **`global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx; 10.0.2xx —
-   регрессии WPF-сборки, не поддерживается)**
+4. **`global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx; 2xx не поддерживается —
+   консервативная политика из-за отдельных подтверждённых регрессий 2xx: dotnet/wpf#11678, dotnet/sdk#53508)**
    — ВСЕ конфигурации (включая net48) собираются под SDK 10. SDK 8 для сборки больше не нужен, но .NET 8
    RUNTIME требуется для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
+   BG1002 (*.baml not found) — прерывистая гонка WPF-разметки, НЕ связана с бэндом SDK:
+   лечится повторным запуском сборки (второй прогон зелёный, #281).
 
 ## Тесты
 
