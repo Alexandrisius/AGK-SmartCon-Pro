@@ -104,28 +104,39 @@
   </ItemGroup>
 
   <!-- ============================================================ -->
-  <!-- Wildcard VersionOverride для Nice3point.TUnit.Revit            -->
-  <!-- (только SmartCon.IntegrationTests). Пакет публикуется per-Revit -->
-  <!-- годом (2021.*–2027.*), как и RevitAPI — зеркалим схему выше.   -->
-  <!-- Пакета 2019/2020 не существует: R19 не поддерживается           -->
-  <!-- (csproj проекта выдаёт явную ошибку для RevitVersion < 2021).   -->
-  <!-- Update без Include в других проектах — no-op.                   -->
+  <!-- Nice3point.TUnit.Revit (только SmartCon.IntegrationTests):     -->
+  <!-- пин per-year last-known-good. Пакет публикуется per-Revit годом -->
+  <!-- (2021.*–2027.*). Пакета 2019/2020 не существует: R19 не         -->
+  <!-- поддерживается (csproj выдаёт явную ошибку). Update без         -->
+  <!-- Include в других проектах — no-op.                              -->
+  <!--                                                                  -->
+  <!-- See #282: wildcard $(RevitVersion).* всплыл на волну x.1.2      -->
+  <!-- (TUnit 1.67 → CodeCoverage 18.10 → System.Text.Json >= 10.0.10) -->
+  <!-- и ломал restore NU1109 против замороженного STJ 8.0.6/9.0.0.    -->
+  <!-- x.1.1 пинит TUnit [1.44.0] и CodeCoverage [18.6.2] точно         -->
+  <!-- (проверено по nuspec) — состояние зелёного CI 2026-09-11.        -->
+  <!-- Для 2027 линейки x.1.x нет — последняя 2027.0.2 (она и была в    -->
+  <!-- зелёном CI). Миграция на волну TUnit 1.67 — отдельной задачей.   -->
   <!-- ============================================================ -->
+  <PropertyGroup>
+    <Nice3pointTUnitRevitVersion Condition="'$(RevitVersion)' == '2027'">2027.0.2</Nice3pointTUnitRevitVersion>
+    <Nice3pointTUnitRevitVersion Condition="'$(RevitVersion)' != '2027' And '$(RevitVersion)' != ''">$(RevitVersion).1.1</Nice3pointTUnitRevitVersion>
+  </PropertyGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' != '' And '$(RevitVersion)' != '2019'">
     <PackageReference Update="Nice3point.TUnit.Revit"
-                      VersionOverride="$(RevitVersion).*" />
+                      VersionOverride="$(Nice3pointTUnitRevitVersion)" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net48' And '$(RevitVersion)' == ''">
     <PackageReference Update="Nice3point.TUnit.Revit"
-                      VersionOverride="2021.*" />
+                      VersionOverride="2021.1.1" />
   </ItemGroup>
   <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(RevitVersion)' != ''">
     <PackageReference Update="Nice3point.TUnit.Revit"
-                      VersionOverride="$(RevitVersion).*" />
+                      VersionOverride="$(Nice3pointTUnitRevitVersion)" />
   </ItemGroup>
   <ItemGroup Condition="('$(TargetFramework)' == 'net8.0-windows' Or '$(TargetFramework)' == 'net10.0-windows') And '$(RevitVersion)' == ''">
     <PackageReference Update="Nice3point.TUnit.Revit"
-                      VersionOverride="2025.*" />
+                      VersionOverride="2025.1.1" />
   </ItemGroup>
 
   <!-- ============================================================ -->
