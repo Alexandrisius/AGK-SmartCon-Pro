@@ -441,6 +441,7 @@ workaround'ов с указанием Issue, файла, платформы и �
 
 - **`dotnet restore` без `-p:Configuration`** → fallback на RevitAPI 2021.* → ложные ошибки CS0618
 - **Собирай `SmartCon.App.csproj`**, НЕ `SmartCon.sln` (подтянет лишние TFM)
+- **BG1002 «не удается найти `*.baml`»** — прерывистая гонка WPF-компиляции разметки (dotnet/wpf#4299, msbuild#6170, wpf#6483), НЕ ошибка конфигурации и НЕ бэнд SDK (A/B на 10.0.201 vs 10.0.112 — ловится на любом, #281). Лечение — просто повторить `dotnet build`: второй прогон всегда зелёный. При частых повторах — binlog (`-bl:build.binlog`) и приложить в issue.
 - **При переходе net8 ↔ net48 ↔ net10** — ВСЕГДА делай restore с конфигурацией
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
@@ -581,7 +582,7 @@ build-and-deploy.bat
 3. **При смене TFM (net8 ↔ net48 ↔ net10):** ВСЕГДА restore с конфигурацией
 4. **Собирай `SmartCon.App.csproj`, НЕ `SmartCon.sln`**
 5. **Per-version бинарники:** каждая версия Revit получает СВОЮ сборку (R25→2025, R26→2026, R27→2027). Эпоха «one binary для 2025+2026» закончилась с #233: в API 2026 у `WireType.WireMaterial`/`TemperatureRating`/`Insulation` сменились типы на `ElementId`, `MaxSize` → `string` — старый бинарник на 2026 = `MissingMethodException`.
-6. **SDK:** `global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx, stable-only; бэнд 10.0.2xx не поддерживается — регрессии WPF-сборки BG1002, dotnet/wpf#11678) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
+6. **SDK:** `global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx, stable-only — консервативная политика: у бэнда 10.0.2xx есть отдельные подтверждённые регрессии, dotnet/wpf#11678 / dotnet/sdk#53508; BG1002 к бэнду отношения НЕ имеет, см. ловушку ниже) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
 
 **Подробная документация в skill:**
 - `references/build-configurations.md` — мульти-версионная сборка

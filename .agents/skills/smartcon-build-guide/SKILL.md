@@ -127,6 +127,13 @@ dotnet build src/SmartCon.sln -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 ```
 
+### 5. BG1002 "*.baml cannot be found" = intermittent WPF race — just retry
+`error BG1002` from Microsoft.WinFX.targets is a long-standing intermittent race in the
+WPF markup compiler (dotnet/wpf#4299, msbuild#6170, wpf#6483). It is NOT a config error
+and NOT SDK-band-specific (A/B confirmed on 10.0.201 vs 10.0.112, see #281). Re-run the
+same build command — the second run is always green. If it recurs often, capture a
+binlog (`-bl:build.binlog`) and attach it to an issue.
+
 ## CI/CD
 
 - **Branch protection:** `main` requires PR → squash-merge. NEVER push to main directly.
