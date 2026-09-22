@@ -299,7 +299,7 @@ Multi-version shipping-артефакты:
 | `R26` | 2026 | net8.0-windows |
 | `R27` | 2027 | net10.0-windows |
 
-**Требования:** .NET 10 SDK (10.0.100+, любой feature-бэнд — см. `global.json`), Visual Studio 2022 или Rider.
+**Требования:** .NET 10 SDK бэнда 10.0.1xx (10.0.100+; бэнд 10.0.2xx не поддерживается — регрессии WPF-сборки, см. `global.json`), Visual Studio 2022 или Rider.
 
 </details>
 

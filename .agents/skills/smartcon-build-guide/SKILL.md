@@ -26,8 +26,9 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 (the Tests project is pinned to net8.0-windows — do NOT build it under R27: NU1201/NU1202;
 in the sln its R27 configurations are mapped to R25, honored only in VS)
 
-**SDK:** `global.json` — floor 10.0.100, rollForward latestFeature (any 10.0.x band,
-stable-only) — ALL configurations (including net48) build under SDK 10.
+**SDK:** `global.json` — floor 10.0.100, rollForward latestPatch (**10.0.1xx band ONLY**;
+the 10.0.2xx band has WPF build regressions — see errorMessage in global.json) — ALL
+configurations (including net48) build under SDK 10.
 The .NET 8 RUNTIME is still required to run unit tests.
 
 ## Build vs Deploy
