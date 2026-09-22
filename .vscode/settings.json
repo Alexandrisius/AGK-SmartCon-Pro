@@ -1,0 +1,13 @@
+{
+  // Профилактика BG1002 (#281): Roslyn LanguageServer из C#-расширения VS Code
+  // фоновыми design-time сборками гоняется с CLI-сборкой за общий obj/
+  // (механизм dotnet/wpf#4299). Исключение obj/bin/artifacts из файлового
+  // ватчера снимает наблюдавшийся триггер. Полные пересборки и
+  // build-and-deploy.bat всё равно запускать при закрытом редакторе —
+  // см. «Частые ловушки» в AGENTS.md.
+  "files.watcherExclude": {
+    "**/obj/**": true,
+    "**/bin/**": true,
+    "**/artifacts/**": true
+  }
+}

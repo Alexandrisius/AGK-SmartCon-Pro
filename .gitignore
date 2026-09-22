@@ -6,7 +6,8 @@ artifacts/
 
 ## Visual Studio / VS Code
 .vs/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *.user
 *.suo
 *.userprefs
