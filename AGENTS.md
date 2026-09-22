@@ -441,7 +441,7 @@ workaround'ов с указанием Issue, файла, платформы и �
 
 - **`dotnet restore` без `-p:Configuration`** → fallback на RevitAPI 2021.* → ложные ошибки CS0618
 - **Собирай `SmartCon.App.csproj`**, НЕ `SmartCon.sln` (подтянет лишние TFM)
-- **BG1002 «не удается найти `*.baml`»** — прерывистая гонка WPF-компиляции разметки (dotnet/wpf#4299, msbuild#6170, wpf#6483), НЕ ошибка конфигурации и НЕ бэнд SDK (A/B на 10.0.201 vs 10.0.112 — ловится на любом, #281). Лечение — просто повторить `dotnet build`: второй прогон всегда зелёный. При частых повторах — binlog (`-bl:build.binlog`) и приложить в issue.
+- **BG1002 «не удается найти `*.baml`»** — гонка CLI-сборки с фоновыми design-time сборками IDE (VS Code C# / Roslyn LanguageServer) за общий `obj/` (механизм dotnet/wpf#4299, msbuild#6170; провоцируется доказательно — #281). НЕ ошибка конфигурации и НЕ бэнд SDK (A/B 10.0.201 vs 10.0.112 — ловится на любом). Лечение: повторить `dotnet build`; если залипло (LS продолжает собирать фоном) — закрыть/перезагрузить окно VS Code (или убить `Microsoft.CodeAnalysis.LanguageServer` + `dotnet build-server shutdown`), затем `git clean -xfd src` и пересобрать. **Полные пересборки / `build-and-deploy.bat` — при закрытом VS Code.** Профилактика: локальный `.vscode/settings.json` → `files.watcherExclude` на `**/obj/**`, `**/bin/**`.
 - **При переходе net8 ↔ net48 ↔ net10** — ВСЕГДА делай restore с конфигурацией
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
