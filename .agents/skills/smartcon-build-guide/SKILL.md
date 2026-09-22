@@ -127,12 +127,16 @@ dotnet build src/SmartCon.sln -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 ```
 
-### 5. BG1002 "*.baml cannot be found" = intermittent WPF race — just retry
-`error BG1002` from Microsoft.WinFX.targets is a long-standing intermittent race in the
-WPF markup compiler (dotnet/wpf#4299, msbuild#6170, wpf#6483). It is NOT a config error
-and NOT SDK-band-specific (A/B confirmed on 10.0.201 vs 10.0.112, see #281). Re-run the
-same build command — the second run is always green. If it recurs often, capture a
-binlog (`-bl:build.binlog`) and attach it to an issue.
+### 5. BG1002 "*.baml cannot be found" = IDE/CLI race over obj/ — retry, don't reconfigure
+Root cause proven (#281): CLI builds race background design-time builds of the VS Code C#
+extension (Roslyn LanguageServer) over the shared `obj/` (the dotnet/wpf#4299 mechanism;
+also msbuild#6170). NOT a config error and NOT SDK-band-specific (A/B: 10.0.201 vs 10.0.112 —
+fails on both). Fix ladder: (1) re-run `dotnet build` — usually enough; (2) if it sticks
+(LS keeps building in background) — close/reload the VS Code window (or kill
+`Microsoft.CodeAnalysis.LanguageServer` + `dotnet build-server shutdown`), then
+`git clean -xfd src` and rebuild; (3) full rebuilds and `build-and-deploy.bat` — run with
+VS Code closed. Prevention: `files.watcherExclude` for `**/obj/**` / `**/bin/**` in the
+local `.vscode/settings.json`.
 
 ## CI/CD
 

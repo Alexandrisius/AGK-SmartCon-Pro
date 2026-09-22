@@ -96,8 +96,9 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
    консервативная политика из-за отдельных подтверждённых регрессий 2xx: dotnet/wpf#11678, dotnet/sdk#53508)**
    — ВСЕ конфигурации (включая net48) собираются под SDK 10. SDK 8 для сборки больше не нужен, но .NET 8
    RUNTIME требуется для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
-   BG1002 (*.baml not found) — прерывистая гонка WPF-разметки, НЕ связана с бэндом SDK:
-   лечится повторным запуском сборки (второй прогон зелёный, #281).
+   BG1002 (*.baml not found) — гонка CLI-сборки с фоновыми design-time сборками VS Code
+   (Roslyn LanguageServer) за общий obj/ (dotnet/wpf#4299), НЕ связана с бэндом SDK:
+   повторить сборку; при залипании — закрыть VS Code, `git clean -xfd src`, пересобрать (#281).
 
 ## Тесты
 
