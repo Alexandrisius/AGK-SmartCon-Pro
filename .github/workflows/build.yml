@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
         with:
-          # global.json: SDK 10.0.x, rollForward latestFeature (Revit 2027 = net10); SDK 10 собирает
+          # global.json: бэнд 10.0.1xx, rollForward latestPatch (Revit 2027 = net10); SDK 10 собирает
           # все TFM (net48/net8/net10), 8.0.x оставлен как страховка runtime
           dotnet-version: |
             8.0.x
