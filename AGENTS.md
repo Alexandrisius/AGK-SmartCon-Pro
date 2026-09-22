@@ -581,7 +581,7 @@ build-and-deploy.bat
 3. **При смене TFM (net8 ↔ net48 ↔ net10):** ВСЕГДА restore с конфигурацией
 4. **Собирай `SmartCon.App.csproj`, НЕ `SmartCon.sln`**
 5. **Per-version бинарники:** каждая версия Revit получает СВОЮ сборку (R25→2025, R26→2026, R27→2027). Эпоха «one binary для 2025+2026» закончилась с #233: в API 2026 у `WireType.WireMaterial`/`TemperatureRating`/`Insulation` сменились типы на `ElementId`, `MaxSize` → `string` — старый бинарник на 2026 = `MissingMethodException`.
-6. **SDK:** `global.json` пинит SDK 10.0.100 (rollForward latestPatch) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
+6. **SDK:** `global.json` — пол 10.0.100, rollForward latestFeature (любой бэнд 10.0.x, stable-only) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
 
 **Подробная документация в skill:**
 - `references/build-configurations.md` — мульти-версионная сборка

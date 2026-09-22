@@ -60,7 +60,7 @@ Always target `SmartCon.App.csproj`, **not** `SmartCon.sln` — the solution
 pulls in test projects and may conflict with named configurations.
 
 Requirements:
-- .NET 8 SDK
+- .NET 10 SDK (any 10.0.x feature band — see `global.json`)
 - Windows (WPF)
 - Revit is **not** required to build — RevitAPI.dll comes from NuGet
   (`Nice3point.Revit.Api`) at design-time.

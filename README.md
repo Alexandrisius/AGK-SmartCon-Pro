@@ -295,9 +295,11 @@ Multi-version shipping-артефакты:
 | `R19` | 2019–2020 | net48 |
 | `R21` | 2021–2023 | net48 |
 | `R24` | 2024 | net48 |
-| `R25` | 2025–2026 | net8.0-windows |
+| `R25` | 2025 | net8.0-windows |
+| `R26` | 2026 | net8.0-windows |
+| `R27` | 2027 | net10.0-windows |
 
-**Требования:** .NET 8.0 SDK, Visual Studio 2022 или Rider.
+**Требования:** .NET 10 SDK (10.0.100+, любой feature-бэнд — см. `global.json`), Visual Studio 2022 или Rider.
 
 </details>
 
