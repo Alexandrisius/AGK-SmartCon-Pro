@@ -71,7 +71,7 @@
     <PackageVersion Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
     <PackageVersion Include="System.Numerics.Vectors" Version="4.6.1" />
-    <PackageVersion Include="ILRepack.Lib.MSBuild.Task" Version="2.0.46" />
+    <PackageVersion Include="ILRepack.Lib.MSBuild.Task" Version="2.0.48" />
 
 
     <!-- HelixToolkit.Wpf.SharpDX — DirectX 11 WPF 3D viewer (ADR-042). net48 + net8.0-windows7.0.
