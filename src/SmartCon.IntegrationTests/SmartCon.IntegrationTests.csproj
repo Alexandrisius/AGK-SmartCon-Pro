@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!--
     SmartCon.IntegrationTests — интеграционные тесты, выполняемые ВНУТРИ реального
@@ -83,6 +83,8 @@
          ExcludeAssets="all" — для диагностики embedded-хэшей нужен реальный
          Sqlite: снимаем обрезку ТОЛЬКО в этом проекте (Update, не duplicate). -->
     <PackageReference Update="Microsoft.Data.Sqlite" ExcludeAssets="none" />
+    <!-- Live dogfood test: OpenAI-compatible HTTP client (net48 needs the explicit reference). -->
+    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net48'" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 

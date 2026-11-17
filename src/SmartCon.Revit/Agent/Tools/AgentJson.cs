@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SmartCon.Revit.Agent.Tools;
@@ -11,6 +11,18 @@ internal static class AgentJson
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    /// <summary>
+    /// Card serialization for field projection: unlike the default options it keeps
+    /// null-valued properties, so availableFields/fields[] show the full card shape
+    /// (live dogfood finding #4: "template" looked unsupported only because its
+    /// value was null and the property was omitted).
+    /// </summary>
+    private static readonly JsonSerializerOptions CardOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
+
     private static readonly JsonSerializerOptions DeserializerOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -18,6 +30,9 @@ internal static class AgentJson
 
     internal static JsonElement Serialize(object value) =>
         JsonSerializer.SerializeToElement(value, SerializerOptions);
+
+    internal static JsonElement SerializeCard(object value) =>
+        JsonSerializer.SerializeToElement(value, CardOptions);
 
     internal static T? Deserialize<T>(JsonElement args)
         where T : class =>

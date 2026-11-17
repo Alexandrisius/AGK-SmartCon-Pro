@@ -1,9 +1,10 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
 #if REVIT2023_OR_GREATER
 using SmartCon.Agent;
 using SmartCon.Agent.Events;
 using SmartCon.Agent.Services;
+using SmartCon.Agent.Services.Analysis;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Agent.Services.Tools;
@@ -434,6 +435,11 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentConversationStore, SqliteAgentConversationStore>();
         services.AddSingleton<IAgentAuditLog, SqliteAgentAuditLog>();
         services.AddSingleton<IAgentChangeSetStore, SqliteAgentChangeSetStore>();
+        services.AddSingleton<IAgentToolCallStore, SqliteAgentToolCallStore>();
+        services.AddSingleton<IAgentFeedbackStore, SqliteAgentFeedbackStore>();
+        services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
+        services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
+        services.AddSingleton<AgentFrictionAnalyzer>();
 
         services.AddSingleton<IAgentSelectionProvider, RevitAgentSelectionProvider>();
         services.AddSingleton<IAgentTool, GetProjectOverviewTool>();
@@ -461,6 +467,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
         services.AddSingleton<IAgentTool, UndoLastTool>();
+        services.AddSingleton<IAgentTool, ReportToolingFeedbackTool>();
 
         services.AddSingleton<AgentConfirmationService>();
         services.AddSingleton<IAgentConfirmationService>(

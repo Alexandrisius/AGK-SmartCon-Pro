@@ -1,4 +1,4 @@
-# Handoff — 2026-11-18 (Phase A–E checkpoint: write layer, confirmation gate, context budget)
+﻿# Handoff — 2026-11-18 (Phase A–F: write layer, confirmation gate, context budget, dogfooding)
 
 ## Состояние
 
@@ -7,7 +7,8 @@
 | Коммит | Содержание |
 |---|---|
 | `d79ee3d7` | feat(agent): write layer — 10 write-tools, confirmation gate, change sets, undo_last, integration/unit tests |
-| (следующий) | feat(agent): context budget — ToolResultBudget, лимиты, broad-query guard, проекции, компакция истории |
+| `b1d30ccb` | feat(agent): context budget — ToolResultBudget, лимиты, broad-query guard, проекции, компакция истории |
+| (следующий) | feat(agent): dogfooding — report_tooling_feedback, tool_calls/token_usage, AgentFrictionAnalyzer, live dogfood, улучшения по фидбэку |
 
 ### Что работает
 
@@ -40,14 +41,38 @@
     `AgentLlmSettings.ContextWindowTokens` (default 200 000) старые tool-сообщения заменяются
     digest-ом `{compacted, success, message, affectedCount, truncated, hint}`; последние 4
     tool-результата сохраняются; факт компакции логируется.
-  - System prompt: блоки «Write workflow» и «Context budget».
+  - System prompt: блоки «Write workflow», «Context budget», «Tooling feedback».
+
+### Dogfooding / телеметрия (P4)
+
+- **`report_tooling_feedback`** — meta-tool (`SmartCon.Agent/Services/Tools/ReportToolingFeedbackTool.cs`,
+  Risk=Read): area(tools|prompt|ui), toolName, rating 1–5, issue, suggestion, example →
+  таблица `agent_feedback` (schema v2) + `smartcon.log`. Модель вызывает его сама
+  (инструкция в system prompt, «один раз на проблему»).
+- **`tool_calls`** заполняется оркестратором: id, session_id, tool_name, arguments_json,
+  result_json (budget-trimmed), status ok/error, error code, duration_ms.
+- **`token_usage`** заполняется по каждому ходу: provider, model, prompt/completion/
+  reasoning tokens, cost_usd.
+- **`AgentFrictionAnalyzer`** (`SmartCon.Agent/Services/Analysis/`): SQL-отчёт по
+  `tool_calls`/`agent_feedback` за N дней + markdown (`ToMarkdown()`): ошибки по кодам,
+  truncated, средние длительности, топ проблемных тулов, рекомендации.
+- **`AgentLiveDogfoodTests`** (IntegrationTests, read-only, skip без `SMARTCON_AGENT_LIVE=1`):
+  реальный OpenAI-compatible клиент (`DogfoodClient`, без ссылки на SmartCon.Agent),
+  10–11 русских задач, бюджет 30 LLM-запросов, транскрипт в `%TEMP%\smartcon-agent-dogfood`.
+- **Итоги прогона 1** (11 задач, 10 ответов, 3 feedback): исправлены 3 замечания —
+  алиасы проекций + `ignoredFields`, округление mm до 0.1, дедупликация параметров и
+  единицы в displayValue. Подробно — `docs/agent/AGENT-FEEDBACK.md`.
 
 ## Проверено (в этой сессии)
 
 - R25 build: 0/0 (App, Revit, IntegrationTests).
-- Unit Agent: **66/66** (`dotnet test ... --filter "FullyQualifiedName~Agent"`).
-- Integration Agent R25: read 14/14 (baseline), write **24/25** + 1 skip
-  (`SetViewRange_OnThreeDView` — в дефолтном шаблоне нет 3D-вида), budget **4/4**.
+- Unit Agent: **76/76** (`dotnet test ... --filter "FullyQualifiedName~Agent"`).
+- Integration Agent R25 (фильтр `/*/*/*Agent*/*`): **45/47** успешно, 2 skip
+  (`LiveDogfood_ReadOnlyTooling` без env-флага; `SetViewRange_OnThreeDView` — нет 3D-вида
+  в дефолтном шаблоне).
+- Live dogfood: прогон 1 — 11 задач, 10 ответов, 3 feedback, 29/30 запросов;
+  прогон 2 — 11/11, 1 feedback, 27/30; **прогон 3 — 11/11, 0 feedback, 24/30**
+  (все замечания закрыты, см. `AGENT-FEEDBACK.md`).
 - Multi-version baseline sweep: 7 конфигураций 0/0 (`tools/build-all-configs.ps1`).
 - Полный прогон всего integration-сьюта R25 после write-слоя **ещё не делался** (см. §Долг).
 
@@ -89,25 +114,12 @@
 
 ## Долг / что осталось
 
-1. **Фаза F — dogfooding** (не начата):
-   - meta-tool `report_tooling_feedback` (Risk=Read) → таблица `agent_feedback` в `agent.db`
-     (схема: id, session_id, document_id, model, provider, tool_name, area, rating, issue,
-     suggestion, context_json, created_at) + `smartcon.log`. Нужен bump `AgentDatabase.SchemaVersion`
-     до 2 с `CREATE TABLE IF NOT EXISTS agent_feedback`.
-   - заполнение `tool_calls` (сейчас пустая): `IAgentToolCallStore` + вызов из
-     `AgentOrchestrator` рядом с audit (поля: session_id, tool_name, arguments_json,
-     result_json, status, error, duration_ms, created_at).
-   - `AgentFrictionAnalyzer` — отчёт по `agent.db` (частоты invalid_arguments/tool_failed/
-     document_changed/truncated, средние раунды, топ-проблемные тулы).
-   - `AgentLiveDogfoodTests` (IntegrationTests, read-only, skip без `SMARTCON_AGENT_LIVE=1`
-     и ключа). ВАЖНО: не ссылаться на SmartCon.Agent (RevitAPIUI риск) — реализовать
-     локальный минимальный OpenAI-compatible клиент в тесте; 10–12 русских задач;
-     транскрипт в `%TEMP%\smartcon-agent-dogfood\<timestamp>.md`; max 30 turns.
-   - `docs/agent/AGENT-FEEDBACK.md` + топ-3–5 улучшений инструментов по итогам.
-2. **Фаза G**: token_usage persistence, настройка порога компакции, plan validation L0–L6.
+1. Ручная приёмка в Revit (владелец): write-flow, оверлей подтверждения, undo.
+2. **Фаза G** (частично сделано): token_usage persistence ✅, порог компакции —
+   `AgentLlmSettings.ContextWindowTokens` (default 200 000) ✅; plan validation L0–L6
+   (preflight → critic → digest) **не начата** — это отдельная крупная фича.
 3. **Фаза H**: полный R25 integration-сьют, net48-прогон (`-p:RevitVersion=2023`),
-   R27-прогон (если Revit 2027 установлен — на машине есть), sweep 7 конфигураций,
-   HANDOFF, коммиты, push.
+   R27-прогон (Revit 2027 установлен), sweep 7 конфигураций, HANDOFF, коммиты, push.
 4. Ручная приёмка записи в Revit (владелец, утро): dry-run → Apply → проверка модели →
    `undo_last`.
 5. Ручная приёмка UI-оверлея подтверждения (кнопки Apply/Cancel, digest, таймаут).

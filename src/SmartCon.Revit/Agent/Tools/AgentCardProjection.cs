@@ -1,15 +1,38 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace SmartCon.Revit.Agent.Tools;
 
 /// <summary>
 /// Projects a card object onto the requested fields (mvp-plan §11 "проекции").
-/// Keeps tool results small: list_views/query_elements | fields: [id,name,...].
+/// Aliases keep the model-facing names stable across tools: "type" resolves to
+/// viewType/typeName, "level" to levelName, "id" to viewId/elementId. Unknown
+/// fields are reported back instead of being dropped silently (live dogfood
+/// finding #1).
 /// </summary>
 internal static class AgentCardProjection
 {
-    internal static JsonElement Apply(JsonElement card, IReadOnlyList<string>? fields)
+    private static readonly Dictionary<string, string[]> Aliases =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = new[] { "viewId", "elementId" },
+            ["type"] = new[] { "viewType", "typeName", "type" },
+            ["level"] = new[] { "levelName", "level" },
+            ["levelid"] = new[] { "levelId" },
+            ["template"] = new[] { "templateName", "template" },
+            ["templateid"] = new[] { "templateId" },
+            ["sheet"] = new[] { "sheetNumber" },
+            ["elevation"] = new[] { "elevationMm" },
+            ["family"] = new[] { "family" },
+            ["category"] = new[] { "category" },
+            ["name"] = new[] { "name" },
+            ["uniqueid"] = new[] { "uniqueId" }
+        };
+
+    internal static JsonElement Apply(
+        JsonElement card,
+        IReadOnlyList<string>? fields,
+        ICollection<string>? ignoredFields = null)
     {
         if (fields is null || fields.Count == 0)
             return card;
@@ -36,10 +59,72 @@ internal static class AgentCardProjection
             if (string.IsNullOrWhiteSpace(field))
                 continue;
 
-            if (source.TryGetPropertyValue(field, out var value) && value is not null)
-                projected[field] = value.DeepClone();
+            if (!TryResolve(source, field, out var property, out var value))
+            {
+                ignoredFields?.Add(field);
+                continue;
+            }
+
+            projected[property] = value?.DeepClone();
         }
 
         return JsonSerializer.SerializeToElement(projected);
+    }
+
+    internal static IReadOnlyList<string> AvailableFields(JsonElement card)
+    {
+        if (card.ValueKind != JsonValueKind.Object)
+            return Array.Empty<string>();
+
+        try
+        {
+            var node = JsonNode.Parse(card.GetRawText());
+            return node is JsonObject obj
+                ? obj.Select(pair => pair.Key).ToList()
+                : Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static bool TryResolve(
+        JsonObject source,
+        string field,
+        out string property,
+        out JsonNode? value)
+    {
+        if (source.TryGetPropertyValue(field, out value))
+        {
+            property = field;
+            return true;
+        }
+
+        if (Aliases.TryGetValue(field, out var candidates))
+        {
+            foreach (var candidate in candidates)
+            {
+                if (source.TryGetPropertyValue(candidate, out value))
+                {
+                    property = candidate;
+                    return true;
+                }
+            }
+        }
+
+        foreach (var pair in source)
+        {
+            if (!string.Equals(pair.Key, field, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            property = pair.Key;
+            value = pair.Value;
+            return true;
+        }
+
+        property = field;
+        value = null;
+        return false;
     }
 }

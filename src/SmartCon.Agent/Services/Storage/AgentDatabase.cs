@@ -6,7 +6,7 @@ namespace SmartCon.Agent.Services.Storage;
 
 public sealed class AgentDatabase
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     static AgentDatabase()
     {
@@ -184,6 +184,27 @@ CREATE TABLE IF NOT EXISTS token_usage (
     cost_usd TEXT NULL,
     created_at TEXT NOT NULL
 );", transaction);
+
+        // Schema v2: model feedback about its own tooling (report_tooling_feedback).
+        Execute(connection, @"
+CREATE TABLE IF NOT EXISTS agent_feedback (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NULL,
+    document_id TEXT NULL,
+    model TEXT NULL,
+    provider TEXT NULL,
+    tool_name TEXT NULL,
+    area TEXT NOT NULL,
+    rating INTEGER NOT NULL DEFAULT 0,
+    issue TEXT NOT NULL,
+    suggestion TEXT NULL,
+    context_json TEXT NULL,
+    created_at TEXT NOT NULL
+);", transaction);
+
+        Execute(connection, @"
+CREATE INDEX IF NOT EXISTS ix_agent_feedback_document
+    ON agent_feedback(document_id, created_at DESC);", transaction);
     }
 
     private static void Execute(

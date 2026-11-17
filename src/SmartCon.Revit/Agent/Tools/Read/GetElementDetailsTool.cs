@@ -116,7 +116,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             }
 
             if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
-                parameters.Add(CreateParameterInfo(parameter, "instance"));
+                parameters.Add(CreateParameterInfo(doc, parameter, "instance"));
         }
 
         if (includeTypeParameters && !truncated)
@@ -135,7 +135,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                     }
 
                     if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
-                        parameters.Add(CreateParameterInfo(parameter, "type"));
+                        parameters.Add(CreateParameterInfo(doc, parameter, "type"));
                 }
             }
         }
@@ -151,8 +151,29 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             LevelName = card.LevelName,
             Room = card.Room,
             ParametersTruncated = truncated,
-            Parameters = parameters
+            Parameters = Deduplicate(parameters)
         };
+    }
+
+    /// <summary>
+    /// Revit exposes several parameters under the same display name (for example
+    /// "Category" via ELEM_CATEGORY_PARAM and ELEM_CATEGORY_PARAM_MT). The model
+    /// reads such duplicates as a bug (dogfood finding #3), so identical
+    /// name+scope+value rows are collapsed.
+    /// </summary>
+    private static List<ParameterValueInfo> Deduplicate(List<ParameterValueInfo> parameters)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<ParameterValueInfo>(parameters.Count);
+        foreach (var parameter in parameters)
+        {
+            var key = parameter.Name + "|" + parameter.Scope + "|" +
+                      parameter.StorageType + "|" + parameter.Value;
+            if (seen.Add(key))
+                result.Add(parameter);
+        }
+
+        return result;
     }
 
     private static bool ShouldInclude(
@@ -190,7 +211,10 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         }
     }
 
-    private static ParameterValueInfo CreateParameterInfo(Parameter parameter, string scope)
+    private static ParameterValueInfo CreateParameterInfo(
+        Document doc,
+        Parameter parameter,
+        string scope)
     {
         var isShared = false;
         string? guid = null;
@@ -212,7 +236,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         {
             Name = parameter.Definition?.Name ?? string.Empty,
             Value = TryReadRawValue(parameter),
-            DisplayValue = TryReadDisplayValue(parameter),
+            DisplayValue = TryReadDisplayValue(doc, parameter),
             StorageType = parameter.StorageType.ToString(),
             IsReadOnly = parameter.IsReadOnly,
             IsShared = isShared,
@@ -244,7 +268,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         }
     }
 
-    private static string? TryReadDisplayValue(Parameter parameter)
+    private static string? TryReadDisplayValue(Document doc, Parameter parameter)
     {
         if (!parameter.HasValue)
             return null;
@@ -252,7 +276,60 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         try
         {
             var value = parameter.AsValueString();
-            return string.IsNullOrWhiteSpace(value) ? null : value;
+            if (parameter.StorageType != StorageType.Double)
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+
+            if (!string.IsNullOrWhiteSpace(value) && !LooksNumeric(value!))
+                return value;
+
+            var label = TryReadUnitLabel(doc, parameter);
+            if (string.IsNullOrWhiteSpace(label))
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+
+            var number = string.IsNullOrWhiteSpace(value)
+                ? parameter.AsDouble().ToString("0.###", CultureInfo.InvariantCulture)
+                : value;
+
+            return number + " " + label;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksNumeric(string value)
+    {
+        foreach (var character in value)
+        {
+            if (char.IsDigit(character)
+                || character is '.' or ',' or '-' or '+' or ' '
+                || character == ' ')
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? TryReadUnitLabel(Document doc, Parameter parameter)
+    {
+        try
+        {
+            var spec = parameter.Definition?.GetDataType();
+            if (spec is null)
+                return null;
+
+            var format = doc.GetUnits().GetFormatOptions(spec);
+            var unit = format?.GetUnitTypeId();
+            if (unit is null)
+                return null;
+
+            var label = LabelUtils.GetLabelForUnit(unit);
+            return string.IsNullOrWhiteSpace(label) ? null : label;
         }
         catch (Exception)
         {

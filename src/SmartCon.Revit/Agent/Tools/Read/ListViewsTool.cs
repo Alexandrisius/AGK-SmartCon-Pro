@@ -25,7 +25,8 @@ public sealed class ListViewsTool : AgentReadToolBase
             "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring. " +
             "Returns view id, name, type, level, template, sheet number. Default limit 50, max 500. " +
             "summaryOnly=true returns counts by view type and by level instead of cards. " +
-            "fields=[\"viewId\",\"name\"] projects each card onto the listed properties.",
+            "fields=[\"viewId\",\"name\",\"type\",\"level\"] projects each card onto the listed " +
+            "properties; unknown names are reported in ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":50,""maximum"":500}},""additionalProperties"":false}"
@@ -86,14 +87,21 @@ public sealed class ListViewsTool : AgentReadToolBase
         if (fields.Count > 0)
         {
             var projected = new List<System.Text.Json.JsonElement>(views.Count);
+            var ignored = new List<string>();
             foreach (var card in views)
-                projected.Add(AgentCardProjection.Apply(AgentJson.Serialize(card), fields));
+                projected.Add(AgentCardProjection.Apply(AgentJson.SerializeCard(card), fields, ignored));
+
+            var available = views.Count > 0
+                ? AgentCardProjection.AvailableFields(AgentJson.SerializeCard(views[0]))
+                : Array.Empty<string>();
 
             var projectedPayload = new
             {
                 total,
                 returned = projected.Count,
                 truncated = total > projected.Count,
+                ignoredFields = ignored.Count > 0 ? ignored : null,
+                availableFields = ignored.Count > 0 ? available : null,
                 views = projected
             };
 

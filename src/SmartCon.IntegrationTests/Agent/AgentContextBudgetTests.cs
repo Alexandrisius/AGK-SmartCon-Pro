@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Core.Models.Agent;
@@ -104,6 +104,57 @@ public sealed class AgentContextBudgetTests : RevitApiTest
         await Assert.That(data.GetProperty("summaryOnly").GetBoolean()).IsTrue();
         await Assert.That(data.GetProperty("byType").GetArrayLength()).IsGreaterThan(0);
         await Assert.That(data.TryGetProperty("views", out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task ListViews_FieldAliases_ProjectTypeAndLevel()
+    {
+        var tool = new ListViewsTool(new StubRevitContext(Doc));
+        var args = Parse("""{"types":["FloorPlan"],"limit":5,"fields":["viewId","name","type","level"]}""");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.TryGetProperty("ignoredFields", out _)).IsFalse();
+
+        var view = data.GetProperty("views")[0];
+        await Assert.That(view.TryGetProperty("viewId", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("name", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("viewType", out var type)).IsTrue();
+        await Assert.That(type.GetString()).IsEqualTo("FloorPlan");
+        await Assert.That(view.TryGetProperty("levelName", out _)).IsTrue();
+    }
+
+    [Test]
+    public async Task ListViews_NullValuedFields_AreStillProjected()
+    {
+        var tool = new ListViewsTool(new StubRevitContext(Doc));
+        var args = Parse("""{"types":["FloorPlan"],"limit":5,"fields":["viewId","template","sheet"]}""");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.TryGetProperty("ignoredFields", out _)).IsFalse();
+
+        var view = data.GetProperty("views")[0];
+        await Assert.That(view.TryGetProperty("templateName", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("sheetNumber", out _)).IsTrue();
+    }
+
+    [Test]
+    public async Task ListViews_UnknownField_IsReported()
+    {
+        var tool = new ListViewsTool(new StubRevitContext(Doc));
+        var args = Parse("""{"types":["FloorPlan"],"limit":5,"fields":["nonsense"]}""");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("ignoredFields")[0].GetString()).IsEqualTo("nonsense");
+        await Assert.That(data.GetProperty("availableFields").GetArrayLength()).IsGreaterThan(0);
     }
 
     private static JsonElement Parse(string json)

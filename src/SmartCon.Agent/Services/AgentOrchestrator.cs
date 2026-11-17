@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Tools;
@@ -23,6 +23,8 @@ public sealed class AgentOrchestrator
     private readonly AgentLlmSettings _settings;
     private readonly AgentSessionContext _sessionContext;
     private readonly AgentPromptBuilder _promptBuilder;
+    private readonly IAgentToolCallStore? _toolCallStore;
+    private readonly IAgentUsageStore? _usageStore;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -33,7 +35,9 @@ public sealed class AgentOrchestrator
         IAgentProjectContextProvider projectContextProvider,
         AgentLlmSettings settings,
         AgentSessionContext sessionContext,
-        AgentPromptBuilder promptBuilder)
+        AgentPromptBuilder promptBuilder,
+        IAgentToolCallStore? toolCallStore = null,
+        IAgentUsageStore? usageStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -45,6 +49,8 @@ public sealed class AgentOrchestrator
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _sessionContext = sessionContext ?? throw new ArgumentNullException(nameof(sessionContext));
         _promptBuilder = promptBuilder ?? throw new ArgumentNullException(nameof(promptBuilder));
+        _toolCallStore = toolCallStore;
+        _usageStore = usageStore;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -149,6 +155,8 @@ public sealed class AgentOrchestrator
                     ToolCallCount = toolCallCount
                 });
 
+                await WriteUsageAsync(conversationId, usage, ct).ConfigureAwait(false);
+
                 return new AgentTurnResult
                 {
                     FinalText = finalText,
@@ -177,6 +185,10 @@ public sealed class AgentOrchestrator
                 await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
                     .ConfigureAwait(false);
 
+                await WriteToolCallAsync(
+                        toolCall, result, serializedResult, conversationId, durationMs, ct)
+                    .ConfigureAwait(false);
+
                 progress?.Report(new AgentProgress
                 {
                     Kind = AgentProgressKind.ToolCompleted,
@@ -200,6 +212,8 @@ public sealed class AgentOrchestrator
             Usage = usage,
             ToolCallCount = toolCallCount
         });
+
+        await WriteUsageAsync(conversationId, usage, ct).ConfigureAwait(false);
 
         return new AgentTurnResult
         {
@@ -248,6 +262,71 @@ public sealed class AgentOrchestrator
                     "tool_exception",
                     ex.GetType().Name + ": " + ex.Message);
             }
+        }
+    }
+
+    private async Task WriteUsageAsync(Guid conversationId, AgentUsage usage, CancellationToken ct)
+    {
+        if (_usageStore is null)
+            return;
+
+        try
+        {
+            await _usageStore
+                .RecordAsync(
+                    conversationId.ToString("D"),
+                    _llm.ProviderName,
+                    _llm.Model,
+                    usage,
+                    ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "Agent token_usage write failed: " + ex.GetType().Name + ": " + ex.Message +
+                " [Action: check write access to agent.db; the turn itself is not affected]");
+        }
+    }
+
+    private async Task WriteToolCallAsync(
+        AgentToolCall toolCall,
+        ToolResult result,
+        string serializedResult,
+        Guid conversationId,
+        long durationMs,
+        CancellationToken ct)
+    {
+        if (_toolCallStore is null)
+            return;
+
+        try
+        {
+            await _toolCallStore.RecordAsync(new AgentToolCallRecord
+            {
+                Id = toolCall.Id,
+                SessionId = conversationId.ToString("D"),
+                ToolName = toolCall.Name,
+                ArgumentsJson = toolCall.ArgumentsJson,
+                ResultJson = serializedResult,
+                Status = result.Success ? "ok" : "error",
+                Error = result.ErrorCode,
+                DurationMs = durationMs
+            }, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "Agent tool_calls write failed: " + ex.GetType().Name + ": " + ex.Message +
+                " [Action: check write access to agent.db; the tool execution itself succeeded]");
         }
     }
 

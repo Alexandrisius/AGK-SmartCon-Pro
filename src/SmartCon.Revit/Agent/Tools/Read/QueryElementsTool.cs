@@ -90,14 +90,22 @@ public sealed class QueryElementsTool : AgentReadToolBase
         }
 
         var fields = AgentJson.GetStringArray(args, "fields");
+        var ignored = new List<string>();
         var cards = new List<object>();
+        IReadOnlyList<string> available = Array.Empty<string>();
         foreach (var element in result.Elements.Skip(spec.Offset).Take(spec.Limit))
         {
             ct.ThrowIfCancellationRequested();
             var card = AgentElementCardFactory.Create(doc, element);
+            var serialized = fields.Count == 0
+                ? AgentJson.Serialize(card)
+                : AgentJson.SerializeCard(card);
+            if (available.Count == 0 && fields.Count > 0)
+                available = AgentCardProjection.AvailableFields(serialized);
+
             cards.Add(fields.Count == 0
                 ? (object)card
-                : AgentCardProjection.Apply(AgentJson.Serialize(card), fields));
+                : AgentCardProjection.Apply(serialized, fields, ignored));
         }
 
         var truncated = result.Total > spec.Offset + cards.Count;
@@ -110,6 +118,8 @@ public sealed class QueryElementsTool : AgentReadToolBase
             returned = cards.Count,
             truncated,
             nextOffset,
+            ignoredFields = ignored.Count > 0 ? ignored : null,
+            availableFields = ignored.Count > 0 ? available : null,
             hint = truncated
                 ? "More elements match. Call query_elements again with offset=" + nextOffset +
                   " or add filters to narrow the result."
