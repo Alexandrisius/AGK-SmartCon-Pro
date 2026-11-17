@@ -10,10 +10,30 @@
     Keep in sync with:
       src/SmartCon.App/Resources/merged-dependencies.txt
       src/Directory.Build.targets (ExcludeAssets block)
+
+    Incremental merge:
+      Merge result is cached in obj (per Configuration+TFM) and reused while the
+      merge inputs are byte-identical: pre-merge assembly, project.assets.json
+      (package graph/versions) and this targets file (merge list/parameters).
+      ILRepack output is NOT deterministic, so timestamps are never trusted —
+      only SHA256 of the inputs. The cached dll is copied back to bin on every
+      build because CopyFilesToOutputDirectory overwrites bin with the pre-merge
+      assembly each time; File.Copy preserves the cached (stable) timestamp,
+      so downstream projects stay incremental.
   -->
-  <Target Name="ILRepacker" AfterTargets="Build">
+  <PropertyGroup>
+    <_SmartConMergeDir>$(IntermediateOutputPath)merged\</_SmartConMergeDir>
+    <_SmartConMergeDll>$(_SmartConMergeDir)SmartCon.Dependencies.dll</_SmartConMergeDll>
+    <_SmartConMergePdb>$(_SmartConMergeDir)SmartCon.Dependencies.pdb</_SmartConMergePdb>
+    <_SmartConMergeInputsStamp>$(_SmartConMergeDir)inputs.stamp</_SmartConMergeInputsStamp>
+    <_SmartConMergeOutputHash>$(_SmartConMergeDir)output.hash</_SmartConMergeOutputHash>
+  </PropertyGroup>
+
+  <Target Name="ILRepacker" AfterTargets="Build" Condition="'$(IsCrossTargetingBuild)' != 'true'">
     <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
-      <InputAssemblies Include="$(OutputPath)SmartCon.Dependencies.dll" />
+      <!-- Primary assembly: pre-merge product from obj (never the bin copy — it may
+           already contain the merged dll, and re-merging it would duplicate types). -->
+      <InputAssemblies Include="@(IntermediateAssembly)" />
       <InputAssemblies Include="$(OutputPath)CommunityToolkit.Mvvm.dll" />
       <InputAssemblies Include="$(OutputPath)Microsoft.Extensions.DependencyInjection.dll" />
       <InputAssemblies Include="$(OutputPath)Microsoft.Bcl.AsyncInterfaces.dll" />
@@ -25,7 +45,7 @@
     <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
       <!-- M.E.DI.Abstractions мержим вместе с M.E.DI (#177): loose-версия резолвилась
            в чужую 7.0.0.0 из Default-контекста (нет IKeyedServiceProvider → TypeLoadException). -->
-      <InputAssemblies Include="$(OutputPath)SmartCon.Dependencies.dll" />
+      <InputAssemblies Include="@(IntermediateAssembly)" />
       <InputAssemblies Include="$(OutputPath)Nice3point.Revit.Toolkit.dll" />
       <InputAssemblies Include="$(OutputPath)CommunityToolkit.Mvvm.dll" />
       <InputAssemblies Include="$(OutputPath)Microsoft.Extensions.DependencyInjection.dll" />
@@ -34,7 +54,44 @@
       <InputAssemblies Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
     </ItemGroup>
 
+    <!-- Input fingerprint: pre-merge dll + resolved package graph + merge parameters. -->
+    <ItemGroup>
+      <_MergeHashInputs Include="@(IntermediateAssembly)" />
+      <_MergeHashInputs Include="$(ProjectAssetsFile)" Condition="Exists('$(ProjectAssetsFile)')" />
+      <_MergeHashInputs Include="$(MSBuildThisFileFullPath)" />
+    </ItemGroup>
+    <GetFileHash Files="@(_MergeHashInputs)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Items" ItemName="_MergeHashResults" />
+    </GetFileHash>
+    <PropertyGroup>
+      <_MergeInputStamp>@(_MergeHashResults->'%(Identity)|%(FileHash)', '|')</_MergeInputStamp>
+    </PropertyGroup>
+
+    <ReadLinesFromFile File="$(_SmartConMergeInputsStamp)" Condition="Exists('$(_SmartConMergeInputsStamp)')">
+      <Output TaskParameter="Lines" ItemName="_MergePrevStampLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <_MergePrevStamp>@(_MergePrevStampLines)</_MergePrevStamp>
+    </PropertyGroup>
+
+    <GetFileHash Files="$(_SmartConMergeDll)" Algorithm="SHA256" HashEncoding="hex"
+                 Condition="Exists('$(_SmartConMergeDll)')">
+      <Output TaskParameter="Hash" PropertyName="_MergeCachedHash" />
+    </GetFileHash>
+    <ReadLinesFromFile File="$(_SmartConMergeOutputHash)" Condition="Exists('$(_SmartConMergeOutputHash)')">
+      <Output TaskParameter="Lines" ItemName="_MergePrevHashLines" />
+    </ReadLinesFromFile>
+    <PropertyGroup>
+      <_MergePrevHash>@(_MergePrevHashLines)</_MergePrevHash>
+      <_MergeNeeded>false</_MergeNeeded>
+      <!-- Any doubt (no stamp, no cache, corrupt cache) forces a fresh merge. -->
+      <_MergeNeeded Condition="'$(_MergePrevStamp)' == '' Or '$(_MergePrevStamp)' != '$(_MergeInputStamp)' Or !Exists('$(_SmartConMergeDll)') Or '$(_MergeCachedHash)' != '$(_MergePrevHash)'">true</_MergeNeeded>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(_SmartConMergeDir)" />
+
     <ILRepack
+        Condition="'$(_MergeNeeded)' == 'true'"
         Parallel="true"
         DebugInfo="true"
         Internalize="false"
@@ -42,10 +99,27 @@
         TargetKind="Dll"
         LibraryPath="$(OutputPath)"
         KeyFile="$(MSBuildThisFileDirectory)SmartCon.snk"
-        OutputFile="$(OutputPath)SmartCon.Dependencies.dll" />
+        OutputFile="$(_SmartConMergeDll)" />
+
+    <GetFileHash Files="$(_SmartConMergeDll)" Algorithm="SHA256" HashEncoding="hex"
+                 Condition="'$(_MergeNeeded)' == 'true'">
+      <Output TaskParameter="Hash" PropertyName="_MergeNewHash" />
+    </GetFileHash>
+    <WriteLinesToFile File="$(_SmartConMergeOutputHash)" Lines="$(_MergeNewHash)"
+                      Overwrite="true" Condition="'$(_MergeNeeded)' == 'true'" />
+    <WriteLinesToFile File="$(_SmartConMergeInputsStamp)" Lines="$(_MergeInputStamp)"
+                      Overwrite="true" Condition="'$(_MergeNeeded)' == 'true'" />
+
+    <!-- Restore the merged dll over the pre-merge copy that CopyFilesToOutputDirectory
+         placed in bin. File.Copy preserves the cached timestamp, so consumers see
+         the same mtime until the merge inputs actually change. -->
+    <Copy SourceFiles="$(_SmartConMergeDll)" DestinationFiles="$(OutputPath)SmartCon.Dependencies.dll"
+          Condition="Exists('$(_SmartConMergeDll)')" />
+    <Copy SourceFiles="$(_SmartConMergePdb)" DestinationFiles="$(OutputPath)SmartCon.Dependencies.pdb"
+          Condition="Exists('$(_SmartConMergePdb)')" />
 
     <ItemGroup>
-      <MergedInputs Include="@(InputAssemblies)" Exclude="$(OutputPath)SmartCon.Dependencies.dll" />
+      <MergedInputs Include="@(InputAssemblies)" Exclude="@(IntermediateAssembly)" />
     </ItemGroup>
     <Delete Files="@(MergedInputs)" />
   </Target>

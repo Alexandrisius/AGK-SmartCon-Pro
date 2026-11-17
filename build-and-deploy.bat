@@ -20,6 +20,11 @@ REM Nice3point.Revit.Api.RevitAPI is pulled with VersionOverride depending on
 REM $(RevitVersion). A global `dotnet restore` without RevitVersion context
 REM activates the 2021.* fallback, which breaks net48 builds that use API 2022+
 REM (for example, Definition.GetDataType introduced in Revit 2022).
+REM
+REM All six configurations are built in PARALLEL (tools\build-all-configs.ps1).
+REM Safe because obj/bin and obj\<Configuration>\project.assets.json are isolated
+REM per configuration (src\Directory.Build.props), so builds cannot invalidate
+REM each other. Use -ThrottleLimit 3 if the machine is memory-constrained.
 
 echo [0/11] Validating documentation...
 powershell -ExecutionPolicy Bypass -File "tools\validate-docs.ps1"
@@ -30,40 +35,10 @@ if errorlevel 1 (
     echo [OK] Documentation validation passed
 )
 
-echo [1/11] Building Revit 2025 (Debug.R25, net8.0-windows)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R25 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R25 failed! & pause & exit /b 1 )
-echo [OK] R25 build successful
-
-echo.
-echo [2/11] Building Revit 2026 (Debug.R26, net8.0-windows)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R26 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R26 failed! & pause & exit /b 1 )
-echo [OK] R26 build successful
-
-echo.
-echo [3/11] Building Revit 2027 (Debug.R27, net10.0-windows)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R27 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R27 failed! & pause & exit /b 1 )
-echo [OK] R27 build successful
-
-echo.
-echo [4/11] Building Revit 2024 (Debug.R24, net48)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R24 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R24 failed! & pause & exit /b 1 )
-echo [OK] R24 build successful
-
-echo.
-echo [5/11] Building Revit 2021-2023 (Debug.R21, net48)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R21 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R21 failed! & pause & exit /b 1 )
-echo [OK] R21 build successful
-
-echo.
-echo [6/11] Building Revit 2019-2020 (Debug.R19, net48)...
-dotnet build "src\SmartCon.App\SmartCon.App.csproj" -c Debug.R19 --verbosity quiet
-if errorlevel 1 ( echo [ERROR] Build R19 failed! & pause & exit /b 1 )
-echo [OK] R19 build successful
+echo [1-6/11] Building all 6 Revit configurations in parallel...
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\build-all-configs.ps1"
+if errorlevel 1 ( echo [ERROR] One or more builds failed! Logs: %TEMP%\smartcon-build & pause & exit /b 1 )
+echo [OK] All 6 configurations built successfully
 
 echo.
 echo [7/11] Building updater (net8.0)...

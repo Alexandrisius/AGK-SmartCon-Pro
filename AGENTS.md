@@ -23,6 +23,7 @@
 | Собрать R26 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26` |
 | Собрать R25 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25` |
 | Собрать R24 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` |
+| Собрать все 6 (параллельно, без деплоя) | `powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1` |
 | Тесты | `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25` (проект пиннут на net8.0-windows — НЕ собирать под R27) |
 | Интеграционные тесты R27 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R27 --framework net10.0-windows` (требует установленный Revit 2027) |
 | Интеграционные тесты R25 | `dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows` |
@@ -439,10 +440,13 @@ workaround'ов с указанием Issue, файла, платформы и �
 
 ## Частые ловушки (gotchas)
 
-- **`dotnet restore` без `-p:Configuration`** → fallback на RevitAPI 2021.* → ложные ошибки CS0618
+- **`dotnet restore` без `-p:Configuration`** → fallback на RevitAPI 2021.* → ложные ошибки CS0618; кроме того, пишет assets в `obj/`, а не в per-config `obj\<Configuration>\`. Собирай через `dotnet build -c Debug.RXX` (implicit restore в правильный путь)
+- **Per-config NuGet assets:** у каждой конфигурации свой `obj\<Configuration>\project.assets.json` (`MSBuildProjectExtensionsPath` в `src/Directory.Build.props`). Смена `-c` больше не перезаписывает чужой граф: R25 после полного sweep R19 — no-op 1–2 с (замерено 2026-11-17). Общего `obj/project.assets.json` для Debug.R* больше нет
+- **Debug.\* без анализаторов:** `EnableNETAnalyzers=false` + `EnforceCodeStyleInBuild=false` только для `Debug.*`; `Release.*` (CI, `release.ps1`) — полный набор. Генераторы исходников (`[ObservableProperty]`, PolySharp) остаются включены
+- **Антивирус:** Kaspersky/Defender замедляет полные сборки в разы. Исключить репозиторий, `%USERPROFILE%\.nuget\packages`, `%LOCALAPPDATA%\NuGet\v3-cache`, `%TEMP%\NuGetScratch`, процессы `dotnet.exe` / `VBCSCompiler.exe`
 - **Собирай `SmartCon.App.csproj`**, НЕ `SmartCon.sln` (подтянет лишние TFM)
 - **BG1002 «не удается найти `*.baml`»** — гонка CLI-сборки с фоновыми design-time сборками IDE (VS Code C# / Roslyn LanguageServer) за общий `obj/` (механизм dotnet/wpf#4299, msbuild#6170; провоцируется доказательно — #281). НЕ ошибка конфигурации и НЕ бэнд SDK (A/B 10.0.201 vs 10.0.112 — ловится на любом). Лечение: повторить `dotnet build`; если залипло (LS продолжает собирать фоном) — закрыть/перезагрузить окно VS Code (или убить `Microsoft.CodeAnalysis.LanguageServer` + `dotnet build-server shutdown`), затем `git clean -xfd src` и пересобрать. **Полные пересборки / `build-and-deploy.bat` — при закрытом VS Code.** Профилактика: локальный `.vscode/settings.json` → `files.watcherExclude` на `**/obj/**`, `**/bin/**`.
-- **При переходе net8 ↔ net48 ↔ net10** — ВСЕГДА делай restore с конфигурацией
+- **При переходе net8 ↔ net48 ↔ net10** — ВСЕГДА `dotnet build` без `--no-restore` (implicit restore в per-config assets)
 - **НЕ создавать PR** без явного запроса пользователя
 - **NEVER commit** если не попросили — только `git add/commit/push` по запросу
 - **`.GetAwaiter().GetResult()` на UI thread** → DEADLOCK. Используй `AsyncBridge.RunSync(() => async())` из `SmartCon.Core.Threading` (обёртка над `Task.Run + GetResult`). См. skill `revit-api-best-practice` + skill `smartcon-logging` §"Threading".
@@ -562,7 +566,10 @@ skill: smartcon-build-guide
 ```
 
 ### Промежуточная сборка (для тестирования)
-Build individual configurations — does NOT deploy:
+Build individual configurations — does NOT deploy. Fastest full check — all 6 in parallel:
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1
+```
 ```bash
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
@@ -577,12 +584,13 @@ build-and-deploy.bat
 ```
 
 ### Критические правила (агенты постоянно забывают):
-1. **Собирай ВСЕ версии:** R19, R21, R24, R25, R26, R27 (а не только R25!)
-2. **Restore требует Configuration:** `dotnet restore -p:Configuration=Debug.R25`
-3. **При смене TFM (net8 ↔ net48 ↔ net10):** ВСЕГДА restore с конфигурацией
+1. **Собирай ВСЕ версии:** R19, R21, R24, R25, R26, R27 (а не только R25!). Быстрее всего — `tools\build-all-configs.ps1` (параллельно; конфигурации изолированы)
+2. **Restore требует Configuration:** per-config assets лежат в `obj\<Configuration>\project.assets.json` (`MSBuildProjectExtensionsPath` в `src/Directory.Build.props`); смена `-c` не перезаписывает чужой граф
+3. **При смене TFM (net8 ↔ net48 ↔ net10):** ВСЕГДА `dotnet build` без `--no-restore` (implicit restore в per-config assets)
 4. **Собирай `SmartCon.App.csproj`, НЕ `SmartCon.sln`**
 5. **Per-version бинарники:** каждая версия Revit получает СВОЮ сборку (R25→2025, R26→2026, R27→2027). Эпоха «one binary для 2025+2026» закончилась с #233: в API 2026 у `WireType.WireMaterial`/`TemperatureRating`/`Insulation` сменились типы на `ElementId`, `MaxSize` → `string` — старый бинарник на 2026 = `MissingMethodException`.
 6. **SDK:** `global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx, stable-only — консервативная политика: у бэнда 10.0.2xx есть отдельные подтверждённые регрессии, dotnet/wpf#11678 / dotnet/sdk#53508; BG1002 к бэнду отношения НЕ имеет, см. ловушку ниже) — ВСЕ конфигурации, включая net48, собираются под SDK 10. SDK 8 больше не нужен для сборки, но .NET 8 RUNTIME нужен для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
+7. **Debug.* vs Release.*:** Debug-сборки идут без NET/IDE-анализаторов (`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false`) — быстрый цикл; Release/CI (`release.ps1`, GitHub Actions) — полный набор. Генерируемый IL одинаков.
 
 **Подробная документация в skill:**
 - `references/build-configurations.md` — мульти-версионная сборка

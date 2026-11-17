@@ -4,7 +4,7 @@ description: "SmartCon Revit plugin build guide. Multi-version build configurati
 license: MIT
 metadata:
   author: AGK Engineering
-  version: "1.0.0"
+  version: "1.2.0"
 ---
 
 # SmartCon Build & Deploy Guide
@@ -26,6 +26,10 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 (the Tests project is pinned to net8.0-windows — do NOT build it under R27: NU1201/NU1202;
 in the sln its R27 configurations are mapped to R25, honored only in VS)
 
+**All 6 configs in parallel (no deploy):**
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`
+(used by `build-and-deploy.bat`; per-config logs in `%TEMP%\smartcon-build`)
+
 **SDK:** `global.json` — floor 10.0.100, rollForward latestPatch (**10.0.1xx band ONLY**;
 the 10.0.2xx band has WPF build regressions — see errorMessage in global.json) — ALL
 configurations (including net48) build under SDK 10.
@@ -35,6 +39,8 @@ The .NET 8 RUNTIME is still required to run unit tests.
 
 ### Intermediate Build (Development/Testing)
 Build individual configurations for quick testing during development. Does NOT deploy to Revit.
+Fastest full check — all 6 in parallel, no deploy:
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`
 ```bash
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
@@ -64,9 +70,19 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 
+# FASTEST — all 6 in parallel (same runner as build-and-deploy.bat)
+powershell -ExecutionPolicy Bypass -File tools\build-all-configs.ps1
+
 # OR for final deploy (only after user testing!)
 build-and-deploy.bat
 ```
+
+Every compilation-affecting change must build ALL 6 configurations — there is no
+"configuration in work" and no postponing the sweep to "before commit". Incremental
+build (§6) keeps each configuration from doing redundant work, but the sweep itself
+is mandatory. Configurations are isolated (`obj\<Config>\` + per-config
+`project.assets.json`), so they can and should be built in parallel — never run two
+builds of the SAME configuration concurrently.
 
 ### 2. Restore Requires Configuration
 ```bash
@@ -79,44 +95,36 @@ dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R25
 
 ### 3. TFM Switch = NEVER Use `--no-restore`
 
-`Nice3point.Revit.Api.RevitAPI` is pulled with `VersionOverride` that depends
-on `$(RevitVersion)`. Each configuration must produce a fresh
-`obj/project.assets.json` that targets the right Revit API year (2021.*,
-2022.*, 2025.*, 2027.*). Once an `assets.json` is written, it is reused on the
-next build **regardless of the new `-c` flag** unless you re-restore.
+Each configuration has its **own** NuGet graph:
+`obj\<Configuration>\project.assets.json` (per-config `MSBuildProjectExtensionsPath`,
+see `src/Directory.Build.props`). A `-c` switch cannot reuse another configuration's
+assets — the target configuration still needs its own restore for its RevitAPI year
+(2020.* / 2021.* / 2024.* / 2025.* / 2026.* / 2027.*).
 
-**This is why `build-and-deploy.bat` runs `dotnet build` WITHOUT
-`--no-restore` for every configuration** (lines 29, 35, 41, 47): the
-restore step is part of the build, and produces a clean assets file.
+`build-and-deploy.bat` / `tools\build-all-configs.ps1` run `dotnet build` WITHOUT
+`--no-restore` for every configuration, so each one gets a clean assets file.
 
 ```bash
-# WRONG — assets.json from previous config is reused, R21 build
-# sees the R25 RevitAPI and explodes with CS0246 ForgeTypeId (added
-# in Revit 2022, not in 2021.*).
+# WRONG — switching -c without restore: the R21 graph may be absent or stale.
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
 #                            ^^^^^^^^^^^^^^^^^^^^^^ NEVER do this
 
-# WRONG — separate restore of a different config writes assets.json
-# for that config, then subsequent --no-restore build of yet another
-# config reuses the wrong assets.
-dotnet restore src/SmartCon.App/SmartCon.App.csproj -p:Configuration=Debug.R24
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
-
-# CORRECT — restore is part of every build, just like build-and-deploy.bat
+# CORRECT — restore is part of every build; per-config assets stay isolated
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
+
+# FASTEST — the same six builds, parallel
+powershell -ExecutionPolicy Bypass -File tools\build-all-configs.ps1
 ```
 
-**Heuristic for the agent:** if you are about to run
-`dotnet build … --no-restore`, you are doing it wrong. The only time
-`--no-restore` is acceptable is the SECOND build of the **same**
-configuration in a row (e.g. after fixing a typo in a source file).
-Switching `-c` always requires a fresh restore.
+**Heuristic for the agent:** `--no-restore` is acceptable only for the SECOND build
+of the **same** configuration in a row (e.g. after fixing a typo). Switching `-c`
+always requires a fresh restore.
 
 ### 4. Build App Project, NOT Solution
 ```bash
@@ -137,6 +145,33 @@ fails on both). Fix ladder: (1) re-run `dotnet build` — usually enough; (2) if
 `git clean -xfd src` and rebuild; (3) full rebuilds and `build-and-deploy.bat` — run with
 VS Code closed. Prevention: `files.watcherExclude` for `**/obj/**` / `**/bin/**` in the
 local `.vscode/settings.json`.
+
+### 6. Incremental Build / Fast Loop
+
+- Each configuration has isolated `obj\<Configuration>\` and its own
+  `project.assets.json`. Switching `-c` no longer rewrites another configuration's
+  graph: measured 2026-11-17 — R25 after a full R19 sweep is a **1–2 s no-op**
+  (previously 300+ s).
+- The ILRepack merge is cached in `obj/<Config>/<TFM>/merged/` and reused while its
+  inputs are byte-identical (pre-merge dll, `project.assets.json`,
+  `ILRepack.targets`). Do NOT delete that folder manually — it only forces a re-merge.
+- `Debug.*` builds skip NET analyzers and IDE code style
+  (`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false`). Source generators and
+  package analyzers stay enabled; `Release.*` (CI, `release.ps1`) keeps the full set.
+- First build after checkout / `dotnet clean` / `git clean` is full (~3–5 min per
+  configuration). A repeat build with no changes is 1–2 s.
+- `dotnet test --filter ...` does NOT shorten the build — it only filters execution.
+  After one successful build use `dotnet run --no-build` / `dotnet test --no-build`.
+- Different configurations may build in parallel — that is what
+  `tools\build-all-configs.ps1` does. Never run two builds of the SAME configuration
+  concurrently (file locks).
+- Real code changes rebuild the affected project and its downstream in each
+  configuration — expected. The plugin must build on ALL 6 configurations immediately
+  after any change (§1); incremental build only removes redundant work.
+- Antivirus: exclude the repo, `%USERPROFILE%\.nuget\packages`,
+  `%LOCALAPPDATA%\NuGet\v3-cache`, `%TEMP%\NuGetScratch`, and
+  `dotnet.exe` / `VBCSCompiler.exe`. Without exclusions full builds are several times
+  slower (Kaspersky was measured on this repo).
 
 ## CI/CD
 

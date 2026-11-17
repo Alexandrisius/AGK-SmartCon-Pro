@@ -27,13 +27,18 @@ Revit 2026.5+ тоже на .NET 10 — net8-бинарник R26 работае
 - Revit API внёс breaking change (изменение сигнатур, удаление методов)
 - Разные TFM (net48 vs net8.0-windows vs net10.0-windows)
 
-## ЕДИНСТВЕННЫЙ правильный способ сборки — `build-and-deploy.bat`
+## Полная сборка + деплой — `build-and-deploy.bat`
 
 ```bash
 build-and-deploy.bat
 ```
 
 Скрипт собирает 6 shipping-конфигураций (R27/R26/R25/R24/R21/R19) + updater и деплоит в Revit.
+Шесть конфигураций собираются **параллельно** через `tools\build-all-configs.ps1`
+(безопасно: у каждой свой `obj\` и свой `obj\<Configuration>\project.assets.json`).
+Без деплоя та же параллельная сборка запускается так:
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`.
+Запускать `build-and-deploy.bat` только перед ручным тестом/сдачей.
 Каждая версия 2025+ получает СВОЙ бинарник: R25→2025, R26→2026, R27→2027 (per-version, #233).
 
 ## Почему НЕЛЬЗЯ использовать `-p:RevitVersion=...`
@@ -47,11 +52,17 @@ build-and-deploy.bat
 
 ## Ручная сборка одной конфигурации
 
-**ВАЖНО:** Собирай каждую конфигурацию ОТДЕЛЬНО. НЕ собирай solution — он подтянет лишние TFM.
+**ВАЖНО:** Каждая конфигурация — отдельный `dotnet build` (НЕ solution — он подтянет лишние TFM).
+Конфигурации изолированы (`obj\<Configuration>\` + собственный `project.assets.json`), поэтому их
+можно и нужно собирать параллельно — для этого есть `tools\build-all-configs.ps1`.
+Любая правка плагина проверяется сборкой ВСЕХ 6 конфигураций — понятия «конфигурация в работе» нет
+(SKILL.md §1). После успешной сборки нужной конфигурации тесты/запуски гоняй с `--no-build` (SKILL.md §6).
 
-**КРИТИЧЕСКИ ВАЖНО:** `dotnet restore` без указания конфигурации НЕ парсит `RevitVersion`
-из `Directory.Build.props` (там `$(Configuration)` = Debug по умолчанию). Это приводит к
-fallback на RevitAPI 2021.* и ложным ошибкам компиляции (CS0618 и др.) при сборке R24/R25/R26/R27.
+**КРИТИЧЕСКИ ВАЖНО:** `dotnet restore` без указания конфигурации пишет assets в `obj/`
+(Debug-fallback), а не в `obj\<Configuration>\`, и не парсит `RevitVersion` из имени
+конфигурации — это даёт fallback на RevitAPI 2021.* и ложные ошибки компиляции
+(CS0618 и др.) для R24/R25/R26/R27. Всегда собирай через `dotnet build -c Debug.RXX`
+(implicit restore в правильный per-config путь).
 
 **Правильный способ — restore + build в ОДНОЙ команде (без `--no-restore`):**
 
@@ -68,10 +79,10 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 # 4. Затем net48 (Revit 2024)
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
 
-# 5. Затем net48 (Revit 2021-2023) — тот же TFM, restore не нужен
+# 5. Затем net48 (Revit 2021-2023) — implicit restore выполняется внутри build
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21
 
-# 6. Затем net48 (Revit 2019-2020) — тот же TFM, restore не нужен
+# 6. Затем net48 (Revit 2019-2020) — implicit restore выполняется внутри build
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19
 ```
 
@@ -88,10 +99,10 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
 ## Правила сборки
 
 1. Собирай `SmartCon.App.csproj`, а НЕ `SmartCon.sln`
-2. Каждую конфигурацию — отдельной командой
-3. **При переходе между разными TFM (net8 ↔ net48 ↔ net10) — ВСЕГДА делай
-   `dotnet restore` с `-p:Configuration=...` перед сборкой, ИЛИ используй `dotnet build`
-   без `--no-restore`**
+2. Каждую конфигурацию — отдельной командой; разные конфигурации можно параллельно,
+   одну и ту же — нельзя
+3. **При переходе между разными TFM (net8 ↔ net48 ↔ net10) — ВСЕГДА используй `dotnet build`
+   без `--no-restore`** (implicit restore в per-config `obj\<Configuration>\project.assets.json`)
 4. **`global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx; 2xx не поддерживается —
    консервативная политика из-за отдельных подтверждённых регрессий 2xx: dotnet/wpf#11678, dotnet/sdk#53508)**
    — ВСЕ конфигурации (включая net48) собираются под SDK 10. SDK 8 для сборки больше не нужен, но .NET 8
@@ -108,6 +119,10 @@ dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
 
 Проект тестов пиннут на net8.0-windows — НЕ собирай его под R27 (net10 → NU1201/NU1202).
 В sln его R27-конфигурации замапены на R25 (маппинг honored только в VS).
+
+**Debug vs Release:** `Debug.*` собираются без NET/IDE-анализаторов
+(`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false` — быстрый цикл);
+`Release.*` (CI, `release.ps1`) — полный набор. Генерируемый IL одинаков.
 
 ## Чеклист перед коммитом
 

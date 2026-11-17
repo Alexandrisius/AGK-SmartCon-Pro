@@ -1,4 +1,13 @@
 <Project>
+  <!-- Per-configuration NuGet assets. Without this, all Debug.R* / Release.R* builds share
+       obj/project.assets.json; every -c switch rewrites it with a different RevitAPI year
+       (2025.* / 2026.* / 2027.* / 2024.* / 2021.*), which invalidates ResolvePackageAssets
+       and forces a full rebuild of the entire project graph on every configuration step.
+       Configuration is a global property (-c ...), available at this point in evaluation. -->
+  <PropertyGroup Condition="'$(Configuration)' != ''">
+    <MSBuildProjectExtensionsPath>$(MSBuildProjectDirectory)\obj\$(Configuration)\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
   <!-- ============================================================ -->
   <!-- ШАГ 1: Парсим RevitVersion из имени конфигурации (.R21 → 2021) -->
   <!-- ДОЛЖНО идти ПЕРЕД TargetFrameworks, иначе $(RevitVersion) пуст -->
@@ -71,6 +80,15 @@
     <RepositoryType>git</RepositoryType>
     <SmartConVersionFile>$(MSBuildThisFileDirectory)..\Version.txt</SmartConVersionFile>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <!-- Debug.*: skip IDE code-style + built-in CA analyzers to keep the build/deploy loop fast.
+       Source generators (CommunityToolkit.Mvvm, PolySharp) and package analyzers stay enabled —
+       they are required for compilation. Release.* (CI, release.ps1) keeps the full set.
+       Produced IL is identical either way; analyzers do not affect codegen. -->
+  <PropertyGroup Condition="$(Configuration.StartsWith('Debug'))">
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
   </PropertyGroup>
 
   <!-- ============================================================
