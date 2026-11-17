@@ -88,6 +88,17 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
+  <!-- net48: the Agent suite is net8-only. On net48 the Agent APIs expose
+       System.Text.Json.JsonElement from the ILRepack-merged System.Text.Json (inside
+       SmartCon.Dependencies, ADR-051), while the test host must reference the real
+       9.0.0 package for TUnit — the two JsonElement types are distinct, so any test
+       that passes JsonElement across that boundary cannot compile (CS0433/CS1503).
+       The net48 run still validates the platform with the rest of the suite; Agent
+       net48 code is compile-checked by the R23/R24 App builds. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Compile Remove="Agent\**\*.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
     <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />

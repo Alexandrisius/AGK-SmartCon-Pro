@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent;
+﻿using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.IntegrationTests.Support;
@@ -92,7 +92,8 @@ internal sealed class InMemoryAgentChangeSetStore : IAgentChangeSetStore
     }
 
     public Task<ChangeSetDetails?> GetAsync(Guid changeSetId, CancellationToken ct) =>
-        Task.FromResult(_sets.TryGetValue(changeSetId, out var found) ? found : null);
+        Task.FromResult<ChangeSetDetails?>(
+            _sets.TryGetValue(changeSetId, out var found) ? found : null);
 
     public Task<ChangeSetDetails?> GetLastAppliedAsync(string documentId, CancellationToken ct)
     {
@@ -101,7 +102,7 @@ internal sealed class InMemoryAgentChangeSetStore : IAgentChangeSetStore
             .OrderByDescending(set => set.Header.AppliedAt)
             .FirstOrDefault();
 
-        return Task.FromResult(found);
+        return Task.FromResult<ChangeSetDetails?>(found);
     }
 
     public Task MarkRolledBackAsync(Guid changeSetId, DateTime rolledBackAt, CancellationToken ct)

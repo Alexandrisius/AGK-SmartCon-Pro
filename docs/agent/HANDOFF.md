@@ -73,8 +73,33 @@
 - Live dogfood: прогон 1 — 11 задач, 10 ответов, 3 feedback, 29/30 запросов;
   прогон 2 — 11/11, 1 feedback, 27/30; **прогон 3 — 11/11, 0 feedback, 24/30**
   (все замечания закрыты, см. `AGENT-FEEDBACK.md`).
-- Multi-version baseline sweep: 7 конфигураций 0/0 (`tools/build-all-configs.ps1`).
-- Полный прогон всего integration-сьюта R25 после write-слоя **ещё не делался** (см. §Долг).
+- Multi-version sweep: **7 конфигураций 0/0** (`tools/build-all-configs.ps1`; R23/R24
+  потребовали один фикс net48-nullable в `AgentViewWriteHelper.Deserialize`).
+- Полный unit-сьют: **3360/3360**.
+- Полный integration-сьют R25: **293/305** успешно, 12 пропущено (контент-зависимые
+  скипы nut-файлов и 3D-вида), 0 сбоев, 5m39s.
+- net48 (Revit 2023, без Agent-тестов): **245/257** успешно, 12 пропущено, 0 сбоев, 5m15s.
+- R27 (Revit 2027, net10, Agent-фильтр): **45/47** успешно, 2 пропущено, 1m02s.
+
+### Ограничение net48 для Agent (важно)
+
+Agent-интеграционные тесты **не компилируются для net48** и исключены из net48-сборки
+`SmartCon.IntegrationTests` (`<Compile Remove="Agent\**\*.cs" />` при
+`'$(TargetFramework)' == 'net48'`). Причина (pre-existing, не из этой сессии):
+на net48 `SmartCon.Dependencies` несёт ILRepack-merged `System.Text.Json` 8.0.6
+(ADR-051), а тест-хосту нужен реальный 9.0.0 для TUnit. `JsonElement` из этих двух
+сборок — разные типы: любая передача `JsonElement` через границу (а весь Agent API
+принимает `JsonElement args`) даёт CS0433/CS1503. Плюс `AgentReadToolsTests` использует
+`new ElementId(long)`, которого нет в R23 (есть только в R24+).
+
+Что это значит:
+- Agent на net48 **компилируется** (App R23/R24 в sweep — 0/0) и его логика покрыта
+  unit-тестами на net8;
+- проверка платформы net48 идёт полным сьютом без Agent — это штатная роль сьюта
+  («проверка платформы, а не года Revit»);
+- если понадобится Agent-прогон на net48: нужен либо отказ от merge STJ для
+  IntegrationTests (сломает TUnit), либо `extern alias`-схема + правка тестов на
+  `ElementIdCompat` — отдельная задача.
 
 ## Ключевые факты Revit API (проверено через Exa + интеграционные тесты)
 
@@ -131,6 +156,14 @@
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools/build-all-configs.ps1"
 
+# полный unit
+dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25
+
+# полный integration R25 / net48 (без Agent) / R27 Agent
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023
+dotnet run --project src/SmartCon.IntegrationTests -c Debug.R27 --framework net10.0-windows -- --treenode-filter "/*/*/*Agent*/*"
+
 # unit (Agent)
 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --filter "FullyQualifiedName~Agent"
 
@@ -142,6 +175,19 @@ dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8
 # net48 (Revit 2023 установлен)
 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R21 --framework net48 -p:RevitVersion=2023 -- --treenode-filter "/*/*/*Agent*/*"
 ```
+
+## Итоговый статус фаз
+
+| Фаза | Статус |
+|---|---|
+| A baseline | ✅ |
+| B write-layer (10 tools) | ✅ |
+| C confirmation gate + change sets/undo | ✅ |
+| D integration + unit тесты write | ✅ |
+| E context budget | ✅ |
+| F dogfooding + feedback | ✅ (3 прогона, 3→1→0 замечаний) |
+| G extras | частично: token_usage ✅, порог компакции ✅; plan validation L0–L6 — нет |
+| H финальный sweep | ✅ 7 конфигураций, unit, R25, net48, R27 |
 
 ## Ограничения
 

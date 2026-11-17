@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 
@@ -540,7 +540,8 @@ internal static class AgentViewWriteHelper
         if (string.IsNullOrWhiteSpace(json))
             return null;
 
-        using var document = JsonDocument.Parse(json);
+        // net48 does not narrow nullable references after IsNullOrWhiteSpace.
+        using var document = JsonDocument.Parse(json!);
         return AgentJson.Deserialize<T>(document.RootElement);
     }
 }
