@@ -1,7 +1,20 @@
 using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
+#if REVIT2023_OR_GREATER
+using SmartCon.Agent;
+using SmartCon.Agent.Events;
+using SmartCon.Agent.Services;
+using SmartCon.Agent.Services.Llm;
+using SmartCon.Agent.Services.Storage;
+using SmartCon.Agent.Services.Tools;
+using SmartCon.Agent.Services.UI;
+using SmartCon.Agent.ViewModels;
+using SmartCon.Agent.Views;
+#endif
 using SmartCon.App.Events;
+using SmartCon.Core.Logging;
 using SmartCon.App.Services;
+using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
 using SmartCon.Core.Services.Interfaces;
@@ -18,6 +31,12 @@ using SmartCon.PipeConnect.Views;
 using SmartCon.ProjectManagement.Services;
 using SmartCon.ProjectManagement.ViewModels;
 using SmartCon.ProjectManagement.Views;
+#if REVIT2023_OR_GREATER
+using SmartCon.Revit.Agent;
+using SmartCon.Revit.Agent.Tools;
+using SmartCon.Revit.Agent.Tools.Read;
+using SmartCon.Revit.Agent.Tools.Write;
+#endif
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
 using SmartCon.Revit.Family;
@@ -380,6 +399,85 @@ public static class ServiceRegistrar
         var fmHandler = new RevitFamilyManagerAwaitableEvent(fmAwaitable);
         var fmEvent = ExternalEvent.Create(fmHandler);
         fmAwaitable.Initialize(() => fmEvent.Raise());
+
+        #if REVIT2023_OR_GREATER
+        // --- Agent (Phase 0) ---
+        // Same pattern as FamilyManager: the queue is pure C#, the
+        // IExternalEventHandler adapter lives in SmartCon.App so that
+        // SmartCon.Agent never loads RevitAPIUI at type-init time.
+        var agentAwaitable = new AgentAwaitableEvent(revitContext);
+        services.AddSingleton(agentAwaitable);
+        services.AddSingleton<IAgentAwaitableEvent>(agentAwaitable);
+
+        var agentHandler = new RevitAgentAwaitableEvent(agentAwaitable);
+        var agentEvent = ExternalEvent.Create(agentHandler);
+        agentAwaitable.Initialize(() => agentEvent.Raise());
+
+        services.AddSingleton(AgentLlmSettings.Load());
+        services.AddSingleton<IAgentLlmClient>(sp =>
+            new OpenAiCompatibleLlmClient(sp.GetRequiredService<AgentLlmSettings>()));
+
+        var agentDatabase = new AgentDatabase();
+        try
+        {
+            agentDatabase.Initialize();
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Error(
+                "Agent database initialization failed: " + ex.GetType().Name + ": " + ex.Message +
+                " [Action: check write access to %APPDATA%\\SmartCon\\Agent; " +
+                "agent history and change sets will be unavailable]");
+        }
+
+        services.AddSingleton(agentDatabase);
+        services.AddSingleton<IAgentConversationStore, SqliteAgentConversationStore>();
+        services.AddSingleton<IAgentAuditLog, SqliteAgentAuditLog>();
+        services.AddSingleton<IAgentChangeSetStore, SqliteAgentChangeSetStore>();
+
+        services.AddSingleton<IAgentSelectionProvider, RevitAgentSelectionProvider>();
+        services.AddSingleton<IAgentTool, GetProjectOverviewTool>();
+        services.AddSingleton<IAgentTool, ListViewsTool>();
+        services.AddSingleton<IAgentTool, ListLevelsTool>();
+        services.AddSingleton<IAgentTool, ListCategoriesTool>();
+        services.AddSingleton<IAgentTool, GetSelectedElementsTool>();
+        services.AddSingleton<IAgentTool, QueryElementsTool>();
+        services.AddSingleton<IAgentTool, GetElementDetailsTool>();
+        services.AddSingleton<IAgentTool, SummarizeElementsTool>();
+        services.AddSingleton<IAgentTool, ListViewTemplatesTool>();
+        services.AddSingleton<IAgentTool, GetViewSettingsTool>();
+        services.AddSingleton<IAgentTool, GetViewTemplateDetailsTool>();
+        services.AddSingleton<IAgentTool, GetCurrentViewInfoTool>();
+
+        // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
+        services.AddSingleton<IAgentTool, RenameViewsTool>();
+        services.AddSingleton<IAgentTool, RenameLevelsTool>();
+        services.AddSingleton<IAgentTool, ApplyViewTemplateTool>();
+        services.AddSingleton<IAgentTool, SetViewRangeTool>();
+        services.AddSingleton<IAgentTool, SetViewCropTool>();
+        services.AddSingleton<IAgentTool, SetViewVisibilityTool>();
+        services.AddSingleton<IAgentTool, ConfigureViewsTool>();
+        services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
+        services.AddSingleton<IAgentTool, SetParametersTool>();
+        services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
+        services.AddSingleton<IAgentTool, UndoLastTool>();
+
+        services.AddSingleton<AgentConfirmationService>();
+        services.AddSingleton<IAgentConfirmationService>(
+            sp => sp.GetRequiredService<AgentConfirmationService>());
+
+        services.AddSingleton<AgentSessionContext>();
+        services.AddSingleton<IToolRegistry, AgentToolRegistry>();
+        services.AddSingleton<IToolExecutor, AgentToolExecutor>();
+        services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
+        services.AddSingleton<AgentPromptBuilder>();
+        services.AddSingleton<AgentOrchestrator>();
+        services.AddSingleton<IAgentFilePicker, WpfAgentFilePicker>();
+        services.AddSingleton<IAgentClipboardService, WpfAgentClipboardService>();
+        services.AddSingleton<AgentMainViewModel>();
+        services.AddSingleton<AgentPaneControl>();
+        services.AddSingleton<AgentPaneProvider>();
+#endif
 
         services.AddSingleton<IFamilyStorageRenameService, LocalFamilyStorageRenameService>();
         services.AddSingleton<IFamilyManagerViewModelFactory, FamilyManagerViewModelFactory>();

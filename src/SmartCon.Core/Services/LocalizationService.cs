@@ -19,6 +19,7 @@ public static partial class LocalizationService
         AddPipeConnectKeys(Ru, En);
         AddProjectManagementKeys(Ru, En);
         AddFamilyManagerKeys(Ru, En);
+        AddAgentKeys(Ru, En);
         _current = Ru;
     }
 

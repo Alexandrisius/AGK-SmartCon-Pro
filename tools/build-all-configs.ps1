@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    SmartCon - parallel build of all 6 shipping configurations.
+    SmartCon - parallel build of all 7 shipping configurations.
 
     Safe because every configuration now has isolated obj/bin and its own
     obj\<Configuration>\project.assets.json (per-config NuGet graph, see
@@ -15,7 +15,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string[]]$Configurations = @('Debug.R25', 'Debug.R26', 'Debug.R27', 'Debug.R24', 'Debug.R21', 'Debug.R19'),
+    [string[]]$Configurations = @('Debug.R25', 'Debug.R26', 'Debug.R27', 'Debug.R24', 'Debug.R23', 'Debug.R21', 'Debug.R19'),
     [int]$ThrottleLimit = 6
 )
 

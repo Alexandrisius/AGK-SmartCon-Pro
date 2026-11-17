@@ -35,10 +35,10 @@ if errorlevel 1 (
     echo [OK] Documentation validation passed
 )
 
-echo [1-6/11] Building all 6 Revit configurations in parallel...
+echo [1-6/11] Building all 7 Revit configurations in parallel...
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\build-all-configs.ps1"
 if errorlevel 1 ( echo [ERROR] One or more builds failed! Logs: %TEMP%\smartcon-build & pause & exit /b 1 )
-echo [OK] All 6 configurations built successfully
+echo [OK] All 7 configurations built successfully
 
 echo.
 echo [7/11] Building updater (net8.0)...
@@ -103,11 +103,18 @@ if not exist "%DLL_R21%" mkdir "%DLL_R21%"
 call :CleanObsolete "%DLL_R21%"
 copy /Y "src\SmartCon.App\bin\Debug.R21\net48\win-x64\*.dll" "%DLL_R21%\" >nul
 
+REM Revit 2023 gets its own R23 binary: SmartCon Agent requires Revit 2023+ APIs,
+REM and the shared 2021-2023 folder stays on the R21 binary for Revit 2021/2022.
+set "DLL_R23=%APPDATA%\SmartCon\2023"
+if not exist "%DLL_R23%" mkdir "%DLL_R23%"
+call :CleanObsolete "%DLL_R23%"
+copy /Y "src\SmartCon.App\bin\Debug.R23\net48\win-x64\*.dll" "%DLL_R23%\" >nul
+
 set "ADDIN_2023=%APPDATA%\Autodesk\Revit\Addins\2023"
 if exist "%ADDIN_2023%" (
     if exist "%ADDIN_2023%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_2023%\SmartCon" 2>nul )
     if exist "%ADDIN_2023%\SmartCon-2023.addin" del /q "%ADDIN_2023%\SmartCon-2023.addin" 2>nul
-    call :WriteAddin "%ADDIN_2023%\SmartCon.addin" "%DLL_R21%\SmartCon.App.dll"
+    call :WriteAddin "%ADDIN_2023%\SmartCon.addin" "%DLL_R23%\SmartCon.App.dll"
     echo [OK] Revit 2023
 ) else (
     echo [SKIP] Revit 2023 not installed

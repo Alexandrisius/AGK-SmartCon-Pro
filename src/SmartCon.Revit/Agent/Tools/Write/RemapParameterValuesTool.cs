@@ -1,0 +1,246 @@
+using System.Text.Json;
+using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services.Interfaces.Agent;
+
+namespace SmartCon.Revit.Agent.Tools.Write;
+
+public sealed class RemapParameterValuesTool : AgentWriteToolBase
+{
+    private const int DefaultLimit = 500;
+    private const int MaxLimit = 500;
+
+    public RemapParameterValuesTool(
+        IRevitContext revitContext,
+        ITransactionService transactions,
+        IAgentChangeSetStore changeSets)
+        : base(revitContext, transactions, changeSets)
+    {
+    }
+
+    public override AgentToolDefinition Definition { get; } = new()
+    {
+        Name = "remap_parameter_values",
+        Description =
+            "Copies values from a source parameter into a target parameter (typical shared " +
+            "parameter migration: old ФОП parameter → new one). mapping: [{source:{name|guid," +
+            "scope}, target:{name|guid,scope}}]. filter: {categories, levelIds, typeIds, limit} " +
+            "selects the elements. Elements without the source value are skipped; storage-type " +
+            "mismatches are converted when possible. dryRun defaults to true.",
+        Risk = AgentToolRisk.Write,
+        SupportsDryRun = true,
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
+    };
+
+    protected override void Apply(
+        Document doc,
+        JsonElement args,
+        WriteOutcome outcome,
+        bool dryRun,
+        CancellationToken ct)
+    {
+        var request = AgentJson.Deserialize<RemapRequest>(args);
+        var mapping = request?.Mapping;
+        if (mapping is null || mapping.Count == 0)
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = "no_items";
+            outcome.Message = "mapping is empty; pass at least one {source,target} pair.";
+            return;
+        }
+
+        var filter = request!.Filter ?? new RemapFilter();
+        var limit = Math.Max(1, Math.Min(filter.Limit ?? DefaultLimit, MaxLimit));
+        var atomic = AgentJson.GetBool(args, "atomic", false);
+
+        var categories = ResolveCategories(doc, filter.Categories);
+        var levelFilter = new HashSet<long>(filter.LevelIds ?? new List<long>());
+        var typeFilter = new HashSet<long>(filter.TypeIds ?? new List<long>());
+
+        var elements = new List<Element>();
+        foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+        {
+            ct.ThrowIfCancellationRequested();
+            if (elements.Count >= limit)
+                break;
+
+            if (categories is not null)
+            {
+                var categoryId = element.Category?.Id.GetValue();
+                if (categoryId is null || !categories.Contains(categoryId.Value))
+                    continue;
+            }
+
+            if (levelFilter.Count > 0)
+            {
+                var levelId = element.LevelId;
+                if (levelId == ElementId.InvalidElementId || !levelFilter.Contains(levelId.GetValue()))
+                    continue;
+            }
+
+            if (typeFilter.Count > 0)
+            {
+                var typeId = element.GetTypeId();
+                if (typeId == ElementId.InvalidElementId || !typeFilter.Contains(typeId.GetValue()))
+                    continue;
+            }
+
+            elements.Add(element);
+        }
+
+        outcome.Description = "Remapped parameter values on " + elements.Count +
+                              " element(s) (limit " + limit + ")";
+
+        var failedElements = 0;
+        foreach (var element in elements)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var report = new WriteItemReport
+            {
+                Id = element.Id.GetValue(),
+                Name = element.Category?.Name
+            };
+
+            var anyApplied = false;
+            foreach (var pair in mapping)
+            {
+                var change = ApplyPair(doc, element, pair, outcome, out var parameterName);
+                if (change is null)
+                    continue; // skipped with a reason recorded by ApplyPair
+
+                anyApplied = true;
+                report.Detail = (report.Detail is null ? string.Empty : report.Detail + "; ") +
+                                parameterName;
+                report.OldValue = (report.OldValue is null ? string.Empty : report.OldValue + " | ") +
+                                  change.Value.OldValue;
+                report.NewValue = (report.NewValue is null ? string.Empty : report.NewValue + " | ") +
+                                  change.Value.NewValue;
+                outcome.AffectedCount++;
+
+                outcome.Items.Add(new ChangeItem
+                {
+                    UniqueId = element.UniqueId,
+                    ElementId = element.Id.GetValue(),
+                    ParameterName = parameterName,
+                    OldValue = change.Value.OldValue,
+                    NewValue = change.Value.NewValue,
+                    Status = ChangeStatus.Applied
+                });
+            }
+
+            if (anyApplied)
+                outcome.Batch.Changed.Add(report);
+            else
+            {
+                failedElements++;
+                report.Reason = "No mapping pair could be applied to this element.";
+                outcome.Batch.Skipped.Add(report);
+            }
+        }
+
+        if (atomic && failedElements > 0)
+        {
+            outcome.Aborted = true;
+            outcome.Success = false;
+            outcome.ErrorCode = "atomic_aborted";
+            outcome.Message = failedElements + " element(s) could not be remapped and " +
+                              "atomic=true, so the whole operation was rolled back. " +
+                              "Nothing was changed.";
+        }
+    }
+
+    private static (string OldValue, string NewValue)? ApplyPair(
+        Document doc,
+        Element element,
+        RemapMapping pair,
+        WriteOutcome outcome,
+        out string parameterName)
+    {
+        parameterName = string.Empty;
+
+        if (pair.Target is null)
+            return null;
+
+        var targetResolution = AgentParameterWriteHelper.Resolve(
+            doc, element, pair.Target.Name, pair.Target.Guid, pair.Target.Scope);
+        if (!targetResolution.Ok)
+        {
+            outcome.Warnings.Add(
+                "Element " + element.Id.GetValue() + ": " + targetResolution.Reason);
+            return null;
+        }
+
+        var target = targetResolution.Parameter!;
+        parameterName = (targetResolution.IsTypeScope ? "type:" : "instance:") +
+                        (target.Definition?.Name ?? pair.Target.Name ?? pair.Target.Guid ?? "?");
+
+        if (pair.Source is null)
+        {
+            outcome.Warnings.Add(
+                "Element " + element.Id.GetValue() + ": source parameter is not specified.");
+            return null;
+        }
+
+        var sourceResolution = AgentParameterWriteHelper.Resolve(
+            doc, element, pair.Source.Name, pair.Source.Guid, pair.Source.Scope);
+        if (!sourceResolution.Ok)
+            return null;
+
+        var source = sourceResolution.Parameter!;
+        var sourceValue = AgentParameterWriteHelper.Describe(source);
+        if (string.IsNullOrEmpty(sourceValue))
+            return null;
+
+        if (!AgentParameterWriteHelper.TryConvertValue(
+                source, target, null, out var text, out var conversionReason))
+        {
+            outcome.Warnings.Add("Element " + element.Id.GetValue() + ": " + conversionReason);
+            return null;
+        }
+
+        var before = AgentParameterWriteHelper.RawValue(target);
+        if (!AgentParameterWriteHelper.TrySet(target, text, "raw", out var errorCode, out var reason))
+        {
+            outcome.Warnings.Add("Element " + element.Id.GetValue() + ": " + errorCode + " — " + reason);
+            return null;
+        }
+
+        var after = AgentParameterWriteHelper.RawValue(target);
+        if (string.Equals(before, after, StringComparison.Ordinal))
+            return null;
+
+        return (before, after);
+    }
+
+    private static HashSet<long>? ResolveCategories(Document doc, IReadOnlyList<string>? names)
+    {
+        if (names is null || names.Count == 0)
+            return null;
+
+        var ids = new HashSet<long>();
+        foreach (var name in names)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            if (Enum.TryParse<BuiltInCategory>(name, ignoreCase: true, out var builtIn))
+            {
+                var category = Category.GetCategory(doc, builtIn);
+                if (category is not null)
+                    ids.Add(category.Id.GetValue());
+            }
+        }
+
+        return ids.Count == 0 ? null : ids;
+    }
+
+    private sealed class RemapRequest
+    {
+        public List<RemapMapping>? Mapping { get; set; }
+
+        public RemapFilter? Filter { get; set; }
+    }
+}

@@ -100,6 +100,25 @@ public static class RibbonBuilder
 
         fmPanel.AddItem(familyManagerButton);
 
+        #if REVIT2023_OR_GREATER
+        // --- AI Panel ---
+        var agentPanel = app.CreateRibbonPanel(TabName, "AI");
+        var agentAssembly = Path.Combine(appDir, "SmartCon.Agent.dll");
+
+        var agentButton = new PushButtonData(
+            name: "SmartConAgent",
+            text: "SmartCon\nAgent",
+            assemblyName: agentAssembly,
+            className: "SmartCon.Agent.Commands.AgentCommand")
+        {
+            ToolTip = "AI assistant for reading and modifying model attributes",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.Info_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.Info_16x16.png")
+        };
+
+        agentPanel.AddItem(agentButton);
+#endif
+
         // --- Info Panel (always rightmost) ---
         var infoPanel = app.CreateRibbonPanel(TabName, PanelInfo);
 

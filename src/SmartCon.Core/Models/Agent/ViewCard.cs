@@ -1,0 +1,182 @@
+namespace SmartCon.Core.Models.Agent;
+
+public sealed class ViewCard
+{
+    public long ViewId { get; init; }
+
+    public required string UniqueId { get; init; }
+
+    public required string Name { get; init; }
+
+    public required string ViewType { get; init; }
+
+    public long? LevelId { get; init; }
+
+    public string? LevelName { get; init; }
+
+    public double? ElevationMm { get; init; }
+
+    public long? TemplateId { get; init; }
+
+    public string? TemplateName { get; init; }
+
+    public bool IsTemplate { get; init; }
+
+    public bool IsOnSheet { get; init; }
+
+    public string? SheetNumber { get; init; }
+}
+
+public sealed class LevelCard
+{
+    public long LevelId { get; init; }
+
+    public required string Name { get; init; }
+
+    public double ElevationMm { get; init; }
+
+    public bool IsBuildingStory { get; init; }
+}
+
+public sealed class CategoryCard
+{
+    public required string Name { get; init; }
+
+    public string? DisplayName { get; init; }
+
+    public string? CategoryType { get; init; }
+
+    public int ElementCount { get; init; }
+}
+
+public sealed class ProjectOverview
+{
+    public required string DocumentId { get; init; }
+
+    public required string Title { get; init; }
+
+    public string? PathName { get; init; }
+
+    public required string RevitVersion { get; init; }
+
+    public bool IsWorkshared { get; init; }
+
+    public bool IsModified { get; init; }
+
+    public string? ProjectNumber { get; init; }
+
+    public string? ProjectName { get; init; }
+
+    public string? Author { get; init; }
+
+    public required string Units { get; init; }
+
+    public int LevelCount { get; init; }
+
+    public int ViewCount { get; init; }
+
+    public int SheetCount { get; init; }
+
+    public IReadOnlyList<LevelCard> Levels { get; init; } = Array.Empty<LevelCard>();
+
+    public IReadOnlyList<CategoryCard> Categories { get; init; } = Array.Empty<CategoryCard>();
+}
+
+public sealed class ViewRangeLevel
+{
+    public long? LevelId { get; init; }
+
+    public string? LevelName { get; init; }
+
+    public double OffsetMm { get; init; }
+}
+
+public sealed class ViewRangeInfo
+{
+    public ViewRangeLevel? Top { get; init; }
+
+    public ViewRangeLevel? CutPlane { get; init; }
+
+    public ViewRangeLevel? Bottom { get; init; }
+
+    public ViewRangeLevel? ViewDepth { get; init; }
+}
+
+public sealed class CropBoxInfo
+{
+    public bool Active { get; init; }
+
+    public bool Visible { get; init; }
+
+    public bool ShapeValid { get; init; }
+
+    public double MinXMm { get; init; }
+
+    public double MinYMm { get; init; }
+
+    public double MaxXMm { get; init; }
+
+    public double MaxYMm { get; init; }
+}
+
+public sealed class CategoryVisibilityInfo
+{
+    public long CategoryId { get; init; }
+
+    public required string Category { get; init; }
+
+    public string? BuiltInName { get; init; }
+
+    public bool Hidden { get; init; }
+}
+
+public sealed class ViewSettings
+{
+    public long ViewId { get; init; }
+
+    public string UniqueId { get; init; } = string.Empty;
+
+    public required string Name { get; init; }
+
+    public required string ViewType { get; init; }
+
+    public long? TemplateId { get; init; }
+
+    public string? TemplateName { get; init; }
+
+    public bool HasTemplate { get; init; }
+
+    public int? Scale { get; init; }
+
+    public string? DetailLevel { get; init; }
+
+    public string? Discipline { get; init; }
+
+    public ViewRangeInfo? ViewRange { get; init; }
+
+    public CropBoxInfo? Crop { get; init; }
+
+    public IReadOnlyList<CategoryVisibilityInfo> HiddenCategories { get; init; } =
+        Array.Empty<CategoryVisibilityInfo>();
+
+    public IReadOnlyList<string> HiddenWorksets { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> ControlledParameters { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> NonControlledParameters { get; init; } = Array.Empty<string>();
+}
+
+public sealed class ViewTemplateCard
+{
+    public long TemplateId { get; init; }
+
+    public required string Name { get; init; }
+
+    public required string ViewType { get; init; }
+
+    public bool IncludesViewRange { get; init; }
+
+    public bool IncludesCrop { get; init; }
+
+    public bool IncludesVisibility { get; init; }
+}

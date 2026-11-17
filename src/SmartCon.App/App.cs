@@ -3,6 +3,9 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Autodesk.Revit.UI;
+#if REVIT2023_OR_GREATER
+using SmartCon.Agent;
+#endif
 using SmartCon.App.Diagnostics;
 using SmartCon.App.DI;
 using SmartCon.App.Ribbon;
@@ -86,6 +89,26 @@ public sealed partial class App : AppBase
             var fmProvider = ServiceHost.GetService<FamilyManagerPaneProvider>();
             var fmPaneId = FamilyManagerPaneIds.FamilyManagerPane;
             application.RegisterDockablePane(fmPaneId, "Family Manager", fmProvider);
+
+            #if REVIT2023_OR_GREATER
+            // A missing/incompatible Agent assembly must not abort startup:
+            // the ribbon is created after this block and must still appear.
+            try
+            {
+                var agentProvider = ServiceHost.GetService<AgentPaneProvider>();
+                application.RegisterDockablePane(
+                    AgentPaneIds.AgentPane,
+                    "SmartCon Agent",
+                    agentProvider);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Error(
+                    "SmartCon Agent pane registration failed: " +
+                    ex.GetType().Name + ": " + ex.Message +
+                    " [Action: verify SmartCon.Agent.dll is deployed next to SmartCon.App.dll]");
+            }
+#endif
 
             // Explicit eager resolve (adversarial review M2): the notifier's
             // DI factory subscribes to ViewActivated — the timing of that

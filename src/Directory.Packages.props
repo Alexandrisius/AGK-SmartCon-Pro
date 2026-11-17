@@ -30,6 +30,11 @@
          использует System.Text.Json. -->
     <PackageVersion Include="System.Text.Json" Version="8.0.6" />
 
+    <!-- Markdown: официальный CommonMark-парсер (BSD-2-Clause) для рендера ответов
+         агента в FlowDocument. net462/netstandard2.0/net8/net10, System.Memory >= 4.6.3
+         уже запинен ниже. -->
+    <PackageVersion Include="Markdig" Version="1.6.0" />
+
     <!-- Frozen polyfill versions (ADR-042): HelixToolkit.Wpf.SharpDX 3.1.2 transitively
          pulls System.Memory 4.6.3 + System.Buffers 4.6.1 + System.Runtime.CompilerServices.Unsafe 6.1.2
          which break net48 (CS1739 AppendFormatted — DefaultInterpolatedStringHandler changes signature).

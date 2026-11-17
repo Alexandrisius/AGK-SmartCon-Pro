@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SmartCon.Agent</RootNamespace>
+    <AssemblyName>SmartCon.Agent</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- CA1510: ArgumentNullException.ThrowIfNull unavailable on net48 (requires .NET 6+). -->
+    <NoWarn>$(NoWarn);CA1510</NoWarn>
+    <!-- net48: PolySharp не должен генерировать System.Index/System.Range в этом
+         модуле — App ссылается и на SmartCon.Agent, и на SmartCon.FamilyManager,
+         и дубли predefined-типов дают CS8356 на range-синтаксисе. -->
+    <PolySharpExcludeGeneratedTypes>System.Index;System.Range</PolySharpExcludeGeneratedTypes>
+  </PropertyGroup>
+
+  <!-- CommunityToolkit.Mvvm + M.D.Sqlite + System.Text.Json на обеих TFM
+       приходят из merged SmartCon.Dependencies (ADR-051). -->
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
+  </ItemGroup>
+
+  <!-- RevitAPI + RevitAPIUI: compile-time only (ExcludeAssets=runtime).
+       Нужны для IDockablePaneProvider (панель) и IExternalCommand (кнопка Ribbon);
+       прямых вызовов Revit API в этом проекте нет — I-01/I-09. -->
+  <ItemGroup>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
+    <ProjectReference Include="..\SmartCon.UI\SmartCon.UI.csproj" />
+  </ItemGroup>
+
+  <!-- Native e_sqlite3 + Batteries.Init для agent.db -->
+  <ItemGroup>
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+  </ItemGroup>
+
+  <!-- Icon pack — same visual language as the FamilyManager dockable panel -->
+  <ItemGroup>
+    <PackageReference Include="MahApps.Metro.IconPacks.Material" />
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Net.Http" />
+    <!-- async iterators (IAsyncEnumerable) на net48 требуют ValueTask из этого пакета -->
+    <PackageReference Include="System.Threading.Tasks.Extensions" />
+    <PackageReference Include="System.Memory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartCon.Tests" />
+    <InternalsVisibleTo Include="SmartCon.App" />
+    <InternalsVisibleTo Include="SmartCon.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

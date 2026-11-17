@@ -121,6 +121,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SmartCon.IntegrationTests" />
+    <InternalsVisibleTo Include="SmartCon.Tests" />
+  </ItemGroup>
+
+  <!-- Agent (Phase 0+) requires Revit 2023+ APIs (ForgeTypeId-era parameter and unit APIs).
+       Older configurations exclude the whole Agent folder. -->
+  <ItemGroup Condition="'$(RevitVersion)' == '2019' Or '$(RevitVersion)' == '2021' Or '$(RevitVersion)' == '2022'">
+    <Compile Remove="Agent\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
   </ItemGroup>
 

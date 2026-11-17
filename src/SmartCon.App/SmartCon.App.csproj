@@ -68,6 +68,9 @@
     <ProjectReference Include="..\SmartCon.PipeConnect\SmartCon.PipeConnect.csproj" />
     <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
     <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
+    <!-- Agent: Revit 2023+ only (uses ForgeTypeId-era parameter APIs). -->
+    <ProjectReference Include="..\SmartCon.Agent\SmartCon.Agent.csproj"
+                      Condition="'$(RevitVersion)' != '2019' And '$(RevitVersion)' != '2021' And '$(RevitVersion)' != '2022'" />
   </ItemGroup>
 
   <ItemGroup>
