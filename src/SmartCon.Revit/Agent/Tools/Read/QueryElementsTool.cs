@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -26,8 +26,10 @@ public sealed class QueryElementsTool : AgentReadToolBase
             "endsWith/in/notIn/exists/notExists and are combined with AND or OR. " +
             "String comparisons are case-insensitive. For numeric conditions pass unit (mm recommended); " +
             "without unit the project display unit for that parameter is used. " +
-            "Always set a reasonable limit (default 200, max 1000).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""roomId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+            "Default limit 50, max 200; use offset/nextOffset to paginate. " +
+            "Broad queries without categories/levelIds/typeIds/conditions/viewId are rejected " +
+            "when limit > 50. fields=[\"elementId\",\"name\"] projects each card.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""roomId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":50,""maximum"":200},""offset"":{""type"":""integer"",""default"":0},""fields"":{""type"":""array"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -54,6 +56,21 @@ public sealed class QueryElementsTool : AgentReadToolBase
         if (errors.Count > 0)
             return ToolResult.Fail("invalid_query", string.Join("; ", errors));
 
+        var broadQuery = spec.Categories.Count == 0
+                         && spec.LevelIds.Count == 0
+                         && spec.TypeIds.Count == 0
+                         && spec.Conditions.Count == 0
+                         && spec.ViewId is null
+                         && spec.RoomId is null;
+        if (broadQuery && spec.Limit > 50)
+        {
+            return ToolResult.Fail(
+                "query_too_broad",
+                "This query has no filters and requests " + spec.Limit + " elements. " +
+                "Add at least one of categories, levelIds, typeIds, conditions or viewId, " +
+                "or reduce limit to 50. Use summarize_elements for counts instead of a full dump.");
+        }
+
         if (spec.ViewId is { } viewId && doc.GetElement(ElementIdCompat.Create(viewId)) is not View)
         {
             return ToolResult.Fail(
@@ -72,23 +89,37 @@ public sealed class QueryElementsTool : AgentReadToolBase
                 ". Use list_categories to see available names.");
         }
 
-        var cards = new List<ElementCard>();
+        var fields = AgentJson.GetStringArray(args, "fields");
+        var cards = new List<object>();
         foreach (var element in result.Elements.Skip(spec.Offset).Take(spec.Limit))
         {
             ct.ThrowIfCancellationRequested();
-            cards.Add(AgentElementCardFactory.Create(doc, element));
+            var card = AgentElementCardFactory.Create(doc, element);
+            cards.Add(fields.Count == 0
+                ? (object)card
+                : AgentCardProjection.Apply(AgentJson.Serialize(card), fields));
         }
+
+        var truncated = result.Total > spec.Offset + cards.Count;
+        int? nextOffset = truncated ? spec.Offset + cards.Count : null;
 
         var payload = new
         {
             total = result.Total,
             offset = spec.Offset,
-            truncated = result.Total > spec.Offset + cards.Count,
+            returned = cards.Count,
+            truncated,
+            nextOffset,
+            hint = truncated
+                ? "More elements match. Call query_elements again with offset=" + nextOffset +
+                  " or add filters to narrow the result."
+                : null,
             elements = cards
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Matched " + result.Total + " element(s); returned " + cards.Count + ".");
+            "Matched " + result.Total + " element(s); returned " + cards.Count + "." +
+            (truncated ? " More available: use offset=" + nextOffset + "." : string.Empty));
     }
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SmartCon.Core.Models.Agent;
@@ -41,8 +41,8 @@ public sealed class QueryCondition
 
 public sealed class QuerySpec
 {
-    public const int DefaultLimit = 200;
-    public const int MaxLimit = 1000;
+    public const int DefaultLimit = 50;
+    public const int MaxLimit = 200;
 
     public IReadOnlyList<string> Categories { get; init; } = Array.Empty<string>();
 

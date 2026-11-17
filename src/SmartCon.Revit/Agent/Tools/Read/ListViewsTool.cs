@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -8,7 +8,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 
 public sealed class ListViewsTool : AgentReadToolBase
 {
-    private const int DefaultLimit = 200;
+    private const int DefaultLimit = 50;
     private const int MaxLimit = 500;
 
     public ListViewsTool(IRevitContext revitContext)
@@ -23,10 +23,12 @@ public sealed class ListViewsTool : AgentReadToolBase
             "Lists project views (not sheets and not view templates by default). " +
             "Filters: view types (FloorPlan, CeilingPlan, Section, ThreeD, Elevation, " +
             "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring. " +
-            "Returns view id, name, type, level, template, sheet number.",
+            "Returns view id, name, type, level, template, sheet number. Default limit 50, max 500. " +
+            "summaryOnly=true returns counts by view type and by level instead of cards. " +
+            "fields=[\"viewId\",\"name\"] projects each card onto the listed properties.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":200}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":50,""maximum"":500}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -38,6 +40,8 @@ public sealed class ListViewsTool : AgentReadToolBase
         var levelIds = AgentJson.GetLongArray(args, "levelIds");
         var nameContains = AgentJson.GetString(args, "nameContains");
         var includeTemplates = AgentJson.GetBool(args, "includeTemplates", false);
+        var summaryOnly = AgentJson.GetBool(args, "summaryOnly", false);
+        var fields = AgentJson.GetStringArray(args, "fields");
         var limit = Math.Max(1, Math.Min(AgentJson.GetInt(args, "limit", DefaultLimit), MaxLimit));
 
         var matched = new List<ViewCard>();
@@ -61,18 +65,77 @@ public sealed class ListViewsTool : AgentReadToolBase
 
         matched.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
         var total = matched.Count;
+
+        if (summaryOnly)
+        {
+            var summaryPayload = new
+            {
+                total,
+                summaryOnly = true,
+                byType = GroupBy(matched, view => view.ViewType),
+                byLevel = GroupBy(matched, view => view.LevelName ?? "(no level)")
+            };
+
+            return ToolResult.Ok(
+                AgentJson.Serialize(summaryPayload),
+                "Matched " + total + " view(s); summary by type and level.");
+        }
+
         var views = matched.Take(limit).ToList();
+
+        if (fields.Count > 0)
+        {
+            var projected = new List<System.Text.Json.JsonElement>(views.Count);
+            foreach (var card in views)
+                projected.Add(AgentCardProjection.Apply(AgentJson.Serialize(card), fields));
+
+            var projectedPayload = new
+            {
+                total,
+                returned = projected.Count,
+                truncated = total > projected.Count,
+                views = projected
+            };
+
+            return ToolResult.Ok(
+                AgentJson.Serialize(projectedPayload),
+                "Matched " + total + " view(s); returned " + projected.Count + "." +
+                (total > projected.Count
+                    ? " The result is truncated — narrow the filters or raise the limit."
+                    : string.Empty));
+        }
 
         var payload = new
         {
             total,
+            returned = views.Count,
             truncated = total > views.Count,
             views
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Matched " + total + " view(s); returned " + views.Count + ".");
+            "Matched " + total + " view(s); returned " + views.Count + "." +
+            (total > views.Count
+                ? " The result is truncated — narrow the filters or raise the limit."
+                : string.Empty));
+    }
+
+    private static IReadOnlyList<object> GroupBy(
+        IReadOnlyList<ViewCard> cards,
+        Func<ViewCard, string> keySelector)
+    {
+        var groups = new List<(string Key, int Count)>();
+        foreach (var group in cards.GroupBy(keySelector, StringComparer.OrdinalIgnoreCase))
+            groups.Add((group.Key, group.Count()));
+
+        groups.Sort((left, right) => right.Count.CompareTo(left.Count));
+
+        var result = new List<object>(groups.Count);
+        foreach (var group in groups)
+            result.Add(new { key = group.Key, count = group.Count });
+
+        return result;
     }
 
     private static bool IsSupportedView(View view)

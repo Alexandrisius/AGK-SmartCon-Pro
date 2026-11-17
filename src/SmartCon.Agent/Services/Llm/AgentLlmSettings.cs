@@ -22,6 +22,12 @@ public sealed class AgentLlmSettings
 
     public int TimeoutSeconds { get; set; } = 120;
 
+    /// <summary>
+    /// Context window used by the history compactor, in tokens. The model has a
+    /// 1M window, but keeping the working set small keeps latency and cost low.
+    /// </summary>
+    public int ContextWindowTokens { get; set; } = 200_000;
+
     public bool IsOpenCodeGo =>
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(Provider, "opencode", StringComparison.OrdinalIgnoreCase);

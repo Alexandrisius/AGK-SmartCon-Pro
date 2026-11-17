@@ -12,8 +12,6 @@ namespace SmartCon.Agent.Services;
 public sealed class AgentOrchestrator
 {
     private const int MaxToolRounds = 8;
-    private const int MaxToolResultCharacters = 40000;
-    private const int ToolResultPreviewCharacters = 4000;
     private const int MaxHistoryMessages = 120;
 
     private readonly IAgentLlmClient _llm;
@@ -70,6 +68,9 @@ public sealed class AgentOrchestrator
 
         var history = await _conversationStore.GetMessagesAsync(conversationId, ct).ConfigureAwait(false);
         var working = EnsureToolCallPairs(TrimHistory(history));
+        var (compacted, _) = AgentHistoryCompactor.Compact(
+            working, _settings.ContextWindowTokens);
+        working = compacted;
         var systemMessage = AgentMessage.System(_promptBuilder.Build(projectContext));
 
         var usage = AgentUsage.Empty;
@@ -285,18 +286,7 @@ public sealed class AgentOrchestrator
 
     private static string SerializeToolResult(ToolResult result)
     {
-        var json = JsonSerializer.Serialize(result, AgentToolResultFormatter.CompactOptions);
-        if (json.Length > MaxToolResultCharacters)
-        {
-            json = JsonSerializer.Serialize(new
-            {
-                success = true,
-                truncated = true,
-                message = "The tool result was too large and was truncated. Narrow the query.",
-                preview = json.Substring(0, ToolResultPreviewCharacters)
-            }, AgentToolResultFormatter.CompactOptions);
-        }
-
+        var json = ToolResultBudget.Serialize(result);
         return AgentTextSanitizer.Sanitize(json);
     }
 

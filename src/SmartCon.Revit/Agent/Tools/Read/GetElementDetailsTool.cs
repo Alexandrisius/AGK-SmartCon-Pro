@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
@@ -9,7 +9,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 
 public sealed class GetElementDetailsTool : AgentReadToolBase
 {
-    private const int MaxElements = 20;
+    private const int MaxElements = 10;
     private const int MaxParametersPerElement = 200;
 
     public GetElementDetailsTool(IRevitContext revitContext)
@@ -23,11 +23,12 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Description =
-            "Returns full parameter details for up to 20 elements: name, category, family, type, " +
-            "level, room and every parameter with its raw value, display value, storage type, " +
-            "read-only/shared flags and scope (instance or type). Use it after query_elements " +
-            "when you need parameter values or types before proposing changes.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":20},""includeTypeParameters"":{""type"":""boolean"",""default"":true}},""required"":[""elementIds""],""additionalProperties"":false}"
+            "Returns parameter details for up to 10 elements: name, category, family, type, " +
+            "level, room and parameters with their raw value, display value, storage type, " +
+            "read-only/shared flags and scope (instance or type). Type parameters are included " +
+            "only when includeTypeParameters=true. Narrow the payload with parameterNames " +
+            "(exact names) and onlyNonEmpty=true. Use it after query_elements before proposing changes.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""onlyNonEmpty"":{""type"":""boolean"",""default"":false}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -44,7 +45,11 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 "too_many_elements",
                 "At most " + MaxElements + " element ids are allowed per call.");
 
-        var includeTypeParameters = AgentJson.GetBool(args, "includeTypeParameters", true);
+        var includeTypeParameters = AgentJson.GetBool(args, "includeTypeParameters", false);
+        var onlyNonEmpty = AgentJson.GetBool(args, "onlyNonEmpty", false);
+        var parameterNames = new HashSet<string>(
+            AgentJson.GetStringArray(args, "parameterNames"),
+            StringComparer.OrdinalIgnoreCase);
         var details = new List<ElementDetails>();
         var missing = new List<long>();
 
@@ -59,7 +64,13 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 continue;
             }
 
-            details.Add(CreateDetails(doc, element, includeTypeParameters, ct));
+            details.Add(CreateDetails(
+                doc,
+                element,
+                includeTypeParameters,
+                onlyNonEmpty,
+                parameterNames,
+                ct));
         }
 
         if (details.Count == 0)
@@ -85,6 +96,8 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         Document doc,
         Element element,
         bool includeTypeParameters,
+        bool onlyNonEmpty,
+        HashSet<string> parameterNames,
         CancellationToken ct)
     {
         var card = AgentElementCardFactory.Create(doc, element);
@@ -102,7 +115,8 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 break;
             }
 
-            parameters.Add(CreateParameterInfo(parameter, "instance"));
+            if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
+                parameters.Add(CreateParameterInfo(parameter, "instance"));
         }
 
         if (includeTypeParameters && !truncated)
@@ -120,7 +134,8 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                         break;
                     }
 
-                    parameters.Add(CreateParameterInfo(parameter, "type"));
+                    if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
+                        parameters.Add(CreateParameterInfo(parameter, "type"));
                 }
             }
         }
@@ -138,6 +153,41 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             ParametersTruncated = truncated,
             Parameters = parameters
         };
+    }
+
+    private static bool ShouldInclude(
+        Parameter parameter,
+        bool onlyNonEmpty,
+        HashSet<string> parameterNames)
+    {
+        var name = parameter.Definition?.Name;
+        if (parameterNames.Count > 0
+            && (string.IsNullOrEmpty(name) || !parameterNames.Contains(name!)))
+        {
+            return false;
+        }
+
+        if (!onlyNonEmpty)
+            return true;
+
+        try
+        {
+            if (!parameter.HasValue)
+                return false;
+
+            return parameter.StorageType switch
+            {
+                StorageType.String => !string.IsNullOrWhiteSpace(parameter.AsString()),
+                StorageType.Integer => parameter.AsInteger() != 0,
+                StorageType.Double => Math.Abs(parameter.AsDouble()) > 1e-9,
+                StorageType.ElementId => parameter.AsElementId() != ElementId.InvalidElementId,
+                _ => true
+            };
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static ParameterValueInfo CreateParameterInfo(Parameter parameter, string scope)

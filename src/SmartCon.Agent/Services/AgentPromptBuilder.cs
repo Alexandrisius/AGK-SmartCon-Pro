@@ -29,6 +29,12 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 5. Never batch more items than the schema allows; split large jobs into several calls.
 6. If a write result contains truncated=true or a limit_exceeded error, narrow the request instead of repeating it.
 7. undo_last reverts only changes made by SmartCon in this document and skips items changed by somebody else (conflicts).
+
+## Context budget
+- Start with summarize_elements for counts and list_views with summaryOnly=true; do not dump whole collections.
+- query_elements: default 50, max 200. When truncated=true use offset/nextOffset; when a tool returns query_too_broad, add filters instead of retrying.
+- Use fields[] to request only the properties you need, and get_element_details with parameterNames/onlyNonEmpty for parameter work.
+- A result with compacted=true was replaced by a digest to save context; re-run a narrower tool call if you still need the data. Never repeat an identical tool call.
 ";
 
     public string Build(AgentProjectContext context)
