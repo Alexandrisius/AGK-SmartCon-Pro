@@ -118,12 +118,13 @@ public sealed class AgentContextBudgetTests : RevitApiTest
         var data = result.Data!.Value;
         await Assert.That(data.TryGetProperty("ignoredFields", out _)).IsFalse();
 
+        // P2-8: returned keys match the requested names ("type" stays "type").
         var view = data.GetProperty("views")[0];
         await Assert.That(view.TryGetProperty("viewId", out _)).IsTrue();
         await Assert.That(view.TryGetProperty("name", out _)).IsTrue();
-        await Assert.That(view.TryGetProperty("viewType", out var type)).IsTrue();
+        await Assert.That(view.TryGetProperty("type", out var type)).IsTrue();
         await Assert.That(type.GetString()).IsEqualTo("FloorPlan");
-        await Assert.That(view.TryGetProperty("levelName", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("level", out _)).IsTrue();
     }
 
     [Test]
@@ -138,9 +139,10 @@ public sealed class AgentContextBudgetTests : RevitApiTest
         var data = result.Data!.Value;
         await Assert.That(data.TryGetProperty("ignoredFields", out _)).IsFalse();
 
+        // P2-8: null-valued aliases keep the requested key ("template" stays "template").
         var view = data.GetProperty("views")[0];
-        await Assert.That(view.TryGetProperty("templateName", out _)).IsTrue();
-        await Assert.That(view.TryGetProperty("sheetNumber", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("template", out _)).IsTrue();
+        await Assert.That(view.TryGetProperty("sheet", out _)).IsTrue();
     }
 
     [Test]
