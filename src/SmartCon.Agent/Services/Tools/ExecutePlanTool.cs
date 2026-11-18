@@ -153,7 +153,7 @@ public sealed class ExecutePlanTool : IAgentTool
             steps = Steps(result),
             hint = "Nothing was changed. Show this diff to the user and call execute_plan with " +
                    "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
-                   " only after explicit approval."
+                   " only after explicit approval. Per-step dryRun flags do not affect the digest."
         }, SerializerOptions);
 
         return ToolResult.Ok(
@@ -172,8 +172,12 @@ public sealed class ExecutePlanTool : IAgentTool
             steps = Steps(result),
             verified = result.Verified,
             mismatches = result.Mismatches,
+            expectationsChecked = result.ExpectationsChecked,
             hint = result.Mismatches.Count == 0
-                ? "All expectations verified by the read-back."
+                ? "All expectations verified by the read-back." +
+                  (result.ExpectationsChecked == 0
+                      ? " No read-back expectations were declared, so there is nothing to verify."
+                      : string.Empty)
                 : "Read-back found mismatches. Review them and offer undo_last for the " +
                   "affected step."
         }, SerializerOptions);
@@ -193,9 +197,35 @@ public sealed class ExecutePlanTool : IAgentTool
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,
+            items = StepItems(step),
+            readBackExecuted = step.ReadBackExecuted,
+            expectationsChecked = step.ExpectationsChecked,
+            verified = step.VerifiedCount,
+            mismatches = step.MismatchCount,
             fidelityMatched = step.FidelityChecked ? step.FidelityMatched : (bool?)null,
             preflightSkipped = step.PreflightSkipped
         }).ToList();
+
+    /// <summary>
+    /// Per-item diff from the step's dry run (or apply): changed / skipped / failed
+    /// cards with id, name, before and after. Without it the model has to re-read
+    /// the model just to show the user what will change (live dogfood P1-4).
+    /// </summary>
+    private static JsonElement? StepItems(AgentPlanStepResult step)
+    {
+        var result = step.DryRunResult ?? step.ApplyResult;
+        if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
+            return null;
+
+        if (!data.TryGetProperty("changed", out _)
+            && !data.TryGetProperty("skipped", out _)
+            && !data.TryGetProperty("failed", out _))
+        {
+            return null;
+        }
+
+        return data;
+    }
 
     private static AgentPlan ParsePlan(JsonElement args)
     {

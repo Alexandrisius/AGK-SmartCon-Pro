@@ -29,7 +29,10 @@ public sealed class DecisionsActionRiskGate : IActionRiskGate
         if (!_client.IsEnabled)
             return new AgentActionRiskAssessment
             {
-                Decision = AgentRiskDecision.Confirm,
+                // Disabled means "no decision layer", not "unsafe": behave exactly
+                // as if the gate were not registered (the executor matrix still
+                // applies its own hard guards).
+                Decision = AgentRiskDecision.Auto,
                 Source = "disabled"
             };
 

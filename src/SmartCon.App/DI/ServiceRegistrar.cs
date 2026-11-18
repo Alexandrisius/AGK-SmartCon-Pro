@@ -492,15 +492,17 @@ public static class ServiceRegistrar
             new HttpDecisionClient(sp.GetRequiredService<AgentDecisionsSettings>()));
         services.AddSingleton<IToolRouter>(sp =>
         {
-            var rule = new RuleToolRouter();
-            var settings = sp.GetRequiredService<AgentDecisionsSettings>();
-            return settings.UseRouter && settings.IsAvailable
-                ? new DecisionsToolRouter(rule, sp.GetRequiredService<IAgentDecisionClient>())
-                : rule;
+            // Always wrapped: the decision router falls back to BM25 when the
+            // decision layer is disabled at startup, and picks the model chosen in
+            // the settings UI immediately (no restart).
+            return new DecisionsToolRouter(
+                new RuleToolRouter(), sp.GetRequiredService<IAgentDecisionClient>());
         });
 
-        if (decisionsSettings.IsAvailable)
-            services.AddSingleton<IActionRiskGate, DecisionsActionRiskGate>();
+        // Registered unconditionally: when disabled the gate returns Auto and the
+        // executor behaves as before, but enabling it in the settings UI works
+        // without a restart.
+        services.AddSingleton<IActionRiskGate, DecisionsActionRiskGate>();
 
         services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
             sp.GetServices<IAgentTool>(), sp.GetRequiredService<FindToolsTool>()));

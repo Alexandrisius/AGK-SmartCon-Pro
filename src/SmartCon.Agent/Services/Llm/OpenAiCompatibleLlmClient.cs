@@ -16,17 +16,13 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
     private const int MaxAttempts = 3;
 
     private readonly AgentLlmSettings _settings;
-    private readonly bool _hasCustomHandler;
     private readonly string? _openCodeSession;
-    private HttpClient _http;
-    private string _proxyUrlUsed;
+    private readonly HttpClient _http;
 
     public OpenAiCompatibleLlmClient(AgentLlmSettings settings, HttpMessageHandler? handler = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _hasCustomHandler = handler is not null;
-        _proxyUrlUsed = settings.ProxyUrl ?? string.Empty;
-        _http = handler is null ? CreateHttpClient(_proxyUrlUsed) : new HttpClient(handler);
+        _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = TimeSpan.FromSeconds(Math.Max(10, settings.TimeoutSeconds));
         _openCodeSession = settings.IsOpenCodeGo ? Guid.NewGuid().ToString("N") : null;
     }
@@ -122,34 +118,6 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
 
     public void Dispose() => _http?.Dispose();
 
-    private HttpClient EnsureHttpClient()
-    {
-        var desiredProxy = _settings.ProxyUrl ?? string.Empty;
-        if (_hasCustomHandler
-            || string.Equals(desiredProxy, _proxyUrlUsed, StringComparison.Ordinal))
-        {
-            return _http;
-        }
-
-        _http.Dispose();
-        _http = CreateHttpClient(desiredProxy);
-        _http.Timeout = TimeSpan.FromSeconds(Math.Max(10, _settings.TimeoutSeconds));
-        _proxyUrlUsed = desiredProxy;
-        return _http;
-    }
-
-    private static HttpClient CreateHttpClient(string? proxyUrl)
-    {
-        var handler = new HttpClientHandler();
-        if (!string.IsNullOrWhiteSpace(proxyUrl))
-        {
-            handler.Proxy = new WebProxy(proxyUrl);
-            handler.UseProxy = true;
-        }
-
-        return new HttpClient(handler);
-    }
-
     private string BuildEndpoint() =>
         _settings.BaseUrl.TrimEnd('/') + "/chat/completions";
 
@@ -157,7 +125,7 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
     {
         Exception? lastError = null;
         var endpoint = BuildEndpoint();
-        var http = EnsureHttpClient();
+        var http = _http;
 
         for (var attempt = 0; attempt < MaxAttempts; attempt++)
         {

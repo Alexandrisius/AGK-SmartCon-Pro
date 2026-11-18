@@ -36,7 +36,7 @@ public sealed class FindToolsTool : IAgentTool
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Category = "Meta",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""query"":{""type"":""string"",""minLength"":1},""context"":{""type"":""string""},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}},""required"":[""query""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""query"":{""type"":""string"",""minLength"":1},""context"":{""type"":""string""},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":8}},""required"":[""query""],""additionalProperties"":false}"
     };
 
     internal void Attach(IToolRegistry registry) => _registry = registry;
@@ -54,27 +54,78 @@ public sealed class FindToolsTool : IAgentTool
         if (registry is null)
             return ToolResult.Fail("tool_failed", "The tool catalog is unavailable.");
 
-        var limit = GetInt(args, "limit", 5);
+        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 8), 10));
         var all = registry.GetDefinitions()
             .Where(definition => !string.Equals(
                 definition.Name, Definition.Name, StringComparison.Ordinal))
             .ToList();
 
         var state = ComposeState(query!, GetString(args, "context"));
+
+        // The generic router always keeps the core read tools, so a small
+        // find_tools limit used to be spent entirely on them and write tools were
+        // never returned (live dogfood P0-3). Rank lexically first, then merge the
+        // configured (possibly decision-model) router result.
+        var lexical = RuleToolRouter.RankOnly(state, all, System.Math.Max(limit, 8));
         var decision = await _router
-            .RouteAsync(state, all, System.Math.Max(1, System.Math.Min(limit, 10)), ct)
+            .RouteAsync(state, all, System.Math.Max(limit, 8), ct)
             .ConfigureAwait(false);
 
+        var merged = new List<AgentToolDefinition>(limit + 2);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Add(AgentToolDefinition definition)
+        {
+            if (names.Add(definition.Name))
+                merged.Add(definition);
+        }
+
+        var writeIntent = HasWriteIntent(state);
+        if (writeIntent)
+        {
+            foreach (var definition in lexical.Tools.Where(tool => tool.Risk != AgentToolRisk.Read))
+                Add(definition);
+        }
+
+        foreach (var definition in lexical.Tools)
+            Add(definition);
+
+        foreach (var definition in decision.Tools)
+            Add(definition);
+
+        var warning = (string?)null;
+        if (writeIntent && merged.All(tool => tool.Risk == AgentToolRisk.Read))
+        {
+            // Last resort: the lexical score found no write tool at all. Return the
+            // closest write tools explicitly instead of silently answering with a
+            // read-only catalog.
+            var writeTools = all.Where(tool => tool.Risk != AgentToolRisk.Read).ToList();
+            var rescue = RuleToolRouter.RankOnly(
+                state + " rename apply set hide show copy replace configure", writeTools, 3);
+            foreach (var definition in rescue.Tools)
+            {
+                if (definition.Risk != AgentToolRisk.Read)
+                    Add(definition);
+            }
+
+            warning = "No write tool matched the query directly; the closest write tools are " +
+                      "included. Check their descriptions before concluding that a change is " +
+                      "impossible.";
+        }
+
+        var returned = merged.Take(System.Math.Min(limit + 2, 10)).ToList();
         var payload = new
         {
-            total = decision.Tools.Count,
+            total = returned.Count,
             fallback = decision.Fallback,
-            tools = decision.Tools.Select(definition => new
+            writeIntent,
+            warning,
+            tools = returned.Select(definition => new
             {
                 name = definition.Name,
                 description = definition.Description,
                 risk = definition.Risk.ToString(),
                 supportsDryRun = definition.SupportsDryRun,
+                alreadyAvailable = context.ActiveToolNames.Contains(definition.Name),
                 inputSchema = ParseSchema(definition.InputSchemaJson)
             }).ToList()
         };
@@ -83,7 +134,8 @@ public sealed class FindToolsTool : IAgentTool
         {
             return ToolResult.Ok(
                 JsonSerializer.SerializeToElement(payload),
-                "Returned " + decision.Tools.Count + " matching tool definition(s).");
+                "Returned " + returned.Count + " matching tool definition(s)." +
+                (warning is null ? string.Empty : " " + warning));
         }
         catch (Exception ex)
         {
@@ -92,6 +144,31 @@ public sealed class FindToolsTool : IAgentTool
                 " [Action: check the tool schema of the matching tools]");
             return ToolResult.Fail("tool_failed", ex.Message);
         }
+    }
+
+    private static bool HasWriteIntent(string text)
+    {
+        var value = text.ToLowerInvariant();
+        string[] markers =
+        {
+            "переимен", "примен", "настро", "сконфигур", "скрыть", "показать", "задать",
+            "установ", "замен", "скопир", "перенес", "удал", "созда", "назнач",
+            "rename", "apply", "set ", "hide", "show", "copy", "replace", "configure",
+            "delete", "create", "remap", "assign"
+        };
+
+        foreach (var marker in markers)
+        {
+#if NET8_0_OR_GREATER
+            if (value.Contains(marker, StringComparison.Ordinal))
+                return true;
+#else
+            if (value.IndexOf(marker, StringComparison.Ordinal) >= 0)
+                return true;
+#endif
+        }
+
+        return false;
     }
 
     private static string ComposeState(string query, string? context)

@@ -252,6 +252,7 @@ public sealed partial class AgentPlanExecutor
                     tool, step.ArgumentsReadBackJson, false, execution, ct)
                 .ConfigureAwait(false);
             result.ReadBackResult = readBack;
+            result.ReadBackExecuted = true;
 
             if (!readBack.Success || readBack.Data is not { } data)
             {
@@ -261,6 +262,7 @@ public sealed partial class AgentPlanExecutor
             }
 
             var stepMismatch = false;
+            result.ExpectationsChecked = step.ReadBackExpectations.Count;
             foreach (var expectation in step.ReadBackExpectations)
             {
                 var actual = ResolvePath(data, expectation.Path);
@@ -268,11 +270,13 @@ public sealed partial class AgentPlanExecutor
                     || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
                 {
                     stepMismatch = true;
+                    result.MismatchCount++;
                     mismatches.Add(step.StepId + ": " + expectation.Path + " expected '" +
                                    expectation.Expected + "', actual '" + (actual ?? "null") + "'");
                 }
                 else
                 {
+                    result.VerifiedCount++;
                     verified.Add(step.StepId + ": " + expectation.Path + " = " + actual);
                 }
             }
@@ -386,6 +390,12 @@ public sealed partial class AgentPlanExecutor
         var current = element;
         foreach (var segment in path.Split('.'))
         {
+            if (TryResolveById(current, segment, out var byId))
+            {
+                current = byId;
+                continue;
+            }
+
             if (current.ValueKind == JsonValueKind.Object
                 && current.TryGetProperty(segment, out var property))
             {
@@ -414,6 +424,81 @@ public sealed partial class AgentPlanExecutor
             JsonValueKind.False => "false",
             JsonValueKind.Null => null,
             _ => current.GetRawText()
+        };
+    }
+
+    /// <summary>
+    /// Addresses a specific element inside an array: <c>byId[1704789].name</c>.
+    /// Read-back results are arrays of cards, so index-based access easily checks
+    /// the wrong object (live dogfood P0-2); byId matches the "id", "viewId",
+    /// "elementId" or "levelId" property of an object anywhere in the current node.
+    /// </summary>
+    private static bool TryResolveById(JsonElement current, string segment, out JsonElement found)
+    {
+        found = default;
+        if (!segment.StartsWith("byId[", StringComparison.Ordinal)
+            || !segment.EndsWith("]", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var raw = segment.Substring(5, segment.Length - 6).Trim().Trim('"', '\'');
+        if (raw.Length == 0)
+            return false;
+
+        return TryFindById(current, raw, out found);
+    }
+
+    private static bool TryFindById(JsonElement element, string id, out JsonElement found)
+    {
+        found = default;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (IsIdProperty(property.Name)
+                        && PropertyMatches(property.Value, id))
+                    {
+                        found = element;
+                        return true;
+                    }
+
+                    if (TryFindById(property.Value, id, out found))
+                        return true;
+                }
+
+                return false;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (TryFindById(item, id, out found))
+                        return true;
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsIdProperty(string name) =>
+        string.Equals(name, "id", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "viewId", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "elementId", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "levelId", StringComparison.OrdinalIgnoreCase);
+
+    private static bool PropertyMatches(JsonElement value, string id)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number => string.Equals(
+                value.GetRawText(), id, StringComparison.Ordinal),
+            JsonValueKind.String => string.Equals(
+                value.GetString(), id, StringComparison.Ordinal),
+            _ => false
         };
     }
 }

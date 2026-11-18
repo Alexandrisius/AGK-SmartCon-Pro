@@ -17,11 +17,11 @@ public sealed class AgentDecisionsSettings
     public const string DefaultTypeSafeEndpoint = "https://api.typesafe.ai/v1/systemone";
     public const string DefaultPerplexityEndpoint = "https://api.perplexity.ai/v1/decisions";
 
-    public bool Enabled { get; init; }
+    public bool Enabled { get; private set; }
 
     public string Provider { get; init; } = "openrouter";
 
-    public required string Model { get; init; }
+    public string Model { get; private set; } = DefaultOpenRouterModel;
 
     public required string Endpoint { get; init; }
 
@@ -33,6 +33,25 @@ public sealed class AgentDecisionsSettings
     public bool UseRouter { get; init; }
 
     public bool IsAvailable => Enabled && !string.IsNullOrWhiteSpace(ApiKey);
+
+    /// <summary>
+    /// Applies the model chosen in the settings UI and persists it to
+    /// secrets.env. An empty value disables the decision layer without losing
+    /// the last model.
+    /// </summary>
+    public void Apply(string? model)
+    {
+        var value = model?.Trim() ?? string.Empty;
+        Enabled = value.Length > 0;
+        if (value.Length > 0)
+            Model = value;
+
+        AgentEnvFile.Save(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["SMARTCON_DECIDER_ENABLED"] = Enabled ? "1" : "0",
+            ["SMARTCON_DECIDER_MODEL"] = Model
+        });
+    }
 
     public static AgentDecisionsSettings Load()
     {

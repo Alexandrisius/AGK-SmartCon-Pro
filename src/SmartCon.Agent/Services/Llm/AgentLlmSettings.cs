@@ -14,8 +14,6 @@ public sealed class AgentLlmSettings
 
     public string ApiKey { get; set; } = string.Empty;
 
-    public string ProxyUrl { get; set; } = string.Empty;
-
     public double Temperature { get; set; } = 0.2;
 
     public int MaxOutputTokens { get; set; } = 8192;
@@ -74,7 +72,6 @@ public sealed class AgentLlmSettings
             Model = Get(values, "SMARTCON_LLM_MODEL") ?? DefaultModel,
             BaseUrl = baseUrl.TrimEnd('/'),
             ApiKey = apiKey,
-            ProxyUrl = Get(values, "SMARTCON_LLM_PROXY") ?? string.Empty,
             Temperature = ParseDouble(Get(values, "SMARTCON_LLM_TEMPERATURE"), 0.2),
             MaxOutputTokens = ParseInt(Get(values, "SMARTCON_LLM_MAX_OUTPUT_TOKENS"), 8192),
             TimeoutSeconds = ParseInt(Get(values, "SMARTCON_LLM_TIMEOUT_SECONDS"), 120),
@@ -93,7 +90,7 @@ public sealed class AgentLlmSettings
         };
     }
 
-    public void Apply(string provider, string model, string apiKey, string proxyUrl)
+    public void Apply(string provider, string model, string apiKey)
     {
         var targetProvider = string.IsNullOrWhiteSpace(provider) ? "openrouter" : provider.Trim();
         var providerChanged = !string.Equals(Provider, targetProvider, StringComparison.OrdinalIgnoreCase);
@@ -112,8 +109,6 @@ public sealed class AgentLlmSettings
             // key stored for the target provider, or clear it so the UI asks for one.
             ApiKey = LoadStoredKey(targetProvider);
         }
-
-        ProxyUrl = proxyUrl?.Trim() ?? string.Empty;
     }
 
     /// <summary>Test seam: replaces the stored-key lookup in unit tests.</summary>
@@ -141,8 +136,7 @@ public sealed class AgentLlmSettings
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["SMARTCON_LLM_PROVIDER"] = Provider,
-            ["SMARTCON_LLM_MODEL"] = Model,
-            ["SMARTCON_LLM_PROXY"] = ProxyUrl
+            ["SMARTCON_LLM_MODEL"] = Model
         };
 
         if (IsOpenCodeGo)

@@ -75,6 +75,24 @@ public sealed class ReportToolingFeedbackToolTests
         Assert.Equal("report_tooling_feedback", tool.Definition.Name);
     }
 
+    [Fact]
+    public async Task Execute_UnknownFields_AreReportedBack()
+    {
+        var store = new RecordingStore();
+        var tool = new ReportToolingFeedbackTool(store, new StubRuntime("p", "m"));
+
+        var result = await tool.ExecuteAsync(
+            new AgentToolContext(new ImmediateEvent(), "doc", Guid.Empty),
+            Parse("""{"area":"tools","rating":3,"issue":"x","typoField":1}"""),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var ignored = result.Data!.Value.GetProperty("ignoredFields");
+        Assert.Equal(1, ignored.GetArrayLength());
+        Assert.Equal("typoField", ignored[0].GetString());
+        Assert.Contains("typoField", result.Message);
+    }
+
     private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);

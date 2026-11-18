@@ -78,7 +78,7 @@ public sealed class ReportToolingFeedbackTool : IAgentTool
                 ContextJson = contextJson
             };
 
-            return RecordAsync(entry, ct);
+            return RecordAsync(entry, UnknownFields(args), ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -95,7 +95,10 @@ public sealed class ReportToolingFeedbackTool : IAgentTool
         }
     }
 
-    private async Task<ToolResult> RecordAsync(AgentFeedbackEntry entry, CancellationToken ct)
+    private async Task<ToolResult> RecordAsync(
+        AgentFeedbackEntry entry,
+        IReadOnlyList<string> ignoredFields,
+        CancellationToken ct)
     {
         await _store.RecordAsync(entry, ct).ConfigureAwait(false);
 
@@ -111,13 +114,17 @@ public sealed class ReportToolingFeedbackTool : IAgentTool
             recorded = true,
             feedbackId = entry.Id.ToString("D"),
             area = entry.Area,
-            rating = entry.Rating
+            rating = entry.Rating,
+            ignoredFields = ignoredFields.Count > 0 ? ignoredFields : null
         });
 
         return ToolResult.Ok(
             data,
             "Feedback recorded (id " + entry.Id.ToString("N").Substring(0, 8) + "). " +
-            "Report each distinct problem only once.",
+            "Report each distinct problem only once." +
+            (ignoredFields.Count > 0
+                ? " Unknown fields were ignored: " + string.Join(", ", ignoredFields) + "."
+                : string.Empty),
             affectedCount: 1);
     }
 
@@ -140,6 +147,26 @@ public sealed class ReportToolingFeedbackTool : IAgentTool
         }
 
         return value.GetString();
+    }
+
+    private static IReadOnlyList<string> UnknownFields(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return Array.Empty<string>();
+
+        var known = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "area", "toolName", "rating", "issue", "suggestion", "example"
+        };
+
+        var result = new List<string>();
+        foreach (var property in args.EnumerateObject())
+        {
+            if (!known.Contains(property.Name))
+                result.Add(property.Name);
+        }
+
+        return result;
     }
 
     private static int GetInt(JsonElement args, string property, int fallback)

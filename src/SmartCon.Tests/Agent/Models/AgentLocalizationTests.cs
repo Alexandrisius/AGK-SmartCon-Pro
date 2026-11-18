@@ -17,6 +17,9 @@ public sealed class AgentLocalizationTests
     [InlineData("Agent_Risk_Destructive")]
     [InlineData("Agent_Risk_Plan")]
     [InlineData("Agent_Risk_Discard")]
+    [InlineData("Agent_Settings_DecisionModel")]
+    [InlineData("Agent_Settings_DecisionHint")]
+    [InlineData("Agent_Decision_Off")]
     public void ApprovalAndRiskKeys_HaveRuAndEnText(string key)
     {
         Assert.True(LocalizationService.ContainsKey(key));

@@ -98,6 +98,7 @@ public sealed class AgentOrchestrator
         var systemMessage = AgentMessage.System(
             _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
         var definitions = await SelectToolDefinitionsAsync(userText, ct);
+        SetActiveToolNames(definitions);
 
         var usage = AgentUsage.Empty;
         var toolCallCount = 0;
@@ -219,6 +220,7 @@ public sealed class AgentOrchestrator
                     if (ExpandsCatalog(definitions, fullCatalog))
                     {
                         definitions = fullCatalog;
+                        SetActiveToolNames(definitions);
                         SmartConLogger.Debug(
                             "Agent expanded the tool catalog after find_tools: " +
                             definitions.Count + " definitions for the next round");
@@ -404,6 +406,10 @@ public sealed class AgentOrchestrator
         var json = ToolResultBudget.Serialize(result);
         return AgentTextSanitizer.SanitizeJson(json);
     }
+
+    private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions) =>
+        _sessionContext.ActiveToolNames =
+            definitions.Select(definition => definition.Name).ToList();
 
     private static bool ExpandsCatalog(
         IReadOnlyList<AgentToolDefinition> current,

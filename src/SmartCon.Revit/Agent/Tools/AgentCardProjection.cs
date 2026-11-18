@@ -26,13 +26,17 @@ internal static class AgentCardProjection
             ["family"] = new[] { "family" },
             ["category"] = new[] { "category" },
             ["name"] = new[] { "name" },
-            ["uniqueid"] = new[] { "uniqueId" }
+            ["uniqueid"] = new[] { "uniqueId" },
+            ["folder"] = new[] { "browserFolder" },
+            ["browserfolder"] = new[] { "browserFolder" },
+            ["inbrowser"] = new[] { "inBrowser" }
         };
 
     internal static JsonElement Apply(
         JsonElement card,
         IReadOnlyList<string>? fields,
-        ICollection<string>? ignoredFields = null)
+        ICollection<string>? ignoredFields = null,
+        IDictionary<string, string>? substitutedFields = null)
     {
         if (fields is null || fields.Count == 0)
             return card;
@@ -66,6 +70,11 @@ internal static class AgentCardProjection
             }
 
             projected[property] = value?.DeepClone();
+            if (!string.Equals(field, property, StringComparison.OrdinalIgnoreCase)
+                && substitutedFields is not null)
+            {
+                substitutedFields[field] = property;
+            }
         }
 
         return JsonSerializer.SerializeToElement(projected);

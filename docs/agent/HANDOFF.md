@@ -14,8 +14,9 @@
 | Проверка | Результат |
 |---|---|
 | Sweep 7 конфигураций (R19–R27) | 7/7, 0 ошибок |
-| Полный unit (`SmartCon.Tests`, Debug.R25) | 3494/3494 |
+| Полный unit (`SmartCon.Tests`, Debug.R25) | 3500/3500 |
 | Integration `AgentPlanExecutionTests` (Revit 2025) | 6/6 |
+| Agent integration R25 (полный сьют) | 77 passed, 2 skipped; live-eval упал на 1 стохастическом schema-invalid вызове, replay 40/40 PASS |
 | Eval replay 40 задач (Revit 2025) | 40/40, gate PASS |
 | Agent integration R27 | 78 passed, 2 skipped, 0 failed |
 | net48 (Revit 2023) | 245 passed, 12 skipped, 0 failed (платформенный сьют) |
@@ -34,10 +35,29 @@
 - Новый bypass-тест `set_view_visibility` (100 views × 3 categories > 200).
 - `AgentQueryToolsTests.GetViewSettings_ReturnsSeededPlanSettings` обновлён под C4: `compact=false` для полного payload (R27-падение было устаревшим тестом, не регрессом).
 
+### Полиш по фидбэку владельца и live-сессии (2026-11-18, коммит после c64a9109)
+
+UI:
+- Выбор режима подтверждения перенесён из шапки в композер (слева, рядом со скрепкой), как в харнесах; шапка освободилась под «+» и шестерёнку.
+- В настройках появился выбор decision-модели (`Не использовать` / `pplx-decider-v1.3:free` / `pplx-decider-latest` / `jev-1.13.0`); выбор сразу применяется и пишется в `secrets.env`. Роутер и risk gate регистрируются всегда: при отключённой модели ведут себя как раньше.
+- Поле «Прокси» удалено из настроек, модели и LLM-клиента (вместе с `SMARTCON_LLM_PROXY`).
+- Вложения: картинка нормализуется (alpha-канал скриншота композитится на белый) — миниатюра, пузырь, полноэкранный просмотр и payload больше не белые; клик по миниатюре открывает просмотр, крестик — круглый, поверх белого, появляется по ховеру и не вылезает за угол.
+
+Agent feedback (P0–P2):
+- **P0-1**: digest плана больше не зависит от `dryRun` — ни от `step.DryRun`, ни от `dryRun` внутри `arguments`; preview и apply сходятся. Hint обновлён.
+- **P0-2**: read-back понимает `byId[<elementId>].prop` (поиск карточки по id/viewId/elementId/levelId); в результате появились `expectationsChecked` и счётчики verified/mismatch по шагам — пустой `verified` больше не путается с «ожиданий не задавали».
+- **P0-3**: `find_tools` ранжирует без принудительных core-read (они съедали весь лимит), возвращает write-инструменты, `risk`, `alreadyAvailable` и warning при write-интенте без write-результата.
+- **P1-4**: `execute_plan` preview/apply отдаёт per-item `changed/skipped/failed` (id, name, before, after) из dry-run/apply.
+- **P1-5**: `apply_view_template` dry-run отдаёт `delta`: scale before→after, hiddenCategoriesAdded, controlledParameters, overwritten, previousTemplate.
+- **P1-6**: `list_views` возвращает `browserFolder`/`inBrowser`, фильтр `folders`, группировку `byFolder` (через `BrowserOrganization.GetCurrentBrowserOrganizationForViews`).
+- **P2-7**: `report_tooling_feedback` всегда в shortlist; неизвестные поля возвращаются в `ignoredFields`.
+- **P2-8**: `substitutedFields` в `list_views`/`get_view_settings` — видно, что `template` заменён на `templateName`.
+- **P2-9**: default limit `list_views` = 200, `truncated` уже был.
+
 ### Что осталось (не блокеры финального коммита)
 
 - 5-й прогон валидатора `general` не проводился — решение владельца.
-- Ручная проверка UI режимов подтверждения в Revit: ComboBox в шапке, баннер, «Выключить», строка рисков в overlay, сброс режима при смене документа.
+- Ручная проверка UI в Revit: режим подтверждения в композере, выбор decision-модели, вложения (превью/ховер/просмотр), строка рисков в overlay, сброс режима при смене документа.
 - D: `execute_plan` пока не входит в 40 eval-задач; live-запись plan-кейсов не делалась. `docs/agent/00-strategy/eval.md` содержит базовые метрики и заготовку «до/после».
 - Новые Agent-модели/интерфейсы не перенесены в `docs/domain/**` — по правилам проекта docs правятся после ручной приёмки.
 - Production `execute_plan`: single-use nonce/expiry остаются только в прямом API; в tool-пути digest-binding + внешнее подтверждение.

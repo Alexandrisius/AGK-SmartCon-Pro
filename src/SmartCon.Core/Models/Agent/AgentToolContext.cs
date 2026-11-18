@@ -26,4 +26,12 @@ public sealed class AgentToolContext
     /// to modify the model when this flag is false and dryRun is false.
     /// </summary>
     public bool WriteApproved { get; init; }
+
+    /// <summary>
+    /// Names of the tools the model can already see in this turn. Used by
+    /// <c>find_tools</c> to flag results as "already available" without another
+    /// round-trip.
+    /// </summary>
+    public IReadOnlyCollection<string> ActiveToolNames { get; init; } =
+        Array.Empty<string>();
 }

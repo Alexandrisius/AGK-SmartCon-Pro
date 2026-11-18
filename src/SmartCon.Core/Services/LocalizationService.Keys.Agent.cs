@@ -100,10 +100,14 @@ public static partial class LocalizationService
         en["Agent_Settings_ApiKey"] = "API key";
         ru["Agent_Settings_ApiKeyHint"] = "Оставьте пустым, чтобы сохранить текущий ключ";
         en["Agent_Settings_ApiKeyHint"] = "Leave empty to keep the current key";
-        ru["Agent_Settings_Proxy"] = "Прокси (необязательно)";
-        en["Agent_Settings_Proxy"] = "Proxy (optional)";
-        ru["Agent_Settings_ProxyHint"] = "Например, http://127.0.0.1:7890";
-        en["Agent_Settings_ProxyHint"] = "For example, http://127.0.0.1:7890";
+        ru["Agent_Settings_DecisionModel"] = "Decision-модель";
+        en["Agent_Settings_DecisionModel"] = "Decision model";
+        ru["Agent_Settings_DecisionHint"] =
+            "Быстрый роутер инструментов и оценка риска. «Не использовать» — обычный BM25-роутер.";
+        en["Agent_Settings_DecisionHint"] =
+            "Fast tool router and risk gate. \"Don't use\" keeps the deterministic BM25 router.";
+        ru["Agent_Decision_Off"] = "Не использовать";
+        en["Agent_Decision_Off"] = "Don't use";
         ru["Agent_Settings_Cancel"] = "Отмена";
         en["Agent_Settings_Cancel"] = "Cancel";
         ru["Agent_Settings_Save"] = "Сохранить";

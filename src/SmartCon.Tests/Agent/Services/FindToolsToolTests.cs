@@ -40,8 +40,14 @@ public sealed class FindToolsToolTests
         Assert.NotNull(router.LastQuery);
         Assert.Contains("переименуй", router.LastQuery);
         Assert.Contains("нашел 3 вида SC_Eval", router.LastQuery);
-        Assert.Equal(5, router.LastMaxTools);
-        Assert.Equal(1, result.Data!.Value.GetProperty("total").GetInt32());
+        Assert.Equal(8, router.LastMaxTools);
+        var tools = result.Data!.Value.GetProperty("tools");
+        Assert.True(tools.GetArrayLength() >= 1);
+        Assert.Contains(tools.EnumerateArray(), tool =>
+            string.Equals(
+                tool.GetProperty("name").GetString(), "write_tool", StringComparison.Ordinal));
+        Assert.Contains(tools.EnumerateArray(), tool =>
+            tool.GetProperty("risk").GetString() == "Write");
     }
 
     [Fact]

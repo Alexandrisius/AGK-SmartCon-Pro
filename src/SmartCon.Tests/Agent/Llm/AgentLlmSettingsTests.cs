@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 using SmartCon.Agent.Services.Llm;
 
 namespace SmartCon.Tests.Agent.Llm;
@@ -17,7 +17,7 @@ public sealed class AgentLlmSettingsTests : IDisposable
             ApiKey = "sk-or-current"
         };
 
-        settings.Apply("openrouter", "new-model", string.Empty, string.Empty);
+        settings.Apply("openrouter", "new-model", string.Empty);
 
         Assert.Equal("sk-or-current", settings.ApiKey);
         Assert.Equal("new-model", settings.Model);
@@ -33,7 +33,7 @@ public sealed class AgentLlmSettingsTests : IDisposable
             ApiKey = "sk-or-previous"
         };
 
-        settings.Apply("opencode-go", "other-model", string.Empty, string.Empty);
+        settings.Apply("opencode-go", "other-model", string.Empty);
 
         Assert.Equal(string.Empty, settings.ApiKey);
         Assert.Equal("opencode-go", settings.Provider);
@@ -56,7 +56,7 @@ public sealed class AgentLlmSettingsTests : IDisposable
             ApiKey = "sk-or-previous"
         };
 
-        settings.Apply("opencode-go", "other-model", string.Empty, string.Empty);
+        settings.Apply("opencode-go", "other-model", string.Empty);
 
         Assert.Equal("opencode-go", requested);
         Assert.Equal("sk-go-stored", settings.ApiKey);
@@ -73,7 +73,7 @@ public sealed class AgentLlmSettingsTests : IDisposable
             ApiKey = "sk-or-previous"
         };
 
-        settings.Apply("opencode-go", "other-model", " sk-explicit ", string.Empty);
+        settings.Apply("opencode-go", "other-model", " sk-explicit ");
 
         Assert.Equal("sk-explicit", settings.ApiKey);
     }

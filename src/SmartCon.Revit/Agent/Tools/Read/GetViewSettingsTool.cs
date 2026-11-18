@@ -77,13 +77,21 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
     private static JsonElement Project(JsonElement full, IReadOnlyList<string> fields)
     {
         var ignored = new List<string>();
-        var projected = AgentCardProjection.Apply(full, fields, ignored);
-        if (ignored.Count == 0)
+        var substituted = new Dictionary<string, string>(StringComparer.Ordinal);
+        var projected = AgentCardProjection.Apply(full, fields, ignored, substituted);
+        if (ignored.Count == 0 && substituted.Count == 0)
             return projected;
 
         var node = JsonNode.Parse(projected.GetRawText()) as JsonObject ?? new JsonObject();
-        node["ignoredFields"] = ToArray(ignored);
-        node["availableFields"] = ToArray(AgentCardProjection.AvailableFields(full));
+        if (ignored.Count > 0)
+        {
+            node["ignoredFields"] = ToArray(ignored);
+            node["availableFields"] = ToArray(AgentCardProjection.AvailableFields(full));
+        }
+
+        if (substituted.Count > 0)
+            node["substitutedFields"] = JsonSerializer.SerializeToNode(substituted);
+
         return JsonSerializer.SerializeToElement(node);
     }
 

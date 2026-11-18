@@ -13,4 +13,10 @@ public sealed class AgentSessionContext
     /// the active document changes (see AgentOrchestrator).
     /// </summary>
     public AgentApprovalMode ApprovalMode { get; set; } = AgentApprovalMode.ConfirmWrites;
+
+    /// <summary>
+    /// Tools sent to the model in the current turn (routed shortlist or the full
+    /// catalog after find_tools). find_tools marks matching results as available.
+    /// </summary>
+    public IReadOnlyCollection<string> ActiveToolNames { get; set; } = Array.Empty<string>();
 }

@@ -98,7 +98,8 @@ public sealed partial class AgentToolExecutor : IToolExecutor
             _sessionContext.DocumentId,
             _sessionContext.ConversationId)
         {
-            WriteApproved = approved
+            WriteApproved = approved,
+            ActiveToolNames = _sessionContext.ActiveToolNames
         };
 
         return await tool.ExecuteAsync(context, args, ct).ConfigureAwait(false);

@@ -25,6 +25,12 @@ public sealed class ViewCard
     public bool IsOnSheet { get; init; }
 
     public string? SheetNumber { get; init; }
+
+    /// <summary>Project-browser folder path from the current view organization.</summary>
+    public string? BrowserFolder { get; init; }
+
+    /// <summary>False when the current browser-organization filter hides the view.</summary>
+    public bool InBrowser { get; init; } = true;
 }
 
 public sealed class LevelCard

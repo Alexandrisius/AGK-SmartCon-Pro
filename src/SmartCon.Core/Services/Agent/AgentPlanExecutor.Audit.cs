@@ -16,9 +16,8 @@ public sealed partial class AgentPlanExecutor
             {
                 step.StepId,
                 step.ToolName,
-                ArgumentsJson = Canonicalize(step.ArgumentsJson),
+                ArgumentsJson = CanonicalizeWithoutDryRun(step.ArgumentsJson),
                 DependsOn = step.DependsOn.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                step.DryRun,
                 step.ExpectedChanges,
                 step.ReadBackTool,
                 ArgumentsReadBackJson = Canonicalize(step.ArgumentsReadBackJson),
@@ -34,6 +33,31 @@ public sealed partial class AgentPlanExecutor
         });
 
         return AgentActionDigest.Compute("agent_plan", json, documentId ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Canonical form of the arguments used for the plan digest. The dry-run flag
+    /// is a transport/service flag, not part of what the user approves: the
+    /// preview runs with dryRun=true and the apply flips it to false, so it must
+    /// not change the digest (live dogfood P0-1).
+    /// </summary>
+    private static string CanonicalizeWithoutDryRun(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return "{}";
+
+        try
+        {
+            if (System.Text.Json.Nodes.JsonNode.Parse(json!) is not System.Text.Json.Nodes.JsonObject obj)
+                return AgentActionDigest.CanonicalizeJson(json!);
+
+            obj.Remove("dryRun");
+            return AgentActionDigest.CanonicalizeJson(obj.ToJsonString());
+        }
+        catch (JsonException)
+        {
+            return json!;
+        }
     }
 
     /// <summary>Whitespace/key-order-insensitive form of a step's JSON arguments.</summary>

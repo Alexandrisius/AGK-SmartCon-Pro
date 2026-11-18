@@ -46,7 +46,8 @@ public sealed class RuleToolRouter : IToolRouter
         "get_element_details",
         "summarize_elements",
         "find_tools",
-        "execute_plan"
+        "execute_plan",
+        "report_tooling_feedback"
     };
 
     private static readonly string[] RussianSuffixes =
@@ -72,12 +73,24 @@ public sealed class RuleToolRouter : IToolRouter
         IReadOnlyList<AgentToolDefinition> tools,
         int maxTools = 14,
         CancellationToken ct = default) =>
-        Task.FromResult(RouteCore(query, tools, maxTools));
+        Task.FromResult(RouteCore(query, tools, maxTools, includeCore: true));
+
+    /// <summary>
+    /// Pure BM25 ranking without the always-on core-read tools. Used by
+    /// <c>find_tools</c>: its small limit must be spent on matches, not on the
+    /// read tools the model already has (live dogfood P0-3).
+    /// </summary>
+    public static ToolRoutingDecision RankOnly(
+        string query,
+        IReadOnlyList<AgentToolDefinition> tools,
+        int maxTools) =>
+        RouteCore(query, tools, maxTools, includeCore: false);
 
     private static ToolRoutingDecision RouteCore(
         string query,
         IReadOnlyList<AgentToolDefinition> tools,
-        int maxTools)
+        int maxTools,
+        bool includeCore)
     {
         if (tools.Count == 0)
             return new ToolRoutingDecision { Tools = Array.Empty<AgentToolDefinition>() };
@@ -127,7 +140,7 @@ public sealed class RuleToolRouter : IToolRouter
 
         foreach (var tool in tools)
         {
-            if (!CoreTools.Contains(tool.Name) || !selectedNames.Add(tool.Name))
+            if (!includeCore || !CoreTools.Contains(tool.Name) || !selectedNames.Add(tool.Name))
                 continue;
 
             selected.Add(tool);

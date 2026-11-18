@@ -4,6 +4,7 @@ using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services;
+using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.UI;
 using SmartCon.Core.Models.Agent;
@@ -22,6 +23,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private readonly IAgentProjectContextProvider _projectContextProvider;
     private readonly IAgentLlmClient _llmClient;
     private readonly AgentLlmSettings _settings;
+    private readonly AgentDecisionsSettings _decisionsSettings;
     private readonly IAgentFilePicker _filePicker;
     private readonly IAgentClipboardService _clipboardService;
     private readonly AgentConfirmationService _confirmationService;
@@ -44,6 +46,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         IAgentProjectContextProvider projectContextProvider,
         IAgentLlmClient llmClient,
         AgentLlmSettings settings,
+        AgentDecisionsSettings decisionsSettings,
         IAgentFilePicker filePicker,
         IAgentClipboardService clipboardService,
         AgentConfirmationService confirmationService,
@@ -57,6 +60,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             ?? throw new ArgumentNullException(nameof(projectContextProvider));
         _llmClient = llmClient ?? throw new ArgumentNullException(nameof(llmClient));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _decisionsSettings = decisionsSettings
+            ?? throw new ArgumentNullException(nameof(decisionsSettings));
         _filePicker = filePicker ?? throw new ArgumentNullException(nameof(filePicker));
         _clipboardService = clipboardService ?? throw new ArgumentNullException(nameof(clipboardService));
         _confirmationService = confirmationService

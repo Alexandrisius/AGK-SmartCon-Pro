@@ -8,7 +8,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 
 public sealed class ListViewsTool : AgentReadToolBase
 {
-    private const int DefaultLimit = 50;
+    private const int DefaultLimit = 200;
     private const int MaxLimit = 500;
 
     public ListViewsTool(IRevitContext revitContext)
@@ -22,14 +22,16 @@ public sealed class ListViewsTool : AgentReadToolBase
         Description =
             "Lists project views (not sheets and not view templates by default). " +
             "Filters: view types (FloorPlan, CeilingPlan, Section, ThreeD, Elevation, " +
-            "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring. " +
-            "Returns view id, name, type, level, template, sheet number. Default limit 50, max 500. " +
-            "summaryOnly=true returns counts by view type and by level instead of cards. " +
-            "fields=[\"viewId\",\"name\",\"type\",\"level\"] projects each card onto the listed " +
-            "properties; unknown names are reported in ignoredFields with availableFields.",
+            "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring, " +
+            "browser folder path substring. Returns view id, name, type, level, template, " +
+            "sheet number, browserFolder and inBrowser. Default limit 200, max 500. " +
+            "summaryOnly=true returns counts by view type, level and browser folder instead of cards. " +
+            "fields=[\"viewId\",\"name\",\"type\",\"level\",\"folder\"] projects each card onto the " +
+            "listed properties; aliases and unknown names are reported in substitutedFields / " +
+            "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":50,""maximum"":500}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -40,10 +42,21 @@ public sealed class ListViewsTool : AgentReadToolBase
         var requestedTypes = AgentJson.GetStringArray(args, "types");
         var levelIds = AgentJson.GetLongArray(args, "levelIds");
         var nameContains = AgentJson.GetString(args, "nameContains");
+        var folders = AgentJson.GetStringArray(args, "folders");
         var includeTemplates = AgentJson.GetBool(args, "includeTemplates", false);
         var summaryOnly = AgentJson.GetBool(args, "summaryOnly", false);
         var fields = AgentJson.GetStringArray(args, "fields");
         var limit = Math.Max(1, Math.Min(AgentJson.GetInt(args, "limit", DefaultLimit), MaxLimit));
+
+        BrowserOrganization? browserOrganization = null;
+        try
+        {
+            browserOrganization = BrowserOrganization.GetCurrentBrowserOrganizationForViews(doc);
+        }
+        catch (Exception)
+        {
+            // Older projects or a broken browser organization: folder data is optional.
+        }
 
         var matched = new List<ViewCard>();
         foreach (var view in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
@@ -61,7 +74,11 @@ public sealed class ListViewsTool : AgentReadToolBase
             if (!MatchesName(view, nameContains))
                 continue;
 
-            matched.Add(CreateCard(doc, view));
+            var card = CreateCard(doc, view, browserOrganization);
+            if (!MatchesFolder(card, folders))
+                continue;
+
+            matched.Add(card);
         }
 
         matched.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
@@ -74,7 +91,8 @@ public sealed class ListViewsTool : AgentReadToolBase
                 total,
                 summaryOnly = true,
                 byType = GroupBy(matched, view => view.ViewType),
-                byLevel = GroupBy(matched, view => view.LevelName ?? "(no level)")
+                byLevel = GroupBy(matched, view => view.LevelName ?? "(no level)"),
+                byFolder = GroupBy(matched, view => view.BrowserFolder ?? "(no folder)")
             };
 
             return ToolResult.Ok(
@@ -88,8 +106,12 @@ public sealed class ListViewsTool : AgentReadToolBase
         {
             var projected = new List<System.Text.Json.JsonElement>(views.Count);
             var ignored = new List<string>();
+            var substituted = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var card in views)
-                projected.Add(AgentCardProjection.Apply(AgentJson.SerializeCard(card), fields, ignored));
+            {
+                projected.Add(AgentCardProjection.Apply(
+                    AgentJson.SerializeCard(card), fields, ignored, substituted));
+            }
 
             var available = views.Count > 0
                 ? AgentCardProjection.AvailableFields(AgentJson.SerializeCard(views[0]))
@@ -101,6 +123,7 @@ public sealed class ListViewsTool : AgentReadToolBase
                 returned = projected.Count,
                 truncated = total > projected.Count,
                 ignoredFields = ignored.Count > 0 ? ignored : null,
+                substitutedFields = substituted.Count > 0 ? substituted : null,
                 availableFields = ignored.Count > 0 ? available : null,
                 views = projected
             };
@@ -195,7 +218,36 @@ public sealed class ListViewsTool : AgentReadToolBase
 #endif
     }
 
-    private static ViewCard CreateCard(Document doc, View view)
+    private static bool MatchesFolder(ViewCard card, IReadOnlyList<string> folders)
+    {
+        if (folders.Count == 0)
+            return true;
+
+        if (!card.InBrowser)
+            return false;
+
+        var folder = card.BrowserFolder ?? string.Empty;
+        foreach (var requested in folders)
+        {
+            if (string.IsNullOrWhiteSpace(requested))
+                continue;
+
+#if NET8_0_OR_GREATER
+            if (folder.Contains(requested, StringComparison.OrdinalIgnoreCase))
+                return true;
+#else
+            if (folder.IndexOf(requested, StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+#endif
+        }
+
+        return false;
+    }
+
+    private static ViewCard CreateCard(
+        Document doc,
+        View view,
+        BrowserOrganization? browserOrganization)
     {
         var level = view.GenLevel;
         var templateId = view.ViewTemplateId;
@@ -204,6 +256,8 @@ public sealed class ListViewsTool : AgentReadToolBase
         var sheetNumber = view.get_Parameter(BuiltInParameter.VIEWER_SHEET_NUMBER)?.AsString();
         if (sheetNumber is "—" or "-" or "---" or "")
             sheetNumber = null;
+
+        var (browserFolder, inBrowser) = ReadBrowserFolder(browserOrganization, view);
 
         return new ViewCard
         {
@@ -220,8 +274,41 @@ public sealed class ListViewsTool : AgentReadToolBase
             TemplateName = hasTemplate ? template?.Name : null,
             IsTemplate = view.IsTemplate,
             IsOnSheet = sheetNumber is not null,
-            SheetNumber = sheetNumber
+            SheetNumber = sheetNumber,
+            BrowserFolder = browserFolder,
+            InBrowser = inBrowser
         };
+    }
+
+    private static (string? Folder, bool InBrowser) ReadBrowserFolder(
+        BrowserOrganization? organization,
+        View view)
+    {
+        if (organization is null)
+            return (null, true);
+
+        try
+        {
+            if (!organization.AreFiltersSatisfied(view.Id))
+                return (null, false);
+
+            var items = organization.GetFolderItems(view.Id);
+            if (items is null || items.Count == 0)
+                return (string.Empty, true);
+
+            var parts = new List<string>();
+            foreach (var item in items)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Name))
+                    parts.Add(item.Name);
+            }
+
+            return (string.Join(" / ", parts), true);
+        }
+        catch (Exception)
+        {
+            return (null, true);
+        }
     }
 
     private static string Normalize(string value)

@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -114,12 +115,64 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             }
 
             report.Name = view.Name;
+            if (dryRun)
+                AddTemplateDelta(doc, view, item.TemplateId, outcome);
+
             var change = AgentViewSettingsWriter.ApplyTemplate(
                 doc, view, item.TemplateId, item.OverwriteTemplate);
 
             ApplyChange(outcome, view, report, change, "view_template", atomic);
             if (outcome.Aborted)
                 return;
+        }
+    }
+
+    /// <summary>
+    /// Dry-run consequence preview (live dogfood P1-5): scale before → after,
+    /// how many hidden categories the template adds, how many view parameters it
+    /// controls and which ones overwrite local settings.
+    /// </summary>
+    private static void AddTemplateDelta(
+        Document doc,
+        View view,
+        long templateId,
+        WriteOutcome outcome)
+    {
+        try
+        {
+            if (doc.GetElement(ElementIdCompat.Create(templateId)) is not View template)
+                return;
+
+            var before = AgentViewSettingsReader.Read(doc, view);
+            var after = AgentViewSettingsReader.Read(doc, template);
+            var delta = new
+            {
+                viewId = view.Id.GetValue(),
+                viewName = view.Name,
+                templateId,
+                templateName = template.Name,
+                previousTemplate = before.TemplateName,
+                scaleBefore = before.Scale,
+                scaleAfter = after.Scale,
+                hiddenCategoriesBefore = before.HiddenCategories.Count,
+                hiddenCategoriesAfter = after.HiddenCategories.Count,
+                hiddenCategoriesAdded = Math.Max(
+                    0, after.HiddenCategories.Count - before.HiddenCategories.Count),
+                controlledParameters = after.ControlledParameters.Count,
+                overwritten = after.ControlledParameters
+            };
+
+            if (outcome.Data["delta"] is not List<object> deltaList)
+            {
+                deltaList = new List<object>();
+                outcome.Data["delta"] = deltaList;
+            }
+
+            deltaList.Add(delta);
+        }
+        catch (Exception)
+        {
+            // The delta is informational; it must never fail the dry run.
         }
     }
 

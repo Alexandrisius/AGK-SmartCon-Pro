@@ -29,6 +29,16 @@ public sealed class AgentPlanStepResult
     public ToolResult? ApplyResult { get; set; }
 
     public ToolResult? ReadBackResult { get; set; }
+
+    /// <summary>True when a read-back tool was actually called for this step.</summary>
+    public bool ReadBackExecuted { get; set; }
+
+    /// <summary>Number of read-back expectations checked for this step.</summary>
+    public int ExpectationsChecked { get; set; }
+
+    public int VerifiedCount { get; set; }
+
+    public int MismatchCount { get; set; }
 }
 
 public sealed class AgentPlanExecutionResult
@@ -49,6 +59,12 @@ public sealed class AgentPlanExecutionResult
     public IReadOnlyList<string> Verified { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> Mismatches { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Total read-back expectations checked. Zero with empty Verified/Mismatches
+    /// means the plan had no read-back, not that the checks passed.
+    /// </summary>
+    public int ExpectationsChecked { get; init; }
 
     public int AffectedCount { get; init; }
 
@@ -146,6 +162,7 @@ public sealed partial class AgentPlanExecutor
             Steps = results,
             Verified = verified,
             Mismatches = mismatches,
+            ExpectationsChecked = results.Sum(item => item.ExpectationsChecked),
             AffectedCount = writeResults.Sum(item => item.Changed)
         };
     }

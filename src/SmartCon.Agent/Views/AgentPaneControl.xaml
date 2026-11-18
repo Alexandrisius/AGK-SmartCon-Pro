@@ -77,6 +77,27 @@
                 </Setter>
             </Style>
 
+            <Style x:Key="ThumbCloseButton" TargetType="Button">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="White"
+                                    CornerRadius="9"
+                                    Width="18" Height="18"
+                                    BorderBrush="#22000000"
+                                    BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style x:Key="BackdropButton" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
@@ -423,7 +444,6 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <Border Width="30" Height="30" CornerRadius="9"
@@ -448,18 +468,7 @@
                            Margin="0,1,0,0"/>
             </StackPanel>
 
-            <ComboBox Grid.Column="2"
-                      ItemsSource="{Binding ApprovalModes}"
-                      SelectedItem="{Binding SelectedApprovalMode}"
-                      DisplayMemberPath="Label"
-                      Width="112"
-                      Height="26"
-                      Margin="0,0,4,0"
-                      VerticalContentAlignment="Center"
-                      Style="{DynamicResource CompactComboBox}"
-                      ToolTip="{Binding ApprovalModeTooltip}"/>
-
-            <Button Grid.Column="3"
+            <Button Grid.Column="2"
                     Command="{Binding NewSessionCommand}"
                     Width="28" Height="28"
                     Style="{DynamicResource FlatIconButton}"
@@ -469,7 +478,7 @@
                                             Foreground="{DynamicResource TextSecondaryBrush}"/>
             </Button>
 
-            <Button Grid.Column="4"
+            <Button Grid.Column="3"
                     Command="{Binding OpenSettingsCommand}"
                     Width="28" Height="28"
                     Style="{DynamicResource FlatIconButton}"
@@ -707,28 +716,42 @@
                     <Border Margin="0,0,6,4"
                             BorderBrush="{DynamicResource BorderAltBrush}"
                             BorderThickness="1"
-                            CornerRadius="6"
-                            Background="{DynamicResource SurfaceBrush}">
+                            CornerRadius="8"
+                            Background="{DynamicResource StatusBarSurfaceBrush}">
                         <Grid>
-                            <Image Source="{Binding Preview}"
-                                   Width="64"
-                                   Height="44"
-                                   Stretch="UniformToFill"
-                                   Margin="2"/>
-                            <Button Width="20"
-                                    Height="20"
-                                    Padding="0"
+                            <Button Style="{StaticResource ImageThumbButton}"
+                                    Command="{Binding DataContext.OpenImagePreviewCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    ToolTip="{loc:Loc Agent_Image_Open}">
+                                <Image Source="{Binding Preview}"
+                                       Width="64"
+                                       Height="44"
+                                       Stretch="UniformToFill"/>
+                            </Button>
+                            <Button Width="18"
+                                    Height="18"
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Top"
-                                    Margin="0,-6,-6,0"
-                                    Style="{DynamicResource FlatIconButton}"
+                                    Margin="0,2,2,0"
                                     Command="{Binding DataContext.RemoveAttachmentCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"
                                     ToolTip="{loc:Loc Agent_Tooltip_RemoveAttachment}">
+                                <Button.Style>
+                                    <Style TargetType="Button"
+                                           BasedOn="{StaticResource ThumbCloseButton}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}"
+                                                         Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
                                 <Viewbox Width="8" Height="8" Stretch="Uniform">
                                     <Path Data="M 0,0 L 8,8 M 8,0 L 0,8"
-                                          Stroke="{DynamicResource TextMutedBrush}"
-                                          StrokeThickness="1.5"
+                                          Stroke="{DynamicResource TextPrimaryBrush}"
+                                          StrokeThickness="1.4"
                                           StrokeStartLineCap="Round"
                                           StrokeEndLineCap="Round"/>
                                 </Viewbox>
@@ -781,6 +804,7 @@
                 <Grid Grid.Row="1" Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
@@ -797,7 +821,18 @@
                         </Viewbox>
                     </Button>
 
-                    <TextBlock Grid.Column="1"
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding ApprovalModes}"
+                              SelectedItem="{Binding SelectedApprovalMode}"
+                              DisplayMemberPath="Label"
+                              Width="132"
+                              Height="26"
+                              Margin="4,0,4,0"
+                              VerticalContentAlignment="Center"
+                              Style="{DynamicResource CompactComboBox}"
+                              ToolTip="{Binding ApprovalModeTooltip}"/>
+
+                    <TextBlock Grid.Column="2"
                                Text="{loc:Loc Agent_Input_Hint}"
                                FontSize="9"
                                Foreground="{DynamicResource TextMutedBrush}"
@@ -805,7 +840,7 @@
                                Margin="8,0,4,0"
                                TextTrimming="CharacterEllipsis"/>
 
-                    <Button Grid.Column="2"
+                    <Button Grid.Column="3"
                             Command="{Binding StopCommand}"
                             Width="30" Height="30"
                             Margin="0,0,6,0"
@@ -817,7 +852,7 @@
                                                     Foreground="{DynamicResource DangerBrush}"/>
                     </Button>
 
-                    <Button Grid.Column="3"
+                    <Button Grid.Column="4"
                             Command="{Binding SendCommand}"
                             Width="30" Height="30"
                             Style="{StaticResource RoundIconButton}"
@@ -1011,12 +1046,13 @@
                                  Style="{DynamicResource CompactTextBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_Proxy}" Style="{StaticResource SettingsLabel}"/>
-                        <TextBox Text="{Binding SettingsProxy, UpdateSourceTrigger=PropertyChanged}"
-                                 Height="28"
-                                 Style="{DynamicResource CompactTextBox}"
-                                 ToolTip="{loc:Loc Agent_Settings_ProxyHint}"/>
-                        <TextBlock Text="{loc:Loc Agent_Settings_ProxyHint}" Style="{StaticResource SettingsHint}"/>
+                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionModel}" Style="{StaticResource SettingsLabel}"/>
+                        <ComboBox ItemsSource="{Binding DecisionModelOptions}"
+                                  SelectedItem="{Binding SelectedDecisionModel}"
+                                  DisplayMemberPath="Label"
+                                  Height="28"
+                                  Style="{DynamicResource CompactComboBox}"/>
+                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
 
                         <Grid Margin="0,16,0,0">
                             <Grid.ColumnDefinitions>

@@ -427,6 +427,75 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public void ComputeDigest_IgnoresDryRunFlags()
+    {
+        var stepA = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = @"{""items"":[{""viewId"":1}],""dryRun"":true}",
+            DryRun = true
+        };
+        var stepB = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = @"{""items"":[{""viewId"":1}],""dryRun"":false}",
+            DryRun = false
+        };
+
+        var digestA = AgentPlanExecutor.ComputeDigest(Plan(stepA), "doc-1");
+        var digestB = AgentPlanExecutor.ComputeDigest(Plan(stepB), "doc-1");
+
+        Assert.Equal(digestA, digestB);
+    }
+
+    [Fact]
+    public async Task ReadBack_ByElementId_ResolvesTheTargetCard()
+    {
+        var writeTool = new ScriptedTool("write_tool");
+        var readTool = new ScriptedTool(
+            "read_tool",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    views = new[]
+                    {
+                        new { viewId = 1, name = "reference", templateName = (string?)null },
+                        new { viewId = 2, name = "target", templateName = (string?)"T" }
+                    }
+                }),
+                "read"),
+            schema: @"{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""}},""additionalProperties"":false}");
+        var confirmation = new RecordingConfirmation();
+        var executor = CreateExecutor(
+            writeTool, readTool, confirmation, new RecordingAuditLog());
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = WriteArguments,
+            ExpectedChanges = 1,
+            ReadBackTool = "read_tool",
+            ArgumentsReadBackJson = "{}",
+            ReadBackExpectations = new[]
+            {
+                new AgentPlanExpectation { Path = "byId[2].templateName", Expected = "T" }
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(step), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.Mismatches);
+        Assert.Equal(1, result.ExpectationsChecked);
+        Assert.Contains(result.Verified, line => line.Contains("byId[2].templateName"));
+    }
+
+    [Fact]
     public void ConfirmationLedger_ConsumesNonceOnce()
     {
         var ledger = new AgentConfirmationLedger();
