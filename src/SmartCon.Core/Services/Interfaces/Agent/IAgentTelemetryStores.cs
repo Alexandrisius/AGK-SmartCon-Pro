@@ -7,16 +7,6 @@ public interface IAgentToolCallStore
     Task RecordAsync(AgentToolCallRecord record, CancellationToken ct);
 }
 
-public interface IAgentFeedbackStore
-{
-    Task RecordAsync(AgentFeedbackEntry entry, CancellationToken ct);
-
-    Task<IReadOnlyList<AgentFeedbackEntry>> ListAsync(
-        string? documentId,
-        int limit,
-        CancellationToken ct);
-}
-
 /// <summary>Per-turn token usage, used by the context-budget indicator.</summary>
 public interface IAgentUsageStore
 {

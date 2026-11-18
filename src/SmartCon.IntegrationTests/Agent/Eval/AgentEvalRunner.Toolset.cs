@@ -45,7 +45,7 @@ internal sealed partial class AgentEvalRunner
             new RemapParameterValuesTool(context, transactions, changeSets),
             new DiscardChangeSetTool(context, changeSets),
             new UndoLastTool(context, transactions, changeSets)
-        }.Concat(_feedbackTools).ToList();
+        }.ToList();
     }
 
     private static async Task ApplyRoutingAsync(

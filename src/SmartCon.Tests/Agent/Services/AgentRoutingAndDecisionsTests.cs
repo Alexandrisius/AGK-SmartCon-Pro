@@ -40,8 +40,7 @@ public sealed class RuleToolRouterTests
         Tool("copy_view_settings", "Copy settings from a reference view",
             "скопировать", "как эталон"),
         Tool("undo_last", "Undo the last change", "отменить", "откат"),
-        Tool("execute_plan", "Run a multi-step plan", "план", "шаги"),
-        Tool("report_tooling_feedback", "Report tooling friction", "фидбэк")
+        Tool("execute_plan", "Run a multi-step plan", "план", "шаги")
     };
 
     [Fact]

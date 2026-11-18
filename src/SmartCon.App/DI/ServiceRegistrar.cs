@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using SmartCon.Agent;
 using SmartCon.Agent.Events;
 using SmartCon.Agent.Services;
-using SmartCon.Agent.Services.Analysis;
 using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Storage;
@@ -440,13 +439,11 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentAuditLog, SqliteAgentAuditLog>();
         services.AddSingleton<IAgentChangeSetStore, SqliteAgentChangeSetStore>();
         services.AddSingleton<IAgentToolCallStore, SqliteAgentToolCallStore>();
-        services.AddSingleton<IAgentFeedbackStore, SqliteAgentFeedbackStore>();
         services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
         services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
         services.AddSingleton<IAgentToolResultBlobStore, SqliteAgentToolResultBlobStore>();
         services.AddSingleton<IAgentCompactionStore, SqliteAgentCompactionStore>();
         services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
-        services.AddSingleton<AgentFrictionAnalyzer>();
 
         services.AddSingleton<IAgentSelectionProvider, RevitAgentSelectionProvider>();
         services.AddSingleton<IAgentTool, GetProjectOverviewTool>();
@@ -480,7 +477,6 @@ public static class ServiceRegistrar
             sp.GetRequiredService<IAgentAwaitableEvent>(),
             sp.GetRequiredService<IAgentAuditLog>(),
             sp.GetRequiredService<AgentSessionContext>()));
-        services.AddSingleton<IAgentTool, ReportToolingFeedbackTool>();
 
         services.AddSingleton<AgentConfirmationService>();
         services.AddSingleton<IAgentConfirmationService>(

@@ -32,11 +32,12 @@ public sealed class DiscardChangeSetTool : IAgentTool
             "targets the previous set. Use it when undo_last reports undo_conflict for a set " +
             "that can no longer be reverted (its old name/id is now used by another element). " +
             "Pass changeSetId, or omit it to discard the last applied set. The model is never " +
-            "modified.",
+            "modified. dryRun=true (default) previews the change set without closing it; pass " +
+            "dryRun=false to actually close it.",
         Risk = AgentToolRisk.Write,
-        SupportsDryRun = false,
+        SupportsDryRun = true,
         Category = "Write",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""changeSetId"":{""type"":""string""}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""changeSetId"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -46,12 +47,8 @@ public sealed class DiscardChangeSetTool : IAgentTool
     {
         ct.ThrowIfCancellationRequested();
 
-        if (!context.WriteApproved)
-        {
-            return ToolResult.Fail(
-                "confirmation_required",
-                "Closing a change set requires explicit user confirmation.");
-        }
+        // Destructive default-safe: preview unless the caller explicitly asks to execute.
+        var dryRun = AgentJson.GetBool(args, "dryRun", true);
 
         var documentId = await context.Revit.RaiseAsync(
                 _ =>
@@ -118,6 +115,30 @@ public sealed class DiscardChangeSetTool : IAgentTool
                 " is not an applied change set; there is nothing to discard.");
         }
 
+        if (dryRun)
+        {
+            var preview = AgentJson.Serialize(new
+            {
+                dryRun = true,
+                wouldDiscard = true,
+                changeSetId = changeSetId.Value.ToString("D"),
+                operation = details.Header.Operation,
+                items = details.Items.Count,
+                hint = "Nothing was closed. Call again with dryRun=false to close this change " +
+                       "set; this removes the undo path for these items."
+            });
+
+            return ToolResult.Ok(preview, "Dry run: change set would be closed, nothing changed.");
+        }
+
+        if (!context.WriteApproved)
+        {
+            return ToolResult.Fail(
+                "confirmation_required",
+                "Closing a change set requires explicit user confirmation; run with dryRun=true " +
+                "first, then dryRun=false after the user approves.");
+        }
+
         await _changeSets
             .MarkDiscardedAsync(changeSetId.Value, DateTime.UtcNow, ct)
             .ConfigureAwait(false);
@@ -125,6 +146,7 @@ public sealed class DiscardChangeSetTool : IAgentTool
         var payload = AgentJson.Serialize(new
         {
             discarded = true,
+            dryRun = false,
             changeSetId = changeSetId.Value.ToString("D"),
             operation = details.Header.Operation,
             items = details.Items.Count

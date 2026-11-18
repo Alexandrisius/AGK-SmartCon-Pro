@@ -86,8 +86,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "meta",
-            Description = "Поиск инструментов, чтение сохранённых результатов и обратная связь по харнесу.",
-            Tools = new[] { "find_tools", "read_tool_result", "report_tooling_feedback" }
+            Description = "Поиск инструментов и чтение сохранённых результатов.",
+            Tools = new[] { "find_tools", "read_tool_result" }
         },
         new()
         {
@@ -145,7 +145,6 @@ public static class AgentToolPacks
         "query_elements",
         "find_tools",
         "execute_plan",
-        "report_tooling_feedback",
         "rename_views",
         "apply_view_template"
     };

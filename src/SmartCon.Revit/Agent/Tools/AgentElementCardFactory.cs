@@ -24,8 +24,13 @@ internal static class AgentElementCardFactory
         {
             var parameter = element.get_Parameter(builtInParameter);
             var value = ReadParameter(parameter);
-            if (!string.IsNullOrWhiteSpace(value))
-                parameters[label] = value;
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+
+            // Use the localized display name, matching get_element_details and
+            // set_parameters; the hardcoded English label is only a fallback.
+            var name = parameter?.Definition?.Name;
+            parameters[string.IsNullOrWhiteSpace(name) ? label : name!] = value;
         }
 
         var level = TryGetLevel(doc, element);

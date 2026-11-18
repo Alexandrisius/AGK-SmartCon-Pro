@@ -30,14 +30,12 @@ internal sealed partial class AgentEvalRunner : IDisposable
 
     private readonly Func<Document> _createDocument;
     private readonly EvalLlmClient _client;
-    private readonly List<IAgentTool> _feedbackTools = new();
     private int _requests;
 
     public AgentEvalRunner(Func<Document> createDocument, EvalLlmClient client)
     {
         _createDocument = createDocument;
         _client = client;
-        _feedbackTools.Add(new EvalFeedbackTool());
     }
 
     public async Task<AgentEvalRun> RunAsync(
@@ -480,26 +478,7 @@ internal sealed partial class AgentEvalRunner : IDisposable
             .Replace("{typeName}", seed.WallTypePrefix);
     }
 
-    private sealed class EvalFeedbackTool : IAgentTool
-    {
-        public AgentToolDefinition Definition { get; } = new()
-        {
-            Name = "report_tooling_feedback",
-            Description =
-                "Reports friction with SmartCon Agent itself. area: tools | prompt | ui; " +
-                "rating 1 (bad) … 5 (good).",
-            Risk = AgentToolRisk.Read,
-            SupportsDryRun = false,
-            InputSchemaJson = @"{""type"":""object"",""properties"":{""area"":{""type"":""string"",""enum"":[""tools"",""prompt"",""ui""]},""toolName"":{""type"":""string""},""rating"":{""type"":""integer"",""minimum"":1,""maximum"":5},""issue"":{""type"":""string""},""suggestion"":{""type"":""string""},""example"":{""type"":""string""}},""required"":[""area"",""rating"",""issue""],""additionalProperties"":false}"
-        };
-
-        public Task<ToolResult> ExecuteAsync(
-            AgentToolContext context,
-            JsonElement args,
-            CancellationToken ct) =>
-            Task.FromResult(ToolResult.Ok(null, "Feedback recorded.", affectedCount: 1));
     }
-}
 
 internal sealed class AgentEvalRun
 {

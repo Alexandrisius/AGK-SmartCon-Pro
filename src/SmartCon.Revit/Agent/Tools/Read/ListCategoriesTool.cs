@@ -25,7 +25,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
             "sorted by element count descending. Use built-in names (OST_...) in queries.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -35,6 +35,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
     {
         var usedOnly = AgentJson.GetBool(args, "usedOnly", true);
         var limit = Math.Max(1, Math.Min(AgentJson.GetInt(args, "limit", DefaultLimit), MaxLimit));
+        var offset = Math.Max(0, AgentJson.GetInt(args, "offset", 0));
 
         var counts = new Dictionary<long, int>();
         if (usedOnly)
@@ -79,15 +80,22 @@ public sealed class ListCategoriesTool : AgentReadToolBase
         });
 
         var total = categories.Count;
+        var page = categories.Skip(offset).Take(limit).ToList();
+        var nextOffset = offset + page.Count < total ? offset + page.Count : (int?)null;
         var payload = new
         {
             total,
-            truncated = total > limit,
-            categories = categories.Take(limit).ToList()
+            returned = page.Count,
+            offset,
+            limit,
+            nextOffset,
+            truncated = nextOffset is not null,
+            categories = page
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Found " + total + " categor" + (total == 1 ? "y" : "ies") + ".");
+            "Returned " + page.Count + " of " + total + " categor" +
+            (total == 1 ? "y" : "ies") + ".");
     }
 }

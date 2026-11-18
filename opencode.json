@@ -3,7 +3,7 @@
   "mcp": {
     "revit-api-docs": {
       "type": "local",
-      "command": ["tools/Rvt_Docs_MCP-windows.exe"],
+      "command": ["D:\\Project\\dotNET\\AGK-SmartCon-Pro\\tools\\Rvt_Docs_MCP-windows.exe"],
       "enabled": true
     }
   }

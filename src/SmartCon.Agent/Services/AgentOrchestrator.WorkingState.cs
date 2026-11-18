@@ -67,7 +67,9 @@ public sealed partial class AgentOrchestrator
         WorkingState state,
         AgentProjectContext projectContext,
         int round,
-        int elapsedMinutes)
+        int elapsedMinutes,
+        int contextTokens,
+        int contextLimit)
     {
         for (var index = messages.Count - 1; index >= 0; index--)
         {
@@ -77,7 +79,8 @@ public sealed partial class AgentOrchestrator
 
             var turnContext = AgentTurnContextBuilder.Build(state, projectContext);
             turnContext += "\n<progress round=\"" + round + "\" elapsed_minutes=\"" +
-                           elapsedMinutes + "\" />";
+                           elapsedMinutes + "\" context_tokens=\"" + contextTokens +
+                           "\" context_limit=\"" + contextLimit + "\" />";
             messages[index] = AgentMessage.User(
                 turnContext + "\n\n" + (message.Content ?? string.Empty),
                 message.Attachments);

@@ -181,13 +181,20 @@ public sealed partial class AgentOrchestrator
                         estimator, ct)
                     .ConfigureAwait(false);
 
+                var contextTokens = _sessionContext.TokenCalibration.Apply(
+                    AgentTokenEstimator.EstimateRequest(
+                        systemMessage.Content, working, definitions));
+                var contextLimit = (int)(_settings.ContextWindowTokens *
+                                         Math.Max(0.3, Math.Min(_settings.ContextThreshold, 0.95)));
+
                 var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
 
                 if (workingState is not null)
                 {
                     ApplyTurnContext(
-                        messages, workingState, projectContext, round, elapsedMinutes);
+                        messages, workingState, projectContext, round, elapsedMinutes,
+                        contextTokens, contextLimit);
                 }
 
                 var estimatedPrompt = AgentTokenEstimator.EstimateRequest(

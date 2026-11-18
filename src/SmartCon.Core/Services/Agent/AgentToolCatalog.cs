@@ -121,10 +121,6 @@ public static class AgentToolCatalog
                 "план", "сценарий", "несколько", "шагов", "сразу", "за один раз", "plan",
                 "multi-step"
             }),
-            ["report_tooling_feedback"] = new("Meta", false, new[]
-            {
-                "фидбэк", "неудобно", "предложение", "feedback", "improvement"
-            }),
             ["find_tools"] = new("Meta", false, new[]
             {
                 "найти инструмент", "какой инструмент", "find tool", "tool search"

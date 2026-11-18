@@ -47,7 +47,6 @@ public sealed class RuleToolRouter : IToolRouter
         "summarize_elements",
         "find_tools",
         "execute_plan",
-        "report_tooling_feedback",
         "rename_views",
         "apply_view_template"
     };

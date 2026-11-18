@@ -243,37 +243,6 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
-                ToolName = "report_tooling_feedback",
-                Pack = "meta",
-                Purpose =
-                    "Сообщение о трении в самом SmartCon Agent: инструменты, промпт, UI.",
-                WhenToUse =
-                    "Когда инструмент неудобен, вернул мало или много данных, потребовал " +
-                    "повторов либо схема неясна.",
-                WhenNotToUse = "Когда проблема в модели Revit или нужно действие с элементами.",
-                Examples = new[]
-                {
-                    "Отметь, что инструмент требует слишком много ID",
-                    "Оставь отзыв: схема set_view_crop непонятная",
-                    "Сообщи, что пришлось повторять вызов трижды",
-                    "Запиши фидбэк по работе агента"
-                },
-                Synonyms = new[]
-                {
-                    "фидбэк", "отзыв", "неудобно", "предложение", "feedback", "improvement",
-                    "трение", "проблема с инструментом", "жалоба на агента"
-                },
-                NegativeExamples = new[]
-                {
-                    "Найди все стены в модели",
-                    "Отмени последнее изменение"
-                },
-                Idempotent = true,
-                TimeoutMs = 15000,
-                Bulk = false
-            },
-            new AgentToolCard
-            {
                 ToolName = "rename_levels",
                 Pack = "levels",
                 Purpose =

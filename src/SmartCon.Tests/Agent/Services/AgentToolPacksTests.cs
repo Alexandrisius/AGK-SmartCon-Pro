@@ -17,11 +17,11 @@ public sealed class AgentToolPacksTests
         "sheets", "families", "schedules", "filters", "worksets", "links", "mep", "annotations", "audit"
     };
 
-    // ADR-075 §2 pins exactly these nine tools.
+    // ADR-075 §2 pins the core set; report_tooling_feedback was removed on request.
     private static readonly string[] ExpectedCoreToolNames =
     {
         "get_project_overview", "list_views", "list_levels", "query_elements",
-        "find_tools", "execute_plan", "report_tooling_feedback", "rename_views",
+        "find_tools", "execute_plan", "rename_views",
         "apply_view_template"
     };
 
@@ -44,7 +44,7 @@ public sealed class AgentToolPacksTests
             ["params"] = new[] { "set_parameters", "remap_parameter_values" },
             ["changes"] = new[] { "undo_last", "discard_change_set" },
             ["plans"] = new[] { "execute_plan" },
-            ["meta"] = new[] { "find_tools", "read_tool_result", "report_tooling_feedback" }
+            ["meta"] = new[] { "find_tools", "read_tool_result" }
         };
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(28, placements.Length);
+        Assert.Equal(27, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
@@ -123,9 +123,9 @@ public sealed class AgentToolPacksTests
     }
 
     [Fact]
-    public void CoreToolNames_AreExactlyTheSpecifiedNine()
+    public void CoreToolNames_AreExactlyTheSpecifiedEight()
     {
-        Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(8, AgentToolPacks.CoreToolNames.Count);
         Assert.Equal(
             ExpectedCoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
             AgentToolPacks.CoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray());

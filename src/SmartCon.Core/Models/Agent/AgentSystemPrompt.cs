@@ -43,8 +43,6 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - Use fields[] to request only the properties you need, and get_element_details with parameterNames/onlyNonEmpty for parameter work.
 - A result with compacted=true was replaced by a digest to save context; re-run a narrower tool call if you still need the data. Never repeat an identical tool call.
 
-## Tooling feedback
-- If a tool was inconvenient (unclear arguments, missing data, needed a repeated call, result too large), call report_tooling_feedback once with area, rating 1-5 and a concrete suggestion. Report each distinct problem only once; do not report normal model-data findings or user errors.
 ";
 
     private const string PlanSection = @"## Plan validation

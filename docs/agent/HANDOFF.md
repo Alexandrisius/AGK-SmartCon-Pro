@@ -1,5 +1,28 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Фидбэк-тул удалён + стресс-тест №3 (2026-11-18, текущая сессия)
+
+По решению владельца `report_tooling_feedback` удалён полностью: из системного
+промпта, карточек, паков, каталога, ядра, DI, eval-фикстур и живого dogfood-теста.
+Таблица `agent_feedback` осталась только как исторический архив (схема v1
+неизменна); обратная связь теперь запрашивается текстом в чате.
+
+Исправления из стресс-теста №3:
+
+- **`discard_change_set` + `dryRun`**: раньше `dryRun` молча выбрасывался и
+  change set реально закрывался. Теперь `dryRun=true` (по умолчанию) — preview
+  `{dryRun:true, wouldDiscard:true, changeSetId, items}`, ничего не закрывается;
+  `dryRun=false` требует подтверждения и только тогда закрывает. `SupportsDryRun=true`.
+- **`<progress>` теперь содержит контекст**: `round`, `elapsed_minutes`,
+  `context_tokens`, `context_limit` — модель видит приближение к порогу сжатия.
+- **`list_categories`**: `limit`/`offset`/`returned`/`nextOffset`, `truncated`
+  честный (было: limit игнорировался).
+- **`copy_view_settings`**: per-section отчёт `sections[{section,status,reason}]`
+  (copied/skipped/failed) и `detail` с причинами skip — потерянный crop больше
+  не выглядит как успех.
+- **`query_elements`**: ключи `parameters` локализованы (`Definition.Name`),
+  совпадают с `get_element_details`/`set_parameters`; English label — fallback.
+
 ## ⚡ Фидбэк самого агента: где лежит и как читать (2026-11-18)
 
 `report_tooling_feedback` пишет в `%APPDATA%\Roaming\SmartCon\Agent\agent.db`,

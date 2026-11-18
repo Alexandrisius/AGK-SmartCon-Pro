@@ -164,7 +164,7 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
         };
         var discarded = await discard.ExecuteAsync(
             discardContext,
-            Parse("{\"changeSetId\":\"" + secondId.ToString("D") + "\"}"),
+            Parse("{\"changeSetId\":\"" + secondId.ToString("D") + "\",\"dryRun\":false}"),
             CancellationToken.None);
 
         await Assert.That(discarded.Success).IsTrue();
@@ -191,7 +191,12 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
         var context = new AgentToolContext(
             new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty);
 
-        var result = await discard.ExecuteAsync(context, Parse("{}"), CancellationToken.None);
+        var preview = await discard.ExecuteAsync(context, Parse("{}"), CancellationToken.None);
+        await Assert.That(preview.Success).IsTrue();
+        await Assert.That(preview.Data!.Value.GetProperty("wouldDiscard").GetBoolean()).IsTrue();
+
+        var result = await discard.ExecuteAsync(
+            context, Parse("{\"dryRun\":false}"), CancellationToken.None);
 
         await Assert.That(result.Success).IsFalse();
         await Assert.That(result.ErrorCode).IsEqualTo("confirmation_required");

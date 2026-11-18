@@ -117,6 +117,7 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             report.Name = target.Name;
             var applied = new List<(string Key, AgentViewSettingsWriter.Change Change)>();
             var skipReasons = new List<string>();
+            var sectionReports = new List<SectionReport>();
             AgentViewSettingsWriter.Change? failure = null;
 
             foreach (var section in sections)
@@ -124,15 +125,41 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
                 var change = ApplySection(doc, source, target, section, overwriteTemplate, outcome);
                 if (change.ErrorCode is not null)
                 {
+                    sectionReports.Add(new SectionReport
+                    {
+                        Section = section,
+                        Status = "failed",
+                        Reason = change.Reason
+                    });
                     failure = change;
                     break;
                 }
 
                 if (change.Changed)
+                {
                     applied.Add((KeyFor(section), change));
-                else if (!string.IsNullOrEmpty(change.Reason))
-                    skipReasons.Add(section + ": " + change.Reason);
+                    sectionReports.Add(new SectionReport
+                    {
+                        Section = section,
+                        Status = "copied"
+                    });
+                }
+                else
+                {
+                    var skipReason = string.IsNullOrEmpty(change.Reason)
+                        ? "nothing to change"
+                        : change.Reason;
+                    skipReasons.Add(section + ": " + skipReason);
+                    sectionReports.Add(new SectionReport
+                    {
+                        Section = section,
+                        Status = "skipped",
+                        Reason = skipReason
+                    });
+                }
             }
+
+            report.Sections = sectionReports;
 
             if (failure is not null)
             {
@@ -164,7 +191,10 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
                 continue;
             }
 
-            report.Detail = "copied: " + string.Join(", ", applied.Select(entry => entry.Key));
+            report.Detail = "copied: " + string.Join(", ", applied.Select(entry => entry.Key)) +
+                            (skipReasons.Count == 0
+                                ? string.Empty
+                                : "; skipped: " + string.Join("; ", skipReasons));
             report.OldValue = string.Join(" | ", applied.Select(entry => entry.Change.OldValue));
             report.NewValue = string.Join(" | ", applied.Select(entry => entry.Change.NewValue));
             outcome.Batch.Changed.Add(report);

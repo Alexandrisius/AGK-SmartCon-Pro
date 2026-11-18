@@ -33,7 +33,6 @@ public sealed class AgentToolCardsTests
         "undo_last",
         "discard_change_set",
         "execute_plan",
-        "report_tooling_feedback",
         "find_tools",
         "read_tool_result"
     };
@@ -41,7 +40,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(28, AgentToolCards.Count);
+        Assert.Equal(27, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

@@ -47,7 +47,7 @@ public sealed partial class AgentOrchestratorTests
             Assert.Contains(sent, tool => tool.Name == core);
 
         Assert.Contains(sent, tool => tool.Name == "set_view_crop");
-        Assert.InRange(sent.Count, 11, 16);
+        Assert.InRange(sent.Count, 9, 16);
     }
 
     [Fact]

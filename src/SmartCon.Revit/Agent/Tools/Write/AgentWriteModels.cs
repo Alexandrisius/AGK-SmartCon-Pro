@@ -20,6 +20,19 @@ public sealed class WriteItemReport
     public string? Reason { get; set; }
 
     public string? Detail { get; set; }
+
+    /// <summary>Per-section result for composite writes (copy_view_settings).</summary>
+    public List<SectionReport>? Sections { get; set; }
+}
+
+public sealed class SectionReport
+{
+    public required string Section { get; init; }
+
+    /// <summary>copied | skipped | failed</summary>
+    public required string Status { get; init; }
+
+    public string? Reason { get; init; }
 }
 
 public sealed class WriteBatch
