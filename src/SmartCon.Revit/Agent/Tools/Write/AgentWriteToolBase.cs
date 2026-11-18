@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
@@ -99,15 +99,23 @@ public abstract class AgentWriteToolBase : IAgentTool
             .ConfigureAwait(false);
 
         if (outcome.ModelChanged && outcome.Items.Count > 0 && !outcome.SuppressChangeSet)
-            await PersistChangeSetAsync(outcome, documentId, conversationId, ct)
+        {
+            // The model is already modified at this point: the audit trail must be
+            // written even if the user pressed Stop or switched documents right after
+            // the commit, otherwise undo_last could never find the change.
+            await PersistChangeSetAsync(outcome, documentId, conversationId, CancellationToken.None)
                 .ConfigureAwait(false);
+        }
 
-        if (outcome.ModelChanged && outcome.RollBackChangeSetId.HasValue)
+        if (!dryRun && outcome.RollBackChangeSetId.HasValue)
         {
             try
             {
                 await _changeSets
-                    .MarkRolledBackAsync(outcome.RollBackChangeSetId.Value, DateTime.UtcNow, ct)
+                    .MarkRolledBackAsync(
+                        outcome.RollBackChangeSetId.Value,
+                        DateTime.UtcNow,
+                        CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -260,6 +268,9 @@ public abstract class AgentWriteToolBase : IAgentTool
                 " Nothing was changed in the model.";
             MarkItemsRolledBack(outcome);
             outcome.ModelChanged = false;
+            // A silent rollback must not close the change set: the model still holds the
+            // applied state, so undo_last has to be able to target this very set again.
+            outcome.RollBackChangeSetId = null;
             return;
         }
 
@@ -329,7 +340,8 @@ public abstract class AgentWriteToolBase : IAgentTool
     {
         if (outcome.Success
             && outcome.Batch.Changed.Count == 0
-            && outcome.Batch.Failed.Count > 0)
+            && outcome.Batch.Failed.Count > 0
+            && outcome.AffectedCount == 0)
         {
             // Every requested item failed — report the batch as failed so the
             // model does not treat an empty result as a success.
@@ -347,12 +359,17 @@ public abstract class AgentWriteToolBase : IAgentTool
             outcome.Data["aborted"] = true;
 
         var data = AgentJson.Serialize(outcome.Data);
+        var appliedText = dryRun
+            ? "Dry run: " + outcome.Batch.Changed.Count + " change(s) planned"
+            : outcome.Batch.Changed.Count == 0 && outcome.AffectedCount > 0
+                ? "Partial apply: " + outcome.AffectedCount + " change(s) applied"
+                : outcome.Batch.Changed.Count + " change(s) applied";
         var summary = outcome.Message
             ?? (dryRun
-                ? "Dry run: " + outcome.Batch.Changed.Count + " change(s) planned, " +
+                ? appliedText + ", " +
                   outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
                   " failed. Nothing was modified."
-                : outcome.Batch.Changed.Count + " change(s) applied, " +
+                : appliedText + ", " +
                   outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
                   " failed.");
 

@@ -80,7 +80,18 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
 
             if (!string.IsNullOrWhiteSpace(item.NewName))
             {
-                var change = AgentViewSettingsWriter.Rename(view, item.NewName);
+                var change = view.IsTemplate
+                    ? AgentViewSettingsWriter.Change.Error(
+                        "view_is_template",
+                        "View " + item.ViewId + " is a view template; rename templates explicitly out of scope.")
+                    : view.ViewType is ViewType.DrawingSheet or ViewType.ProjectBrowser
+                        or ViewType.SystemBrowser or ViewType.Internal
+                        ? AgentViewSettingsWriter.Change.Error(
+                            "unsupported_view_type",
+                            "View " + item.ViewId + " is a " + view.ViewType +
+                            " and cannot be renamed here.")
+                        : AgentViewSettingsWriter.Rename(view, item.NewName);
+
                 if (change.ErrorCode is not null)
                     failure = change;
                 else if (change.Changed)
@@ -128,6 +139,19 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
 
             if (failure is not null)
             {
+                // atomic=false: the sections applied before the failure are already in
+                // the model — they must be recorded so undo_last can revert them.
+                if (applied.Count > 0)
+                {
+                    AddChangeItems(outcome, view, applied);
+                    outcome.AffectedCount++;
+                    report.Detail = "partial: applied " + string.Join(", ", applied.Select(entry => entry.Key));
+                    outcome.Warnings.Add(
+                        "Partial apply on view '" + report.Name + "': " +
+                        string.Join(", ", applied.Select(entry => entry.Key)) +
+                        " applied; the remaining section failed — review failed[] and use undo_last if needed.");
+                }
+
                 ApplyViewTemplateTool.Fail(outcome, report, failure.ErrorCode!, failure.Reason);
                 if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
                 continue;
@@ -146,18 +170,26 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
 
-            foreach (var entry in applied)
+            AddChangeItems(outcome, view, applied);
+        }
+    }
+
+    private static void AddChangeItems(
+        WriteOutcome outcome,
+        View view,
+        IReadOnlyList<(string Key, AgentViewSettingsWriter.Change Change)> applied)
+    {
+        foreach (var entry in applied)
+        {
+            outcome.Items.Add(new ChangeItem
             {
-                outcome.Items.Add(new ChangeItem
-                {
-                    UniqueId = view.UniqueId,
-                    ElementId = view.Id.GetValue(),
-                    ParameterName = entry.Key,
-                    OldValue = entry.Change.OldValue,
-                    NewValue = entry.Change.NewValue,
-                    Status = ChangeStatus.Applied
-                });
-            }
+                UniqueId = view.UniqueId,
+                ElementId = view.Id.GetValue(),
+                ParameterName = entry.Key,
+                OldValue = entry.Change.OldValue,
+                NewValue = entry.Change.NewValue,
+                Status = ChangeStatus.Applied
+            });
         }
     }
 

@@ -191,10 +191,21 @@ internal static class AgentViewSettingsWriter
             }
             else
             {
+                // Only explicit extents mean "make the crop rectangular": a call that
+                // merely toggles active/visible must keep an existing crop sketch.
+                var explicitExtents = spec.MinMm is not null || spec.MaxMm is not null;
+                if (explicitExtents && before.ShapeSet)
+                {
+                    warnings.Add("The crop sketch of '" + view.Name +
+                                 "' was replaced by the requested rectangular extents.");
+                }
+
                 var state = new ViewCropState
                 {
                     Active = spec.Active ?? before.Active,
                     Visible = spec.Visible ?? before.Visible,
+                    ShapeSet = explicitExtents ? false : before.ShapeSet,
+                    ShapeMm = explicitExtents ? null : before.ShapeMm,
                     MinMm = spec.MinMm ?? before.MinMm,
                     MaxMm = spec.MaxMm ?? before.MaxMm
                 };

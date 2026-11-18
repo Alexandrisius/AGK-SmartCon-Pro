@@ -31,7 +31,8 @@ internal static class AgentParameterWriteHelper
         string? guid,
         string? scope)
     {
-        var typeScope = string.Equals(scope, "type", StringComparison.OrdinalIgnoreCase);
+        var typeScope = string.Equals(scope, "type", StringComparison.OrdinalIgnoreCase)
+                        || element is ElementType;
 
         if (!string.IsNullOrWhiteSpace(guid)
             && Guid.TryParse(guid, out var parsedGuid))
@@ -70,7 +71,10 @@ internal static class AgentParameterWriteHelper
             };
         }
 
-        var onType = parameter.Element is not null && parameter.Element.Id.GetValue() != element.Id.GetValue();
+        // A type element owns its parameters directly; a hit there is a type-scope hit.
+        var onType = element is ElementType
+                     || (parameter.Element is not null
+                         && parameter.Element.Id.GetValue() != element.Id.GetValue());
         if (onType && !typeScope)
         {
             return new Resolution
@@ -152,15 +156,26 @@ internal static class AgentParameterWriteHelper
 
             case StorageType.Double:
             {
+                if (string.IsNullOrWhiteSpace(unit))
+                {
+                    errorCode = "invalid_value";
+                    reason = "Numeric value '" + text + "' for parameter '" +
+                             parameter.Definition?.Name + "' needs an explicit unit: pass " +
+                             "unit=\"mm\" (or \"m\", \"ft\", \"m2\", \"m3\"), or unit=\"raw\" " +
+                             "to write internal Revit units as-is.";
+                    return false;
+                }
+
                 var (parsed, ok) = ParseDouble(text, unit);
                 if (!ok)
                 {
                     errorCode = "invalid_value";
-                    reason = "'" + text + "' is not a valid number for parameter '" +
-                             parameter.Definition?.Name + "'" +
-                             (string.IsNullOrWhiteSpace(unit)
-                                 ? ". Pass unit=\"mm\" (or \"m\", \"ft\") so the value can be converted."
-                                 : ".");
+                    reason = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
+                        ? "Unit '" + unit + "' is not supported for parameter '" +
+                          parameter.Definition?.Name +
+                          "'; use mm, cm, m, ft, m2, m3 or raw."
+                        : "'" + text + "' is not a valid number for parameter '" +
+                          parameter.Definition?.Name + "'.";
                     return false;
                 }
 

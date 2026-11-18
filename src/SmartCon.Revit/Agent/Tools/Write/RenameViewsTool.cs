@@ -25,8 +25,8 @@ public sealed class RenameViewsTool : AgentWriteToolBase
         Description =
             "Renames existing views by an explicit viewId → newName list. Does not create " +
             "views. Pre-checks name uniqueness across the whole project and handles name " +
-            "swaps inside the batch. Templates, sheets and system browsers are skipped. " +
-            "dryRun defaults to true and only reports the plan.",
+            "swaps inside the batch (A→B, B→A). Templates, sheets and system browsers are " +
+            "skipped. dryRun defaults to true and only reports the plan.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""newName"":{""type"":""string"",""minLength"":1}},""required"":[""viewId"",""newName""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
@@ -56,14 +56,21 @@ public sealed class RenameViewsTool : AgentWriteToolBase
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
         var usedNames = AgentViewWriteHelper.CollectViewNamesByName(doc);
-        var planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<Candidate>();
+        var seenIds = new HashSet<long>();
 
-        var valid = new List<(RenameViewItem Item, View View)>();
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = item.ViewId, NewValue = item.NewName };
+            if (!seenIds.Add(item.ViewId))
+            {
+                Reject(outcome, report, "duplicate_item",
+                    "View " + item.ViewId + " is listed more than once in this call.");
+                continue;
+            }
+
             if (!AgentViewWriteHelper.TryGetView(doc, item.ViewId, out var view, out var code, out var reason))
             {
                 Reject(outcome, report, code, reason);
@@ -103,26 +110,16 @@ public sealed class RenameViewsTool : AgentWriteToolBase
                 continue;
             }
 
-            if (usedNames.TryGetValue(newName, out var owner) && owner != item.ViewId)
+            candidates.Add(new Candidate
             {
-                Reject(outcome, report, "duplicate_name",
-                    "Another view already has the name '" + newName + "' (id " + owner + ").");
-                continue;
-            }
-
-            if (!planned.Add(newName))
-            {
-                Reject(outcome, report, "duplicate_name",
-                    "The name '" + newName + "' is used by another item of this batch.");
-                continue;
-            }
-
-            // The view's current name is released, so its old name becomes free.
-            usedNames.Remove(view.Name);
-            usedNames[newName] = item.ViewId;
-            valid.Add((item, view));
+                Id = item.ViewId,
+                View = view,
+                OriginalName = view.Name,
+                NewName = newName
+            });
         }
 
+        var valid = SelectValid(outcome, usedNames, candidates);
         if (valid.Count == 0)
         {
             outcome.Description = "rename_views: nothing to rename";
@@ -144,73 +141,172 @@ public sealed class RenameViewsTool : AgentWriteToolBase
         ApplyRenames(doc, valid, outcome, atomic, ct);
     }
 
+    /// <summary>
+    /// Drops candidates whose target name cannot be freed by this batch. A name is
+    /// available when no other element uses it, or when its owner is a valid batch
+    /// member that renames away from it (the planner orders/breaks such chains).
+    /// </summary>
+    private static List<Candidate> SelectValid(
+        WriteOutcome outcome,
+        IReadOnlyDictionary<string, long> documentNames,
+        IReadOnlyList<Candidate> candidates)
+    {
+        var candidateIds = new HashSet<long>(candidates.Select(candidate => candidate.Id));
+        var rejected = new Dictionary<long, (string Code, string Reason)>();
+        var valid = new List<Candidate>();
+        var plannedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidates)
+        {
+            if (documentNames.TryGetValue(candidate.NewName, out var owner)
+                && owner != candidate.Id
+                && !candidateIds.Contains(owner))
+            {
+                rejected[candidate.Id] = (
+                    "duplicate_name",
+                    "Another view already has the name '" + candidate.NewName + "' (id " + owner + ").");
+                continue;
+            }
+
+            if (!plannedTargets.Add(candidate.NewName))
+            {
+                rejected[candidate.Id] = (
+                    "duplicate_name",
+                    "The name '" + candidate.NewName + "' is used by another item of this batch.");
+                continue;
+            }
+
+            valid.Add(candidate);
+        }
+
+        // An owner that was rejected keeps its name, so candidates depending on it must go too.
+        bool removed;
+        do
+        {
+            removed = false;
+            var validIds = new HashSet<long>(valid.Select(candidate => candidate.Id));
+            for (var index = valid.Count - 1; index >= 0; index--)
+            {
+                var candidate = valid[index];
+                if (!documentNames.TryGetValue(candidate.NewName, out var owner)
+                    || owner == candidate.Id
+                    || validIds.Contains(owner))
+                {
+                    continue;
+                }
+
+                rejected[candidate.Id] = (
+                    "duplicate_name",
+                    "The name '" + candidate.NewName + "' stays taken: its owner (id " + owner +
+                    ") is not renamed by this call.");
+                valid.RemoveAt(index);
+                removed = true;
+            }
+        }
+        while (removed);
+
+        foreach (var candidate in candidates)
+        {
+            if (!rejected.TryGetValue(candidate.Id, out var rejection))
+                continue;
+
+            Reject(
+                outcome,
+                new WriteItemReport { Id = candidate.Id, Name = candidate.OriginalName },
+                rejection.Code,
+                rejection.Reason);
+        }
+
+        return valid;
+    }
+
     private static void ApplyRenames(
         Document doc,
-        IReadOnlyList<(RenameViewItem Item, View View)> valid,
+        IReadOnlyList<Candidate> candidates,
         WriteOutcome outcome,
         bool atomic,
         CancellationToken ct)
     {
-        var entries = valid
-            .Select(pair => new AgentRenamePlanner.Entry
+        var entries = candidates
+            .Select(candidate => new AgentRenamePlanner.Entry
             {
-                Id = pair.Item.ViewId,
-                CurrentName = pair.View.Name,
-                NewName = pair.Item.NewName!.Trim()
+                Id = candidate.Id,
+                CurrentName = candidate.OriginalName,
+                NewName = candidate.NewName
             })
             .ToList();
 
-        var tempEntries = AgentRenamePlanner.SelectTempRenames(entries);
-        if (tempEntries.Count > 0)
-        {
-            foreach (var entry in tempEntries)
-            {
-                var view = doc.GetElement(ElementIdCompat.Create(entry.Id)) as View;
-                if (view is null)
-                    continue;
-                view.Name = AgentRenamePlanner.TempName();
-            }
-        }
+        var documentNames = AgentViewWriteHelper.CollectViewNamesByName(doc).Keys;
+        var plan = AgentRenamePlanner.Build(entries, documentNames);
+        var succeeded = new HashSet<long>();
 
-        foreach (var pair in valid)
+        foreach (var entry in plan.TempFirst)
         {
-            ct.ThrowIfCancellationRequested();
-
-            var view = pair.View;
-            var report = new WriteItemReport
-            {
-                Id = pair.Item.ViewId,
-                Name = view.Name,
-                OldValue = view.Name,
-                NewValue = pair.Item.NewName!.Trim(),
-                Detail = view.ViewType.ToString()
-            };
+            var tempView = doc.GetElement(ElementIdCompat.Create(entry.Id)) as View;
+            if (tempView is null)
+                continue;
 
             try
             {
-                var oldName = view.Name;
-                view.Name = pair.Item.NewName!.Trim();
+                tempView.Name = AgentRenamePlanner.TempName();
+            }
+            catch (Exception ex)
+            {
+                outcome.Warnings.Add(
+                    "Could not reserve a temporary name for view " + entry.Id + ": " + ex.Message);
+            }
+        }
 
-                if (!string.Equals(view.Name, report.NewValue, StringComparison.Ordinal))
+        foreach (var entry in plan.Order)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var view = doc.GetElement(ElementIdCompat.Create(entry.Id)) as View;
+            var report = new WriteItemReport
+            {
+                Id = entry.Id,
+                Name = entry.CurrentName,
+                OldValue = entry.CurrentName,
+                NewValue = entry.NewName
+            };
+
+            if (view is null)
+            {
+                report.ErrorCode = "view_not_found";
+                report.Reason = "The view disappeared during the operation.";
+                outcome.Batch.Failed.Add(report);
+                if (AbortIfAtomic(outcome, atomic))
+                    return;
+                continue;
+            }
+
+            report.Detail = view.ViewType.ToString();
+
+            try
+            {
+                view.Name = entry.NewName;
+
+                if (!string.Equals(view.Name, entry.NewName, StringComparison.Ordinal))
                 {
                     report.Reason = "The view name did not change as expected.";
                     outcome.Batch.Failed.Add(report);
-                    AbortIfAtomic(outcome, atomic);
+                    if (AbortIfAtomic(outcome, atomic))
+                        return;
                     continue;
                 }
 
-                report.OldValue = oldName;
                 report.Name = view.Name;
                 outcome.Batch.Changed.Add(report);
                 outcome.AffectedCount++;
+                succeeded.Add(entry.Id);
 
                 outcome.Items.Add(new ChangeItem
                 {
                     UniqueId = view.UniqueId,
                     ElementId = view.Id.GetValue(),
                     ParameterName = "view_name",
-                    OldValue = oldName,
-                    NewValue = view.Name,
+                    OldValue = entry.CurrentName,
+                    NewValue = entry.NewName,
                     Status = ChangeStatus.Applied
                 });
             }
@@ -221,6 +317,61 @@ public sealed class RenameViewsTool : AgentWriteToolBase
                 outcome.Batch.Failed.Add(report);
                 if (AbortIfAtomic(outcome, atomic))
                     return;
+            }
+        }
+
+        RestoreTemporaryNames(doc, plan, succeeded, outcome);
+
+        var planned = new HashSet<long>(plan.Order.Select(entry => entry.Id));
+        foreach (var candidate in candidates.Where(candidate => !planned.Contains(candidate.Id)))
+        {
+            outcome.Batch.Failed.Add(new WriteItemReport
+            {
+                Id = candidate.Id,
+                Name = candidate.OriginalName,
+                NewValue = candidate.NewName,
+                ErrorCode = "duplicate_name",
+                Reason = "The name '" + candidate.NewName + "' is held by an element this call " +
+                         "does not rename, so the rename cannot be scheduled."
+            });
+        }
+
+        if (outcome.Batch.Failed.Count > 0)
+            AbortIfAtomic(outcome, atomic);
+    }
+
+    private static void RestoreTemporaryNames(
+        Document doc,
+        AgentRenamePlanner.Plan plan,
+        HashSet<long> succeeded,
+        WriteOutcome outcome)
+    {
+        if (outcome.Aborted)
+            return;
+
+        foreach (var entry in plan.TempFirst)
+        {
+            if (succeeded.Contains(entry.Id))
+                continue;
+
+            if (doc.GetElement(ElementIdCompat.Create(entry.Id)) is not View view)
+                continue;
+
+            if (!view.Name.StartsWith(AgentRenamePlanner.TempPrefix, StringComparison.Ordinal))
+                continue;
+
+            try
+            {
+                view.Name = entry.CurrentName;
+                outcome.Warnings.Add(
+                    "View " + entry.Id + " kept its original name '" + entry.CurrentName +
+                    "' after the failed rename.");
+            }
+            catch (Exception ex)
+            {
+                outcome.Warnings.Add(
+                    "View " + entry.Id + " is left with the temporary name '" + view.Name +
+                    "': " + ex.Message + " [Action: rename it manually in Revit]");
             }
         }
     }
@@ -250,6 +401,17 @@ public sealed class RenameViewsTool : AgentWriteToolBase
         outcome.Success = false;
         outcome.ErrorCode = code;
         outcome.Message = message;
+    }
+
+    private sealed class Candidate
+    {
+        public long Id { get; init; }
+
+        public required View View { get; init; }
+
+        public required string OriginalName { get; init; }
+
+        public required string NewName { get; init; }
     }
 
     private sealed class RenameViewsRequest

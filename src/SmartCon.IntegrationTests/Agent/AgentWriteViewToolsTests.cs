@@ -137,6 +137,301 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task RenameViews_Swap_AppliesBothAndUndoRestores()
+    {
+        var tool = CreateRenameViewsTool();
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _planId + ",\"newName\":\"" + TargetName + "\"}," +
+            "{\"viewId\":" + _targetId + ",\"newName\":\"" + PlanName + "\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(GetView(_planId).Name).IsEqualTo(TargetName);
+        await Assert.That(GetView(_targetId).Name).IsEqualTo(PlanName);
+
+        var set = _changeSets!.Last!;
+        await Assert.That(set.Items.Count).IsEqualTo(2);
+        await Assert.That(set.Items.Any(item => item.OldValue == PlanName)).IsTrue();
+        await Assert.That(set.Items.Any(item => item.OldValue == TargetName)).IsTrue();
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
+        await Assert.That(GetView(_targetId).Name).IsEqualTo(TargetName);
+    }
+
+    [Test]
+    public async Task RenameLevels_Swap_SwapsBothAndUndoRestores()
+    {
+        long secondLevelId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed second level", doc =>
+        {
+            var level = ModelSeed.CreateLevel(doc, 6.0);
+            level.Name = "SC_AgentWrite_LevelB";
+            secondLevelId = level.Id.GetValue();
+        });
+
+        var tool = new RenameLevelsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"levelId\":" + _levelId + ",\"newName\":\"SC_AgentWrite_LevelB\"}," +
+            "{\"levelId\":" + secondLevelId + ",\"newName\":\"" + LevelName + "\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(GetLevel(_levelId).Name).IsEqualTo("SC_AgentWrite_LevelB");
+        await Assert.That(GetLevel(secondLevelId).Name).IsEqualTo(LevelName);
+
+        var set = _changeSets!.Last!;
+        await Assert.That(set.Items.Count).IsEqualTo(2);
+        await Assert.That(set.Items.Any(item => item.OldValue == LevelName)).IsTrue();
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(GetLevel(_levelId).Name).IsEqualTo(LevelName);
+        await Assert.That(GetLevel(secondLevelId).Name).IsEqualTo("SC_AgentWrite_LevelB");
+    }
+
+    [Test]
+    public async Task ConfigureViews_RenameTemplate_IsRejected()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new ConfigureViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _templateId + ",\"newName\":\"SC_AgentWrite_TemplateRenamed\"}]," +
+            "\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed[0].GetProperty("errorCode").GetString()).IsEqualTo("view_is_template");
+    }
+
+    [Test]
+    public async Task WriteTools_InputSchemas_AreValidJsonObjects()
+    {
+        var context = new StubRevitContext(Doc);
+        var tools = new List<SmartCon.Core.Services.Interfaces.Agent.IAgentTool>
+        {
+            new RenameViewsTool(context, _transactions!, _changeSets!),
+            new RenameLevelsTool(context, _transactions!, _changeSets!),
+            new ApplyViewTemplateTool(context, _transactions!, _changeSets!),
+            new SetViewRangeTool(context, _transactions!, _changeSets!),
+            new SetViewCropTool(context, _transactions!, _changeSets!),
+            new SetViewVisibilityTool(context, _transactions!, _changeSets!),
+            new ConfigureViewsTool(context, _transactions!, _changeSets!),
+            new CopyViewSettingsTool(context, _transactions!, _changeSets!),
+            new SetParametersTool(context, _transactions!, _changeSets!),
+            new RemapParameterValuesTool(context, _transactions!, _changeSets!),
+            new UndoLastTool(context, _transactions!, _changeSets!)
+        };
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tool in tools)
+        {
+            using var document = JsonDocument.Parse(tool.Definition.InputSchemaJson);
+            var root = document.RootElement;
+            await Assert.That(root.ValueKind).IsEqualTo(JsonValueKind.Object);
+            await Assert.That(root.TryGetProperty("type", out var type)).IsTrue();
+            await Assert.That(type.GetString()).IsEqualTo("object");
+            await Assert.That(names.Add(tool.Definition.Name)).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task RenameLevels_SwapWithCascadeViews_SwapsNamesAndUndoRestores()
+    {
+        long secondLevelId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed cascade pair", doc =>
+        {
+            var first = (Level)doc.GetElement(ElementIdCompat.Create(_levelId));
+            ModelSeed.CreateViewPlanChecked(doc, first.Id, LevelName);
+
+            var second = ModelSeed.CreateLevel(doc, 6.0);
+            second.Name = "SC_AgentWrite_LevelB";
+            secondLevelId = second.Id.GetValue();
+            ModelSeed.CreateViewPlanChecked(doc, second.Id, "SC_AgentWrite_LevelB");
+        });
+
+        var tool = new RenameLevelsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"levelId\":" + _levelId + ",\"newName\":\"SC_AgentWrite_LevelB\"}," +
+            "{\"levelId\":" + secondLevelId + ",\"newName\":\"" + LevelName + "\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(GetLevel(_levelId).Name).IsEqualTo("SC_AgentWrite_LevelB");
+        await Assert.That(GetLevel(secondLevelId).Name).IsEqualTo(LevelName);
+        await Assert.That(PlanForLevel(_levelId).Name).IsEqualTo("SC_AgentWrite_LevelB");
+        await Assert.That(PlanForLevel(secondLevelId).Name).IsEqualTo(LevelName);
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(PlanForLevel(_levelId).Name).IsEqualTo(LevelName);
+        await Assert.That(PlanForLevel(secondLevelId).Name).IsEqualTo("SC_AgentWrite_LevelB");
+    }
+
+    [Test]
+    public async Task ConfigureViews_PartialFailure_StillRecordsChangeSet()
+    {
+        var tool = new ConfigureViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _targetId + ",\"newName\":\"SC_AgentWrite_Partial\"," +
+            "\"templateId\":" + _planId + "}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(GetView(_targetId).Name).IsEqualTo("SC_AgentWrite_Partial");
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(1);
+        await Assert.That(_changeSets.Last!.Items[0].ParameterName).IsEqualTo("view_name");
+
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(failed[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("invalid_template");
+    }
+
+    [Test]
+    public async Task UndoLast_RenameTargetTaken_ReportsConflictAndKeepsChangeSet()
+    {
+        var tool = CreateRenameViewsTool();
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _planId + ",\"newName\":\"SC_AgentWrite_Taken\"}],\"dryRun\":false}");
+        var applied = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+
+        _transactions!.RunInTransaction(Doc, "Take old name", doc =>
+        {
+            var target = (View)doc.GetElement(ElementIdCompat.Create(_targetId));
+            target.Name = PlanName;
+        });
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsFalse();
+        await Assert.That(undo.ErrorCode).IsEqualTo("undo_conflict");
+        await Assert.That(GetView(_planId).Name).IsEqualTo("SC_AgentWrite_Taken");
+        await Assert.That(_changeSets!.Last!.Header.AppliedAt).IsNotNull();
+    }
+
+    [Test]
+    public async Task SetViewCrop_KeepsShapeOnVisibilityToggle_ExtentsRemoveIt_UndoRestores()
+    {
+        _transactions!.RunInTransaction(Doc, "Seed crop shape", doc =>
+        {
+            var view = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            view.CropBoxActive = true;
+            view.CropBoxVisible = true;
+            var loop = CurveLoop.Create(new List<Curve>
+            {
+                Line.CreateBound(new XYZ(0, 0, 0), new XYZ(10, 0, 0)),
+                Line.CreateBound(new XYZ(10, 0, 0), new XYZ(0, 10, 0)),
+                Line.CreateBound(new XYZ(0, 10, 0), new XYZ(0, 0, 0))
+            });
+            view.GetCropRegionShapeManager().SetCropShape(loop);
+        });
+
+        var plan = GetView(_planId);
+        var manager = plan.GetCropRegionShapeManager();
+        if (!manager.ShapeSet)
+            Skip.Test("Шаблон проекта не позволил задать нефигурный crop (CanHaveShape=false)");
+
+        var cropTool = new SetViewCropTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var toggle = cropTool.ExecuteForTests(
+            Parse("{\"items\":[{\"viewId\":" + _planId + ",\"crop\":{\"visible\":false}}],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(toggle.Success).IsTrue();
+        await Assert.That(plan.GetCropRegionShapeManager().ShapeSet).IsTrue();
+
+        var rectangle = cropTool.ExecuteForTests(
+            Parse("{\"items\":[{\"viewId\":" + _planId +
+                  ",\"crop\":{\"minMm\":[-5000,-5000],\"maxMm\":[5000,5000]}}],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(rectangle.Success).IsTrue();
+        await Assert.That(plan.GetCropRegionShapeManager().ShapeSet).IsFalse();
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(plan.GetCropRegionShapeManager().ShapeSet).IsTrue();
+    }
+
+    [Test]
+    public async Task RenameViews_DuplicateItem_IsRejected()
+    {
+        var tool = CreateRenameViewsTool();
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _planId + ",\"newName\":\"SC_AgentWrite_DupA\"}," +
+            "{\"viewId\":" + _planId + ",\"newName\":\"SC_AgentWrite_DupB\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(GetView(_planId).Name).IsEqualTo("SC_AgentWrite_DupA");
+        await Assert.That(_changeSets!.Last!.Items.Count).IsEqualTo(1);
+
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(failed[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("duplicate_item");
+    }
+
+    [Test]
+    public async Task UndoLast_AlreadyRestored_ClosesChangeSet()
+    {
+        var tool = CreateRenameViewsTool();
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _planId + ",\"newName\":\"SC_AgentWrite_Closed\"}],\"dryRun\":false}");
+        var applied = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+
+        _transactions!.RunInTransaction(Doc, "Restore name manually", doc =>
+        {
+            var view = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            view.Name = PlanName;
+        });
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsFalse();
+        await Assert.That(undo.ErrorCode).IsEqualTo("nothing_to_undo");
+        await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
+        await Assert.That(_changeSets!.Last!.Header.AppliedAt).IsNull();
+    }
+
+    private ViewPlan PlanForLevel(long levelId) => new FilteredElementCollector(Doc)
+        .OfClass(typeof(ViewPlan))
+        .Cast<ViewPlan>()
+        .First(view => view.GenLevel is not null
+                       && view.GenLevel.Id.GetValue() == levelId
+                       && (view.Name == LevelName || view.Name == "SC_AgentWrite_LevelB"));
+
+    private Level GetLevel(long id) => (Level)Doc.GetElement(ElementIdCompat.Create(id));
+
+    [Test]
     public async Task ApplyViewTemplate_AppliesAndReadsBack()
     {
         if (_templateId == 0)

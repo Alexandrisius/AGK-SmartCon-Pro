@@ -11,6 +11,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
 {
     private const int DefaultLimit = 500;
     private const int MaxLimit = 500;
+    private const int MaxMappings = 20;
 
     public RemapParameterValuesTool(
         IRevitContext revitContext,
@@ -26,9 +27,11 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         Description =
             "Copies values from a source parameter into a target parameter (typical shared " +
             "parameter migration: old ФОП parameter → new one). mapping: [{source:{name|guid," +
-            "scope}, target:{name|guid,scope}}]. filter: {categories, levelIds, typeIds, limit} " +
-            "selects the elements. Elements without the source value are skipped; storage-type " +
-            "mismatches are converted when possible. dryRun defaults to true.",
+            "scope}, target:{name|guid,scope}}], at most 20 pairs. filter: {categories, " +
+            "levelIds, typeIds, limit} selects the elements; categories are BuiltInCategory " +
+            "tokens (OST_Pipes) or category display names. Elements without the source value " +
+            "are skipped; storage-type mismatches are converted when possible. dryRun " +
+            "defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
@@ -51,11 +54,26 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             return;
         }
 
+        if (mapping.Count > MaxMappings)
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = "limit_exceeded";
+            outcome.Message = "At most " + MaxMappings + " mapping pairs per call are allowed.";
+            return;
+        }
+
         var filter = request!.Filter ?? new RemapFilter();
         var limit = Math.Max(1, Math.Min(filter.Limit ?? DefaultLimit, MaxLimit));
         var atomic = AgentJson.GetBool(args, "atomic", false);
 
-        var categories = ResolveCategories(doc, filter.Categories);
+        if (!TryResolveCategories(doc, filter.Categories, out var categories, out var categoryError,
+                out var categoryReason))
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = categoryError;
+            outcome.Message = categoryReason;
+            return;
+        }
         var levelFilter = new HashSet<long>(filter.LevelIds ?? new List<long>());
         var typeFilter = new HashSet<long>(filter.TypeIds ?? new List<long>());
 
@@ -107,7 +125,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             var anyApplied = false;
             foreach (var pair in mapping)
             {
-                var change = ApplyPair(doc, element, pair, outcome, out var parameterName);
+                var change = ApplyPair(doc, element, pair, outcome, out var parameterName, out var owner);
                 if (change is null)
                     continue; // skipped with a reason recorded by ApplyPair
 
@@ -122,8 +140,8 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
 
                 outcome.Items.Add(new ChangeItem
                 {
-                    UniqueId = element.UniqueId,
-                    ElementId = element.Id.GetValue(),
+                    UniqueId = owner.UniqueId,
+                    ElementId = owner.Id.GetValue(),
                     ParameterName = parameterName,
                     OldValue = change.Value.OldValue,
                     NewValue = change.Value.NewValue,
@@ -157,9 +175,11 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         Element element,
         RemapMapping pair,
         WriteOutcome outcome,
-        out string parameterName)
+        out string parameterName,
+        out Element owner)
     {
         parameterName = string.Empty;
+        owner = element;
 
         if (pair.Target is null)
             return null;
@@ -176,6 +196,8 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         var target = targetResolution.Parameter!;
         parameterName = (targetResolution.IsTypeScope ? "type:" : "instance:") +
                         (target.Definition?.Name ?? pair.Target.Name ?? pair.Target.Guid ?? "?");
+        if (targetResolution.IsTypeScope && target.Element is not null)
+            owner = target.Element;
 
         if (pair.Source is null)
         {
@@ -215,26 +237,70 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         return (before, after);
     }
 
-    private static HashSet<long>? ResolveCategories(Document doc, IReadOnlyList<string>? names)
+    private static bool TryResolveCategories(
+        Document doc,
+        IReadOnlyList<string>? names,
+        out HashSet<long>? ids,
+        out string? errorCode,
+        out string? reason)
     {
-        if (names is null || names.Count == 0)
-            return null;
+        ids = null;
+        errorCode = null;
+        reason = null;
 
-        var ids = new HashSet<long>();
-        foreach (var name in names)
+        if (names is null || names.Count == 0)
+            return true;
+
+        var resolved = new HashSet<long>();
+        var unknown = new List<string>();
+        foreach (var raw in names)
         {
-            if (string.IsNullOrWhiteSpace(name))
+            if (string.IsNullOrWhiteSpace(raw))
                 continue;
 
+            var name = raw.Trim();
             if (Enum.TryParse<BuiltInCategory>(name, ignoreCase: true, out var builtIn))
             {
                 var category = Category.GetCategory(doc, builtIn);
                 if (category is not null)
-                    ids.Add(category.Id.GetValue());
+                {
+                    resolved.Add(category.Id.GetValue());
+                    continue;
+                }
             }
+
+            var byDisplayName = FindCategoryByName(doc, name);
+            if (byDisplayName is not null)
+            {
+                resolved.Add(byDisplayName.Id.GetValue());
+                continue;
+            }
+
+            unknown.Add(name);
         }
 
-        return ids.Count == 0 ? null : ids;
+        if (unknown.Count > 0)
+        {
+            errorCode = "unknown_category";
+            reason = "Unknown category name(s): " + string.Join(", ", unknown) +
+                     ". Pass a BuiltInCategory token (OST_Pipes) or the exact category name " +
+                     "shown in the project.";
+            return false;
+        }
+
+        ids = resolved.Count > 0 ? resolved : null;
+        return true;
+    }
+
+    private static Category? FindCategoryByName(Document doc, string name)
+    {
+        foreach (Category category in doc.Settings.Categories)
+        {
+            if (string.Equals(category.Name, name, StringComparison.OrdinalIgnoreCase))
+                return category;
+        }
+
+        return null;
     }
 
     private sealed class RemapRequest

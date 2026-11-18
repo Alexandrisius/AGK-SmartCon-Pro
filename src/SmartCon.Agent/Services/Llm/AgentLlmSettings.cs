@@ -32,6 +32,10 @@ public sealed class AgentLlmSettings
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(Provider, "opencode", StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsOpenCodeGoProvider(string? provider) =>
+        string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(provider, "opencode", StringComparison.OrdinalIgnoreCase);
+
     public bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey);
 
     public static AgentLlmSettings Load()
@@ -65,14 +69,45 @@ public sealed class AgentLlmSettings
 
     public void Apply(string provider, string model, string apiKey, string proxyUrl)
     {
-        Provider = string.IsNullOrWhiteSpace(provider) ? "openrouter" : provider.Trim();
+        var targetProvider = string.IsNullOrWhiteSpace(provider) ? "openrouter" : provider.Trim();
+        var providerChanged = !string.Equals(Provider, targetProvider, StringComparison.OrdinalIgnoreCase);
+
+        Provider = targetProvider;
         Model = string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim();
         BaseUrl = IsOpenCodeGo ? DefaultOpenCodeGoBaseUrl : DefaultOpenRouterBaseUrl;
 
         if (!string.IsNullOrWhiteSpace(apiKey))
+        {
             ApiKey = apiKey.Trim();
+        }
+        else if (providerChanged)
+        {
+            // Never carry the previous provider's key over to another provider: load the
+            // key stored for the target provider, or clear it so the UI asks for one.
+            ApiKey = LoadStoredKey(targetProvider);
+        }
 
         ProxyUrl = proxyUrl?.Trim() ?? string.Empty;
+    }
+
+    /// <summary>Test seam: replaces the stored-key lookup in unit tests.</summary>
+    internal static Func<string, string?>? StoredKeyProvider { get; set; }
+
+    private static string LoadStoredKey(string provider)
+    {
+        if (StoredKeyProvider is not null)
+            return StoredKeyProvider(provider) ?? string.Empty;
+
+        var keyName = IsOpenCodeGoProvider(provider)
+            ? "SMARTCON_OPENCODE_GO_API_KEY"
+            : "SMARTCON_OPENROUTER_API_KEY";
+
+        var fromEnvironment = Environment.GetEnvironmentVariable(keyName);
+        if (!string.IsNullOrWhiteSpace(fromEnvironment))
+            return fromEnvironment.Trim();
+
+        var values = AgentEnvFile.Load();
+        return values.TryGetValue(keyName, out var value) ? value.Trim() : string.Empty;
     }
 
     public void Save()

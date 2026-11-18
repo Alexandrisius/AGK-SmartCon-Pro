@@ -24,9 +24,10 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
         Name = "rename_levels",
         Description =
             "Renames levels by an explicit levelId → newName list. Pre-checks level name " +
-            "uniqueness. Revit also renames the views whose name equals the old level name " +
-            "(plans/sections created for that level) — the tool verifies that cascade does " +
-            "not create duplicate view names. dryRun defaults to true and only reports the plan.",
+            "uniqueness and handles swaps inside the batch (A→B, B→A). Revit also renames " +
+            "the views whose name equals the old level name (plans/sections created for " +
+            "that level) — the tool verifies that cascade does not create duplicate view " +
+            "names. dryRun defaults to true and only reports the plan.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""levelId"":{""type"":""integer""},""newName"":{""type"":""string"",""minLength"":1}},""required"":[""levelId"",""newName""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
@@ -63,23 +64,27 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
         foreach (var level in allLevels)
             levelNames[level.Name] = level.Id.GetValue();
 
-        var allViews = new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>().ToList();
-        var viewNames = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        foreach (var view in allViews)
-        {
-            if (view.ViewType is ViewType.ProjectBrowser or ViewType.SystemBrowser or ViewType.Internal)
-                continue;
-            viewNames[view.Name] = view.Id.GetValue();
-        }
+        var allViews = new FilteredElementCollector(doc)
+            .OfClass(typeof(View))
+            .Cast<View>()
+            .Where(view => view.ViewType is not (ViewType.ProjectBrowser
+                or ViewType.SystemBrowser or ViewType.Internal))
+            .ToList();
 
-        var plannedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var valid = new List<(RenameLevelItem Item, Level Level)>();
-
+        var candidates = new List<Candidate>();
+        var seenIds = new HashSet<long>();
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = item.LevelId, NewValue = item.NewName };
+            if (!seenIds.Add(item.LevelId))
+            {
+                Reject(outcome, report, "duplicate_item",
+                    "Level " + item.LevelId + " is listed more than once in this call.");
+                continue;
+            }
+
             if (!AgentViewWriteHelper.TryGetLevel(doc, item.LevelId, out var level, out var reason))
             {
                 Reject(outcome, report, "level_not_found", reason);
@@ -104,36 +109,16 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
                 continue;
             }
 
-            if (levelNames.TryGetValue(newName, out var owner) && owner != item.LevelId)
+            candidates.Add(new Candidate
             {
-                Reject(outcome, report, "duplicate_name",
-                    "Another level already has the name '" + newName + "' (id " + owner + ").");
-                continue;
-            }
-
-            if (!plannedNames.Add(newName))
-            {
-                Reject(outcome, report, "duplicate_name",
-                    "The name '" + newName + "' is used by another item of this batch.");
-                continue;
-            }
-
-            // Revit renames the views whose name equals the old level name; make sure
-            // the cascade does not collide with an unrelated view.
-            var cascadeConflict = FindCascadeConflict(allViews, level.Name, newName);
-            if (cascadeConflict is not null)
-            {
-                Reject(outcome, report, "cascade_conflict",
-                    "Renaming this level would also rename its view to '" + newName +
-                    "', but view '" + cascadeConflict + "' already uses that name.");
-                continue;
-            }
-
-            levelNames.Remove(level.Name);
-            levelNames[newName] = item.LevelId;
-            valid.Add((item, level));
+                Item = item,
+                Level = level,
+                OriginalName = level.Name,
+                NewName = newName
+            });
         }
 
+        var valid = SelectValid(doc, outcome, allViews, levelNames, candidates);
         if (valid.Count == 0)
         {
             outcome.Description = "rename_levels: nothing to rename";
@@ -155,50 +140,248 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
         ApplyRenames(doc, valid, outcome, atomic, ct);
     }
 
+    /// <summary>
+    /// Drops candidates whose level name cannot be freed by this batch and candidates
+    /// whose view-name cascade would collide with an unrelated view.
+    /// </summary>
+    private static List<Candidate> SelectValid(
+        Document doc,
+        WriteOutcome outcome,
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<string, long> documentNames,
+        IReadOnlyList<Candidate> candidates)
+    {
+        var candidateIds = new HashSet<long>(candidates.Select(candidate => candidate.Item.LevelId));
+        var rejected = new Dictionary<long, (string Code, string Reason)>();
+        var valid = new List<Candidate>();
+        var plannedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidates)
+        {
+            if (documentNames.TryGetValue(candidate.NewName, out var owner)
+                && owner != candidate.Item.LevelId
+                && !candidateIds.Contains(owner))
+            {
+                rejected[candidate.Item.LevelId] = (
+                    "duplicate_name",
+                    "Another level already has the name '" + candidate.NewName +
+                    "' (id " + owner + ").");
+                continue;
+            }
+
+            if (!plannedTargets.Add(candidate.NewName))
+            {
+                rejected[candidate.Item.LevelId] = (
+                    "duplicate_name",
+                    "The name '" + candidate.NewName + "' is used by another item of this batch.");
+                continue;
+            }
+
+            valid.Add(candidate);
+        }
+
+        bool removed;
+        do
+        {
+            removed = false;
+            var validIds = new HashSet<long>(valid.Select(candidate => candidate.Item.LevelId));
+            for (var index = valid.Count - 1; index >= 0; index--)
+            {
+                var candidate = valid[index];
+                if (!documentNames.TryGetValue(candidate.NewName, out var owner)
+                    || owner == candidate.Item.LevelId
+                    || validIds.Contains(owner))
+                {
+                    continue;
+                }
+
+                rejected[candidate.Item.LevelId] = (
+                    "duplicate_name",
+                    "The name '" + candidate.NewName + "' stays taken: its owner (id " + owner +
+                    ") is not renamed by this call.");
+                valid.RemoveAt(index);
+                removed = true;
+            }
+        }
+        while (removed);
+
+        // Revit renames every view whose name equals the old level name. Simulate the
+        // final state with the full accepted set (a swap frees names in the same batch),
+        // then drop candidates whose cascade would collide inside one view family.
+        var accepted = new List<Candidate>(valid);
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var candidate in accepted.ToList())
+            {
+                if (!HasCascadeConflict(doc, views, accepted, candidate))
+                    continue;
+
+                accepted.Remove(candidate);
+                rejected[candidate.Item.LevelId] = (
+                    "cascade_conflict",
+                    "Renaming this level would also rename its views to '" + candidate.NewName +
+                    "', but another view of the same family already has that name.");
+                changed = true;
+            }
+        }
+        while (changed);
+
+        foreach (var candidate in candidates)
+        {
+            if (!rejected.TryGetValue(candidate.Item.LevelId, out var rejection))
+                continue;
+
+            Reject(
+                outcome,
+                new WriteItemReport { Id = candidate.Item.LevelId, Name = candidate.OriginalName },
+                rejection.Code,
+                rejection.Reason);
+        }
+
+        return accepted;
+    }
+
+    /// <summary>
+    /// True when the views cascaded by <paramref name="candidate"/> would end up with
+    /// the same name as another view of the same view family in the final state.
+    /// Equal names across different view families (floor plan vs ceiling plan) are
+    /// allowed by Revit and must not be reported.
+    /// </summary>
+    private static bool HasCascadeConflict(
+        Document doc,
+        IReadOnlyList<View> views,
+        IReadOnlyList<Candidate> accepted,
+        Candidate candidate)
+    {
+        foreach (var cascaded in views)
+        {
+            if (!string.Equals(cascaded.Name, candidate.OriginalName, StringComparison.Ordinal))
+                continue;
+
+            foreach (var other in views)
+            {
+                if (ReferenceEquals(other, cascaded))
+                    continue;
+
+                if (!SameViewFamily(doc, other, cascaded))
+                    continue;
+
+                if (string.Equals(
+                        FinalName(other, accepted), candidate.NewName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static string FinalName(View view, IReadOnlyList<Candidate> accepted)
+    {
+        foreach (var candidate in accepted)
+        {
+            if (string.Equals(view.Name, candidate.OriginalName, StringComparison.Ordinal))
+                return candidate.NewName;
+        }
+
+        return view.Name;
+    }
+
+    private static bool SameViewFamily(Document doc, View left, View right)
+    {
+        var leftFamily = FamilyOf(doc, left);
+        var rightFamily = FamilyOf(doc, right);
+        if (leftFamily is null || rightFamily is null)
+            return left.ViewType == right.ViewType;
+
+        return leftFamily == rightFamily;
+    }
+
+    private static ViewFamily? FamilyOf(Document doc, View view) =>
+        doc.GetElement(view.GetTypeId()) is ViewFamilyType familyType
+            ? familyType.ViewFamily
+            : null;
+
     private static void ApplyRenames(
         Document doc,
-        IReadOnlyList<(RenameLevelItem Item, Level Level)> valid,
+        IReadOnlyList<Candidate> candidates,
         WriteOutcome outcome,
         bool atomic,
         CancellationToken ct)
     {
-        var entries = valid
-            .Select(pair => new AgentRenamePlanner.Entry
+        var entries = candidates
+            .Select(candidate => new AgentRenamePlanner.Entry
             {
-                Id = pair.Item.LevelId,
-                CurrentName = pair.Level.Name,
-                NewName = pair.Item.NewName!.Trim()
+                Id = candidate.Item.LevelId,
+                CurrentName = candidate.OriginalName,
+                NewName = candidate.NewName
             })
             .ToList();
 
-        foreach (var entry in AgentRenamePlanner.SelectTempRenames(entries))
-        {
-            var level = doc.GetElement(ElementIdCompat.Create(entry.Id)) as Level;
-            if (level is not null)
-                level.Name = AgentRenamePlanner.TempName();
-        }
+        var documentNames = new FilteredElementCollector(doc)
+            .OfClass(typeof(Level))
+            .Cast<Level>()
+            .Select(level => level.Name)
+            .ToList();
 
-        foreach (var pair in valid)
-        {
-            ct.ThrowIfCancellationRequested();
+        var plan = AgentRenamePlanner.Build(entries, documentNames);
+        var succeeded = new HashSet<long>();
 
-            var level = pair.Level;
-            var report = new WriteItemReport
-            {
-                Id = pair.Item.LevelId,
-                NewValue = pair.Item.NewName!.Trim(),
-                Detail = "Elevation " + AgentUnitsFormat.ToMillimeters(level.Elevation).ToString("F0") + " mm"
-            };
+        foreach (var entry in plan.TempFirst)
+        {
+            var tempLevel = doc.GetElement(ElementIdCompat.Create(entry.Id)) as Level;
+            if (tempLevel is null)
+                continue;
 
             try
             {
-                var oldName = level.Name;
-                level.Name = pair.Item.NewName!.Trim();
+                tempLevel.Name = AgentRenamePlanner.TempName();
+            }
+            catch (Exception ex)
+            {
+                outcome.Warnings.Add(
+                    "Could not reserve a temporary name for level " + entry.Id + ": " + ex.Message);
+            }
+        }
 
-                if (!string.Equals(level.Name, report.NewValue, StringComparison.Ordinal))
+        foreach (var entry in plan.Order)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var level = doc.GetElement(ElementIdCompat.Create(entry.Id)) as Level;
+            var report = new WriteItemReport
+            {
+                Id = entry.Id,
+                Name = entry.CurrentName,
+                OldValue = entry.CurrentName,
+                NewValue = entry.NewName
+            };
+
+            if (level is null)
+            {
+                report.ErrorCode = "level_not_found";
+                report.Reason = "The level disappeared during the operation.";
+                outcome.Batch.Failed.Add(report);
+                if (AbortIfAtomic(outcome, atomic))
+                    return;
+                continue;
+            }
+
+            report.Detail = "Elevation " +
+                            AgentUnitsFormat.ToMillimeters(level.Elevation)
+                                .ToString("F0", System.Globalization.CultureInfo.InvariantCulture) +
+                            " mm";
+
+            try
+            {
+                level.Name = entry.NewName;
+
+                if (!string.Equals(level.Name, entry.NewName, StringComparison.Ordinal))
                 {
-                    report.Name = oldName;
-                    report.OldValue = oldName;
                     report.Reason = "The level name did not change as expected.";
                     outcome.Batch.Failed.Add(report);
                     if (AbortIfAtomic(outcome, atomic))
@@ -207,17 +390,17 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
                 }
 
                 report.Name = level.Name;
-                report.OldValue = oldName;
                 outcome.Batch.Changed.Add(report);
                 outcome.AffectedCount++;
+                succeeded.Add(entry.Id);
 
                 outcome.Items.Add(new ChangeItem
                 {
                     UniqueId = level.UniqueId,
                     ElementId = level.Id.GetValue(),
                     ParameterName = "level_name",
-                    OldValue = oldName,
-                    NewValue = level.Name,
+                    OldValue = entry.CurrentName,
+                    NewValue = entry.NewName,
                     Status = ChangeStatus.Applied
                 });
             }
@@ -230,28 +413,61 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
                     return;
             }
         }
-    }
 
-    private static string? FindCascadeConflict(
-        IReadOnlyList<View> views,
-        string oldLevelName,
-        string newLevelName)
-    {
-        foreach (var view in views)
+        RestoreTemporaryNames(doc, plan, succeeded, outcome);
+
+        var planned = new HashSet<long>(plan.Order.Select(entry => entry.Id));
+        foreach (var candidate in candidates.Where(candidate => !planned.Contains(candidate.Item.LevelId)))
         {
-            if (!string.Equals(view.Name, oldLevelName, StringComparison.Ordinal))
-                continue;
-
-            foreach (var other in views)
+            outcome.Batch.Failed.Add(new WriteItemReport
             {
-                if (ReferenceEquals(other, view))
-                    continue;
-                if (string.Equals(other.Name, newLevelName, StringComparison.Ordinal))
-                    return other.Name;
-            }
+                Id = candidate.Item.LevelId,
+                Name = candidate.OriginalName,
+                NewValue = candidate.NewName,
+                ErrorCode = "duplicate_name",
+                Reason = "The name '" + candidate.NewName + "' is held by an element this call " +
+                         "does not rename, so the rename cannot be scheduled."
+            });
         }
 
-        return null;
+        if (outcome.Batch.Failed.Count > 0)
+            AbortIfAtomic(outcome, atomic);
+    }
+
+    private static void RestoreTemporaryNames(
+        Document doc,
+        AgentRenamePlanner.Plan plan,
+        HashSet<long> succeeded,
+        WriteOutcome outcome)
+    {
+        if (outcome.Aborted)
+            return;
+
+        foreach (var entry in plan.TempFirst)
+        {
+            if (succeeded.Contains(entry.Id))
+                continue;
+
+            if (doc.GetElement(ElementIdCompat.Create(entry.Id)) is not Level level)
+                continue;
+
+            if (!level.Name.StartsWith(AgentRenamePlanner.TempPrefix, StringComparison.Ordinal))
+                continue;
+
+            try
+            {
+                level.Name = entry.CurrentName;
+                outcome.Warnings.Add(
+                    "Level " + entry.Id + " kept its original name '" + entry.CurrentName +
+                    "' after the failed rename.");
+            }
+            catch (Exception ex)
+            {
+                outcome.Warnings.Add(
+                    "Level " + entry.Id + " is left with the temporary name '" + level.Name +
+                    "': " + ex.Message + " [Action: rename it manually in Revit]");
+            }
+        }
     }
 
     private static bool AbortIfAtomic(WriteOutcome outcome, bool atomic)
@@ -279,6 +495,17 @@ public sealed class RenameLevelsTool : AgentWriteToolBase
         outcome.Success = false;
         outcome.ErrorCode = code;
         outcome.Message = message;
+    }
+
+    private sealed class Candidate
+    {
+        public required RenameLevelItem Item { get; init; }
+
+        public required Level Level { get; init; }
+
+        public required string OriginalName { get; init; }
+
+        public required string NewName { get; init; }
     }
 
     private sealed class RenameLevelsRequest

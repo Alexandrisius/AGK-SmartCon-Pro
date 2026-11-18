@@ -270,6 +270,116 @@ public sealed class AgentWriteParameterUndoTests : RevitApiTest
         await Assert.That(_changeSets!.Last!.Items[0].ParameterName).IsEqualTo("instance:Mark");
     }
 
+    [Test]
+    public async Task SetParameters_DoubleWithoutUnit_Fails()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateSetParametersTool();
+        var args = Parse(
+            "{\"items\":[{\"elementId\":" + _wallId + ",\"parameter\":\"Base Offset\",\"value\":\"250\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("invalid_value");
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetParameters_DoubleWithRawUnit_WritesInternalUnits()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateSetParametersTool();
+        var args = Parse(
+            "{\"items\":[{\"elementId\":" + _wallId + ",\"parameter\":\"Base Offset\",\"value\":\"0.25\",\"unit\":\"raw\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var element = Doc.GetElement(ElementIdCompat.Create(_wallId))!;
+        var parameter = element.get_Parameter(BuiltInParameter.WALL_BASE_OFFSET);
+        await Assert.That(Math.Abs(parameter!.AsDouble() - 0.25) < 1e-9).IsTrue();
+    }
+
+    [Test]
+    public async Task SetParameters_TypeScope_ChangeItemReferencesTypeElement()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateSetParametersTool();
+        var args = Parse(
+            "{\"items\":[{\"elementId\":" + _wallId + ",\"parameter\":\"Description\",\"scope\":\"type\",\"value\":\"AgentTypeOwner\"}],\"dryRun\":false}");
+
+        var applied = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+
+        var wall = Doc.GetElement(ElementIdCompat.Create(_wallId))!;
+        var type = Doc.GetElement(wall.GetTypeId())!;
+        var item = _changeSets!.Last!.Items[0];
+        await Assert.That(item.UniqueId).IsEqualTo(type.UniqueId);
+        await Assert.That(item.ElementId).IsEqualTo(type.Id.GetValue());
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        var description = type.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION);
+        await Assert.That(description!.AsString()).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task RemapParameterValues_UnknownCategory_Fails()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new RemapParameterValuesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"mapping\":[{\"source\":{\"name\":\"Comments\"},\"target\":{\"name\":\"Mark\"}}]," +
+            "\"filter\":{\"categories\":[\"OST_NotARealCategory\"]},\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("unknown_category");
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RemapParameterValues_CategoryDisplayName_Works()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        _transactions!.RunInTransaction(Doc, "Seed value", doc =>
+        {
+            var wall = doc.GetElement(ElementIdCompat.Create(_wallId));
+            wall?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(Comments);
+        });
+
+        var tool = new RemapParameterValuesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"mapping\":[{\"source\":{\"name\":\"Comments\"},\"target\":{\"name\":\"Mark\"}}]," +
+            "\"filter\":{\"categories\":[\"Walls\"]},\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var wall = Doc.GetElement(ElementIdCompat.Create(_wallId))!;
+        await Assert.That(wall.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)!.AsString())
+            .IsEqualTo(Comments);
+    }
+
     private SetParametersTool CreateSetParametersTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 

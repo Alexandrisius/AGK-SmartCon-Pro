@@ -133,6 +133,16 @@ internal sealed class ViewCropState
 
     public bool Visible { get; set; }
 
+    /// <summary>True when the view crop is a non-rectangular sketch.</summary>
+    public bool ShapeSet { get; set; }
+
+    /// <summary>
+    /// Polygon points of the crop sketch in millimetres (view frame), implicitly
+    /// closed. Without them an undo of a shape → rectangle transition cannot
+    /// restore the sketch: View.CropBox has no effect on non-rectangular crops.
+    /// </summary>
+    public List<double[]>? ShapeMm { get; set; }
+
     public double[]? MinMm { get; set; }
 
     public double[]? MaxMm { get; set; }

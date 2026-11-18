@@ -137,6 +137,43 @@ Agent-интеграционные тесты **не компилируются 
   `ITransactionService` — на `StubRevitContext`, change set store — `InMemoryAgentChangeSetStore`
   (SQLite-стор живет в SmartCon.Agent, а его нельзя тянуть в IntegrationTests — WPF/RevitAPIUI).
 
+## Валидация write-layer (gate `general`) и фикс-проход
+
+Первый вердикт валидатора: **FAIL** — BLOCKER (невалидная JSON-схема `set_view_visibility`)
++ HIGH-дефекты. Всё закрыто до повторной валидации:
+
+| Пункт | Что было | Что сделано |
+|---|---|---|
+| BLOCKER | `set_view_visibility` InputSchemaJson не парсился | схема перегенерирована; `AgentToolRegistry.ValidateDefinition` парсит схемы всех инструментов на старте и падает с именем инструмента; тест `WriteTools_InputSchemas_AreValidJsonObjects` |
+| HIGH | CancellationToken после commit мог отменить запись change set | персист/`MarkRolledBackAsync` только с `CancellationToken.None` |
+| HIGH | частичные изменения `configure_views`/`copy_view_settings` не попадали в change set | `AddChangeItems` + `AffectedCount++` на failure-пути; `all_items_failed` только при `AffectedCount==0`; warning о partial |
+| HIGH | rename swap/cycle не работал (preflight отклонял, temp-имена теряли OldValue) | `AgentRenamePlanner.Build` (head-first порядок, temp для циклов), валидация с учётом освобождаемых имён, OriginalName в change item; undo откатывает rename-ы пакетно через тот же плейнер |
+| HIGH | crop shape нельзя было откатить | `ViewCropState.ShapeMm` (полигон в мм), `ApplyCropState` снимает shape до CropBox, `ApplyCropShape` включает CropBoxActive/Visible + `IsCropRegionShapeValid` |
+| HIGH | `set_parameters` Double без unit писал внутренние единицы молча | отказ `invalid_value` с подсказкой; `unit="raw"` — явный opt-in; no-op по `RawValue`; type-scope change item ссылается на type element |
+| HIGH | remap: неизвестная категория → молча пустой фильтр | `unknown_category`, display-name категорий, лимит 20 mapping, confirmation count учитывает `filter.limit` |
+| HIGH | смена LLM-провайдера переносила старый ключ | `Apply` при смене провайдера грузит ключ целевого из env/secrets.env или очищает; тест-сим `StoredKeyProvider`, 4 unit-теста |
+| MEDIUM | rename_levels: ложный cascade_conflict (swap, floor plan + RCP) | каскад проверяется по полному accepted-set, конфликт только внутри одного `ViewFamily`; тест `RenameLevels_SwapWithCascadeViews_*` |
+| MEDIUM | undo молча пропускал неспланированные rename-ы и мог закрыть набор | неспланированные → `undo_conflict`; undo ничего не откатил и failed нет → `RollBackChangeSetId` (набор закрывается) |
+| MEDIUM | temp-имя оставалось после сбоя rename | `RestoreTemporaryNames` + warning с `[Action]` |
+| MEDIUM | `AgentViewWriteHelper` 635 / `UndoLastTool` 622 строк | partial-разбивка: `AgentViewWriteHelper.Crop.cs`, `UndoLastTool.Renames.cs` |
+| MEDIUM | дубли `viewId`/`levelId` в одном вызове | `duplicate_item` |
+| MEDIUM | `configure_views` rename на шаблоне/листе | `view_is_template` / `unsupported_view_type` guard |
+| HIGH (второй проход) | пометка change set в обход реального коммита (silent rollback Revit) | в ветке `!committed` базового класса `RollBackChangeSetId = null`; маркировка только при `!dryRun` |
+| MEDIUM | «залипание» набора: skipped/уже-восстановленные держали set applied | «уже восстановлено» → skipped до conflict-проверки; набор закрывается, если все items skipped; `undo_partial` только по реальным `failed` |
+
+Осознанно не сделано: rename-секции `configure_views`/`copy_view_settings` не используют
+плейнер (swap имён внутри одного вызова — только через `rename_views`); `TryReadCropShape`
+поддерживает один loop из прямых сегментов (дуги/несколько loop → warning); undo уровня
+не записывает каскадно переименованные виды (Revit переименовывает их обратно сам).
+Известное ограничение undo: если старое имя навсегда занято новым элементом
+(`undo_conflict`), неименованный `undo_last` будет снова и снова возвращаться к этому
+набору — обход через явный `changeSetId` более раннего набора; «abandon change set» API
+пока нет.
+
+Проверка после прохода (финальный gate): unit 3368/3368; integration Agent R25
+65 pass / 2 skip (67 total); R27 (net10) 65 pass / 2 skip; net48 (Revit 2023)
+245 pass / 12 skip; 7 конфигураций — 0 ошибок. Валидатор `general` — **PASS**.
+
 ## Долг / что осталось
 
 1. Ручная приёмка в Revit (владелец): write-flow, оверлей подтверждения, undo.

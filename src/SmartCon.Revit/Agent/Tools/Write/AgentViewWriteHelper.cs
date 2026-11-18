@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 
@@ -8,7 +8,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// Read/apply helpers shared by the view write tools. All view-range and crop
 /// values are exchanged in millimetres; conversion to internal units happens here.
 /// </summary>
-internal static class AgentViewWriteHelper
+internal static partial class AgentViewWriteHelper
 {
     private static readonly char[] ForbiddenNameChars =
     {
@@ -187,138 +187,6 @@ internal static class AgentViewWriteHelper
         ApplyPlane(range, spec.Bottom, PlanViewPlane.BottomClipPlane);
         ApplyPlane(range, spec.ViewDepth, PlanViewPlane.ViewDepthPlane);
         plan.SetViewRange(range);
-    }
-
-    internal static ViewCropState ReadCropState(View view)
-    {
-        var state = new ViewCropState();
-        try
-        {
-            state.Active = view.CropBoxActive;
-            state.Visible = view.CropBoxVisible;
-        }
-        catch (Exception)
-        {
-            return state;
-        }
-
-        var box = view.CropBox;
-        if (box is null)
-            return state;
-
-        state.MinMm = new[]
-        {
-            AgentUnitsFormat.ToMillimeters(box.Min.X),
-            AgentUnitsFormat.ToMillimeters(box.Min.Y),
-            AgentUnitsFormat.ToMillimeters(box.Min.Z)
-        };
-        state.MaxMm = new[]
-        {
-            AgentUnitsFormat.ToMillimeters(box.Max.X),
-            AgentUnitsFormat.ToMillimeters(box.Max.Y),
-            AgentUnitsFormat.ToMillimeters(box.Max.Z)
-        };
-        return state;
-    }
-
-    internal static void ApplyCropState(View view, ViewCropState state, List<string> warnings)
-    {
-        if (state.MinMm is not null && state.MaxMm is not null
-            && state.MinMm.Length >= 2 && state.MaxMm.Length >= 2)
-        {
-            var existing = view.CropBox;
-            var minZ = existing?.Min.Z ?? 0.0;
-            var maxZ = existing?.Max.Z ?? 0.0;
-            if (state.MinMm.Length >= 3)
-                minZ = ToInternal(state.MinMm[2]);
-            if (state.MaxMm.Length >= 3)
-                maxZ = ToInternal(state.MaxMm[2]);
-
-            view.CropBox = new BoundingBoxXYZ
-            {
-                Min = new XYZ(ToInternal(state.MinMm[0]), ToInternal(state.MinMm[1]), minZ),
-                Max = new XYZ(ToInternal(state.MaxMm[0]), ToInternal(state.MaxMm[1]), maxZ)
-            };
-        }
-
-        if (state.Active)
-            view.CropBoxActive = true;
-
-        view.CropBoxVisible = state.Visible;
-
-        if (!state.Active)
-            SetCropActive(view, false, warnings);
-    }
-
-    /// <summary>
-    /// Copies the crop region of <paramref name="source"/> to <paramref name="target"/>.
-    /// Crop shape coordinates are in the view frame, so the copy works across
-    /// views of the same orientation (mvp-plan §7A.6).
-    /// </summary>
-    internal static void CopyCrop(View source, View target, List<string> warnings)
-    {
-        var sourceBox = ReadCropState(source);
-        var targetBox = ReadCropState(target);
-
-        target.CropBoxActive = true;
-        target.CropBoxVisible = sourceBox.Visible;
-
-        if (sourceBox.MinMm is not null && sourceBox.MaxMm is not null)
-        {
-            target.CropBox = new BoundingBoxXYZ
-            {
-                Min = new XYZ(
-                    ToInternal(sourceBox.MinMm[0]),
-                    ToInternal(sourceBox.MinMm[1]),
-                    ToInternal(targetBox.MinMm is { Length: >= 3 } ? targetBox.MinMm[2] : 0.0)),
-                Max = new XYZ(
-                    ToInternal(sourceBox.MaxMm[0]),
-                    ToInternal(sourceBox.MaxMm[1]),
-                    ToInternal(targetBox.MaxMm is { Length: >= 3 } ? targetBox.MaxMm[2] : 0.0))
-            };
-        }
-
-        CurveLoop? shape = null;
-        try
-        {
-            var manager = source.GetCropRegionShapeManager();
-            if (manager is not null && manager.ShapeSet)
-            {
-                var loops = manager.GetCropShape();
-                if (loops.Count == 1)
-                    shape = loops[0];
-                else if (loops.Count > 1)
-                    warnings.Add("Non-rectangular crop of '" + source.Name +
-                                 "' has multiple loops; only the first one is copied.");
-            }
-        }
-        catch (Exception)
-        {
-            warnings.Add("Crop shape of '" + source.Name + "' could not be read; " +
-                         "only the crop extents were copied.");
-        }
-
-        if (shape is not null)
-        {
-            try
-            {
-                var targetManager = target.GetCropRegionShapeManager();
-                if (targetManager is not null && targetManager.CanHaveShape)
-                    targetManager.SetCropShape(shape);
-                else
-                    warnings.Add("View '" + target.Name +
-                                 "' does not support non-rectangular crop shapes; " +
-                                 "only the crop extents were copied.");
-            }
-            catch (Exception ex)
-            {
-                warnings.Add("Crop shape could not be applied to '" + target.Name + "': " +
-                             ex.Message);
-            }
-        }
-
-        if (!sourceBox.Active)
-            SetCropActive(target, false, warnings);
     }
 
     internal static ViewVisibilityState ReadVisibility(Document doc, View view)
@@ -517,17 +385,6 @@ internal static class AgentViewWriteHelper
             range.SetOffset(plane, ToInternal(spec.OffsetMm.Value));
     }
 
-    private static void SetCropActive(View view, bool active, List<string> warnings)
-    {
-        try
-        {
-            view.CropBoxActive = active;
-        }
-        catch (Exception ex)
-        {
-            warnings.Add("CropBoxActive could not be set for '" + view.Name + "': " + ex.Message);
-        }
-    }
 
     private static double ToInternal(double millimeters) =>
         UnitUtils.ConvertToInternalUnits(millimeters, UnitTypeId.Millimeters);

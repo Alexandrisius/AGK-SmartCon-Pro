@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
@@ -14,7 +14,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// Only changes recorded by SmartCon are touched; items whose current value no
 /// longer matches the recorded new value are reported as conflicts and skipped.
 /// </summary>
-public sealed class UndoLastTool : AgentWriteToolBase
+public sealed partial class UndoLastTool : AgentWriteToolBase
 {
     public UndoLastTool(
         IRevitContext revitContext,
@@ -49,14 +49,31 @@ public sealed class UndoLastTool : AgentWriteToolBase
 
         ChangeSetDetails? details;
         var requestedId = AgentJson.GetString(args, "changeSetId");
-        if (!string.IsNullOrWhiteSpace(requestedId) && Guid.TryParse(requestedId, out var parsedId))
+        if (!string.IsNullOrWhiteSpace(requestedId))
         {
+            if (!Guid.TryParse(requestedId, out var parsedId))
+            {
+                outcome.Success = false;
+                outcome.ErrorCode = "invalid_change_set_id";
+                outcome.Message = "'" + requestedId + "' is not a valid change set id (GUID).";
+                return;
+            }
+
             details = AsyncBridge.RunSync(() => ChangeSets.GetAsync(parsedId, ct));
             if (details is null)
             {
                 outcome.Success = false;
                 outcome.ErrorCode = "change_set_not_found";
                 outcome.Message = "Change set " + requestedId + " was not found.";
+                return;
+            }
+
+            if (!details.Header.AppliedAt.HasValue)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode = "change_set_not_applied";
+                outcome.Message = "Change set " + requestedId +
+                                  " is not applied (already rolled back or never applied).";
                 return;
             }
         }
@@ -86,56 +103,110 @@ public sealed class UndoLastTool : AgentWriteToolBase
         outcome.SuppressChangeSet = true;
         outcome.RollBackChangeSetId = details.Header.Id;
 
+        var renames = new List<(ChangeItem Item, Element Element)>();
+
         for (var index = details.Items.Count - 1; index >= 0; index--)
         {
             ct.ThrowIfCancellationRequested();
 
             var item = details.Items[index];
-            var report = new WriteItemReport
-            {
-                Id = item.ElementId,
-                Name = item.ParameterName,
-                OldValue = item.NewValue,
-                NewValue = item.OldValue
-            };
+            var key = item.ParameterName ?? string.Empty;
 
-            var element = ResolveElement(doc, item);
-            if (element is null)
+            // Name renames are reverted as one batch: an A↔B swap must be planned with
+            // temporary names, otherwise the first restore collides with the second view.
+            if (key is "view_name" or "level_name")
             {
-                report.ErrorCode = "element_not_found";
-                report.Reason = "The element no longer exists in the document.";
-                outcome.Batch.Failed.Add(report);
+                var element = ResolveElement(doc, item);
+                var report = CreateReport(item);
+                if (element is null)
+                {
+                    report.ErrorCode = "element_not_found";
+                    report.Reason = "The element no longer exists in the document.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                if ((key == "view_name" && element is not View)
+                    || (key == "level_name" && element is not Level))
+                {
+                    report.ErrorCode = "unsupported_element";
+                    report.Reason = "Element " + item.ElementId + " does not match '" + key + "'.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                renames.Add((item, element));
                 continue;
             }
 
-            var (ok, errorCode, reason) = RevertSafely(doc, element, item, force);
+            var genericReport = CreateReport(item);
+
+            var genericElement = ResolveElement(doc, item);
+            if (genericElement is null)
+            {
+                genericReport.ErrorCode = "element_not_found";
+                genericReport.Reason = "The element no longer exists in the document.";
+                outcome.Batch.Failed.Add(genericReport);
+                continue;
+            }
+
+            var (ok, errorCode, reason) = RevertSafely(doc, genericElement, item, force);
             if (ok)
             {
-                outcome.Batch.Changed.Add(report);
+                outcome.Batch.Changed.Add(genericReport);
                 outcome.AffectedCount++;
             }
             else if (errorCode is null)
             {
-                report.Reason = reason;
-                outcome.Batch.Skipped.Add(report);
+                genericReport.Reason = reason;
+                outcome.Batch.Skipped.Add(genericReport);
             }
             else
             {
-                report.ErrorCode = errorCode;
-                report.Reason = reason;
-                outcome.Batch.Failed.Add(report);
+                genericReport.ErrorCode = errorCode;
+                genericReport.Reason = reason;
+                outcome.Batch.Failed.Add(genericReport);
             }
         }
 
+        RevertRenames(doc, renames, outcome, force);
+
+        // Only real failures keep the set applied. Skipped items are "already restored"
+        // or unrestorable — they must not block closing the set forever.
+        var notReverted = outcome.Batch.Failed.Count;
+
         if (outcome.AffectedCount == 0)
         {
+            if (notReverted == 0)
+            {
+                // The model already matches the recorded previous state: close the set so
+                // the next unnamed undo_last can reach earlier change sets.
+                outcome.RollBackChangeSetId = details.Header.Id;
+                outcome.Success = false;
+                outcome.ErrorCode = "nothing_to_undo";
+                outcome.Message = "Nothing was reverted; the model already matches the " +
+                                  "recorded previous state. The change set was closed.";
+                return;
+            }
+
             outcome.RollBackChangeSetId = null;
             outcome.Success = false;
-            outcome.ErrorCode = outcome.Batch.Failed.Count > 0 ? "undo_conflict" : "nothing_to_undo";
-            outcome.Message = outcome.Batch.Failed.Count > 0
-                ? "Nothing could be reverted: the recorded values were changed after the " +
-                  "operation. Pass force=true to restore them anyway."
-                : "Nothing was reverted; the model already matches the recorded previous state.";
+            outcome.ErrorCode = "undo_conflict";
+            outcome.Message = "Nothing could be reverted: the recorded values were changed " +
+                              "after the operation. Pass force=true to restore them anyway.";
+            return;
+        }
+
+        if (notReverted > 0)
+        {
+            // A partially reverted set must stay applied: the remaining failed items still
+            // need to be undoable later (marking it rolled back would hide them).
+            outcome.RollBackChangeSetId = null;
+            outcome.Success = false;
+            outcome.ErrorCode = "undo_partial";
+            outcome.Message = outcome.AffectedCount + " item(s) reverted, " + notReverted +
+                              " failed. The change set stays applied so a later " +
+                              "undo_last (or force=true) can finish the job. See failed[].";
         }
     }
 
@@ -155,6 +226,14 @@ public sealed class UndoLastTool : AgentWriteToolBase
         }
     }
 
+    private static WriteItemReport CreateReport(ChangeItem item) => new()
+    {
+        Id = item.ElementId,
+        Name = item.ParameterName,
+        OldValue = item.NewValue,
+        NewValue = item.OldValue
+    };
+
     private static (bool Ok, string? ErrorCode, string? Reason) Revert(
         Document doc,
         Element element,
@@ -162,12 +241,6 @@ public sealed class UndoLastTool : AgentWriteToolBase
         bool force)
     {
         var key = item.ParameterName ?? string.Empty;
-
-        if (key == "view_name")
-            return RevertViewName(element as View, item, force);
-
-        if (key == "level_name")
-            return RevertLevelName(element as Level, item, force);
 
         if (key is "view_template" or "view_range" or "crop" or "visibility"
             or "viewRange" or "template")
@@ -193,49 +266,17 @@ public sealed class UndoLastTool : AgentWriteToolBase
         return (false, null, "Unknown change item type '" + key + "' — skipped.");
     }
 
-    private static (bool, string?, string?) RevertViewName(View? view, ChangeItem item, bool force)
-    {
-        if (view is null)
-            return (false, "unsupported_element", "Element " + item.ElementId + " is not a view.");
-
-        var target = item.OldValue ?? string.Empty;
-        if (!force && !string.Equals(view.Name, item.NewValue, StringComparison.Ordinal))
-        {
-            return (false, "undo_conflict",
-                "The view is named '" + view.Name + "' instead of '" + item.NewValue +
-                "' — it was changed after the operation (conflict).");
-        }
-
-        view.Name = target;
-        return (true, null, null);
-    }
-
-    private static (bool, string?, string?) RevertLevelName(Level? level, ChangeItem item, bool force)
-    {
-        if (level is null)
-            return (false, "unsupported_element", "Element " + item.ElementId + " is not a level.");
-
-        var target = item.OldValue ?? string.Empty;
-        if (!force && !string.Equals(level.Name, item.NewValue, StringComparison.Ordinal))
-        {
-            return (false, "undo_conflict",
-                "The level is named '" + level.Name + "' instead of '" + item.NewValue +
-                "' — it was changed after the operation (conflict).");
-        }
-
-        level.Name = target;
-        return (true, null, null);
-    }
-
     private static (bool, string?, string?) RevertTemplate(
         Document doc,
         View view,
         ChangeItem item,
         bool force)
     {
-        var current = view.ViewTemplateId;
-        var expected = item.NewValue;
-        if (!force && !string.Equals(IdText(current), expected, StringComparison.Ordinal))
+        var current = IdText(view.ViewTemplateId);
+        if (string.Equals(current, item.OldValue ?? string.Empty, StringComparison.Ordinal))
+            return (false, null, "The template already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
         {
             return (false, "undo_conflict",
                 "The template of '" + view.Name + "' changed after the operation (conflict).");
@@ -269,16 +310,16 @@ public sealed class UndoLastTool : AgentWriteToolBase
         if (spec is null || spec.IsEmpty)
             return (false, null, "The recorded view range is empty — nothing to restore.");
 
-        if (!force)
+        var current = AgentViewWriteHelper.Serialize(
+            AgentViewWriteHelper.ReadViewRange(view) ?? new ViewRangeSpec());
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The view range already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
         {
-            var current = AgentViewWriteHelper.Serialize(
-                AgentViewWriteHelper.ReadViewRange(view) ?? new ViewRangeSpec());
-            if (!string.Equals(current, item.NewValue, StringComparison.Ordinal))
-            {
-                return (false, "undo_conflict",
-                    "The view range of '" + view.Name +
-                    "' changed after the operation (conflict).");
-            }
+            return (false, "undo_conflict",
+                "The view range of '" + view.Name +
+                "' changed after the operation (conflict).");
         }
 
         AgentViewWriteHelper.ApplyViewRange(plan, spec);
@@ -291,14 +332,14 @@ public sealed class UndoLastTool : AgentWriteToolBase
         if (state is null)
             return (false, null, "The recorded crop state is empty — nothing to restore.");
 
-        if (!force)
+        var current = AgentViewWriteHelper.Serialize(AgentViewWriteHelper.ReadCropState(view));
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The crop region already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
         {
-            var current = AgentViewWriteHelper.Serialize(AgentViewWriteHelper.ReadCropState(view));
-            if (!string.Equals(current, item.NewValue, StringComparison.Ordinal))
-            {
-                return (false, "undo_conflict",
-                    "The crop region of '" + view.Name + "' changed after the operation (conflict).");
-            }
+            return (false, "undo_conflict",
+                "The crop region of '" + view.Name + "' changed after the operation (conflict).");
         }
 
         var warnings = new List<string>();
@@ -316,15 +357,15 @@ public sealed class UndoLastTool : AgentWriteToolBase
         if (state is null)
             return (false, null, "The recorded visibility state is empty — nothing to restore.");
 
-        if (!force)
+        var current = AgentViewWriteHelper.Serialize(
+            AgentViewWriteHelper.ReadVisibility(doc, view));
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "Visibility already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
         {
-            var current = AgentViewWriteHelper.Serialize(
-                AgentViewWriteHelper.ReadVisibility(doc, view));
-            if (!string.Equals(current, item.NewValue, StringComparison.Ordinal))
-            {
-                return (false, "undo_conflict",
-                    "Visibility of '" + view.Name + "' changed after the operation (conflict).");
-            }
+            return (false, "undo_conflict",
+                "Visibility of '" + view.Name + "' changed after the operation (conflict).");
         }
 
         AgentViewWriteHelper.ApplyVisibilityState(doc, view, state);
@@ -352,16 +393,16 @@ public sealed class UndoLastTool : AgentWriteToolBase
             return (false, resolution.ErrorCode, resolution.Reason);
 
         var parameter = resolution.Parameter!;
-        if (!force)
+        var current = AgentParameterWriteHelper.RawValue(parameter);
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The parameter already matches the recorded previous value.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
         {
-            var current = AgentParameterWriteHelper.RawValue(parameter);
-            if (!string.Equals(current, item.NewValue, StringComparison.Ordinal))
-            {
-                return (false, "undo_conflict",
-                    "Parameter '" + name + "' has the value '" + current +
-                    "' instead of '" + item.NewValue + "' — it was changed after the " +
-                    "operation (conflict).");
-            }
+            return (false, "undo_conflict",
+                "Parameter '" + name + "' has the value '" + current +
+                "' instead of '" + item.NewValue + "' — it was changed after the " +
+                "operation (conflict).");
         }
 
         if (!AgentParameterWriteHelper.TrySet(

@@ -133,6 +133,20 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
 
             if (failure is not null)
             {
+                // atomic=false: sections copied before the failure are already in the
+                // model — record them so undo_last can revert them.
+                if (applied.Count > 0)
+                {
+                    AddChangeItems(outcome, target, applied);
+                    outcome.AffectedCount++;
+                    report.Detail = "partial: copied " +
+                                    string.Join(", ", applied.Select(entry => entry.Key));
+                    outcome.Warnings.Add(
+                        "Partial copy to view '" + report.Name + "': " +
+                        string.Join(", ", applied.Select(entry => entry.Key)) +
+                        " copied; the remaining section failed — review failed[] and use undo_last if needed.");
+                }
+
                 ApplyViewTemplateTool.Fail(outcome, report, failure.ErrorCode!, failure.Reason);
                 if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
                 continue;
@@ -153,18 +167,26 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
 
-            foreach (var entry in applied)
+            AddChangeItems(outcome, target, applied);
+        }
+    }
+
+    private static void AddChangeItems(
+        WriteOutcome outcome,
+        View target,
+        IReadOnlyList<(string Key, AgentViewSettingsWriter.Change Change)> applied)
+    {
+        foreach (var entry in applied)
+        {
+            outcome.Items.Add(new ChangeItem
             {
-                outcome.Items.Add(new ChangeItem
-                {
-                    UniqueId = target.UniqueId,
-                    ElementId = target.Id.GetValue(),
-                    ParameterName = entry.Key,
-                    OldValue = entry.Change.OldValue,
-                    NewValue = entry.Change.NewValue,
-                    Status = ChangeStatus.Applied
-                });
-            }
+                UniqueId = target.UniqueId,
+                ElementId = target.Id.GetValue(),
+                ParameterName = entry.Key,
+                OldValue = entry.Change.OldValue,
+                NewValue = entry.Change.NewValue,
+                Status = ChangeStatus.Applied
+            });
         }
     }
 

@@ -143,7 +143,18 @@ public sealed class AgentToolExecutor : IToolExecutor
         }
 
         if (args.TryGetProperty("mapping", out var mapping) && mapping.ValueKind == JsonValueKind.Array)
-            return mapping.GetArrayLength();
+        {
+            var count = mapping.GetArrayLength();
+            if (args.TryGetProperty("filter", out var filter)
+                && filter.ValueKind == JsonValueKind.Object
+                && filter.TryGetProperty("limit", out var limit)
+                && limit.TryGetInt32(out var parsedLimit))
+            {
+                count = Math.Max(count, parsedLimit);
+            }
+
+            return count;
+        }
 
         return 0;
     }

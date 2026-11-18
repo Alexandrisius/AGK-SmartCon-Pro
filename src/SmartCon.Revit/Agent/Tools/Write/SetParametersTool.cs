@@ -26,8 +26,9 @@ public sealed class SetParametersTool : AgentWriteToolBase
             "Writes parameter values. items: [{elementId, parameter?, guid?, value, scope?, unit?}]. " +
             "parameter is a name, a BuiltInParameter id (ALL_MODEL_INSTANCE_COMMENTS) or a shared " +
             "parameter GUID. scope: \"instance\" (default) or \"type\" (changes every instance of " +
-            "the type). Numeric values need unit=\"mm\" (or \"m\", \"ft\"). Read-only and " +
-            "formula parameters are refused. dryRun defaults to true.",
+            "the type). Numeric values REQUIRE unit: \"mm\" (or \"m\", \"ft\", \"m2\", \"m3\"), " +
+            "or \"raw\" for internal Revit units. Read-only and formula parameters are refused. " +
+            "dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""elementId"":{""type"":""integer""},""parameter"":{""type"":""string""},""guid"":{""type"":""string""},""value"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""unit"":{""type"":""string""}},""required"":[""elementId"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
@@ -106,7 +107,7 @@ public sealed class SetParametersTool : AgentWriteToolBase
             report.NewValue = after;
             report.Detail = (resolution.IsTypeScope ? "type" : "instance") + " parameter";
 
-            if (string.Equals(before, after, StringComparison.Ordinal))
+            if (string.Equals(rawBefore, rawAfter, StringComparison.Ordinal))
             {
                 report.Reason = "The parameter already has this value (no-op).";
                 outcome.Batch.Skipped.Add(report);
@@ -116,10 +117,16 @@ public sealed class SetParametersTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
 
+            // A type-scope write belongs to the type element; storing the instance id would
+            // break undo when the instance is deleted or retyped.
+            var owner = resolution.IsTypeScope && parameter.Element is not null
+                ? parameter.Element
+                : element;
+
             outcome.Items.Add(new ChangeItem
             {
-                UniqueId = element.UniqueId,
-                ElementId = element.Id.GetValue(),
+                UniqueId = owner.UniqueId,
+                ElementId = owner.Id.GetValue(),
                 ParameterName = scopeKey + parameterName,
                 OldValue = rawBefore,
                 NewValue = rawAfter,

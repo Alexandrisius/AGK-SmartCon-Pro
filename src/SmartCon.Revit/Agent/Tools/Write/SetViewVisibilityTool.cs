@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
@@ -28,7 +28,7 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
             "workshared). dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""additionalProperties"":false}},""required"":[""viewId"",""visibility""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}}},""additionalProperties"":false}},""required"":[""viewId"",""visibility""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
