@@ -139,6 +139,9 @@ public static class ToolResultBudget
             }
         };
 
+        if (root["_repairs"] is { } repairs)
+            minimal["_repairs"] = repairs.DeepClone();
+
         return minimal.ToJsonString(SerializerOptions);
     }
 }

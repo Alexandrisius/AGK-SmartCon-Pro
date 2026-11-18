@@ -8,6 +8,12 @@ namespace SmartCon.Agent.Events;
 
 public sealed class AgentAwaitableEvent : IAgentAwaitableEvent
 {
+    /// <summary>
+    /// A queued action that waited longer than this means the Revit main thread
+    /// was blocked; the caller will likely hit the per-tool timeout (H1-10).
+    /// </summary>
+    internal const int SlowQueueWarnThresholdMs = 60000;
+
     private readonly ConcurrentQueue<Entry> _queue = new();
     private readonly IRevitContextWriter? _contextWriter;
     private Action? _onRaise;
@@ -63,15 +69,30 @@ public sealed class AgentAwaitableEvent : IAgentAwaitableEvent
         {
             processed++;
             var waitedMs = (Stopwatch.GetTimestamp() - entry.EnqueuedAt) * 1000.0 / Stopwatch.Frequency;
-            SmartConLogger.Debug(
-                "[AgentAwaitable] Execute start: " +
-                "waited=" + waitedMs.ToString("F0") + "ms, pending=" + _queue.Count);
+            var waitedText = waitedMs.ToString("F0");
+            if (IsSlowQueueWait(waitedMs))
+            {
+                SmartConLogger.Warn(
+                    "[AgentAwaitable] Execute start: waited=" + waitedText +
+                    "ms, pending=" + _queue.Count +
+                    " [Action: the Revit main thread is busy; the agent call may time out]");
+            }
+            else
+            {
+                SmartConLogger.Debug(
+                    "[AgentAwaitable] Execute start: waited=" + waitedText +
+                    "ms, pending=" + _queue.Count);
+            }
+
             entry.Action(revitApp);
         }
 
         if (processed > 0)
             SmartConLogger.Debug("[AgentAwaitable] Drained " + processed + " action(s)");
     }
+
+    internal static bool IsSlowQueueWait(double waitedMs) =>
+        waitedMs > SlowQueueWarnThresholdMs;
 
     private void UpdateRevitContext(object revitApp)
     {

@@ -99,6 +99,12 @@ public sealed partial class AgentOrchestrator
             var conversationChanged = _sessionContext.ConversationId != Guid.Empty
                 && _sessionContext.ConversationId != conversationId;
             _sessionContext.ConversationId = conversationId;
+            if (conversationChanged)
+            {
+                // Loaded packs belong to the previous conversation: never leak its
+                // tool set into a different chat.
+                _sessionContext.ResetToolSet();
+            }
 
             var userMessage = AgentMessage.User(userText, attachments);
             await _conversationStore
@@ -143,10 +149,19 @@ public sealed partial class AgentOrchestrator
             working = compacted;
 
             var toolCallCount = 0;
+            var loopGuard = new LoopGuard();
+            var loopAborted = false;
 
             for (var round = 1; round <= MaxToolRounds; round++)
             {
                 ct.ThrowIfCancellationRequested();
+
+                if (_settings.ToolCatalogV2 && _sessionContext.PendingToolNames.Count > 0)
+                {
+                    definitions = await ApplyPendingToolSetAsync(
+                            userText, definitions.Count, ct)
+                        .ConfigureAwait(false);
+                }
 
                 var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
@@ -267,7 +282,52 @@ public sealed partial class AgentOrchestrator
                     toolCallCount++;
 
                     var startedAt = Stopwatch.GetTimestamp();
-                    var result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
+                    ToolResult result;
+                    if (loopAborted)
+                    {
+                        result = LoopAbortedResult(toolCall.Name);
+                    }
+                    else
+                    {
+                        var argumentsJson = toolCall.ArgumentsJson ?? "{}";
+                        var guard = loopGuard.BeforeCall(toolCall.Name, argumentsJson);
+                        if (guard.Action == LoopGuardAction.Abort)
+                        {
+                            loopAborted = true;
+                            SmartConLogger.Info(
+                                "Agent loop guard aborted the turn: tool=" + toolCall.Name +
+                                ", identicalCalls=" + guard.IdenticalCalls);
+                            result = LoopAbortedResult(toolCall.Name);
+                        }
+                        else if (guard.Action == LoopGuardAction.Block)
+                        {
+                            SmartConLogger.Info(
+                                "Agent loop guard blocked the tool call: tool=" + toolCall.Name +
+                                ", identicalCalls=" + guard.IdenticalCalls);
+                            result = ToolResult.Fail(
+                                "loop_detected",
+                                guard.Hint ?? DefaultLoopBlockedHint,
+                                data: JsonSerializer.SerializeToElement(new
+                                {
+                                    identicalCalls = guard.IdenticalCalls
+                                }));
+                        }
+                        else
+                        {
+                            result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
+                            var observed = loopGuard.ObserveResult(
+                                toolCall.Name, argumentsJson, result.Success);
+                            if (observed.WarnOnly && !result.Success)
+                            {
+                                SmartConLogger.Info(
+                                    "Agent loop guard warning: tool=" + toolCall.Name +
+                                    ", identicalErrors=" + observed.IdenticalErrors);
+                                if (!string.IsNullOrEmpty(observed.Hint))
+                                    result = result.WithWarnings(new[] { observed.Hint! });
+                            }
+                        }
+                    }
+
                     if (_settings.WorkingStateEnabled && workingState is not null)
                         AgentWorkingStateUpdater.ObserveToolResult(workingState, toolCall.Name, result);
 
@@ -290,8 +350,11 @@ public sealed partial class AgentOrchestrator
 
                     // find_tools exists to unlock tools outside the routed shortlist:
                     // the model must be able to call what it just discovered, so the
-                    // next round sends the full catalog.
-                    if (result.Success
+                    // next round sends the full catalog. In catalog v2 discovery is
+                    // separated from loading: only load_tool_pack changes the set,
+                    // and it does so at the next round boundary.
+                    if (!_settings.ToolCatalogV2
+                        && result.Success
                         && string.Equals(toolCall.Name, "find_tools", StringComparison.Ordinal))
                     {
                         var fullCatalog = _toolRegistry.GetDefinitions();
@@ -315,6 +378,36 @@ public sealed partial class AgentOrchestrator
                         Text = result.Message,
                         Details = AgentToolResultFormatter.Pretty(serializedResult)
                     });
+
+                    if (loopAborted)
+                        break;
+                }
+
+                if (loopAborted)
+                {
+                    var abortMessage =
+                        (LanguageManager.GetString("Agent_Status_LoopAborted")
+                         ?? "Stopped: repeated tool calls were detected") +
+                        " (loop_aborted).";
+                    progress?.Report(new AgentProgress
+                    {
+                        Kind = AgentProgressKind.TurnCompleted,
+                        Text = abortMessage,
+                        Usage = usage,
+                        ToolCallCount = toolCallCount
+                    });
+
+                    await WriteUsageAsync(
+                        conversationId, usage, "ok", turnStartedAt,
+                        lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
+
+                    return new AgentTurnResult
+                    {
+                        FinalText = abortMessage,
+                        ToolCallCount = toolCallCount,
+                        Rounds = round,
+                        Usage = usage
+                    };
                 }
             }
 
@@ -369,127 +462,6 @@ public sealed partial class AgentOrchestrator
         }
     }
 
-    private async Task<WorkingState> PrepareWorkingStateAsync(
-        Guid conversationId,
-        string userText,
-        AgentProjectContext projectContext,
-        CancellationToken ct)
-    {
-        var state = _sessionContext.WorkingState;
-        if (state is null && _workingStateStore is not null)
-        {
-            try
-            {
-                state = await _workingStateStore
-                    .LoadAsync(conversationId, ct)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    "Agent working state load failed: " + ex.GetType().Name + ": " + ex.Message +
-                    " [Action: check read access to agent.db; the turn starts with an empty " +
-                    "working state]");
-            }
-        }
-
-        state ??= new WorkingState();
-        AgentWorkingStateUpdater.UpdateFromUserText(state, userText);
-        AgentWorkingStateUpdater.UpdateFromProjectContext(state, projectContext);
-        _sessionContext.WorkingState = state;
-        return state;
-    }
-
-    private async Task SaveWorkingStateAsync(Guid conversationId, WorkingState state)
-    {
-        try
-        {
-            await _workingStateStore!
-                .SaveAsync(conversationId, state, CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent working state save failed: " + ex.GetType().Name + ": " + ex.Message +
-                " [Action: check write access to agent.db; the turn itself is not affected]");
-        }
-    }
-
-    /// <summary>
-    /// Prepends the rendered turn context to the last user message of the
-    /// outgoing payload only. The message stored in the conversation history
-    /// stays exactly as the user sent it.
-    /// </summary>
-    private static void ApplyTurnContext(
-        List<AgentMessage> messages,
-        WorkingState state,
-        AgentProjectContext projectContext)
-    {
-        for (var index = messages.Count - 1; index >= 0; index--)
-        {
-            var message = messages[index];
-            if (message.Role != AgentRole.User)
-                continue;
-
-            var turnContext = AgentTurnContextBuilder.Build(state, projectContext);
-            messages[index] = AgentMessage.User(
-                turnContext + "\n\n" + (message.Content ?? string.Empty),
-                message.Attachments);
-            return;
-        }
-    }
-
-    private async Task<ToolResult> ExecuteToolAsync(AgentToolCall toolCall, CancellationToken ct)
-    {
-        JsonDocument document;
-        try
-        {
-            document = JsonDocument.Parse(
-                string.IsNullOrWhiteSpace(toolCall.ArgumentsJson) ? "{}" : toolCall.ArgumentsJson);
-        }
-        catch (JsonException ex)
-        {
-            return ToolResult.Fail(
-                "invalid_arguments",
-                "Arguments for tool '" + toolCall.Name + "' are not valid JSON: " + ex.Message);
-        }
-
-        using (document)
-        {
-            try
-            {
-                return await _toolExecutor
-                    .ExecuteAsync(toolCall.Name, document.RootElement, ct)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                SmartConLogger.Warn(
-                    "Agent tool '" + toolCall.Name + "' threw: " +
-                    ex.GetType().Name + ": " + ex.Message +
-                    " [Action: the model will receive a tool error and can retry with different arguments]");
-                return ToolResult.Fail(
-                    "tool_exception",
-                    ex.GetType().Name + ": " + ex.Message);
-            }
-        }
-    }
-
-    private static string SerializeToolResult(ToolResult result)
-    {
-        var json = ToolResultBudget.Serialize(result);
-        return AgentTextSanitizer.SanitizeJson(json);
-    }
-
     private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions) =>
         _sessionContext.ActiveToolNames =
             definitions.Select(definition => definition.Name).ToList();
@@ -505,11 +477,32 @@ public sealed partial class AgentOrchestrator
             string.Equals(existing.Name, candidate.Name, StringComparison.Ordinal)));
     }
 
+    private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
+        string userText,
+        int previousCount,
+        CancellationToken ct)
+    {
+        foreach (var name in _sessionContext.PendingToolNames)
+            _sessionContext.LoadedToolNames.Add(name);
+
+        _sessionContext.PendingToolNames.Clear();
+
+        var definitions = await SelectToolDefinitionsAsync(userText, ct).ConfigureAwait(false);
+        SetActiveToolNames(definitions);
+        SmartConLogger.Info(
+            "Agent tool catalog changed: " + previousCount + " -> " + definitions.Count +
+            " tools, cache invalidated");
+        return definitions;
+    }
+
     private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
         string userText,
         CancellationToken ct)
     {
         var all = _toolRegistry.GetDefinitions();
+        if (_settings.ToolCatalogV2)
+            return SelectCatalogV2ToolDefinitions(userText, all);
+
         if (_toolRouter is null || !_settings.UseToolRouter || all.Count == 0)
             return all;
 
@@ -527,66 +520,54 @@ public sealed partial class AgentOrchestrator
         return decision.Tools;
     }
 
-    private static List<AgentMessage> TrimHistory(IReadOnlyList<AgentMessage> history)
-    {
-        var start = Math.Max(0, history.Count - MaxHistoryMessages);
-        while (start < history.Count && history[start].Role == AgentRole.Tool)
-            start++;
-
-        var result = new List<AgentMessage>(history.Count - start);
-        for (var i = start; i < history.Count; i++)
-            result.Add(history[i]);
-        return result;
-    }
-
     /// <summary>
-    /// OpenAI-compatible providers reject a history where an assistant
-    /// tool call has no matching tool result. A cancelled turn can leave
-    /// such a gap, so missing results are synthesized as "cancelled"
-    /// and orphan tool messages are dropped before the next request.
+    /// Catalog v2 turn set: the fixed core tools plus everything loaded through
+    /// load_tool_pack plus the best BM25 card matches for the user text. The full
+    /// catalog is never sent; no BM25 signal degrades to core + loaded.
     /// </summary>
-    private static List<AgentMessage> EnsureToolCallPairs(IReadOnlyList<AgentMessage> messages)
+    private IReadOnlyList<AgentToolDefinition> SelectCatalogV2ToolDefinitions(
+        string userText,
+        IReadOnlyList<AgentToolDefinition> all)
     {
-        var result = new List<AgentMessage>(messages.Count);
-        var pending = new List<string>();
+        const int maxTools = 16;
+        const int topCount = 5;
 
-        foreach (var message in messages)
+        var selected = new List<AgentToolDefinition>(maxTools);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Add(AgentToolDefinition definition)
         {
-            if (message.Role == AgentRole.Tool)
-            {
-                if (message.ToolCallId is null || !pending.Contains(message.ToolCallId))
-                    continue;
+            if (selected.Count >= maxTools || !names.Add(definition.Name))
+                return;
 
-                pending.Remove(message.ToolCallId);
-                result.Add(message);
-                continue;
-            }
-
-            AppendMissingToolResults(result, pending);
-            pending.Clear();
-
-            if (message.Role == AgentRole.Assistant && message.ToolCalls.Count > 0)
-            {
-                foreach (var call in message.ToolCalls)
-                    pending.Add(call.Id);
-            }
-
-            result.Add(message);
+            selected.Add(definition);
         }
 
-        AppendMissingToolResults(result, pending);
-        return result;
+        foreach (var definition in all)
+        {
+            if (IsAlwaysAvailableV2(definition.Name))
+                Add(definition);
+        }
+
+        foreach (var definition in all)
+        {
+            if (_sessionContext.LoadedToolNames.Contains(definition.Name))
+                Add(definition);
+        }
+
+        var rankable = all
+            .Where(definition => !names.Contains(definition.Name))
+            .ToList();
+        foreach (var definition in ToolCardRouter.Rank(userText, rankable, topCount))
+            Add(definition);
+
+        SmartConLogger.Debug(
+            "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
+            _sessionContext.LoadedToolNames.Count);
+
+        return selected;
     }
 
-    private static void AppendMissingToolResults(List<AgentMessage> target, List<string> pending)
-    {
-        foreach (var id in pending)
-        {
-            target.Add(AgentMessage.ToolResult(
-                id,
-                SerializeToolResult(ToolResult.Fail(
-                    "cancelled",
-                    "The tool call was not executed because the previous turn was interrupted."))));
-        }
-    }
+    private static bool IsAlwaysAvailableV2(string name) =>
+        AgentToolPacks.IsCore(name)
+        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal);
 }

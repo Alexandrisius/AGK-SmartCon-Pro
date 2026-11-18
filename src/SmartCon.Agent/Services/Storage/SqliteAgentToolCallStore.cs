@@ -25,9 +25,9 @@ public sealed class SqliteAgentToolCallStore : IAgentToolCallStore
             using var command = connection.CreateCommand();
             command.CommandText = @"
 INSERT OR REPLACE INTO tool_calls(id, session_id, tool_name, arguments_json, result_json,
-                                   status, error, duration_ms, created_at)
+                                   status, error, duration_ms, created_at, repairs_json)
 VALUES(@id, @sessionId, @toolName, @argumentsJson, @resultJson,
-       @status, @error, @durationMs, @createdAt);";
+       @status, @error, @durationMs, @createdAt, @repairsJson);";
             command.Parameters.AddWithValue("@id", record.Id);
             command.Parameters.AddWithValue("@sessionId", record.SessionId);
             command.Parameters.AddWithValue("@toolName", record.ToolName);
@@ -37,6 +37,7 @@ VALUES(@id, @sessionId, @toolName, @argumentsJson, @resultJson,
             command.Parameters.AddWithValue("@error", (object?)record.Error ?? DBNull.Value);
             command.Parameters.AddWithValue("@durationMs", record.DurationMs);
             command.Parameters.AddWithValue("@createdAt", Format(record.CreatedAt));
+            command.Parameters.AddWithValue("@repairsJson", (object?)record.RepairsJson ?? DBNull.Value);
             command.ExecuteNonQuery();
         }
 

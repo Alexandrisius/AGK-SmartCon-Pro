@@ -2,6 +2,7 @@ using Xunit;
 using System.Text.Json;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.Tests.Agent.Services;
@@ -57,6 +58,36 @@ public sealed class AgentToolRegistryTests
         Assert.True(registry.TryGet("GET_ONE", out var tool));
         Assert.NotNull(tool);
         Assert.False(registry.TryGet("missing", out _));
+    }
+
+    [Fact]
+    public void Constructor_EnrichesEveryCatalogCard()
+    {
+        var tools = AgentToolCards.All
+            .Select(card => new StubTool(card.ToolName, "{\"type\":\"object\",\"properties\":{}}"))
+            .ToArray();
+
+        var registry = new AgentToolRegistry(tools);
+
+        Assert.Equal(27, registry.GetDefinitions().Count);
+        Assert.All(registry.GetDefinitions(), definition =>
+        {
+            Assert.True(AgentToolCards.TryGet(definition.Name, out var card));
+            Assert.NotNull(card);
+            Assert.Equal(card!.Pack, definition.Pack);
+            Assert.Equal(card.Purpose, definition.Purpose);
+            Assert.Equal(card.WhenToUse, definition.WhenToUse);
+            Assert.Equal(card.Examples.ToArray(), definition.Examples.ToArray());
+            Assert.Equal(card.Synonyms.ToArray(), definition.Synonyms.ToArray());
+            Assert.Equal(card.TimeoutMs, definition.TimeoutMs);
+            Assert.Equal(definition.SupportsBulk, definition.Bulk);
+            Assert.False(string.IsNullOrWhiteSpace(definition.Category));
+        });
+
+        var rename = registry.GetDefinitions().Single(definition => definition.Name == "rename_views");
+        Assert.Equal("Write", rename.Category);
+        Assert.True(rename.SupportsBulk);
+        Assert.Equal("views", rename.Pack);
     }
 
     private sealed class StubTool : IAgentTool

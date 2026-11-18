@@ -67,6 +67,14 @@ public sealed class AgentAwaitableEventTests
         Assert.Same(app, writer.RevitApplication);
     }
 
+    [Fact]
+    public void IsSlowQueueWait_UsesTheSixtySecondThreshold()
+    {
+        Assert.False(AgentAwaitableEvent.IsSlowQueueWait(59999));
+        Assert.False(AgentAwaitableEvent.IsSlowQueueWait(60000));
+        Assert.True(AgentAwaitableEvent.IsSlowQueueWait(60001));
+    }
+
     private sealed class CapturingContextWriter : IRevitContextWriter
     {
         public object? RevitApplication { get; private set; }

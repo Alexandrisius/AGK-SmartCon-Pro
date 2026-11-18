@@ -21,6 +21,18 @@ public sealed class AgentSessionContext
     public IReadOnlyCollection<string> ActiveToolNames { get; set; } = Array.Empty<string>();
 
     /// <summary>
+    /// Tools enabled through load_tool_pack in this conversation. The set is
+    /// merged into the catalog sent to the model from the next round on.
+    /// </summary>
+    public HashSet<string> LoadedToolNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Tools queued by load_tool_pack during the current round. The orchestrator
+    /// moves them into <see cref="LoadedToolNames"/> at the next round boundary.
+    /// </summary>
+    public HashSet<string> PendingToolNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Per-session prompt-token calibration, fed by provider usage after every
     /// completion and applied to local estimates before compaction.
     /// </summary>
@@ -31,4 +43,11 @@ public sealed class AgentSessionContext
     /// by the orchestrator only when <c>SMARTCON_AGENT_WORKING_STATE</c> is on.
     /// </summary>
     public WorkingState? WorkingState { get; set; }
+
+    /// <summary>Clears the tools loaded for a different conversation.</summary>
+    public void ResetToolSet()
+    {
+        LoadedToolNames.Clear();
+        PendingToolNames.Clear();
+    }
 }

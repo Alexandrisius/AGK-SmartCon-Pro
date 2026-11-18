@@ -17,6 +17,14 @@ public sealed class AgentToolRegistry : IToolRegistry
     }
 
     public AgentToolRegistry(IEnumerable<IAgentTool> tools, FindToolsTool? findTools)
+        : this(tools, findTools, null)
+    {
+    }
+
+    public AgentToolRegistry(
+        IEnumerable<IAgentTool> tools,
+        FindToolsTool? findTools,
+        LoadToolPackTool? loadToolPack)
     {
         if (tools is null) throw new ArgumentNullException(nameof(tools));
 
@@ -36,6 +44,7 @@ public sealed class AgentToolRegistry : IToolRegistry
         }
 
         findTools?.Attach(this);
+        loadToolPack?.Attach(this);
     }
 
     /// <summary>

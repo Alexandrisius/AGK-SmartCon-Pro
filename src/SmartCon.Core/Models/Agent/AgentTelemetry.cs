@@ -39,6 +39,9 @@ public sealed class AgentToolCallRecord
 
     public string? ResultJson { get; init; }
 
+    /// <summary>JSON array of argument repairs applied before the call (H1-09).</summary>
+    public string? RepairsJson { get; init; }
+
     /// <summary>ok | error | cancelled</summary>
     public required string Status { get; init; }
 

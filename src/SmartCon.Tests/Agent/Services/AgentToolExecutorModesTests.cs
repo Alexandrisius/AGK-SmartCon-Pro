@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -158,7 +158,7 @@ public sealed class AgentToolExecutorModesTests
     public async Task AutoApprove_NestedPlanAboveThreshold_StillConfirms()
     {
         var nested = new ScriptedTool("write_tool");
-        var planTool = new ScriptedTool("execute_plan");
+        var planTool = new ScriptedTool("execute_plan", schema: "{}");
         var registry = new AgentToolRegistry(new IAgentTool[] { nested, planTool });
         var confirmation = new RecordingConfirmation();
         var executor = new AgentToolExecutor(
@@ -184,7 +184,7 @@ public sealed class AgentToolExecutorModesTests
     public async Task AutoApprove_NestedDestructiveStep_StillConfirms()
     {
         var destructive = new ScriptedTool("danger_tool", AgentToolRisk.Destructive);
-        var planTool = new ScriptedTool("execute_plan");
+        var planTool = new ScriptedTool("execute_plan", schema: "{}");
         var registry = new AgentToolRegistry(new IAgentTool[] { destructive, planTool });
         var confirmation = new RecordingConfirmation();
         var executor = new AgentToolExecutor(
@@ -241,7 +241,7 @@ public sealed class AgentToolExecutorModesTests
     [Fact]
     public async Task AutoApprove_CopySettingsAllSections_StillConfirms()
     {
-        var tool = new ScriptedTool("copy_view_settings");
+        var tool = new ScriptedTool("copy_view_settings", schema: "{}");
         var confirmation = new RecordingConfirmation();
         var executor = CreateExecutor(
             tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
@@ -259,7 +259,7 @@ public sealed class AgentToolExecutorModesTests
     [Fact]
     public async Task AutoApprove_RemapWithoutLimit_StillConfirms()
     {
-        var tool = new ScriptedTool("remap_parameter_values");
+        var tool = new ScriptedTool("remap_parameter_values", schema: "{}");
         var confirmation = new RecordingConfirmation();
         var executor = CreateExecutor(
             tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
@@ -289,7 +289,7 @@ public sealed class AgentToolExecutorModesTests
     public async Task AutoApprove_NestedDiscardStep_StillConfirms()
     {
         var discard = new ScriptedTool("discard_change_set", supportsDryRun: false);
-        var planTool = new ScriptedTool("execute_plan");
+        var planTool = new ScriptedTool("execute_plan", schema: "{}");
         var registry = new AgentToolRegistry(new IAgentTool[] { discard, planTool });
         var confirmation = new RecordingConfirmation();
         var executor = new AgentToolExecutor(
@@ -311,7 +311,7 @@ public sealed class AgentToolExecutorModesTests
     public async Task AutoApprove_DestructivePlan_ReportsConservativeAffectedCount()
     {
         var destructive = new ScriptedTool("danger_tool", AgentToolRisk.Destructive);
-        var planTool = new ScriptedTool("execute_plan");
+        var planTool = new ScriptedTool("execute_plan", schema: "{}");
         var registry = new AgentToolRegistry(new IAgentTool[] { destructive, planTool });
         var confirmation = new RecordingConfirmation();
         var executor = new AgentToolExecutor(

@@ -82,7 +82,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
                     {
                         Id = "call_" + round,
                         Name = "list_views",
-                        ArgumentsJson = "{}"
+                        ArgumentsJson = "{\"viewId\":" + round + "}"
                     }
                 });
         }

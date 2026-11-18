@@ -1,0 +1,285 @@
+using System.Text.Json;
+using SmartCon.Agent.Services.Llm;
+using SmartCon.Agent.Services.Tools;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
+using SmartCon.Core.Services.Interfaces.Agent;
+using Xunit;
+
+namespace SmartCon.Tests.Agent.Services;
+
+public sealed partial class AgentOrchestratorTests
+{
+    private static AgentLlmSettings V2Settings() =>
+        new() { Model = "test-model", ToolCatalogV2 = true };
+
+    private static List<IAgentTool> CoreTools() =>
+        AgentToolPacks.CoreToolNames
+            .Select(name => (IAgentTool)new CountingTool(name: name))
+            .ToList();
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2_StartsWithCoreAndTopFive()
+    {
+        var store = new InMemoryConversationStore();
+        var tools = CoreTools();
+        tools.Add(new CountingTool(name: "set_view_crop"));
+        tools.Add(new CountingTool(name: "set_view_visibility"));
+        tools.Add(new CountingTool(name: "get_current_view_info"));
+        tools.Add(new CountingTool(name: "list_view_templates"));
+        var registry = new AgentToolRegistry(tools);
+        var session = new AgentSessionContext();
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant("ok");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "включи область подрезки у вида",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        var sent = llm.Requests[0].Tools;
+        foreach (var core in AgentToolPacks.CoreToolNames)
+            Assert.Contains(sent, tool => tool.Name == core);
+
+        Assert.Contains(sent, tool => tool.Name == "set_view_crop");
+        Assert.InRange(sent.Count, 11, 16);
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2_FindToolsDoesNotExpandThePayload()
+    {
+        var store = new InMemoryConversationStore();
+        var tools = CoreTools();
+        tools.Add(new CountingTool(name: "set_view_crop"));
+        var registry = new AgentToolRegistry(tools);
+        var session = new AgentSessionContext();
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "find_tools",
+                    ArgumentsJson = "{\"query\":\"подрезка\"}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(2, llm.Requests.Count);
+        Assert.Equal(llm.Requests[0].Tools.Count, llm.Requests[1].Tools.Count);
+        Assert.DoesNotContain(llm.Requests[1].Tools, tool => tool.Name == "set_view_crop");
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2_LoadToolPackAppliesAtTheNextRound()
+    {
+        var store = new InMemoryConversationStore();
+        var session = new AgentSessionContext();
+        var loadTool = new LoadToolPackTool(session);
+        var tools = CoreTools();
+        tools.Add(new CountingTool(name: "get_view_settings"));
+        tools.Add(new CountingTool(name: "set_view_crop"));
+        tools.Add(new CountingTool(name: "set_view_range"));
+        tools.Add(new CountingTool(name: "set_view_visibility"));
+        tools.Add(loadTool);
+        var registry = new AgentToolRegistry(tools, null, loadTool);
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "load_tool_pack",
+                    ArgumentsJson = "{\"pack\":\"view_settings\"}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(2, llm.Requests.Count);
+        Assert.DoesNotContain(llm.Requests[0].Tools, tool => tool.Name == "set_view_crop");
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "get_view_settings");
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_crop");
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_range");
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_visibility");
+        Assert.Empty(session.PendingToolNames);
+        Assert.Equal(4, session.LoadedToolNames.Count);
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2_KeepsDefinitionsFixedWithinRound()
+    {
+        var store = new InMemoryConversationStore();
+        var session = new AgentSessionContext();
+        var loadTool = new LoadToolPackTool(session);
+        var capture = new ActiveToolsCapturingTool("get_project_overview");
+        var tools = CoreTools()
+            .Where(tool => tool.Definition.Name != "get_project_overview")
+            .ToList();
+        tools.Add(capture);
+        tools.Add(new CountingTool(name: "set_view_crop"));
+        tools.Add(loadTool);
+        var registry = new AgentToolRegistry(tools, null, loadTool);
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "load_tool_pack",
+                    ArgumentsJson = "{\"pack\":\"view_settings\"}"
+                },
+                new AgentToolCall
+                {
+                    Id = "call_2",
+                    Name = "get_project_overview",
+                    ArgumentsJson = "{}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Single(capture.SeenActiveToolNames);
+        Assert.DoesNotContain("set_view_crop", capture.SeenActiveToolNames[0]);
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_crop");
+    }
+
+    [Fact]
+    public async Task RunTurn_ConversationChanged_ResetsLoadedAndPendingTools()
+    {
+        var store = new InMemoryConversationStore();
+        var tools = CoreTools();
+        var registry = new AgentToolRegistry(tools);
+        var previousConversation = Guid.NewGuid();
+        var session = new AgentSessionContext { ConversationId = previousConversation };
+        session.LoadedToolNames.Add("set_view_crop");
+        session.PendingToolNames.Add("apply_view_template");
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant("ok");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Empty(session.LoadedToolNames);
+        Assert.Empty(session.PendingToolNames);
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2Off_FindToolsStillExpandsTheCatalog()
+    {
+        var store = new InMemoryConversationStore();
+        var findTools = new CountingTool(name: "find_tools");
+        var rename = new CountingTool(name: "rename_views");
+        var registry = new AgentToolRegistry(new IAgentTool[] { findTools, rename });
+        var session = new AgentSessionContext();
+        var executor = CreateExecutor(registry, session);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "find_tools",
+                    ArgumentsJson = "{\"query\":\"rename views\"}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm,
+            executor,
+            registry,
+            store,
+            session,
+            settings: new AgentLlmSettings { Model = "test-model", ToolCatalogV2 = false });
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "наведи порядок в именах видов",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(2, llm.Requests.Count);
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "rename_views");
+    }
+
+    private static AgentToolExecutor CreateExecutor(
+        IToolRegistry registry,
+        AgentSessionContext session) =>
+        new(registry, new ImmediateAwaitableEvent(), session, new AutoApproveConfirmation());
+
+    private sealed class ActiveToolsCapturingTool : IAgentTool
+    {
+        public ActiveToolsCapturingTool(string name)
+        {
+            Definition = new AgentToolDefinition
+            {
+                Name = name,
+                Description = name + " capturing tool",
+                Risk = AgentToolRisk.Read,
+                InputSchemaJson = "{\"type\":\"object\",\"properties\":{}}"
+            };
+        }
+
+        public AgentToolDefinition Definition { get; }
+
+        public List<IReadOnlyCollection<string>> SeenActiveToolNames { get; } = new();
+
+        public Task<ToolResult> ExecuteAsync(
+            AgentToolContext context,
+            JsonElement args,
+            CancellationToken ct)
+        {
+            SeenActiveToolNames.Add(context.ActiveToolNames.ToList());
+            return Task.FromResult(ToolResult.Ok(null, "captured"));
+        }
+    }
+}

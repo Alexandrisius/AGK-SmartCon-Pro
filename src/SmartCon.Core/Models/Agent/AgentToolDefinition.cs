@@ -30,4 +30,34 @@ public sealed class AgentToolDefinition
 
     /// <summary>True when the tool accepts batches of many items in one call.</summary>
     public bool SupportsBulk { get; init; }
+
+    /// <summary>Catalog pack name (see <see cref="SmartCon.Core.Services.Agent.AgentToolPacks"/>).</summary>
+    public string Pack { get; init; } = string.Empty;
+
+    /// <summary>One-line statement of what the tool does.</summary>
+    public string Purpose { get; init; } = string.Empty;
+
+    public string WhenToUse { get; init; } = string.Empty;
+
+    public string WhenNotToUse { get; init; } = string.Empty;
+
+    public IReadOnlyList<string> Examples { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> Synonyms { get; init; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> NegativeExamples { get; init; } = Array.Empty<string>();
+
+    public bool Idempotent { get; init; }
+
+    public int TimeoutMs { get; init; } = 30000;
+
+    /// <summary>"active_view", "selection" or null when the tool has no context requirement.</summary>
+    public string? RequiredContext { get; init; }
+
+    /// <summary>Alias of <see cref="SupportsBulk"/> (runbook §7.1 contract).</summary>
+    public bool Bulk
+    {
+        get => SupportsBulk;
+        init => SupportsBulk = value;
+    }
 }

@@ -417,7 +417,8 @@ public static class ServiceRegistrar
         var agentEvent = ExternalEvent.Create(agentHandler);
         agentAwaitable.Initialize(() => agentEvent.Raise());
 
-        services.AddSingleton(AgentLlmSettings.Load());
+        var agentSettings = AgentLlmSettings.Load();
+        services.AddSingleton(agentSettings);
         services.AddSingleton<IAgentLlmClient>(sp =>
             new OpenAiCompatibleLlmClient(sp.GetRequiredService<AgentLlmSettings>()));
 
@@ -486,6 +487,11 @@ public static class ServiceRegistrar
         services.AddSingleton<AgentSessionContext>();
         services.AddSingleton<FindToolsTool>();
         services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<FindToolsTool>());
+        if (agentSettings.ToolCatalogV2)
+        {
+            services.AddSingleton<LoadToolPackTool>();
+            services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<LoadToolPackTool>());
+        }
 
         var decisionsSettings = AgentDecisionsSettings.Load();
         services.AddSingleton(decisionsSettings);
@@ -506,7 +512,9 @@ public static class ServiceRegistrar
         services.AddSingleton<IActionRiskGate, DecisionsActionRiskGate>();
 
         services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
-            sp.GetServices<IAgentTool>(), sp.GetRequiredService<FindToolsTool>()));
+            sp.GetServices<IAgentTool>(),
+            sp.GetRequiredService<FindToolsTool>(),
+            agentSettings.ToolCatalogV2 ? sp.GetRequiredService<LoadToolPackTool>() : null));
         services.AddSingleton<IToolExecutor, AgentToolExecutor>();
         services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
         services.AddSingleton<AgentPromptBuilder>();

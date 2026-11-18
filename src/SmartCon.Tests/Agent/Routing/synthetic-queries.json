@@ -1,0 +1,905 @@
+{
+  "description": "H1-11 synthetic routing eval: 100 queries, each with a unique token that occurs in exactly one card of the generated 1000-card catalog (20 packs x 50 cards).",
+  "queries": [
+    {
+      "id": "s001",
+      "query": "Что делает zzqviews001?",
+      "expectedTools": [
+        "views_01"
+      ],
+      "kind": "read",
+      "token": "zzqviews001"
+    },
+    {
+      "id": "s002",
+      "query": "Покажи возможность zzqviews007 для пака views",
+      "expectedTools": [
+        "views_07"
+      ],
+      "kind": "read",
+      "token": "zzqviews007"
+    },
+    {
+      "id": "s003",
+      "query": "Мне нужен сценарий zzqviews013 в работе с моделью",
+      "expectedTools": [
+        "views_13"
+      ],
+      "kind": "read",
+      "token": "zzqviews013"
+    },
+    {
+      "id": "s004",
+      "query": "Запусти zzqviews025 и покажи аргументы",
+      "expectedTools": [
+        "views_25"
+      ],
+      "kind": "read",
+      "token": "zzqviews025"
+    },
+    {
+      "id": "s005",
+      "query": "Опиши инструмент zzqviews049 и его пользу",
+      "expectedTools": [
+        "views_49"
+      ],
+      "kind": "read",
+      "token": "zzqviews049"
+    },
+    {
+      "id": "s006",
+      "query": "Что делает zzqviewsettings001?",
+      "expectedTools": [
+        "view_settings_01"
+      ],
+      "kind": "read",
+      "token": "zzqviewsettings001"
+    },
+    {
+      "id": "s007",
+      "query": "Покажи возможность zzqviewsettings007 для пака view_settings",
+      "expectedTools": [
+        "view_settings_07"
+      ],
+      "kind": "read",
+      "token": "zzqviewsettings007"
+    },
+    {
+      "id": "s008",
+      "query": "Мне нужен сценарий zzqviewsettings013 в работе с моделью",
+      "expectedTools": [
+        "view_settings_13"
+      ],
+      "kind": "read",
+      "token": "zzqviewsettings013"
+    },
+    {
+      "id": "s009",
+      "query": "Запусти zzqviewsettings025 и покажи аргументы",
+      "expectedTools": [
+        "view_settings_25"
+      ],
+      "kind": "read",
+      "token": "zzqviewsettings025"
+    },
+    {
+      "id": "s010",
+      "query": "Опиши инструмент zzqviewsettings049 и его пользу",
+      "expectedTools": [
+        "view_settings_49"
+      ],
+      "kind": "read",
+      "token": "zzqviewsettings049"
+    },
+    {
+      "id": "s011",
+      "query": "Что делает zzqviewedit001?",
+      "expectedTools": [
+        "view_edit_01"
+      ],
+      "kind": "read",
+      "token": "zzqviewedit001"
+    },
+    {
+      "id": "s012",
+      "query": "Покажи возможность zzqviewedit007 для пака view_edit",
+      "expectedTools": [
+        "view_edit_07"
+      ],
+      "kind": "read",
+      "token": "zzqviewedit007"
+    },
+    {
+      "id": "s013",
+      "query": "Мне нужен сценарий zzqviewedit013 в работе с моделью",
+      "expectedTools": [
+        "view_edit_13"
+      ],
+      "kind": "read",
+      "token": "zzqviewedit013"
+    },
+    {
+      "id": "s014",
+      "query": "Запусти zzqviewedit025 и покажи аргументы",
+      "expectedTools": [
+        "view_edit_25"
+      ],
+      "kind": "read",
+      "token": "zzqviewedit025"
+    },
+    {
+      "id": "s015",
+      "query": "Опиши инструмент zzqviewedit049 и его пользу",
+      "expectedTools": [
+        "view_edit_49"
+      ],
+      "kind": "read",
+      "token": "zzqviewedit049"
+    },
+    {
+      "id": "s016",
+      "query": "Что делает zzqtemplates001?",
+      "expectedTools": [
+        "templates_01"
+      ],
+      "kind": "read",
+      "token": "zzqtemplates001"
+    },
+    {
+      "id": "s017",
+      "query": "Покажи возможность zzqtemplates007 для пака templates",
+      "expectedTools": [
+        "templates_07"
+      ],
+      "kind": "read",
+      "token": "zzqtemplates007"
+    },
+    {
+      "id": "s018",
+      "query": "Мне нужен сценарий zzqtemplates013 в работе с моделью",
+      "expectedTools": [
+        "templates_13"
+      ],
+      "kind": "read",
+      "token": "zzqtemplates013"
+    },
+    {
+      "id": "s019",
+      "query": "Запусти zzqtemplates025 и покажи аргументы",
+      "expectedTools": [
+        "templates_25"
+      ],
+      "kind": "read",
+      "token": "zzqtemplates025"
+    },
+    {
+      "id": "s020",
+      "query": "Опиши инструмент zzqtemplates049 и его пользу",
+      "expectedTools": [
+        "templates_49"
+      ],
+      "kind": "read",
+      "token": "zzqtemplates049"
+    },
+    {
+      "id": "s021",
+      "query": "Что делает zzqmodel001?",
+      "expectedTools": [
+        "model_01"
+      ],
+      "kind": "read",
+      "token": "zzqmodel001"
+    },
+    {
+      "id": "s022",
+      "query": "Покажи возможность zzqmodel007 для пака model",
+      "expectedTools": [
+        "model_07"
+      ],
+      "kind": "read",
+      "token": "zzqmodel007"
+    },
+    {
+      "id": "s023",
+      "query": "Мне нужен сценарий zzqmodel013 в работе с моделью",
+      "expectedTools": [
+        "model_13"
+      ],
+      "kind": "read",
+      "token": "zzqmodel013"
+    },
+    {
+      "id": "s024",
+      "query": "Запусти zzqmodel025 и покажи аргументы",
+      "expectedTools": [
+        "model_25"
+      ],
+      "kind": "read",
+      "token": "zzqmodel025"
+    },
+    {
+      "id": "s025",
+      "query": "Опиши инструмент zzqmodel049 и его пользу",
+      "expectedTools": [
+        "model_49"
+      ],
+      "kind": "read",
+      "token": "zzqmodel049"
+    },
+    {
+      "id": "s026",
+      "query": "Что делает zzqlevels001?",
+      "expectedTools": [
+        "levels_01"
+      ],
+      "kind": "read",
+      "token": "zzqlevels001"
+    },
+    {
+      "id": "s027",
+      "query": "Покажи возможность zzqlevels007 для пака levels",
+      "expectedTools": [
+        "levels_07"
+      ],
+      "kind": "read",
+      "token": "zzqlevels007"
+    },
+    {
+      "id": "s028",
+      "query": "Мне нужен сценарий zzqlevels013 в работе с моделью",
+      "expectedTools": [
+        "levels_13"
+      ],
+      "kind": "read",
+      "token": "zzqlevels013"
+    },
+    {
+      "id": "s029",
+      "query": "Запусти zzqlevels025 и покажи аргументы",
+      "expectedTools": [
+        "levels_25"
+      ],
+      "kind": "read",
+      "token": "zzqlevels025"
+    },
+    {
+      "id": "s030",
+      "query": "Опиши инструмент zzqlevels049 и его пользу",
+      "expectedTools": [
+        "levels_49"
+      ],
+      "kind": "read",
+      "token": "zzqlevels049"
+    },
+    {
+      "id": "s031",
+      "query": "Что делает zzqelements001?",
+      "expectedTools": [
+        "elements_01"
+      ],
+      "kind": "read",
+      "token": "zzqelements001"
+    },
+    {
+      "id": "s032",
+      "query": "Покажи возможность zzqelements007 для пака elements",
+      "expectedTools": [
+        "elements_07"
+      ],
+      "kind": "read",
+      "token": "zzqelements007"
+    },
+    {
+      "id": "s033",
+      "query": "Мне нужен сценарий zzqelements013 в работе с моделью",
+      "expectedTools": [
+        "elements_13"
+      ],
+      "kind": "read",
+      "token": "zzqelements013"
+    },
+    {
+      "id": "s034",
+      "query": "Запусти zzqelements025 и покажи аргументы",
+      "expectedTools": [
+        "elements_25"
+      ],
+      "kind": "read",
+      "token": "zzqelements025"
+    },
+    {
+      "id": "s035",
+      "query": "Опиши инструмент zzqelements049 и его пользу",
+      "expectedTools": [
+        "elements_49"
+      ],
+      "kind": "read",
+      "token": "zzqelements049"
+    },
+    {
+      "id": "s036",
+      "query": "Что делает zzqparams001?",
+      "expectedTools": [
+        "params_01"
+      ],
+      "kind": "read",
+      "token": "zzqparams001"
+    },
+    {
+      "id": "s037",
+      "query": "Покажи возможность zzqparams007 для пака params",
+      "expectedTools": [
+        "params_07"
+      ],
+      "kind": "read",
+      "token": "zzqparams007"
+    },
+    {
+      "id": "s038",
+      "query": "Мне нужен сценарий zzqparams013 в работе с моделью",
+      "expectedTools": [
+        "params_13"
+      ],
+      "kind": "read",
+      "token": "zzqparams013"
+    },
+    {
+      "id": "s039",
+      "query": "Запусти zzqparams025 и покажи аргументы",
+      "expectedTools": [
+        "params_25"
+      ],
+      "kind": "read",
+      "token": "zzqparams025"
+    },
+    {
+      "id": "s040",
+      "query": "Опиши инструмент zzqparams049 и его пользу",
+      "expectedTools": [
+        "params_49"
+      ],
+      "kind": "read",
+      "token": "zzqparams049"
+    },
+    {
+      "id": "s041",
+      "query": "Что делает zzqchanges001?",
+      "expectedTools": [
+        "changes_01"
+      ],
+      "kind": "read",
+      "token": "zzqchanges001"
+    },
+    {
+      "id": "s042",
+      "query": "Покажи возможность zzqchanges007 для пака changes",
+      "expectedTools": [
+        "changes_07"
+      ],
+      "kind": "read",
+      "token": "zzqchanges007"
+    },
+    {
+      "id": "s043",
+      "query": "Мне нужен сценарий zzqchanges013 в работе с моделью",
+      "expectedTools": [
+        "changes_13"
+      ],
+      "kind": "read",
+      "token": "zzqchanges013"
+    },
+    {
+      "id": "s044",
+      "query": "Запусти zzqchanges025 и покажи аргументы",
+      "expectedTools": [
+        "changes_25"
+      ],
+      "kind": "read",
+      "token": "zzqchanges025"
+    },
+    {
+      "id": "s045",
+      "query": "Опиши инструмент zzqchanges049 и его пользу",
+      "expectedTools": [
+        "changes_49"
+      ],
+      "kind": "read",
+      "token": "zzqchanges049"
+    },
+    {
+      "id": "s046",
+      "query": "Что делает zzqplans001?",
+      "expectedTools": [
+        "plans_01"
+      ],
+      "kind": "read",
+      "token": "zzqplans001"
+    },
+    {
+      "id": "s047",
+      "query": "Покажи возможность zzqplans007 для пака plans",
+      "expectedTools": [
+        "plans_07"
+      ],
+      "kind": "read",
+      "token": "zzqplans007"
+    },
+    {
+      "id": "s048",
+      "query": "Мне нужен сценарий zzqplans013 в работе с моделью",
+      "expectedTools": [
+        "plans_13"
+      ],
+      "kind": "read",
+      "token": "zzqplans013"
+    },
+    {
+      "id": "s049",
+      "query": "Запусти zzqplans025 и покажи аргументы",
+      "expectedTools": [
+        "plans_25"
+      ],
+      "kind": "read",
+      "token": "zzqplans025"
+    },
+    {
+      "id": "s050",
+      "query": "Опиши инструмент zzqplans049 и его пользу",
+      "expectedTools": [
+        "plans_49"
+      ],
+      "kind": "read",
+      "token": "zzqplans049"
+    },
+    {
+      "id": "s051",
+      "query": "Что делает zzqmeta001?",
+      "expectedTools": [
+        "meta_01"
+      ],
+      "kind": "read",
+      "token": "zzqmeta001"
+    },
+    {
+      "id": "s052",
+      "query": "Покажи возможность zzqmeta007 для пака meta",
+      "expectedTools": [
+        "meta_07"
+      ],
+      "kind": "read",
+      "token": "zzqmeta007"
+    },
+    {
+      "id": "s053",
+      "query": "Мне нужен сценарий zzqmeta013 в работе с моделью",
+      "expectedTools": [
+        "meta_13"
+      ],
+      "kind": "read",
+      "token": "zzqmeta013"
+    },
+    {
+      "id": "s054",
+      "query": "Запусти zzqmeta025 и покажи аргументы",
+      "expectedTools": [
+        "meta_25"
+      ],
+      "kind": "read",
+      "token": "zzqmeta025"
+    },
+    {
+      "id": "s055",
+      "query": "Опиши инструмент zzqmeta049 и его пользу",
+      "expectedTools": [
+        "meta_49"
+      ],
+      "kind": "read",
+      "token": "zzqmeta049"
+    },
+    {
+      "id": "s056",
+      "query": "Что делает zzqsheets001?",
+      "expectedTools": [
+        "sheets_01"
+      ],
+      "kind": "read",
+      "token": "zzqsheets001"
+    },
+    {
+      "id": "s057",
+      "query": "Покажи возможность zzqsheets007 для пака sheets",
+      "expectedTools": [
+        "sheets_07"
+      ],
+      "kind": "read",
+      "token": "zzqsheets007"
+    },
+    {
+      "id": "s058",
+      "query": "Мне нужен сценарий zzqsheets013 в работе с моделью",
+      "expectedTools": [
+        "sheets_13"
+      ],
+      "kind": "read",
+      "token": "zzqsheets013"
+    },
+    {
+      "id": "s059",
+      "query": "Запусти zzqsheets025 и покажи аргументы",
+      "expectedTools": [
+        "sheets_25"
+      ],
+      "kind": "read",
+      "token": "zzqsheets025"
+    },
+    {
+      "id": "s060",
+      "query": "Опиши инструмент zzqsheets049 и его пользу",
+      "expectedTools": [
+        "sheets_49"
+      ],
+      "kind": "read",
+      "token": "zzqsheets049"
+    },
+    {
+      "id": "s061",
+      "query": "Что делает zzqfamilies001?",
+      "expectedTools": [
+        "families_01"
+      ],
+      "kind": "read",
+      "token": "zzqfamilies001"
+    },
+    {
+      "id": "s062",
+      "query": "Покажи возможность zzqfamilies007 для пака families",
+      "expectedTools": [
+        "families_07"
+      ],
+      "kind": "read",
+      "token": "zzqfamilies007"
+    },
+    {
+      "id": "s063",
+      "query": "Мне нужен сценарий zzqfamilies013 в работе с моделью",
+      "expectedTools": [
+        "families_13"
+      ],
+      "kind": "read",
+      "token": "zzqfamilies013"
+    },
+    {
+      "id": "s064",
+      "query": "Запусти zzqfamilies025 и покажи аргументы",
+      "expectedTools": [
+        "families_25"
+      ],
+      "kind": "read",
+      "token": "zzqfamilies025"
+    },
+    {
+      "id": "s065",
+      "query": "Опиши инструмент zzqfamilies049 и его пользу",
+      "expectedTools": [
+        "families_49"
+      ],
+      "kind": "read",
+      "token": "zzqfamilies049"
+    },
+    {
+      "id": "s066",
+      "query": "Что делает zzqschedules001?",
+      "expectedTools": [
+        "schedules_01"
+      ],
+      "kind": "read",
+      "token": "zzqschedules001"
+    },
+    {
+      "id": "s067",
+      "query": "Покажи возможность zzqschedules007 для пака schedules",
+      "expectedTools": [
+        "schedules_07"
+      ],
+      "kind": "read",
+      "token": "zzqschedules007"
+    },
+    {
+      "id": "s068",
+      "query": "Мне нужен сценарий zzqschedules013 в работе с моделью",
+      "expectedTools": [
+        "schedules_13"
+      ],
+      "kind": "read",
+      "token": "zzqschedules013"
+    },
+    {
+      "id": "s069",
+      "query": "Запусти zzqschedules025 и покажи аргументы",
+      "expectedTools": [
+        "schedules_25"
+      ],
+      "kind": "read",
+      "token": "zzqschedules025"
+    },
+    {
+      "id": "s070",
+      "query": "Опиши инструмент zzqschedules049 и его пользу",
+      "expectedTools": [
+        "schedules_49"
+      ],
+      "kind": "read",
+      "token": "zzqschedules049"
+    },
+    {
+      "id": "s071",
+      "query": "Что делает zzqfilters001?",
+      "expectedTools": [
+        "filters_01"
+      ],
+      "kind": "read",
+      "token": "zzqfilters001"
+    },
+    {
+      "id": "s072",
+      "query": "Покажи возможность zzqfilters007 для пака filters",
+      "expectedTools": [
+        "filters_07"
+      ],
+      "kind": "read",
+      "token": "zzqfilters007"
+    },
+    {
+      "id": "s073",
+      "query": "Мне нужен сценарий zzqfilters013 в работе с моделью",
+      "expectedTools": [
+        "filters_13"
+      ],
+      "kind": "read",
+      "token": "zzqfilters013"
+    },
+    {
+      "id": "s074",
+      "query": "Запусти zzqfilters025 и покажи аргументы",
+      "expectedTools": [
+        "filters_25"
+      ],
+      "kind": "read",
+      "token": "zzqfilters025"
+    },
+    {
+      "id": "s075",
+      "query": "Опиши инструмент zzqfilters049 и его пользу",
+      "expectedTools": [
+        "filters_49"
+      ],
+      "kind": "read",
+      "token": "zzqfilters049"
+    },
+    {
+      "id": "s076",
+      "query": "Что делает zzqworksets001?",
+      "expectedTools": [
+        "worksets_01"
+      ],
+      "kind": "read",
+      "token": "zzqworksets001"
+    },
+    {
+      "id": "s077",
+      "query": "Покажи возможность zzqworksets007 для пака worksets",
+      "expectedTools": [
+        "worksets_07"
+      ],
+      "kind": "read",
+      "token": "zzqworksets007"
+    },
+    {
+      "id": "s078",
+      "query": "Мне нужен сценарий zzqworksets013 в работе с моделью",
+      "expectedTools": [
+        "worksets_13"
+      ],
+      "kind": "read",
+      "token": "zzqworksets013"
+    },
+    {
+      "id": "s079",
+      "query": "Запусти zzqworksets025 и покажи аргументы",
+      "expectedTools": [
+        "worksets_25"
+      ],
+      "kind": "read",
+      "token": "zzqworksets025"
+    },
+    {
+      "id": "s080",
+      "query": "Опиши инструмент zzqworksets049 и его пользу",
+      "expectedTools": [
+        "worksets_49"
+      ],
+      "kind": "read",
+      "token": "zzqworksets049"
+    },
+    {
+      "id": "s081",
+      "query": "Что делает zzqlinks001?",
+      "expectedTools": [
+        "links_01"
+      ],
+      "kind": "read",
+      "token": "zzqlinks001"
+    },
+    {
+      "id": "s082",
+      "query": "Покажи возможность zzqlinks007 для пака links",
+      "expectedTools": [
+        "links_07"
+      ],
+      "kind": "read",
+      "token": "zzqlinks007"
+    },
+    {
+      "id": "s083",
+      "query": "Мне нужен сценарий zzqlinks013 в работе с моделью",
+      "expectedTools": [
+        "links_13"
+      ],
+      "kind": "read",
+      "token": "zzqlinks013"
+    },
+    {
+      "id": "s084",
+      "query": "Запусти zzqlinks025 и покажи аргументы",
+      "expectedTools": [
+        "links_25"
+      ],
+      "kind": "read",
+      "token": "zzqlinks025"
+    },
+    {
+      "id": "s085",
+      "query": "Опиши инструмент zzqlinks049 и его пользу",
+      "expectedTools": [
+        "links_49"
+      ],
+      "kind": "read",
+      "token": "zzqlinks049"
+    },
+    {
+      "id": "s086",
+      "query": "Что делает zzqmep001?",
+      "expectedTools": [
+        "mep_01"
+      ],
+      "kind": "read",
+      "token": "zzqmep001"
+    },
+    {
+      "id": "s087",
+      "query": "Покажи возможность zzqmep007 для пака mep",
+      "expectedTools": [
+        "mep_07"
+      ],
+      "kind": "read",
+      "token": "zzqmep007"
+    },
+    {
+      "id": "s088",
+      "query": "Мне нужен сценарий zzqmep013 в работе с моделью",
+      "expectedTools": [
+        "mep_13"
+      ],
+      "kind": "read",
+      "token": "zzqmep013"
+    },
+    {
+      "id": "s089",
+      "query": "Запусти zzqmep025 и покажи аргументы",
+      "expectedTools": [
+        "mep_25"
+      ],
+      "kind": "read",
+      "token": "zzqmep025"
+    },
+    {
+      "id": "s090",
+      "query": "Опиши инструмент zzqmep049 и его пользу",
+      "expectedTools": [
+        "mep_49"
+      ],
+      "kind": "read",
+      "token": "zzqmep049"
+    },
+    {
+      "id": "s091",
+      "query": "Что делает zzqannotations001?",
+      "expectedTools": [
+        "annotations_01"
+      ],
+      "kind": "read",
+      "token": "zzqannotations001"
+    },
+    {
+      "id": "s092",
+      "query": "Покажи возможность zzqannotations007 для пака annotations",
+      "expectedTools": [
+        "annotations_07"
+      ],
+      "kind": "read",
+      "token": "zzqannotations007"
+    },
+    {
+      "id": "s093",
+      "query": "Мне нужен сценарий zzqannotations013 в работе с моделью",
+      "expectedTools": [
+        "annotations_13"
+      ],
+      "kind": "read",
+      "token": "zzqannotations013"
+    },
+    {
+      "id": "s094",
+      "query": "Запусти zzqannotations025 и покажи аргументы",
+      "expectedTools": [
+        "annotations_25"
+      ],
+      "kind": "read",
+      "token": "zzqannotations025"
+    },
+    {
+      "id": "s095",
+      "query": "Опиши инструмент zzqannotations049 и его пользу",
+      "expectedTools": [
+        "annotations_49"
+      ],
+      "kind": "read",
+      "token": "zzqannotations049"
+    },
+    {
+      "id": "s096",
+      "query": "Что делает zzqaudit001?",
+      "expectedTools": [
+        "audit_01"
+      ],
+      "kind": "read",
+      "token": "zzqaudit001"
+    },
+    {
+      "id": "s097",
+      "query": "Покажи возможность zzqaudit007 для пака audit",
+      "expectedTools": [
+        "audit_07"
+      ],
+      "kind": "read",
+      "token": "zzqaudit007"
+    },
+    {
+      "id": "s098",
+      "query": "Мне нужен сценарий zzqaudit013 в работе с моделью",
+      "expectedTools": [
+        "audit_13"
+      ],
+      "kind": "read",
+      "token": "zzqaudit013"
+    },
+    {
+      "id": "s099",
+      "query": "Запусти zzqaudit025 и покажи аргументы",
+      "expectedTools": [
+        "audit_25"
+      ],
+      "kind": "read",
+      "token": "zzqaudit025"
+    },
+    {
+      "id": "s100",
+      "query": "Опиши инструмент zzqaudit049 и его пользу",
+      "expectedTools": [
+        "audit_49"
+      ],
+      "kind": "read",
+      "token": "zzqaudit049"
+    }
+  ]
+}

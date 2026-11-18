@@ -80,6 +80,8 @@ public static partial class LocalizationService
         en["Agent_Tooltip_RemoveAttachment"] = "Remove";
         ru["Agent_Status_StepLimit"] = "Достигнут лимит шагов";
         en["Agent_Status_StepLimit"] = "Step limit reached";
+        ru["Agent_Status_LoopAborted"] = "Остановлено: обнаружены повторяющиеся вызовы инструмента";
+        en["Agent_Status_LoopAborted"] = "Stopped: repeated tool calls were detected";
         ru["Agent_Status_ToolPrefix"] = "Инструмент: {0}";
         en["Agent_Status_ToolPrefix"] = "Tool: {0}";
         ru["Agent_Status_ToolFailure"] = "Инструмент вернул ошибку";

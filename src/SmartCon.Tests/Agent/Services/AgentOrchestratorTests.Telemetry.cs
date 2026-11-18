@@ -219,7 +219,7 @@ public sealed partial class AgentOrchestratorTests
                     {
                         Id = "call_" + round,
                         Name = "get_test",
-                        ArgumentsJson = "{}"
+                        ArgumentsJson = "{\"round\":" + round + "}"
                     }
                 },
                 usage: new AgentUsage { PromptTokens = 10, CompletionTokens = 1, TotalTokens = 11 });

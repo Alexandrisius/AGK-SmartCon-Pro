@@ -60,22 +60,10 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
         string? extraRules = null)
     {
-        var builder = new StringBuilder(BasePrompt);
-        builder.AppendLine();
-        builder.Append(ModeSection(mode));
-        builder.AppendLine();
-        builder.Append(PlanSection);
-        builder.AppendLine();
+        var builder = new StringBuilder(BuildPrefix(mode));
         builder.Append(context.BuildPromptSection());
         builder.AppendLine();
-        builder.AppendLine("## Working rules for this session");
-        builder.AppendLine("- Active document is the only writable document.");
-        builder.AppendLine("- Use view ids from list_views; use level ids from list_levels.");
-        builder.AppendLine("- For view configuration tasks, first inspect the reference view, then propose the target list.");
-        builder.AppendLine("- Search the model with query_elements and summarize_elements; do not dump all elements.");
-        builder.AppendLine("- Inspect parameters with get_element_details before proposing parameter changes.");
-        builder.AppendLine("- Always pass a unit (preferably mm) for numeric parameter conditions.");
-        builder.AppendLine("- Read get_view_settings/get_view_template_details before proposing view changes.");
+        AppendWorkingRules(builder);
 
         if (!string.IsNullOrWhiteSpace(extraRules))
         {
@@ -85,6 +73,42 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Prompt prefix that does not depend on the open document (runbook H1-13):
+    /// role, approval mode, plan validation and working rules. Stable between
+    /// turns, so its hash is the prompt-cache key; the per-document context is
+    /// appended by <see cref="Build"/> and never enters this hash.
+    /// </summary>
+    public static string BuildStatic(AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites)
+    {
+        var builder = new StringBuilder(BuildPrefix(mode));
+        AppendWorkingRules(builder);
+        return builder.ToString();
+    }
+
+    private static string BuildPrefix(AgentApprovalMode mode)
+    {
+        var builder = new StringBuilder(BasePrompt);
+        builder.AppendLine();
+        builder.Append(ModeSection(mode));
+        builder.AppendLine();
+        builder.Append(PlanSection);
+        builder.AppendLine();
+        return builder.ToString();
+    }
+
+    private static void AppendWorkingRules(StringBuilder builder)
+    {
+        builder.AppendLine("## Working rules for this session");
+        builder.AppendLine("- Active document is the only writable document.");
+        builder.AppendLine("- Use view ids from list_views; use level ids from list_levels.");
+        builder.AppendLine("- For view configuration tasks, first inspect the reference view, then propose the target list.");
+        builder.AppendLine("- Search the model with query_elements and summarize_elements; do not dump all elements.");
+        builder.AppendLine("- Inspect parameters with get_element_details before proposing parameter changes.");
+        builder.AppendLine("- Always pass a unit (preferably mm) for numeric parameter conditions.");
+        builder.AppendLine("- Read get_view_settings/get_view_template_details before proposing view changes.");
     }
 
     public static string ModeSection(AgentApprovalMode mode)

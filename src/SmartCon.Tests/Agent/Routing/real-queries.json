@@ -1,0 +1,131 @@
+{
+  "description": "H1-11 routing eval: 100 real Russian BIM user intents, 27-tool catalog. expectedTools lists acceptable tool names (1-3); kind is the intent class.",
+  "queries": [
+    { "id": "r001", "query": "Что за проект открыт и сколько в нём видов?", "expectedTools": ["get_project_overview"], "kind": "read" },
+    { "id": "r002", "query": "Дай общую сводку по модели: уровни, категории, листы", "expectedTools": ["get_project_overview"], "kind": "read" },
+    { "id": "r003", "query": "Покажи название файла, путь и версию Revit", "expectedTools": ["get_project_overview"], "kind": "read" },
+    { "id": "r004", "query": "Какая информация о документе и общие счётчики проекта?", "expectedTools": ["get_project_overview"], "kind": "read" },
+
+    { "id": "r005", "query": "Какие категории есть в проекте?", "expectedTools": ["list_categories", "get_project_overview"], "kind": "read" },
+    { "id": "r006", "query": "Покажи используемые категории с количеством элементов", "expectedTools": ["list_categories", "summarize_elements"], "kind": "read" },
+    { "id": "r007", "query": "Сколько стен и дверей в модели?", "expectedTools": ["list_categories", "summarize_elements"], "kind": "read" },
+    { "id": "r008", "query": "Сколько элементов по категориям?", "expectedTools": ["list_categories", "summarize_elements"], "kind": "read" },
+
+    { "id": "r009", "query": "Покажи выбранные элементы", "expectedTools": ["get_selected_elements"], "kind": "read" },
+    { "id": "r010", "query": "Что у меня сейчас выделено?", "expectedTools": ["get_selected_elements"], "kind": "read" },
+    { "id": "r011", "query": "Дай данные по выделенным стенам", "expectedTools": ["get_selected_elements"], "kind": "read" },
+    { "id": "r012", "query": "Какие элементы я выбрал на плане?", "expectedTools": ["get_selected_elements"], "kind": "read" },
+
+    { "id": "r013", "query": "Покажи все уровни с отметками", "expectedTools": ["list_levels"], "kind": "read" },
+    { "id": "r014", "query": "Какие уровни есть в проекте?", "expectedTools": ["list_levels"], "kind": "read" },
+    { "id": "r015", "query": "Дай ID уровней для фильтра по этажу", "expectedTools": ["list_levels"], "kind": "read" },
+    { "id": "r016", "query": "На каком уровне отметка 3.000?", "expectedTools": ["list_levels"], "kind": "read" },
+
+    { "id": "r017", "query": "Найди все трубы на уровне 1", "expectedTools": ["query_elements"], "kind": "read" },
+    { "id": "r018", "query": "Покажи стены толщиной 200 мм", "expectedTools": ["query_elements"], "kind": "read" },
+    { "id": "r019", "query": "Найди элементы без параметра «Марка»", "expectedTools": ["query_elements"], "kind": "read" },
+    { "id": "r020", "query": "Какие двери стоят в помещении 101?", "expectedTools": ["query_elements"], "kind": "read" },
+
+    { "id": "r021", "query": "Сколько стен на каждом уровне?", "expectedTools": ["summarize_elements"], "kind": "read" },
+    { "id": "r022", "query": "Посчитай суммарную длину труб по системам", "expectedTools": ["summarize_elements"], "kind": "read" },
+    { "id": "r023", "query": "Сгруппируй двери по типу", "expectedTools": ["summarize_elements"], "kind": "read" },
+    { "id": "r024", "query": "Какая общая площадь окон по этажам?", "expectedTools": ["summarize_elements"], "kind": "read" },
+
+    { "id": "r025", "query": "Покажи параметры элемента 12345", "expectedTools": ["get_element_details"], "kind": "read" },
+    { "id": "r026", "query": "Какие значения у параметров «Марка» и «Комментарий» у этих стен?", "expectedTools": ["get_element_details"], "kind": "read" },
+    { "id": "r027", "query": "Дай детали выбранной двери", "expectedTools": ["get_element_details", "get_selected_elements"], "kind": "read" },
+    { "id": "r028", "query": "Какие параметры доступны у типа ОК-1?", "expectedTools": ["get_element_details"], "kind": "read" },
+
+    { "id": "r029", "query": "Покажи все виды проекта", "expectedTools": ["list_views"], "kind": "read" },
+    { "id": "r030", "query": "Какие планы есть на уровне 1?", "expectedTools": ["list_views"], "kind": "read" },
+    { "id": "r031", "query": "Сколько разрезов в модели?", "expectedTools": ["list_views", "summarize_elements"], "kind": "read" },
+    { "id": "r032", "query": "Покажи виды в папке 01_Архитектура", "expectedTools": ["list_views"], "kind": "read" },
+
+    { "id": "r033", "query": "Какой вид сейчас открыт?", "expectedTools": ["get_current_view_info"], "kind": "read" },
+    { "id": "r034", "query": "Что за вид у меня на экране?", "expectedTools": ["get_current_view_info"], "kind": "read" },
+    { "id": "r035", "query": "Какая дисциплина у текущего вида?", "expectedTools": ["get_current_view_info"], "kind": "read" },
+    { "id": "r036", "query": "Какой шаблон применён к этому виду?", "expectedTools": ["get_current_view_info", "get_view_settings"], "kind": "read" },
+
+    { "id": "r037", "query": "Переименуй вид 101 в «План 1 этажа»", "expectedTools": ["rename_views"], "kind": "write" },
+    { "id": "r038", "query": "Поменяй названия видов местами: A→B и B→A", "expectedTools": ["rename_views"], "kind": "write" },
+    { "id": "r039", "query": "Убери суффикс _old из названий видов 201 и 202", "expectedTools": ["rename_views"], "kind": "write" },
+    { "id": "r040", "query": "Переименуй виды по эталону", "expectedTools": ["rename_views", "copy_view_settings"], "kind": "write" },
+
+    { "id": "r041", "query": "Какие шаблоны видов есть в проекте?", "expectedTools": ["list_view_templates"], "kind": "read" },
+    { "id": "r042", "query": "Покажи шаблоны для планов этажей", "expectedTools": ["list_view_templates"], "kind": "read" },
+    { "id": "r043", "query": "Найди шаблон с «АР_План» в названии", "expectedTools": ["list_view_templates"], "kind": "read" },
+    { "id": "r044", "query": "Какие шаблоны контролируют подрезку?", "expectedTools": ["list_view_templates", "get_view_template_details"], "kind": "read" },
+
+    { "id": "r045", "query": "Что контролирует шаблон «АР_План»?", "expectedTools": ["get_view_template_details"], "kind": "read" },
+    { "id": "r046", "query": "Покажи настройки шаблона вида", "expectedTools": ["get_view_template_details"], "kind": "read" },
+    { "id": "r047", "query": "Какие параметры шаблон не контролирует?", "expectedTools": ["get_view_template_details"], "kind": "read" },
+    { "id": "r048", "query": "Какая подрезка задана в шаблоне «Разрез_АР»?", "expectedTools": ["get_view_template_details"], "kind": "read" },
+
+    { "id": "r049", "query": "Примени шаблон «АР_План» к этим видам", "expectedTools": ["apply_view_template"], "kind": "write" },
+    { "id": "r050", "query": "Назначь шаблон «Разрез_АР» видам 501 и 502", "expectedTools": ["apply_view_template"], "kind": "write" },
+    { "id": "r051", "query": "Замени шаблон у вида 601, даже если уже есть другой", "expectedTools": ["apply_view_template"], "kind": "write" },
+    { "id": "r052", "query": "Поставь шаблон на все разрезы", "expectedTools": ["apply_view_template"], "kind": "write" },
+
+    { "id": "r053", "query": "Покажи настройки вида 101", "expectedTools": ["get_view_settings"], "kind": "read" },
+    { "id": "r054", "query": "Какой масштаб и диапазон у этого вида?", "expectedTools": ["get_view_settings"], "kind": "read" },
+    { "id": "r055", "query": "Какие категории скрыты на виде «План 1»?", "expectedTools": ["get_view_settings"], "kind": "read" },
+    { "id": "r056", "query": "Дай полные настройки эталонного вида", "expectedTools": ["get_view_settings"], "kind": "read" },
+
+    { "id": "r057", "query": "Поставь верх диапазона на уровень 2 с отступом 200 мм", "expectedTools": ["set_view_range"], "kind": "write" },
+    { "id": "r058", "query": "Опусти нижнюю границу до -300 мм от уровня 1", "expectedTools": ["set_view_range"], "kind": "write" },
+    { "id": "r059", "query": "Задай плоскость разреза на 1200 мм выше уровня 1", "expectedTools": ["set_view_range"], "kind": "write" },
+    { "id": "r060", "query": "Измени глубину вида до уровня 0", "expectedTools": ["set_view_range"], "kind": "write" },
+
+    { "id": "r061", "query": "Включи область подрезки у вида", "expectedTools": ["set_view_crop"], "kind": "write" },
+    { "id": "r062", "query": "Скопируй подрезку с вида 101 на 102", "expectedTools": ["set_view_crop", "copy_view_settings"], "kind": "write" },
+    { "id": "r063", "query": "Обрежь вид по границам 0–10000 мм", "expectedTools": ["set_view_crop"], "kind": "write" },
+    { "id": "r064", "query": "Отключи видимость рамки подрезки", "expectedTools": ["set_view_crop", "set_view_visibility"], "kind": "write" },
+
+    { "id": "r065", "query": "Скрой сетки на этом виде", "expectedTools": ["set_view_visibility"], "kind": "write" },
+    { "id": "r066", "query": "Покажи категорию мебели на плане 1", "expectedTools": ["set_view_visibility"], "kind": "write" },
+    { "id": "r067", "query": "Отключи видимость осей на видах 201 и 202", "expectedTools": ["set_view_visibility"], "kind": "write" },
+    { "id": "r068", "query": "Скрой категорию двери на плане", "expectedTools": ["set_view_visibility"], "kind": "write" },
+
+    { "id": "r069", "query": "Настрой виды: новые имена, шаблон и подрезка за один вызов", "expectedTools": ["configure_views"], "kind": "write" },
+    { "id": "r070", "query": "Примени шаблон и переименуй виды батчем", "expectedTools": ["configure_views", "apply_view_template", "rename_views"], "kind": "write" },
+    { "id": "r071", "query": "Задай диапазон и видимость сразу для трёх видов", "expectedTools": ["configure_views", "set_view_range", "set_view_visibility"], "kind": "write" },
+    { "id": "r072", "query": "Сделай настройку видов атомарной", "expectedTools": ["configure_views"], "kind": "write" },
+
+    { "id": "r073", "query": "Сделай виды как эталонный 101", "expectedTools": ["copy_view_settings"], "kind": "write" },
+    { "id": "r074", "query": "Скопируй подрезку с вида 101 на 102 и 103", "expectedTools": ["copy_view_settings", "set_view_crop"], "kind": "write" },
+    { "id": "r075", "query": "Перенеси видимость категорий с образца на все планы", "expectedTools": ["copy_view_settings", "set_view_visibility"], "kind": "write" },
+    { "id": "r076", "query": "Перенеси настройки с вида X на Y", "expectedTools": ["copy_view_settings"], "kind": "write" },
+
+    { "id": "r077", "query": "Поставь комментарий «Проверено» всем выбранным стенам", "expectedTools": ["set_parameters"], "kind": "write" },
+    { "id": "r078", "query": "Измени параметр «Марка» на TYPE-01", "expectedTools": ["set_parameters"], "kind": "write" },
+    { "id": "r079", "query": "Проставь огнестойкость REI60 в тип конструкции", "expectedTools": ["set_parameters"], "kind": "write" },
+    { "id": "r080", "query": "Заполни параметр ADSK_Этаж значением 3", "expectedTools": ["set_parameters"], "kind": "write" },
+
+    { "id": "r081", "query": "Скопируй значения старого ФОП в новый параметр", "expectedTools": ["remap_parameter_values"], "kind": "write" },
+    { "id": "r082", "query": "Перенеси значения из «Марка_old» в «Марка» для всех труб", "expectedTools": ["remap_parameter_values"], "kind": "write" },
+    { "id": "r083", "query": "Смигрируй общие параметры на новый GUID", "expectedTools": ["remap_parameter_values"], "kind": "write" },
+    { "id": "r084", "query": "Заполни новый параметр из старого по всем дверям", "expectedTools": ["remap_parameter_values"], "kind": "write" },
+
+    { "id": "r085", "query": "Отмени последнее изменение", "expectedTools": ["undo_last"], "kind": "write" },
+    { "id": "r086", "query": "Верни как было после переименования", "expectedTools": ["undo_last"], "kind": "write" },
+    { "id": "r087", "query": "Откати последний change set", "expectedTools": ["undo_last"], "kind": "write" },
+    { "id": "r088", "query": "Верни последнее изменение", "expectedTools": ["undo_last"], "kind": "write" },
+
+    { "id": "r089", "query": "Выполни план из трёх шагов", "expectedTools": ["execute_plan"], "kind": "write" },
+    { "id": "r090", "query": "Сначала покажи dry-run план, потом примени после подтверждения", "expectedTools": ["execute_plan"], "kind": "write" },
+    { "id": "r091", "query": "Сделай несколько изменений одним планом", "expectedTools": ["execute_plan"], "kind": "write" },
+    { "id": "r092", "query": "Собери переименование и настройку видов в один план", "expectedTools": ["execute_plan", "rename_views", "configure_views"], "kind": "write" },
+
+    { "id": "r093", "query": "Закрой последний набор изменений без отката", "expectedTools": ["discard_change_set"], "kind": "write" },
+    { "id": "r094", "query": "Сбрось конфликтующий набор 5", "expectedTools": ["discard_change_set"], "kind": "write" },
+
+    { "id": "r095", "query": "Найди инструмент для работы с шаблонами", "expectedTools": ["find_tools", "list_view_templates"], "kind": "meta" },
+    { "id": "r096", "query": "Какой инструмент умеет копировать настройки вида?", "expectedTools": ["find_tools", "copy_view_settings"], "kind": "meta" },
+
+    { "id": "r097", "query": "Оставь отзыв: схема set_view_crop непонятная", "expectedTools": ["report_tooling_feedback"], "kind": "meta" },
+    { "id": "r098", "query": "Запиши фидбэк по работе агента", "expectedTools": ["report_tooling_feedback"], "kind": "meta" },
+
+    { "id": "r099", "query": "Переименуй уровень 1 в «Первый этаж»", "expectedTools": ["rename_levels"], "kind": "write" },
+    { "id": "r100", "query": "Добавь префикс ОТ_ к уровням 2 и 3", "expectedTools": ["rename_levels"], "kind": "write" }
+  ]
+}

@@ -39,9 +39,7 @@ public sealed partial class AgentToolExecutor : IToolExecutor
 
         if (!_registry.TryGet(name, out var tool) || tool is null)
         {
-            return ToolResult.Fail(
-                "unknown_tool",
-                "Unknown tool '" + name + "'. Use only the tools listed in this request.");
+            return BuildUnknownToolResult(name);
         }
 
         if (_sessionContext.ApprovalMode == AgentApprovalMode.ReadOnly
@@ -52,6 +50,12 @@ public sealed partial class AgentToolExecutor : IToolExecutor
                 "The session is read-only, so '" + name + "' is blocked. Read the model and " +
                 "explain what would change; switch the approval mode to apply it.");
         }
+
+        var preparation = PrepareArguments(tool.Definition, args);
+        if (preparation.Failure is not null)
+            return preparation.Failure;
+
+        args = preparation.Arguments;
 
         var approved = false;
         if (RequiresConfirmation(tool.Definition, args))
@@ -102,7 +106,9 @@ public sealed partial class AgentToolExecutor : IToolExecutor
             ActiveToolNames = _sessionContext.ActiveToolNames
         };
 
-        return await tool.ExecuteAsync(context, args, ct).ConfigureAwait(false);
+        var result = await ExecuteWithTimeoutAsync(tool, context, args, ct)
+            .ConfigureAwait(false);
+        return result.WithRepairs(preparation.Repairs);
     }
 
     /// <summary>

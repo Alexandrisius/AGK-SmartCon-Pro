@@ -133,7 +133,9 @@ public static class AgentToolCatalog
 
     public static AgentToolDefinition Enrich(AgentToolDefinition definition)
     {
-        if (!MetadataByName.TryGetValue(definition.Name, out var metadata))
+        var hasMetadata = MetadataByName.TryGetValue(definition.Name, out var metadata);
+        var hasCard = AgentToolCards.TryGet(definition.Name, out var card);
+        if (!hasMetadata && !hasCard)
             return definition;
 
         return new AgentToolDefinition
@@ -143,11 +145,21 @@ public static class AgentToolCatalog
             Risk = definition.Risk,
             SupportsDryRun = definition.SupportsDryRun,
             InputSchemaJson = definition.InputSchemaJson,
-            Category = string.IsNullOrEmpty(definition.Category)
-                ? metadata.Category
+            Category = hasMetadata && string.IsNullOrEmpty(definition.Category)
+                ? metadata!.Category
                 : definition.Category,
-            Tags = definition.Tags.Count > 0 ? definition.Tags : metadata.Tags,
-            SupportsBulk = definition.SupportsBulk || metadata.Bulk
+            Tags = hasMetadata && definition.Tags.Count == 0 ? metadata!.Tags : definition.Tags,
+            SupportsBulk = hasMetadata ? definition.SupportsBulk || metadata!.Bulk : definition.SupportsBulk,
+            Pack = card?.Pack ?? string.Empty,
+            Purpose = card?.Purpose ?? string.Empty,
+            WhenToUse = card?.WhenToUse ?? string.Empty,
+            WhenNotToUse = card?.WhenNotToUse ?? string.Empty,
+            Examples = card?.Examples ?? Array.Empty<string>(),
+            Synonyms = card?.Synonyms ?? Array.Empty<string>(),
+            NegativeExamples = card?.NegativeExamples ?? Array.Empty<string>(),
+            Idempotent = card?.Idempotent ?? false,
+            TimeoutMs = card?.TimeoutMs ?? 30000,
+            RequiredContext = card?.RequiredContext
         };
     }
 }

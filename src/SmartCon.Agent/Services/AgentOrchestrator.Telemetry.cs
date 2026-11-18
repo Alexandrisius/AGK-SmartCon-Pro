@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
 
@@ -6,6 +8,11 @@ namespace SmartCon.Agent.Services;
 
 public sealed partial class AgentOrchestrator
 {
+    private static readonly JsonSerializerOptions RepairsSerializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private async Task WriteUsageAsync(
         Guid conversationId,
         AgentUsage usage,
@@ -71,7 +78,11 @@ public sealed partial class AgentOrchestrator
                 ResultJson = AgentRedactor.Redact(serializedResult),
                 Status = result.Success ? "ok" : "error",
                 Error = result.ErrorCode,
-                DurationMs = durationMs
+                DurationMs = durationMs,
+                RepairsJson = result.Repairs.Count == 0
+                    ? null
+                    : AgentRedactor.Redact(
+                        JsonSerializer.Serialize(result.Repairs, RepairsSerializerOptions))
             }, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

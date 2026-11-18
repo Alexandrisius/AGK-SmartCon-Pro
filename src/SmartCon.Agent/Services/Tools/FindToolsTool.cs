@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SmartCon.Agent.Services.Llm;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
@@ -15,29 +16,26 @@ namespace SmartCon.Agent.Services.Tools;
 /// </summary>
 public sealed class FindToolsTool : IAgentTool
 {
+    private const string CatalogHint =
+        "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable; " +
+        "find_tools does not change the tool set";
+
+    private const string ListingHint =
+        "request the schema of the chosen tool via find_tools(query=...) or load_tool_pack";
+
     private readonly IToolRouter _router;
+    private readonly bool _catalogV2;
 
     private IToolRegistry? _registry;
 
-    public FindToolsTool(IToolRouter router)
+    public FindToolsTool(IToolRouter router, AgentLlmSettings? settings = null)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
+        _catalogV2 = settings?.ToolCatalogV2 == true;
+        Definition = BuildDefinition(_catalogV2);
     }
 
-    public AgentToolDefinition Definition { get; } = new()
-    {
-        Name = "find_tools",
-        Description =
-            "Returns the full definition (name, description, argument schema) of tools that match " +
-            "a query. Use it when the tool you need is not in the current request. For an abstract " +
-            "or multi-part task: read the model first, then pass a concrete query plus context " +
-            "(what you learned and what you are about to change) so the catalog search returns " +
-            "the right tools. Then call the returned tool by name.",
-        Risk = AgentToolRisk.Read,
-        SupportsDryRun = false,
-        Category = "Meta",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""query"":{""type"":""string"",""minLength"":1},""context"":{""type"":""string""},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":8}},""required"":[""query""],""additionalProperties"":false}"
-    };
+    public AgentToolDefinition Definition { get; }
 
     internal void Attach(IToolRegistry registry) => _registry = registry;
 
@@ -47,20 +45,47 @@ public sealed class FindToolsTool : IAgentTool
         CancellationToken ct)
     {
         var query = GetString(args, "query");
+        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", _catalogV2 ? 5 : 8), 10));
+
+        if (_catalogV2)
+        {
+            var fields = GetStringArray(args, "fields");
+            if (fields.Count > 0 && string.IsNullOrWhiteSpace(query))
+                return ExecuteListing(args, limit);
+
+            if (string.IsNullOrWhiteSpace(query))
+                return ToolResult.Fail("invalid_arguments", "query is required.");
+
+            return await ExecuteCatalogV2Async(
+                    context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
+                .ConfigureAwait(false);
+        }
+
         if (string.IsNullOrWhiteSpace(query))
             return ToolResult.Fail("invalid_arguments", "query is required.");
 
+        return await ExecuteLegacyAsync(
+                context, query!, GetString(args, "context"), limit, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ToolResult> ExecuteLegacyAsync(
+        AgentToolContext context,
+        string query,
+        string? contextText,
+        int limit,
+        CancellationToken ct)
+    {
         var registry = _registry;
         if (registry is null)
             return ToolResult.Fail("tool_failed", "The tool catalog is unavailable.");
 
-        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 8), 10));
         var all = registry.GetDefinitions()
             .Where(definition => !string.Equals(
                 definition.Name, Definition.Name, StringComparison.Ordinal))
             .ToList();
 
-        var state = ComposeState(query!, GetString(args, "context"));
+        var state = ComposeState(query, contextText);
 
         // The generic router always keeps the core read tools, so a small
         // find_tools limit used to be spent entirely on them and write tools were
@@ -146,6 +171,217 @@ public sealed class FindToolsTool : IAgentTool
         }
     }
 
+    private async Task<ToolResult> ExecuteCatalogV2Async(
+        AgentToolContext context,
+        string query,
+        string? contextText,
+        string? packName,
+        int limit,
+        CancellationToken ct)
+    {
+        var registry = _registry;
+        if (registry is null)
+            return ToolResult.Fail("tool_failed", "The tool catalog is unavailable.");
+
+        var all = registry.GetDefinitions()
+            .Where(definition => !string.Equals(
+                definition.Name, Definition.Name, StringComparison.Ordinal))
+            .Where(definition => !string.Equals(
+                definition.Name, LoadToolPackTool.ToolName, StringComparison.Ordinal))
+            .ToList();
+
+        var candidates = all;
+        if (!string.IsNullOrWhiteSpace(packName))
+        {
+            if (!AgentToolPacks.TryGet(packName!, out _))
+            {
+                return ToolResult.Fail(
+                    "invalid_arguments",
+                    "Unknown pack '" + packName + "'. Known packs: " +
+                    string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + ".");
+            }
+
+            var packTools = new HashSet<string>(
+                AgentToolPacks.ToolsInPack(packName!), StringComparer.Ordinal);
+            candidates = all.Where(definition => packTools.Contains(definition.Name)).ToList();
+        }
+
+        var rankable = candidates
+            .Where(definition => !AgentToolPacks.IsCore(definition.Name))
+            .ToList();
+        var state = ComposeState(query, contextText);
+
+        var lexical = ToolCardRouter.TopCandidates(state, rankable, 50);
+
+        var chosen = new List<AgentToolDefinition>(6);
+        if (rankable.Count > 0)
+        {
+            var decision = await _router
+                .RouteAsync(state, rankable, 6, ct)
+                .ConfigureAwait(false);
+            foreach (var definition in decision.Tools)
+            {
+                if (!AgentToolPacks.IsCore(definition.Name))
+                    chosen.Add(definition);
+            }
+        }
+
+        var merged = new List<AgentToolDefinition>(limit + chosen.Count);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Add(AgentToolDefinition definition)
+        {
+            if (names.Add(definition.Name))
+                merged.Add(definition);
+        }
+
+        foreach (var definition in chosen)
+            Add(definition);
+
+        foreach (var definition in lexical)
+            Add(definition);
+
+        var returned = merged.Take(limit).ToList();
+        var payload = new
+        {
+            total = returned.Count,
+            packs = PacksOf(returned),
+            hint = CatalogHint,
+            tools = returned.Select(definition => new
+            {
+                name = definition.Name,
+                description = definition.Description,
+                risk = definition.Risk.ToString(),
+                supportsDryRun = definition.SupportsDryRun,
+                pack = definition.Pack,
+                purpose = definition.Purpose,
+                whenToUse = definition.WhenToUse,
+                whenNotToUse = definition.WhenNotToUse,
+                examples = definition.Examples,
+                synonyms = definition.Synonyms,
+                timeoutMs = definition.TimeoutMs,
+                alreadyAvailable = context.ActiveToolNames.Contains(definition.Name),
+                inputSchema = ParseSchema(definition.InputSchemaJson)
+            }).ToList()
+        };
+
+        try
+        {
+            return ToolResult.Ok(
+                JsonSerializer.SerializeToElement(payload),
+                "Returned " + returned.Count + " matching tool definition(s).");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "find_tools failed to serialize definitions: " + ex.Message +
+                " [Action: check the tool schema of the matching tools]");
+            return ToolResult.Fail("tool_failed", ex.Message);
+        }
+    }
+
+    private ToolResult ExecuteListing(JsonElement args, int limit)
+    {
+        var registry = _registry;
+        if (registry is null)
+            return ToolResult.Fail("tool_failed", "The tool catalog is unavailable.");
+
+        var all = registry.GetDefinitions()
+            .Where(definition => !string.Equals(
+                definition.Name, Definition.Name, StringComparison.Ordinal))
+            .Where(definition => !string.Equals(
+                definition.Name, LoadToolPackTool.ToolName, StringComparison.Ordinal))
+            .ToList();
+
+        var packName = GetString(args, "pack");
+        if (!string.IsNullOrWhiteSpace(packName))
+        {
+            if (!AgentToolPacks.TryGet(packName!, out _))
+            {
+                return ToolResult.Fail(
+                    "invalid_arguments",
+                    "Unknown pack '" + packName + "'. Known packs: " +
+                    string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + ".");
+            }
+
+            var packTools = new HashSet<string>(
+                AgentToolPacks.ToolsInPack(packName!), StringComparer.Ordinal);
+            all = all.Where(definition => packTools.Contains(definition.Name)).ToList();
+        }
+
+        var returned = all.Take(limit).ToList();
+        var payload = new
+        {
+            mode = "listing",
+            total = returned.Count,
+            packs = PacksOf(returned),
+            hint = ListingHint,
+            tools = returned.Select(definition => new
+            {
+                name = definition.Name,
+                description = definition.Description,
+                pack = definition.Pack,
+                risk = definition.Risk.ToString()
+            }).ToList()
+        };
+
+        try
+        {
+            return ToolResult.Ok(
+                JsonSerializer.SerializeToElement(payload),
+                "Listed " + returned.Count + " tool(s) without schemas.");
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "find_tools failed to serialize the tool listing: " + ex.Message +
+                " [Action: check the tool catalog]");
+            return ToolResult.Fail("tool_failed", ex.Message);
+        }
+    }
+
+    private static List<string> PacksOf(IEnumerable<AgentToolDefinition> definitions) =>
+        definitions
+            .Select(definition => definition.Pack)
+            .Where(pack => !string.IsNullOrWhiteSpace(pack))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(pack => pack, StringComparer.Ordinal)
+            .ToList();
+
+    private static AgentToolDefinition BuildDefinition(bool catalogV2)
+    {
+        var schema = catalogV2
+            ? @"{""type"":""object"",""properties"":{" +
+              @"""query"":{""type"":""string"",""minLength"":1}," +
+              @"""pack"":{""type"":""string""}," +
+              @"""context"":{""type"":""string""}," +
+              @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}," +
+              @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
+              @"""enum"":[""name"",""description""]}}}," +
+              @"""additionalProperties"":false}"
+            : @"{""type"":""object"",""properties"":{""query"":{""type"":""string"",""minLength"":1},""context"":{""type"":""string""},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":8}},""required"":[""query""],""additionalProperties"":false}";
+
+        return new AgentToolDefinition
+        {
+            Name = "find_tools",
+            Description = catalogV2
+                ? "Searches the full tool catalog by the user's intent and returns matching tool " +
+                  "cards with argument schemas. Use it when the tool you need is not in the " +
+                  "current request. Discovery only: it does not change the tool set. After it, " +
+                  "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
+                  "chosen tools for the next round. Pass fields=[\"name\",\"description\"] with " +
+                  "an empty query to browse the catalog or one pack compactly without schemas."
+                : "Returns the full definition (name, description, argument schema) of tools that match " +
+                  "a query. Use it when the tool you need is not in the current request. For an abstract " +
+                  "or multi-part task: read the model first, then pass a concrete query plus context " +
+                  "(what you learned and what you are about to change) so the catalog search returns " +
+                  "the right tools. Then call the returned tool by name.",
+            Risk = AgentToolRisk.Read,
+            SupportsDryRun = false,
+            Category = "Meta",
+            InputSchemaJson = schema
+        };
+    }
+
     private static bool HasWriteIntent(string text)
     {
         var value = text.ToLowerInvariant();
@@ -208,6 +444,28 @@ public sealed class FindToolsTool : IAgentTool
         }
 
         return value.GetString();
+    }
+
+    private static List<string> GetStringArray(JsonElement args, string property)
+    {
+        var result = new List<string>();
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.Array)
+        {
+            return result;
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                result.Add(item.GetString()!);
+            }
+        }
+
+        return result;
     }
 
     private static int GetInt(JsonElement args, string property, int fallback)

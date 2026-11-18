@@ -39,12 +39,35 @@ dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 \
 | Read tasks | 15/15 (100 %) |
 | Write dry-run | 15/15 (100 %) |
 | Apply + undo | 10/10 (100 %) |
+| Prompt tokens (сумма 40 задач) | 1 105 140 |
+| Completion tokens (сумма 40 задач) | 27 056 |
 | Schema-valid calls | 144/144 (100 %) |
 | Unauthorized writes | 0 |
-| Routing accuracy | 97.5 % |
+| Routing accuracy | 100 % |
 | Gate (read ≥ 85 %, write ≥ 80 %, schema 100 %, unauthorized 0) | PASS |
 
+### H1-04 — live baseline 5 read + 5 write (2026-11-18 19:07)
+
+Подмножество `read_overview, read_levels, read_filtered_views, read_view_settings,
+read_wall_count, dry_rename_view, dry_apply_template, dry_crop_active,
+dry_set_parameter, apply_rename_view`; live без записи fixtures
+(`SMARTCON_AGENT_EVAL_SOFT=1`), модель `deepseek/deepseek-v4.1-flash-1017`
+(OpenRouter). Отчёт: `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\20261118-190710`.
+
+| Метрика | Значение |
+|---|---|
+| Tasks | 10/10 (100 %), read 5/5, write 5/5 (dry-run + apply/undo) |
+| Tool selection | 100 % |
+| Routing accuracy (shortlist) | 100 %; fallback 0 % |
+| Schema-valid calls | 20/20 (100 %) |
+| Prompt / completion tokens | 202 173 / 4 427 |
+| Latency avg / p95 | 4 758 / 7 557 ms (сеть модели) |
+| Threshold gate | PASS |
+
+
 Метрики совпадают для replay (без ключа/сети) и live-прогона после фиксов.
+Ранняя редакция этого прогона показывала routing 97.5 % (первый live до фиксов);
+после уточнения ожиданий fixtures и retry — 100 %.
 
 ## 2026-11-18 — A4 offline-orchestrator (CI)
 
@@ -57,6 +80,91 @@ dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 \
 4. `find_tools` расширяет каталог на следующий раунд (shortlist → полный каталог);
 5. `execute_plan`: preview dry-run → apply с `planDigest`, план одобрен один раз,
    два dry-run-прогона и один apply-прогон шага.
+
+## 2026-11-18 — H1.1 routing/cache (H1-11/H1-12/H1-13)
+
+**Стенд.** Реальный каталог — 27 карточек (`AgentToolCards` + `AgentToolCatalog.Enrich`).
+Синтетический — 1000 карточек: 20 паков × 50, у каждой карточки уникальный токен
+`zzq<pack><NNN>` в Purpose/Synonyms; 100 синтетических запросов из
+`synthetic-queries.json` содержат этот токен. Fixtures:
+`src/SmartCon.Tests/Agent/Routing/real-queries.json` (100 реальных русских BIM-намерений,
+покрытие каждого из 27 тулов ≥2 фразами) и `synthetic-queries.json`.
+
+Команды:
+
+```bash
+dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 \
+  --filter "FullyQualifiedName~Agent.Routing"
+SMARTCON_DECIDER_LIVE=1 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 \
+  --filter "FullyQualifiedName~RoutingDecisionsLiveTests"
+```
+
+| Метрика | rules (BM25, 27 карточек) | decisions (fake Choice, plumbing) | decisions live (OpenRouter `perplexity/pplx-decider-v1.3:free`) |
+|---|---|---|---|
+| Запросов | 100 | 100 | 20 |
+| top-1 | 95.0 % (95/100) | 100 % | 95 % (19/20) |
+| top-5 recall | 100 % (100/100) | 100 % | 100 % (20/20) |
+| top-14 recall | 100 % (100/100) | — | — |
+| false tool rate (read-intent → write top-1) | 0.0 % | — | — |
+| p95 | 1.28 ms | — | 1027 ms (решение модели, ADR-075 лимит <2 s) |
+
+- rules: `ToolCardRouter.Rank`, прогрев 10 запросов, p95 по 100 вызовам. Гейт
+  top-1 ≥80 %, top-5 ≥95 %, p95 <100 ms — PASS. top-14 — триггер vector-ветки
+  ADR-075 §3 (порог 95 %), тоже PASS.
+- decisions fake: `DecisionsToolRouter` + fake `IAgentDecisionClient`, Choice =
+  `expectedTools[0]`; проверены plumbing, видимость (100/100) и fail-closed
+  (исключение клиента → результат rules). Core-инструменты закреплены первыми
+  (ADR-075 §2), поэтому top-1/top-5 считаются по non-core слотам.
+- decisions live: 20 запросов (каждый 5-й из real-queries), реальный
+  `HttpDecisionClient`, 2026-11-18, провайдер OpenRouter, модель
+  `perplexity/pplx-decider-v1.3:free`. Модель ответила на все 20 запросов;
+  p95 включает сеть.
+
+**Top-1 misses (rules, все 5 остаются в top-5):** r008 «Сколько элементов по
+категориям?» → `get_project_overview` вместо `list_categories`; r031 «Сколько
+разрезов в модели?» → `list_categories` вместо `list_views`; r043 «Найди шаблон
+с …» → `apply_view_template` вместо `list_view_templates`; r046 «Покажи настройки
+шаблона вида» → `get_view_settings` вместо `get_view_template_details`; r087
+«Откати последний change set» → `discard_change_set` вместо `undo_last`
+(пересечение negative examples). Top-5 recall не страдает; карточки не менялись
+(итерации разрешены только при top-5 <95 %).
+
+**Синтетический каталог 1000 (H1-12):** top-1 100 %, top-5 100 % (100/100),
+p95 11.1 ms. Важно: запросы содержат уникальный токен карточки, поэтому замер
+доказывает масштаб/производительность BM25 на 1000 карточках, а не семантическое
+покрытие формулировок.
+
+**Размер промпта с паками (H1-12):** `AgentTokenEstimator.EstimateText`:
+
+| Часть | Токены |
+|---|---|
+| Каталог паков (20 строк name+description) | 469 |
+| Core 9 карточек (name+purpose+when) | 735 |
+| Top-5 полных схем (representative schema ~800 chars на тул) | 1 166 |
+| Итого паки + core + схемы | 2 370 |
+| Static system prompt (`AgentSystemPrompt.BuildStatic`) | 1 748 |
+| Полный стартовый промпт | 4 118 |
+
+Гейт ≤8000 токенов — PASS. Схемы в этом замере representative (production
+`InputSchemaJson` живут в `SmartCon.Agent`), явно не реальные; порядок величины
+на 5 тулов сохраняется.
+
+**Cache stability (H1-13).** Новый `AgentPromptHash` (SHA-256 hex):
+`ComputeStatic`, `ComputeToolSet` (сортировка по имени, name+InputSchemaJson),
+`Compute`. `AgentSystemPrompt.BuildStatic(mode)` выделен из `Build` без изменения
+полного текста (BasePrompt + Mode + PlanSection + working rules, без project
+context). Тесты: hash стабилен между вызовами; смена ActiveViewName/ViewCount
+меняет полный Build, но не static hash; порядок tools не влияет; смена схемы
+влияет. Поле cache: `usage.prompt_tokens_details.cached_tokens` уже парсится и
+покрыто `LlmResponseAccumulatorTests` (H1-02: cached 40/64, clamp 50) — отдельный
+тест не дублировался.
+
+**Вердикт по vector (ADR-075 / H6): не нужен сейчас.** BM25 top-14 recall 100 %
+(порог принудительного включения <95 %), top-5 100 % на реальном каталоге,
+top-5 100 % на 1000 карточек; видимый каталог — 27 инструментов (<200 по ADR-075
+§3). Embeddings не добавлялись. Пересмотреть в H6 при каталоге >200 видимых
+инструментов или при падении top-14 recall <95 % на семантических (не
+token-уникальных) запросах.
 
 ## Фаза D — до/после
 
