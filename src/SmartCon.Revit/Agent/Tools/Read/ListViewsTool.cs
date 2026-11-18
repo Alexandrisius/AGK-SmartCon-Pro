@@ -24,14 +24,16 @@ public sealed class ListViewsTool : AgentReadToolBase
             "Filters: view types (FloorPlan, CeilingPlan, Section, ThreeD, Elevation, " +
             "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring, " +
             "browser folder path substring. Returns view id, name, type, level, template, " +
-            "sheet number, browserFolder and inBrowser. Default limit 200, max 500. " +
+            "sheet number, browserFolder (path), browserFolderPath (segments), " +
+            "browserFolderParameters (grouping parameter per segment: name/shared/built-in) " +
+            "and inBrowser. Default limit 200, max 500. " +
             "summaryOnly=true returns counts by view type, level and browser folder instead of cards. " +
             "fields=[\"viewId\",\"name\",\"type\",\"level\",\"folder\"] projects each card onto the " +
             "listed properties; aliases and unknown names are reported in substitutedFields / " +
             "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,inBrowser. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -90,6 +92,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             {
                 total,
                 summaryOnly = true,
+                browserOrganization = browserOrganization?.Name,
                 byType = GroupBy(matched, view => view.ViewType),
                 byLevel = GroupBy(matched, view => view.LevelName ?? "(no level)"),
                 byFolder = GroupBy(
@@ -126,6 +129,7 @@ public sealed class ListViewsTool : AgentReadToolBase
                 total,
                 returned = projected.Count,
                 truncated = total > projected.Count,
+                browserOrganization = browserOrganization?.Name,
                 ignoredFields = ignored.Count > 0 ? ignored : null,
                 substitutedFields = substituted.Count > 0 ? substituted : null,
                 availableFields = ignored.Count > 0 ? available : null,
@@ -145,6 +149,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             total,
             returned = views.Count,
             truncated = total > views.Count,
+            browserOrganization = browserOrganization?.Name,
             views
         };
 
@@ -261,7 +266,8 @@ public sealed class ListViewsTool : AgentReadToolBase
         if (sheetNumber is "—" or "-" or "---" or "")
             sheetNumber = null;
 
-        var (browserFolder, inBrowser) = ReadBrowserFolder(doc, browserOrganization, view);
+        var (browserFolder, inBrowser, folderPath, folderParameters) =
+            ReadBrowserFolder(doc, browserOrganization, view);
 
         return new ViewCard
         {
@@ -280,43 +286,69 @@ public sealed class ListViewsTool : AgentReadToolBase
             IsOnSheet = sheetNumber is not null,
             SheetNumber = sheetNumber,
             BrowserFolder = browserFolder,
+            BrowserFolderPath = folderPath,
+            BrowserFolderParameters = folderParameters,
             InBrowser = inBrowser
         };
     }
 
-    private static (string? Folder, bool InBrowser) ReadBrowserFolder(
+    private static (
+        string? Folder,
+        bool InBrowser,
+        IReadOnlyList<string> Path,
+        IReadOnlyList<ViewBrowserFolderSegment> Parameters) ReadBrowserFolder(
         Document doc,
         BrowserOrganization? organization,
         View view)
     {
         if (organization is null)
-            return (null, true);
+            return (null, true, Array.Empty<string>(), Array.Empty<ViewBrowserFolderSegment>());
 
         try
         {
             if (!organization.AreFiltersSatisfied(view.Id))
-                return (null, false);
+            {
+                return (null, false, Array.Empty<string>(),
+                    Array.Empty<ViewBrowserFolderSegment>());
+            }
 
             var items = organization.GetFolderItems(view.Id);
             if (items is null || items.Count == 0)
-                return (string.Empty, true);
-
-            var parts = new List<string>();
-            foreach (var item in items)
             {
-                var name = item.Name;
-                if (IsUnresolvedFolderName(name))
-                    name = ResolveFolderName(doc, GetFolderParameterId(item));
-
-                if (!IsUnresolvedFolderName(name))
-                    parts.Add(name!);
+                return (string.Empty, true, Array.Empty<string>(),
+                    Array.Empty<ViewBrowserFolderSegment>());
             }
 
-            return (string.Join(" / ", parts), true);
+            var parts = new List<string>(items.Count);
+            var segments = new List<ViewBrowserFolderSegment>(items.Count);
+            foreach (var item in items)
+            {
+                var parameterId = GetFolderParameterId(item);
+                var parameter = DescribeParameter(doc, parameterId);
+
+                var name = item.Name;
+                if (IsUnresolvedFolderName(name))
+                    name = parameter.Name;
+
+                if (IsUnresolvedFolderName(name))
+                    continue;
+
+                parts.Add(name!);
+                segments.Add(new ViewBrowserFolderSegment
+                {
+                    Segment = name!,
+                    ParameterId = parameterId?.GetValue(),
+                    ParameterName = parameter.Name,
+                    IsShared = parameter.IsShared,
+                    IsBuiltIn = parameter.IsBuiltIn
+                });
+            }
+
+            return (string.Join(" / ", parts), true, parts, segments);
         }
         catch (Exception)
         {
-            return (null, true);
+            return (null, true, Array.Empty<string>(), Array.Empty<ViewBrowserFolderSegment>());
         }
     }
 
@@ -334,10 +366,12 @@ public sealed class ListViewsTool : AgentReadToolBase
         string.IsNullOrWhiteSpace(name)
         || name is "???" or "?" or "??? ";
 
-    private static string? ResolveFolderName(Document doc, ElementId? parameterId)
+    private static (string? Name, bool IsShared, bool IsBuiltIn) DescribeParameter(
+        Document doc,
+        ElementId? parameterId)
     {
         if (parameterId is null || parameterId == ElementId.InvalidElementId)
-            return null;
+            return (null, false, false);
 
         try
         {
@@ -346,19 +380,26 @@ public sealed class ListViewsTool : AgentReadToolBase
             {
                 try
                 {
-                    return LabelUtils.GetLabelFor((BuiltInParameter)value);
+                    return (LabelUtils.GetLabelFor((BuiltInParameter)value), false, true);
                 }
                 catch (Exception)
                 {
-                    return null;
+                    return (null, false, true);
                 }
             }
 
-            return doc.GetElement(parameterId)?.Name;
+            var element = doc.GetElement(parameterId);
+            if (element is SharedParameterElement shared)
+                return (shared.Name, true, false);
+
+            if (element is ParameterElement parameter)
+                return (parameter.Name, false, false);
+
+            return (element?.Name, false, false);
         }
         catch (Exception)
         {
-            return null;
+            return (null, false, false);
         }
     }
 

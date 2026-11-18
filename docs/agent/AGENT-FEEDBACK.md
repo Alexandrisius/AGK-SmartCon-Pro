@@ -61,7 +61,7 @@
 |---|---|---|---|
 | 1 | `rename_views` | описан в промпте как штатный, но отсутствовал в routed shortlist — понадобился `find_tools` | `rename_views` и `apply_view_template` закреплены в `RuleToolRouter.CoreTools`, shortlist поднят до 16 |
 | 2 | `execute_plan` | в применённом плане `items.dryRun=true`; hint «All expectations verified» при `verified=0` | apply-отчёт берёт per-item diff из `ApplyResult` (`dryRun=false`); при `expectationsChecked=0` hint говорит «проверок не задавали» |
-| 3 | `list_views` | в `summaryOnly`/`byFolder` сегменты пути `???` | имя сегмента разрешается через `LabelUtils.GetLabelFor` / имя элемента; Revit 2026+ — `GetGroupingParameterIdPath()` |
+| 3 | `list_views` | в `summaryOnly`/`byFolder` сегменты пути `???` | имя сегмента разрешается через `LabelUtils.GetLabelFor` / имя элемента; Revit 2026+ — `GetGroupingParameterIdPath()`; добавлены `browserFolderPath[]` и `browserFolderParameters[{segment,parameterId,parameterName,isShared,isBuiltIn}]` — видно, что «Сводные» это значение общего параметра, а не физическая папка |
 | 4 | `list_views` | `fields` принимает не те имена, что в карточке (`type`→`viewType`), допустимые значения не перечислены | ключи ответа = запрошенные имена; `substitutedFields`; допустимые имена/алиасы перечислены в схемах `list_views`, `get_view_settings`, `get_view_template_details` |
 
 Отдельное наблюдение по роутингу: при 27 тулах decision-модель не даёт выигрыша

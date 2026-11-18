@@ -29,6 +29,8 @@ internal static class AgentCardProjection
             ["uniqueid"] = new[] { "uniqueId" },
             ["folder"] = new[] { "browserFolder" },
             ["browserfolder"] = new[] { "browserFolder" },
+            ["folderpath"] = new[] { "browserFolderPath" },
+            ["folderparameters"] = new[] { "browserFolderParameters" },
             ["inbrowser"] = new[] { "inBrowser" }
         };
 

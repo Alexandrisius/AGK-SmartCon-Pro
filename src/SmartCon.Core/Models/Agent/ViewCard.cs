@@ -29,8 +29,35 @@ public sealed class ViewCard
     /// <summary>Project-browser folder path from the current view organization.</summary>
     public string? BrowserFolder { get; init; }
 
+    /// <summary>Same path split into grouping levels (root → leaf).</summary>
+    public IReadOnlyList<string> BrowserFolderPath { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// The parameter behind each grouping level: built-in (level, view type) or
+    /// project/shared parameter (e.g. "Группа видов" = "Сводный").
+    /// </summary>
+    public IReadOnlyList<ViewBrowserFolderSegment> BrowserFolderParameters { get; init; } =
+        Array.Empty<ViewBrowserFolderSegment>();
+
     /// <summary>False when the current browser-organization filter hides the view.</summary>
     public bool InBrowser { get; init; } = true;
+}
+
+/// <summary>One grouping level of the project-browser path for a view.</summary>
+public sealed class ViewBrowserFolderSegment
+{
+    /// <summary>Folder name shown in the project browser (the parameter value).</summary>
+    public required string Segment { get; init; }
+
+    public long? ParameterId { get; init; }
+
+    public string? ParameterName { get; init; }
+
+    /// <summary>True for a shared parameter (project/company shared parameter).</summary>
+    public bool IsShared { get; init; }
+
+    /// <summary>True for a Revit built-in grouping parameter (level, view type, …).</summary>
+    public bool IsBuiltIn { get; init; }
 }
 
 public sealed class LevelCard

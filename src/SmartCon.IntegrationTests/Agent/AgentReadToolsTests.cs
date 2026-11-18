@@ -99,6 +99,11 @@ public sealed class AgentReadToolsTests : RevitApiTest
         await Assert.That(seeded.ValueKind).IsEqualTo(JsonValueKind.Object);
         await Assert.That(seeded.GetProperty("viewType").GetString()).IsEqualTo("FloorPlan");
         await Assert.That(seeded.GetProperty("levelName").GetString()).IsEqualTo(SeededLevelName);
+        await Assert.That(seeded.GetProperty("browserFolderPath").ValueKind)
+            .IsEqualTo(JsonValueKind.Array);
+        await Assert.That(seeded.GetProperty("browserFolderParameters").ValueKind)
+            .IsEqualTo(JsonValueKind.Array);
+        await Assert.That(result.Data!.Value.TryGetProperty("browserOrganization", out _)).IsTrue();
     }
 
     [Test]
