@@ -136,7 +136,6 @@ public sealed class AgentCompactionStorageTests
                 ContextBudgetTokens = 10_000,
                 Threshold = 0.3,
                 KeepRecentMessages = 2,
-                CoveredMessageCount = messages.Count,
                 SessionId = conversationId
             },
             CancellationToken.None);
@@ -144,12 +143,61 @@ public sealed class AgentCompactionStorageTests
         await Assert.That(result.Summarized).IsTrue();
         var checkpoint = await store.GetLatestAsync(conversationId, CancellationToken.None);
         await Assert.That(checkpoint).IsNotNull();
-        await Assert.That(checkpoint!.ToRowId).IsEqualTo(messages.Count);
+        await Assert.That(checkpoint!.ToRowId).IsEqualTo(messages.Count - 2);
 
         // Projection used by the orchestrator after a restart.
         var tail = messages.Skip(checkpoint.ToRowId).ToList();
-        await Assert.That(tail.Count).IsEqualTo(0);
+        await Assert.That(tail.Count).IsEqualTo(2);
         await Assert.That(checkpoint.Summary).Contains("CHECKPOINT");
+    }
+
+    [Test]
+    public async Task Compactor_PersistsACheckpointThatValidatesAgainstTheRealStore()
+    {
+        var conversationId = Guid.NewGuid();
+        using var fixture = new DatabaseFixture();
+        fixture.Database.Initialize();
+
+        var conversations = new SqliteAgentConversationStore(fixture.Database);
+        await conversations.CreateConversationAsync(
+            new AgentConversationHeader
+            {
+                Id = conversationId,
+                Title = "compaction",
+                DocumentId = "doc"
+            },
+            CancellationToken.None);
+
+        for (var index = 0; index < 10; index++)
+        {
+            await conversations.AppendMessageAsync(
+                conversationId,
+                AgentMessage.User("шаг " + index + " " + new string('я', 6000)),
+                CancellationToken.None);
+        }
+
+        var messages = await conversations.GetMessagesAsync(
+            conversationId, CancellationToken.None);
+        var store = new SqliteAgentCompactionStore(fixture.Database);
+        var compactor = new AgentContextCompactor(new FakeSummarizer(), store: store);
+
+        var result = await compactor.CompactAsync(
+            new AgentCompactionRequest
+            {
+                Messages = messages,
+                ContextBudgetTokens = 10_000,
+                Threshold = 0.3,
+                KeepRecentMessages = 2,
+                BaseRowId = 0,
+                RawHistory = messages,
+                SessionId = conversationId
+            },
+            CancellationToken.None);
+
+        await Assert.That(result.Summarized).IsTrue();
+        var checkpoint = await store.GetLatestAsync(conversationId, CancellationToken.None);
+        await Assert.That(checkpoint).IsNotNull();
+        await Assert.That(AgentCompactionHash.Validate(checkpoint!, messages)).IsTrue();
     }
 
     [Test]

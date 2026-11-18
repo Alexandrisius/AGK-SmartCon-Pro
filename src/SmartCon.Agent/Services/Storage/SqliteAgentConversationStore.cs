@@ -161,7 +161,10 @@ ORDER BY rowid;";
             command.Parameters.AddWithValue("@sessionId", conversationId.ToString("D"));
             using var reader = command.ExecuteReader();
             while (reader.Read())
-                result.Add(ReadMessage(reader));
+            {
+                var message = ReadMessage(reader);
+                result.Add(message.WithSessionIndex(result.Count + 1));
+            }
         }
 
         return Task.FromResult<IReadOnlyList<AgentMessage>>(result);

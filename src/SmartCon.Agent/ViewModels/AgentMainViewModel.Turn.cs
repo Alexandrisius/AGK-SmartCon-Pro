@@ -124,6 +124,29 @@ public sealed partial class AgentMainViewModel
         _turnCancellation.Cancel();
     }
 
+    private bool CanPrimaryAction() => IsBusy || CanSend();
+
+    /// <summary>
+    /// One composer action: while a turn is running the primary button is Stop;
+    /// when idle it is Send. When steer lands, a non-empty input during a turn
+    /// will switch this back to Send.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanPrimaryAction))]
+    private async Task PrimaryActionAsync()
+    {
+        if (IsBusy)
+        {
+            Stop();
+            return;
+        }
+
+        if (CanSend())
+            await SendAsync();
+    }
+
+    [RelayCommand]
+    private void ToggleContextPopup() => IsContextPopupOpen = !IsContextPopupOpen;
+
     private void OnProgress(AgentProgress progress)
     {
         switch (progress.Kind)
@@ -198,6 +221,12 @@ public sealed partial class AgentMainViewModel
                     UpdateUsage(progress.Usage);
                 break;
 
+            case AgentProgressKind.ContextUsage:
+                ContextLimit = progress.ContextLimit;
+                ContextTokens = progress.ContextTokens;
+                UpdateContextDetails(progress);
+                break;
+
             case AgentProgressKind.Error:
                 AddError(progress.Error ?? S("Agent_Status_Error", "Ошибка"));
                 HasError = true;
@@ -240,8 +269,6 @@ public sealed partial class AgentMainViewModel
             return;
 
         var parts = new List<string>(3);
-        if (usage.PromptTokens > 0)
-            parts.Add("ctx ~" + FormatTokens(usage.PromptTokens));
         if (usage.CompletionTokens > 0)
             parts.Add("out " + FormatTokens(usage.CompletionTokens));
         if (usage.CostUsd.HasValue)
@@ -249,6 +276,31 @@ public sealed partial class AgentMainViewModel
 
         if (parts.Count > 0)
             TokenSummary = string.Join(" · ", parts);
+    }
+
+    private void UpdateContextDetails(AgentProgress progress)
+    {
+        if (string.IsNullOrEmpty(progress.CompactionKind))
+            return;
+
+        var label = progress.CompactionKind == "summary"
+            ? S("Agent_Context_Summary", "История сжата в чекпойнт")
+            : progress.CompactionKind == "hard_shrink"
+                ? S("Agent_Context_HardShrink", "Аварийное усечение контекста")
+                : S("Agent_Context_Masked", "Старые результаты инструментов заменены дайджестами");
+
+        var parts = new List<string> { label };
+        if (progress.CompactionMasked > 0)
+            parts.Add("×" + progress.CompactionMasked);
+        if (progress.CompactionDropped > 0)
+            parts.Add("−" + progress.CompactionDropped);
+        if (progress.CompactionTokensBefore > 0)
+        {
+            parts.Add(FormatNumber(progress.CompactionTokensBefore) + " → " +
+                      FormatNumber(progress.CompactionTokensAfter));
+        }
+
+        ContextDetails = string.Join(" · ", parts);
     }
 
     private static string FormatTokens(int value) =>

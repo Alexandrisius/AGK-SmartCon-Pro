@@ -12,8 +12,6 @@ namespace SmartCon.Agent.Services;
 
 public sealed partial class AgentOrchestrator
 {
-    private const int MaxHistoryMessages = 120;
-
     private readonly IAgentLlmClient _llm;
     private readonly IToolExecutor _toolExecutor;
     private readonly IToolRegistry _toolRegistry;
@@ -128,22 +126,35 @@ public sealed partial class AgentOrchestrator
             var history = await _conversationStore
                 .GetMessagesAsync(conversationId, ct)
                 .ConfigureAwait(false);
+            var rawHistory = history.ToList();
             var persistedMessageCount = history.Count;
             var checkpoint = await LoadCheckpointAsync(conversationId, ct).ConfigureAwait(false);
+            var baseRowId = 0;
             IReadOnlyList<AgentMessage> effectiveHistory = history;
-            if (checkpoint is not null && checkpoint.ToRowId <= history.Count && checkpoint.ToRowId > 0)
+            if (checkpoint is not null && AgentCompactionHash.Validate(checkpoint, history))
+            {
+                baseRowId = checkpoint.ToRowId;
                 effectiveHistory = history.Skip(checkpoint.ToRowId).ToList();
+            }
+            else if (checkpoint is not null)
+            {
+                SmartConLogger.Warn(
+                    "Agent context: ignored checkpoint " + checkpoint.Id +
+                    " because its source prefix changed [Action: the raw history is used; " +
+                    "the next turn can create a fresh checkpoint]");
+            }
 
-            var working = EnsureToolCallPairs(TrimHistory(effectiveHistory));
-            if (checkpoint is not null
-                && checkpoint.ToRowId <= history.Count
-                && checkpoint.ToRowId > 0)
+            // No message-count cap: dropping the oldest messages silently is what
+            // made a long chat lose its first instruction. The compactor replaces
+            // the old prefix with a checkpoint and keeps a token-bounded tail.
+            var working = EnsureToolCallPairs(effectiveHistory);
+            if (baseRowId > 0)
             {
                 working.Insert(0, AgentMessage.System(
-                    "<conversation_checkpoint>\n" + checkpoint.Summary +
+                    "<conversation_checkpoint>\n" + checkpoint!.Summary +
                     "\n</conversation_checkpoint>"));
                 SmartConLogger.Info(
-                    "Agent context: restored checkpoint " + checkpoint.Id +
+                    "Agent context: restored checkpoint " + checkpoint!.Id +
                     " (" + checkpoint.ToRowId + " messages covered)");
             }
 
@@ -152,12 +163,45 @@ public sealed partial class AgentOrchestrator
             var definitions = await SelectToolDefinitionsAsync(userText, ct);
             SetActiveToolNames(definitions);
 
-            Func<IReadOnlyList<AgentMessage>, int> estimator = messages =>
+            var lastActualPromptTokens = 0;
+            var lastRequestedWorkingCount = 0;
+            AgentCompactionResult? lastCompaction = null;
+
+            Func<IReadOnlyList<AgentMessage>, int> rawEstimator = messages =>
                 _sessionContext.TokenCalibration.Apply(
                     AgentTokenEstimator.EstimateRequest(
                         systemMessage.Content, messages, definitions));
 
+            Func<IReadOnlyList<AgentMessage>, int> estimator = messages =>
+            {
+                var calibrated = rawEstimator(messages);
 
+                // The provider's last prompt_tokens is the floor: a local
+                // estimate that came 20-30 % short must not let the next request
+                // cross the trigger unnoticed. It applies only before
+                // compaction; the compactor measures the shrunken prompt with
+                // rawEstimator.
+                if (lastActualPromptTokens > 0 && messages.Count > lastRequestedWorkingCount)
+                {
+                    var floor = lastActualPromptTokens;
+                    for (var index = lastRequestedWorkingCount; index < messages.Count; index++)
+                        floor += AgentTokenEstimator.Estimate(messages[index]);
+                    if (floor > calibrated)
+                        calibrated = floor;
+                }
+
+                return calibrated;
+            };
+
+            var projected = await ProjectHistoryAsync(
+                    working, workingState, conversationId, baseRowId, rawHistory,
+                    estimator, rawEstimator, ct)
+                .ConfigureAwait(false);
+            working = projected.Messages;
+            if (projected.Changed)
+                lastCompaction = projected;
+
+            var allowCheckpoint = true;
             var toolCallCount = 0;
             var loopGuard = new LoopGuard();
             var loopAborted = false;
@@ -176,27 +220,66 @@ public sealed partial class AgentOrchestrator
                         .ConfigureAwait(false);
                 }
 
-                working = await CompactContextAsync(
-                        working, workingState, conversationId, persistedMessageCount,
-                        estimator, ct)
+                var turnContextBase = workingState is null
+                    ? string.Empty
+                    : AgentTurnContextBuilder.Build(workingState, projectContext);
+                var reserveTokens = AgentTokenEstimator.EstimateText(turnContextBase)
+                                    + AgentContextStatus.EstimatedTokens + 160;
+
+                var compaction = await CompactContextAsync(
+                        working, workingState, conversationId, baseRowId, reserveTokens,
+                        rawHistory, allowCheckpoint, estimator, rawEstimator, ct)
                     .ConfigureAwait(false);
+                working = compaction.Messages;
+                if (compaction.Changed)
+                {
+                    lastCompaction = compaction;
 
-                var contextTokens = _sessionContext.TokenCalibration.Apply(
-                    AgentTokenEstimator.EstimateRequest(
-                        systemMessage.Content, working, definitions));
-                var contextLimit = (int)(_settings.ContextWindowTokens *
+                    // The provider-reported prompt_tokens describes the prompt
+                    // before this compaction. Keeping it as the floor for the
+                    // shrunken prompt would make every following round look
+                    // larger than it is.
+                    lastActualPromptTokens = 0;
+                    lastRequestedWorkingCount = 0;
+                }
+
+                if (compaction.CoveredToRowId > baseRowId)
+                    baseRowId = compaction.CoveredToRowId;
+
+                if (compaction.Fallback
+                    && !compaction.Summarized
+                    && compaction.DroppedCount > 0)
+                {
+                    // The in-memory tail no longer maps to a contiguous raw
+                    // prefix; a checkpoint created from it would be invalid.
+                    allowCheckpoint = false;
+                }
+
+                var contextLimit = (int)(Math.Max(
+                                             1000,
+                                             _settings.ContextWindowTokens - reserveTokens) *
                                          Math.Max(0.3, Math.Min(_settings.ContextThreshold, 0.95)));
+                // Measured on the same working set the compactor triggers on;
+                // the turn context/status reserve is internal headroom.
+                var contextTokens = rawEstimator(working);
 
-                var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
+                var messages = new List<AgentMessage>(working.Count + 2) { systemMessage };
                 messages.AddRange(working);
 
-                if (workingState is not null)
+                if (!string.IsNullOrEmpty(turnContextBase))
                 {
                     ApplyTurnContext(
-                        messages, workingState, projectContext, round, elapsedMinutes,
+                        messages, turnContextBase, round, elapsedMinutes,
                         contextTokens, contextLimit);
                 }
 
+                messages.Add(AgentContextStatus.BuildMessage(
+                    round, elapsedMinutes, contextTokens, contextLimit, lastCompaction));
+                progress?.Report(AgentProgress.ContextUsage(
+                    contextTokens, contextLimit, lastCompaction));
+                lastCompaction = null;
+
+                var requestedWorkingCount = working.Count;
                 var estimatedPrompt = AgentTokenEstimator.EstimateRequest(
                     systemMessage.Content, messages, definitions);
                 var calibrated = _sessionContext.TokenCalibration.Apply(estimatedPrompt);
@@ -262,6 +345,9 @@ public sealed partial class AgentOrchestrator
                 lastRequestId = completion.RequestId ?? lastRequestId;
                 if (completion.Usage.PromptTokens > 0)
                 {
+                    lastActualPromptTokens = completion.Usage.PromptTokens;
+                    lastRequestedWorkingCount = requestedWorkingCount;
+
                     _sessionContext.TokenCalibration.Observe(
                         estimatedPrompt, completion.Usage.PromptTokens);
 
@@ -274,16 +360,24 @@ public sealed partial class AgentOrchestrator
                         ", deviation=" + deviationPercent.ToString(
                             "F1", System.Globalization.CultureInfo.InvariantCulture) + "%");
                 }
-
-                working.Add(completion.Message);
-                await _conversationStore
-                    .AppendMessageAsync(conversationId, completion.Message, ct)
-                    .ConfigureAwait(false);
-                persistedMessageCount++;
-
-                if (completion.Message.ToolCalls.Count == 0)
+                else
                 {
-                    var finalText = completion.Message.Content ?? string.Empty;
+                    // No usage: the previous floor no longer describes this request.
+                    lastActualPromptTokens = 0;
+                }
+
+                var persistedCompletion =
+                    completion.Message.WithSessionIndex(persistedMessageCount + 1);
+                persistedMessageCount++;
+                working.Add(persistedCompletion);
+                rawHistory.Add(persistedCompletion);
+                await _conversationStore
+                    .AppendMessageAsync(conversationId, persistedCompletion, ct)
+                    .ConfigureAwait(false);
+
+                if (persistedCompletion.ToolCalls.Count == 0)
+                {
+                    var finalText = persistedCompletion.Content ?? string.Empty;
                     progress?.Report(new AgentProgress
                     {
                         Kind = AgentProgressKind.TurnCompleted,
@@ -305,7 +399,7 @@ public sealed partial class AgentOrchestrator
                     };
                 }
 
-                foreach (var toolCall in completion.Message.ToolCalls)
+                foreach (var toolCall in persistedCompletion.ToolCalls)
                 {
                     ct.ThrowIfCancellationRequested();
                     toolCallCount++;
@@ -365,12 +459,15 @@ public sealed partial class AgentOrchestrator
 
                     var serializedResult =
                         await SerializeToolResultAsync(toolCall, result, ct).ConfigureAwait(false);
-                    var toolMessage = AgentMessage.ToolResult(toolCall.Id, serializedResult);
+                    var toolMessage = AgentMessage
+                        .ToolResult(toolCall.Id, serializedResult)
+                        .WithSessionIndex(persistedMessageCount + 1);
+                    persistedMessageCount++;
                     working.Add(toolMessage);
+                    rawHistory.Add(toolMessage);
                     await _conversationStore
                         .AppendMessageAsync(conversationId, toolMessage, ct)
                         .ConfigureAwait(false);
-                    persistedMessageCount++;
 
                     await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
                         .ConfigureAwait(false);
@@ -446,106 +543,4 @@ public sealed partial class AgentOrchestrator
             }
         }
     }
-
-    private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions)
-    {
-        // Loaded and pending tools count as available for find_tools, even before
-        // the next round applies them to the request.
-        var names = new HashSet<string>(
-            definitions.Select(definition => definition.Name), StringComparer.Ordinal);
-        foreach (var name in _sessionContext.LoadedToolNames)
-            names.Add(name);
-        foreach (var name in _sessionContext.PendingToolNames)
-            names.Add(name);
-        _sessionContext.ActiveToolNames = names.ToList();
-    }
-
-    private static int ElapsedMinutes(long startedAt) =>
-        (int)((Stopwatch.GetTimestamp() - startedAt) * 60.0 / Stopwatch.Frequency / 60.0);
-
-    private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
-        string userText,
-        int previousCount,
-        CancellationToken ct)
-    {
-        foreach (var name in _sessionContext.PendingToolNames)
-            _sessionContext.LoadedToolNames.Add(name);
-
-        _sessionContext.PendingToolNames.Clear();
-
-        var definitions = await SelectToolDefinitionsAsync(userText, ct).ConfigureAwait(false);
-        SetActiveToolNames(definitions);
-        SmartConLogger.Info(
-            "Agent tool catalog changed: " + previousCount + " -> " + definitions.Count +
-            " tools, cache invalidated");
-        return definitions;
-    }
-
-    private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
-        string userText,
-        CancellationToken ct)
-    {
-        var all = _toolRegistry.GetDefinitions();
-        if (all.Count == 0)
-            return all;
-
-        return SelectCatalogV2ToolDefinitions(userText, all);
-    }
-
-    /// <summary>
-    /// Catalog v2 turn set: the fixed core tools plus everything loaded through
-    /// load_tool_pack plus the best BM25 card matches for the user text. The full
-    /// catalog is never sent; no BM25 signal degrades to core + loaded.
-    /// </summary>
-    private IReadOnlyList<AgentToolDefinition> SelectCatalogV2ToolDefinitions(
-        string userText,
-        IReadOnlyList<AgentToolDefinition> all)
-    {
-        const int maxTools = 16;
-        const int topCount = 5;
-
-        // A tiny catalog needs no retrieval: hiding tools from it would only cost
-        // the model extra discovery rounds.
-        if (all.Count <= 8)
-            return all;
-
-        var selected = new List<AgentToolDefinition>(maxTools);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        void Add(AgentToolDefinition definition)
-        {
-            if (selected.Count >= maxTools || !names.Add(definition.Name))
-                return;
-
-            selected.Add(definition);
-        }
-
-        foreach (var definition in all)
-        {
-            if (IsAlwaysAvailableV2(definition.Name))
-                Add(definition);
-        }
-
-        foreach (var definition in all)
-        {
-            if (_sessionContext.LoadedToolNames.Contains(definition.Name))
-                Add(definition);
-        }
-
-        var rankable = all
-            .Where(definition => !names.Contains(definition.Name))
-            .ToList();
-        foreach (var definition in ToolCardRouter.Rank(userText, rankable, topCount))
-            Add(definition);
-
-        SmartConLogger.Debug(
-            "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
-            _sessionContext.LoadedToolNames.Count);
-
-        return selected;
-    }
-
-    private static bool IsAlwaysAvailableV2(string name) =>
-        AgentToolPacks.IsCore(name)
-        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal)
-        || string.Equals(name, ReadToolResultTool.ToolName, StringComparison.Ordinal);
 }

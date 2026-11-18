@@ -44,6 +44,27 @@ public sealed class AgentMessage
 
     public int TokenCount { get; init; }
 
+    /// <summary>
+    /// 1-based ordinal of the message in the persisted conversation. Zero for
+    /// messages that exist only in the outgoing prompt (turn context, context
+    /// status, a restored checkpoint) and for synthetic tool-call repairs.
+    /// </summary>
+    public int SessionIndex { get; init; }
+
+    public AgentMessage WithSessionIndex(int sessionIndex) =>
+        new()
+        {
+            Role = Role,
+            Content = Content,
+            ReasoningContent = ReasoningContent,
+            ToolCalls = ToolCalls,
+            ToolCallId = ToolCallId,
+            Attachments = Attachments,
+            CreatedAt = CreatedAt,
+            TokenCount = TokenCount,
+            SessionIndex = sessionIndex
+        };
+
     public static AgentMessage System(string content) => new() { Role = AgentRole.System, Content = content };
 
     public static AgentMessage User(string content, IReadOnlyList<AgentAttachment>? attachments = null) =>

@@ -11,6 +11,13 @@ public sealed class AgentCompactionResult
 
     public int DroppedCount { get; init; }
 
+    /// <summary>
+    /// Session ordinal of the last raw message covered by the checkpoint, or
+    /// the request's <c>BaseRowId</c> when nothing was covered. The orchestrator
+    /// advances its checkpoint anchor with this value after a summary.
+    /// </summary>
+    public int CoveredToRowId { get; init; }
+
     public int TokensBefore { get; init; }
 
     public int TokensAfter { get; init; }

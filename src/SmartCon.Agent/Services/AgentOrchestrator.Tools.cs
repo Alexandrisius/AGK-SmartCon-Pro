@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.Text.Json;
+using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Agent.Services;
 
@@ -108,18 +111,6 @@ public sealed partial class AgentOrchestrator
             : ToolResultBudget.Trim(fullJson, ToolResultBudget.DefaultMaxCharacters, handle);
     }
 
-    private static List<AgentMessage> TrimHistory(IReadOnlyList<AgentMessage> history)
-    {
-        var start = System.Math.Max(0, history.Count - MaxHistoryMessages);
-        while (start < history.Count && history[start].Role == AgentRole.Tool)
-            start++;
-
-        var result = new List<AgentMessage>(history.Count - start);
-        for (var i = start; i < history.Count; i++)
-            result.Add(history[i]);
-        return result;
-    }
-
     /// <summary>
     /// OpenAI-compatible providers reject a history where an assistant
     /// tool call has no matching tool result. A cancelled turn can leave
@@ -170,4 +161,106 @@ public sealed partial class AgentOrchestrator
                     "The tool call was not executed because the previous turn was interrupted."))));
         }
     }
+
+    private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions)
+    {
+        // Loaded and pending tools count as available for find_tools, even before
+        // the next round applies them to the request.
+        var names = new HashSet<string>(
+            definitions.Select(definition => definition.Name), StringComparer.Ordinal);
+        foreach (var name in _sessionContext.LoadedToolNames)
+            names.Add(name);
+        foreach (var name in _sessionContext.PendingToolNames)
+            names.Add(name);
+        _sessionContext.ActiveToolNames = names.ToList();
+    }
+
+    private static int ElapsedMinutes(long startedAt) =>
+        (int)((Stopwatch.GetTimestamp() - startedAt) * 60.0 / Stopwatch.Frequency / 60.0);
+
+    private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
+        string userText,
+        int previousCount,
+        CancellationToken ct)
+    {
+        foreach (var name in _sessionContext.PendingToolNames)
+            _sessionContext.LoadedToolNames.Add(name);
+
+        _sessionContext.PendingToolNames.Clear();
+
+        var definitions = await SelectToolDefinitionsAsync(userText, ct).ConfigureAwait(false);
+        SetActiveToolNames(definitions);
+        SmartConLogger.Info(
+            "Agent tool catalog changed: " + previousCount + " -> " + definitions.Count +
+            " tools, cache invalidated");
+        return definitions;
+    }
+
+    private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
+        string userText,
+        CancellationToken ct)
+    {
+        var all = _toolRegistry.GetDefinitions();
+        if (all.Count == 0)
+            return all;
+
+        return SelectCatalogV2ToolDefinitions(userText, all);
+    }
+
+    /// <summary>
+    /// Catalog v2 turn set: the fixed core tools plus everything loaded through
+    /// load_tool_pack plus the best BM25 card matches for the user text. The full
+    /// catalog is never sent; no BM25 signal degrades to core + loaded.
+    /// </summary>
+    private IReadOnlyList<AgentToolDefinition> SelectCatalogV2ToolDefinitions(
+        string userText,
+        IReadOnlyList<AgentToolDefinition> all)
+    {
+        const int maxTools = 16;
+        const int topCount = 5;
+
+        // A tiny catalog needs no retrieval: hiding tools from it would only cost
+        // the model extra discovery rounds.
+        if (all.Count <= 8)
+            return all;
+
+        var selected = new List<AgentToolDefinition>(maxTools);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Add(AgentToolDefinition definition)
+        {
+            if (selected.Count >= maxTools || !names.Add(definition.Name))
+                return;
+
+            selected.Add(definition);
+        }
+
+        foreach (var definition in all)
+        {
+            if (IsAlwaysAvailableV2(definition.Name))
+                Add(definition);
+        }
+
+        foreach (var definition in all)
+        {
+            if (_sessionContext.LoadedToolNames.Contains(definition.Name))
+                Add(definition);
+        }
+
+        var rankable = all
+            .Where(definition => !names.Contains(definition.Name))
+            .ToList();
+        foreach (var definition in ToolCardRouter.Rank(userText, rankable, topCount))
+            Add(definition);
+
+        SmartConLogger.Debug(
+            "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
+            _sessionContext.LoadedToolNames.Count);
+
+        return selected;
+    }
+
+    private static bool IsAlwaysAvailableV2(string name) =>
+        AgentToolPacks.IsCore(name)
+        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal)
+        || string.Equals(name, ReadToolResultTool.ToolName, StringComparison.Ordinal);
 }

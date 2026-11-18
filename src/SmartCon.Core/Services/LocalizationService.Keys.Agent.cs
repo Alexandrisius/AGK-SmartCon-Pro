@@ -16,6 +16,16 @@ public static partial class LocalizationService
         en["Agent_Send"] = "Send";
         ru["Agent_Stop"] = "Стоп";
         en["Agent_Stop"] = "Stop";
+        ru["Agent_Context"] = "Контекст";
+        en["Agent_Context"] = "Context";
+        ru["Agent_Context_Unknown"] = "Контекст ещё не измерен";
+        en["Agent_Context_Unknown"] = "Context is not measured yet";
+        ru["Agent_Context_Masked"] = "Старые результаты инструментов заменены дайджестами";
+        en["Agent_Context_Masked"] = "Old tool results replaced by digests";
+        ru["Agent_Context_Summary"] = "История сжата в чекпойнт";
+        en["Agent_Context_Summary"] = "History summarized into a checkpoint";
+        ru["Agent_Context_HardShrink"] = "Аварийное усечение контекста";
+        en["Agent_Context_HardShrink"] = "Context hard-shrunk";
         ru["Agent_Input_Placeholder"] = "Спросите что-нибудь о модели…";
         en["Agent_Input_Placeholder"] = "Ask anything about the model…";
         ru["Agent_Input_Tooltip"] = "Опишите задачу. Enter — отправить, Shift+Enter — новая строка, Ctrl+V — скриншот";

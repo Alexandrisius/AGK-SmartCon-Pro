@@ -50,9 +50,11 @@ public sealed partial class AgentContextCompactor
             if (IsDigest(message.Content))
                 continue;
 
-            result[messageIndex] = AgentMessage.ToolResult(
-                message.ToolCallId ?? string.Empty,
-                BuildDigest(message.Content));
+            result[messageIndex] = AgentMessage
+                .ToolResult(
+                    message.ToolCallId ?? string.Empty,
+                    BuildDigest(message.Content))
+                .WithSessionIndex(message.SessionIndex);
             maskedCount++;
         }
 

@@ -399,14 +399,27 @@ public sealed partial class AgentOrchestratorTests
 
         public Task AppendMessageAsync(Guid conversationId, AgentMessage message, CancellationToken ct)
         {
-            Messages.Add(message);
+            Messages.Add(message.SessionIndex > 0
+                ? message
+                : message.WithSessionIndex(Messages.Count + 1));
             return Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<AgentMessage>> GetMessagesAsync(
             Guid conversationId,
-            CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<AgentMessage>>(Messages.ToList());
+            CancellationToken ct)
+        {
+            var snapshot = new List<AgentMessage>(Messages.Count);
+            for (var index = 0; index < Messages.Count; index++)
+            {
+                var message = Messages[index];
+                snapshot.Add(message.SessionIndex > 0
+                    ? message
+                    : message.WithSessionIndex(index + 1));
+            }
+
+            return Task.FromResult<IReadOnlyList<AgentMessage>>(snapshot);
+        }
 
         public Task UpdateTitleAsync(Guid conversationId, string title, CancellationToken ct) =>
             Task.CompletedTask;

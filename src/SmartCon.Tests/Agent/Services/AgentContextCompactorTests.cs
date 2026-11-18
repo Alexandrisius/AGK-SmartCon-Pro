@@ -1,11 +1,11 @@
-using SmartCon.Agent.Services;
+﻿using SmartCon.Agent.Services;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using Xunit;
 
 namespace SmartCon.Tests.Agent.Services;
 
-public sealed class AgentContextCompactorTests
+public sealed partial class AgentContextCompactorTests
 {
     private const int Budget = 10_000;
     private const double Threshold = 0.3;
@@ -212,21 +212,32 @@ public sealed class AgentContextCompactorTests
     }
 
     [Fact]
-    public async Task Checkpoint_IsPersistedWithTheCoveredCount()
+    public async Task Checkpoint_IsPersistedWithTheActualCoveredPrefix()
     {
         var summarizer = new FakeSummarizer { Result = "summary" };
         var store = new InMemoryCompactionStore();
         var compactor = new AgentContextCompactor(summarizer, store: store);
 
+        var messages = BuildLargeHistory();
         var result = await compactor.CompactAsync(
-            Request(BuildLargeHistory(), keepRecentMessages: 2, covered: 42),
+            Request(messages, keepRecentMessages: 2, baseRowId: 10),
             CancellationToken.None);
 
         Assert.True(result.Summarized);
         var saved = Assert.Single(store.Saved);
-        Assert.Equal(42, saved.ToRowId);
+        Assert.Equal(24, saved.ToRowId);
+        Assert.Equal(11, saved.FromRowId);
         Assert.Equal(Session, saved.SessionId);
         Assert.Equal(result.Summary, saved.Summary);
+        Assert.Equal(
+            AgentCompactionHash.Compute(messages.Take(14).ToList()),
+            saved.SourcePrefixHash);
+
+        var fullHistory = new List<AgentMessage>();
+        for (var index = 0; index < 10; index++)
+            fullHistory.Add(AgentMessage.User("before-" + index).WithSessionIndex(index + 1));
+        fullHistory.AddRange(messages);
+        Assert.True(AgentCompactionHash.Validate(saved, fullHistory));
     }
 
     [Fact]
@@ -253,8 +264,14 @@ public sealed class AgentContextCompactorTests
         IReadOnlyList<AgentMessage> messages,
         int keepRecentToolResults = 6,
         int keepRecentMessages = 8,
+        int keepRecentTokens = 0,
         WorkingState? workingState = null,
-        int covered = 0) =>
+        int baseRowId = 0,
+        int minMaskSavings = 0,
+        int reserveTokens = 0,
+        IReadOnlyList<AgentMessage>? rawHistory = null,
+        Func<IReadOnlyList<AgentMessage>, int>? postEstimator = null,
+        bool allowCheckpoint = true) =>
         new()
         {
             Messages = messages,
@@ -262,8 +279,14 @@ public sealed class AgentContextCompactorTests
             Threshold = Threshold,
             KeepRecentToolResults = keepRecentToolResults,
             KeepRecentMessages = keepRecentMessages,
+            KeepRecentTokens = keepRecentTokens,
             HardShrinkMessages = 2,
-            CoveredMessageCount = covered,
+            BaseRowId = baseRowId,
+            MinMaskSavingsTokens = minMaskSavings,
+            ReserveTokens = reserveTokens,
+            RawHistory = rawHistory,
+            PostEstimator = postEstimator,
+            AllowCheckpoint = allowCheckpoint,
             SessionId = Session,
             WorkingState = workingState
         };
@@ -273,9 +296,13 @@ public sealed class AgentContextCompactorTests
         var messages = new List<AgentMessage>();
         for (var index = 0; index < 8; index++)
         {
-            messages.Add(AgentMessage.User("FACT: fact-" + index + " " + new string('я', 6000)));
+            messages.Add(AgentMessage.User(
+                "FACT: fact-" + index + " " + new string('я', 6000)));
             messages.Add(AgentMessage.Assistant("шаг " + index));
         }
+
+        for (var index = 0; index < messages.Count; index++)
+            messages[index] = messages[index].WithSessionIndex(index + 11);
 
         return messages;
     }

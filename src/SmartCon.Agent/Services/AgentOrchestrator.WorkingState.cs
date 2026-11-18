@@ -60,12 +60,14 @@ public sealed partial class AgentOrchestrator
     /// <summary>
     /// Prepends the rendered turn context to the last user message of the
     /// outgoing payload only. The message stored in the conversation history
-    /// stays exactly as the user sent it.
+    /// stays exactly as the user sent it. The current token count and any
+    /// compaction event are appended separately as
+    /// <see cref="AgentContextStatus"/> so the model sees them at the end of the
+    /// request, not only at the start of a turn.
     /// </summary>
     private static void ApplyTurnContext(
         List<AgentMessage> messages,
-        WorkingState state,
-        AgentProjectContext projectContext,
+        string turnContextBase,
         int round,
         int elapsedMinutes,
         int contextTokens,
@@ -77,10 +79,10 @@ public sealed partial class AgentOrchestrator
             if (message.Role != AgentRole.User)
                 continue;
 
-            var turnContext = AgentTurnContextBuilder.Build(state, projectContext);
-            turnContext += "\n<progress round=\"" + round + "\" elapsed_minutes=\"" +
-                           elapsedMinutes + "\" context_tokens=\"" + contextTokens +
-                           "\" context_limit=\"" + contextLimit + "\" />";
+            var turnContext = turnContextBase +
+                              "\n<progress round=\"" + round + "\" elapsed_minutes=\"" +
+                              elapsedMinutes + "\" context_tokens=\"" + contextTokens +
+                              "\" context_limit=\"" + contextLimit + "\" />";
             messages[index] = AgentMessage.User(
                 turnContext + "\n\n" + (message.Content ?? string.Empty),
                 message.Attachments);

@@ -98,7 +98,9 @@ public sealed partial class AgentContextCompactor
             switch (message.Role)
             {
                 case AgentRole.User:
-                    builder.Append("USER: ").AppendLine(Truncate(message.Content));
+                    // User instructions are carried verbatim: the summarizer must
+                    // not paraphrase the goal, constraints or corrections.
+                    builder.Append("USER: ").AppendLine(message.Content ?? string.Empty);
                     break;
 
                 case AgentRole.Assistant:

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -108,12 +109,15 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PrimaryActionCommand))]
     private string _inputText = string.Empty;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PrimaryActionCommand))]
     [NotifyPropertyChangedFor(nameof(IsBusyVisible))]
+    [NotifyPropertyChangedFor(nameof(PrimaryActionTooltip))]
     private bool _isBusy;
 
     [ObservableProperty]
@@ -124,6 +128,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SendCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PrimaryActionCommand))]
     [NotifyPropertyChangedFor(nameof(ShowBanner))]
     private bool _hasDocument;
 
@@ -138,6 +143,29 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _tokenSummary = "—";
+
+    [ObservableProperty]
+    private int _contextTokens;
+
+    [ObservableProperty]
+    private int _contextLimit;
+
+    [ObservableProperty]
+    private string _contextPercent = "—";
+
+    [ObservableProperty]
+    private string _contextTooltip = string.Empty;
+
+    [ObservableProperty]
+    private string _contextDetails = string.Empty;
+
+    [ObservableProperty]
+    private bool _isContextPopupOpen;
+
+    public bool HasContextUsage => ContextLimit > 0;
+
+    public string PrimaryActionTooltip =>
+        IsBusy ? S("Agent_Stop", "Стоп") : S("Agent_Send", "Отправить");
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -167,6 +195,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     partial void OnSelectedSessionChanged(AgentSessionItemViewModel? value)
     {
         SendCommand.NotifyCanExecuteChanged();
+        PrimaryActionCommand.NotifyCanExecuteChanged();
+        ResetContextUsage();
         if (value is null || IsBusy)
             return;
 
@@ -174,6 +204,39 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     }
 
     partial void OnHasDocumentChanged(bool value) => UpdateBanner();
+
+    partial void OnContextTokensChanged(int value) => UpdateContextPresentation();
+
+    partial void OnContextLimitChanged(int value) => UpdateContextPresentation();
+
+    private void ResetContextUsage()
+    {
+        ContextTokens = 0;
+        ContextLimit = 0;
+        ContextDetails = string.Empty;
+        IsContextPopupOpen = false;
+    }
+
+    private void UpdateContextPresentation()
+    {
+        if (ContextLimit <= 0)
+        {
+            ContextPercent = "—";
+            ContextTooltip = S("Agent_Context_Unknown", "Контекст ещё не измерен");
+            OnPropertyChanged(nameof(HasContextUsage));
+            return;
+        }
+
+        var ratio = Math.Max(0, (double)ContextTokens / ContextLimit);
+        ContextPercent = (ratio * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
+        ContextTooltip = S("Agent_Context", "Контекст") + ": ≈ " +
+                         FormatNumber(ContextTokens) + " / " + FormatNumber(ContextLimit) +
+                         " (" + (ratio * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%)";
+        OnPropertyChanged(nameof(HasContextUsage));
+    }
+
+    private static string FormatNumber(int value) =>
+        value.ToString("N0", CultureInfo.CurrentCulture);
 
     private async Task InitializeAsync()
     {

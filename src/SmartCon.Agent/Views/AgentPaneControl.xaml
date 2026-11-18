@@ -8,6 +8,7 @@
              xmlns:vm="clr-namespace:SmartCon.Agent.ViewModels"
              xmlns:agentConverters="clr-namespace:SmartCon.Agent.Converters"
              xmlns:behaviors="clr-namespace:SmartCon.Agent.Behaviors"
+             xmlns:controls="clr-namespace:SmartCon.Agent.Views.Controls"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="{DynamicResource BackgroundBrush}"
              FontFamily="Segoe UI"
@@ -61,6 +62,24 @@
                    BasedOn="{StaticResource RoundIconButton}">
                 <Setter Property="Background" Value="{DynamicResource StatusBarSurfaceBrush}"/>
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Style>
+
+            <Style x:Key="ContextDonutButton" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="13">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style x:Key="ImageThumbButton" TargetType="Button">
@@ -840,26 +859,115 @@
                                Margin="8,0,4,0"
                                TextTrimming="CharacterEllipsis"/>
 
-                    <Button Grid.Column="3"
-                            Command="{Binding StopCommand}"
-                            Width="30" Height="30"
+                    <Button x:Name="ContextButton"
+                            Grid.Column="3"
+                            Width="26" Height="26"
                             Margin="0,0,6,0"
-                            Style="{StaticResource RoundSecondaryIconButton}"
-                            ToolTip="{loc:Loc Agent_Stop}"
-                            Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
-                        <iconPacks:PackIconMaterial Kind="Stop"
-                                                    Width="14" Height="14"
-                                                    Foreground="{DynamicResource DangerBrush}"/>
+                            VerticalAlignment="Center"
+                            Command="{Binding ToggleContextPopupCommand}"
+                            Style="{StaticResource ContextDonutButton}"
+                            ToolTipService.ShowDuration="15000">
+                        <Button.ToolTip>
+                            <ToolTip Background="{DynamicResource SurfaceBrush}"
+                                     BorderBrush="{DynamicResource BorderAltBrush}"
+                                     BorderThickness="1"
+                                     Padding="10,8"
+                                     MaxWidth="300">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding ContextTooltip}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ContextDetails}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,4,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ContextDetails}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </ToolTip>
+                        </Button.ToolTip>
+                        <Grid Width="20" Height="20">
+                            <controls:ContextDonut Value="{Binding ContextTokens}"
+                                                   Maximum="{Binding ContextLimit}"
+                                                   Width="20" Height="20"
+                                                   TrackBrush="{DynamicResource BorderAltBrush}"
+                                                   ProgressBrush="{DynamicResource AccentBrush}"
+                                                   WarningBrush="{DynamicResource WarningBrush}"
+                                                   DangerBrush="{DynamicResource DangerBrush}"
+                                                   StrokeThickness="3"/>
+                            <TextBlock Text="{Binding ContextPercent}"
+                                       FontSize="7"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextMutedBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
                     </Button>
 
+                    <Popup Grid.Column="3"
+                           IsOpen="{Binding IsContextPopupOpen, Mode=TwoWay}"
+                           PlacementTarget="{Binding ElementName=ContextButton}"
+                           Placement="Top"
+                           StaysOpen="False"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade">
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderAltBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="10,8"
+                                MaxWidth="300">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ContextTooltip}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding ContextDetails}"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ContextDetails}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
                     <Button Grid.Column="4"
-                            Command="{Binding SendCommand}"
+                            Command="{Binding PrimaryActionCommand}"
                             Width="30" Height="30"
                             Style="{StaticResource RoundIconButton}"
-                            ToolTip="{loc:Loc Agent_Send}">
-                        <iconPacks:PackIconMaterial Kind="Send"
-                                                    Width="15" Height="15"
-                                                    Foreground="White"/>
+                            ToolTip="{Binding PrimaryActionTooltip}">
+                        <Grid Width="15" Height="15">
+                            <iconPacks:PackIconMaterial Kind="Send"
+                                                        Width="15" Height="15"
+                                                        Foreground="White"
+                                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                            <iconPacks:PackIconMaterial Kind="Stop"
+                                                        Width="14" Height="14"
+                                                        Foreground="{DynamicResource DangerBrush}"
+                                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
                     </Button>
                 </Grid>
             </Grid>
