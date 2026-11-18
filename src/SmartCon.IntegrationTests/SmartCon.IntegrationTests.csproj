@@ -105,4 +105,10 @@
     <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
   </ItemGroup>
 
+  <!-- Agent runtime tests (H1-14/H1-16) run on net8/net10 only: Agent sources are
+       excluded on net48 above, and the net48 run stays a Revit-boundary suite. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net48'">
+    <ProjectReference Include="..\SmartCon.Agent\SmartCon.Agent.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -28,6 +28,8 @@ public sealed partial class AgentOrchestrator
     private readonly IAgentUsageStore? _usageStore;
     private readonly IAgentWorkingStateStore? _workingStateStore;
     private readonly IAgentToolResultBlobStore? _toolResultBlobStore;
+    private readonly IAgentContextCompactor? _contextCompactor;
+    private readonly IAgentCompactionStore? _compactionStore;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -42,7 +44,9 @@ public sealed partial class AgentOrchestrator
         IAgentToolCallStore? toolCallStore = null,
         IAgentUsageStore? usageStore = null,
         IAgentWorkingStateStore? workingStateStore = null,
-        IAgentToolResultBlobStore? toolResultBlobStore = null)
+        IAgentToolResultBlobStore? toolResultBlobStore = null,
+        IAgentContextCompactor? contextCompactor = null,
+        IAgentCompactionStore? compactionStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -58,6 +62,8 @@ public sealed partial class AgentOrchestrator
         _usageStore = usageStore;
         _workingStateStore = workingStateStore;
         _toolResultBlobStore = toolResultBlobStore;
+        _contextCompactor = contextCompactor;
+        _compactionStore = compactionStore;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -123,7 +129,25 @@ public sealed partial class AgentOrchestrator
             var history = await _conversationStore
                 .GetMessagesAsync(conversationId, ct)
                 .ConfigureAwait(false);
-            var working = EnsureToolCallPairs(TrimHistory(history));
+            var persistedMessageCount = history.Count;
+            var checkpoint = await LoadCheckpointAsync(conversationId, ct).ConfigureAwait(false);
+            IReadOnlyList<AgentMessage> effectiveHistory = history;
+            if (checkpoint is not null && checkpoint.ToRowId <= history.Count && checkpoint.ToRowId > 0)
+                effectiveHistory = history.Skip(checkpoint.ToRowId).ToList();
+
+            var working = EnsureToolCallPairs(TrimHistory(effectiveHistory));
+            if (checkpoint is not null
+                && checkpoint.ToRowId <= history.Count
+                && checkpoint.ToRowId > 0)
+            {
+                working.Insert(0, AgentMessage.System(
+                    "<conversation_checkpoint>\n" + checkpoint.Summary +
+                    "\n</conversation_checkpoint>"));
+                SmartConLogger.Info(
+                    "Agent context: restored checkpoint " + checkpoint.Id +
+                    " (" + checkpoint.ToRowId + " messages covered)");
+            }
+
             var systemMessage = AgentMessage.System(
                 _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
             var definitions = await SelectToolDefinitionsAsync(userText, ct);
@@ -134,13 +158,6 @@ public sealed partial class AgentOrchestrator
                     AgentTokenEstimator.EstimateRequest(
                         systemMessage.Content, messages, definitions));
 
-            var (compacted, _) = AgentHistoryCompactor.Compact(
-                working,
-                _settings.ContextWindowTokens,
-                _settings.ContextThreshold,
-                AgentHistoryCompactor.KeepRecentToolResults,
-                estimator);
-            working = compacted;
 
             var toolCallCount = 0;
             var loopGuard = new LoopGuard();
@@ -156,6 +173,11 @@ public sealed partial class AgentOrchestrator
                             userText, definitions.Count, ct)
                         .ConfigureAwait(false);
                 }
+
+                working = await CompactContextAsync(
+                        working, workingState, conversationId, persistedMessageCount,
+                        estimator, ct)
+                    .ConfigureAwait(false);
 
                 var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
@@ -245,6 +267,7 @@ public sealed partial class AgentOrchestrator
                 await _conversationStore
                     .AppendMessageAsync(conversationId, completion.Message, ct)
                     .ConfigureAwait(false);
+                persistedMessageCount++;
 
                 if (completion.Message.ToolCalls.Count == 0)
                 {
@@ -335,6 +358,7 @@ public sealed partial class AgentOrchestrator
                     await _conversationStore
                         .AppendMessageAsync(conversationId, toolMessage, ct)
                         .ConfigureAwait(false);
+                    persistedMessageCount++;
 
                     await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
                         .ConfigureAwait(false);

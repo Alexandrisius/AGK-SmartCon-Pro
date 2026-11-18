@@ -444,6 +444,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
         services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
         services.AddSingleton<IAgentToolResultBlobStore, SqliteAgentToolResultBlobStore>();
+        services.AddSingleton<IAgentCompactionStore, SqliteAgentCompactionStore>();
         services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
         services.AddSingleton<AgentFrictionAnalyzer>();
 
@@ -518,6 +519,13 @@ public static class ServiceRegistrar
         services.AddSingleton<IToolExecutor, AgentToolExecutor>();
         services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
         services.AddSingleton<AgentPromptBuilder>();
+        services.AddSingleton<IAgentSummarizer>(sp => new LlmAgentSummarizer(
+            sp.GetRequiredService<IAgentLlmClient>(),
+            sp.GetRequiredService<AgentLlmSettings>()));
+        services.AddSingleton<IAgentContextCompactor>(sp => new AgentContextCompactor(
+            sp.GetRequiredService<IAgentSummarizer>(),
+            sp.GetRequiredService<AgentLlmSettings>(),
+            sp.GetRequiredService<IAgentCompactionStore>()));
         services.AddSingleton<AgentOrchestrator>();
         services.AddSingleton<IAgentFilePicker, WpfAgentFilePicker>();
         services.AddSingleton<IAgentClipboardService, WpfAgentClipboardService>();

@@ -215,7 +215,9 @@ public sealed partial class AgentOrchestratorTests
         IAgentUsageStore? usageStore = null,
         AgentLlmSettings? settings = null,
         IAgentWorkingStateStore? workingStateStore = null,
-        IAgentToolResultBlobStore? toolResultBlobStore = null)
+        IAgentToolResultBlobStore? toolResultBlobStore = null,
+        IAgentContextCompactor? contextCompactor = null,
+        IAgentCompactionStore? compactionStore = null)
     {
         return new AgentOrchestrator(
             llm,
@@ -230,7 +232,9 @@ public sealed partial class AgentOrchestratorTests
             toolCallStore,
             usageStore,
             workingStateStore,
-            toolResultBlobStore);
+            toolResultBlobStore,
+            contextCompactor,
+            compactionStore);
     }
 
     private sealed class CountingTool : IAgentTool
