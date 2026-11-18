@@ -377,11 +377,16 @@ SMARTCON_AGENT_EVAL_REPLAY=1 dotnet run --project src/SmartCon.IntegrationTests 
 После H1:
 
 - **H1b (следующий):** model entity search — BM25 по семействам/типам/категориям/уровням/видам/параметрам, `search_model_entities` + структурный `query_elements`, ADR-077.
+- **H1c:** view configuration — шаблон или текущий вид, visibility, фильтры по условиям, overrides, crop/scope boxes.
+- **H1d:** family editing — EditFamily без UI, instance/type, shared parameters, формулы/lookup, перенос значений, save/load.
+- **H8 (после H1d):** bulk/cyclic job engine — отдельный дизайн; в H1/H1b–H1d его нет. Альтернатива — sandbox-скрипт (H7), не runtime C#.
 - **H2:** память (`MEMORY.md`), FTS5, session search, skills 100–200.
 - **H3:** policy engine, persisted grants, atomic plan, verify-on-stop.
 - **H4:** usage ledger v2, cost caps, eval v2, snapshots.
 - **H5:** steering, timeline/rewind, memory inbox, MCP (backlog).
 - **H7:** typed facade + sandbox-интерпретатор для длинного хвоста (Jint/Lua поверх `IRevitOps`), ADR-076; без runtime C#.
 - **H6 (последний):** гибридный retrieval (BM25 ∪ vector → decision reranker), ADR-075 — только после H1b и по метрике recall.
+
+Детали H1b–H1d и границы cyclic: [`h1b-tool-packs.md`](h1b-tool-packs.md).
 
 Ссылки: `harness-ideal-plan.md` §5 (фазы), §6 (спеки), §7 (схема), §8 (метрики).

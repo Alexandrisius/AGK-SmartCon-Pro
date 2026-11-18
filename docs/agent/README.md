@@ -31,6 +31,7 @@
 | [`00-strategy/harness-ideal-plan.md`](00-strategy/harness-ideal-plan.md) | Долгосрочная стратегия: gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики |
 | [`00-strategy/harness-development-approach.md`](00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики |
 | [`00-strategy/initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) | Эпик **H1** — первый большой рывок, исполнимый runbook |
+| [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) | **H1b–H1d**: model search, view configuration, family editing, кейсы и границы (cyclic → H8) |
 | [`00-strategy/eval.md`](00-strategy/eval.md) | Журнал eval-прогонов и baseline |
 | [`00-strategy/decisions-benchmark.md`](00-strategy/decisions-benchmark.md) | Research note: decision-модели |
 | [`HANDOFF.md`](HANDOFF.md) | Текущее состояние, что сделано/осталось |
@@ -57,7 +58,10 @@
 | Эпик | Содержание | Документ |
 |---|---|---|
 | **H1 (сейчас)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
-| **H1b (следующий)** | Model entity search: BM25 по категориям/семействам/типам/уровням/видам/параметрам, русский стеммер/синонимы, `search_model_entities` + структурный `query_elements`, ленивый индекс только по одному параметру (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md) |
+| **H1b (следующий)** | Model entity search: BM25 по категориям/семействам/типам/уровням/видам/параметрам, русский стеммер/синонимы, `search_model_entities` + структурный `query_elements`, ленивый индекс только по одному параметру (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md), [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) |
+| **H1c** | View configuration: шаблон или текущий вид, visibility категорий/осей, фильтры по условиям, overrides (покрасить стены), crop/scope boxes | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §3 |
+| **H1d** | Family editing: EditFamily без UI, параметры instance/type, shared, формулы/lookup, перенос значений, save/load | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §4 |
+| H8 (после H1d) | Bulk/cyclic job engine: select + action + батчи, прогресс/отмена/resume; альтернатива — sandbox-скрипт (H7), не runtime C#. Отдельный дизайн, не в H1 | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §5 |
 | H2 | Memory v1 + FTS5 + skills 100–200 | `harness-ideal-plan.md` P2 |
 | H3 | Policy engine, persisted approvals, atomic plan | `harness-ideal-plan.md` P3 |
 | H4 | Observability, cost caps, eval v2 | `harness-ideal-plan.md` P4–P5 |

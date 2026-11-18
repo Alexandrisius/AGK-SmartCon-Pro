@@ -11,6 +11,7 @@
 | [`harness-ideal-plan.md`](harness-ideal-plan.md) | Долгосрочная стратегия: as-is, gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед любым крупным решением по харнесу |
 | [`harness-development-approach.md`](harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, статусы документов, роли, эпики | Перед стартом любой задачи по харнесу |
 | [`initial-improvement-runbook.md`](initial-improvement-runbook.md) | Эпик **H1**: первый большой рывок (tool catalog v2 + context budgeting + WorkingState) | Перед реализацией H1; содержит задачи, файлы, приёмку, команды |
+| [`h1b-tool-packs.md`](h1b-tool-packs.md) | **H1b–H1d**: model search, view configuration, family editing, реальные кейсы; cyclic → H8 | Перед этапом после H1; границы и приёмка |
 | [`eval.md`](eval.md) | Журнал eval-прогонов и baseline-метрик | При измерении «до/после» |
 | [`decisions-benchmark.md`](decisions-benchmark.md) | Research note: бенчмарк decision-моделей | При выборе роутера/модели |
 

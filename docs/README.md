@@ -119,7 +119,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
 | SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
-| SmartCon.Agent | ✅ Read/write + plan + eval | AI-харнес: 27 тулов, plan L0–L6, change sets/undo, eval 40/40; память/skills/policy, model entity search H1b (ADR-077), гибридный retrieval 500–1000 (ADR-075) и typed facade/code mode (ADR-076) — roadmap |
+| SmartCon.Agent | ✅ Read/write + plan + eval | AI-харнес: 27 тулов, plan L0–L6, change sets/undo, eval 40/40; память/skills/policy, model search + view/family packs H1b–H1d (ADR-077), гибридный retrieval 500–1000 (ADR-075) и typed facade/code mode (ADR-076) — roadmap; cyclic jobs — H8 |
 | SmartCon.Tests | ✅ 3284 теста, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
 | SmartCon.IntegrationTests | ✅ ~250 тестов в реальном Revit | TUnit + Nice3point: граница SmartCon ↔ Revit API (net48/net8/net10), см. AGENTS.md |
 
