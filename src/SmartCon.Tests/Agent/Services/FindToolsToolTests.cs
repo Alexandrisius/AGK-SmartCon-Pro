@@ -80,17 +80,18 @@ public sealed class FindToolsToolTests
     }
 
     [Fact]
-    public async Task FindTools_WithoutQuery_IsRejected()
+    public async Task FindTools_WithoutQuery_ReturnsACompactListing()
     {
         var write = new ScriptedTool("write_tool");
         var tool = new FindToolsTool(new RecordingToolRouter());
         tool.Attach(new FakeToolRegistry(write));
 
         var result = await tool.ExecuteAsync(
-            Context(), Parse("{\"context\":\"only context\"}"), CancellationToken.None);
+            Context(), Parse("{\"limit\":5}"), CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Equal("invalid_arguments", result.ErrorCode);
+        Assert.True(result.Success);
+        Assert.Equal("listing", result.Data!.Value.GetProperty("mode").GetString());
+        Assert.True(result.Data.Value.GetProperty("tools").GetArrayLength() >= 1);
     }
 
     [Fact]

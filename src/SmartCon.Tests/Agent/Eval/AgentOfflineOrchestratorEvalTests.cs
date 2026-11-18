@@ -67,12 +67,12 @@ public sealed class AgentOfflineOrchestratorEvalTests
     }
 
     [Fact]
-    public async Task RoundLimit_StopsAtEightRounds_AndReportsIt()
+    public async Task NoRoundLimit_RunsUntilTheModelStops()
     {
         var tool = new ScriptedTool("list_views", AgentToolRisk.Read, supportsDryRun: false);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var llm = new FakeAgentLlmClient();
-        for (var round = 1; round <= 8; round++)
+        for (var round = 1; round <= 12; round++)
         {
             llm.EnqueueAssistant(
                 null,
@@ -87,6 +87,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
                 });
         }
 
+        llm.EnqueueAssistant("готово");
         var orchestrator = CreateOrchestrator(llm, registry);
 
         var result = await orchestrator.RunTurnAsync(
@@ -96,12 +97,12 @@ public sealed class AgentOfflineOrchestratorEvalTests
             null,
             CancellationToken.None);
 
-        Assert.True(result.MaxRoundsReached);
-        Assert.Equal(8, result.Rounds);
-        Assert.Equal(8, result.ToolCallCount);
-        Assert.Equal(8, tool.Executions.Count);
-        Assert.Equal(8, llm.Requests.Count);
-        Assert.Contains("8", result.FinalText, StringComparison.Ordinal);
+        Assert.False(result.MaxRoundsReached);
+        Assert.Equal(13, result.Rounds);
+        Assert.Equal(12, result.ToolCallCount);
+        Assert.Equal(12, tool.Executions.Count);
+        Assert.Equal(13, llm.Requests.Count);
+        Assert.Equal("готово", result.FinalText);
     }
 
     [Fact]

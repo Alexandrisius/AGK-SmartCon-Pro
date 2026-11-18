@@ -12,7 +12,6 @@ namespace SmartCon.Agent.Services;
 
 public sealed partial class AgentOrchestrator
 {
-    private const int MaxToolRounds = 8;
     private const int MaxHistoryMessages = 120;
 
     private readonly IAgentLlmClient _llm;
@@ -163,9 +162,12 @@ public sealed partial class AgentOrchestrator
             var loopGuard = new LoopGuard();
             var loopAborted = false;
 
-            for (var round = 1; round <= MaxToolRounds; round++)
+            // No round or time cap: the turn runs until the model stops, the user
+            // presses Stop (ct) or the loop guard aborts a repeating call pattern.
+            for (var round = 1; ; round++)
             {
                 ct.ThrowIfCancellationRequested();
+                var elapsedMinutes = ElapsedMinutes(turnStartedAt);
 
                 if (_sessionContext.PendingToolNames.Count > 0)
                 {
@@ -183,7 +185,10 @@ public sealed partial class AgentOrchestrator
                 messages.AddRange(working);
 
                 if (workingState is not null)
-                    ApplyTurnContext(messages, workingState, projectContext);
+                {
+                    ApplyTurnContext(
+                        messages, workingState, projectContext, round, elapsedMinutes);
+                }
 
                 var estimatedPrompt = AgentTokenEstimator.EstimateRequest(
                     systemMessage.Content, messages, definitions);
@@ -409,30 +414,6 @@ public sealed partial class AgentOrchestrator
                     };
                 }
             }
-
-            var limitMessage =
-                (LanguageManager.GetString("Agent_Status_StepLimit") ?? "Step limit reached") +
-                " (" + MaxToolRounds + ").";
-            progress?.Report(new AgentProgress
-            {
-                Kind = AgentProgressKind.Error,
-                Error = limitMessage,
-                Usage = usage,
-                ToolCallCount = toolCallCount
-            });
-
-            await WriteUsageAsync(
-                conversationId, usage, "ok", turnStartedAt,
-                lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
-
-            return new AgentTurnResult
-            {
-                FinalText = limitMessage,
-                ToolCallCount = toolCallCount,
-                Rounds = MaxToolRounds,
-                Usage = usage,
-                MaxRoundsReached = true
-            };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -459,9 +440,21 @@ public sealed partial class AgentOrchestrator
         }
     }
 
-    private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions) =>
-        _sessionContext.ActiveToolNames =
-            definitions.Select(definition => definition.Name).ToList();
+    private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions)
+    {
+        // Loaded and pending tools count as available for find_tools, even before
+        // the next round applies them to the request.
+        var names = new HashSet<string>(
+            definitions.Select(definition => definition.Name), StringComparer.Ordinal);
+        foreach (var name in _sessionContext.LoadedToolNames)
+            names.Add(name);
+        foreach (var name in _sessionContext.PendingToolNames)
+            names.Add(name);
+        _sessionContext.ActiveToolNames = names.ToList();
+    }
+
+    private static int ElapsedMinutes(long startedAt) =>
+        (int)((Stopwatch.GetTimestamp() - startedAt) * 60.0 / Stopwatch.Frequency / 60.0);
 
     private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
         string userText,

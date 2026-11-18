@@ -40,6 +40,7 @@ public sealed class LoadToolPackTool : IAgentTool
         InputSchemaJson =
             @"{""type"":""object"",""properties"":{" +
             @"""pack"":{""type"":""string""}," +
+            @"""packs"":{""type"":""array"",""items"":{""type"":""string""}}," +
             @"""tools"":{""type"":""array"",""items"":{""type"":""string""}}," +
             @"""context"":{""type"":""string""}}," +
             @"""additionalProperties"":false}"
@@ -60,26 +61,30 @@ public sealed class LoadToolPackTool : IAgentTool
                 ToolResult.Fail("tool_failed", "The tool catalog is unavailable."));
 
         var packName = GetString(args, "pack");
+        var packNames = GetStringArray(args, "packs");
+        if (!string.IsNullOrWhiteSpace(packName) && !packNames.Contains(packName!))
+            packNames.Insert(0, packName!);
+
         var requested = GetStringArray(args, "tools");
-        if (string.IsNullOrWhiteSpace(packName) && requested.Count == 0)
+        if (packNames.Count == 0 && requested.Count == 0)
         {
             return Task.FromResult(ToolResult.Fail(
                 "invalid_arguments",
-                "Provide 'pack' or at least one tool name in 'tools'."));
+                "Provide 'pack', 'packs' or at least one tool name in 'tools'."));
         }
 
         var wanted = new List<string>();
-        if (!string.IsNullOrWhiteSpace(packName))
+        foreach (var name in packNames.Distinct(StringComparer.Ordinal))
         {
-            if (!AgentToolPacks.TryGet(packName!, out var pack) || pack is null)
+            if (!AgentToolPacks.TryGet(name, out var pack) || pack is null)
             {
                 return Task.FromResult(ToolResult.Fail(
                     "invalid_arguments",
-                    "Unknown pack '" + packName + "'. Known packs: " +
+                    "Unknown pack '" + name + "'. Known packs: " +
                     string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + "."));
             }
 
-            wanted.AddRange(AgentToolPacks.ToolsInPack(packName!));
+            wanted.AddRange(AgentToolPacks.ToolsInPack(name));
         }
 
         var knownNames = registry.GetDefinitions()
@@ -131,7 +136,7 @@ public sealed class LoadToolPackTool : IAgentTool
         {
             loaded,
             alreadyLoaded,
-            pack = string.IsNullOrWhiteSpace(packName) ? null : packName,
+            pack = packNames.Count == 0 ? null : string.Join(",", packNames),
             totalTools = _sessionContext.LoadedToolNames.Count,
             appliedTo,
             hint = appliedTo == "none"
@@ -140,8 +145,8 @@ public sealed class LoadToolPackTool : IAgentTool
         };
 
         SmartConLogger.Info(
-            "Agent tool pack queued for the next round: pack=" +
-            (string.IsNullOrWhiteSpace(packName) ? "-" : packName) +
+            "Agent tool pack queued for the next round: packs=" +
+            (packNames.Count == 0 ? "-" : string.Join(",", packNames)) +
             ", loaded=" + loaded.Count +
             ", alreadyLoaded=" + alreadyLoaded.Count +
             ", total=" + _sessionContext.LoadedToolNames.Count);

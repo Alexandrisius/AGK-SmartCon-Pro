@@ -45,12 +45,8 @@ public sealed class FindToolsTool : IAgentTool
         var query = GetString(args, "query");
         var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 5), 10));
 
-        var fields = GetStringArray(args, "fields");
-        if (fields.Count > 0 && string.IsNullOrWhiteSpace(query))
-            return ExecuteListing(args, limit);
-
         if (string.IsNullOrWhiteSpace(query))
-            return ToolResult.Fail("invalid_arguments", "query is required.");
+            return ExecuteListing(args, limit);
 
         return await ExecuteSearchAsync(
                 context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
@@ -236,7 +232,7 @@ public sealed class FindToolsTool : IAgentTool
     private static AgentToolDefinition BuildDefinition()
     {
         const string schema = @"{""type"":""object"",""properties"":{" +
-            @"""query"":{""type"":""string"",""minLength"":1}," +
+            @"""query"":{""type"":""string"",""description"":""Empty lists the catalog or one pack without schemas""}," +
             @"""pack"":{""type"":""string""}," +
             @"""context"":{""type"":""string""}," +
             @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}," +
@@ -252,8 +248,8 @@ public sealed class FindToolsTool : IAgentTool
                 "cards with argument schemas. Use it when the tool you need is not in the " +
                 "current request. Discovery only: it does not change the tool set. After it, " +
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                "chosen tools for the next round. Pass fields=[\"name\",\"description\"] with " +
-                "an empty query to browse the catalog or one pack compactly without schemas.",
+                "chosen tools for the next round. An empty query returns a compact listing " +
+                "(name, description, pack, risk) without schemas; add pack to browse one pack.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",

@@ -1,5 +1,29 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Автономные ходы без лимитов (2026-11-18, текущая сессия)
+
+Жёсткий лимит 8 раундов удалён полностью. Ход выполняется до одного из событий:
+модель ответила без tool-calls, пользователь нажал Stop (CancellationToken),
+`LoopGuard` заблокировал повторяющийся вызов (3 одинаковых → block, 5 → abort).
+Никакого лимита по времени/шагам нет — как в других харнесах.
+Модель видит `<progress round="N" elapsed_minutes="M" />` в `<turn_context>`.
+Контекст не растёт безгранично: compaction ladder срабатывает перед каждым
+раундом.
+
+Замечания из ручного прогона закрыты:
+
+- `load_tool_pack(packs:[...])` — несколько паков одним вызовом;
+- `find_tools` с пустым query возвращает компактный listing (name/description/
+  pack/risk), схема больше не требует query; `alreadyAvailable` учитывает
+  loaded+pending;
+- `get_element_details`: `maxParametersPerElement` (default 50, max 500),
+  `parameterNameContains`, `excludeDerived` (read-only/formula), реальный
+  `parametersTruncated`;
+- `summarize_elements`: `topN` (default 20), `excludeInternal` (default true,
+  выкидывает «(no category)»), `groupsTotal`/`groupsSkippedInternal`;
+- `get_view_template_details`: `fields:["settings"]` отдаёт все настройки,
+  `fields:["template"]` — всю карточку, поддержан `settings.<name>`.
+
 ## ⚡ H1 ЗАКРЫТ полностью (2026-11-18, текущая сессия)
 
 ### Коммиты

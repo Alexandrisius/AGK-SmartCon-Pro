@@ -65,7 +65,9 @@ public sealed partial class AgentOrchestrator
     private static void ApplyTurnContext(
         List<AgentMessage> messages,
         WorkingState state,
-        AgentProjectContext projectContext)
+        AgentProjectContext projectContext,
+        int round,
+        int elapsedMinutes)
     {
         for (var index = messages.Count - 1; index >= 0; index--)
         {
@@ -74,6 +76,8 @@ public sealed partial class AgentOrchestrator
                 continue;
 
             var turnContext = AgentTurnContextBuilder.Build(state, projectContext);
+            turnContext += "\n<progress round=\"" + round + "\" elapsed_minutes=\"" +
+                           elapsedMinutes + "\" />";
             messages[index] = AgentMessage.User(
                 turnContext + "\n\n" + (message.Content ?? string.Empty),
                 message.Attachments);

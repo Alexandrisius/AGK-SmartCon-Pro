@@ -90,9 +90,29 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
         var settingsJson = AgentJson.SerializeCard(settings);
         var projectSettingsFields = new List<string>();
         var projectCardFields = new List<string>();
+        var includeAllSettings = false;
+        var includeAllCard = false;
 
         foreach (var field in fields)
         {
+            if (string.Equals(field, "settings", StringComparison.OrdinalIgnoreCase))
+            {
+                includeAllSettings = true;
+                continue;
+            }
+
+            if (string.Equals(field, "template", StringComparison.OrdinalIgnoreCase))
+            {
+                includeAllCard = true;
+                continue;
+            }
+
+            if (field.StartsWith("settings.", StringComparison.OrdinalIgnoreCase))
+            {
+                projectSettingsFields.Add(field.Substring("settings.".Length));
+                continue;
+            }
+
             if (Resolves(settingsJson, field))
                 projectSettingsFields.Add(field);
             else
@@ -100,13 +120,21 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
         }
 
         var node = new JsonObject();
-        if (projectSettingsFields.Count > 0)
+        if (includeAllSettings)
+        {
+            node["settings"] = ToNode(settingsJson);
+        }
+        else if (projectSettingsFields.Count > 0)
         {
             node["settings"] = ToNode(AgentCardProjection.Apply(
                 settingsJson, projectSettingsFields, ignored));
         }
 
-        if (projectCardFields.Count > 0)
+        if (includeAllCard)
+        {
+            node["template"] = ToNode(AgentJson.SerializeCard(card));
+        }
+        else if (projectCardFields.Count > 0)
         {
             var cardJson = AgentJson.SerializeCard(card);
             var projectCard = AgentCardProjection.Apply(cardJson, projectCardFields, ignored);

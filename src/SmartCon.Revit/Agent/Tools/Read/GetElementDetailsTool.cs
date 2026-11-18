@@ -10,7 +10,8 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 public sealed class GetElementDetailsTool : AgentReadToolBase
 {
     private const int MaxElements = 10;
-    private const int MaxParametersPerElement = 200;
+    private const int DefaultMaxParametersPerElement = 50;
+    private const int HardMaxParametersPerElement = 500;
 
     public GetElementDetailsTool(IRevitContext revitContext)
         : base(revitContext)
@@ -26,9 +27,11 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             "Returns parameter details for up to 10 elements: name, category, family, type, " +
             "level, room and parameters with their raw value, display value, storage type, " +
             "read-only/shared flags and scope (instance or type). Type parameters are included " +
-            "only when includeTypeParameters=true. Narrow the payload with parameterNames " +
-            "(exact names) and onlyNonEmpty=true. Use it after query_elements before proposing changes.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""onlyNonEmpty"":{""type"":""boolean"",""default"":false}},""required"":[""elementIds""],""additionalProperties"":false}"
+            "only when includeTypeParameters=true. By default at most 50 parameters per element " +
+            "are returned (parametersTruncated=true then). Narrow the payload with parameterNames " +
+            "(exact names), parameterNameContains (substring), onlyNonEmpty=true or " +
+            "excludeDerived=true (read-only/formula-driven parameters are skipped).",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -47,6 +50,13 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
 
         var includeTypeParameters = AgentJson.GetBool(args, "includeTypeParameters", false);
         var onlyNonEmpty = AgentJson.GetBool(args, "onlyNonEmpty", false);
+        var excludeDerived = AgentJson.GetBool(args, "excludeDerived", false);
+        var parameterNameContains = AgentJson.GetString(args, "parameterNameContains");
+        var maxParameters = Math.Max(
+            1,
+            Math.Min(
+                AgentJson.GetInt(args, "maxParametersPerElement", DefaultMaxParametersPerElement),
+                HardMaxParametersPerElement));
         var parameterNames = new HashSet<string>(
             AgentJson.GetStringArray(args, "parameterNames"),
             StringComparer.OrdinalIgnoreCase);
@@ -69,6 +79,9 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 element,
                 includeTypeParameters,
                 onlyNonEmpty,
+                excludeDerived,
+                parameterNameContains,
+                maxParameters,
                 parameterNames,
                 ct));
         }
@@ -97,6 +110,9 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         Element element,
         bool includeTypeParameters,
         bool onlyNonEmpty,
+        bool excludeDerived,
+        string? parameterNameContains,
+        int maxParameters,
         HashSet<string> parameterNames,
         CancellationToken ct)
     {
@@ -109,14 +125,18 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             if (ct.IsCancellationRequested)
                 ct.ThrowIfCancellationRequested();
 
-            if (parameters.Count >= MaxParametersPerElement)
+            if (parameters.Count >= maxParameters)
             {
                 truncated = true;
                 break;
             }
 
-            if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
+            if (ShouldInclude(
+                parameter, onlyNonEmpty, excludeDerived,
+                parameterNameContains, parameterNames))
+            {
                 parameters.Add(CreateParameterInfo(doc, parameter, "instance"));
+            }
         }
 
         if (includeTypeParameters && !truncated)
@@ -128,14 +148,18 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 foreach (Parameter parameter in type.Parameters)
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (parameters.Count >= MaxParametersPerElement)
+                    if (parameters.Count >= maxParameters)
                     {
                         truncated = true;
                         break;
                     }
 
-                    if (ShouldInclude(parameter, onlyNonEmpty, parameterNames))
+                    if (ShouldInclude(
+                        parameter, onlyNonEmpty, excludeDerived,
+                        parameterNameContains, parameterNames))
+                    {
                         parameters.Add(CreateParameterInfo(doc, parameter, "type"));
+                    }
                 }
             }
         }
@@ -179,6 +203,8 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
     private static bool ShouldInclude(
         Parameter parameter,
         bool onlyNonEmpty,
+        bool excludeDerived,
+        string? parameterNameContains,
         HashSet<string> parameterNames)
     {
         var name = parameter.Definition?.Name;
@@ -187,6 +213,18 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         {
             return false;
         }
+
+        if (!string.IsNullOrWhiteSpace(parameterNameContains)
+            && (string.IsNullOrEmpty(name)
+                || name!.IndexOf(parameterNameContains!, StringComparison.OrdinalIgnoreCase) < 0))
+        {
+            return false;
+        }
+
+        // Derived here means computed/read-only: formula-driven values cannot be
+        // written by the agent anyway.
+        if (excludeDerived && parameter.IsReadOnly)
+            return false;
 
         if (!onlyNonEmpty)
             return true;

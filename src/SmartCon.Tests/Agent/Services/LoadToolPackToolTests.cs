@@ -60,6 +60,33 @@ public sealed class LoadToolPackToolTests
     }
 
     [Fact]
+    public async Task Execute_ByPacksArray_LoadsAllPacksInOneCall()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(
+            session,
+            new FakeToolRegistry(
+                new ScriptedTool("list_views"),
+                new ScriptedTool("get_current_view_info"),
+                new ScriptedTool("rename_views"),
+                new ScriptedTool("list_levels"),
+                new ScriptedTool("rename_levels")));
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"packs\":[\"views\",\"levels\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var loaded = result.Data!.Value.GetProperty("loaded").EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToList();
+        Assert.Contains("rename_views", loaded);
+        Assert.Contains("rename_levels", loaded);
+        Assert.Equal(5, session.PendingToolNames.Count);
+    }
+
+    [Fact]
     public async Task Execute_ByTools_LoadsExplicitNames()
     {
         var session = new AgentSessionContext();

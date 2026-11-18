@@ -113,6 +113,25 @@ public sealed class AgentQueryToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task GetElementDetails_LimitsAndFlagsTruncation()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+        var args = Parse(
+            "{\"elementIds\":[" + _wallId +
+            "],\"includeTypeParameters\":true,\"maxParametersPerElement\":1}");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var element = result.Data!.Value.GetProperty("elements")[0];
+        await Assert.That(element.GetProperty("parameters").GetArrayLength()).IsLessThanOrEqualTo(1);
+        await Assert.That(element.GetProperty("parametersTruncated").GetBoolean()).IsTrue();
+    }
+
+    [Test]
     public async Task SummarizeElements_GroupsByCategory()
     {
         if (!_wallCreated)
@@ -129,6 +148,8 @@ public sealed class AgentQueryToolsTests : RevitApiTest
         await Assert.That(groups.GetArrayLength()).IsGreaterThanOrEqualTo(1);
         await Assert.That(groups[0].GetProperty("key").GetString()).IsEqualTo("OST_Walls");
         await Assert.That(groups[0].GetProperty("count").GetInt32()).IsGreaterThanOrEqualTo(1);
+        await Assert.That(result.Data.Value.TryGetProperty("groupsTotal", out _)).IsTrue();
+        await Assert.That(result.Data.Value.TryGetProperty("groupsSkippedInternal", out _)).IsTrue();
     }
 
     [Test]

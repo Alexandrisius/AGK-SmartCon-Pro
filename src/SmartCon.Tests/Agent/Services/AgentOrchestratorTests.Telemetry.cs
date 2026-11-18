@@ -202,14 +202,14 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_MaxRounds_WritesUsageExactlyOnce()
+    public async Task RunTurn_ManyRounds_WritesUsageExactlyOnce()
     {
         var store = new InMemoryConversationStore();
         var tool = new CountingTool();
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
-        for (var round = 0; round < 8; round++)
+        for (var round = 0; round < 12; round++)
         {
             llm.EnqueueAssistant(
                 null,
@@ -225,6 +225,7 @@ public sealed partial class AgentOrchestratorTests
                 usage: new AgentUsage { PromptTokens = 10, CompletionTokens = 1, TotalTokens = 11 });
         }
 
+        llm.EnqueueAssistant("готово");
         var usageStore = new CapturingUsageStore();
         var orchestrator = CreateOrchestrator(
             llm, executor, registry, store, usageStore: usageStore);
@@ -236,10 +237,11 @@ public sealed partial class AgentOrchestratorTests
             null,
             CancellationToken.None);
 
-        Assert.True(result.MaxRoundsReached);
-        Assert.Equal(8, llm.Requests.Count);
+        Assert.False(result.MaxRoundsReached);
+        Assert.Equal(13, result.Rounds);
+        Assert.Equal(13, llm.Requests.Count);
         var record = Assert.Single(usageStore.Records);
         Assert.Equal("ok", record.Status);
-        Assert.Equal(80, record.Usage.PromptTokens);
+        Assert.Equal(120, record.Usage.PromptTokens);
     }
 }

@@ -267,6 +267,18 @@ public sealed class AgentReadToolsTests : RevitApiTest
             JsonDocument.Parse(
                 "{\"templateId\":" + templateId + ",\"compact\":false}").RootElement.Clone(),
             CancellationToken.None);
+        var settingsField = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse(
+                "{\"templateId\":" + templateId + ",\"fields\":[\"settings\"]}")
+                .RootElement.Clone(),
+            CancellationToken.None);
+        var templateField = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse(
+                "{\"templateId\":" + templateId + ",\"fields\":[\"template\"]}")
+                .RootElement.Clone(),
+            CancellationToken.None);
 
         await Assert.That(summary.Success).IsTrue();
         await Assert.That(projected.Success).IsTrue();
@@ -284,6 +296,12 @@ public sealed class AgentReadToolsTests : RevitApiTest
 
         await Assert.That(summaryPayload.GetRawText().Length)
             .IsLessThan(full.Data!.Value.GetRawText().Length);
+
+        await Assert.That(settingsField.Success).IsTrue();
+        await Assert.That(settingsField.Data!.Value.GetProperty("settings")
+            .TryGetProperty("hiddenCategories", out _)).IsTrue();
+        await Assert.That(templateField.Success).IsTrue();
+        await Assert.That(templateField.Data!.Value.TryGetProperty("template", out _)).IsTrue();
     }
 
     private long GetSeededViewId()

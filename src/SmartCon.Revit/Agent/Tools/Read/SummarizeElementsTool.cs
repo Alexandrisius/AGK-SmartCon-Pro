@@ -10,6 +10,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 public sealed class SummarizeElementsTool : AgentReadToolBase
 {
     private const int MaxElementsForSummary = 20000;
+    private const int DefaultTopGroups = 20;
     private const int MaxGroups = 200;
 
     public SummarizeElementsTool(IRevitContext revitContext)
@@ -26,8 +27,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             "Counts elements matched by a QuerySpec and groups them by category, level, type or " +
             "a parameter value. Optionally sums a numeric parameter (sumParameter) per group. " +
             "Use it for questions like 'how many walls are on each level' or " +
-            "'total door width per fire rating'. Query rules are the same as in query_elements.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""}},""required"":[""groupBy""],""additionalProperties"":false}"
+            "'total door width per fire rating'. Returns at most topN groups " +
+            "(default 20, largest first); excludeInternal=true (default) drops the " +
+            "'(no category)' bucket. Query rules are the same as in query_elements.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -127,14 +130,26 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var excludeInternal = AgentJson.GetBool(args, "excludeInternal", true);
+        var skippedInternal = 0;
+        if (excludeInternal)
+        {
+            var before = grouped.Count;
+            grouped = grouped.Where(group => !IsInternalGroupKey(group.Key)).ToList();
+            skippedInternal = before - grouped.Count;
+        }
+
+        var topN = Math.Max(1, Math.Min(AgentJson.GetInt(args, "topN", DefaultTopGroups), MaxGroups));
         var payload = new
         {
             total = result.Total,
             scanned = result.Elements.Count,
             truncated = result.Total > result.Elements.Count,
             groupBy,
-            groupsTruncated = grouped.Count > MaxGroups,
-            groups = grouped.Take(MaxGroups).ToList()
+            groupsTotal = grouped.Count,
+            groupsSkippedInternal = skippedInternal,
+            groupsTruncated = grouped.Count > topN,
+            groups = grouped.Take(topN).ToList()
         };
 
         return ToolResult.Ok(
@@ -193,6 +208,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                        ?? "(no category)";
         }
     }
+
+    private static bool IsInternalGroupKey(string key) =>
+        string.IsNullOrWhiteSpace(key)
+        || string.Equals(key, "(no category)", StringComparison.OrdinalIgnoreCase);
 
     private sealed class GroupAccumulator
     {
