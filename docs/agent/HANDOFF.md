@@ -1,10 +1,11 @@
-﻿# Handoff — ночной прогон №2 (2026-11-18)
+﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
 ## ⚡ Передача продолжения (финал, 2026-11-18)
 
 ### Где мы сейчас
 
-- **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/00-strategy/night-run-2.md`.
+- **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/00-strategy/initial-improvement-runbook.md`.
+- **Актуальные документы:** `docs/agent/README.md` (индекс) → `00-strategy/harness-ideal-plan.md` (стратегия) → `00-strategy/harness-development-approach.md` (процесс) → `00-strategy/initial-improvement-runbook.md` (эпик H1).
 - Ветка `develop`. Фазы P1/P2/A/B/C + A4 и финальный полиш завершены. Коммиты: `c64a9109` (plan validation, bypass modes, tool discovery), `5fe44e41` (UI polish + live-session feedback), запушены в `develop`.
 - Валидатор `general` прогонялся 4 раза: 1–3 FAIL → исправлены; 4-й FAIL (локализация Approval UI, `Risks` не показывались в overlay, `AgentEvalRunner` >600 строк) → **всё исправлено**. 5-й прогон по решению владельца **не запускался**.
 - **НЕ добавлять в коммит:** `opencode.json`, `server/`, `tools/allow-revit-network.ps1` (личное/не по задаче). Секреты — только в `%APPDATA%\AGK\SmartCon\Agent\secrets.env`, в репозиторий не попадают.
@@ -14,7 +15,7 @@
 | Проверка | Результат |
 |---|---|
 | Sweep 7 конфигураций (R19–R27) | 7/7, 0 ошибок |
-| Полный unit (`SmartCon.Tests`, Debug.R25) | 3500/3500 |
+| Полный unit (`SmartCon.Tests`, Debug.R25) | 3502/3502 |
 | Integration `AgentPlanExecutionTests` (Revit 2025) | 6/6 |
 | Agent integration R25 (полный сьют) | 77 passed, 2 skipped; live-eval упал на 1 стохастическом schema-invalid вызове, replay 40/40 PASS |
 | Eval replay 40 задач (Revit 2025) | 40/40, gate PASS |
@@ -41,7 +42,7 @@ UI:
 - Выбор режима подтверждения перенесён из шапки в композер (слева, рядом со скрепкой), как в харнесах; шапка освободилась под «+» и шестерёнку.
 - В настройках появился выбор decision-модели (`Не использовать` / `pplx-decider-v1.3:free` / `pplx-decider-latest` / `jev-1.13.0`); выбор сразу применяется и пишется в `secrets.env`. Роутер и risk gate регистрируются всегда: при отключённой модели ведут себя как раньше.
 - Поле «Прокси» удалено из настроек, модели и LLM-клиента (вместе с `SMARTCON_LLM_PROXY`).
-- Вложения: картинка нормализуется (alpha-канал скриншота композитится на белый) — миниатюра, пузырь, полноэкранный просмотр и payload больше не белые; клик по миниатюре открывает просмотр, крестик — круглый, поверх белого, появляется по ховеру и не вылезает за угол.
+- Вложения: картинка нормализуется; полностью нулевой alpha-канал клипборда трактуется как «альфы нет» (RGB сохраняется), смешанная прозрачность композитится на белый. Миниатюра, пузырь, полноэкранный просмотр и payload больше не белые; клик по миниатюре открывает просмотр, крестик — круглый, поверх белого, появляется по ховеру и не вылезает за угол.
 
 Agent feedback (P0–P2):
 - **P0-1**: digest плана больше не зависит от `dryRun` — ни от `step.DryRun`, ни от `dryRun` внутри `arguments`; preview и apply сходятся. Hint обновлён.
@@ -53,6 +54,12 @@ Agent feedback (P0–P2):
 - **P2-7**: `report_tooling_feedback` всегда в shortlist; неизвестные поля возвращаются в `ignoredFields`.
 - **P2-8**: `substitutedFields` в `list_views`/`get_view_settings` — видно, что `template` заменён на `templateName`.
 - **P2-9**: default limit `list_views` = 200, `truncated` уже был.
+
+Повторный live-фидбэк (4 замечания):
+- `rename_views` и `apply_view_template` добавлены в always-on shortlist (`RuleToolRouter.CoreTools`), лимит shortlist поднят до 16 — штатные write-инструменты больше не требуют `find_tools` в начале задачи.
+- `execute_plan` apply-отчёт берёт per-item diff из `ApplyResult` (не из dry-run), поэтому в применённом плане `items.dryRun=false`; hint при `expectationsChecked=0` больше не говорит «All expectations verified», а явно сообщает, что проверок не задавали.
+- `list_views` summary/byFolder: сегменты `???` от `FolderItemInfo.Name` разрешаются через параметр (`LabelUtils.GetLabelFor` / имя элемента); для Revit 2026+ используется `GetGroupingParameterIdPath()` вместо устаревшего `ElementId`.
+- `fields` возвращает ключи ровно с теми именами, которые запросили (`type` → `type`, не `viewType`); в схемах `list_views`/`get_view_settings`/`get_view_template_details` перечислены допустимые имена и алиасы.
 
 ### Что осталось (не блокеры финального коммита)
 
@@ -80,7 +87,7 @@ SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=200
 
 ## Текущий статус (обновляется после каждой фазы)
 
-Ветка `develop`. Прогон идёт по `docs/agent/00-strategy/night-run-2.md`.
+Ветка `develop`. Прогон завершён; новый цикл — `docs/agent/00-strategy/initial-improvement-runbook.md`.
 
 ### Сделано и проверено
 
@@ -317,7 +324,7 @@ Agent-интеграционные тесты **не компилируются 
 
 ## Долг / что осталось
 
-**Следующий прогон:** `docs/agent/00-strategy/night-run-2.md` (eval-first, 12–15 ч).
+**Следующий прогон:** `docs/agent/00-strategy/initial-improvement-runbook.md` (эпик H1: tool catalog v2 + context budgeting + WorkingState).
 
 1. Ручная приёмка в Revit (владелец): write-flow, оверлей подтверждения, undo.
 2. **Фаза G** (частично сделано): token_usage persistence ✅, порог компакции —

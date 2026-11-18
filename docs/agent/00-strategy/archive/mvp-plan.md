@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-11-18).** Исторический MVP-план. Актуальная стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+
 # Agent MVP — детальный план
 
 > **Статус:** Draft, готов к ревью

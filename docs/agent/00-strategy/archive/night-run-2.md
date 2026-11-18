@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-11-18).** Прогон завершён. Актуальное состояние — [`../../HANDOFF.md`](../../HANDOFF.md), стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+
 # Ночной прогон №2 — runbook (eval-first, 12–15 часов)
 
 > Читать первым. Этот файл — самодостаточный бриф: фазы, тайм-боксы, критерии

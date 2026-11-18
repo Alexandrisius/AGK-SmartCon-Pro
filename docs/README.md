@@ -1,7 +1,7 @@
 # SmartCon — SSOT (Single Source of Truth)
 
 > **Версия:** см. `Version.txt` | **Платформа:** Revit 2019-2027 / .NET Framework 4.8 + .NET 8 + .NET 10 / C# 12 / WPF
-> **Последнее обновление:** 2026-09-10
+> **Последнее обновление:** 2026-11-18
 > **Pre-release:** Поддержка beta-версий через SemVer + GitHub pre-release (ADR-021)
 
 Этот файл — **единая точка входа** в документацию проекта SmartCon.
@@ -66,6 +66,17 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 |---|---|---|
 | [`family-manager/README.md`](family-manager/README.md) | Индекс модуля, архитектура, таблицы БД, миграции, фазы | При любой работе с FamilyManager |
 
+### Agent (AI-харнес для Revit, BIM-ops)
+
+| Документ | Описание | Когда загружать |
+|---|---|---|
+| [`agent/README.md`](agent/README.md) | Индекс модуля, текущий статус, карта документов, команды | При любой работе с агентом |
+| [`agent/00-strategy/README.md`](agent/00-strategy/README.md) | Индекс стратегии, статусы документов, архив | Перед крупным решением |
+| [`agent/00-strategy/harness-ideal-plan.md`](agent/00-strategy/harness-ideal-plan.md) | Долгосрочный план: gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед планированием |
+| [`agent/00-strategy/harness-development-approach.md`](agent/00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики | Перед стартом задачи |
+| [`agent/00-strategy/initial-improvement-runbook.md`](agent/00-strategy/initial-improvement-runbook.md) | Эпик H1: tool catalog v2, WorkingState, store-and-reference, compaction v2 | Перед реализацией H1 |
+| [`agent/HANDOFF.md`](agent/HANDOFF.md) | Текущее состояние и следующие шаги | При продолжении работы |
+
 ### FloorHeating (модуль тёплого пола, в разработке)
 
 | Документ | Описание | Когда загружать |
@@ -108,6 +119,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 | SmartCon.PipeConnect | ✅ Полный | PipeConnect: 5 partial VM, 12 сервисов, 6 окон |
 | SmartCon.ProjectManagement | ✅ Реализован | Share Project: ISO 19650, ADR-013 |
 | SmartCon.FamilyManager | ✅ Реализован | FamilyManager: dockable panel, SQLite catalog, Published Storage, ADR-015, Stale Detection v2 (ADR-030), Type Catalog Bake-in (ADR-033) |
+| SmartCon.Agent | ✅ Read/write + plan + eval | AI-харнес: 27 тулов, plan L0–L6, change sets/undo, eval 40/40; память/skills/policy — roadmap |
 | SmartCon.Tests | ✅ 3284 теста, 0 ошибок | Unit + ViewModel тесты (xUnit + Moq) |
 | SmartCon.IntegrationTests | ✅ ~250 тестов в реальном Revit | TUnit + Nice3point: граница SmartCon ↔ Revit API (net48/net8/net10), см. AGENTS.md |
 
@@ -129,7 +141,7 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 **Phase 20 (FamilyManager RBAC) завершена (2026-05-16):** ADR-022, Role-Based Access Control для локальных каталогов, DbUser/DbUserRole, Profile dialog, ownership transfer.
 
-**Phase 24 (FamilyManager Stale Detection v2) завершена (2026-06-18):** ADR-030, on-demand stale detection через `SmartCon_FamilyVersion_v1` ExtensibleStorage Schema на `Family` элементе в проекте (не на `.rfa` — over-engineered, см. ADR-030 §2), override ADR-014 §FM-007 (см. [ADR-030](adr/030-phase-24-stale-detection-v2.md) и [план реализации](family-manager/02-plans/phase-24-stale-detection-v2.md)). Schema v12: drop table `project_usage` (clean slate, breaking change 2.0.0). ПКМ "Проверить" на категории/семействе, пакетное обновление, roll-up индикация на категориях.
+**Phase 24 (FamilyManager Stale Detection v2) завершена (2026-06-18):** ADR-030, on-demand stale detection через `SmartCon_FamilyVersion_v1` ExtensibleStorage Schema на `Family` элементе в проекте (не на `.rfa` — over-engineered, см. ADR-030 §2), override ADR-014 §FM-007 (см. [ADR-030](adr/030-phase-24-stale-detection-v2.md)). Schema v12: drop table `project_usage` (clean slate, breaking change 2.0.0). ПКМ "Проверить" на категории/семействе, пакетное обновление, roll-up индикация на категориях.
 
 **Phase 25 (FamilyManager Type Catalog Simulation — Issue #66) завершена (2026-06-21):** ADR-032, симуляция типов из `.txt` каталога через `Document.Regenerate()` для вычисления формул. Новый сервис `ITypeCatalogValueApplier` (pure C#), единая точка входа `IFamilyDataExtractionService.ExtractFromManagedFile(path, names, ct)`, per-type/per-parameter изоляция ошибок, `__SCAT__` префикс временных типов, encoding detection через UTF.Unknown, `tx.RollBack()` гарантирует неизменность `.rfa`. Поддержка R19/R21/R24/R25. **Superseded by ADR-033** (bake-in заменил simulation для managed `.rfa`).
 

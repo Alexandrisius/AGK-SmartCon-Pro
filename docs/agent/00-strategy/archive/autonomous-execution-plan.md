@@ -1,3 +1,5 @@
+> **ARCHIVED (2026-11-18).** Исторический runbook первого MVP-прогона. Актуальная стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+
 # Autonomous Execution Plan (Runbook)
 
 > **Для агента с нулевым контекстом.** Читать вместе с `mvp-plan.md`.
