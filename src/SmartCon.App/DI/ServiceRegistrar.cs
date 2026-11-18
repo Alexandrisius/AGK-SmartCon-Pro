@@ -458,6 +458,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, GetViewSettingsTool>();
         services.AddSingleton<IAgentTool, GetViewTemplateDetailsTool>();
         services.AddSingleton<IAgentTool, GetCurrentViewInfoTool>();
+        services.AddSingleton<IAgentTool, ListSheetsTool>();
+        services.AddSingleton<IAgentTool, GetSheetContentTool>();
+        services.AddSingleton<IAgentTool, ListSchedulesTool>();
+        services.AddSingleton<IAgentTool, GetScheduleDataTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();
@@ -468,6 +472,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetViewVisibilityTool>();
         services.AddSingleton<IAgentTool, ConfigureViewsTool>();
         services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
+        services.AddSingleton<IAgentTool, CreateViewFilterTool>();
+        services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
         services.AddSingleton<IAgentTool, DiscardChangeSetTool>();

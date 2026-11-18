@@ -1,0 +1,43 @@
+{
+  "taskId": "read_sheets",
+  "prompt": "Сколько листов в проекте? Перечисли номера и названия.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {},
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Сколько листов в проекте? Перечисли номера и названия."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_sheets_1",
+            "name": "list_sheets",
+            "argumentsJson": "{}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Сколько листов в проекте? Перечисли номера и названия."
+      },
+      "response": {
+        "content": "В проекте один лист: SC-EVAL-101 «SC_Eval_Sheet». На нём размещены вид SC_Eval_Ref и ведомость SC_Eval_Schedule.",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "taskId": "read_sheet_content",
+  "prompt": "Что размещено на листе SC-EVAL-101? Назови виды и их координаты.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {},
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Что размещено на листе SC-EVAL-101? Назови виды и их координаты."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_sheet_content_1",
+            "name": "get_sheet_content",
+            "argumentsJson": "{\"number\":\"SC-EVAL-101\"}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Что размещено на листе SC-EVAL-101? Назови виды и их координаты."
+      },
+      "response": {
+        "content": "На листе SC-EVAL-101 размещены вид SC_Eval_Ref (план этажа, видовое окно с координатами в мм) и ведомость SC_Eval_Schedule.",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

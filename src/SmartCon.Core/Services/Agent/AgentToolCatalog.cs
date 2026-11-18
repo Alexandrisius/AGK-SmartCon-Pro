@@ -121,6 +121,36 @@ public static class AgentToolCatalog
                 "план", "сценарий", "несколько", "шагов", "сразу", "за один раз", "plan",
                 "multi-step"
             }),
+            ["list_schedules"] = new("Read", false, new[]
+            {
+                "ведомости", "ведомость", "спецификации", "спецификация", "schedules",
+                "schedule list", "поля ведомости", "строки ведомости"
+            }),
+            ["get_schedule_data"] = new("Read", false, new[]
+            {
+                "данные ведомости", "строки спецификации", "содержимое ведомости",
+                "schedule data", "таблица ведомости", "значения ведомости"
+            }),
+            ["list_sheets"] = new("Read", false, new[]
+            {
+                "листы", "лист", "комплект листов", "номера листов", "sheets", "sheet list",
+                "чертежи", "альбом"
+            }),
+            ["get_sheet_content"] = new("Read", false, new[]
+            {
+                "содержимое листа", "что на листе", "виды на листе", "видовые окна",
+                "координаты видов", "sheet content", "views on sheet"
+            }),
+            ["create_view_filter"] = new("Write", true, new[]
+            {
+                "фильтр вида", "создать фильтр", "скрыть по параметру", "убрать с вида",
+                "фильтр по системе", "view filter", "create filter", "фильтр по уровню"
+            }),
+            ["set_filter_overrides"] = new("Write", true, new[]
+            {
+                "покрасить", "цвет фильтра", "overrides", "заливка фильтра", "штриховка фильтра",
+                "прозрачность фильтра", "halftone", "графические замены"
+            }),
             ["find_tools"] = new("Meta", false, new[]
             {
                 "найти инструмент", "какой инструмент", "find tool", "tool search"

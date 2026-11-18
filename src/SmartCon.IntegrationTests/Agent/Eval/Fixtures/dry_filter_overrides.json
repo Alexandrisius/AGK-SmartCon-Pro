@@ -1,0 +1,45 @@
+{
+  "taskId": "dry_filter_overrides",
+  "prompt": "Покрась стены в красный на виде SC_Eval_A через фильтр SC_Eval_Filter.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {
+    "5001": { "kind": "view", "name": "SC_Eval_A", "index": 0 }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Покрась стены в красный на виде SC_Eval_A через фильтр SC_Eval_Filter."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_filter_overrides_1",
+            "name": "set_filter_overrides",
+            "argumentsJson": "{\"viewIds\":[5001],\"filterName\":\"SC_Eval_Filter\",\"color\":\"#FF0000\",\"dryRun\":true}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Покрась стены в красный на виде SC_Eval_A через фильтр SC_Eval_Filter."
+      },
+      "response": {
+        "content": "Dry-run: фильтру SC_Eval_Filter будет задан красный цвет заливки и линий, фильтр применится к виду SC_Eval_A (1 изменение).",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

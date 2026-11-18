@@ -92,7 +92,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "sheets",
-            Description = "Листы и размещение видов (задел следующих версий)."
+            Description = "Листы и размещение видов.",
+            Tools = new[] { "list_sheets", "get_sheet_content" }
         },
         new()
         {
@@ -102,12 +103,14 @@ public static class AgentToolPacks
         new()
         {
             Name = "schedules",
-            Description = "Ведомости и спецификации (задел следующих версий)."
+            Description = "Ведомости и спецификации: список и данные.",
+            Tools = new[] { "list_schedules", "get_schedule_data" }
         },
         new()
         {
             Name = "filters",
-            Description = "Фильтры видов (задел следующих версий)."
+            Description = "Фильтры видов: создание по условиям и графические overrides.",
+            Tools = new[] { "create_view_filter", "set_filter_overrides" }
         },
         new()
         {

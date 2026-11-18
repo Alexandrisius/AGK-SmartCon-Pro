@@ -114,6 +114,83 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
 
             // Name renames are reverted as one batch: an A↔B swap must be planned with
             // temporary names, otherwise the first restore collides with the second view.
+            if (key is "filter" or "filter_created")
+            {
+                var report = CreateReport(item);
+                var element = ResolveElement(doc, item);
+
+                if (key == "filter_created")
+                {
+                    if (element is null)
+                    {
+                        report.Reason = "The filter no longer exists — already removed.";
+                        outcome.Batch.Skipped.Add(report);
+                        continue;
+                    }
+
+                    if (element is not ParameterFilterElement createdFilter)
+                    {
+                        report.ErrorCode = "unsupported_element";
+                        report.Reason = "Element " + item.ElementId + " is not a view filter.";
+                        outcome.Batch.Failed.Add(report);
+                        continue;
+                    }
+
+                    var (deleted, deleteError, deleteReason) =
+                        RevertFilterCreated(doc, createdFilter);
+                    if (deleted)
+                    {
+                        outcome.Batch.Changed.Add(report);
+                        outcome.AffectedCount++;
+                    }
+                    else
+                    {
+                        report.ErrorCode = deleteError;
+                        report.Reason = deleteReason;
+                        outcome.Batch.Failed.Add(report);
+                    }
+
+                    continue;
+                }
+
+                if (element is null)
+                {
+                    report.ErrorCode = "element_not_found";
+                    report.Reason = "The view no longer exists in the document.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                if (element is not View filteredView)
+                {
+                    report.ErrorCode = "unsupported_element";
+                    report.Reason = "Element " + item.ElementId + " is not a view.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                var (reverted, revertError, revertReason) =
+                    RevertFilter(filteredView, item, force);
+                if (reverted)
+                {
+                    outcome.Batch.Changed.Add(report);
+                    outcome.AffectedCount++;
+                }
+                else if (revertError is null)
+                {
+                    report.Reason = revertReason;
+                    outcome.Batch.Skipped.Add(report);
+                }
+                else
+                {
+                    report.ErrorCode = revertError;
+                    report.Reason = revertReason;
+                    outcome.Batch.Failed.Add(report);
+                }
+
+                continue;
+            }
+
             if (key is "view_name" or "level_name")
             {
                 var element = ResolveElement(doc, item);

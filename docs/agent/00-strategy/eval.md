@@ -216,3 +216,77 @@ Integration (H1-19): `AgentCompactionStorageTests` — 5 тестов на ре�
 внутри Revit 2025 (blob restart/session isolation, paging, checkpoint store,
 checkpoint→projection, cancellation) — 5/5 PASS. net48 сьют остаётся
 Revit-boundary (Agent-тесты исключены из net48 по конфигурации проекта).
+
+## 2026-11-18 — новые инструменты, фаза 1: листы и ведомости
+
+Каталог 27 → 31. Добавлены read-задачи `read_sheets`, `read_sheet_content`,
+`read_schedules`, `read_schedule_data` (fixtures записаны вручную, replay без
+ключа). Детерминированный seed расширен: ведомость `SC_Eval_Schedule` по стенам
+с полем Comments и лист `SC-EVAL-101` (Title Block подгружается из
+контент-библиотеки Revit, если в шаблоне проекта его нет).
+
+| Метрика | Значение |
+|---|---|
+| Новые eval-задачи (replay) | 4/4 PASS |
+| Schema-valid calls | 4/4 |
+| Routing accuracy новых задач | 100 % |
+| Routing rules, 110 реальных запросов | top-1 96.4 %, top-5 100 %, top-14 100 %, p95 1.68 мс, false tool 0 |
+| Synthetic 1000 карточек | top-1 100 %, top-5 100 %, p95 11.65 мс |
+| Decisions (fake Choice), 110 запросов | visible 110/110, top-1 110, top-5 110 |
+
+Top-1 misses остались те же четыре (r008, r031, r046, r087), все в top-5;
+новые запросы r103–r112 попадают в top-1.
+
+## 2026-11-19 — новые инструменты, фаза 2: фильтры и overrides
+
+Каталог 31 → 33 (`create_view_filter`, `set_filter_overrides`). Eval: +2
+write-dry-run задачи (`dry_create_filter`, `dry_filter_overrides`); seed
+дополнен фильтром `SC_Eval_Filter` (категория стен, без правил и без применения).
+
+| Метрика | Значение |
+|---|---|
+| Полный replay | 46/46 PASS, schema 149/149, unauthorized 0, gate PASS |
+| Routing rules, 120 реальных запросов | top-1 96.7 %, top-5 100 %, top-14 100 %, p95 1.64 мс, false tool 0 |
+| Synthetic 1000 карточек | top-1 100 %, top-5 100 %, p95 17.12 мс |
+| Integration R25 `AgentFilterToolsTests` | 13/13 |
+
+Top-1 misses прежние четыре (r008, r031, r046, r087); новые запросы r113–r122
+попадают в top-1.
+
+## 2026-11-19 — фаза 3: routing/decision эксперимент на 170 фразах
+
+**Стенд.** `real-queries.json` расширен 120 → **170** реальных русских фраз
+(новые r123–r172: парафразы существующих инструментов + вариации новых).
+Live agent-loop: новый `RoutingLiveBenchmarkTests` (opt-in `SMARTCON_AGENT_LIVE=1`)
+прогоняет production `AgentOrchestrator` с 33 скриптованными инструментами
+(правдоподобные payload'ы с id) на 16 интентах (10 прямых + 6 парафраз без
+ключевых слов) в двух режимах: rule router и decision router внутри `find_tools`.
+
+| Метрика | rules (BM25) | decisions (pplx free, live) |
+|---|---|---|
+| Routing top-1 (170 фраз) | 95.9 % | 100 % (20-запросная выборка) |
+| Routing top-5 (170 фраз) | 100 % | 100 % (20-запросная выборка) |
+| top-14 recall | 100 % | — |
+| false tool (read→write top-1) | 0 % | — |
+| p95 решения | 1.70 мс | 4 129 мс (сеть) |
+| Agent-loop: ожидаемый тул в первом shortlist | 16/16 | 16/16 |
+| Agent-loop: задача решена (тул вызван) | 16/16 | 15/16 |
+| Раундов до первого правильного вызова (avg / p95) | 3.81 / 11 | 3.07 / 9 |
+| Всего раундов на задачу (avg) | 7.62 | 6.25 |
+| `find_tools` на задачу | 0 | 0 |
+| `load_tool_pack` на задачу | 0 | 0 |
+
+**Вывод.** Decision как reranker **не нужен по умолчанию** на текущем каталоге:
+BM25 top-5 содержит правильный инструмент во всех 16 интентах (включая
+парафразы), поэтому `find_tools` не вызывается и decision-слой не включается;
+разница агентских метрик между режимами — шум одной живой серии, а не эффект
+reranker'а. На routing-уровне decision закрывает 4 top-1 промаха BM25
+(95.9 % → 100 % на выборке), но платит ~4 с p95 за вызов. Решение: оставить
+`SMARTCON_DECIDER_ENABLED=0` (текущий secrets.env), включать точечно для
+длиннохвостых запросов/большого каталога; пересмотреть при падении top-5 <95 %
+или росте каталога >200.
+
+**Раунды.** Модель сначала исследует модель (get_project_overview/list_views/
+query_elements), только затем вызывает целевой инструмент — в среднем 3 раунда
+до правильного вызова при 6–8 раундах на задачу. Shortlist тут не виноват:
+целевой инструмент был виден с первого запроса.

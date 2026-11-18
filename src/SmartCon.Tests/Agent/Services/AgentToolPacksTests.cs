@@ -14,7 +14,7 @@ public sealed class AgentToolPacksTests
 
     private static readonly string[] ExpectedEmptyPacks =
     {
-        "sheets", "families", "schedules", "filters", "worksets", "links", "mep", "annotations", "audit"
+        "families", "worksets", "links", "mep", "annotations", "audit"
     };
 
     // ADR-075 §2 pins the core set; report_tooling_feedback was removed on request.
@@ -44,7 +44,10 @@ public sealed class AgentToolPacksTests
             ["params"] = new[] { "set_parameters", "remap_parameter_values" },
             ["changes"] = new[] { "undo_last", "discard_change_set" },
             ["plans"] = new[] { "execute_plan" },
-            ["meta"] = new[] { "find_tools", "read_tool_result" }
+            ["meta"] = new[] { "find_tools", "read_tool_result" },
+            ["sheets"] = new[] { "list_sheets", "get_sheet_content" },
+            ["schedules"] = new[] { "list_schedules", "get_schedule_data" },
+            ["filters"] = new[] { "create_view_filter", "set_filter_overrides" }
         };
 
     [Fact]
@@ -70,7 +73,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(27, placements.Length);
+        Assert.Equal(33, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

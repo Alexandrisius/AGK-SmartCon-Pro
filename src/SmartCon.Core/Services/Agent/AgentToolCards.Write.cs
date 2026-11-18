@@ -262,7 +262,8 @@ public static partial class AgentToolCards
                 Synonyms = new[]
                 {
                     "переименовать уровень", "имя уровня", "название этажа", "rename level",
-                    "level name", "этаж", "каскад видов", "переименовать этажи"
+                    "level name", "этаж", "каскад видов", "переименовать этажи", "назови уровни",
+                    "назвать этажи"
                 },
                 NegativeExamples = new[]
                 {

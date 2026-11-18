@@ -1,4 +1,88 @@
-﻿# Handoff — Agent: текущее состояние (2026-11-18)
+# Handoff — Agent: текущее состояние (2026-11-18)
+
+## ⚡ Сессия «новые инструменты» — Фаза 3: routing/decision (2026-11-19)
+
+- `real-queries.json` 120 → **170** фраз (r123–r172), гейты: rules top-1 95.9 %,
+  top-5 100 %, top-14 100 %, false tool 0 %, p95 1.70 мс.
+- Decisions live (pplx free через OpenRouter, 20-запросная выборка): top-1 100 %,
+  top-5 100 %, p95 4 129 мс (сеть). `SMARTCON_DECIDER_ENABLED=0` в secrets —
+  live-тест требует явного `SMARTCON_DECIDER_ENABLED=1` и `SMARTCON_DECIDER_LIVE=1`.
+- Новый live-бенчмарк `RoutingLiveBenchmarkTests` (opt-in `SMARTCON_AGENT_LIVE=1`,
+  вне CI): production-оркестратор, 33 скриптованных тула, 16 интентов (10 прямых +
+  6 парафраз), два режима `find_tools`. Результат: expected tool в первом
+  shortlist **16/16** в обоих режимах; задачи 16/16 (rules) и 15/16 (decisions);
+  раундов до первого правильного вызова 3.81/3.07 (avg), всего раундов 7.62/6.25;
+  `find_tools` и `load_tool_pack` — **0** на задачу.
+- **Вердикт:** decision-reranker по умолчанию не включать. BM25 top-5 покрывает
+  парафразы, `find_tools` не вызывается, decision не включается; на routing-уровне
+  decision закрывает top-1 промахи (95.9 % → 100 % на выборке), но p95 ~4 с.
+  Пересмотр — при top-5 <95 % или каталоге >200.
+
+Не проверено: ручной UI-тест (manual pending).
+
+## ⚡ Сессия «новые инструменты» — Фаза 2: фильтры и overrides (2026-11-19)
+
+Каталог 31 → **33**: `create_view_filter`, `set_filter_overrides`; пак `filters`
+больше не задел (15 populated + 5 reserved).
+
+- `create_view_filter` — generic DSL: `categories` (OST_ или локализованное имя) +
+  `conditions` (`field: family|type|level|room|system|parameter`, `op` eq/neq/
+  contains/…/gt/ge/lt/le/hasvalue/novalue, `value`, `logic: and|or`) +
+  `visibility: none|hide|show`. Фильтр переиспользуется по имени (idempotent),
+  имя санитизируется от запрещённых Revit символов (с warning), фильтруемое
+  множество параметров берётся из `ParameterFilterUtilities`, `level` для стен
+  падает на `WALL_BASE_CONSTRAINT`; per-section отчёт и read-back по каждому виду.
+- `set_filter_overrides` — цвет поверхностей/линий/разреза, штриховка, прозрачность,
+  halftone, `clear`; delta-семантика (сохраняет текущие overrides), `color`
+  ставит solid fill + цвет; неизвестный фильтр возвращает `knownFilters`,
+  неизвестная штриховка — `knownPatterns`.
+- Undo: новые ключи change item — `filter` (снимок фильтров вида old/new и полное
+  восстановление) и `filter_created` (удаление созданного фильтра); поддержано в
+  `undo_last` (partial `UndoLastTool.Filters.cs`).
+
+Гейты фазы:
+
+| Проверка | Результат |
+|---|---|
+| Unit `Agent.Services` + `Agent.Routing` | 288/288; routing 120 запросов: top-1 96.7 %, top-5 100 %, p95 1.64 мс |
+| Integration R25 `AgentFilterToolsTests` | 13/13 (dry-run/apply/reuse, level-правило, ошибки, undo фильтра и overrides) |
+| Eval replay (все 46 задач) | 46/46, schema 149/149, unauthorized 0, gate PASS |
+| Новые eval-задачи | `dry_create_filter`, `dry_filter_overrides` — PASS |
+
+Не проверено: полный unit/integration sweep и 7 конфигураций (финальный гейт),
+ручной UI-тест — manual pending.
+
+## ⚡ Сессия «новые инструменты» — Фаза 1: read breadth (2026-11-18)
+
+Каталог 27 → **31**: добавлены `list_sheets`, `get_sheet_content`,
+`list_schedules`, `get_schedule_data`. Паки `sheets` и `schedules` больше не
+заделы (14 populated + 6 reserved, общее число паков 20 неизменно).
+
+- `list_sheets` — номер/имя/размер мм/число видов и ведомостей/placeholder;
+  `limit`+`offset`+`returned`+`nextOffset`+`truncated`; `fields`-проекция с
+  `ignoredFields`/`availableFields`.
+- `get_sheet_content` — видовые окна (координаты и размер в мм) и размещённые
+  ведомости; поиск по `sheetId`/номеру/имени, неоднозначное имя → `ambiguous_sheet`
+  с `candidates`; пагинация по видам.
+- `list_schedules` — имя, категория (`OST_*` + локализованное имя), видимые поля,
+  число строк, `isKeySchedule`/`isTemplate`/ревизионная, номера листов;
+  `unknownCategories` не выбрасываются молча.
+- `get_schedule_data` — колонки (`heading` + `parameterName` + `fieldType`) и
+  страница строк; строка заголовков и пустая строка названия распознаются и
+  пропускаются (`headerRowSkipped`); чтение через `TableView.GetCellText` с
+  fallback на `TableSectionData`, значения — как в ведомости.
+
+Гейты фазы:
+
+| Проверка | Результат |
+|---|---|
+| Unit `Agent.Services` + `Agent.Routing` | 288/288 |
+| Routing (110 реальных запросов) | top-1 96.4 %, top-5 100 %, p95 1.68 мс, false tool 0 |
+| Integration R25 `AgentSheetScheduleToolsTests` | 9/9 (лист создаётся загрузкой Title Block из контент-библиотеки, если в шаблоне его нет) |
+| Eval replay новых задач | 4/4 (`read_sheets`, `read_sheet_content`, `read_schedules`, `read_schedule_data`), schema 4/4 |
+
+Не проверено: полный unit/integration sweep (финальный гейт), ручной UI-тест —
+manual pending.
 
 ## ⚡ Фидбэк-тул удалён + стресс-тест №3 (2026-11-18, текущая сессия)
 

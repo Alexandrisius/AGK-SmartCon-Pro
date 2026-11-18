@@ -37,13 +37,18 @@ internal static class ModelSeed
 
     public static Wall? TryCreateWall(Document document, ElementId levelId)
     {
+        return TryCreateWallAt(document, levelId, 0.0);
+    }
+
+    public static Wall? TryCreateWallAt(Document document, ElementId levelId, double offsetY)
+    {
         var wallTypeId = FirstTypeId(document, typeof(WallType));
         if (wallTypeId is null)
         {
             return null;
         }
 
-        var line = Line.CreateBound(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
+        var line = Line.CreateBound(new XYZ(0, offsetY, 0), new XYZ(10, offsetY, 0));
         return Wall.Create(document, line, wallTypeId, levelId, WallHeight, 0.0, false, false);
     }
 
