@@ -443,6 +443,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentFeedbackStore, SqliteAgentFeedbackStore>();
         services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
         services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
+        services.AddSingleton<IAgentToolResultBlobStore, SqliteAgentToolResultBlobStore>();
         services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
         services.AddSingleton<AgentFrictionAnalyzer>();
 
@@ -489,6 +490,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<FindToolsTool>());
         services.AddSingleton<LoadToolPackTool>();
         services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<LoadToolPackTool>());
+        services.AddSingleton<ReadToolResultTool>();
+        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<ReadToolResultTool>());
 
         var decisionsSettings = AgentDecisionsSettings.Load();
         services.AddSingleton(decisionsSettings);

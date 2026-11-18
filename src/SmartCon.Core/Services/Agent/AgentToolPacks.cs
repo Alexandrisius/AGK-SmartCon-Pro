@@ -86,8 +86,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "meta",
-            Description = "Поиск инструментов и обратная связь по харнесу.",
-            Tools = new[] { "find_tools", "report_tooling_feedback" }
+            Description = "Поиск инструментов, чтение сохранённых результатов и обратная связь по харнесу.",
+            Tools = new[] { "find_tools", "read_tool_result", "report_tooling_feedback" }
         },
         new()
         {

@@ -27,6 +27,7 @@ public sealed partial class AgentOrchestrator
     private readonly IAgentToolCallStore? _toolCallStore;
     private readonly IAgentUsageStore? _usageStore;
     private readonly IAgentWorkingStateStore? _workingStateStore;
+    private readonly IAgentToolResultBlobStore? _toolResultBlobStore;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -40,7 +41,8 @@ public sealed partial class AgentOrchestrator
         AgentPromptBuilder promptBuilder,
         IAgentToolCallStore? toolCallStore = null,
         IAgentUsageStore? usageStore = null,
-        IAgentWorkingStateStore? workingStateStore = null)
+        IAgentWorkingStateStore? workingStateStore = null,
+        IAgentToolResultBlobStore? toolResultBlobStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -55,6 +57,7 @@ public sealed partial class AgentOrchestrator
         _toolCallStore = toolCallStore;
         _usageStore = usageStore;
         _workingStateStore = workingStateStore;
+        _toolResultBlobStore = toolResultBlobStore;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -325,7 +328,8 @@ public sealed partial class AgentOrchestrator
                     var durationMs = (long)((Stopwatch.GetTimestamp() - startedAt)
                         * 1000.0 / Stopwatch.Frequency);
 
-                    var serializedResult = SerializeToolResult(result);
+                    var serializedResult =
+                        await SerializeToolResultAsync(toolCall, result, ct).ConfigureAwait(false);
                     var toolMessage = AgentMessage.ToolResult(toolCall.Id, serializedResult);
                     working.Add(toolMessage);
                     await _conversationStore
@@ -518,5 +522,6 @@ public sealed partial class AgentOrchestrator
 
     private static bool IsAlwaysAvailableV2(string name) =>
         AgentToolPacks.IsCore(name)
-        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal);
+        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal)
+        || string.Equals(name, ReadToolResultTool.ToolName, StringComparison.Ordinal);
 }

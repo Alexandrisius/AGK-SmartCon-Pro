@@ -128,6 +128,11 @@ public static class AgentToolCatalog
             ["find_tools"] = new("Meta", false, new[]
             {
                 "найти инструмент", "какой инструмент", "find tool", "tool search"
+            }),
+            ["read_tool_result"] = new("Meta", false, new[]
+            {
+                "сохранённый результат", "полный результат", "resulthandle", "дочитать",
+                "продолжить результат", "stored result"
             })
         };
 

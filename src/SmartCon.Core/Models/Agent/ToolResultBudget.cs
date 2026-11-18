@@ -20,6 +20,10 @@ public static class ToolResultBudget
         "(filters, smaller limit) or continue with offset/nextOffset instead of " +
         "repeating the same call.";
 
+    public const string BlobHint =
+        "The full result is stored under resultHandle: call read_tool_result with that " +
+        "handle (and offset/limit or a path) instead of re-running the same call.";
+
     private static readonly string[] TrimmableArrays =
     {
         "elements", "views", "levels", "groups", "parameters", "cards",
@@ -33,18 +37,31 @@ public static class ToolResultBudget
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    public static string Serialize(ToolResult result, int maxCharacters = DefaultMaxCharacters)
+    /// <summary>Full JSON without any trimming (stored as a tool-result blob).</summary>
+    public static string SerializeFull(ToolResult result)
+    {
+        if (result is null) throw new ArgumentNullException(nameof(result));
+        return JsonSerializer.Serialize(result, SerializerOptions);
+    }
+
+    public static string Serialize(
+        ToolResult result,
+        int maxCharacters = DefaultMaxCharacters,
+        string? resultHandle = null)
     {
         if (result is null) throw new ArgumentNullException(nameof(result));
 
-        var json = JsonSerializer.Serialize(result, SerializerOptions);
+        var json = SerializeFull(result);
         if (json.Length <= maxCharacters)
             return json;
 
-        return Trim(json, maxCharacters);
+        return Trim(json, maxCharacters, resultHandle);
     }
 
-    public static string Trim(string json, int maxCharacters = DefaultMaxCharacters)
+    public static string Trim(
+        string json,
+        int maxCharacters = DefaultMaxCharacters,
+        string? resultHandle = null)
     {
         JsonNode? node;
         try
@@ -71,7 +88,7 @@ public static class ToolResultBudget
         }
 
         if (arrays.Count == 0)
-            return AddEnvelope(root, maxCharacters);
+            return AddEnvelope(root, maxCharacters, resultHandle);
 
         while (true)
         {
@@ -85,7 +102,7 @@ public static class ToolResultBudget
                 .FirstOrDefault();
 
             if (largest.Array is null)
-                return AddEnvelope(root, maxCharacters);
+                return AddEnvelope(root, maxCharacters, resultHandle);
 
             var keep = largest.Array.Count / 2;
             while (largest.Array.Count > keep)
@@ -94,11 +111,16 @@ public static class ToolResultBudget
             data[largest.Name + "Returned"] = largest.Array.Count;
             data[largest.Name + "Total"] = largest.OriginalCount;
             data["truncated"] = true;
-            data["hint"] = TruncationHint;
+            data["hint"] = resultHandle is null ? TruncationHint : BlobHint;
+            if (resultHandle is not null)
+                data["resultHandle"] = resultHandle;
         }
     }
 
-    private static string AddEnvelope(JsonObject root, int maxCharacters)
+    private static string AddEnvelope(
+        JsonObject root,
+        int maxCharacters,
+        string? resultHandle = null)
     {
         if (root["data"] is not JsonObject data)
             return root.ToJsonString(SerializerOptions);
@@ -108,7 +130,7 @@ public static class ToolResultBudget
         var digest = new JsonObject
         {
             ["truncated"] = true,
-            ["hint"] = TruncationHint
+            ["hint"] = resultHandle is null ? TruncationHint : BlobHint
         };
 
         foreach (var name in new[] { "total", "returned", "offset", "nextOffset", "dryRun" })
@@ -119,6 +141,9 @@ public static class ToolResultBudget
 
         if (data["affected"] is { } affected)
             digest["affected"] = affected.DeepClone();
+
+        if (resultHandle is not null)
+            digest["resultHandle"] = resultHandle;
 
         root["data"] = digest;
         var json = root.ToJsonString(SerializerOptions);
@@ -135,9 +160,12 @@ public static class ToolResultBudget
             ["data"] = new JsonObject
             {
                 ["truncated"] = true,
-                ["hint"] = TruncationHint
+                ["hint"] = resultHandle is null ? TruncationHint : BlobHint
             }
         };
+
+        if (resultHandle is not null)
+            ((JsonObject)minimal["data"]!)["resultHandle"] = resultHandle;
 
         if (root["_repairs"] is { } repairs)
             minimal["_repairs"] = repairs.DeepClone();

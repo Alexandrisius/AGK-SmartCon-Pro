@@ -208,6 +208,41 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
+                ToolName = "read_tool_result",
+                Pack = "meta",
+                Purpose =
+                    "Дочитывает полный сохранённый результат инструмента по resultHandle, " +
+                    "когда в контекст попала только обрезанная версия.",
+                WhenToUse =
+                    "Когда в результате есть resultHandle/truncated=true и нужны данные за " +
+                    "пределами превью: список целиком, конкретный элемент или продолжение.",
+                WhenNotToUse =
+                    "Когда результат уже полный или нужный фрагмент виден в превью — повторно " +
+                    "вызывать исходный инструмент не нужно.",
+                Examples = new[]
+                {
+                    "Покажи остаток результата по resultHandle",
+                    "Дочитай список видов из сохранённого результата",
+                    "Возьми data.views из результата с resultHandle",
+                    "Продолжи результат с offset 8000"
+                },
+                Synonyms = new[]
+                {
+                    "read_tool_result", "resultHandle", "сохранённый результат", "полный результат",
+                    "дочитать", "продолжить результат", "stored result", "result handle",
+                    "обрезанный результат", "truncated result"
+                },
+                NegativeExamples = new[]
+                {
+                    "Переименуй вид 101",
+                    "Покажи список уровней"
+                },
+                Idempotent = true,
+                TimeoutMs = 15000,
+                Bulk = false
+            },
+            new AgentToolCard
+            {
                 ToolName = "report_tooling_feedback",
                 Pack = "meta",
                 Purpose =

@@ -87,6 +87,40 @@ public sealed class ToolResultBudgetTests
     }
 
     [Fact]
+    public void Serialize_TrimmedResult_CarriesTheHandleAndBlobHint()
+    {
+        var views = Enumerable.Range(0, 300)
+            .Select(i => new { id = i, name = "План " + i })
+            .ToArray();
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { views }),
+            "ok");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 2000, resultHandle: "call_1");
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("call_1", data.GetProperty("resultHandle").GetString());
+        Assert.Contains("read_tool_result", data.GetProperty("hint").GetString());
+    }
+
+    [Fact]
+    public void SerializeFull_IsNotTrimmed()
+    {
+        var items = Enumerable.Range(0, 5000)
+            .Select(i => new { id = i })
+            .ToArray();
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { items }),
+            "ok");
+
+        var full = ToolResultBudget.SerializeFull(result);
+
+        Assert.True(full.Length > ToolResultBudget.DefaultMaxCharacters);
+        Assert.DoesNotContain("truncated", full, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Serialize_FailureResult_KeepsErrorCode()
     {
         var items = Enumerable.Range(0, 300)

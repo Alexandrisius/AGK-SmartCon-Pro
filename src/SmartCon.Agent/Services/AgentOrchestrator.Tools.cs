@@ -63,6 +63,51 @@ public sealed partial class AgentOrchestrator
         return AgentTextSanitizer.SanitizeJson(json);
     }
 
+    /// <summary>
+    /// Redacts and trims the tool result for the model. A result that exceeds the
+    /// character budget is stored in full first, and the trimmed envelope carries
+    /// its handle so <c>read_tool_result</c> can page through the rest later.
+    /// </summary>
+    private async Task<string> SerializeToolResultAsync(
+        AgentToolCall toolCall,
+        ToolResult result,
+        CancellationToken ct)
+    {
+        var fullJson = AgentTextSanitizer.SanitizeJson(ToolResultBudget.SerializeFull(result));
+        string? handle = null;
+
+        if (fullJson.Length > ToolResultBudget.DefaultMaxCharacters
+            && _toolResultBlobStore is not null
+            && !string.IsNullOrWhiteSpace(toolCall.Id))
+        {
+            try
+            {
+                await _toolResultBlobStore
+                    .SaveAsync(_sessionContext.ConversationId, toolCall.Id, fullJson, ct)
+                    .ConfigureAwait(false);
+                handle = toolCall.Id;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    "Agent failed to store the full result of '" + toolCall.Name + "': " +
+                    ex.GetType().Name + ": " + ex.Message +
+                    " [Action: the model receives the trimmed preview without a handle]; " +
+                    "read_tool_result will not find this handle.");
+            }
+        }
+
+        // Sanitize first, trim second: the sanitizer reserializes with the default
+        // encoder and can inflate Cyrillic payloads past the budget.
+        return fullJson.Length <= ToolResultBudget.DefaultMaxCharacters
+            ? fullJson
+            : ToolResultBudget.Trim(fullJson, ToolResultBudget.DefaultMaxCharacters, handle);
+    }
+
     private static List<AgentMessage> TrimHistory(IReadOnlyList<AgentMessage> history)
     {
         var start = System.Math.Max(0, history.Count - MaxHistoryMessages);
