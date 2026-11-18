@@ -13,13 +13,24 @@
 
     Incremental merge:
       Merge result is cached in obj (per Configuration+TFM) and reused while the
-      merge inputs are byte-identical: pre-merge assembly, project.assets.json
-      (package graph/versions) and this targets file (merge list/parameters).
+      merge inputs are byte-identical: the host source + csproj + version file,
+      project.assets.json (package graph/versions) and this targets file
+      (merge list/parameters).
+
+      The compiled host assembly is deliberately NOT part of the cache key. It
+      contains only the DependencyHost marker and assembly attributes; SDK
+      compilation rewrites it with a new MVID/timestamp even when nothing
+      changed, which used to invalidate the merge on every build. A new merged
+      dll then made every project in the graph out-of-date (Core → UI → Revit →
+      FamilyManager → App, in all configurations). Keying on the stable sources
+      keeps the cached dll (and its timestamp) stable, so only projects whose
+      own sources changed rebuild.
+
       ILRepack output is NOT deterministic, so timestamps are never trusted —
-      only SHA256 of the inputs. The cached dll is copied back to bin on every
-      build because CopyFilesToOutputDirectory overwrites bin with the pre-merge
-      assembly each time; File.Copy preserves the cached (stable) timestamp,
-      so downstream projects stay incremental.
+      only SHA256 of the stable inputs. The cached dll is copied back to bin on
+      every build because CopyFilesToOutputDirectory overwrites bin with the
+      pre-merge assembly each time; File.Copy preserves the cached (stable)
+      timestamp, so downstream projects stay incremental.
   -->
   <PropertyGroup>
     <_SmartConMergeDir>$(IntermediateOutputPath)merged\</_SmartConMergeDir>
@@ -56,7 +67,10 @@
 
     <!-- Input fingerprint: pre-merge dll + resolved package graph + merge parameters. -->
     <ItemGroup>
-      <_MergeHashInputs Include="@(IntermediateAssembly)" />
+      <_MergeHashInputs Include="$(MSBuildProjectFullPath)" />
+      <_MergeHashInputs Include="$(MSBuildProjectDirectory)\DependencyHost.cs"
+                        Condition="Exists('$(MSBuildProjectDirectory)\DependencyHost.cs')" />
+      <_MergeHashInputs Include="$(SmartConVersionFile)" Condition="Exists('$(SmartConVersionFile)')" />
       <_MergeHashInputs Include="$(ProjectAssetsFile)" Condition="Exists('$(ProjectAssetsFile)')" />
       <_MergeHashInputs Include="$(MSBuildThisFileFullPath)" />
     </ItemGroup>
