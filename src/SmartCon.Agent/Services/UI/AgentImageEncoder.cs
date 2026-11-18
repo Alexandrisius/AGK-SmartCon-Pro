@@ -89,6 +89,42 @@ public static class AgentImageEncoder
                 width, height, frame.DpiX, frame.DpiY, PixelFormats.Bgra32, null, pixels, stride);
         }
 
+        // Clipboard DIBs frequently expose a fully zero alpha channel while the
+        // RGB bytes still contain the screenshot. Treating that as "transparent"
+        // paints the whole image white; an all-zero alpha channel means "this
+        // bitmap has no alpha information", so keep the RGB and make it opaque.
+        var anyAlpha = false;
+        var anyRgb = false;
+        for (var index = 0; index < pixels.Length; index += 4)
+        {
+            if (pixels[index + 3] != 0)
+                anyAlpha = true;
+
+            if (pixels[index] != 0 || pixels[index + 1] != 0 || pixels[index + 2] != 0)
+                anyRgb = true;
+
+            if (anyAlpha && anyRgb)
+                break;
+        }
+
+        if (!anyAlpha)
+        {
+            for (var index = 0; index < pixels.Length; index += 4)
+            {
+                if (!anyRgb)
+                {
+                    pixels[index] = 255;
+                    pixels[index + 1] = 255;
+                    pixels[index + 2] = 255;
+                }
+
+                pixels[index + 3] = 255;
+            }
+
+            return BitmapSource.Create(
+                width, height, frame.DpiX, frame.DpiY, PixelFormats.Bgra32, null, pixels, stride);
+        }
+
         for (var index = 0; index < pixels.Length; index += 4)
         {
             var alpha = pixels[index + 3];
