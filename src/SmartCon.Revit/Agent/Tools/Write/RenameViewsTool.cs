@@ -123,7 +123,11 @@ public sealed class RenameViewsTool : AgentWriteToolBase
         if (valid.Count == 0)
         {
             outcome.Description = "rename_views: nothing to rename";
-            outcome.Message ??= "No view could be renamed; see failed[] for the reasons.";
+            outcome.Message ??= outcome.Batch.Failed.Count == 0
+                && outcome.Batch.Skipped.Count > 0
+                    ? "No changes: all " + outcome.Batch.Skipped.Count +
+                      " target(s) already have the requested names (see skipped[])."
+                    : "No view could be renamed; see failed[] for the reasons.";
             return;
         }
 

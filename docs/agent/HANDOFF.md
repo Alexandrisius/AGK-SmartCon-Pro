@@ -1,5 +1,33 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Фидбэк самого агента: где лежит и как читать (2026-11-18)
+
+`report_tooling_feedback` пишет в `%APPDATA%\Roaming\SmartCon\Agent\agent.db`,
+таблица `agent_feedback` (дубль — `smartcon.log`). Автоматического читателя нет:
+`AgentFrictionAnalyzer` зарегистрирован в DI, но нигде не вызывается — таблица
+была write-only. На 2026-11-18 в ней 22 записи (включая стресс-тесты №1/№2).
+
+Правило для следующих сессий: **перед работой над инструментами и после каждого
+стресс-теста читать `agent_feedback`** (SQL/DB browser), а не полагаться только
+на текст, присланный в чат. Быстрый запрос:
+`select created_at, area, rating, tool_name, issue, suggestion from agent_feedback order by created_at desc limit 50;`
+
+## ⚡ Стресс-тест №2: исправления (2026-11-18, текущая сессия)
+
+- **Критично — подмена тула.** Провайдер иногда присылает несколько tool-calls
+  без `index`; аккумулятор сводил их в index 0: имя последнего + склеенные
+  аргументы → исполнялся чужой инструмент со старым аргументом и `success:true`.
+  Теперь вызовы ключуются по `id`, при его отсутствии аллоцируются по порядку,
+  id-less дельта продолжает последний вызов (`LlmResponseAccumulator`).
+- `plan_fidelity_mismatch` возвращает `steps[]` со всеми dry-run диффами
+  (s1–s4 больше не теряются); `plan_dry_run_failed` — тоже.
+- `readBackTool/ArgumentsReadBackJson/ReadBackExpectations` исключены из
+  `planDigest`: их можно добавить после preview, не подтверждая план заново.
+- `rename_views`/`rename_levels` при чистом no-op пишут «No changes: N target(s)
+  already have the requested names (see skipped[])», а не «see failed[]».
+- `query_elements`: пустой `parameters: {}` больше не выводится (карточка
+  опускает поле, если значений нет).
+
 ## ⚡ Автономные ходы без лимитов (2026-11-18, текущая сессия)
 
 Жёсткий лимит 8 раундов удалён полностью. Ход выполняется до одного из событий:

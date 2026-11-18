@@ -156,4 +156,48 @@ public sealed class LlmResponseAccumulatorTests
 
         Assert.Equal(50, response.Usage.CacheWriteTokens);
     }
+
+    [Fact]
+    public void Append_TwoCallsWithoutIndexInOneDelta_StaySeparate()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"choices":[{"delta":{"tool_calls":[{"id":"call_a","function":{"name":"undo_last","arguments":"{}"}},{"id":"call_b","function":{"name":"rename_levels","arguments":"{\"items\":[]}"}}]}}]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal(2, response.Message.ToolCalls.Count);
+        Assert.Equal("undo_last", response.Message.ToolCalls[0].Name);
+        Assert.Equal("{}", response.Message.ToolCalls[0].ArgumentsJson);
+        Assert.Equal("rename_levels", response.Message.ToolCalls[1].Name);
+        Assert.Equal("{\"items\":[]}", response.Message.ToolCalls[1].ArgumentsJson);
+    }
+
+    [Fact]
+    public void Append_TwoCallsWithoutIndexAcrossDeltas_StaySeparate()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"choices":[{"delta":{"tool_calls":[{"id":"call_a","function":{"name":"undo_last","arguments":"{"}}]}}]}""",
+            output);
+        accumulator.Append(
+            """{"choices":[{"delta":{"tool_calls":[{"id":"call_a","function":{"arguments":"}"}}]}}]}""",
+            output);
+        accumulator.Append(
+            """{"choices":[{"delta":{"tool_calls":[{"id":"call_b","function":{"name":"set_view_crop","arguments":"{\"viewId\":1}"}}]}}]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal(2, response.Message.ToolCalls.Count);
+        Assert.Equal("undo_last", response.Message.ToolCalls[0].Name);
+        Assert.Equal("{}", response.Message.ToolCalls[0].ArgumentsJson);
+        Assert.Equal("set_view_crop", response.Message.ToolCalls[1].Name);
+        Assert.Equal("{\"viewId\":1}", response.Message.ToolCalls[1].ArgumentsJson);
+    }
 }

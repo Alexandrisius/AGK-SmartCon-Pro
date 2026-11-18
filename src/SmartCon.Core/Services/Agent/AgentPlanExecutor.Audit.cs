@@ -18,17 +18,10 @@ public sealed partial class AgentPlanExecutor
                 step.ToolName,
                 ArgumentsJson = CanonicalizeWithoutDryRun(step.ArgumentsJson),
                 DependsOn = step.DependsOn.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                step.ExpectedChanges,
-                step.ReadBackTool,
-                ArgumentsReadBackJson = Canonicalize(step.ArgumentsReadBackJson),
-                readBackExpectations = step.ReadBackExpectations
-                    .OrderBy(expectation => expectation.Path, StringComparer.Ordinal)
-                    .ThenBy(expectation => expectation.Expected, StringComparer.Ordinal)
-                    .Select(expectation => new
-                    {
-                        expectation.Path,
-                        expectation.Expected
-                    })
+                step.ExpectedChanges
+                // Read-back fields are deliberately excluded: they do not change
+                // the model, so adding them after the preview must not invalidate
+                // the approved digest (stress test #2).
             })
         });
 

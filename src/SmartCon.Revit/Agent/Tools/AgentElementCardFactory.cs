@@ -42,7 +42,9 @@ internal static class AgentElementCardFactory
             LevelId = level is null ? null : level.Id.GetValue(),
             LevelName = level?.Name,
             Room = element.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString(),
-            Parameters = parameters
+            // Omit the field when nothing was collected: an empty "{}" reads as
+            // "the query found no parameter values" (stress test #2).
+            Parameters = parameters.Count == 0 ? null : parameters
         };
     }
 

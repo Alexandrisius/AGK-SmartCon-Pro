@@ -10,6 +10,9 @@ internal sealed class LlmResponseAccumulator
     private readonly StringBuilder _content = new();
     private readonly StringBuilder _reasoning = new();
     private readonly Dictionary<int, ToolCallBuilder> _toolCalls = new();
+    private readonly Dictionary<string, int> _idToIndex = new(StringComparer.Ordinal);
+    private int _nextIndex;
+    private int _lastIndex = -1;
     private string? _finishReason;
     private string? _requestId;
     private AgentUsage _usage = AgentUsage.Empty;
@@ -97,16 +100,63 @@ internal sealed class LlmResponseAccumulator
         if (delta.TryGetProperty("tool_calls", out var toolCalls)
             && toolCalls.ValueKind == JsonValueKind.Array)
         {
-            foreach (var toolCall in toolCalls.EnumerateArray())
-                AppendToolCall(toolCall, output);
+            var callArray = toolCalls.EnumerateArray().ToList();
+            for (var position = 0; position < callArray.Count; position++)
+                AppendToolCall(callArray[position], position, callArray.Count, output);
         }
     }
 
-    private void AppendToolCall(JsonElement toolCall, List<LlmStreamEvent> output)
+    /// <summary>
+    /// Some OpenAI-compatible providers omit <c>index</c> entirely and may put
+    /// several tool calls into one delta. Treating a missing index as 0 merged
+    /// every call into one builder: the last name won and the arguments of all
+    /// calls were concatenated, so the executor ran the wrong tool with stale
+    /// arguments (stress test #2, critical). Calls are now keyed by provider id
+    /// when present, otherwise allocated in order; an id-less delta continues
+    /// the previous call.
+    /// </summary>
+    private void AppendToolCall(
+        JsonElement toolCall,
+        int position,
+        int arrayCount,
+        List<LlmStreamEvent> output)
     {
-        var index = 0;
-        if (toolCall.TryGetProperty("index", out var indexElement) && indexElement.ValueKind == JsonValueKind.Number)
+        var hasIndex = toolCall.TryGetProperty("index", out var indexElement)
+                       && indexElement.ValueKind == JsonValueKind.Number;
+        var id = TryGetString(toolCall, "id", out var parsedId) && !string.IsNullOrEmpty(parsedId)
+            ? parsedId
+            : null;
+
+        int index;
+        if (hasIndex)
+        {
             index = indexElement.GetInt32();
+            if (id is not null
+                && _toolCalls.TryGetValue(index, out var existing)
+                && !string.IsNullOrEmpty(existing.Id)
+                && !string.Equals(existing.Id, id, StringComparison.Ordinal))
+            {
+                index = AllocateIndex();
+            }
+        }
+        else if (id is not null)
+        {
+            if (!_idToIndex.TryGetValue(id, out index))
+                index = AllocateIndex();
+        }
+        else if (arrayCount > 1)
+        {
+            // Several id-less calls in one delta: each element is a distinct call.
+            index = AllocateIndex();
+        }
+        else
+        {
+            index = _lastIndex >= 0 ? _lastIndex : AllocateIndex();
+        }
+
+        if (id is not null)
+            _idToIndex[id] = index;
+        _lastIndex = index;
 
         if (!_toolCalls.TryGetValue(index, out var builder))
         {
@@ -114,7 +164,7 @@ internal sealed class LlmResponseAccumulator
             _toolCalls[index] = builder;
         }
 
-        if (TryGetString(toolCall, "id", out var id) && !string.IsNullOrEmpty(id))
+        if (id is not null)
             builder.Id = id;
 
         if (toolCall.TryGetProperty("function", out var function) && function.ValueKind == JsonValueKind.Object)
@@ -133,6 +183,8 @@ internal sealed class LlmResponseAccumulator
                 builder.AppendArguments(arguments);
         }
     }
+
+    private int AllocateIndex() => _nextIndex++;
 
     private static bool TryGetString(JsonElement element, string property, out string value)
     {

@@ -20,8 +20,7 @@ public sealed class ElementCard
 
     public string? Room { get; init; }
 
-    public IReadOnlyDictionary<string, string?> Parameters { get; init; } =
-        new Dictionary<string, string?>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string?>? Parameters { get; init; }
 }
 
 public sealed class ParameterValueInfo

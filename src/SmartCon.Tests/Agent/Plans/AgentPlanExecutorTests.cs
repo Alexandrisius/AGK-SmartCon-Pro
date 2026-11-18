@@ -122,6 +122,12 @@ public sealed class AgentPlanExecutorTests
         Assert.Empty(confirmation.Requests);
         Assert.Contains(audit.Entries, entry => entry.Tool == "plan#fidelity" &&
                                                 entry.Result == "mismatch");
+
+        // The failing preview must still return the per-step diff (stress #2).
+        var step = Assert.Single(result.Steps);
+        Assert.True(step.DryRunOk);
+        Assert.Equal(2, step.Changed);
+        Assert.Contains("steps[]", result.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -448,6 +454,33 @@ public sealed class AgentPlanExecutorTests
         var digestB = AgentPlanExecutor.ComputeDigest(Plan(stepB), "doc-1");
 
         Assert.Equal(digestA, digestB);
+    }
+
+    [Fact]
+    public void ComputeDigest_IgnoresReadBackFields()
+    {
+        var withoutReadBack = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = @"{""items"":[{""viewId"":1}]}"
+        };
+        var withReadBack = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = @"{""items"":[{""viewId"":1}]}",
+            ReadBackTool = "read_tool",
+            ArgumentsReadBackJson = @"{""viewId"":1}",
+            ReadBackExpectations = new[]
+            {
+                new AgentPlanExpectation { Path = "name", Expected = "x" }
+            }
+        };
+
+        Assert.Equal(
+            AgentPlanExecutor.ComputeDigest(Plan(withoutReadBack), "doc-1"),
+            AgentPlanExecutor.ComputeDigest(Plan(withReadBack), "doc-1"));
     }
 
     [Fact]

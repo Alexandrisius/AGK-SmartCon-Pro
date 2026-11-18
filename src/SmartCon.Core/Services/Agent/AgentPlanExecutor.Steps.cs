@@ -60,6 +60,7 @@ public sealed partial class AgentPlanExecutor
         AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
+        var mismatches = new List<string>();
         foreach (var step in steps)
         {
             ct.ThrowIfCancellationRequested();
@@ -82,7 +83,9 @@ public sealed partial class AgentPlanExecutor
                 return AgentPlanExecutionResult.Fail(
                     "plan_dry_run_failed",
                     "Step '" + step.StepId + "' dry run failed: " +
-                    (dryResult.ErrorCode ?? "unknown"));
+                    (dryResult.ErrorCode ?? "unknown") +
+                    ". Full per-step diff is in steps[].",
+                    results);
             }
 
             if (step.ExpectedChanges.HasValue)
@@ -94,12 +97,23 @@ public sealed partial class AgentPlanExecutor
                     await WriteAuditAsync(
                             null, "plan#fidelity", "mismatch", result.Changed, execution, ct)
                         .ConfigureAwait(false);
-                    return AgentPlanExecutionResult.Fail(
-                        "plan_fidelity_mismatch",
+                    mismatches.Add(
                         "Step '" + step.StepId + "' promised " + step.ExpectedChanges.Value +
-                        " change(s), the dry run produced " + result.Changed + ".");
+                        " change(s), the dry run produced " + result.Changed);
                 }
             }
+        }
+
+        if (mismatches.Count > 0)
+        {
+            // Continue the dry run through every step so the model gets the full
+            // per-step diff even when one step misses its estimate (stress #2).
+            return AgentPlanExecutionResult.Fail(
+                "plan_fidelity_mismatch",
+                string.Join("; ", mismatches) +
+                ". Full per-step diff is in steps[]; fix the expectedChanges or the step " +
+                "arguments and preview again.",
+                results);
         }
 
         await WriteAuditAsync(null, "plan#fidelity", "match", 0, execution, ct).ConfigureAwait(false);
