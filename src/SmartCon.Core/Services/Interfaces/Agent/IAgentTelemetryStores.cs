@@ -20,12 +20,7 @@ public interface IAgentFeedbackStore
 /// <summary>Per-turn token usage, used by the context-budget indicator.</summary>
 public interface IAgentUsageStore
 {
-    Task RecordAsync(
-        string sessionId,
-        string provider,
-        string model,
-        AgentUsage usage,
-        CancellationToken ct);
+    Task RecordAsync(AgentUsageRecord record, CancellationToken ct);
 }
 
 /// <summary>

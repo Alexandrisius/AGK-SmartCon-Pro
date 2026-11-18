@@ -10,7 +10,7 @@ using SmartCon.UI;
 
 namespace SmartCon.Agent.Services;
 
-public sealed class AgentOrchestrator
+public sealed partial class AgentOrchestrator
 {
     private const int MaxToolRounds = 8;
     private const int MaxHistoryMessages = 120;
@@ -27,6 +27,7 @@ public sealed class AgentOrchestrator
     private readonly IAgentToolCallStore? _toolCallStore;
     private readonly IAgentUsageStore? _usageStore;
     private readonly IToolRouter? _toolRouter;
+    private readonly IAgentWorkingStateStore? _workingStateStore;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -40,7 +41,8 @@ public sealed class AgentOrchestrator
         AgentPromptBuilder promptBuilder,
         IAgentToolCallStore? toolCallStore = null,
         IAgentUsageStore? usageStore = null,
-        IToolRouter? toolRouter = null)
+        IToolRouter? toolRouter = null,
+        IAgentWorkingStateStore? workingStateStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -55,6 +57,7 @@ public sealed class AgentOrchestrator
         _toolCallStore = toolCallStore;
         _usageStore = usageStore;
         _toolRouter = toolRouter;
+        _workingStateStore = workingStateStore;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -69,198 +72,376 @@ public sealed class AgentOrchestrator
             ("Session", conversationId.ToString("N")),
             ("Provider", _llm.ProviderName));
 
-        var projectContext = await _projectContextProvider.GetAsync(ct).ConfigureAwait(false);
-        if (!string.IsNullOrEmpty(_sessionContext.DocumentId)
-            && !string.Equals(
-                _sessionContext.DocumentId,
-                projectContext.DocumentId,
-                StringComparison.Ordinal)
-            && _sessionContext.ApprovalMode != AgentApprovalMode.ConfirmWrites)
-        {
-            // The bypass / read-only choice is bound to one document: switching the
-            // active document must never inherit a relaxed confirmation policy.
-            _sessionContext.ApprovalMode = AgentApprovalMode.ConfirmWrites;
-            SmartConLogger.Info(
-                "Agent approval mode reset to ConfirmWrites because the active document changed");
-        }
-
-        _sessionContext.DocumentId = projectContext.DocumentId;
-        _sessionContext.ConversationId = conversationId;
-
-        var userMessage = AgentMessage.User(userText, attachments);
-        await _conversationStore.AppendMessageAsync(conversationId, userMessage, ct).ConfigureAwait(false);
-
-        var history = await _conversationStore.GetMessagesAsync(conversationId, ct).ConfigureAwait(false);
-        var working = EnsureToolCallPairs(TrimHistory(history));
-        var (compacted, _) = AgentHistoryCompactor.Compact(
-            working, _settings.ContextWindowTokens, _settings.ContextThreshold);
-        working = compacted;
-        var systemMessage = AgentMessage.System(
-            _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
-        var definitions = await SelectToolDefinitionsAsync(userText, ct);
-        SetActiveToolNames(definitions);
-
+        var turnStartedAt = Stopwatch.GetTimestamp();
         var usage = AgentUsage.Empty;
-        var toolCallCount = 0;
+        var estimatedPromptTokens = 0;
+        string? lastRequestId = null;
+        WorkingState? workingState = null;
 
-        for (var round = 1; round <= MaxToolRounds; round++)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            progress?.Report(AgentProgress.Status(
-                round == 1
-                    ? LanguageManager.GetString("Agent_Status_Thinking") ?? "Thinking…"
-                    : LanguageManager.GetString("Agent_Status_Continuing") ?? "Continuing…"));
-
-            var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
-            messages.AddRange(working);
-
-            var request = new AgentChatRequest
+            var projectContext = await _projectContextProvider.GetAsync(ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(_sessionContext.DocumentId)
+                && !string.Equals(
+                    _sessionContext.DocumentId,
+                    projectContext.DocumentId,
+                    StringComparison.Ordinal)
+                && _sessionContext.ApprovalMode != AgentApprovalMode.ConfirmWrites)
             {
-                Model = _settings.Model,
-                Messages = messages,
-                Tools = definitions,
-                Temperature = _settings.Temperature,
-                MaxOutputTokens = _settings.MaxOutputTokens
-            };
-
-            AgentChatResponse? completion = null;
-            await foreach (var streamEvent in _llm.StreamAsync(request, ct).ConfigureAwait(false))
-            {
-                switch (streamEvent.Kind)
-                {
-                    case LlmStreamEventKind.TextDelta:
-                        if (!string.IsNullOrEmpty(streamEvent.Text))
-                            progress?.Report(AgentProgress.TextDelta(streamEvent.Text!));
-                        break;
-
-                    case LlmStreamEventKind.ReasoningDelta:
-                        if (!string.IsNullOrEmpty(streamEvent.Text))
-                            progress?.Report(AgentProgress.ReasoningDelta(streamEvent.Text!));
-                        break;
-
-                    case LlmStreamEventKind.ToolCallStarted:
-                        progress?.Report(new AgentProgress
-                        {
-                            Kind = AgentProgressKind.ToolStarted,
-                            ToolCallId = streamEvent.ToolCallId,
-                            ToolName = streamEvent.ToolName
-                        });
-                        break;
-
-                    case LlmStreamEventKind.Error:
-                        throw new AgentLlmException(streamEvent.Error ?? "Unknown LLM stream error.");
-
-                    case LlmStreamEventKind.Completed:
-                        completion = streamEvent.Completion;
-                        break;
-                }
+                // The bypass / read-only choice is bound to one document: switching the
+                // active document must never inherit a relaxed confirmation policy.
+                _sessionContext.ApprovalMode = AgentApprovalMode.ConfirmWrites;
+                SmartConLogger.Info(
+                    "Agent approval mode reset to ConfirmWrites because the active document changed");
             }
 
-            if (completion is null)
-                throw new AgentLlmException("LLM stream ended without a completion event.");
+            _sessionContext.DocumentId = projectContext.DocumentId;
+            var conversationChanged = _sessionContext.ConversationId != Guid.Empty
+                && _sessionContext.ConversationId != conversationId;
+            _sessionContext.ConversationId = conversationId;
 
-            usage = Add(usage, completion.Usage);
-            working.Add(completion.Message);
+            var userMessage = AgentMessage.User(userText, attachments);
             await _conversationStore
-                .AppendMessageAsync(conversationId, completion.Message, ct)
+                .AppendMessageAsync(conversationId, userMessage, ct)
                 .ConfigureAwait(false);
 
-            if (completion.Message.ToolCalls.Count == 0)
+            if (_settings.WorkingStateEnabled)
             {
-                var finalText = completion.Message.Content ?? string.Empty;
-                progress?.Report(new AgentProgress
-                {
-                    Kind = AgentProgressKind.TurnCompleted,
-                    Text = finalText,
-                    Usage = usage,
-                    ToolCallCount = toolCallCount
-                });
+                // The cached state belongs to the previous conversation: never
+                // leak its goal/constraints into a different chat.
+                if (conversationChanged)
+                    _sessionContext.WorkingState = null;
 
-                await WriteUsageAsync(conversationId, usage, ct).ConfigureAwait(false);
-
-                return new AgentTurnResult
-                {
-                    FinalText = finalText,
-                    ToolCallCount = toolCallCount,
-                    Rounds = round,
-                    Usage = usage
-                };
+                workingState = await PrepareWorkingStateAsync(
+                        conversationId, userText, projectContext, ct)
+                    .ConfigureAwait(false);
             }
 
-            foreach (var toolCall in completion.Message.ToolCalls)
+            var history = await _conversationStore
+                .GetMessagesAsync(conversationId, ct)
+                .ConfigureAwait(false);
+            var working = EnsureToolCallPairs(TrimHistory(history));
+            var systemMessage = AgentMessage.System(
+                _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
+            var definitions = await SelectToolDefinitionsAsync(userText, ct);
+            SetActiveToolNames(definitions);
+
+            Func<IReadOnlyList<AgentMessage>, int>? estimator = null;
+            if (_settings.ContextCompactionV2)
+            {
+                estimator = messages => _sessionContext.TokenCalibration.Apply(
+                    AgentTokenEstimator.EstimateRequest(
+                        systemMessage.Content, messages, definitions));
+            }
+
+            var (compacted, _) = AgentHistoryCompactor.Compact(
+                working,
+                _settings.ContextWindowTokens,
+                _settings.ContextThreshold,
+                AgentHistoryCompactor.KeepRecentToolResults,
+                estimator);
+            working = compacted;
+
+            var toolCallCount = 0;
+
+            for (var round = 1; round <= MaxToolRounds; round++)
             {
                 ct.ThrowIfCancellationRequested();
-                toolCallCount++;
 
-                var startedAt = Stopwatch.GetTimestamp();
-                var result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
-                var durationMs = (long)((Stopwatch.GetTimestamp() - startedAt) * 1000.0 / Stopwatch.Frequency);
+                var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
+                messages.AddRange(working);
 
-                var serializedResult = SerializeToolResult(result);
-                var toolMessage = AgentMessage.ToolResult(toolCall.Id, serializedResult);
-                working.Add(toolMessage);
-                await _conversationStore
-                    .AppendMessageAsync(conversationId, toolMessage, ct)
-                    .ConfigureAwait(false);
+                if (_settings.WorkingStateEnabled && workingState is not null)
+                    ApplyTurnContext(messages, workingState, projectContext);
 
-                await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
-                    .ConfigureAwait(false);
+                var estimatedPrompt = AgentTokenEstimator.EstimateRequest(
+                    systemMessage.Content, messages, definitions);
+                var calibrated = _sessionContext.TokenCalibration.Apply(estimatedPrompt);
+                estimatedPromptTokens += estimatedPrompt;
+                SmartConLogger.Debug(
+                    "Agent prompt estimate: raw=" + estimatedPrompt +
+                    ", calibrated=" + calibrated +
+                    ", messages=" + working.Count +
+                    ", tools=" + definitions.Count);
 
-                await WriteToolCallAsync(
-                        toolCall, result, serializedResult, conversationId, durationMs, ct)
-                    .ConfigureAwait(false);
+                progress?.Report(AgentProgress.Status(
+                    round == 1
+                        ? LanguageManager.GetString("Agent_Status_Thinking") ?? "Thinking…"
+                        : LanguageManager.GetString("Agent_Status_Continuing") ?? "Continuing…"));
 
-                // find_tools exists to unlock tools outside the routed shortlist:
-                // the model must be able to call what it just discovered, so the
-                // next round sends the full catalog.
-                if (result.Success
-                    && string.Equals(toolCall.Name, "find_tools", StringComparison.Ordinal))
+                var request = new AgentChatRequest
                 {
-                    var fullCatalog = _toolRegistry.GetDefinitions();
-                    if (ExpandsCatalog(definitions, fullCatalog))
+                    Model = _settings.Model,
+                    Messages = messages,
+                    Tools = definitions,
+                    Temperature = _settings.Temperature,
+                    MaxOutputTokens = _settings.MaxOutputTokens
+                };
+
+                AgentChatResponse? completion = null;
+                await foreach (var streamEvent in _llm.StreamAsync(request, ct).ConfigureAwait(false))
+                {
+                    switch (streamEvent.Kind)
                     {
-                        definitions = fullCatalog;
-                        SetActiveToolNames(definitions);
-                        SmartConLogger.Debug(
-                            "Agent expanded the tool catalog after find_tools: " +
-                            definitions.Count + " definitions for the next round");
+                        case LlmStreamEventKind.TextDelta:
+                            if (!string.IsNullOrEmpty(streamEvent.Text))
+                                progress?.Report(AgentProgress.TextDelta(streamEvent.Text!));
+                            break;
+
+                        case LlmStreamEventKind.ReasoningDelta:
+                            if (!string.IsNullOrEmpty(streamEvent.Text))
+                                progress?.Report(AgentProgress.ReasoningDelta(streamEvent.Text!));
+                            break;
+
+                        case LlmStreamEventKind.ToolCallStarted:
+                            progress?.Report(new AgentProgress
+                            {
+                                Kind = AgentProgressKind.ToolStarted,
+                                ToolCallId = streamEvent.ToolCallId,
+                                ToolName = streamEvent.ToolName
+                            });
+                            break;
+
+                        case LlmStreamEventKind.Error:
+                            throw new AgentLlmException(
+                                streamEvent.Error ?? "Unknown LLM stream error.");
+
+                        case LlmStreamEventKind.Completed:
+                            completion = streamEvent.Completion;
+                            break;
                     }
                 }
 
-                progress?.Report(new AgentProgress
+                if (completion is null)
+                    throw new AgentLlmException("LLM stream ended without a completion event.");
+
+                usage = Add(usage, completion.Usage);
+                lastRequestId = completion.RequestId ?? lastRequestId;
+                if (completion.Usage.PromptTokens > 0)
                 {
-                    Kind = AgentProgressKind.ToolCompleted,
-                    ToolCallId = toolCall.Id,
-                    ToolName = toolCall.Name,
-                    Success = result.Success,
-                    Error = result.ErrorCode,
-                    Text = result.Message,
-                    Details = AgentToolResultFormatter.Pretty(serializedResult)
-                });
+                    _sessionContext.TokenCalibration.Observe(
+                        estimatedPrompt, completion.Usage.PromptTokens);
+
+                    var deviationPercent =
+                        (completion.Usage.PromptTokens - estimatedPrompt) * 100.0
+                        / completion.Usage.PromptTokens;
+                    SmartConLogger.Debug(
+                        "Agent prompt estimate deviation: estimated=" + estimatedPrompt +
+                        ", actual=" + completion.Usage.PromptTokens +
+                        ", deviation=" + deviationPercent.ToString(
+                            "F1", System.Globalization.CultureInfo.InvariantCulture) + "%");
+                }
+
+                working.Add(completion.Message);
+                await _conversationStore
+                    .AppendMessageAsync(conversationId, completion.Message, ct)
+                    .ConfigureAwait(false);
+
+                if (completion.Message.ToolCalls.Count == 0)
+                {
+                    var finalText = completion.Message.Content ?? string.Empty;
+                    progress?.Report(new AgentProgress
+                    {
+                        Kind = AgentProgressKind.TurnCompleted,
+                        Text = finalText,
+                        Usage = usage,
+                        ToolCallCount = toolCallCount
+                    });
+
+                    await WriteUsageAsync(
+                        conversationId, usage, "ok", turnStartedAt,
+                        lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
+
+                    return new AgentTurnResult
+                    {
+                        FinalText = finalText,
+                        ToolCallCount = toolCallCount,
+                        Rounds = round,
+                        Usage = usage
+                    };
+                }
+
+                foreach (var toolCall in completion.Message.ToolCalls)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    toolCallCount++;
+
+                    var startedAt = Stopwatch.GetTimestamp();
+                    var result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
+                    if (_settings.WorkingStateEnabled && workingState is not null)
+                        AgentWorkingStateUpdater.ObserveToolResult(workingState, toolCall.Name, result);
+
+                    var durationMs = (long)((Stopwatch.GetTimestamp() - startedAt)
+                        * 1000.0 / Stopwatch.Frequency);
+
+                    var serializedResult = SerializeToolResult(result);
+                    var toolMessage = AgentMessage.ToolResult(toolCall.Id, serializedResult);
+                    working.Add(toolMessage);
+                    await _conversationStore
+                        .AppendMessageAsync(conversationId, toolMessage, ct)
+                        .ConfigureAwait(false);
+
+                    await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
+                        .ConfigureAwait(false);
+
+                    await WriteToolCallAsync(
+                            toolCall, result, serializedResult, conversationId, durationMs, ct)
+                        .ConfigureAwait(false);
+
+                    // find_tools exists to unlock tools outside the routed shortlist:
+                    // the model must be able to call what it just discovered, so the
+                    // next round sends the full catalog.
+                    if (result.Success
+                        && string.Equals(toolCall.Name, "find_tools", StringComparison.Ordinal))
+                    {
+                        var fullCatalog = _toolRegistry.GetDefinitions();
+                        if (ExpandsCatalog(definitions, fullCatalog))
+                        {
+                            definitions = fullCatalog;
+                            SetActiveToolNames(definitions);
+                            SmartConLogger.Debug(
+                                "Agent expanded the tool catalog after find_tools: " +
+                                definitions.Count + " definitions for the next round");
+                        }
+                    }
+
+                    progress?.Report(new AgentProgress
+                    {
+                        Kind = AgentProgressKind.ToolCompleted,
+                        ToolCallId = toolCall.Id,
+                        ToolName = toolCall.Name,
+                        Success = result.Success,
+                        Error = result.ErrorCode,
+                        Text = result.Message,
+                        Details = AgentToolResultFormatter.Pretty(serializedResult)
+                    });
+                }
+            }
+
+            var limitMessage =
+                (LanguageManager.GetString("Agent_Status_StepLimit") ?? "Step limit reached") +
+                " (" + MaxToolRounds + ").";
+            progress?.Report(new AgentProgress
+            {
+                Kind = AgentProgressKind.Error,
+                Error = limitMessage,
+                Usage = usage,
+                ToolCallCount = toolCallCount
+            });
+
+            await WriteUsageAsync(
+                conversationId, usage, "ok", turnStartedAt,
+                lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
+
+            return new AgentTurnResult
+            {
+                FinalText = limitMessage,
+                ToolCallCount = toolCallCount,
+                Rounds = MaxToolRounds,
+                Usage = usage,
+                MaxRoundsReached = true
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await WriteUsageAsync(
+                conversationId, usage, "cancelled", turnStartedAt,
+                lastRequestId, estimatedPromptTokens, CancellationToken.None)
+                .ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception)
+        {
+            await WriteUsageAsync(
+                conversationId, usage, "error", turnStartedAt,
+                lastRequestId, estimatedPromptTokens, CancellationToken.None)
+                .ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            if (_settings.WorkingStateEnabled
+                && workingState is not null
+                && _workingStateStore is not null)
+            {
+                await SaveWorkingStateAsync(conversationId, workingState).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<WorkingState> PrepareWorkingStateAsync(
+        Guid conversationId,
+        string userText,
+        AgentProjectContext projectContext,
+        CancellationToken ct)
+    {
+        var state = _sessionContext.WorkingState;
+        if (state is null && _workingStateStore is not null)
+        {
+            try
+            {
+                state = await _workingStateStore
+                    .LoadAsync(conversationId, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    "Agent working state load failed: " + ex.GetType().Name + ": " + ex.Message +
+                    " [Action: check read access to agent.db; the turn starts with an empty " +
+                    "working state]");
             }
         }
 
-        var limitMessage =
-            (LanguageManager.GetString("Agent_Status_StepLimit") ?? "Step limit reached") +
-            " (" + MaxToolRounds + ").";
-        progress?.Report(new AgentProgress
-        {
-            Kind = AgentProgressKind.Error,
-            Error = limitMessage,
-            Usage = usage,
-            ToolCallCount = toolCallCount
-        });
+        state ??= new WorkingState();
+        AgentWorkingStateUpdater.UpdateFromUserText(state, userText);
+        AgentWorkingStateUpdater.UpdateFromProjectContext(state, projectContext);
+        _sessionContext.WorkingState = state;
+        return state;
+    }
 
-        await WriteUsageAsync(conversationId, usage, ct).ConfigureAwait(false);
-
-        return new AgentTurnResult
+    private async Task SaveWorkingStateAsync(Guid conversationId, WorkingState state)
+    {
+        try
         {
-            FinalText = limitMessage,
-            ToolCallCount = toolCallCount,
-            Rounds = MaxToolRounds,
-            Usage = usage,
-            MaxRoundsReached = true
-        };
+            await _workingStateStore!
+                .SaveAsync(conversationId, state, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "Agent working state save failed: " + ex.GetType().Name + ": " + ex.Message +
+                " [Action: check write access to agent.db; the turn itself is not affected]");
+        }
+    }
+
+    /// <summary>
+    /// Prepends the rendered turn context to the last user message of the
+    /// outgoing payload only. The message stored in the conversation history
+    /// stays exactly as the user sent it.
+    /// </summary>
+    private static void ApplyTurnContext(
+        List<AgentMessage> messages,
+        WorkingState state,
+        AgentProjectContext projectContext)
+    {
+        for (var index = messages.Count - 1; index >= 0; index--)
+        {
+            var message = messages[index];
+            if (message.Role != AgentRole.User)
+                continue;
+
+            var turnContext = AgentTurnContextBuilder.Build(state, projectContext);
+            messages[index] = AgentMessage.User(
+                turnContext + "\n\n" + (message.Content ?? string.Empty),
+                message.Attachments);
+            return;
+        }
     }
 
     private async Task<ToolResult> ExecuteToolAsync(AgentToolCall toolCall, CancellationToken ct)
@@ -300,104 +481,6 @@ public sealed class AgentOrchestrator
                     "tool_exception",
                     ex.GetType().Name + ": " + ex.Message);
             }
-        }
-    }
-
-    private async Task WriteUsageAsync(Guid conversationId, AgentUsage usage, CancellationToken ct)
-    {
-        if (_usageStore is null)
-            return;
-
-        try
-        {
-            await _usageStore
-                .RecordAsync(
-                    conversationId.ToString("D"),
-                    _llm.ProviderName,
-                    _llm.Model,
-                    usage,
-                    ct)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent token_usage write failed: " + ex.GetType().Name + ": " + ex.Message +
-                " [Action: check write access to agent.db; the turn itself is not affected]");
-        }
-    }
-
-    private async Task WriteToolCallAsync(
-        AgentToolCall toolCall,
-        ToolResult result,
-        string serializedResult,
-        Guid conversationId,
-        long durationMs,
-        CancellationToken ct)
-    {
-        if (_toolCallStore is null)
-            return;
-
-        try
-        {
-            await _toolCallStore.RecordAsync(new AgentToolCallRecord
-            {
-                Id = toolCall.Id,
-                SessionId = conversationId.ToString("D"),
-                ToolName = toolCall.Name,
-                ArgumentsJson = AgentRedactor.Redact(toolCall.ArgumentsJson),
-                ResultJson = AgentRedactor.Redact(serializedResult),
-                Status = result.Success ? "ok" : "error",
-                Error = result.ErrorCode,
-                DurationMs = durationMs
-            }, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent tool_calls write failed: " + ex.GetType().Name + ": " + ex.Message +
-                " [Action: check write access to agent.db; the tool execution itself succeeded]");
-        }
-    }
-
-    private async Task WriteAuditAsync(
-        AgentToolCall toolCall,
-        ToolResult result,
-        AgentProjectContext projectContext,
-        long durationMs,
-        CancellationToken ct)
-    {
-        try
-        {
-            await _auditLog.WriteAsync(new AgentAuditEntry
-            {
-                Actor = Environment.UserName,
-                DocumentPath = projectContext.PathName,
-                Tool = toolCall.Name,
-                ArgsHash = AgentHashing.Sha256Hex(toolCall.ArgumentsJson),
-                Result = result.Success ? "ok" : "error",
-                AffectedCount = result.AffectedCount,
-                DurationMs = durationMs,
-                ErrorCode = result.ErrorCode
-            }, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent audit write failed: " + ex.GetType().Name + ": " + ex.Message +
-                " [Action: check agent.db write access; the operation itself is not affected]");
         }
     }
 
@@ -505,21 +588,5 @@ public sealed class AgentOrchestrator
                     "cancelled",
                     "The tool call was not executed because the previous turn was interrupted."))));
         }
-    }
-
-    private static AgentUsage Add(AgentUsage left, AgentUsage right)
-    {
-        decimal? cost = null;
-        if (left.CostUsd.HasValue || right.CostUsd.HasValue)
-            cost = (left.CostUsd ?? 0m) + (right.CostUsd ?? 0m);
-
-        return new AgentUsage
-        {
-            PromptTokens = left.PromptTokens + right.PromptTokens,
-            CompletionTokens = left.CompletionTokens + right.CompletionTokens,
-            ReasoningTokens = left.ReasoningTokens + right.ReasoningTokens,
-            TotalTokens = left.TotalTokens + right.TotalTokens,
-            CostUsd = cost
-        };
     }
 }

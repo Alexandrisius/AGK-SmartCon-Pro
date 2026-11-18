@@ -10,7 +10,7 @@ using SmartCon.Tests.Agent.Support;
 
 namespace SmartCon.Tests.Agent.Services;
 
-public sealed class AgentOrchestratorTests
+public sealed partial class AgentOrchestratorTests
 {
     [Fact]
     public async Task RunTurn_ToolCallThenAnswer_ExecutesToolAndAppendsMessages()
@@ -231,43 +231,6 @@ public sealed class AgentOrchestratorTests
         Assert.Equal("doc-b", session.DocumentId);
     }
 
-    [Fact]
-    public async Task RunTurn_ToolCallTelemetry_RedactsCredentials()
-    {
-        var store = new InMemoryConversationStore();
-        var tool = new CountingTool();
-        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
-        var executor = CreateExecutor(registry);
-        var llm = new FakeAgentLlmClient();
-        llm.EnqueueAssistant(
-            null,
-            new[]
-            {
-                new AgentToolCall
-                {
-                    Id = "call_1",
-                    Name = "get_test",
-                    ArgumentsJson = "{\"api_key\":\"sk-secret12345678\"}"
-                }
-            });
-        llm.EnqueueAssistant("done");
-        var telemetry = new CapturingToolCallStore();
-
-        var orchestrator = CreateOrchestrator(
-            llm, executor, registry, store, toolCallStore: telemetry);
-
-        await orchestrator.RunTurnAsync(
-            Guid.NewGuid(),
-            "привет",
-            Array.Empty<AgentAttachment>(),
-            null,
-            CancellationToken.None);
-
-        var record = Assert.Single(telemetry.Records);
-        Assert.DoesNotContain("sk-secret12345678", record.ArgumentsJson);
-        Assert.Contains(AgentRedactor.Replacement, record.ArgumentsJson);
-    }
-
     private static AgentToolExecutor CreateExecutor(IToolRegistry registry)
     {
         return new AgentToolExecutor(
@@ -293,7 +256,10 @@ public sealed class AgentOrchestratorTests
         AgentSessionContext? session = null,
         IAgentProjectContextProvider? projectContext = null,
         IAgentToolCallStore? toolCallStore = null,
-        IToolRouter? toolRouter = null)
+        IToolRouter? toolRouter = null,
+        IAgentUsageStore? usageStore = null,
+        AgentLlmSettings? settings = null,
+        IAgentWorkingStateStore? workingStateStore = null)
     {
         return new AgentOrchestrator(
             llm,
@@ -302,25 +268,29 @@ public sealed class AgentOrchestratorTests
             store,
             new NullAuditLog(),
             projectContext ?? new StubProjectContextProvider(),
-            new AgentLlmSettings { Model = "test-model" },
+            settings ?? new AgentLlmSettings { Model = "test-model" },
             session ?? new AgentSessionContext(),
             new AgentPromptBuilder(),
             toolCallStore,
-            null,
-            toolRouter);
+            usageStore,
+            toolRouter,
+            workingStateStore);
     }
 
     private sealed class CountingTool : IAgentTool
     {
         private readonly ToolResult _result;
 
-        public CountingTool(ToolResult? result = null, string name = "get_test")
+        public CountingTool(
+            ToolResult? result = null,
+            string name = "get_test",
+            string? description = null)
         {
             _result = result ?? ToolResult.Ok(null, "ok");
             Definition = new AgentToolDefinition
             {
                 Name = name,
-                Description = name + " test tool",
+                Description = description ?? name + " test tool",
                 Risk = AgentToolRisk.Read,
                 InputSchemaJson = "{\"type\":\"object\",\"properties\":{}}"
             };
@@ -390,6 +360,56 @@ public sealed class AgentOrchestratorTests
         {
             Records.Add(record);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingUsageStore : IAgentUsageStore
+    {
+        public List<AgentUsageRecord> Records { get; } = new();
+
+        public Task RecordAsync(AgentUsageRecord record, CancellationToken ct)
+        {
+            Records.Add(record);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryWorkingStateStore : IAgentWorkingStateStore
+    {
+        private readonly Dictionary<Guid, WorkingState> _states = new();
+
+        public List<WorkingState> Saved { get; } = new();
+
+        public Task<WorkingState?> LoadAsync(Guid conversationId, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                _states.TryGetValue(conversationId, out var state) ? state : null);
+        }
+
+        public Task SaveAsync(Guid conversationId, WorkingState state, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            _states[conversationId] = state;
+            Saved.Add(state);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingWorkingStateStore : IAgentWorkingStateStore
+    {
+        public int Calls { get; private set; }
+
+        public Task<WorkingState?> LoadAsync(Guid conversationId, CancellationToken ct)
+        {
+            Calls++;
+            throw new InvalidOperationException("The working state store must stay untouched");
+        }
+
+        public Task SaveAsync(Guid conversationId, WorkingState state, CancellationToken ct)
+        {
+            Calls++;
+            throw new InvalidOperationException("The working state store must stay untouched");
         }
     }
 

@@ -20,14 +20,17 @@ public static class AgentHistoryCompactor
         IReadOnlyList<AgentMessage> messages,
         int contextBudgetTokens = DefaultContextBudgetTokens,
         double threshold = DefaultThreshold,
-        int keepRecent = KeepRecentToolResults)
+        int keepRecent = KeepRecentToolResults,
+        Func<IReadOnlyList<AgentMessage>, int>? estimator = null)
     {
         if (messages is null) throw new ArgumentNullException(nameof(messages));
 
         var result = new List<AgentMessage>(messages);
         var budget = Math.Max(1000, contextBudgetTokens);
         var limit = (int)(budget * threshold);
-        var estimated = AgentTokenEstimator.Estimate(messages);
+        var estimated = estimator is not null
+            ? estimator(messages)
+            : AgentTokenEstimator.Estimate(messages);
         if (estimated <= limit)
             return (result, 0);
 

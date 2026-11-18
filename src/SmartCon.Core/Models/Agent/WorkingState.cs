@@ -2,33 +2,33 @@ namespace SmartCon.Core.Models.Agent;
 
 public sealed class WorkingState
 {
-    public string? Goal { get; init; }
+    public string? Goal { get; set; }
 
-    public IReadOnlyList<string> AcceptanceCriteria { get; init; } = Array.Empty<string>();
+    public List<string> Constraints { get; set; } = new();
 
-    public string? DocumentId { get; init; }
+    public string? PlanId { get; set; }
 
-    public string? DocumentPath { get; init; }
+    public List<string> CompletedSteps { get; set; } = new();
 
-    public string? RevitVersion { get; init; }
+    public List<string> PendingSteps { get; set; } = new();
 
-    public string? BuildConfiguration { get; init; }
+    public long? ActiveViewId { get; set; }
 
-    public long? ActiveViewId { get; init; }
+    public string? ActiveViewName { get; set; }
 
-    public string? ActiveViewName { get; init; }
+    public List<string> SelectedUniqueIds { get; set; } = new();
 
-    public IReadOnlyList<string> SelectedUniqueIds { get; init; } = Array.Empty<string>();
+    public List<string> TouchedElementIds { get; set; } = new();
 
-    public Guid? CurrentChangeSetId { get; init; }
+    public List<string> ChangeSetIds { get; set; } = new();
 
-    public string? LastBuild { get; init; }
+    public List<string> OpenQuestions { get; set; } = new();
 
-    public string? LastTest { get; init; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    public IReadOnlyList<string> OpenErrors { get; init; } = Array.Empty<string>();
+    public string? DocumentId { get; set; }
 
-    public string? PendingDecision { get; init; }
+    public string? DocumentPath { get; set; }
 
-    public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;
+    public string? RevitVersion { get; set; }
 }

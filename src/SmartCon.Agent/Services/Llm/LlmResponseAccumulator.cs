@@ -11,12 +11,20 @@ internal sealed class LlmResponseAccumulator
     private readonly StringBuilder _reasoning = new();
     private readonly Dictionary<int, ToolCallBuilder> _toolCalls = new();
     private string? _finishReason;
+    private string? _requestId;
     private AgentUsage _usage = AgentUsage.Empty;
 
     public void Append(string json, List<LlmStreamEvent> output)
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
+
+        if (root.TryGetProperty("id", out var requestId) && requestId.ValueKind == JsonValueKind.String)
+        {
+            var value = requestId.GetString();
+            if (!string.IsNullOrEmpty(value))
+                _requestId = value;
+        }
 
         if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
             _usage = ParseUsage(usage);
@@ -59,7 +67,8 @@ internal sealed class LlmResponseAccumulator
             Usage = _usage,
             FinishReason = _finishReason,
             Model = model,
-            Provider = provider
+            Provider = provider,
+            RequestId = _requestId
         };
     }
 
@@ -140,14 +149,37 @@ internal sealed class LlmResponseAccumulator
 
     private static AgentUsage ParseUsage(JsonElement usage)
     {
-        var reasoning = 0;
-        if (usage.TryGetProperty("completion_tokens_details", out var details)
-            && details.ValueKind == JsonValueKind.Object
-            && details.TryGetProperty("reasoning_tokens", out var reasoningTokens)
-            && reasoningTokens.ValueKind == JsonValueKind.Number)
+        var promptTokens = GetInt32(usage, "prompt_tokens");
+
+        var reasoning = TryGetNestedInt32(
+            usage, "completion_tokens_details", "reasoning_tokens", out var parsedReasoning)
+            ? parsedReasoning
+            : 0;
+
+        var cached = 0;
+        if (!TryGetNestedInt32(usage, "prompt_tokens_details", "cached_tokens", out cached)
+            && !TryGetInt32(usage, "prompt_cache_hit_tokens", out cached))
         {
-            reasoning = reasoningTokens.GetInt32();
+            cached = 0;
         }
+
+        if (cached < 0)
+            cached = 0;
+        if (promptTokens > 0 && cached > promptTokens)
+            cached = promptTokens;
+
+        var cacheWrite = 0;
+        if (!TryGetNestedInt32(usage, "prompt_tokens_details", "cache_write_tokens", out cacheWrite)
+            && !TryGetInt32(usage, "cache_write_tokens", out cacheWrite)
+            && !TryGetInt32(usage, "prompt_cache_write_tokens", out cacheWrite))
+        {
+            cacheWrite = 0;
+        }
+
+        if (cacheWrite < 0)
+            cacheWrite = 0;
+        if (promptTokens > 0 && cacheWrite > promptTokens)
+            cacheWrite = promptTokens;
 
         decimal? cost = null;
         if (usage.TryGetProperty("cost", out var costElement))
@@ -166,19 +198,44 @@ internal sealed class LlmResponseAccumulator
 
         return new AgentUsage
         {
-            PromptTokens = GetInt32(usage, "prompt_tokens"),
+            PromptTokens = promptTokens,
             CompletionTokens = GetInt32(usage, "completion_tokens"),
             TotalTokens = GetInt32(usage, "total_tokens"),
             ReasoningTokens = reasoning,
+            CachedTokens = cached,
+            CacheWriteTokens = cacheWrite,
             CostUsd = cost
         };
     }
 
     private static int GetInt32(JsonElement element, string property)
     {
-        return element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetInt32()
-            : 0;
+        return TryGetInt32(element, property, out var value) ? value : 0;
+    }
+
+    private static bool TryGetInt32(JsonElement element, string property, out int value)
+    {
+        if (element.TryGetProperty(property, out var propertyElement)
+            && propertyElement.ValueKind == JsonValueKind.Number)
+        {
+            value = propertyElement.GetInt32();
+            return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryGetNestedInt32(
+        JsonElement element,
+        string container,
+        string property,
+        out int value)
+    {
+        value = 0;
+        return element.TryGetProperty(container, out var containerElement)
+            && containerElement.ValueKind == JsonValueKind.Object
+            && TryGetInt32(containerElement, property, out value);
     }
 
     private sealed class ToolCallBuilder

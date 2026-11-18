@@ -29,6 +29,41 @@ public static class AgentTokenEstimator
         return total;
     }
 
+    public static int EstimateText(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0;
+
+        var divisor = ContainsCyrillic(text) ? 2.5 : 3.5;
+        return (int)Math.Ceiling(text!.Length / divisor);
+    }
+
+    public static int EstimateTools(IReadOnlyList<AgentToolDefinition> tools)
+    {
+        if (tools is null) throw new ArgumentNullException(nameof(tools));
+
+        var total = 0;
+        foreach (var tool in tools)
+        {
+            var characters = (tool.Name?.Length ?? 0)
+                + (tool.Description?.Length ?? 0)
+                + (tool.InputSchemaJson?.Length ?? 0);
+            total += (int)Math.Ceiling(characters / 3.5) + 4;
+        }
+
+        return total;
+    }
+
+    public static int EstimateRequest(
+        string? systemContent,
+        IReadOnlyList<AgentMessage> messages,
+        IReadOnlyList<AgentToolDefinition> tools)
+    {
+        if (messages is null) throw new ArgumentNullException(nameof(messages));
+
+        return EstimateText(systemContent) + Estimate(messages) + EstimateTools(tools);
+    }
+
     private static bool ContainsCyrillic(string? text)
     {
         if (string.IsNullOrEmpty(text))

@@ -138,6 +138,26 @@ public sealed class AgentHistoryCompactorTests
         Assert.Equal(2, result.Count);
     }
 
+    [Fact]
+    public void Compact_CustomEstimator_CanTriggerCompactionBelowDefaultEstimate()
+    {
+        var messages = BuildHistory(6, payloadLength: 10);
+
+        var (_, withoutEstimator) = AgentHistoryCompactor.Compact(
+            messages,
+            contextBudgetTokens: 1000,
+            threshold: 0.6);
+        var (result, withEstimator) = AgentHistoryCompactor.Compact(
+            messages,
+            contextBudgetTokens: 1000,
+            threshold: 0.6,
+            estimator: _ => 1000);
+
+        Assert.Equal(0, withoutEstimator);
+        Assert.Equal(2, withEstimator);
+        Assert.Contains("\"compacted\":true", result.First(message => message.Role == AgentRole.Tool).Content);
+    }
+
     private static List<AgentMessage> BuildHistory(int toolCalls, int payloadLength)
     {
         var payload = new string('x', payloadLength);

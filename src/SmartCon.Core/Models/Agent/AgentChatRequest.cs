@@ -21,6 +21,10 @@ public sealed class AgentUsage
 
     public int ReasoningTokens { get; init; }
 
+    public int CachedTokens { get; init; }
+
+    public int CacheWriteTokens { get; init; }
+
     public int TotalTokens { get; init; }
 
     public decimal? CostUsd { get; init; }
@@ -39,6 +43,8 @@ public sealed class AgentChatResponse
     public string? Model { get; init; }
 
     public string? Provider { get; init; }
+
+    public string? RequestId { get; init; }
 }
 
 public enum LlmStreamEventKind

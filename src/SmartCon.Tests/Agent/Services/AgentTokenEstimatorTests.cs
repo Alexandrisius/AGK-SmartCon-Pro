@@ -53,4 +53,50 @@ public sealed class AgentTokenEstimatorTests
             AgentTokenEstimator.Estimate(messages),
             AgentTokenEstimator.Estimate(messages[0]) + AgentTokenEstimator.Estimate(messages[1]));
     }
+
+    [Fact]
+    public void EstimateText_CyrillicTextIsMoreExpensiveThanEnglish()
+    {
+        var english = AgentTokenEstimator.EstimateText(new string('a', 500));
+        var russian = AgentTokenEstimator.EstimateText(new string('а', 500));
+
+        Assert.True(english > 0);
+        Assert.True(russian > english);
+    }
+
+    [Fact]
+    public void EstimateTools_IncludesNameDescriptionAndSchema()
+    {
+        var tools = new[]
+        {
+            new AgentToolDefinition
+            {
+                Name = "get_views",
+                Description = "Lists project views with optional filters.",
+                InputSchemaJson = "{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"integer\"}}}"
+            }
+        };
+
+        Assert.True(AgentTokenEstimator.EstimateTools(tools) > 0);
+    }
+
+    [Fact]
+    public void EstimateRequest_AddsSystemAndToolsOnTopOfMessages()
+    {
+        var messages = new[] { AgentMessage.User("hello") };
+        var tools = new[]
+        {
+            new AgentToolDefinition
+            {
+                Name = "get_views",
+                Description = "Lists project views with optional filters.",
+                InputSchemaJson = "{\"type\":\"object\"}"
+            }
+        };
+
+        var requestEstimate = AgentTokenEstimator.EstimateRequest(
+            new string('s', 1000), messages, tools);
+
+        Assert.True(requestEstimate > AgentTokenEstimator.Estimate(messages));
+    }
 }

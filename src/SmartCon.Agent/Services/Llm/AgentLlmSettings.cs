@@ -40,6 +40,24 @@ public sealed class AgentLlmSettings
     /// </summary>
     public bool UseToolRouter { get; set; } = true;
 
+    /// <summary>
+    /// Enable the v2 tool catalog (packs + enriched cards). Off by default;
+    /// override with SMARTCON_AGENT_TOOL_CATALOG_V2=1|true.
+    /// </summary>
+    public bool ToolCatalogV2 { get; set; }
+
+    /// <summary>
+    /// Enable the v2 context compaction pipeline (store-and-reference). Off by
+    /// default; override with SMARTCON_AGENT_CONTEXT_COMPACTION_V2=1|true.
+    /// </summary>
+    public bool ContextCompactionV2 { get; set; }
+
+    /// <summary>
+    /// Persist and inject the structured working state. Off by default; override
+    /// with SMARTCON_AGENT_WORKING_STATE=1|true.
+    /// </summary>
+    public bool WorkingStateEnabled { get; set; }
+
     public bool IsOpenCodeGo =>
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(Provider, "opencode", StringComparison.OrdinalIgnoreCase);
@@ -52,7 +70,7 @@ public sealed class AgentLlmSettings
 
     public static AgentLlmSettings Load()
     {
-        var values = AgentEnvFile.Load();
+        var values = LoadEnvValues();
 
         var provider = Get(values, "SMARTCON_LLM_PROVIDER") ?? "openrouter";
         var openCodeGo = string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
@@ -86,7 +104,10 @@ public sealed class AgentLlmSettings
                     ParseDouble(Get(values, "SMARTCON_AGENT_CONTEXT_THRESHOLD"), 0.7),
                     0.95)),
             UseToolRouter = !string.Equals(
-                Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal)
+                Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal),
+            ToolCatalogV2 = ParseBool(Get(values, "SMARTCON_AGENT_TOOL_CATALOG_V2")),
+            ContextCompactionV2 = ParseBool(Get(values, "SMARTCON_AGENT_CONTEXT_COMPACTION_V2")),
+            WorkingStateEnabled = ParseBool(Get(values, "SMARTCON_AGENT_WORKING_STATE"))
         };
     }
 
@@ -114,6 +135,16 @@ public sealed class AgentLlmSettings
     /// <summary>Test seam: replaces the stored-key lookup in unit tests.</summary>
     internal static Func<string, string?>? StoredKeyProvider { get; set; }
 
+    /// <summary>
+    /// Test seam: replaces the secrets.env lookup in unit tests so they never
+    /// depend on a developer's real secrets.env (MEDIUM-7). Null keeps the
+    /// production behavior.
+    /// </summary>
+    internal static Func<IReadOnlyDictionary<string, string>>? EnvValuesProvider { get; set; }
+
+    private static IReadOnlyDictionary<string, string> LoadEnvValues() =>
+        EnvValuesProvider is not null ? EnvValuesProvider() : AgentEnvFile.Load();
+
     private static string LoadStoredKey(string provider)
     {
         if (StoredKeyProvider is not null)
@@ -127,7 +158,7 @@ public sealed class AgentLlmSettings
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
             return fromEnvironment.Trim();
 
-        var values = AgentEnvFile.Load();
+        var values = LoadEnvValues();
         return values.TryGetValue(keyName, out var value) ? value.Trim() : string.Empty;
     }
 
@@ -164,6 +195,10 @@ public sealed class AgentLlmSettings
             System.Globalization.CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
+
+    private static bool ParseBool(string? value) =>
+        string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
 
     private static string? Get(IReadOnlyDictionary<string, string> values, string key)
     {

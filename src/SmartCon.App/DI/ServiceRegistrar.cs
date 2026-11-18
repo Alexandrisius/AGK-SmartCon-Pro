@@ -441,6 +441,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentToolCallStore, SqliteAgentToolCallStore>();
         services.AddSingleton<IAgentFeedbackStore, SqliteAgentFeedbackStore>();
         services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
+        services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
         services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
         services.AddSingleton<AgentFrictionAnalyzer>();
 

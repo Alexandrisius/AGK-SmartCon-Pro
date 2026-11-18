@@ -77,6 +77,125 @@ public sealed class AgentLlmSettingsTests : IDisposable
 
         Assert.Equal("sk-explicit", settings.ApiKey);
     }
+
+    [Fact]
+    public void H1Flags_DefaultToOff()
+    {
+        var settings = new AgentLlmSettings();
+
+        Assert.False(settings.ToolCatalogV2);
+        Assert.False(settings.ContextCompactionV2);
+        Assert.False(settings.WorkingStateEnabled);
+    }
+
+    [Fact]
+    public void Load_H1FlagsOffWhenEnvironmentIsEmpty()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = null,
+                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = null,
+                ["SMARTCON_AGENT_WORKING_STATE"] = null
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.False(settings.ToolCatalogV2);
+                Assert.False(settings.ContextCompactionV2);
+                Assert.False(settings.WorkingStateEnabled);
+            });
+    }
+
+    [Fact]
+    public void Load_H1FlagsEnabledByOneOrTrue()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "1",
+                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "TRUE",
+                ["SMARTCON_AGENT_WORKING_STATE"] = "True"
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.True(settings.ToolCatalogV2);
+                Assert.True(settings.ContextCompactionV2);
+                Assert.True(settings.WorkingStateEnabled);
+            });
+    }
+
+    [Fact]
+    public void Load_H1FlagsIgnoreOtherValues()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "0",
+                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "yes",
+                ["SMARTCON_AGENT_WORKING_STATE"] = "off"
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.False(settings.ToolCatalogV2);
+                Assert.False(settings.ContextCompactionV2);
+                Assert.False(settings.WorkingStateEnabled);
+            });
+    }
+
+    [Fact]
+    public void Load_UsesEnvironmentValuesProviderInsteadOfSecretsFile()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_MODEL"] = null,
+                ["SMARTCON_AGENT_WORKING_STATE"] = null
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.Equal("seam-model", settings.Model);
+                Assert.True(settings.WorkingStateEnabled);
+            },
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_MODEL"] = "seam-model",
+                ["SMARTCON_AGENT_WORKING_STATE"] = "1"
+            });
+    }
+
+    private static void WithEnvironment(
+        IReadOnlyDictionary<string, string?> values,
+        Action action,
+        IReadOnlyDictionary<string, string>? envFileValues = null)
+    {
+        var previous = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var name in values.Keys)
+            previous[name] = Environment.GetEnvironmentVariable(name);
+
+        try
+        {
+            AgentLlmSettings.EnvValuesProvider = envFileValues is null
+                ? () => new Dictionary<string, string>(StringComparer.Ordinal)
+                : () => envFileValues;
+            foreach (var pair in values)
+                Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+            action();
+        }
+        finally
+        {
+            foreach (var pair in previous)
+                Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+            AgentLlmSettings.EnvValuesProvider = null;
+        }
+    }
 }
 
 [CollectionDefinition("LlmSettings", DisableParallelization = true)]

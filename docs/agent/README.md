@@ -11,15 +11,15 @@
 |---|---|
 | Чат-панель | DockablePane, WPF MVVM, вложения/скриншоты, streaming |
 | LLM | OpenAI-compatible streaming, DeepSeek V4.1 Flash через OpenRouter/OpenCode Go, reasoning |
-| Инструменты | 27 тулов (24 Revit + 3 meta), BM25-shortlist + JEV + `find_tools` |
+| Инструменты | 27 тулов (24 Revit + 3 meta), BM25-shortlist + опциональная decision-модель + `find_tools`; гибридный retrieval 500–1000 — ADR-075, ещё не реализован |
 | Запись | dry-run → подтверждение → change set → `undo_last`/`discard_change_set` |
 | План | `execute_plan` L0–L6 (L2 нет, L5 не атомарен — план H1/H3) |
 | Approvals | ConfirmWrites / AutoApproveSession / ReadOnly, digest-binding |
 | Память | Сессии в SQLite; долговременной памяти и FTS пока нет |
 | Eval | 40 задач, replay без ключа, gate PASS, routing 97.5 % |
-| Сборка | 7 конфигураций R19–R27, unit 3500 (последний прогон), integration R25/R27/net48 |
+| Сборка | 7 конфигураций R19–R27, unit 3560 (H1.0), integration R25/R27/net48 |
 
-**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine. Это roadmap, не факт.
+**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках. Это roadmap, не факт. Архитектурное решение по retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md).
 
 ## Карта документов
 
@@ -61,6 +61,19 @@
 | H3 | Policy engine, persisted approvals, atomic plan | `harness-ideal-plan.md` P3 |
 | H4 | Observability, cost caps, eval v2 | `harness-ideal-plan.md` P4–P5 |
 | H5 | UX: steering, timeline, fork/rewind, MCP (backlog) | `harness-ideal-plan.md` P5 |
+| H6 (после H1) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075) | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md); триггер — routing-eval H1 |
+
+## Флаги H1
+
+Все три флага **выключены по умолчанию** — при выключенных флагах поведение 1:1 текущему. Значение
+`1` или `true` (без учёта регистра) включает флаг; любые другие значения — выключен.
+Переменная окружения перекрывает `secrets.env`.
+
+| Флаг (`AgentLlmSettings`) | Env | Дефолт | Что гейтит |
+|---|---|---|---|
+| `ToolCatalogV2` | `SMARTCON_AGENT_TOOL_CATALOG_V2` | `false` | Tool catalog v2: packs и enriched tool cards (H1-06..H1-08) |
+| `ContextCompactionV2` | `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` | `false` | В H1.0 флаг включает учёт system+tools в оценке контекста и калибровку; mask→summary→shrink и checkpoint в `compactions` — H1.2 |
+| `WorkingStateEnabled` | `SMARTCON_AGENT_WORKING_STATE` | `false` | Persisted WorkingState и вставка `<turn_context>` (H1-03) |
 
 ## Жёсткие ограничения
 

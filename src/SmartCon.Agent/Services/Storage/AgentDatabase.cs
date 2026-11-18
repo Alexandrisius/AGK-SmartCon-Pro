@@ -1,12 +1,14 @@
+using System.Globalization;
 using System.IO;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
+using SmartCon.Core.Services.Agent.Storage;
 
 namespace SmartCon.Agent.Services.Storage;
 
 public sealed class AgentDatabase
 {
-    private const int SchemaVersion = 2;
+    private readonly IReadOnlyList<AgentSchemaMigration> _migrations;
 
     static AgentDatabase()
     {
@@ -21,9 +23,17 @@ public sealed class AgentDatabase
     }
 
     public AgentDatabase(string databasePath)
+        : this(databasePath, AgentSchema.All)
+    {
+    }
+
+    public AgentDatabase(string databasePath, IReadOnlyList<AgentSchemaMigration> migrations)
     {
         DatabasePath = databasePath ?? throw new ArgumentNullException(nameof(databasePath));
+        _migrations = migrations ?? throw new ArgumentNullException(nameof(migrations));
     }
+
+    private const int SchemaVersion = AgentSchema.CurrentVersion;
 
     public string DatabasePath { get; }
 
@@ -43,15 +53,51 @@ public sealed class AgentDatabase
             Execute(connection, "PRAGMA busy_timeout=5000;");
             Execute(connection, "PRAGMA foreign_keys=ON;");
 
-            var version = Convert.ToInt32(ExecuteScalar(connection, "PRAGMA user_version;"));
-            if (version >= SchemaVersion)
-                return;
+            var version = Convert.ToInt32(
+                ExecuteScalar(connection, "PRAGMA user_version;"), CultureInfo.InvariantCulture);
 
-            using var transaction = connection.BeginTransaction();
-            CreateSchema(connection, transaction);
-            Execute(connection, "PRAGMA user_version=" + SchemaVersion + ";", transaction);
-            transaction.Commit();
-            SmartConLogger.Info("Agent database initialized: " + DatabasePath);
+            if (version > SchemaVersion)
+            {
+                SmartConLogger.Warn(
+                    "Agent database schema version " + version + " is newer than supported " +
+                    SchemaVersion + "; leaving it untouched [Action: upgrade SmartCon]");
+                return;
+            }
+
+            if (version == SchemaVersion)
+            {
+                SelfHeal(connection, version);
+                SmartConLogger.Info(
+                    "Agent database already up to date (v" + version + "): " +
+                    Path.GetFileName(DatabasePath));
+                return;
+            }
+
+            if (version > 0)
+                CreateBackup(connection, version);
+
+            var initialVersion = version;
+            foreach (var migration in _migrations.OrderBy(m => m.Version))
+            {
+                if (migration.Version <= version)
+                    continue;
+
+                ApplyMigration(connection, migration);
+                version = migration.Version;
+            }
+
+            if (initialVersion == 0)
+            {
+                SmartConLogger.Info(
+                    "Agent database initialized (v" + version + "): " +
+                    Path.GetFileName(DatabasePath));
+            }
+            else
+            {
+                SmartConLogger.Info(
+                    "Agent database migrated from v" + initialVersion + " to v" + version + ": " +
+                    Path.GetFileName(DatabasePath));
+            }
         }
     }
 
@@ -67,144 +113,149 @@ public sealed class AgentDatabase
         return new SqliteConnection(builder.ToString());
     }
 
-    private static void CreateSchema(SqliteConnection connection, SqliteTransaction transaction)
+    private void CreateBackup(SqliteConnection source, int version)
     {
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    document_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    document_path TEXT NULL,
-    revit_version TEXT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    token_count INTEGER NOT NULL DEFAULT 0
-);", transaction);
+        var backupPath = DatabasePath
+            + ".bak-v" + version
+            + "-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_sessions_document
-    ON sessions(document_id, updated_at DESC);", transaction);
+        var builder = new SqliteConnectionStringBuilder
+        {
+            DataSource = backupPath,
+            Mode = SqliteOpenMode.ReadWriteCreate
+        };
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NULL,
-    reasoning_content TEXT NULL,
-    tool_calls_json TEXT NULL,
-    tool_call_id TEXT NULL,
-    attachments_json TEXT NULL,
-    created_at TEXT NOT NULL,
-    token_count INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);", transaction);
+        using (var destination = new SqliteConnection(builder.ToString()))
+        {
+            destination.Open();
+            source.BackupDatabase(destination);
+        }
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_messages_session
-    ON messages(session_id);", transaction);
+        SmartConLogger.Info("Agent database backup created: " + Path.GetFileName(backupPath));
+    }
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS tool_calls (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    arguments_json TEXT NULL,
-    result_json TEXT NULL,
-    status TEXT NOT NULL,
-    error TEXT NULL,
-    duration_ms INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);", transaction);
+    private static void ApplyMigration(SqliteConnection connection, AgentSchemaMigration migration)
+    {
+        // An immediate (write) transaction takes the write lock up front. A deferred
+        // transaction would read user_version without a lock and could race another
+        // SmartCon process that migrates the same database (MEDIUM-4).
+        using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            var currentVersion = Convert.ToInt32(
+                ExecuteScalar(connection, "PRAGMA user_version;", transaction),
+                CultureInfo.InvariantCulture);
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_tool_calls_session
-    ON tool_calls(session_id);", transaction);
+            if (currentVersion >= migration.Version)
+            {
+                // Another process applied this migration while we were waiting for
+                // the write lock: re-checking inside the transaction makes it a no-op.
+                transaction.Commit();
+                SmartConLogger.Debug(
+                    "Agent database migration v" + migration.Version +
+                    " skipped: user_version is already " + currentVersion);
+                return;
+            }
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS change_sets (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NULL,
-    tool_call_id TEXT NULL,
-    operation TEXT NOT NULL,
-    document_id TEXT NOT NULL,
-    document_path TEXT NULL,
-    revit_version TEXT NULL,
-    author TEXT NULL,
-    description TEXT NULL,
-    created_at TEXT NOT NULL,
-    applied_at TEXT NULL
-);", transaction);
+            ApplyStatements(connection, transaction, migration);
+            Execute(connection, "PRAGMA user_version=" + migration.Version + ";", transaction);
+            transaction.Commit();
+        }
+        catch
+        {
+            TryRollback(transaction, migration.Version);
+            throw;
+        }
+    }
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_change_sets_document
-    ON change_sets(document_id, created_at DESC);", transaction);
+    /// <summary>
+    /// Repairs a database whose <c>user_version</c> already equals the current
+    /// schema version but whose tables/columns are incomplete (a database created
+    /// by an intermediate build). Applies only the current migration's statements;
+    /// no backup and no user_version change (MEDIUM-3).
+    /// </summary>
+    private void SelfHeal(SqliteConnection connection, int version)
+    {
+        AgentSchemaMigration? migration = null;
+        foreach (var candidate in _migrations)
+        {
+            if (candidate.Version == version)
+            {
+                migration = candidate;
+                break;
+            }
+        }
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS change_items (
-    id TEXT PRIMARY KEY,
-    change_set_id TEXT NOT NULL,
-    unique_id TEXT NULL,
-    element_id INTEGER NULL,
-    parameter_name TEXT NULL,
-    old_value TEXT NULL,
-    new_value TEXT NULL,
-    status TEXT NOT NULL,
-    error TEXT NULL,
-    FOREIGN KEY(change_set_id) REFERENCES change_sets(id) ON DELETE CASCADE
-);", transaction);
+        if (migration is null)
+            return;
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_change_items_set
-    ON change_items(change_set_id);", transaction);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            ApplyStatements(connection, transaction, migration);
+            transaction.Commit();
+            SmartConLogger.Debug(
+                "Agent database schema self-heal completed for v" + version + ": " +
+                Path.GetFileName(DatabasePath));
+        }
+        catch
+        {
+            TryRollback(transaction, version);
+            throw;
+        }
+    }
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts TEXT NOT NULL,
-    actor TEXT NULL,
-    document_path TEXT NULL,
-    tool TEXT NOT NULL,
-    args_hash TEXT NOT NULL,
-    result TEXT NOT NULL,
-    affected_count INTEGER NOT NULL DEFAULT 0,
-    duration_ms INTEGER NOT NULL DEFAULT 0,
-    error_code TEXT NULL
-);", transaction);
+    private static void ApplyStatements(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        AgentSchemaMigration migration)
+    {
+        foreach (var statement in migration.Statements)
+        {
+            if (statement.Table is not null
+                && statement.Column is not null
+                && ColumnExists(connection, transaction, statement.Table, statement.Column))
+            {
+                continue;
+            }
 
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS token_usage (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NULL,
-    provider TEXT NULL,
-    model TEXT NULL,
-    prompt_tokens INTEGER NOT NULL DEFAULT 0,
-    completion_tokens INTEGER NOT NULL DEFAULT 0,
-    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
-    cost_usd TEXT NULL,
-    created_at TEXT NOT NULL
-);", transaction);
+            Execute(connection, statement.Sql, transaction);
+        }
+    }
 
-        // Schema v2: model feedback about its own tooling (report_tooling_feedback).
-        Execute(connection, @"
-CREATE TABLE IF NOT EXISTS agent_feedback (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NULL,
-    document_id TEXT NULL,
-    model TEXT NULL,
-    provider TEXT NULL,
-    tool_name TEXT NULL,
-    area TEXT NOT NULL,
-    rating INTEGER NOT NULL DEFAULT 0,
-    issue TEXT NOT NULL,
-    suggestion TEXT NULL,
-    context_json TEXT NULL,
-    created_at TEXT NOT NULL
-);", transaction);
+    private static void TryRollback(SqliteTransaction transaction, int version)
+    {
+        try
+        {
+            transaction.Rollback();
+        }
+        catch (Exception rollbackError)
+        {
+            SmartConLogger.Warn(
+                "Agent database rollback failed for migration v" + version + ": " +
+                rollbackError.GetType().Name +
+                " [Action: delete the partially migrated agent.db and restart SmartCon]");
+        }
+    }
 
-        Execute(connection, @"
-CREATE INDEX IF NOT EXISTS ix_agent_feedback_document
-    ON agent_feedback(document_id, created_at DESC);", transaction);
+    private static bool ColumnExists(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        string column)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "PRAGMA table_info(\"" + table + "\");";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static void Execute(

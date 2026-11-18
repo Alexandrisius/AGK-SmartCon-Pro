@@ -72,4 +72,88 @@ public sealed class LlmResponseAccumulatorTests
 
         Assert.Equal("call_0", response.Message.ToolCalls[0].Id);
     }
+
+    [Fact]
+    public void Append_NestedPromptTokenDetails_ParsesCachedAndCacheWrite()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,"prompt_cache_hit_tokens":99,"prompt_tokens_details":{"cached_tokens":40,"cache_write_tokens":15}},"choices":[]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal(40, response.Usage.CachedTokens);
+        Assert.Equal(15, response.Usage.CacheWriteTokens);
+        Assert.Equal(100, response.Usage.PromptTokens);
+    }
+
+    [Fact]
+    public void Append_DeepSeekTopLevelPromptCacheFields_FallBackWhenNestedMissing()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"usage":{"prompt_tokens":200,"completion_tokens":20,"total_tokens":220,"prompt_cache_hit_tokens":64,"prompt_cache_write_tokens":12},"choices":[]}""",
+            output);
+
+        var response = accumulator.Build("deepseek", "deepseek-chat");
+
+        Assert.Equal(64, response.Usage.CachedTokens);
+        Assert.Equal(12, response.Usage.CacheWriteTokens);
+    }
+
+    [Fact]
+    public void Append_RootId_KeepsLastNonEmptyRequestId()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"id":"req-1","choices":[{"delta":{"content":"a"}}]}""",
+            output);
+        accumulator.Append(
+            """{"id":"req-2","choices":[{"delta":{"content":"b"}}]}""",
+            output);
+        accumulator.Append(
+            """{"id":"","choices":[{"delta":{"content":"c"}}]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal("req-2", response.RequestId);
+    }
+
+    [Fact]
+    public void Append_CachedTokensAbovePromptTokens_IsClamped()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"usage":{"prompt_tokens":50,"completion_tokens":5,"total_tokens":55,"prompt_tokens_details":{"cached_tokens":80}},"choices":[]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal(50, response.Usage.CachedTokens);
+    }
+
+    [Fact]
+    public void Append_CacheWriteTokensAbovePromptTokens_IsClamped()
+    {
+        var accumulator = new LlmResponseAccumulator();
+        var output = new List<LlmStreamEvent>();
+
+        accumulator.Append(
+            """{"usage":{"prompt_tokens":50,"completion_tokens":5,"total_tokens":55,"prompt_tokens_details":{"cache_write_tokens":80}},"choices":[]}""",
+            output);
+
+        var response = accumulator.Build("openrouter", "test-model");
+
+        Assert.Equal(50, response.Usage.CacheWriteTokens);
+    }
 }
