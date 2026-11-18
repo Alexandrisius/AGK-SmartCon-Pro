@@ -1,5 +1,4 @@
 using System.Text.Json;
-using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
@@ -20,11 +19,9 @@ public sealed class FindToolsToolTests
     private static AgentToolContext Context() =>
         new(new ImmediateAwaitableEvent(), "doc", Guid.Empty);
 
-    private static FindToolsTool CreateV2Tool(IToolRegistry registry)
+    private static FindToolsTool CreateTool(IToolRegistry registry)
     {
-        var tool = new FindToolsTool(
-            new RecordingToolRouter(),
-            new AgentLlmSettings { ToolCatalogV2 = true });
+        var tool = new FindToolsTool(new RecordingToolRouter());
         tool.Attach(registry);
         return tool;
     }
@@ -51,7 +48,7 @@ public sealed class FindToolsToolTests
         Assert.NotNull(router.LastQuery);
         Assert.Contains("переименуй", router.LastQuery);
         Assert.Contains("нашел 3 вида SC_Eval", router.LastQuery);
-        Assert.Equal(8, router.LastMaxTools);
+        Assert.Equal(6, router.LastMaxTools);
         var tools = result.Data!.Value.GetProperty("tools");
         Assert.True(tools.GetArrayLength() >= 1);
         Assert.Contains(tools.EnumerateArray(), tool =>
@@ -112,7 +109,7 @@ public sealed class FindToolsToolTests
             new ScriptedTool("set_view_range"),
             new ScriptedTool("set_view_crop")
         });
-        var tool = CreateV2Tool(registry);
+        var tool = CreateTool(registry);
 
         var result = await tool.ExecuteAsync(
             Context(), Parse("{\"query\":\"настройки вида\"}"), CancellationToken.None);
@@ -131,7 +128,7 @@ public sealed class FindToolsToolTests
             new ScriptedTool("set_view_crop"),
             new ScriptedTool("rename_views")
         });
-        var tool = CreateV2Tool(registry);
+        var tool = CreateTool(registry);
 
         var result = await tool.ExecuteAsync(
             Context(),
@@ -155,7 +152,7 @@ public sealed class FindToolsToolTests
             new ScriptedTool("rename_views"),
             new ScriptedTool("apply_view_template")
         });
-        var tool = CreateV2Tool(registry);
+        var tool = CreateTool(registry);
 
         var result = await tool.ExecuteAsync(
             Context(),
@@ -187,7 +184,7 @@ public sealed class FindToolsToolTests
             new ScriptedTool("get_view_template_details"),
             new ScriptedTool("get_view_settings")
         });
-        var tool = CreateV2Tool(registry);
+        var tool = CreateTool(registry);
 
         var result = await tool.ExecuteAsync(
             Context(),
@@ -223,7 +220,7 @@ public sealed class FindToolsToolTests
         {
             new ScriptedTool("set_view_crop")
         });
-        var tool = CreateV2Tool(registry);
+        var tool = CreateTool(registry);
 
         var result = await tool.ExecuteAsync(
             Context(), Parse("{\"query\":\"подрезка\",\"pack\":\"rooms\"}"), CancellationToken.None);
@@ -247,8 +244,7 @@ public sealed class FindToolsToolTests
                 Tools = new[] { registry.GetDefinitions()[0], registry.GetDefinitions()[1] }
             }
         };
-        var tool = new FindToolsTool(
-            router, new AgentLlmSettings { ToolCatalogV2 = true });
+        var tool = new FindToolsTool(router);
         tool.Attach(registry);
 
         var result = await tool.ExecuteAsync(

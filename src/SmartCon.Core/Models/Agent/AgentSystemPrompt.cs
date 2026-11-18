@@ -65,10 +65,9 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     public static string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
-        string? extraRules = null,
-        bool toolCatalogV2 = false)
+        string? extraRules = null)
     {
-        var builder = new StringBuilder(BuildPrefix(mode, toolCatalogV2));
+        var builder = new StringBuilder(BuildPrefix(mode));
         builder.Append(context.BuildPromptSection());
         builder.AppendLine();
         AppendWorkingRules(builder);
@@ -90,15 +89,14 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     /// appended by <see cref="Build"/> and never enters this hash.
     /// </summary>
     public static string BuildStatic(
-        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
-        bool toolCatalogV2 = false)
+        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites)
     {
-        var builder = new StringBuilder(BuildPrefix(mode, toolCatalogV2));
+        var builder = new StringBuilder(BuildPrefix(mode));
         AppendWorkingRules(builder);
         return builder.ToString();
     }
 
-    private static string BuildPrefix(AgentApprovalMode mode, bool toolCatalogV2)
+    private static string BuildPrefix(AgentApprovalMode mode)
     {
         var builder = new StringBuilder(BasePrompt);
         builder.AppendLine();
@@ -106,13 +104,8 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         builder.AppendLine();
         builder.Append(PlanSection);
         builder.AppendLine();
-
-        if (toolCatalogV2)
-        {
-            builder.Append(ToolCatalogV2Section);
-            builder.AppendLine();
-        }
-
+        builder.Append(ToolCatalogV2Section);
+        builder.AppendLine();
         return builder.ToString();
     }
 

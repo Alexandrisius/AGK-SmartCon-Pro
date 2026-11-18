@@ -34,31 +34,21 @@ public sealed class AgentLlmSettings
     public double ContextThreshold { get; set; } = 0.7;
 
     /// <summary>
-    /// Send only a BM25 shortlist of tool schemas per turn (core read tools are
-    /// always included; find_tools covers the rest). Disable with
-    /// SMARTCON_AGENT_TOOL_ROUTER=0.
+    /// Model used for history summaries when the context ladder reaches the
+    /// summary step. Empty keeps <see cref="Model"/>.
     /// </summary>
-    public bool UseToolRouter { get; set; } = true;
+    public string SummaryModel { get; set; } = string.Empty;
 
     /// <summary>
-    /// v2 tool catalog (packs + enriched cards + load_tool_pack). Enabled by
-    /// default; set SMARTCON_AGENT_TOOL_CATALOG_V2=0 as an emergency rollout
-    /// switch back to the plain shortlist.
+    /// Maximum tokens of one summarizer input chunk; longer histories are
+    /// summarized recursively in chunks of this size.
     /// </summary>
-    public bool ToolCatalogV2 { get; set; } = true;
+    public int SummaryMaxInputTokens { get; set; } = 24_000;
 
     /// <summary>
-    /// v2 context pipeline: calibrated estimate with system+tools and, in H1.14,
-    /// store-and-reference. Enabled by default; set
-    /// SMARTCON_AGENT_CONTEXT_COMPACTION_V2=0 to disable.
+    /// Maximum tokens of the compacted summary that replaces old history.
     /// </summary>
-    public bool ContextCompactionV2 { get; set; } = true;
-
-    /// <summary>
-    /// Persist and inject the structured working state. Enabled by default;
-    /// set SMARTCON_AGENT_WORKING_STATE=0 to disable.
-    /// </summary>
-    public bool WorkingStateEnabled { get; set; } = true;
+    public int SummaryMaxOutputTokens { get; set; } = 1_500;
 
     public bool IsOpenCodeGo =>
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
@@ -105,14 +95,17 @@ public sealed class AgentLlmSettings
                 Math.Min(
                     ParseDouble(Get(values, "SMARTCON_AGENT_CONTEXT_THRESHOLD"), 0.7),
                     0.95)),
-            UseToolRouter = !string.Equals(
-                Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal),
-            ToolCatalogV2 = ParseFlag(
-                Get(values, "SMARTCON_AGENT_TOOL_CATALOG_V2"), fallback: true),
-            ContextCompactionV2 = ParseFlag(
-                Get(values, "SMARTCON_AGENT_CONTEXT_COMPACTION_V2"), fallback: true),
-            WorkingStateEnabled = ParseFlag(
-                Get(values, "SMARTCON_AGENT_WORKING_STATE"), fallback: true)
+            SummaryModel = Get(values, "SMARTCON_AGENT_SUMMARY_MODEL") ?? string.Empty,
+            SummaryMaxInputTokens = Math.Max(
+                4_000,
+                Math.Min(
+                    ParseInt(Get(values, "SMARTCON_AGENT_SUMMARY_MAX_INPUT_TOKENS"), 24_000),
+                    200_000)),
+            SummaryMaxOutputTokens = Math.Max(
+                500,
+                Math.Min(
+                    ParseInt(Get(values, "SMARTCON_AGENT_SUMMARY_MAX_OUTPUT_TOKENS"), 1_500),
+                    8_192))
         };
     }
 
@@ -200,31 +193,6 @@ public sealed class AgentLlmSettings
             System.Globalization.CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : fallback;
-
-    /// <summary>
-    /// Tri-state rollout flag: absent/unknown keeps the feature default, "0" or
-    /// "false" is the emergency switch back to the legacy behaviour, "1"/"true"
-    /// pins it on.
-    /// </summary>
-    private static bool ParseFlag(string? value, bool fallback)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return fallback;
-
-        if (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return fallback;
-    }
 
     private static string? Get(IReadOnlyDictionary<string, string> values, string key)
     {

@@ -11,7 +11,7 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed partial class AgentOrchestratorTests
 {
     private static AgentLlmSettings V2Settings() =>
-        new() { Model = "test-model", ToolCatalogV2 = true };
+        new() { Model = "test-model" };
 
     private static List<IAgentTool> CoreTools() =>
         AgentToolPacks.CoreToolNames
@@ -208,47 +208,6 @@ public sealed partial class AgentOrchestratorTests
 
         Assert.Empty(session.LoadedToolNames);
         Assert.Empty(session.PendingToolNames);
-    }
-
-    [Fact]
-    public async Task RunTurn_ToolCatalogV2Off_FindToolsStillExpandsTheCatalog()
-    {
-        var store = new InMemoryConversationStore();
-        var findTools = new CountingTool(name: "find_tools");
-        var rename = new CountingTool(name: "rename_views");
-        var registry = new AgentToolRegistry(new IAgentTool[] { findTools, rename });
-        var session = new AgentSessionContext();
-        var executor = CreateExecutor(registry, session);
-        var llm = new FakeAgentLlmClient();
-        llm.EnqueueAssistant(
-            null,
-            new[]
-            {
-                new AgentToolCall
-                {
-                    Id = "call_1",
-                    Name = "find_tools",
-                    ArgumentsJson = "{\"query\":\"rename views\"}"
-                }
-            });
-        llm.EnqueueAssistant("done");
-        var orchestrator = CreateOrchestrator(
-            llm,
-            executor,
-            registry,
-            store,
-            session,
-            settings: new AgentLlmSettings { Model = "test-model", ToolCatalogV2 = false });
-
-        await orchestrator.RunTurnAsync(
-            Guid.NewGuid(),
-            "наведи порядок в именах видов",
-            Array.Empty<AgentAttachment>(),
-            null,
-            CancellationToken.None);
-
-        Assert.Equal(2, llm.Requests.Count);
-        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "rename_views");
     }
 
     private static AgentToolExecutor CreateExecutor(

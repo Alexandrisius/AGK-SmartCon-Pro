@@ -69,18 +69,20 @@
 | H7 (до H6) | Tool surface и длинный хвост: intent-tools, generic data tools, запрет runtime C#; typed facade `IRevitOps` + sandbox-интерпретатор (Jint/Lua), промоция скриптов в composite-tools (ADR-076) | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
 | H6 (последний) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075); запускается только после H1b и по метрике recall | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md) |
 
-## Флаги H1
+## Поведение H1 (без флагов)
 
-Все три флага **включены по умолчанию** — это новая логика харнеса. Флаги остались только
-как аварийный выключатель: `0` или `false` (без учёта регистра) возвращает старое поведение;
-отсутствие переменной или неизвестное значение оставляет дефолт. Переменная окружения
-перекрывает `secrets.env`.
+Легаси-ветки v1 удалены: пользователей старого поведения нет, совместимость не нужна.
+Харнес всегда работает по новой логике:
 
-| Флаг (`AgentLlmSettings`) | Env | Дефолт | Что гейтит |
-|---|---|---|---|
-| `ToolCatalogV2` | `SMARTCON_AGENT_TOOL_CATALOG_V2` | `true` | Tool catalog v2: packs, enriched tool cards, `find_tools` discovery и `load_tool_pack` (H1-06..H1-08) |
-| `ContextCompactionV2` | `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` | `true` | Учёт system+tools в оценке контекста и калибровка; store-and-reference/compaction v2 добавляются в H1.2 |
-| `WorkingStateEnabled` | `SMARTCON_AGENT_WORKING_STATE` | `true` | Persisted WorkingState и вставка `<turn_context>` (H1-03) |
+- tool catalog v2: паки, карточки, `find_tools` (только discovery) и `load_tool_pack`;
+- учёт system+tools в оценке контекста и калибровка по `usage.prompt_tokens`;
+- persisted WorkingState и вставка `<turn_context>`;
+- store-and-reference (`tool_result_blobs` + `read_tool_result`) и compaction v2
+  (mask → summary → hard shrink).
+
+Настраиваются только параметры контекста (не поведение): `SMARTCON_AGENT_CONTEXT_TOKENS`,
+`SMARTCON_AGENT_CONTEXT_THRESHOLD`, `SMARTCON_AGENT_SUMMARY_MODEL`,
+`SMARTCON_AGENT_SUMMARY_MAX_INPUT_TOKENS`, `SMARTCON_AGENT_SUMMARY_MAX_OUTPUT_TOKENS`.
 
 ## Жёсткие ограничения
 

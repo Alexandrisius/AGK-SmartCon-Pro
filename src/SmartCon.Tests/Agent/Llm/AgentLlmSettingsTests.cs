@@ -79,92 +79,32 @@ public sealed class AgentLlmSettingsTests : IDisposable
     }
 
     [Fact]
-    public void H1Flags_DefaultToOn()
+    public void SummarySettings_HaveCompactionDefaults()
     {
         var settings = new AgentLlmSettings();
 
-        Assert.True(settings.ToolCatalogV2);
-        Assert.True(settings.ContextCompactionV2);
-        Assert.True(settings.WorkingStateEnabled);
+        Assert.Equal(string.Empty, settings.SummaryModel);
+        Assert.Equal(24_000, settings.SummaryMaxInputTokens);
+        Assert.Equal(1_500, settings.SummaryMaxOutputTokens);
     }
 
     [Fact]
-    public void Load_H1FlagsOnWhenEnvironmentIsEmpty()
+    public void Load_ReadsSummarySettingsAndClampsThem()
     {
         WithEnvironment(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = null,
-                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = null,
-                ["SMARTCON_AGENT_WORKING_STATE"] = null
+                ["SMARTCON_AGENT_SUMMARY_MODEL"] = "cheap/model",
+                ["SMARTCON_AGENT_SUMMARY_MAX_INPUT_TOKENS"] = "1",
+                ["SMARTCON_AGENT_SUMMARY_MAX_OUTPUT_TOKENS"] = "999999"
             },
             () =>
             {
                 var settings = AgentLlmSettings.Load();
 
-                Assert.True(settings.ToolCatalogV2);
-                Assert.True(settings.ContextCompactionV2);
-                Assert.True(settings.WorkingStateEnabled);
-            });
-    }
-
-    [Fact]
-    public void Load_H1FlagsEnabledByOneOrTrue()
-    {
-        WithEnvironment(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "1",
-                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "TRUE",
-                ["SMARTCON_AGENT_WORKING_STATE"] = "True"
-            },
-            () =>
-            {
-                var settings = AgentLlmSettings.Load();
-
-                Assert.True(settings.ToolCatalogV2);
-                Assert.True(settings.ContextCompactionV2);
-                Assert.True(settings.WorkingStateEnabled);
-            });
-    }
-
-    [Fact]
-    public void Load_H1Flags_ZeroDisablesAndUnknownKeepsDefault()
-    {
-        WithEnvironment(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "0",
-                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "yes",
-                ["SMARTCON_AGENT_WORKING_STATE"] = "off"
-            },
-            () =>
-            {
-                var settings = AgentLlmSettings.Load();
-
-                Assert.False(settings.ToolCatalogV2);
-                Assert.True(settings.ContextCompactionV2);
-                Assert.True(settings.WorkingStateEnabled);
-            });
-    }
-
-    [Fact]
-    public void Load_H1Flags_ZeroSwitchesEverythingOff()
-    {
-        WithEnvironment(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "0",
-                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "0",
-                ["SMARTCON_AGENT_WORKING_STATE"] = "false"
-            },
-            () =>
-            {
-                var settings = AgentLlmSettings.Load();
-
-                Assert.False(settings.ToolCatalogV2);
-                Assert.False(settings.ContextCompactionV2);
-                Assert.False(settings.WorkingStateEnabled);
+                Assert.Equal("cheap/model", settings.SummaryModel);
+                Assert.Equal(4_000, settings.SummaryMaxInputTokens);
+                Assert.Equal(8_192, settings.SummaryMaxOutputTokens);
             });
     }
 
@@ -174,20 +114,17 @@ public sealed class AgentLlmSettingsTests : IDisposable
         WithEnvironment(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                ["SMARTCON_LLM_MODEL"] = null,
-                ["SMARTCON_AGENT_WORKING_STATE"] = null
+                ["SMARTCON_LLM_MODEL"] = null
             },
             () =>
             {
                 var settings = AgentLlmSettings.Load();
 
                 Assert.Equal("seam-model", settings.Model);
-                Assert.True(settings.WorkingStateEnabled);
             },
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["SMARTCON_LLM_MODEL"] = "seam-model",
-                ["SMARTCON_AGENT_WORKING_STATE"] = "1"
+                ["SMARTCON_LLM_MODEL"] = "seam-model"
             });
     }
 

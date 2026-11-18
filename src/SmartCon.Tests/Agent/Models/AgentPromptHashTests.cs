@@ -107,23 +107,18 @@ public sealed class AgentPromptHashTests
     }
 
     [Fact]
-    public void Build_ToolCatalogV2_AddsDiscoveryInstructions()
+    public void Build_AlwaysCarriesDiscoveryInstructions()
     {
         var context = Context("Project A", "План 1 этажа", 120);
 
-        var legacy = AgentSystemPrompt.Build(context, AgentApprovalMode.ConfirmWrites);
-        var v2 = AgentSystemPrompt.Build(
-            context, AgentApprovalMode.ConfirmWrites, toolCatalogV2: true);
+        var prompt = AgentSystemPrompt.Build(context, AgentApprovalMode.ConfirmWrites);
 
-        Assert.DoesNotContain("load_tool_pack", legacy);
-        Assert.Contains("## Tool catalog", v2);
-        Assert.Contains("load_tool_pack", v2);
-        Assert.Contains("find_tools", v2);
-        Assert.NotEqual(
-            AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic(
-                AgentApprovalMode.ConfirmWrites, toolCatalogV2: true)),
-            AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic(
-                AgentApprovalMode.ConfirmWrites)));
+        Assert.Contains("## Tool catalog", prompt);
+        Assert.Contains("load_tool_pack", prompt);
+        Assert.Contains("find_tools", prompt);
+        Assert.Contains(
+            "## Tool catalog",
+            AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites));
     }
 
     private static AgentToolDefinition Tool(string name, string schema) =>

@@ -98,8 +98,6 @@ public sealed class AbstractTaskLiveTests
                 findTools
             });
 
-        var initialRouter = new FixedShortlistRouter(new[] { "list_views", "list_levels",
-            "get_view_settings", "find_tools" });
         var toolCalls = new CapturingToolCallStore();
         var session = new AgentSessionContext
         {
@@ -121,9 +119,7 @@ public sealed class AbstractTaskLiveTests
             settings,
             session,
             new AgentPromptBuilder(),
-            toolCalls,
-            null,
-            initialRouter);
+            toolCalls);
 
         var task =
             "В проекте есть эталонный вид SC_Ref и несколько планов этажей. Наведи порядок: " +
@@ -207,26 +203,6 @@ public sealed class AbstractTaskLiveTests
             CancellationToken ct) =>
             Task.FromResult(ToolResult.Ok(
                 JsonDocument.Parse(_payload).RootElement.Clone(), "ok"));
-    }
-
-    private sealed class FixedShortlistRouter : IToolRouter
-    {
-        private readonly HashSet<string> _names;
-
-        public FixedShortlistRouter(IEnumerable<string> names)
-        {
-            _names = new HashSet<string>(names, StringComparer.Ordinal);
-        }
-
-        public Task<ToolRoutingDecision> RouteAsync(
-            string query,
-            IReadOnlyList<AgentToolDefinition> tools,
-            int maxTools = 14,
-            CancellationToken ct = default) =>
-            Task.FromResult(new ToolRoutingDecision
-            {
-                Tools = tools.Where(tool => _names.Contains(tool.Name)).ToList()
-            });
     }
 
     private sealed class CapturingToolCallStore : IAgentToolCallStore

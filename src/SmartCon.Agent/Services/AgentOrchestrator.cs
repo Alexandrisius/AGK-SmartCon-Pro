@@ -26,7 +26,6 @@ public sealed partial class AgentOrchestrator
     private readonly AgentPromptBuilder _promptBuilder;
     private readonly IAgentToolCallStore? _toolCallStore;
     private readonly IAgentUsageStore? _usageStore;
-    private readonly IToolRouter? _toolRouter;
     private readonly IAgentWorkingStateStore? _workingStateStore;
 
     public AgentOrchestrator(
@@ -41,7 +40,6 @@ public sealed partial class AgentOrchestrator
         AgentPromptBuilder promptBuilder,
         IAgentToolCallStore? toolCallStore = null,
         IAgentUsageStore? usageStore = null,
-        IToolRouter? toolRouter = null,
         IAgentWorkingStateStore? workingStateStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
@@ -56,7 +54,6 @@ public sealed partial class AgentOrchestrator
         _promptBuilder = promptBuilder ?? throw new ArgumentNullException(nameof(promptBuilder));
         _toolCallStore = toolCallStore;
         _usageStore = usageStore;
-        _toolRouter = toolRouter;
         _workingStateStore = workingStateStore;
     }
 
@@ -111,37 +108,28 @@ public sealed partial class AgentOrchestrator
                 .AppendMessageAsync(conversationId, userMessage, ct)
                 .ConfigureAwait(false);
 
-            if (_settings.WorkingStateEnabled)
-            {
-                // The cached state belongs to the previous conversation: never
-                // leak its goal/constraints into a different chat.
-                if (conversationChanged)
-                    _sessionContext.WorkingState = null;
+            // The cached state belongs to the previous conversation: never
+            // leak its goal/constraints into a different chat.
+            if (conversationChanged)
+                _sessionContext.WorkingState = null;
 
-                workingState = await PrepareWorkingStateAsync(
-                        conversationId, userText, projectContext, ct)
-                    .ConfigureAwait(false);
-            }
+            workingState = await PrepareWorkingStateAsync(
+                    conversationId, userText, projectContext, ct)
+                .ConfigureAwait(false);
 
             var history = await _conversationStore
                 .GetMessagesAsync(conversationId, ct)
                 .ConfigureAwait(false);
             var working = EnsureToolCallPairs(TrimHistory(history));
             var systemMessage = AgentMessage.System(
-                _promptBuilder.Build(
-                    projectContext,
-                    _sessionContext.ApprovalMode,
-                    toolCatalogV2: _settings.ToolCatalogV2));
+                _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
             var definitions = await SelectToolDefinitionsAsync(userText, ct);
             SetActiveToolNames(definitions);
 
-            Func<IReadOnlyList<AgentMessage>, int>? estimator = null;
-            if (_settings.ContextCompactionV2)
-            {
-                estimator = messages => _sessionContext.TokenCalibration.Apply(
+            Func<IReadOnlyList<AgentMessage>, int> estimator = messages =>
+                _sessionContext.TokenCalibration.Apply(
                     AgentTokenEstimator.EstimateRequest(
                         systemMessage.Content, messages, definitions));
-            }
 
             var (compacted, _) = AgentHistoryCompactor.Compact(
                 working,
@@ -159,7 +147,7 @@ public sealed partial class AgentOrchestrator
             {
                 ct.ThrowIfCancellationRequested();
 
-                if (_settings.ToolCatalogV2 && _sessionContext.PendingToolNames.Count > 0)
+                if (_sessionContext.PendingToolNames.Count > 0)
                 {
                     definitions = await ApplyPendingToolSetAsync(
                             userText, definitions.Count, ct)
@@ -169,7 +157,7 @@ public sealed partial class AgentOrchestrator
                 var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
 
-                if (_settings.WorkingStateEnabled && workingState is not null)
+                if (workingState is not null)
                     ApplyTurnContext(messages, workingState, projectContext);
 
                 var estimatedPrompt = AgentTokenEstimator.EstimateRequest(
@@ -331,7 +319,7 @@ public sealed partial class AgentOrchestrator
                         }
                     }
 
-                    if (_settings.WorkingStateEnabled && workingState is not null)
+                    if (workingState is not null)
                         AgentWorkingStateUpdater.ObserveToolResult(workingState, toolCall.Name, result);
 
                     var durationMs = (long)((Stopwatch.GetTimestamp() - startedAt)
@@ -350,26 +338,6 @@ public sealed partial class AgentOrchestrator
                     await WriteToolCallAsync(
                             toolCall, result, serializedResult, conversationId, durationMs, ct)
                         .ConfigureAwait(false);
-
-                    // find_tools exists to unlock tools outside the routed shortlist:
-                    // the model must be able to call what it just discovered, so the
-                    // next round sends the full catalog. In catalog v2 discovery is
-                    // separated from loading: only load_tool_pack changes the set,
-                    // and it does so at the next round boundary.
-                    if (!_settings.ToolCatalogV2
-                        && result.Success
-                        && string.Equals(toolCall.Name, "find_tools", StringComparison.Ordinal))
-                    {
-                        var fullCatalog = _toolRegistry.GetDefinitions();
-                        if (ExpandsCatalog(definitions, fullCatalog))
-                        {
-                            definitions = fullCatalog;
-                            SetActiveToolNames(definitions);
-                            SmartConLogger.Debug(
-                                "Agent expanded the tool catalog after find_tools: " +
-                                definitions.Count + " definitions for the next round");
-                        }
-                    }
 
                     progress?.Report(new AgentProgress
                     {
@@ -456,9 +424,7 @@ public sealed partial class AgentOrchestrator
         }
         finally
         {
-            if (_settings.WorkingStateEnabled
-                && workingState is not null
-                && _workingStateStore is not null)
+            if (workingState is not null && _workingStateStore is not null)
             {
                 await SaveWorkingStateAsync(conversationId, workingState).ConfigureAwait(false);
             }
@@ -468,17 +434,6 @@ public sealed partial class AgentOrchestrator
     private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions) =>
         _sessionContext.ActiveToolNames =
             definitions.Select(definition => definition.Name).ToList();
-
-    private static bool ExpandsCatalog(
-        IReadOnlyList<AgentToolDefinition> current,
-        IReadOnlyList<AgentToolDefinition> fullCatalog)
-    {
-        if (fullCatalog.Count != current.Count)
-            return true;
-
-        return fullCatalog.Any(candidate => !current.Any(existing =>
-            string.Equals(existing.Name, candidate.Name, StringComparison.Ordinal)));
-    }
 
     private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
         string userText,
@@ -503,24 +458,10 @@ public sealed partial class AgentOrchestrator
         CancellationToken ct)
     {
         var all = _toolRegistry.GetDefinitions();
-        if (_settings.ToolCatalogV2)
-            return SelectCatalogV2ToolDefinitions(userText, all);
-
-        if (_toolRouter is null || !_settings.UseToolRouter || all.Count == 0)
+        if (all.Count == 0)
             return all;
 
-        var decision = await _toolRouter.RouteAsync(userText, all, 16, ct).ConfigureAwait(false);
-        if (decision.Fallback)
-        {
-            SmartConLogger.Debug(
-                "Agent tool routing: no signal, full catalog (" + all.Count + " tools)");
-            return all;
-        }
-
-        SmartConLogger.Debug(
-            "Agent tool routing: " + decision.Tools.Count + "/" + all.Count + " tools, topScore " +
-            decision.TopScore.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-        return decision.Tools;
+        return SelectCatalogV2ToolDefinitions(userText, all);
     }
 
     /// <summary>
@@ -534,6 +475,11 @@ public sealed partial class AgentOrchestrator
     {
         const int maxTools = 16;
         const int topCount = 5;
+
+        // A tiny catalog needs no retrieval: hiding tools from it would only cost
+        // the model extra discovery rounds.
+        if (all.Count <= 8)
+            return all;
 
         var selected = new List<AgentToolDefinition>(maxTools);
         var names = new HashSet<string>(StringComparer.Ordinal);

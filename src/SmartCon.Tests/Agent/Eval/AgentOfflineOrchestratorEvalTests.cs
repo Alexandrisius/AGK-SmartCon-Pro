@@ -134,10 +134,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
             {
                 Model = "test-model",
                 ContextWindowTokens = 2000,
-                ContextThreshold = 0.3,
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false,
-                WorkingStateEnabled = false
+                ContextThreshold = 0.3
             });
 
         var result = await orchestrator.RunTurnAsync(
@@ -164,7 +161,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
     }
 
     [Fact]
-    public async Task FindTools_ExpandsTheCatalogForTheNextRound()
+    public async Task FindTools_DoesNotChangeTheToolSet()
     {
         var findTools = new ScriptedTool(
             "find_tools",
@@ -181,13 +178,6 @@ public sealed class AgentOfflineOrchestratorEvalTests
         var setParams = new ScriptedTool("set_parameters", AgentToolRisk.Write);
         var registry = new AgentToolRegistry(
             new IAgentTool[] { findTools, rename, deleteViews, setParams });
-        var router = new RecordingToolRouter
-        {
-            Result = new ToolRoutingDecision
-            {
-                Tools = new[] { findTools.Definition }
-            }
-        };
 
         var llm = new FakeAgentLlmClient();
         llm.EnqueueAssistant(
@@ -203,18 +193,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
             });
         llm.EnqueueAssistant("Нашёл rename_views");
 
-        var orchestrator = CreateOrchestrator(
-            llm,
-            registry,
-            settings: new AgentLlmSettings
-            {
-                Model = "test-model",
-                UseToolRouter = true,
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false,
-                WorkingStateEnabled = false
-            },
-            toolRouter: router);
+        var orchestrator = CreateOrchestrator(llm, registry);
 
         var result = await orchestrator.RunTurnAsync(
             Guid.NewGuid(),
@@ -224,10 +203,9 @@ public sealed class AgentOfflineOrchestratorEvalTests
             CancellationToken.None);
 
         Assert.Equal("Нашёл rename_views", result.FinalText);
-        Assert.Equal("переименуй виды", router.LastQuery);
-        Assert.Single(llm.Requests[0].Tools);
-        Assert.Equal(4, llm.Requests[1].Tools.Count);
-        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "rename_views");
+        Assert.Equal(
+            llm.Requests[0].Tools.Select(tool => tool.Name),
+            llm.Requests[1].Tools.Select(tool => tool.Name));
     }
 
     [Fact]
@@ -336,8 +314,7 @@ public sealed class AgentOfflineOrchestratorEvalTests
         IToolRegistry registry,
         AgentSessionContext? session = null,
         AgentLlmSettings? settings = null,
-        EvalConversationStore? store = null,
-        IToolRouter? toolRouter = null)
+        EvalConversationStore? store = null)
     {
         session ??= new AgentSessionContext { DocumentId = "doc" };
         store ??= new EvalConversationStore();
@@ -355,18 +332,11 @@ public sealed class AgentOfflineOrchestratorEvalTests
             store,
             new RecordingAuditLog(),
             new EvalProjectContextProvider(session.DocumentId),
-            settings ?? new AgentLlmSettings
-            {
-                Model = "test-model",
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false,
-                WorkingStateEnabled = false
-            },
+            settings ?? new AgentLlmSettings { Model = "test-model" },
             session,
             new AgentPromptBuilder(),
             null,
-            null,
-            toolRouter);
+            null);
     }
 
     private static string BigToolResult()

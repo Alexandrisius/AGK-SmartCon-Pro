@@ -24,15 +24,13 @@ public sealed class FindToolsTool : IAgentTool
         "request the schema of the chosen tool via find_tools(query=...) or load_tool_pack";
 
     private readonly IToolRouter _router;
-    private readonly bool _catalogV2;
 
     private IToolRegistry? _registry;
 
-    public FindToolsTool(IToolRouter router, AgentLlmSettings? settings = null)
+    public FindToolsTool(IToolRouter router)
     {
         _router = router ?? throw new ArgumentNullException(nameof(router));
-        _catalogV2 = settings?.ToolCatalogV2 == true;
-        Definition = BuildDefinition(_catalogV2);
+        Definition = BuildDefinition();
     }
 
     public AgentToolDefinition Definition { get; }
@@ -45,133 +43,21 @@ public sealed class FindToolsTool : IAgentTool
         CancellationToken ct)
     {
         var query = GetString(args, "query");
-        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", _catalogV2 ? 5 : 8), 10));
+        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 5), 10));
 
-        if (_catalogV2)
-        {
-            var fields = GetStringArray(args, "fields");
-            if (fields.Count > 0 && string.IsNullOrWhiteSpace(query))
-                return ExecuteListing(args, limit);
-
-            if (string.IsNullOrWhiteSpace(query))
-                return ToolResult.Fail("invalid_arguments", "query is required.");
-
-            return await ExecuteCatalogV2Async(
-                    context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
-                .ConfigureAwait(false);
-        }
+        var fields = GetStringArray(args, "fields");
+        if (fields.Count > 0 && string.IsNullOrWhiteSpace(query))
+            return ExecuteListing(args, limit);
 
         if (string.IsNullOrWhiteSpace(query))
             return ToolResult.Fail("invalid_arguments", "query is required.");
 
-        return await ExecuteLegacyAsync(
-                context, query!, GetString(args, "context"), limit, ct)
+        return await ExecuteSearchAsync(
+                context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
             .ConfigureAwait(false);
     }
 
-    private async Task<ToolResult> ExecuteLegacyAsync(
-        AgentToolContext context,
-        string query,
-        string? contextText,
-        int limit,
-        CancellationToken ct)
-    {
-        var registry = _registry;
-        if (registry is null)
-            return ToolResult.Fail("tool_failed", "The tool catalog is unavailable.");
-
-        var all = registry.GetDefinitions()
-            .Where(definition => !string.Equals(
-                definition.Name, Definition.Name, StringComparison.Ordinal))
-            .ToList();
-
-        var state = ComposeState(query, contextText);
-
-        // The generic router always keeps the core read tools, so a small
-        // find_tools limit used to be spent entirely on them and write tools were
-        // never returned (live dogfood P0-3). Rank lexically first, then merge the
-        // configured (possibly decision-model) router result.
-        var lexical = RuleToolRouter.RankOnly(state, all, System.Math.Max(limit, 8));
-        var decision = await _router
-            .RouteAsync(state, all, System.Math.Max(limit, 8), ct)
-            .ConfigureAwait(false);
-
-        var merged = new List<AgentToolDefinition>(limit + 2);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        void Add(AgentToolDefinition definition)
-        {
-            if (names.Add(definition.Name))
-                merged.Add(definition);
-        }
-
-        var writeIntent = HasWriteIntent(state);
-        if (writeIntent)
-        {
-            foreach (var definition in lexical.Tools.Where(tool => tool.Risk != AgentToolRisk.Read))
-                Add(definition);
-        }
-
-        foreach (var definition in lexical.Tools)
-            Add(definition);
-
-        foreach (var definition in decision.Tools)
-            Add(definition);
-
-        var warning = (string?)null;
-        if (writeIntent && merged.All(tool => tool.Risk == AgentToolRisk.Read))
-        {
-            // Last resort: the lexical score found no write tool at all. Return the
-            // closest write tools explicitly instead of silently answering with a
-            // read-only catalog.
-            var writeTools = all.Where(tool => tool.Risk != AgentToolRisk.Read).ToList();
-            var rescue = RuleToolRouter.RankOnly(
-                state + " rename apply set hide show copy replace configure", writeTools, 3);
-            foreach (var definition in rescue.Tools)
-            {
-                if (definition.Risk != AgentToolRisk.Read)
-                    Add(definition);
-            }
-
-            warning = "No write tool matched the query directly; the closest write tools are " +
-                      "included. Check their descriptions before concluding that a change is " +
-                      "impossible.";
-        }
-
-        var returned = merged.Take(System.Math.Min(limit + 2, 10)).ToList();
-        var payload = new
-        {
-            total = returned.Count,
-            fallback = decision.Fallback,
-            writeIntent,
-            warning,
-            tools = returned.Select(definition => new
-            {
-                name = definition.Name,
-                description = definition.Description,
-                risk = definition.Risk.ToString(),
-                supportsDryRun = definition.SupportsDryRun,
-                alreadyAvailable = context.ActiveToolNames.Contains(definition.Name),
-                inputSchema = ParseSchema(definition.InputSchemaJson)
-            }).ToList()
-        };
-
-        try
-        {
-            return ToolResult.Ok(
-                JsonSerializer.SerializeToElement(payload),
-                "Returned " + returned.Count + " matching tool definition(s)." +
-                (warning is null ? string.Empty : " " + warning));
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "find_tools failed to serialize definitions: " + ex.Message +
-                " [Action: check the tool schema of the matching tools]");
-            return ToolResult.Fail("tool_failed", ex.Message);
-        }
-    }
-
-    private async Task<ToolResult> ExecuteCatalogV2Async(
+    private async Task<ToolResult> ExecuteSearchAsync(
         AgentToolContext context,
         string query,
         string? contextText,
@@ -347,64 +233,32 @@ public sealed class FindToolsTool : IAgentTool
             .OrderBy(pack => pack, StringComparer.Ordinal)
             .ToList();
 
-    private static AgentToolDefinition BuildDefinition(bool catalogV2)
+    private static AgentToolDefinition BuildDefinition()
     {
-        var schema = catalogV2
-            ? @"{""type"":""object"",""properties"":{" +
-              @"""query"":{""type"":""string"",""minLength"":1}," +
-              @"""pack"":{""type"":""string""}," +
-              @"""context"":{""type"":""string""}," +
-              @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}," +
-              @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
-              @"""enum"":[""name"",""description""]}}}," +
-              @"""additionalProperties"":false}"
-            : @"{""type"":""object"",""properties"":{""query"":{""type"":""string"",""minLength"":1},""context"":{""type"":""string""},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":8}},""required"":[""query""],""additionalProperties"":false}";
+        const string schema = @"{""type"":""object"",""properties"":{" +
+            @"""query"":{""type"":""string"",""minLength"":1}," +
+            @"""pack"":{""type"":""string""}," +
+            @"""context"":{""type"":""string""}," +
+            @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}," +
+            @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
+            @"""enum"":[""name"",""description""]}}}," +
+            @"""additionalProperties"":false}";
 
         return new AgentToolDefinition
         {
             Name = "find_tools",
-            Description = catalogV2
-                ? "Searches the full tool catalog by the user's intent and returns matching tool " +
-                  "cards with argument schemas. Use it when the tool you need is not in the " +
-                  "current request. Discovery only: it does not change the tool set. After it, " +
-                  "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                  "chosen tools for the next round. Pass fields=[\"name\",\"description\"] with " +
-                  "an empty query to browse the catalog or one pack compactly without schemas."
-                : "Returns the full definition (name, description, argument schema) of tools that match " +
-                  "a query. Use it when the tool you need is not in the current request. For an abstract " +
-                  "or multi-part task: read the model first, then pass a concrete query plus context " +
-                  "(what you learned and what you are about to change) so the catalog search returns " +
-                  "the right tools. Then call the returned tool by name.",
+            Description =
+                "Searches the full tool catalog by the user's intent and returns matching tool " +
+                "cards with argument schemas. Use it when the tool you need is not in the " +
+                "current request. Discovery only: it does not change the tool set. After it, " +
+                "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
+                "chosen tools for the next round. Pass fields=[\"name\",\"description\"] with " +
+                "an empty query to browse the catalog or one pack compactly without schemas.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",
             InputSchemaJson = schema
         };
-    }
-
-    private static bool HasWriteIntent(string text)
-    {
-        var value = text.ToLowerInvariant();
-        string[] markers =
-        {
-            "переимен", "примен", "настро", "сконфигур", "скрыть", "показать", "задать",
-            "установ", "замен", "скопир", "перенес", "удал", "созда", "назнач",
-            "rename", "apply", "set ", "hide", "show", "copy", "replace", "configure",
-            "delete", "create", "remap", "assign"
-        };
-
-        foreach (var marker in markers)
-        {
-#if NET8_0_OR_GREATER
-            if (value.Contains(marker, StringComparison.Ordinal))
-                return true;
-#else
-            if (value.IndexOf(marker, StringComparison.Ordinal) >= 0)
-                return true;
-#endif
-        }
-
-        return false;
     }
 
     private static string ComposeState(string query, string? context)

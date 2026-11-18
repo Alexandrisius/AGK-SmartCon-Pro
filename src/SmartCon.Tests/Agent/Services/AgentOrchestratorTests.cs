@@ -154,50 +154,6 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_FindTools_ExpandsCatalogForNextRound()
-    {
-        var store = new InMemoryConversationStore();
-        var findTools = new CountingTool(name: "find_tools");
-        var rename = new CountingTool(name: "rename_views");
-        var registry = new AgentToolRegistry(new IAgentTool[] { findTools, rename });
-        var executor = CreateExecutor(registry);
-        var router = new RecordingToolRouter
-        {
-            Result = new ToolRoutingDecision { Tools = new[] { findTools.Definition } }
-        };
-        var llm = new FakeAgentLlmClient();
-        llm.EnqueueAssistant(
-            null,
-            new[]
-            {
-                new AgentToolCall
-                {
-                    Id = "call_1",
-                    Name = "find_tools",
-                    ArgumentsJson = "{\"query\":\"rename views\"}"
-                }
-            });
-        llm.EnqueueAssistant("done");
-
-        var orchestrator = CreateOrchestrator(
-            llm, executor, registry, store, toolRouter: router);
-
-        await orchestrator.RunTurnAsync(
-            Guid.NewGuid(),
-            "наведи порядок в именах видов",
-            Array.Empty<AgentAttachment>(),
-            null,
-            CancellationToken.None);
-
-        Assert.Equal(2, llm.Requests.Count);
-        Assert.DoesNotContain(
-            llm.Requests[0].Tools, tool => tool.Name == "rename_views");
-        Assert.Contains(
-            llm.Requests[1].Tools, tool => tool.Name == "rename_views");
-        Assert.Equal(1, findTools.Calls);
-    }
-
-    [Fact]
     public async Task RunTurn_ActiveDocumentChanged_ResetsApprovalModeToConfirmWrites()
     {
         var store = new InMemoryConversationStore();
@@ -256,7 +212,6 @@ public sealed partial class AgentOrchestratorTests
         AgentSessionContext? session = null,
         IAgentProjectContextProvider? projectContext = null,
         IAgentToolCallStore? toolCallStore = null,
-        IToolRouter? toolRouter = null,
         IAgentUsageStore? usageStore = null,
         AgentLlmSettings? settings = null,
         IAgentWorkingStateStore? workingStateStore = null)
@@ -268,18 +223,11 @@ public sealed partial class AgentOrchestratorTests
             store,
             new NullAuditLog(),
             projectContext ?? new StubProjectContextProvider(),
-            settings ?? new AgentLlmSettings
-            {
-                Model = "test-model",
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false,
-                WorkingStateEnabled = false
-            },
+            settings ?? new AgentLlmSettings { Model = "test-model" },
             session ?? new AgentSessionContext(),
             new AgentPromptBuilder(),
             toolCallStore,
             usageStore,
-            toolRouter,
             workingStateStore);
     }
 

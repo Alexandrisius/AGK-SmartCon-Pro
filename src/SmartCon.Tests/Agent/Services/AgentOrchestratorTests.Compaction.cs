@@ -12,21 +12,9 @@ public sealed partial class AgentOrchestratorTests
     private const int HugeToolDescriptionLength = 400_000;
 
     [Fact]
-    public async Task RunTurn_ContextCompactionV2Off_UsesMessageOnlyEstimate()
+    public async Task RunTurn_Compaction_EstimatesSystemAndToolsToo()
     {
-        var toolMessages = await RunTurnWithCompactionFlag(enabled: false);
-
-        Assert.Equal(5, toolMessages.Count);
-        Assert.All(toolMessages, message =>
-            Assert.Contains("original-result-", message.Content, StringComparison.Ordinal));
-        Assert.DoesNotContain(toolMessages, message =>
-            (message.Content ?? string.Empty).Contains("\"compacted\":true", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task RunTurn_ContextCompactionV2On_EstimatesSystemAndToolsToo()
-    {
-        var toolMessages = await RunTurnWithCompactionFlag(enabled: true);
+        var toolMessages = await RunTurnWithCompaction();
 
         Assert.Equal(5, toolMessages.Count);
         Assert.Contains(toolMessages, message =>
@@ -35,7 +23,7 @@ public sealed partial class AgentOrchestratorTests
             (message.Content ?? string.Empty).Contains("original-result-", StringComparison.Ordinal));
     }
 
-    private static async Task<IReadOnlyList<AgentMessage>> RunTurnWithCompactionFlag(bool enabled)
+    private static async Task<IReadOnlyList<AgentMessage>> RunTurnWithCompaction()
     {
         var store = new InMemoryConversationStore();
         for (var index = 0; index < 5; index++)
@@ -66,10 +54,7 @@ public sealed partial class AgentOrchestratorTests
         {
             Model = "test-model",
             ContextWindowTokens = CompactionContextWindow,
-            ContextThreshold = 0.7,
-            ContextCompactionV2 = enabled,
-            ToolCatalogV2 = false,
-            WorkingStateEnabled = false
+            ContextThreshold = 0.7
         };
         var orchestrator = CreateOrchestrator(
             llm, executor, registry, store, settings: settings);

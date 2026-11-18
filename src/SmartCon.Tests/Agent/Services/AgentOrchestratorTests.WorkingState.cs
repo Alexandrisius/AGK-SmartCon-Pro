@@ -10,107 +10,43 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed partial class AgentOrchestratorTests
 {
     [Fact]
-    public async Task RunTurn_WorkingStateDisabled_DoesNotInjectOrTouchStore()
+    public async Task RunTurn_InjectsTurnContextButPersistsOriginalUserText()
     {
+        const string userText = "Переименуй виды, не трогай листы";
+        var projectContext = new StubProjectContextProvider("doc-ws");
+
         var store = new InMemoryConversationStore();
         var registry = new AgentToolRegistry(Array.Empty<IAgentTool>());
-        var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
         llm.EnqueueAssistant("ok");
-        var workingStore = new ThrowingWorkingStateStore();
-
+        var workingStore = new InMemoryWorkingStateStore();
         var orchestrator = CreateOrchestrator(
-            llm, executor, registry, store, workingStateStore: workingStore);
+            llm,
+            CreateExecutor(registry),
+            registry,
+            store,
+            projectContext: projectContext,
+            settings: new AgentLlmSettings { Model = "test-model" },
+            workingStateStore: workingStore);
 
         await orchestrator.RunTurnAsync(
             Guid.NewGuid(),
-            "привет",
+            userText,
             Array.Empty<AgentAttachment>(),
             null,
             CancellationToken.None);
 
         var user = llm.Requests[0].Messages.Last(message => message.Role == AgentRole.User);
-        Assert.Equal("привет", user.Content);
-        Assert.DoesNotContain("<turn_context>", user.Content);
-        Assert.Equal(0, workingStore.Calls);
-    }
 
-    [Fact]
-    public async Task RunTurn_WorkingStateEnabled_InjectsTurnContextButPersistsOriginalUserText()
-    {
-        const string userText = "Переименуй виды, не трогай листы";
-        var projectContext = new StubProjectContextProvider("doc-ws");
-
-        var offRegistry = new AgentToolRegistry(Array.Empty<IAgentTool>());
-        var offLlm = new FakeAgentLlmClient();
-        offLlm.EnqueueAssistant("ok");
-        var offOrchestrator = CreateOrchestrator(
-            offLlm,
-            CreateExecutor(offRegistry),
-            offRegistry,
-            new InMemoryConversationStore(),
-            projectContext: projectContext,
-            settings: new AgentLlmSettings
-            {
-                Model = "test-model",
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false,
-                WorkingStateEnabled = false
-            });
-
-        await offOrchestrator.RunTurnAsync(
-            Guid.NewGuid(),
-            userText,
-            Array.Empty<AgentAttachment>(),
-            null,
-            CancellationToken.None);
-
-        var onStore = new InMemoryConversationStore();
-        var onRegistry = new AgentToolRegistry(Array.Empty<IAgentTool>());
-        var onLlm = new FakeAgentLlmClient();
-        onLlm.EnqueueAssistant("ok");
-        var workingStore = new InMemoryWorkingStateStore();
-        var onOrchestrator = CreateOrchestrator(
-            onLlm,
-            CreateExecutor(onRegistry),
-            onRegistry,
-            onStore,
-            projectContext: projectContext,
-            settings: new AgentLlmSettings
-            {
-                Model = "test-model",
-                WorkingStateEnabled = true,
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false
-            },
-            workingStateStore: workingStore);
-
-        await onOrchestrator.RunTurnAsync(
-            Guid.NewGuid(),
-            userText,
-            Array.Empty<AgentAttachment>(),
-            null,
-            CancellationToken.None);
-
-        var offUser = offLlm.Requests[0].Messages.Last(
-            message => message.Role == AgentRole.User);
-        var onUser = onLlm.Requests[0].Messages.Last(
-            message => message.Role == AgentRole.User);
-
-        Assert.Equal(userText, offUser.Content);
-        Assert.StartsWith("<turn_context>", onUser.Content);
-        Assert.Contains("goal: " + userText, onUser.Content);
-        Assert.EndsWith("\n\n" + userText, onUser.Content);
-
-        Assert.Equal(
-            offLlm.Requests[0].Messages[0].Content,
-            onLlm.Requests[0].Messages[0].Content);
+        Assert.StartsWith("<turn_context>", user.Content);
+        Assert.Contains("goal: " + userText, user.Content);
+        Assert.EndsWith("\n\n" + userText, user.Content);
 
         Assert.Contains(
-            onStore.Messages,
+            store.Messages,
             message => message.Role == AgentRole.User && message.Content == userText);
         Assert.DoesNotContain(
-            onStore.Messages,
+            store.Messages,
             message => message.Role == AgentRole.User
                 && (message.Content ?? string.Empty).Contains(
                     "<turn_context>", StringComparison.Ordinal));
@@ -120,17 +56,13 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_WorkingStateEnabled_RestoresGoalFromStoreOnRestart()
+    public async Task RunTurn_RestoresGoalFromStoreOnRestart()
     {
         var conversationId = Guid.NewGuid();
         var conversationStore = new InMemoryConversationStore();
         var workingStore = new InMemoryWorkingStateStore();
         var projectContext = new StubProjectContextProvider("doc-ws");
-        var settings = new AgentLlmSettings
-        {
-            Model = "test-model",
-            WorkingStateEnabled = true
-        };
+        var settings = new AgentLlmSettings { Model = "test-model" };
 
         var firstRegistry = new AgentToolRegistry(Array.Empty<IAgentTool>());
         var firstLlm = new FakeAgentLlmClient();
@@ -177,7 +109,7 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_WorkingStateEnabled_RecordsChangeSetFromToolResult()
+    public async Task RunTurn_RecordsChangeSetFromToolResult()
     {
         var store = new InMemoryConversationStore();
         var payload = JsonSerializer.SerializeToElement(new
@@ -208,13 +140,7 @@ public sealed partial class AgentOrchestratorTests
             executor,
             registry,
             store,
-            settings: new AgentLlmSettings
-            {
-                Model = "test-model",
-                WorkingStateEnabled = true,
-                ToolCatalogV2 = false,
-                ContextCompactionV2 = false
-            },
+            settings: new AgentLlmSettings { Model = "test-model" },
             workingStateStore: workingStore);
 
         await orchestrator.RunTurnAsync(
@@ -237,11 +163,7 @@ public sealed partial class AgentOrchestratorTests
         var conversationStore = new InMemoryConversationStore();
         var workingStore = new InMemoryWorkingStateStore();
         var session = new AgentSessionContext();
-        var settings = new AgentLlmSettings
-        {
-            Model = "test-model",
-            WorkingStateEnabled = true
-        };
+        var settings = new AgentLlmSettings { Model = "test-model" };
         var registry = new AgentToolRegistry(Array.Empty<IAgentTool>());
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
