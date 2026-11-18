@@ -3,6 +3,9 @@ bin/
 obj/
 out/
 artifacts/
+# WPF/MSBuild temporary markup-compile projects (random suffix, left behind by
+# interrupted builds); they are regenerated and must never be committed.
+*_wpftmp.csproj
 
 ## Visual Studio / VS Code
 .vs/
