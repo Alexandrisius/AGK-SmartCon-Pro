@@ -1,4 +1,36 @@
-﻿# Handoff — Agent: текущее состояние (2026-11-18)
+# Handoff — Agent: текущее состояние (2026-11-18)
+
+## ⚡ Сессия «новые инструменты» — Фаза 2: фильтры и overrides (2026-11-19)
+
+Каталог 31 → **33**: `create_view_filter`, `set_filter_overrides`; пак `filters`
+больше не задел (15 populated + 5 reserved).
+
+- `create_view_filter` — generic DSL: `categories` (OST_ или локализованное имя) +
+  `conditions` (`field: family|type|level|room|system|parameter`, `op` eq/neq/
+  contains/…/gt/ge/lt/le/hasvalue/novalue, `value`, `logic: and|or`) +
+  `visibility: none|hide|show`. Фильтр переиспользуется по имени (idempotent),
+  имя санитизируется от запрещённых Revit символов (с warning), фильтруемое
+  множество параметров берётся из `ParameterFilterUtilities`, `level` для стен
+  падает на `WALL_BASE_CONSTRAINT`; per-section отчёт и read-back по каждому виду.
+- `set_filter_overrides` — цвет поверхностей/линий/разреза, штриховка, прозрачность,
+  halftone, `clear`; delta-семантика (сохраняет текущие overrides), `color`
+  ставит solid fill + цвет; неизвестный фильтр возвращает `knownFilters`,
+  неизвестная штриховка — `knownPatterns`.
+- Undo: новые ключи change item — `filter` (снимок фильтров вида old/new и полное
+  восстановление) и `filter_created` (удаление созданного фильтра); поддержано в
+  `undo_last` (partial `UndoLastTool.Filters.cs`).
+
+Гейты фазы:
+
+| Проверка | Результат |
+|---|---|
+| Unit `Agent.Services` + `Agent.Routing` | 288/288; routing 120 запросов: top-1 96.7 %, top-5 100 %, p95 1.64 мс |
+| Integration R25 `AgentFilterToolsTests` | 13/13 (dry-run/apply/reuse, level-правило, ошибки, undo фильтра и overrides) |
+| Eval replay (все 46 задач) | 46/46, schema 149/149, unauthorized 0, gate PASS |
+| Новые eval-задачи | `dry_create_filter`, `dry_filter_overrides` — PASS |
+
+Не проверено: полный unit/integration sweep и 7 конфигураций (финальный гейт),
+ручной UI-тест — manual pending.
 
 ## ⚡ Сессия «новые инструменты» — Фаза 1: read breadth (2026-11-18)
 

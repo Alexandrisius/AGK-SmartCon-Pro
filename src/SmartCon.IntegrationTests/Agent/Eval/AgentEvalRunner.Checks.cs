@@ -21,6 +21,8 @@ internal sealed partial class AgentEvalRunner
         "set_view_visibility",
         "configure_views",
         "copy_view_settings",
+        "create_view_filter",
+        "set_filter_overrides",
         "set_parameters",
         "remap_parameter_values",
         "undo_last",

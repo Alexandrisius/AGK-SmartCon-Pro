@@ -236,3 +236,19 @@ Revit-boundary (Agent-тесты исключены из net48 по конфиг
 
 Top-1 misses остались те же четыре (r008, r031, r046, r087), все в top-5;
 новые запросы r103–r112 попадают в top-1.
+
+## 2026-11-19 — новые инструменты, фаза 2: фильтры и overrides
+
+Каталог 31 → 33 (`create_view_filter`, `set_filter_overrides`). Eval: +2
+write-dry-run задачи (`dry_create_filter`, `dry_filter_overrides`); seed
+дополнен фильтром `SC_Eval_Filter` (категория стен, без правил и без применения).
+
+| Метрика | Значение |
+|---|---|
+| Полный replay | 46/46 PASS, schema 149/149, unauthorized 0, gate PASS |
+| Routing rules, 120 реальных запросов | top-1 96.7 %, top-5 100 %, top-14 100 %, p95 1.64 мс, false tool 0 |
+| Synthetic 1000 карточек | top-1 100 %, top-5 100 %, p95 17.12 мс |
+| Integration R25 `AgentFilterToolsTests` | 13/13 |
+
+Top-1 misses прежние четыре (r008, r031, r046, r087); новые запросы r113–r122
+попадают в top-1.

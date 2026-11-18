@@ -32,6 +32,8 @@ public sealed class AgentToolCardsTests
         "set_view_visibility",
         "configure_views",
         "copy_view_settings",
+        "create_view_filter",
+        "set_filter_overrides",
         "set_parameters",
         "remap_parameter_values",
         "undo_last",
@@ -44,7 +46,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(31, AgentToolCards.Count);
+        Assert.Equal(33, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

@@ -25,6 +25,7 @@ internal sealed class EvalModelSeed
     public const string ScheduleName = "SC_Eval_Schedule";
     public const string SheetNumber = "SC-EVAL-101";
     public const string SheetName = "SC_Eval_Sheet";
+    public const string FilterName = "SC_Eval_Filter";
 
     private EvalModelSeed()
     {
@@ -102,6 +103,8 @@ internal sealed class EvalModelSeed
             template.Name = TemplateName;
             refView.ViewTemplateId = template.Id;
 
+            CreateFilter(doc);
+
             var schedule = ModelSeed.CreateScheduleChecked(doc);
             schedule.Name = ScheduleName;
             schedule.Definition.AddField(
@@ -136,6 +139,21 @@ internal sealed class EvalModelSeed
         });
 
         return result;
+    }
+
+    private static void CreateFilter(Document document)
+    {
+        try
+        {
+            ParameterFilterElement.Create(
+                document,
+                FilterName,
+                new List<ElementId> { new(BuiltInCategory.OST_Walls) });
+        }
+        catch (Exception)
+        {
+            // The filter is optional for the filter-override eval task.
+        }
     }
 
     private static ViewSheet? CreateSheet(

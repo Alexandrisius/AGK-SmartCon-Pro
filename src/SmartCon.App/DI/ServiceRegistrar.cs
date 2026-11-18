@@ -472,6 +472,8 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetViewVisibilityTool>();
         services.AddSingleton<IAgentTool, ConfigureViewsTool>();
         services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
+        services.AddSingleton<IAgentTool, CreateViewFilterTool>();
+        services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
         services.AddSingleton<IAgentTool, DiscardChangeSetTool>();

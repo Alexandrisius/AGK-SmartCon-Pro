@@ -338,6 +338,27 @@ public static class AgentEvalTasks
             Check = AgentEvalCheck.HonestUnsupported,
             Notes = "No shared-parameter creation or bulk job tool exists — refuse honestly."
         },
+        new()
+        {
+            Id = "dry_create_filter",
+            Kind = AgentEvalTaskKind.WriteDryRun,
+            Prompt = "Скрой на виде SC_Eval_A стены с комментарием SC_Eval_Wall: создай фильтр " +
+                     "вида и скрой его.",
+            ExpectedTools = new[] { "create_view_filter" },
+            ExpectedDataKeys = new[] { "filterId", "sections" },
+            ExpectedChanged = 1,
+            Notes = "Generic filter DSL: category OST_Walls + instance comment rule + hide."
+        },
+        new()
+        {
+            Id = "dry_filter_overrides",
+            Kind = AgentEvalTaskKind.WriteDryRun,
+            Prompt = "Покрась стены в красный на виде SC_Eval_A через фильтр SC_Eval_Filter.",
+            ExpectedTools = new[] { "set_filter_overrides" },
+            ExpectedDataKeys = new[] { "filterId", "readBack" },
+            ExpectedChanged = 1,
+            Notes = "The eval seed creates the filter SC_Eval_Filter without applying it."
+        },
 
         // ── Apply + undo: 10 real writes, each reverted and verified ─────────
         new()

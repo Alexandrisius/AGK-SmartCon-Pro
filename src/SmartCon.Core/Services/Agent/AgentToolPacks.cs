@@ -109,7 +109,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "filters",
-            Description = "Фильтры видов (задел следующих версий)."
+            Description = "Фильтры видов: создание по условиям и графические overrides.",
+            Tools = new[] { "create_view_filter", "set_filter_overrides" }
         },
         new()
         {

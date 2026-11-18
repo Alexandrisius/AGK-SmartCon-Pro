@@ -141,6 +141,16 @@ public static class AgentToolCatalog
                 "содержимое листа", "что на листе", "виды на листе", "видовые окна",
                 "координаты видов", "sheet content", "views on sheet"
             }),
+            ["create_view_filter"] = new("Write", true, new[]
+            {
+                "фильтр вида", "создать фильтр", "скрыть по параметру", "убрать с вида",
+                "фильтр по системе", "view filter", "create filter", "фильтр по уровню"
+            }),
+            ["set_filter_overrides"] = new("Write", true, new[]
+            {
+                "покрасить", "цвет фильтра", "overrides", "заливка фильтра", "штриховка фильтра",
+                "прозрачность фильтра", "halftone", "графические замены"
+            }),
             ["find_tools"] = new("Meta", false, new[]
             {
                 "найти инструмент", "какой инструмент", "find tool", "tool search"

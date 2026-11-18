@@ -1,0 +1,45 @@
+{
+  "taskId": "dry_create_filter",
+  "prompt": "Скрой на виде SC_Eval_A стены с комментарием SC_Eval_Wall: создай фильтр вида и скрой его.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {
+    "5001": { "kind": "view", "name": "SC_Eval_A", "index": 0 }
+  },
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Скрой на виде SC_Eval_A стены с комментарием SC_Eval_Wall: создай фильтр вида и скрой его."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_create_filter_1",
+            "name": "create_view_filter",
+            "argumentsJson": "{\"viewIds\":[5001],\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":\"ALL_MODEL_INSTANCE_COMMENTS\",\"op\":\"eq\",\"value\":\"SC_Eval_Wall\"}],\"visibility\":\"hide\",\"dryRun\":true}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Скрой на виде SC_Eval_A стены с комментарием SC_Eval_Wall: создай фильтр вида и скрой его."
+      },
+      "response": {
+        "content": "Dry-run: будет создан фильтр по категории Стены с правилом «Комментарии = SC_Eval_Wall» и скрыт на виде SC_Eval_A (1 изменение).",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

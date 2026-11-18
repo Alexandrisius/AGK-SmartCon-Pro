@@ -138,6 +138,17 @@
     { "id": "r109", "query": "Какие ведомости есть в проекте?", "expectedTools": ["list_schedules"], "kind": "read" },
     { "id": "r110", "query": "Покажи спецификации по стенам", "expectedTools": ["list_schedules"], "kind": "read" },
     { "id": "r111", "query": "Покажи первые 20 строк ведомости помещений", "expectedTools": ["get_schedule_data"], "kind": "read" },
-    { "id": "r112", "query": "Выведи данные спецификации дверей", "expectedTools": ["get_schedule_data"], "kind": "read" }
+    { "id": "r112", "query": "Выведи данные спецификации дверей", "expectedTools": ["get_schedule_data"], "kind": "read" },
+
+    { "id": "r113", "query": "Убери с вида трубы системы Т1", "expectedTools": ["create_view_filter"], "kind": "write" },
+    { "id": "r114", "query": "Создай фильтр вида по параметру «Марка»", "expectedTools": ["create_view_filter"], "kind": "write" },
+    { "id": "r115", "query": "Скрой на виде оборудование семейства «Кран шаровый»", "expectedTools": ["create_view_filter"], "kind": "write" },
+    { "id": "r116", "query": "Сделай фильтр по уровню «Этаж 2» и примени к разрезу", "expectedTools": ["create_view_filter"], "kind": "write" },
+    { "id": "r117", "query": "Покрась стены в красный на этом виде", "expectedTools": ["set_filter_overrides"], "kind": "write" },
+    { "id": "r118", "query": "Сделай трубы полупрозрачными на 50 процентов", "expectedTools": ["set_filter_overrides"], "kind": "write" },
+    { "id": "r119", "query": "Задай фильтру серую заливку", "expectedTools": ["set_filter_overrides"], "kind": "write" },
+    { "id": "r120", "query": "Покажи элементы бледным полутоном через фильтр", "expectedTools": ["set_filter_overrides"], "kind": "write" },
+    { "id": "r121", "query": "Сбрось графические замены у фильтра «Стены»", "expectedTools": ["set_filter_overrides"], "kind": "write" },
+    { "id": "r122", "query": "Покрась линии фильтра в синий цвет", "expectedTools": ["set_filter_overrides"], "kind": "write" }
   ]
 }

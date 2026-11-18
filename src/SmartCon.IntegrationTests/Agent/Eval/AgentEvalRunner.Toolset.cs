@@ -45,6 +45,8 @@ internal sealed partial class AgentEvalRunner
             new SetViewVisibilityTool(context, transactions, changeSets),
             new ConfigureViewsTool(context, transactions, changeSets),
             new CopyViewSettingsTool(context, transactions, changeSets),
+            new CreateViewFilterTool(context, transactions, changeSets),
+            new SetFilterOverridesTool(context, transactions, changeSets),
             new SetParametersTool(context, transactions, changeSets),
             new RemapParameterValuesTool(context, transactions, changeSets),
             new DiscardChangeSetTool(context, changeSets),
