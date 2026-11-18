@@ -19,7 +19,7 @@
 | Eval | 40 задач, replay без ключа, gate PASS, routing 97.5 % |
 | Сборка | 7 конфигураций R19–R27, unit 3560 (H1.0), integration R25/R27/net48 |
 
-**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках. Это roadmap, не факт. Архитектурное решение по retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md).
+**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках, code mode / sandbox-интерпретатор / runtime C#. Это roadmap, не факт. Архитектурные решения: retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md), tool surface и code mode — [ADR-076](../adr/076-tool-surface-and-code-mode.md).
 
 ## Карта документов
 
@@ -62,6 +62,7 @@
 | H4 | Observability, cost caps, eval v2 | `harness-ideal-plan.md` P4–P5 |
 | H5 | UX: steering, timeline, fork/rewind, MCP (backlog) | `harness-ideal-plan.md` P5 |
 | H6 (после H1) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075) | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md); триггер — routing-eval H1 |
+| H7 (после H6) | Tool surface и длинный хвост: intent-tools, generic data tools, запрет runtime C#; typed facade `IRevitOps` + sandbox-интерпретатор (Jint/Lua), промоция скриптов в composite-tools (ADR-076) | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
 
 ## Флаги H1
 

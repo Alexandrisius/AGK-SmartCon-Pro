@@ -22,7 +22,7 @@
 | Подтверждения | digest-binding + внешнее подтверждение; nonce/ledger — только прямой API | У Cline/Roo подтверждение — просто кнопка, без криптографической привязки |
 | Eval | 40 фикстур, replay, порог | Aider/OpenCode/Goose не имеют встроенного eval-контура |
 | Домен | 27 тулов (24 Revit + 3 meta), structural query builder | Универсальные харнесы не знают ElementId, view templates, worksets |
-| Роутинг | BM25 + JEV + `find_tools` | У большинства — полный каталог или простой deferred loading |
+| Роутинг | BM25 + опциональный decision + `find_tools`; на 27 тулах хватает | У большинства — полный каталог или простой deferred loading; целевой hybrid vector 500–1000 — ADR-075 |
 
 ### 1.2 Десять главных пробелов
 
@@ -80,7 +80,7 @@
 | Prompt | `AgentSystemPrompt.cs`, `AgentPromptBuilder.cs`, `LlmPayloadBuilder.cs` | Статический текст + project context; cache отсутствует |
 | LLM client | `OpenAiCompatibleLlmClient.cs`, `LlmResponseAccumulator.cs` | SSE streaming; retry только до первого токена |
 | Tools | `AgentToolRegistry.cs`, `AgentToolExecutor.cs`, 27 тулов | DI-каталог; ручные JSON-схемы; sequential |
-| Routing | `RuleToolRouter.cs`, `DecisionsToolRouter.cs`, `FindToolsTool.cs` | BM25 + JEV; shortlist 14 |
+| Routing | `RuleToolRouter.cs`, `DecisionsToolRouter.cs`, `FindToolsTool.cs` | BM25 + опциональный decision; shortlist 16; vector branch — ADR-075 |
 | Plan | `AgentPlanExecutor(.Steps/.Audit).cs`, `AgentPlanValidator.cs`, `ExecutePlanTool.cs` | L0–L6 (L2 отсутствует, L5 не атомарен) |
 | Approvals | `AgentToolExecutor(.Bypass).cs`, `AgentConfirmationService.cs`, `AgentConfirmationLedger.cs` | 3 режима; ledger in-memory; tool-confirm без nonce |
 | Change sets | `AgentWriteToolBase.cs`, `SqliteAgentChangeSetStore.cs`, `UndoLastTool.cs` | Old/new по элементам; undo после рестарта |
@@ -147,18 +147,21 @@
 
 1. **Стабильный префикс — закон.** Static system + отсортированные tools + skills/memory index впереди; всё волатильное — в turn-context в хвосте.
 2. **Компакция — проекция, а не разрушение.** Сырые сообщения остаются в БД; модель видит checkpoint + tail; UI видит всё.
-3. **Память — файлы + FTS5.** Без эмбеддингов и vector RAG: 0/11 исследованных харнесов используют vector RAG по коду.
+3. **Память — файлы + FTS5.** Без эмбеддингов и vector RAG по содержимому сессий/модели: 0/11 исследованных харнесов используют vector RAG по коду. Эмбеддинги применяются **только для каталога тулов/навыков** (ADR-075), не для памяти.
 4. **Политика — данные.** `agent-policy.json` + grants в БД; deny-first; fail-closed.
 5. **План атомарен.** `TransactionGroup` на весь план; read-back до `Assimilate`; иначе `RollBack`.
 6. **Наблюдаемость — продукт.** Каждый ход отвечает: сколько токенов, cache hit, какие tools, сколько стоил, что сжалось.
 7. **Один агент, один Revit-поток.** Никакой параллельной записи; read-only батчи — в одном `ExternalEvent`.
 8. **Каждая фича — за флагом.** Дефолт — текущее поведение; включение после eval.
+9. **Tool — намерение, не API.** Никаких 1:1 обёрток методов и per-property tools; длинный хвост — через план или sandbox-интерпретатор поверх типизированного фасада, не через runtime C# (ADR-076).
 
 ### 3.2 Non-goals (осознанно не берём)
 
 | Не берём | Почему |
 |---|---|
-| Vector RAG / embeddings | 0/11 используют; для Revit лучше structural query + FTS5 |
+| Vector RAG по содержимому модели/сессий | 0/11 используют; для Revit лучше structural query + FTS5. Эмбеддинги — только для retrieval каталога тулов/навыков (ADR-075) |
+| Runtime C# / raw code eval в процессе Revit | net48 не выгружает сборки, API однопоточный, произвольный код обходит I-01/I-03/I-05; длинный хвост — план → sandbox-интерпретатор → C#-tool в релизе (ADR-076) |
+| Tool на каждый метод API / на каждое свойство | Tool = пользовательское намерение; свойства — generic query/get/set; иначе 1000 схем и деградация выбора (ADR-076) |
 | Event-sourcing переписывание | Дорого; добавляем только журнал событий для аудита/компакции |
 | Параллельные tool calls в Revit | API однопоточный (I-01); батчим чтения в одном ExternalEvent |
 | Multi-agent coordinator для записи | Один документ, конфликты транзакций; позже — read-only explorer |
@@ -174,7 +177,7 @@
 **Тулы.** Модель не должна видеть 1000 схем — это физически не влезает и убивает выбор. Каталог из трёх уровней:
 
 1. **Паки (12–20):** `views`, `sheets`, `params`, `families`, `schedules`, `filters`, `worksets`, `links`, `mep`, `annotations`, `rooms`, `warnings`… В промпте — 1 строка на пакет.
-2. **Поиск:** `find_tools(query, pack?, context)` → top-5 с полными схемами. BM25 по карточке (name + purpose + when-to-use + when-not + 2–3 примера + синонимы ru/en + negative examples), затем JEV/LLM-reranker по top-50.
+2. **Поиск (целевой — гибридный, ADR-075):** `find_tools(query, pack?, context)` → top-5 с полными схемами. Кандидаты собираются **двумя независимыми ретриверами**: BM25 по карточке (name + purpose + when-to-use + when-not + 2–3 примера + синонимы ru/en + negative examples) **∪** vector search по предвычисленным эмбеддингам карточки; слияние — RRF (`k=60`, top-50 от каждого). Decision-модель (JEV/pplx) — **reranker** на объединённых 100–200 кандидатах, не единственный prefilter. При ≤100 тулах допустим decision напрямую по каталогу; при 500–1000 vector обязателен. Ни один ретривер не отрезает кандидатов окончательно. **H1 реализует только BM25 + карточки + паки + decision reranker; vector-ветка — H6 после routing-eval.**
 3. **Фиксация:** `load_tool_pack(pack)` / `enable_tools(names)` меняет набор **только на границе хода** и логирует cache invalidation. Внутри хода набор неизменен; `find_tools` — только discovery в tool-result, вызов найденного — после `enable_tools`.
 
 **Два уровня каталога:** в индексе — 500–1000 карточек (включая атомарные операции); на витрине по умолчанию — 100–150 композитных действий с bulk-параметрами. Атомарные операции доступны через advanced-паки/`enable_tools`. `configure_views`, `set_parameters` с фильтром, `apply_view_template` уже показывают правильный паттерн. 1000 схем сразу — анти-паттерн: поддержка и ошибки выбора растут квадратично.
@@ -183,9 +186,9 @@
 
 **Контекст 1M.** 500k сейчас; 1M можно выставить, но это не замена роутингу: 1000 схем ≈ 1.5M токенов. Порог компакции: 1M → ~783k, хвост ~147k; 500k → ~383k, хвост ~72k (формула §6.1). Маскировать tool-результаты старше последних 6 или >60k токенов tool-вывода; если экономия <20k — не трогать. Полный результат — в `tool_result_blobs`, модель получает превью + handle. WorkingState обновлять каждый ход; checkpoint-summary — последний эшелон. Стоимость на 1M растёт линейно — нужны caps и cache-метрики.
 
-**Метрики масштаба:** top-1 ≥ 80 %, top-5 recall ≥ 95 %, false tool rate < 3 %, routing p95 < 100 ms (BM25) / < 2 s (JEV), 100 % вызовов — из зафиксированного набора.
+**Метрики масштаба:** top-1 ≥ 80 %, top-5 recall ≥ 95 %, false tool rate < 3 %, routing p95 < 100 ms (BM25) / < 150 ms (query embedding, local) / < 2 s (JEV reranker), 100 % вызовов — из зафиксированного набора. Recall@K измеряется **отдельно для BM25, vector и union**; кейсы «BM25 промахнулся, union нашёл» — обязательная часть отчёта.
 
-**Следствия для плана:** P1-11 (каталог v2) — приоритет №1; P0-11 (WorkingState), P1-12 (1M profile), P1-6 (store-and-reference), P0-1 (prefix), P2-10/P2-12 (skills), P1-1…P1-4 (compaction), P4-5 (cost/cache).
+**Следствия для плана:** P1-11 (каталог v2) — приоритет №1; P0-11 (WorkingState), P1-12 (1M profile), P1-6 (store-and-reference), P0-1 (prefix), P2-10/P2-12 (skills), P1-1…P1-4 (compaction), P4-5 (cost/cache). Векторный retrieval — **H6** после H1-11/H1-12 (порог по recall); typed facade + sandbox-интерпретатор — **H7** после H6 (ADR-076); в H1 не входят.
 
 ---
 
@@ -455,7 +458,7 @@ CREATE TABLE compactions (
 
 - `AgentSystemPrompt` разделить на `BuildStatic()` и `BuildTurnContext(...)`.
 - Static: роль, правила, I-инварианты, tool-usage policy, отсортированный skills index, memory index. Без даты, document id, режима и плана. **Индекс памяти/скиллов фиксируется на сессию**; изменения применяются со следующего хода delta-сообщением, а не переписыванием prefix (иначе cache инвалидируется).
-- Tools: для 27 — полный каталог, сортировка по имени. Для 500–1000 — только паки + `find_tools` top-5 + `load_tool_pack` с фиксацией набора (§3.3); полный каталог не отправляется.
+- Tools: для 27 — полный каталог, сортировка по имени. Для 500–1000 — только паки + `find_tools` top-5 + `load_tool_pack` с фиксацией набора (§3.3); полный каталог не отправляется. Внутри `find_tools` кандидаты собираются hybrid-retrieval (BM25 ∪ vector → RRF → decision reranker, ADR-075); в промпт хода попадают только загруженные инструменты.
 - Turn-context — отдельное сообщение перед последним user:
 
 ```xml
@@ -743,7 +746,8 @@ CREATE INDEX ix_agent_events_session ON agent_events(session_id, seq);
 | Tool error rate | измерить в P0 | < 8 % | < 3 % |
 | Invalid args rate | измерить в P0 | < 3 % | < 1 % |
 | Routing top-1 / top-5 recall | не измеряется | top-1 ≥ 80 %, top-5 ≥ 95 % | top-1 ≥ 85 %, top-5 ≥ 98 % |
-| Routing p95 (BM25 / JEV) | не измеряется | < 100 ms / < 2 s | < 50 ms / < 1 s |
+| Routing p95 (BM25 / embedding / reranker) | не измеряется | < 100 ms / < 150 ms / < 2 s | < 50 ms / < 100 ms / < 1 s |
+| Recall@K BM25 / vector / union | не измеряется | фиксируется в routing-отчёте | vector добавляет ≥5 п.п. top-5 |
 | `finish_reason=length` rate | измерить в P0 | < 5 % | < 2 % |
 | Loop detections / ход | 0 (не детектит) | — | < 1 % |
 | Compaction fact retention | n/a | ≥ 95 % | ≥ 97 % |

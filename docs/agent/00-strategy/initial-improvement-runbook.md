@@ -11,13 +11,43 @@
 
 Сейчас харнес рассчитан на **27 тулов и короткие сессии**. Целевой продукт — **500–1000 тулов, 100–200 навыков, 1M контекста**. При текущей архитектуре:
 
-- BM25-shortlist 14 из 1000 — лотерея;
+- BM25-shortlist 16 из 1000 — лотерея; без vector-ветки (H6) это не лечится;
 - каждый tool-результат до 40k символов лежит в истории — контекст умирает за 10–20 вызовов;
 - компакция одноразовая, без summary и без персистенции;
 - модель не имеет структурного состояния (цель, план, ID, change sets);
 - динамический набор tools ломает prompt cache.
 
 H1 закрывает **фундамент**: каталог тулов, сжатие результатов, рабочее состояние и компакцию. Без него H2–H5 (память, skills, policy, atomic plan) будут строиться на песке.
+
+## 1a. Граница H1: vector retrieval не реализуем
+
+H1 должен **понимать**, что 500–1000 тулов и 100–200 навыков невозможно
+обслуживать одним BM25 — целевая схема зафиксирована в
+[ADR-075](../../adr/075-hybrid-tool-retrieval.md): два независимых ретривера
+(BM25 ∪ vector), RRF-слияние и decision-модель как reranker на 100–200
+кандидатах.
+
+Но **H1 не реализует vector-ветку**: ни embedding-провайдера, ни индекса, ни
+выбора embedding-модели/reranker'а в настройках. Это отдельный эпик **H6**,
+который запускается только после H1-11/H1-12 по измеренному recall. Причины:
+
+- H1 и так самый большой эпик; embedding-провайдер, индекс и UI — новая
+  инфраструктура и новые точки отказа;
+- без 1000-карточного routing-eval нельзя доказать, что vector вообще нужен
+  раньше 200–300 видимых инструментов;
+- decision-модель уже проверена на 100–200 кандидатах, и H1 должен довести
+  BM25+карточки+паки до этой границы, а не строить второй ретривер вслепую.
+
+**Что H1 обязан оставить для H6:** enriched-карточки, паки, `find_tools`/
+`load_tool_pack`, фиксацию набора, routing-eval с числами top-1/top-5 и явный
+вердикт «vector нужен / не нужен». Если recall проваливается — записать цифры и
+передать в H6, **не добавляя embeddings в H1**.
+
+**Граница tool surface (ADR-076).** H1 также **не добавляет** runtime C#,
+`send_code_to_revit`, per-property tools и обёртки 1:1 по методам Revit API.
+Новый tool — только пользовательское намерение/композитная операция или
+meta-tool; свойства — generic `query/get/set` с проекциями. Code mode и
+sandbox-интерпретатор — эпик **H7** (после H6), не H1.
 
 ## 2. Цель и метрики
 
@@ -96,13 +126,13 @@ H1 закрывает **фундамент**: каталог тулов, сжа�
 
 | ID | Задача | Что сделать | Файлы | Приёмка |
 |---|---|---|---|---|
-| H1-06 | ToolCard | Расширить `AgentToolDefinition`: `Pack`, `Purpose`, `WhenToUse`, `WhenNotToUse`, `Examples[]`, `Synonyms[]`, `NegativeExamples[]`, `Idempotent`, `TimeoutMs`, `RequiredContext`, `Bulk` | `Core/Models/Agent/AgentToolDefinition.cs`, `Core/Services/Agent/AgentToolCatalog.cs`, описания 27 тулов | Все 27 карточек enriched; unit на сериализацию |
+| H1-06 | ToolCard | Расширить `AgentToolDefinition`: `Pack`, `Purpose`, `WhenToUse`, `WhenNotToUse`, `Examples[]`, `Synonyms[]`, `NegativeExamples[]`, `Idempotent`, `TimeoutMs`, `RequiredContext`, `Bulk`. Карточка описывает **пользовательское намерение**, не метод API | `Core/Models/Agent/AgentToolDefinition.cs`, `Core/Services/Agent/AgentToolCatalog.cs`, описания 27 тулов | Все 27 карточек enriched; unit на сериализацию; review-гейт ADR-076: нет 1:1 обёрток API, нет per-property tools |
 | H1-07 | Packs | 12–20 паков: `views`, `sheets`, `params`, `families`, `schedules`, `filters`, `worksets`, `links`, `mep`, `annotations`, `rooms`, `warnings`, `model`, `audit`, `meta`… Каждый тул — ровно в одном паке; core-набор | `AgentToolCatalog.cs`, новый `Core/Services/Agent/AgentToolPacks.cs` | Каждый тул в одном паке; core 8–10 всегда доступны |
-| H1-08 | Router v2 + find/load | BM25 по карточке (name+purpose+when+examples+synonyms); top-50 → JEV/LLM reranker (опционально) → top-5; `find_tools(query, pack?, context)`; `load_tool_pack(pack)` / `enable_tools(names)`; набор фиксируется в `AgentSessionContext` | `RuleToolRouter.cs`, `FindToolsTool.cs`, новый `LoadToolPackTool.cs`, `AgentOrchestrator.cs`, `AgentSessionContext.cs` | top-5 recall ≥95 % на 200 запросах; после load набор не меняется; `find_tools` не расширяет до полного каталога |
+| H1-08 | Router v2 + find/load | **BM25 по карточке** (name+purpose+when+examples+synonyms) → top-50 → decision-модель как reranker на 100–200 кандидатах (опционально, при включённой модели) → top-5. `find_tools(query, pack?, context)` + режим листинга `fields=["name","description"]`; `load_tool_pack(pack)` / `enable_tools(names)`; набор фиксируется в `AgentSessionContext`. **Vector-ветка в H1 не входит** — отдельный эпик H6 по ADR-075, только после routing-eval на 1000 карточках | `RuleToolRouter.cs`, `FindToolsTool.cs`, новый `LoadToolPackTool.cs`, `AgentOrchestrator.cs`, `AgentSessionContext.cs` | top-5 recall ≥95 % на 200 запросах; после load набор не меняется; `find_tools` не расширяет до полного каталога; выключенный decision = текущий BM25 |
 | H1-09 | Validation + repair | Валидация всех тулов; tolerant JSON, coerce, aliases, unknown-tool suggestions; `_repairs[]` в tool_calls | `AgentToolSchemaValidator.cs`, новый `AgentToolInputRepair.cs`, `AgentToolExecutor.cs`, `AgentOrchestrator.cs` | 20 malformed payload → `invalid_arguments` с path/hint; repair залогирован |
 | H1-10 | Loop guard + timeout | SHA-256(tool+args): 2 одинаковые ошибки → warn, 3 одинаковых вызова → block+ask, 5 → abort. `TimeoutMs`, net48-совместимый `Task.WhenAny`+`Delay`, watchdog | новый `Core/Services/Agent/LoopGuard.cs`, `AgentOrchestrator.cs`, `AgentAwaitableEvent.cs` (watchdog) | 3 одинаковых вызова → `loop_detected`; зависший вызов логируется |
-| H1-11 | Routing eval | 200 запросов: 100 реальных BIM-фраз, 100 синтетических; top-1/top-5/false tool/p95; каталог 1000 карточек, витрина ≤150 composite | `SmartCon.Tests/Agent/Routing/…`, fixtures | Метрики в `eval.md`; gate ≥80/95 |
-| H1-12 | 1000-card test | Синтетический каталог 1000 карточек; проверить размер промпта с паками и качество top-5 | `SmartCon.Tests/Agent/Routing/…` | Prompt с паками ≤ ~8k токенов; top-5 ≥95 % |
+| H1-11 | Routing eval | 200 запросов: 100 реальных BIM-фраз, 100 синтетических; режимы `rules` и `decisions` (decision reranker); top-1/top-5/false tool/p95; каталог 1000 карточек, витрина ≤150 composite | `SmartCon.Tests/Agent/Routing/…`, fixtures | Метрики в `eval.md`; gate ≥80/95; зафиксировано, нужен ли vector (порог — следующий эпик) |
+| H1-12 | 1000-card test | Синтетический каталог 1000 карточек; размер промпта с паками; качество top-5 на BM25 + decision reranker | `SmartCon.Tests/Agent/Routing/…` | Prompt с паками ≤ ~8k токенов; top-5 ≥95 %; вердикт по vector-ветке (нужна/нет) |
 | H1-13 | Cache stability | Тест: одинаковый набор tools/prefix между ходами; смена active view не меняет static hash | `SmartCon.Tests/Agent/…` | Hash стабилен; поле cache заполнено |
 
 **Выход H1.1:** 1000 тулов навигируются; модель не видит лишнего; ошибки аргументов лечатся.
@@ -159,7 +189,8 @@ public sealed class AgentToolDefinition
 ```
 
 Правила:
-- `find_tools` — **только discovery**: возвращает карточки/схемы в tool-result и **не меняет** tools в payload.
+- `find_tools` — **только discovery**: возвращает карточки/схемы в tool-result и **не меняет** tools в payload. В H1 кандидаты — BM25 по карточке (+ decision reranker, если модель включена); vector-ветка — эпик H6 (ADR-075), не H1.
+- Режим листинга: `find_tools(fields=["name","description"])` возвращает каталог/пак без `inputSchema` — модель может просмотреть его целиком и потом запросить схему выбранного инструмента.
 - `load_tool_pack`/`enable_tools` фиксирует набор в `AgentSessionContext`; повторный вызов **добавляет**, не заменяет. Набор меняется только на границе хода; внутри хода — неизменен.
 - В LLM payload уходят только загруженные tools + core.
 - Вызвать найденный tool можно только после `load_tool_pack`/`enable_tools`; смена набора логирует cache invalidation.
@@ -343,5 +374,7 @@ SMARTCON_AGENT_EVAL_REPLAY=1 dotnet run --project src/SmartCon.IntegrationTests 
 - **H3:** policy engine, persisted grants, atomic plan, verify-on-stop.
 - **H4:** usage ledger v2, cost caps, eval v2, snapshots.
 - **H5:** steering, timeline/rewind, memory inbox, MCP (backlog).
+- **H6:** гибридный retrieval (BM25 ∪ vector → decision reranker), ADR-075 — только после H1-11/H1-12.
+- **H7:** typed facade + sandbox-интерпретатор для длинного хвоста (Jint/Lua поверх `IRevitOps`), ADR-076; без runtime C#.
 
 Ссылки: `harness-ideal-plan.md` §5 (фазы), §6 (спеки), §7 (схема), §8 (метрики).

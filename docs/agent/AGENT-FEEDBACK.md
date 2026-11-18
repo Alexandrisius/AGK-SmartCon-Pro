@@ -53,6 +53,23 @@
 - Сокращение числа запросов (29 → 24) — прямое следствие алиасов проекций и
   целых мм: модель перестала делать «уточняющие» вызовы.
 
+## Внешний прогон 4 — 2026-11-18, владелец + реальная задача (rename + template)
+
+Четыре замечания и что с ними сделано (`13ffb360`):
+
+| # | Инструмент | Проблема | Что изменено |
+|---|---|---|---|
+| 1 | `rename_views` | описан в промпте как штатный, но отсутствовал в routed shortlist — понадобился `find_tools` | `rename_views` и `apply_view_template` закреплены в `RuleToolRouter.CoreTools`, shortlist поднят до 16 |
+| 2 | `execute_plan` | в применённом плане `items.dryRun=true`; hint «All expectations verified» при `verified=0` | apply-отчёт берёт per-item diff из `ApplyResult` (`dryRun=false`); при `expectationsChecked=0` hint говорит «проверок не задавали» |
+| 3 | `list_views` | в `summaryOnly`/`byFolder` сегменты пути `???` | имя сегмента разрешается через `LabelUtils.GetLabelFor` / имя элемента; Revit 2026+ — `GetGroupingParameterIdPath()` |
+| 4 | `list_views` | `fields` принимает не те имена, что в карточке (`type`→`viewType`), допустимые значения не перечислены | ключи ответа = запрошенные имена; `substitutedFields`; допустимые имена/алиасы перечислены в схемах `list_views`, `get_view_settings`, `get_view_template_details` |
+
+Отдельное наблюдение по роутингу: при 27 тулах decision-модель не даёт выигрыша
+над BM25, `find_tools` ограничен поиском (не листингом), `context` необязателен.
+Решение: decision остаётся опциональной; для 500–1000 тулов и 200 навыков
+принят гибридный retrieval BM25 ∪ vector → RRF → decision reranker
+(**ADR-075**, эпик H6 после H1). H1 vector не реализует.
+
 ## Как использовать дальше
 
 1. `AgentFrictionAnalyzer` (SmartCon.Agent/Services/Analysis) читает `tool_calls` и
