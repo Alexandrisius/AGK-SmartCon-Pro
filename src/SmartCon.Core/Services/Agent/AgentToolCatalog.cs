@@ -20,7 +20,8 @@ public static class AgentToolCatalog
             }),
             ["list_views"] = new("Read", false, new[]
             {
-                "виды", "вид", "план", "разрез", "список", "перечень", "views", "list", "plans"
+                "виды", "вид", "план", "разрез", "список", "перечень", "views", "list", "plans",
+                "папка", "браузер", "организация", "folder", "browser", "organization"
             }),
             ["list_levels"] = new("Read", false, new[]
             {

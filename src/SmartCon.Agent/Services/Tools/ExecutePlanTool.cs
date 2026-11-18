@@ -47,7 +47,9 @@ public sealed class ExecutePlanTool : IAgentTool
             "changes. Show that diff to the user. Call again with dryRun=false and the " +
             "planDigest from the preview only after the user approves: the steps are applied in " +
             "dependency order, one change set per step (undo_last works per step) and a " +
-            "read-back verifies the result. Never include execute_plan as a step.",
+            "read-back verifies the result. Never include execute_plan as a step. " +
+            "readBackExpectations.path is dot-addressed; use byId[<elementId>].property " +
+            "when the read-back returns an array (index access can check the wrong element).",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         Category = "Write",
