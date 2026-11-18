@@ -69,8 +69,9 @@ Return only the checkpoint, no preamble, at most the requested number of tokens,
                         streamEvent.Error ?? "Summary stream error.");
 
                 case LlmStreamEventKind.Completed:
-                    if (builder.Length == 0 && !string.IsNullOrWhiteSpace(streamEvent.Completion?.Message.Content))
-                        builder.Append(streamEvent.Completion.Message.Content);
+                    var completedText = streamEvent.Completion?.Message?.Content;
+                    if (builder.Length == 0 && !string.IsNullOrWhiteSpace(completedText))
+                        builder.Append(completedText);
                     break;
             }
         }

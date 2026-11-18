@@ -176,3 +176,43 @@ token-уникальных) запросах.
 | Tool selection | | | |
 | Запросов на задачу | | | |
 | Токенов на задачу | | | |
+
+## H1.2 (2026-11-18) — context ladder и legacies
+
+Легаси v1 удалено (флаги `ToolCatalogV2`/`ContextCompactionV2`/`WorkingStateEnabled`
+и старые ветки), каталог стал 28 инструментов (`read_tool_result` в паке `meta`,
+всегда доступен). Метрики routing пересняты на 102 реальных запросах:
+
+| Метрика | Значение |
+|---|---|
+| rules real top-1 | 95.1 % (95/100 было; новые meta-запросы в top-1) |
+| rules real top-5 | 100 % |
+| false tool | 0 % |
+| p95 | 2.05 мс (<100 мс) |
+| synthetic 1000 карточек top-1 / top-5 | 100 % / 100 % |
+| decisions fake visible / top1 / top5 | 102/102 / 102 / 102 |
+| Полный стартовый промпт с паками | 4 285 токенов (≤8k) |
+
+Store-and-reference (H1-14): результат >40k символов сохраняется в
+`tool_result_blobs` после redaction, конверт получает `resultHandle` (id
+tool-call), модель дочитывает через `read_tool_result(handle, offset, limit,
+path)`. Blob живёт 30 дней и привязан к conversation; после рестарта доступен.
+
+Compaction ladder (H1-15..H1-17): mask → nine-section checkpoint → hard shrink.
+Маска не трогает последние 6 tool-результатов и `find_tools`/`load_tool_pack`/
+`read_tool_result`/`execute_plan`, сохраняет `resultHandle`.
+`compactions` хранит чекпойнт (covered ordinal, summary, tokens before/after,
+model, source hash); после рестарта оркестратор восстанавливает
+`<conversation_checkpoint>` + хвост. Summarizer input режется на чанки
+`SummaryMaxInputTokens` (default 24k) и суммируется рекурсивно; 3 подряд ошибки
+открывают circuit breaker, ход продолжается на маске/жёстком сжатии.
+
+Compaction eval (H1-18, 10 кейсов): 20 фактов на 200 ходах (≥95 %), ElementId/
+UniqueId, changeSetId, planDigest, рестарт, ошибка summarizer, целостность пар
+tool-call→tool-result, pinning ограничений пользователя, protected results,
+cap summarizer-входа. Все 10 PASS (детерминированный summarizer, без сети).
+
+Integration (H1-19): `AgentCompactionStorageTests` — 5 тестов на реальном SQLite
+внутри Revit 2025 (blob restart/session isolation, paging, checkpoint store,
+checkpoint→projection, cancellation) — 5/5 PASS. net48 сьют остаётся
+Revit-boundary (Agent-тесты исключены из net48 по конфигурации проекта).

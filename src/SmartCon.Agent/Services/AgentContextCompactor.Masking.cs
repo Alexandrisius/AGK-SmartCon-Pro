@@ -77,7 +77,7 @@ public sealed partial class AgentContextCompactor
 
     private static bool IsDigest(string? content) =>
         !string.IsNullOrEmpty(content)
-        && content!.Contains("\"compacted\":true", StringComparison.Ordinal);
+        && content!.IndexOf("\"compacted\":true", StringComparison.Ordinal) >= 0;
 
     /// <summary>
     /// Digest keeps what the model needs to react (success/message/counts) and

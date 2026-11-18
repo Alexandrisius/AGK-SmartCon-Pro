@@ -1,5 +1,49 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ H1 ЗАКРЫТ полностью (2026-11-18, текущая сессия)
+
+### Коммиты
+
+- `3ed6d229` — легаси v1 и rollout-флаги удалены, поведение одно (H1).
+- `6b67f859` — **H1-14** store-and-reference: `tool_result_blobs`, `resultHandle`,
+  `read_tool_result(handle, offset, limit, path)`, 30 дней, привязка к conversation.
+- `f8cec03e` — **H1-15/H1-16/H1-17**: mask → 9-section checkpoint → hard shrink,
+  protected tools, constraint pinning, `compactions` + restore после рестарта,
+  circuit breaker (3), chunked summarizer (`SummaryMaxInputTokens`).
+
+### Что теперь умеет харнес
+
+- Каталог 28 тулов: core 9 + BM25 top-5 + `load_tool_pack`; мелкий каталог (≤8)
+  отдаётся целиком. `find_tools` — только discovery.
+- Обрезанные результаты не теряются: полный redacted JSON в blob, модель
+  дочитывает страницами, в т.ч. после рестарта.
+- Длинная сессия: старые tool-результаты маскируются digest'ом (handle
+  сохраняется); выше порога — чекпойнт из 9 секций с pinned goal/constraints/
+  change sets; после рестарта чекпойнт подставляется в промпт.
+- Падение summarizer'а не ломает ход: fallback на маску/shrink, после 3 ошибок
+  summary-ступень отключается на сессию.
+
+### Гейты (заполняется финальным прогоном)
+
+| Проверка | Результат |
+|---|---|
+| `build-all-configs.ps1` (R19–R27) | R19/R21/R25/R26/R27 — 0 ошибок; R23/R24 упали на net48-API (`Contains(StringComparison)`), после фикса пересобраны отдельно — 0 ошибок |
+| Unit `SmartCon.Tests -c Debug.R25` | 3743/3743 |
+| Routing eval (102 запроса) | top-1 95.1 %, top-5 100 %, p95 2.05 мс |
+| 1000 карточек | top-1 100 %, top-5 100 %, p95 21.4 мс |
+| Prompt с паками | 4 285 токенов (≤8k) |
+| Compaction eval (10 кейсов H1-18) | 10/10 |
+| `AgentCompactionStorageTests` (Revit R25) | 5/5 |
+| Integration R25 (полный, replay) | **332 passed, 12 skipped, 0 failed** (344) |
+| Eval replay 40 задач | PASS (тест `AgentEvalTests`, replay-режим) |
+| Integration net48 / R27 | **не перезапускались в этом проходе** — владелец остановил долгие прогоны. net48 сьют не содержит Agent-тестов (исключены конфигурацией); R27 использует тот же net10 Agent-код, что собран в sweep |
+
+### Осталось
+
+- Ручной UI-тест в Revit (обязателен): длинная сессия → чекпойнт; трим >40k →
+  `read_tool_result`; рестарт Revit → чекпойнт/WorkingState; loop guard/timeout.
+- Деплой `build-and-deploy.bat` — только владелец, после ручного теста.
+
 ## ⚡ Легаси v1 удалено (2026-11-18, текущая сессия)
 
 Решение владельца: продукт новый, пользователей и совместимости нет. Удалены

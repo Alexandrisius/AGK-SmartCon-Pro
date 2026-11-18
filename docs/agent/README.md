@@ -11,13 +11,14 @@
 |---|---|
 | Чат-панель | DockablePane, WPF MVVM, вложения/скриншоты, streaming |
 | LLM | OpenAI-compatible streaming, DeepSeek V4.1 Flash через OpenRouter/OpenCode Go, reasoning |
-| Инструменты | 27 тулов (24 Revit + 3 meta), BM25-shortlist + опциональная decision-модель + `find_tools`; гибридный retrieval 500–1000 — ADR-075, ещё не реализован |
+| Инструменты | 28 тулов (24 Revit + 4 meta), каталог v2: 20 паков, карточки, BM25 top-5 + `find_tools` + `load_tool_pack`; гибридный retrieval 500–1000 — ADR-075, ещё не реализован |
 | Запись | dry-run → подтверждение → change set → `undo_last`/`discard_change_set` |
 | План | `execute_plan` L0–L6 (L2 нет, L5 не атомарен — план H1/H3) |
 | Approvals | ConfirmWrites / AutoApproveSession / ReadOnly, digest-binding |
+| Контекст | WorkingState + `<turn_context>`, store-and-reference (`tool_result_blobs` + `read_tool_result`), compaction v2 (mask → 9-section checkpoint → hard shrink, persisted/restored) |
 | Память | Сессии в SQLite; долговременной памяти и FTS пока нет |
-| Eval | 40 задач, replay без ключа, gate PASS, routing 97.5 % |
-| Сборка | 7 конфигураций R19–R27, unit 3560 (H1.0), integration R25/R27/net48 |
+| Eval | 40 задач replay, gate PASS; routing 102 запроса — top-1 95.1 %, top-5 100 %, p95 2.05 мс; 1000 карточек 100 % |
+| Сборка | 7 конфигураций R19–R27, unit 3743, integration R25/R27/net48 |
 
 **Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках, code mode / sandbox-интерпретатор / runtime C#, model entity search / BM25-каталог сущностей. Это roadmap, не факт. Архитектурные решения: retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md), tool surface и code mode — [ADR-076](../adr/076-tool-surface-and-code-mode.md), model search — [ADR-077](../adr/077-model-entity-search.md).
 
@@ -57,8 +58,8 @@
 
 | Эпик | Содержание | Документ |
 |---|---|---|
-| **H1 (сейчас)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
-| **H1b (следующий)** | Model entity search: BM25 по категориям/семействам/типам/уровням/видам/параметрам, русский стеммер/синонимы, `search_model_entities` + структурный `query_elements`, ленивый индекс только по одному параметру (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md), [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) |
+| **H1 (закрыт)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 — готово | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
+| **H1b (следующий)** | Живой поиск по модели без индекса: нормализация запроса (стеммер/синонимы/алиасы), `list_family_types`, `find_families_with_parameter`, `list_parameters`, `query_elements` с `parameterContainsAny`; 100k экземпляров — scoped-проход, one-shot cache (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md), [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) |
 | **H1c** | View configuration: шаблон или текущий вид, visibility категорий/осей, фильтры по условиям, overrides (покрасить стены), crop/scope boxes | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §3 |
 | **H1d** | Family editing: EditFamily без UI, параметры instance/type, shared, формулы/lookup, перенос значений, save/load | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §4 |
 | H8 (после H1d) | Bulk/cyclic job engine: select + action + батчи, прогресс/отмена/resume; альтернатива — sandbox-скрипт (H7), не runtime C#. Отдельный дизайн, не в H1 | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §5 |
