@@ -1,12 +1,12 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
-## ⚡ H1 session — H1.0 закрыт, H1.1 в работе (2026-11-18, текущая сессия)
+## ⚡ H1 session — H1.0 + H1.1 закрыты (2026-11-18, текущая сессия)
 
 ### Где мы сейчас
 
-- Ветка `develop`. Эпик H1: **H1.0 полностью закрыт**, H1.1 выполняется.
-- Коммиты сессии: `8a2406cb` (docs: runbook H1), `cecac3b9` (test: P2-8 key names), `ea059c12` (**H1.0**).
-- H1.1: H1-06 (+карточки 27 тулов) и H1-07 (20 паков, core 10) реализованы, но **ещё не закоммичены**; H1-08/H1-09/H1-10 + eval в работе.
+- Ветка `develop`. Эпик H1: **H1.0 и H1.1 закрыты** (H1.2 — context compaction — следующий).
+- Коммиты сессии: `8a2406cb` (docs: runbook H1), `cecac3b9` (test: P2-8 key names), `ea059c12` (**H1.0**), `d289da83` (H1.0 handoff), `8dd01da1` (**H1.1**).
+- H1.1 включает: карточки 27 тулов, 20 паков, Router v2 + `find_tools`/`load_tool_pack`, tolerant repair, loop guard/timeout/watchdog, routing eval 200 запросов, 1000-карточный тест, cache stability.
 
 ### H1.0 — что сделано
 
@@ -33,17 +33,42 @@
 - Флаги H1 — `AgentLlmSettings` (docs/agent/README.md §«Флаги H1»); при выключенных поведение 1:1.
 - Расширения сверх runbook §7.5 (аддитивные): `working_states`, `token_usage.estimated_prompt_tokens`, `tool_calls.repairs_json`.
 
-### H1.1 — статус
+### H1.1 — что сделано и метрики
 
-- **H1-06/H1-07 (готово, не закоммичено)**: `AgentToolDefinition` расширен (Pack, Purpose, WhenToUse, WhenNotToUse, Examples, Synonyms, NegativeExamples, Idempotent, TimeoutMs, RequiredContext, Bulk-алиас); `AgentToolCards` — 27 карточек; `AgentToolPacks` — 20 паков (11 заполненных + 9 задел), core 10.
-- **Дальше**: H1-08 router v2 (BM25 по карточке, top-50 → decision reranker → top-5, `find_tools` без расширения каталога, `load_tool_pack`, фиксация набора), H1-09 repair/validation, H1-10 loop guard/timeout, H1-11/12/13 eval.
+- **H1-06**: `AgentToolDefinition` расширен (Pack, Purpose, WhenToUse, WhenNotToUse, Examples, Synonyms, NegativeExamples, Idempotent, TimeoutMs, RequiredContext, Bulk-алиас); `AgentToolCards` — 27 intent-карточек (ADR-076, без 1:1 обёрток API); `ToolCardRouter` — BM25 по карточке с negative-примерным штрафом.
+- **H1-07**: `AgentToolPacks` — 20 паков (11 заполненных + 9 задел), каждый тул ровно в одном паке; core = 9 инструментов ADR-075.
+- **H1-08**: при `ToolCatalogV2=1` payload = core 9 + загруженные + BM25 top-5 (≤16); `find_tools` — только discovery (top-5, pack-фильтр, listing `fields=["name","description"]`), не расширяет payload; `load_tool_pack` пишет pending/loaded, применяет на границе раунда и логирует cache invalidation.
+- **H1-09**: валидация аргументов перед выполнением + tolerant repair (aliases/coerce/scalar↔array/unknown fields), `_repairs[]` в tool-result и `tool_calls.repairs_json`, unknown-tool suggestions.
+- **H1-10**: `LoopGuard` (2 одинаковые ошибки → warn, 3 одинаковых вызова → `loop_detected`, 5 → abort хода), per-tool timeout (cooperative cancel + grace), watchdog `AgentAwaitableEvent`.
+- **H1-11/12/13** (детали — `docs/agent/00-strategy/eval.md`): rules — top-1 95 %, top-5 100 %, p95 1.28 мс; decisions live (20 запросов) — 95 %/100 %; 1000 карточек — top-5 100 %, p95 11 мс; prompt с паками 4 118 токенов (≤8k); static/tool-set hash стабильны. **Вердикт: vector-ветка (H6) пока не нужна** — BM25 top-14 100 %, видимый каталог 27 < 200.
+- **H1-04**: live baseline 5 read + 5 write — 10/10, tool selection 100 %, schema 20/20, prompt 202 173 / completion 4 427 токенов.
+
+### Гейты H1.1 (все зелёные)
+
+| Проверка | Результат |
+|---|---|
+| `build-all-configs.ps1` | 7/7, 0 warnings / 0 errors |
+| Unit `SmartCon.Tests -c Debug.R25` | **3714/3714** |
+| Integration R25 (replay) | **327 passed, 12 skipped, 0 failed** (339) |
+| Integration net48 (Revit 2023) | **246 passed, 12 skipped, 0 failed** (258) |
+| Integration R27 (net10) | **313 passed, 27 skipped, 0 failed** (340) |
+| Eval replay 40 задач | **40/40 PASS** |
+| Routing eval 100 + 100 | top-1 95 %, top-5 100 %, p95 1.28 мс; 1000 карточек top-5 100 % |
+
+### Что осталось (следующий эпик/сессия)
+
+- **H1.2**: store-and-reference (`tool_result_blobs` + `read_tool_result`), masking, compaction v2 (checkpoint-summary, constraint pinning, 9 секций), compaction eval.
+- **H1-14** (опционально, если останется время): store-and-reference без compaction v2.
+- Ручной UI-тест в Revit — **manual pending**: флаг `ToolCatalogV2=1` (find/load/freeze), `WorkingStateEnabled=1` (turn_context/restart), timeout/loop guard, запись+undo.
+- Валидатор `general` повторно не запускался по решению владельца (H1.0 — PASS, фиксы внесены).
 
 ### Риски / заметки
 
-- В рабочем дереве есть **параллельные изменения другого агента** (ADR-075, docs/README.md, docs/agent/00-strategy/*, AGENT-FEEDBACK.md) — не коммитить их в наши коммиты.
+- Документация H1/H6/H7 и ADR-075/076 зафиксированы отдельным коммитом `bab714ca` (другая сессия); H1.1 реализован уже с учётом ADR-075 (core 9, listing mode, vector — H6).
 - `%APPDATA%\SmartCon\Agent\agent.db` на dev-машине может быть v3 без новых колонок — self-heal лечит при старте.
-- Ручной UI-тест в Revit **manual pending** (флаги OFF/ON, рестарт, смена conversation).
+- Ручной UI-тест в Revit **manual pending** (флаги OFF/ON, рестарт, смена conversation, timeout/loop guard).
 - `AgentContextBudgetTests` (P2-8) исправлен отдельным коммитом `cecac3b9` — это baseline-фикс, не H1.0.
+- H1.1 gate-валидатор `general` повторно не запускался (решение владельца «ревалидация не нужна»); H1.0 — PASS, все найденные HIGH/MEDIUM исправлены.
 
 ---
 
