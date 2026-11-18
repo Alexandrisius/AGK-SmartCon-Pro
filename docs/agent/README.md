@@ -71,15 +71,16 @@
 
 ## Флаги H1
 
-Все три флага **выключены по умолчанию** — при выключенных флагах поведение 1:1 текущему. Значение
-`1` или `true` (без учёта регистра) включает флаг; любые другие значения — выключен.
-Переменная окружения перекрывает `secrets.env`.
+Все три флага **включены по умолчанию** — это новая логика харнеса. Флаги остались только
+как аварийный выключатель: `0` или `false` (без учёта регистра) возвращает старое поведение;
+отсутствие переменной или неизвестное значение оставляет дефолт. Переменная окружения
+перекрывает `secrets.env`.
 
 | Флаг (`AgentLlmSettings`) | Env | Дефолт | Что гейтит |
 |---|---|---|---|
-| `ToolCatalogV2` | `SMARTCON_AGENT_TOOL_CATALOG_V2` | `false` | Tool catalog v2: packs и enriched tool cards (H1-06..H1-08) |
-| `ContextCompactionV2` | `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` | `false` | В H1.0 флаг включает учёт system+tools в оценке контекста и калибровку; mask→summary→shrink и checkpoint в `compactions` — H1.2 |
-| `WorkingStateEnabled` | `SMARTCON_AGENT_WORKING_STATE` | `false` | Persisted WorkingState и вставка `<turn_context>` (H1-03) |
+| `ToolCatalogV2` | `SMARTCON_AGENT_TOOL_CATALOG_V2` | `true` | Tool catalog v2: packs, enriched tool cards, `find_tools` discovery и `load_tool_pack` (H1-06..H1-08) |
+| `ContextCompactionV2` | `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` | `true` | Учёт system+tools в оценке контекста и калибровка; store-and-reference/compaction v2 добавляются в H1.2 |
+| `WorkingStateEnabled` | `SMARTCON_AGENT_WORKING_STATE` | `true` | Persisted WorkingState и вставка `<turn_context>` (H1-03) |
 
 ## Жёсткие ограничения
 

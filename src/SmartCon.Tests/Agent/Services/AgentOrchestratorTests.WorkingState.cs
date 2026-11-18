@@ -50,7 +50,13 @@ public sealed partial class AgentOrchestratorTests
             offRegistry,
             new InMemoryConversationStore(),
             projectContext: projectContext,
-            settings: new AgentLlmSettings { Model = "test-model" });
+            settings: new AgentLlmSettings
+            {
+                Model = "test-model",
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false,
+                WorkingStateEnabled = false
+            });
 
         await offOrchestrator.RunTurnAsync(
             Guid.NewGuid(),
@@ -73,7 +79,9 @@ public sealed partial class AgentOrchestratorTests
             settings: new AgentLlmSettings
             {
                 Model = "test-model",
-                WorkingStateEnabled = true
+                WorkingStateEnabled = true,
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false
             },
             workingStateStore: workingStore);
 
@@ -203,7 +211,9 @@ public sealed partial class AgentOrchestratorTests
             settings: new AgentLlmSettings
             {
                 Model = "test-model",
-                WorkingStateEnabled = true
+                WorkingStateEnabled = true,
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false
             },
             workingStateStore: workingStore);
 

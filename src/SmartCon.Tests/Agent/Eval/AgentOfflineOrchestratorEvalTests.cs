@@ -134,7 +134,10 @@ public sealed class AgentOfflineOrchestratorEvalTests
             {
                 Model = "test-model",
                 ContextWindowTokens = 2000,
-                ContextThreshold = 0.3
+                ContextThreshold = 0.3,
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false,
+                WorkingStateEnabled = false
             });
 
         var result = await orchestrator.RunTurnAsync(
@@ -203,7 +206,14 @@ public sealed class AgentOfflineOrchestratorEvalTests
         var orchestrator = CreateOrchestrator(
             llm,
             registry,
-            settings: new AgentLlmSettings { Model = "test-model", UseToolRouter = true },
+            settings: new AgentLlmSettings
+            {
+                Model = "test-model",
+                UseToolRouter = true,
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false,
+                WorkingStateEnabled = false
+            },
             toolRouter: router);
 
         var result = await orchestrator.RunTurnAsync(
@@ -345,7 +355,13 @@ public sealed class AgentOfflineOrchestratorEvalTests
             store,
             new RecordingAuditLog(),
             new EvalProjectContextProvider(session.DocumentId),
-            settings ?? new AgentLlmSettings { Model = "test-model" },
+            settings ?? new AgentLlmSettings
+            {
+                Model = "test-model",
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false,
+                WorkingStateEnabled = false
+            },
             session,
             new AgentPromptBuilder(),
             null,

@@ -41,22 +41,24 @@ public sealed class AgentLlmSettings
     public bool UseToolRouter { get; set; } = true;
 
     /// <summary>
-    /// Enable the v2 tool catalog (packs + enriched cards). Off by default;
-    /// override with SMARTCON_AGENT_TOOL_CATALOG_V2=1|true.
+    /// v2 tool catalog (packs + enriched cards + load_tool_pack). Enabled by
+    /// default; set SMARTCON_AGENT_TOOL_CATALOG_V2=0 as an emergency rollout
+    /// switch back to the plain shortlist.
     /// </summary>
-    public bool ToolCatalogV2 { get; set; }
+    public bool ToolCatalogV2 { get; set; } = true;
 
     /// <summary>
-    /// Enable the v2 context compaction pipeline (store-and-reference). Off by
-    /// default; override with SMARTCON_AGENT_CONTEXT_COMPACTION_V2=1|true.
+    /// v2 context pipeline: calibrated estimate with system+tools and, in H1.14,
+    /// store-and-reference. Enabled by default; set
+    /// SMARTCON_AGENT_CONTEXT_COMPACTION_V2=0 to disable.
     /// </summary>
-    public bool ContextCompactionV2 { get; set; }
+    public bool ContextCompactionV2 { get; set; } = true;
 
     /// <summary>
-    /// Persist and inject the structured working state. Off by default; override
-    /// with SMARTCON_AGENT_WORKING_STATE=1|true.
+    /// Persist and inject the structured working state. Enabled by default;
+    /// set SMARTCON_AGENT_WORKING_STATE=0 to disable.
     /// </summary>
-    public bool WorkingStateEnabled { get; set; }
+    public bool WorkingStateEnabled { get; set; } = true;
 
     public bool IsOpenCodeGo =>
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
@@ -105,9 +107,12 @@ public sealed class AgentLlmSettings
                     0.95)),
             UseToolRouter = !string.Equals(
                 Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal),
-            ToolCatalogV2 = ParseBool(Get(values, "SMARTCON_AGENT_TOOL_CATALOG_V2")),
-            ContextCompactionV2 = ParseBool(Get(values, "SMARTCON_AGENT_CONTEXT_COMPACTION_V2")),
-            WorkingStateEnabled = ParseBool(Get(values, "SMARTCON_AGENT_WORKING_STATE"))
+            ToolCatalogV2 = ParseFlag(
+                Get(values, "SMARTCON_AGENT_TOOL_CATALOG_V2"), fallback: true),
+            ContextCompactionV2 = ParseFlag(
+                Get(values, "SMARTCON_AGENT_CONTEXT_COMPACTION_V2"), fallback: true),
+            WorkingStateEnabled = ParseFlag(
+                Get(values, "SMARTCON_AGENT_WORKING_STATE"), fallback: true)
         };
     }
 
@@ -196,9 +201,30 @@ public sealed class AgentLlmSettings
             ? parsed
             : fallback;
 
-    private static bool ParseBool(string? value) =>
-        string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Tri-state rollout flag: absent/unknown keeps the feature default, "0" or
+    /// "false" is the emergency switch back to the legacy behaviour, "1"/"true"
+    /// pins it on.
+    /// </summary>
+    private static bool ParseFlag(string? value, bool fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+
+        if (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return fallback;
+    }
 
     private static string? Get(IReadOnlyDictionary<string, string> values, string key)
     {

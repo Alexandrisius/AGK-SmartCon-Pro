@@ -128,7 +128,10 @@ public sealed partial class AgentOrchestrator
                 .ConfigureAwait(false);
             var working = EnsureToolCallPairs(TrimHistory(history));
             var systemMessage = AgentMessage.System(
-                _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
+                _promptBuilder.Build(
+                    projectContext,
+                    _sessionContext.ApprovalMode,
+                    toolCatalogV2: _settings.ToolCatalogV2));
             var definitions = await SelectToolDefinitionsAsync(userText, ct);
             SetActiveToolNames(definitions);
 

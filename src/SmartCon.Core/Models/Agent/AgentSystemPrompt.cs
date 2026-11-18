@@ -55,12 +55,20 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - After apply, verify the result by re-reading the affected objects (get_view_settings / list_views / get_element_details) and report any mismatch instead of assuming success.
 ";
 
+    private const string ToolCatalogV2Section = @"## Tool catalog
+- Only the core tools and the few most relevant tools are available in each request.
+- If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools(fields=[""name"",""description""]) lists a pack without schemas.
+- find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). The new tools become available on the next round.
+- Never call a tool that is not in the current request; it will fail with unknown_tool.
+";
+
     public static string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
-        string? extraRules = null)
+        string? extraRules = null,
+        bool toolCatalogV2 = false)
     {
-        var builder = new StringBuilder(BuildPrefix(mode));
+        var builder = new StringBuilder(BuildPrefix(mode, toolCatalogV2));
         builder.Append(context.BuildPromptSection());
         builder.AppendLine();
         AppendWorkingRules(builder);
@@ -81,14 +89,16 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     /// turns, so its hash is the prompt-cache key; the per-document context is
     /// appended by <see cref="Build"/> and never enters this hash.
     /// </summary>
-    public static string BuildStatic(AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites)
+    public static string BuildStatic(
+        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
+        bool toolCatalogV2 = false)
     {
-        var builder = new StringBuilder(BuildPrefix(mode));
+        var builder = new StringBuilder(BuildPrefix(mode, toolCatalogV2));
         AppendWorkingRules(builder);
         return builder.ToString();
     }
 
-    private static string BuildPrefix(AgentApprovalMode mode)
+    private static string BuildPrefix(AgentApprovalMode mode, bool toolCatalogV2)
     {
         var builder = new StringBuilder(BasePrompt);
         builder.AppendLine();
@@ -96,6 +106,13 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         builder.AppendLine();
         builder.Append(PlanSection);
         builder.AppendLine();
+
+        if (toolCatalogV2)
+        {
+            builder.Append(ToolCatalogV2Section);
+            builder.AppendLine();
+        }
+
         return builder.ToString();
     }
 

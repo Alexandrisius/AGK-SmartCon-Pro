@@ -67,7 +67,9 @@ public sealed partial class AgentOrchestratorTests
             Model = "test-model",
             ContextWindowTokens = CompactionContextWindow,
             ContextThreshold = 0.7,
-            ContextCompactionV2 = enabled
+            ContextCompactionV2 = enabled,
+            ToolCatalogV2 = false,
+            WorkingStateEnabled = false
         };
         var orchestrator = CreateOrchestrator(
             llm, executor, registry, store, settings: settings);

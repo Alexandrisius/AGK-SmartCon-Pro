@@ -79,17 +79,17 @@ public sealed class AgentLlmSettingsTests : IDisposable
     }
 
     [Fact]
-    public void H1Flags_DefaultToOff()
+    public void H1Flags_DefaultToOn()
     {
         var settings = new AgentLlmSettings();
 
-        Assert.False(settings.ToolCatalogV2);
-        Assert.False(settings.ContextCompactionV2);
-        Assert.False(settings.WorkingStateEnabled);
+        Assert.True(settings.ToolCatalogV2);
+        Assert.True(settings.ContextCompactionV2);
+        Assert.True(settings.WorkingStateEnabled);
     }
 
     [Fact]
-    public void Load_H1FlagsOffWhenEnvironmentIsEmpty()
+    public void Load_H1FlagsOnWhenEnvironmentIsEmpty()
     {
         WithEnvironment(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -102,9 +102,9 @@ public sealed class AgentLlmSettingsTests : IDisposable
             {
                 var settings = AgentLlmSettings.Load();
 
-                Assert.False(settings.ToolCatalogV2);
-                Assert.False(settings.ContextCompactionV2);
-                Assert.False(settings.WorkingStateEnabled);
+                Assert.True(settings.ToolCatalogV2);
+                Assert.True(settings.ContextCompactionV2);
+                Assert.True(settings.WorkingStateEnabled);
             });
     }
 
@@ -129,7 +129,7 @@ public sealed class AgentLlmSettingsTests : IDisposable
     }
 
     [Fact]
-    public void Load_H1FlagsIgnoreOtherValues()
+    public void Load_H1Flags_ZeroDisablesAndUnknownKeepsDefault()
     {
         WithEnvironment(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -137,6 +137,26 @@ public sealed class AgentLlmSettingsTests : IDisposable
                 ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "0",
                 ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "yes",
                 ["SMARTCON_AGENT_WORKING_STATE"] = "off"
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.False(settings.ToolCatalogV2);
+                Assert.True(settings.ContextCompactionV2);
+                Assert.True(settings.WorkingStateEnabled);
+            });
+    }
+
+    [Fact]
+    public void Load_H1Flags_ZeroSwitchesEverythingOff()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_AGENT_TOOL_CATALOG_V2"] = "0",
+                ["SMARTCON_AGENT_CONTEXT_COMPACTION_V2"] = "0",
+                ["SMARTCON_AGENT_WORKING_STATE"] = "false"
             },
             () =>
             {

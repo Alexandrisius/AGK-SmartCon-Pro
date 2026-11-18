@@ -268,7 +268,13 @@ public sealed partial class AgentOrchestratorTests
             store,
             new NullAuditLog(),
             projectContext ?? new StubProjectContextProvider(),
-            settings ?? new AgentLlmSettings { Model = "test-model" },
+            settings ?? new AgentLlmSettings
+            {
+                Model = "test-model",
+                ToolCatalogV2 = false,
+                ContextCompactionV2 = false,
+                WorkingStateEnabled = false
+            },
             session ?? new AgentSessionContext(),
             new AgentPromptBuilder(),
             toolCallStore,

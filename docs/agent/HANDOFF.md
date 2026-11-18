@@ -13,7 +13,7 @@
 - **H1-01**: ordered migrations (`AgentSchema`, v1→v2→v3a), backup `SqliteConnection.BackupDatabase` перед миграцией, транзакция на миграцию + `PRAGMA user_version`, self-heal текущей версии, immediate-transaction + перечитывание версии (гонка нескольких Revit). Новые таблицы `compactions`, `tool_result_blobs`, `working_states`; колонки `token_usage` (cached_tokens, cache_write_tokens, latency_ms, status, request_id, compaction_id, estimated_prompt_tokens), `messages.turn_id`, `tool_calls.repairs_json`. FTS5 smoke на net48 (`IntegrationTests/Storage/AgentSchemaStorageTests`).
 - **H1-02**: оценка промпта system+messages+tools (`AgentTokenEstimator.EstimateRequest`), `AgentTokenCalibration` (EMA по `usage.prompt_tokens`), cached/cache-write из OpenRouter/OpenAI и DeepSeek форм, ровно одна запись `token_usage` за ход (ok/error/cancelled), latency/request_id.
 - **H1-03**: `WorkingState` по §7.3 (+Document*), `AgentTurnContextBuilder` (`<turn_context>`, XML-escape, лимит 2000), `AgentWorkingStateUpdater` (goal/constraints/selection/change sets/touched ids/plan steps; dry-run не считается применённым), `SqliteAgentWorkingStateStore`, инъекция только в payload, восстановление после рестарта.
-- **H1-05**: флаги `ToolCatalogV2`, `ContextCompactionV2`, `WorkingStateEnabled` — OFF по умолчанию (env `SMARTCON_AGENT_TOOL_CATALOG_V2` / `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` / `SMARTCON_AGENT_WORKING_STATE`).
+- **H1-05**: флаги `ToolCatalogV2`, `ContextCompactionV2`, `WorkingStateEnabled` — **включены по умолчанию** (решение владельца: старая логика не нужна); env `SMARTCON_AGENT_*` со значением `0`/`false` — аварийный выключатель.
 
 ### Гейты H1.0 (все зелёные)
 
@@ -30,7 +30,7 @@
 ### Схема БД и флаги
 
 - `user_version = 3` (v3a). При старте на v3 выполняется идемпотентный self-heal колонок.
-- Флаги H1 — `AgentLlmSettings` (docs/agent/README.md §«Флаги H1»); при выключенных поведение 1:1.
+- Флаги H1 (`AgentLlmSettings`) **включены по умолчанию** — это новая логика харнеса. `0`/`false` в env (`SMARTCON_AGENT_TOOL_CATALOG_V2`, `SMARTCON_AGENT_CONTEXT_COMPACTION_V2`, `SMARTCON_AGENT_WORKING_STATE`) — аварийный выключатель. Живая проверка нового дефолта: `AbstractTaskLiveTests` 1/1 (модель сама нашла инструменты через `find_tools` → `load_tool_pack`, 21 с).
 - Расширения сверх runbook §7.5 (аддитивные): `working_states`, `token_usage.estimated_prompt_tokens`, `tool_calls.repairs_json`.
 
 ### H1.1 — что сделано и метрики

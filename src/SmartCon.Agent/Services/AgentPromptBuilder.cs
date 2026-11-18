@@ -12,6 +12,7 @@ public sealed class AgentPromptBuilder
     public string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
-        string? extraRules = null) =>
-        AgentSystemPrompt.Build(context, mode, extraRules);
+        string? extraRules = null,
+        bool toolCatalogV2 = false) =>
+        AgentSystemPrompt.Build(context, mode, extraRules, toolCatalogV2);
 }
