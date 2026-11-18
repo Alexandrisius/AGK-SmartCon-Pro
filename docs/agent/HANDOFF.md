@@ -1,5 +1,52 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ H1 session — H1.0 закрыт, H1.1 в работе (2026-11-18, текущая сессия)
+
+### Где мы сейчас
+
+- Ветка `develop`. Эпик H1: **H1.0 полностью закрыт**, H1.1 выполняется.
+- Коммиты сессии: `8a2406cb` (docs: runbook H1), `cecac3b9` (test: P2-8 key names), `ea059c12` (**H1.0**).
+- H1.1: H1-06 (+карточки 27 тулов) и H1-07 (20 паков, core 10) реализованы, но **ещё не закоммичены**; H1-08/H1-09/H1-10 + eval в работе.
+
+### H1.0 — что сделано
+
+- **H1-01**: ordered migrations (`AgentSchema`, v1→v2→v3a), backup `SqliteConnection.BackupDatabase` перед миграцией, транзакция на миграцию + `PRAGMA user_version`, self-heal текущей версии, immediate-transaction + перечитывание версии (гонка нескольких Revit). Новые таблицы `compactions`, `tool_result_blobs`, `working_states`; колонки `token_usage` (cached_tokens, cache_write_tokens, latency_ms, status, request_id, compaction_id, estimated_prompt_tokens), `messages.turn_id`, `tool_calls.repairs_json`. FTS5 smoke на net48 (`IntegrationTests/Storage/AgentSchemaStorageTests`).
+- **H1-02**: оценка промпта system+messages+tools (`AgentTokenEstimator.EstimateRequest`), `AgentTokenCalibration` (EMA по `usage.prompt_tokens`), cached/cache-write из OpenRouter/OpenAI и DeepSeek форм, ровно одна запись `token_usage` за ход (ok/error/cancelled), latency/request_id.
+- **H1-03**: `WorkingState` по §7.3 (+Document*), `AgentTurnContextBuilder` (`<turn_context>`, XML-escape, лимит 2000), `AgentWorkingStateUpdater` (goal/constraints/selection/change sets/touched ids/plan steps; dry-run не считается применённым), `SqliteAgentWorkingStateStore`, инъекция только в payload, восстановление после рестарта.
+- **H1-05**: флаги `ToolCatalogV2`, `ContextCompactionV2`, `WorkingStateEnabled` — OFF по умолчанию (env `SMARTCON_AGENT_TOOL_CATALOG_V2` / `SMARTCON_AGENT_CONTEXT_COMPACTION_V2` / `SMARTCON_AGENT_WORKING_STATE`).
+
+### Гейты H1.0 (все зелёные)
+
+| Проверка | Результат |
+|---|---|
+| `build-all-configs.ps1` (R19–R27) | 7/7, 0 warnings / 0 errors |
+| Unit `SmartCon.Tests -c Debug.R25` | **3579/3579** |
+| Integration R25 (replay) | **327 passed, 12 skipped, 0 failed** (339) |
+| Integration net48 (Revit 2023) | **246 passed, 12 skipped, 0 failed** (258) |
+| Integration R27 (net10) | **313 passed, 27 skipped, 0 failed** (340) |
+| Eval replay 40 задач | **40/40 PASS**, routing 100 %, schema 144/144 |
+| Валидатор `general` (H1.0) | **PASS** (2 HIGH + MEDIUM исправлены фикс-проходом) |
+
+### Схема БД и флаги
+
+- `user_version = 3` (v3a). При старте на v3 выполняется идемпотентный self-heal колонок.
+- Флаги H1 — `AgentLlmSettings` (docs/agent/README.md §«Флаги H1»); при выключенных поведение 1:1.
+- Расширения сверх runbook §7.5 (аддитивные): `working_states`, `token_usage.estimated_prompt_tokens`, `tool_calls.repairs_json`.
+
+### H1.1 — статус
+
+- **H1-06/H1-07 (готово, не закоммичено)**: `AgentToolDefinition` расширен (Pack, Purpose, WhenToUse, WhenNotToUse, Examples, Synonyms, NegativeExamples, Idempotent, TimeoutMs, RequiredContext, Bulk-алиас); `AgentToolCards` — 27 карточек; `AgentToolPacks` — 20 паков (11 заполненных + 9 задел), core 10.
+- **Дальше**: H1-08 router v2 (BM25 по карточке, top-50 → decision reranker → top-5, `find_tools` без расширения каталога, `load_tool_pack`, фиксация набора), H1-09 repair/validation, H1-10 loop guard/timeout, H1-11/12/13 eval.
+
+### Риски / заметки
+
+- В рабочем дереве есть **параллельные изменения другого агента** (ADR-075, docs/README.md, docs/agent/00-strategy/*, AGENT-FEEDBACK.md) — не коммитить их в наши коммиты.
+- `%APPDATA%\SmartCon\Agent\agent.db` на dev-машине может быть v3 без новых колонок — self-heal лечит при старте.
+- Ручной UI-тест в Revit **manual pending** (флаги OFF/ON, рестарт, смена conversation).
+- `AgentContextBudgetTests` (P2-8) исправлен отдельным коммитом `cecac3b9` — это baseline-фикс, не H1.0.
+
+---
+
 ## ⚡ Передача продолжения (финал, 2026-11-18)
 
 ### Где мы сейчас
