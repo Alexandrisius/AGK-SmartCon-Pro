@@ -142,7 +142,7 @@ public sealed class ListSchedulesTool : AgentReadToolBase
 #if NET8_0_OR_GREATER
         return value.Contains(needle, StringComparison.OrdinalIgnoreCase);
 #else
-        return value.IndexOf(needle!, StringComparison.OrdinalIgnoreCase) >= 0;
+        return value!.IndexOf(needle!, StringComparison.OrdinalIgnoreCase) >= 0;
 #endif
     }
 

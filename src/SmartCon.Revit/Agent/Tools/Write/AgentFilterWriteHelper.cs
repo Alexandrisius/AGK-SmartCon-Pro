@@ -244,7 +244,7 @@ internal static class AgentFilterWriteHelper
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
-        return TryParseColor(value, out var color, out _) ? color : null;
+        return TryParseColor(value!, out var color, out _) ? color : null;
     }
 
     internal static string? FormatColor(Color? color)
