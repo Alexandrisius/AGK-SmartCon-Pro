@@ -5,7 +5,7 @@
 ### Где мы сейчас
 
 - **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/00-strategy/night-run-2.md`.
-- Ветка `develop`. Фазы P1/P2/A/B/C + A4 и финальный полиш завершены. Коммит `c64a9109` (plan validation, bypass modes, tool discovery), запушен в `develop`.
+- Ветка `develop`. Фазы P1/P2/A/B/C + A4 и финальный полиш завершены. Коммиты: `c64a9109` (plan validation, bypass modes, tool discovery), `5fe44e41` (UI polish + live-session feedback), запушены в `develop`.
 - Валидатор `general` прогонялся 4 раза: 1–3 FAIL → исправлены; 4-й FAIL (локализация Approval UI, `Risks` не показывались в overlay, `AgentEvalRunner` >600 строк) → **всё исправлено**. 5-й прогон по решению владельца **не запускался**.
 - **НЕ добавлять в коммит:** `opencode.json`, `server/`, `tools/allow-revit-network.ps1` (личное/не по задаче). Секреты — только в `%APPDATA%\AGK\SmartCon\Agent\secrets.env`, в репозиторий не попадают.
 
