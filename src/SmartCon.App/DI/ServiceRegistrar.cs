@@ -15,6 +15,7 @@ using SmartCon.Agent.Views;
 using SmartCon.App.Events;
 using SmartCon.Core.Logging;
 using SmartCon.App.Services;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
@@ -474,7 +475,11 @@ public static class ServiceRegistrar
             sp => sp.GetRequiredService<AgentConfirmationService>());
 
         services.AddSingleton<AgentSessionContext>();
-        services.AddSingleton<IToolRegistry, AgentToolRegistry>();
+        services.AddSingleton<FindToolsTool>();
+        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<FindToolsTool>());
+        services.AddSingleton<IToolRouter, RuleToolRouter>();
+        services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
+            sp.GetServices<IAgentTool>(), sp.GetRequiredService<FindToolsTool>()));
         services.AddSingleton<IToolExecutor, AgentToolExecutor>();
         services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
         services.AddSingleton<AgentPromptBuilder>();

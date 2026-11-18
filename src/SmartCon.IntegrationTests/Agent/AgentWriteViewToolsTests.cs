@@ -465,6 +465,37 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task ApplyViewTemplate_IncompatibleFamily_ReturnsTemplateNotApplicable()
+    {
+        // Tester report C3: a schedule template on a floor plan must be rejected by
+        // the family-compatibility check even though the target view has no template.
+        long scheduleTemplateId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed schedule template", doc =>
+        {
+            var schedule = ModelSeed.CreateScheduleChecked(doc);
+            scheduleTemplateId = schedule.CreateViewTemplate()?.Id.GetValue() ?? 0;
+        });
+
+        if (scheduleTemplateId == 0)
+            Skip.Test("Шаблон ведомости не создан");
+
+        var tool = new ApplyViewTemplateTool(new StubRevitContext(Doc), _transactions, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + _targetId + ",\"templateId\":" + scheduleTemplateId +
+            "}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(failed[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("template_not_applicable");
+        await Assert.That(GetView(_targetId).ViewTemplateId)
+            .IsEqualTo(ElementId.InvalidElementId);
+    }
+
+    [Test]
     public async Task SetViewRange_AppliesAndReadsBack()
     {
         var tool = new SetViewRangeTool(new StubRevitContext(Doc), _transactions!, _changeSets!);

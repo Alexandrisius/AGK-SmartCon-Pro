@@ -1,4 +1,54 @@
-﻿# Handoff — 2026-11-18 (Phase A–F: write layer, confirmation gate, context budget, dogfooding)
+﻿# Handoff — ночной прогон №2 (2026-11-18)
+
+## Текущий статус (обновляется после каждой фазы)
+
+Ветка `develop`. Прогон идёт по `docs/agent/00-strategy/night-run-2.md`.
+
+### Сделано и проверено
+
+| Фаза | Статус | Проверка |
+|---|---|---|
+| 0 Baseline | ✅ | unit 3368/3368; Agent R25 65 pass / 2 skip, 0 fail |
+| P1 hotfix C1–C4 + A1 | ✅ | C2: fallback на имя элемента для ElementId-параметров; C4: `fields`/`compact` у `get_view_settings`/`get_view_template_details`; C1 регресс-тест `list_levels.total == overview.levelCount`; C3 тест «Schedule-шаблон на FloorPlan → template_not_applicable»; A1 правило «имя не переносится шаблоном» в промпте и описаниях |
+| P2 routing v1 | ✅ код + метрика | `AgentToolDefinition.Category/Tags/SupportsBulk`; `AgentToolCatalog` (Core); `RuleToolRouter` (BM25, core-read + cap 14, fallback на полный каталог); `find_tools` meta-tool; оркестратор шлёт shortlist (`SMARTCON_AGENT_TOOL_ROUTER=0` отключает) |
+| A Eval-харнес | ✅ | 40 задач (15 read / 15 dry-run / 10 apply+undo, включая 5 регресс-кейсов); запись fixtures live, replay без ключа/сети; отчёт JSON+MD в `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\<ts>`; порог-гейт; routing accuracy считается |
+| A4 Offline orchestrator | ⏳ | запланирован в `SmartCon.Tests/Agent/Eval` |
+| B Plan validation | ⏳ код | `AgentPlan` + `AgentPlanValidator` (L0) + `IAgentToolPreflight` (L1 в `AgentWriteToolBase`, family-check в `apply_view_template`) + `AgentPlanExecutor` (L3 nonce/digest/expiry, L4 fidelity, L6 read-back); тесты ещё не написаны |
+| C Bypass/надёжность | ⏳ код | `AgentApprovalMode` (ConfirmWrites/AutoApproveSession/ReadOnly), гейт в `AgentToolExecutor` с предохранителями (Destructive, >200, risk gate, fail-closed), сброс режима при смене документа, `AgentRedactor`, `AgentTextSanitizer.SanitizeJson`; `discard_change_set` и тесты ещё не сделаны |
+
+### Eval-база (зафиксирована)
+
+- Живая запись: 40 fixtures в `src/SmartCon.IntegrationTests/Agent/Eval/Fixtures/` (модель `deepseek/deepseek-v4.1-flash-1017`, OpenRouter).
+- Replay (без ключа): **40/40**, read 100 %, write dry-run 100 %, apply+undo 100 %, schema-valid 144/144, unauthorized 0, routing accuracy 97.5 %, gate PASS.
+- Первый live-прогон был 34/40 (85 %); после уточнения ожиданий (configure changed=1 на вид, альтернативы `set_parameters`/`configure_views`, honest `no_active_view`, retry на пустой ответ) — 40/40.
+- Отчёт последнего прогона: `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\` (последняя папка по времени).
+
+### Важные решения этой сессии
+
+- **Decision-слой — OpenRouter Decisions API** (`POST https://openrouter.ai/api/alpha/decisions`), модель `perplexity/pplx-decider-v1.3:free`: проверено живьём (HTTP 200 без VPN, `choice`+`noul`, `cost: 0`). JEV/TypeSafe остаётся альтернативным провайдером; всё fail-closed. Причина: JEV early access без VPN недоступен.
+- **Sys prompt вынесен в Core** (`AgentSystemPrompt`) — eval гоняет ровно production-промпт; `AgentPromptBuilder` делегирует.
+- **Eval изолирует задачи**: на каждую задачу новый project document + сид `SC_Eval_*`; fixtures хранят `idMap` (kind/name/category/index) и на replay ремапят ElementId по имени — иначе записанные id невалидны в новом документе.
+- **Await в eval без `ConfigureAwait(false)`**: пробник подтвердил, что TUnit-исполнитель возвращает продолжение на поток Revit (иначе транзакции apply/undo уходили бы в пул).
+- Порог-гейт не срабатывает на отсутствующие категории (подмножество `SMARTCON_AGENT_EVAL_ONLY`) — иначе subset-прогон всегда «красный».
+
+### Следующие шаги (в порядке)
+
+1. Тесты B: L0 (все коды отказов), digest nonce/expiry/replay, fidelity, read-back, end-to-end план→approve→apply→undo (fake tools).
+2. Тесты C: режимы подтверждения, предохранители bypass, read-only, redaction, sanitizer; `discard_change_set` + store `MarkDiscardedAsync` + integration-тест конфликтного undo.
+3. A4 offline orchestrator eval в `SmartCon.Tests/Agent/Eval`.
+4. D: исправить провалы live-прогона, перегенерировать только затронутые fixtures, метрики до/после в `eval.md`.
+5. E: sweep 7 конфигураций, полный unit, R25/R27/net48, HANDOFF, push.
+
+### Заметки для продолжения после суммаризации
+
+- Eval запуск: `SMARTCON_AGENT_EVAL_REPLAY=1 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows -- --treenode-filter "/*/*/*AgentEvalTests*/*"`.
+- Live-запись: `SMARTCON_AGENT_EVAL_RECORD=1` (+ ключ), подмножество — `SMARTCON_AGENT_EVAL_ONLY=id1,id2`; без `SMARTCON_AGENT_EVAL_SOFT=1` тест падает на порогах.
+- `apply_copy_settings` fixture перезаписан после добавления retry на пустой ответ — не откатывать.
+- Партиальные классы runner: `AgentEvalRunner.cs` (цикл), `.Checks.cs` (оценка/снимки), `.Report.cs` (отчёты).
+
+---
+
+# Предыдущая сессия — 2026-11-18 (Phase A–F: write layer, confirmation gate, context budget, dogfooding)
 
 ## Состояние
 
@@ -175,6 +225,8 @@ Agent-интеграционные тесты **не компилируются 
 245 pass / 12 skip; 7 конфигураций — 0 ошибок. Валидатор `general` — **PASS**.
 
 ## Долг / что осталось
+
+**Следующий прогон:** `docs/agent/00-strategy/night-run-2.md` (eval-first, 12–15 ч).
 
 1. Ручная приёмка в Revit (владелец): write-flow, оверлей подтверждения, undo.
 2. **Фаза G** (частично сделано): token_usage persistence ✅, порог компакции —

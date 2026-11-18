@@ -7,24 +7,30 @@ namespace SmartCon.Agent.Services.Tools;
 
 public sealed class AgentToolExecutor : IToolExecutor
 {
+    /// <summary>Bypass never auto-applies more items than this in one call.</summary>
+    public const int MaxAutoApproveAffected = 200;
+
     private readonly IToolRegistry _registry;
     private readonly IAgentAwaitableEvent _revit;
     private readonly AgentSessionContext _sessionContext;
     private readonly IAgentConfirmationService _confirmation;
     private readonly IAgentAuditLog? _auditLog;
+    private readonly IActionRiskGate? _riskGate;
 
     public AgentToolExecutor(
         IToolRegistry registry,
         IAgentAwaitableEvent revit,
         AgentSessionContext sessionContext,
         IAgentConfirmationService confirmation,
-        IAgentAuditLog? auditLog = null)
+        IAgentAuditLog? auditLog = null,
+        IActionRiskGate? riskGate = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _revit = revit ?? throw new ArgumentNullException(nameof(revit));
         _sessionContext = sessionContext ?? throw new ArgumentNullException(nameof(sessionContext));
         _confirmation = confirmation ?? throw new ArgumentNullException(nameof(confirmation));
         _auditLog = auditLog;
+        _riskGate = riskGate;
     }
 
     public async Task<ToolResult> ExecuteAsync(string name, JsonElement args, CancellationToken ct)
@@ -38,32 +44,53 @@ public sealed class AgentToolExecutor : IToolExecutor
                 "Unknown tool '" + name + "'. Use only the tools listed in this request.");
         }
 
+        if (_sessionContext.ApprovalMode == AgentApprovalMode.ReadOnly
+            && tool.Definition.Risk != AgentToolRisk.Read)
+        {
+            return ToolResult.Fail(
+                "read_only_mode",
+                "The session is read-only, so '" + name + "' is blocked. Read the model and " +
+                "explain what would change; switch the approval mode to apply it.");
+        }
+
         var approved = false;
         if (RequiresConfirmation(tool.Definition, args))
         {
-            var approval = await RequestConfirmationAsync(tool.Definition, args, ct)
+            var autoReason = await TryAutoApproveAsync(tool.Definition, args, ct)
                 .ConfigureAwait(false);
+            if (autoReason is not null)
+            {
+                approved = true;
+                await WriteAuditAsync(tool.Definition.Name, args, "auto_approved", autoReason, ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                var approval = await RequestConfirmationAsync(tool.Definition, args, ct)
+                    .ConfigureAwait(false);
 
-            if (approval != AgentConfirmationResult.Approved)
-                return ToolResult.Fail(
-                    approval == AgentConfirmationResult.Rejected
-                        ? "confirmation_rejected"
-                        : "confirmation_" + approval.ToString().ToLowerInvariant(),
-                    approval switch
-                    {
-                        AgentConfirmationResult.Rejected =>
-                            "The user rejected this change. Do not retry it; propose an " +
-                            "alternative or ask what should be different.",
-                        AgentConfirmationResult.TimedOut =>
-                            "The confirmation request timed out. Ask the user whether to " +
-                            "apply the change again.",
-                        _ =>
-                            "The confirmation was cancelled. Ask the user before retrying."
-                    });
+                if (approval != AgentConfirmationResult.Approved)
+                    return ToolResult.Fail(
+                        approval == AgentConfirmationResult.Rejected
+                            ? "confirmation_rejected"
+                            : "confirmation_" + approval.ToString().ToLowerInvariant(),
+                        approval switch
+                        {
+                            AgentConfirmationResult.Rejected =>
+                                "The user rejected this change. Do not retry it; propose an " +
+                                "alternative or ask what should be different.",
+                            AgentConfirmationResult.TimedOut =>
+                                "The confirmation request timed out. Ask the user whether to " +
+                                "apply the change again.",
+                            _ =>
+                                "The confirmation was cancelled. Ask the user before retrying."
+                        });
 
-            approved = true;
+                approved = true;
 
-            await WriteAuditAsync(tool.Definition.Name, args, "confirmed", ct).ConfigureAwait(false);
+                await WriteAuditAsync(tool.Definition.Name, args, "confirmed", "user", ct)
+                    .ConfigureAwait(false);
+            }
         }
 
         var context = new AgentToolContext(
@@ -75,6 +102,83 @@ public sealed class AgentToolExecutor : IToolExecutor
         };
 
         return await tool.ExecuteAsync(context, args, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Auto-approval is allowed only in <see cref="AgentApprovalMode.AutoApproveSession"/>
+    /// and only after the hard guards: destructive risk, more than
+    /// <see cref="MaxAutoApproveAffected"/> items, and the optional risk gate
+    /// (fail-closed). Returns the audit reason or null when a dialog is required.
+    /// </summary>
+    private async Task<string?> TryAutoApproveAsync(
+        AgentToolDefinition definition,
+        JsonElement args,
+        CancellationToken ct)
+    {
+        if (_sessionContext.ApprovalMode != AgentApprovalMode.AutoApproveSession)
+            return null;
+
+        if (definition.Risk == AgentToolRisk.Destructive)
+            return null;
+
+        var affected = CountItems(args);
+        if (affected > MaxAutoApproveAffected)
+            return null;
+
+        if (_riskGate is null)
+            return "bypass";
+
+        try
+        {
+            var assessment = await _riskGate
+                .AssessAsync(
+                    new AgentActionRiskRequest
+                    {
+                        ToolName = definition.Name,
+                        Risk = definition.Risk,
+                        AffectedCount = affected,
+                        Reversible = true,
+                        ArgumentSummary = DescribeArguments(args)
+                    },
+                    ct)
+                .ConfigureAwait(false);
+
+            return assessment.Decision == AgentRiskDecision.Auto ? "risk_gate" : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "Agent risk gate failed for '" + definition.Name + "': " + ex.Message +
+                " [Action: the action will require explicit confirmation (fail-closed)]");
+            return null;
+        }
+    }
+
+    private static string DescribeArguments(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return "{}";
+
+        var keys = new List<string>();
+        foreach (var property in args.EnumerateObject())
+        {
+            var shape = property.Value.ValueKind switch
+            {
+                JsonValueKind.Array => "array(" + property.Value.GetArrayLength() + ")",
+                JsonValueKind.Object => "object",
+                JsonValueKind.String => "string",
+                JsonValueKind.Number => "number",
+                JsonValueKind.True or JsonValueKind.False => "boolean",
+                _ => "null"
+            };
+            keys.Add(property.Name + ":" + shape);
+        }
+
+        return "{" + string.Join(",", keys) + "}";
     }
 
     private static bool RequiresConfirmation(AgentToolDefinition definition, JsonElement args)
@@ -163,6 +267,7 @@ public sealed class AgentToolExecutor : IToolExecutor
         string toolName,
         JsonElement args,
         string decision,
+        string reason,
         CancellationToken ct)
     {
         if (_auditLog is null)
@@ -175,9 +280,9 @@ public sealed class AgentToolExecutor : IToolExecutor
             {
                 Actor = Environment.UserName,
                 DocumentPath = _sessionContext.DocumentId,
-                Tool = toolName + "#confirm",
+                Tool = toolName + "#" + decision,
                 ArgsHash = AgentHashing.Sha256Hex(rawArgs),
-                Result = decision
+                Result = decision + ":" + reason
             }, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

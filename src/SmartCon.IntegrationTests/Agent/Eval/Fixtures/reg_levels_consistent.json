@@ -1,0 +1,98 @@
+{
+  "taskId": "reg_levels_consistent",
+  "prompt": "\u0421\u043A\u043E\u043B\u044C\u043A\u043E \u0443\u0440\u043E\u0432\u043D\u0435\u0439 \u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0435? \u0421\u0432\u0435\u0440\u044C \u043E\u0442\u0432\u0435\u0442 list_levels \u0441 \u043E\u0431\u0449\u0438\u043C \u043E\u0431\u0437\u043E\u0440\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "openrouter",
+  "recordedAt": "2026-11-18T09:31:23.6116654Z",
+  "idMap": {},
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [
+          "get_project_overview",
+          "list_views",
+          "list_levels",
+          "list_categories",
+          "query_elements",
+          "get_element_details",
+          "summarize_elements",
+          "list_view_templates",
+          "get_view_settings",
+          "get_view_template_details",
+          "get_current_view_info",
+          "rename_views",
+          "rename_levels",
+          "apply_view_template",
+          "set_view_range",
+          "set_view_crop",
+          "set_view_visibility",
+          "configure_views",
+          "copy_view_settings",
+          "set_parameters",
+          "remap_parameter_values",
+          "undo_last",
+          "report_tooling_feedback"
+        ],
+        "lastUserMessage": "\u0421\u043A\u043E\u043B\u044C\u043A\u043E \u0443\u0440\u043E\u0432\u043D\u0435\u0439 \u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0435? \u0421\u0432\u0435\u0440\u044C \u043E\u0442\u0432\u0435\u0442 list_levels \u0441 \u043E\u0431\u0449\u0438\u043C \u043E\u0431\u0437\u043E\u0440\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+        "systemPromptHash": "9cc8c39263eb1e49cbc3a1632c1f8b95512e68c1115b86dcbe62f7994d21c3b5"
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_3d4902a20c8047b69ae0cf40",
+            "name": "list_levels",
+            "argumentsJson": "{}"
+          },
+          {
+            "id": "call_05d22a11fe2e4f5999e972c5",
+            "name": "get_project_overview",
+            "argumentsJson": "{}"
+          }
+        ],
+        "promptTokens": 6908,
+        "completionTokens": 66
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 5,
+        "toolNames": [
+          "get_project_overview",
+          "list_views",
+          "list_levels",
+          "list_categories",
+          "query_elements",
+          "get_element_details",
+          "summarize_elements",
+          "list_view_templates",
+          "get_view_settings",
+          "get_view_template_details",
+          "get_current_view_info",
+          "rename_views",
+          "rename_levels",
+          "apply_view_template",
+          "set_view_range",
+          "set_view_crop",
+          "set_view_visibility",
+          "configure_views",
+          "copy_view_settings",
+          "set_parameters",
+          "remap_parameter_values",
+          "undo_last",
+          "report_tooling_feedback"
+        ],
+        "lastUserMessage": "\u0421\u043A\u043E\u043B\u044C\u043A\u043E \u0443\u0440\u043E\u0432\u043D\u0435\u0439 \u0432 \u043F\u0440\u043E\u0435\u043A\u0442\u0435? \u0421\u0432\u0435\u0440\u044C \u043E\u0442\u0432\u0435\u0442 list_levels \u0441 \u043E\u0431\u0449\u0438\u043C \u043E\u0431\u0437\u043E\u0440\u043E\u043C \u043F\u0440\u043E\u0435\u043A\u0442\u0430.",
+        "systemPromptHash": "9cc8c39263eb1e49cbc3a1632c1f8b95512e68c1115b86dcbe62f7994d21c3b5"
+      },
+      "response": {
+        "content": "\u0412 \u043F\u0440\u043E\u0435\u043A\u0442\u0435 **4 \u0443\u0440\u043E\u0432\u043D\u044F** \u2014 \u0434\u0430\u043D\u043D\u044B\u0435 \u0060list_levels\u0060 \u0438 \u043E\u0431\u0449\u0435\u0433\u043E \u043E\u0431\u0437\u043E\u0440\u0430 \u043F\u0440\u043E\u0435\u043A\u0442\u0430 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0441\u043E\u0432\u043F\u0430\u0434\u0430\u044E\u0442 (levelCount = 4, \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F OST_Levels = 4 \u044D\u043B\u0435\u043C\u0435\u043D\u0442\u0430).\n\n| ID | \u0418\u043C\u044F | \u041E\u0442\u043C\u0435\u0442\u043A\u0430, \u043C\u043C | \u041D\u0435\u0441\u0443\u0449\u0438\u0439 (building story) |\n|---|---|---|---|\n| 1951 | Level 1 | 0 | \u0434\u0430 |\n| 2785 | SC_Eval_L1 | 0 | \u0434\u0430 |\n| 2786 | SC_Eval_L2 | 914.4 | \u0434\u0430 |\n| 2787 | SC_Eval_L3 | 1828.8 | \u0434\u0430 |\n\n\u0421\u0432\u0435\u0440\u043A\u0430: \u043E\u0431\u0430 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0430 \u0432\u0435\u0440\u043D\u0443\u043B\u0438 \u043E\u0434\u0438\u043D \u0438 \u0442\u043E\u0442 \u0436\u0435 \u0441\u043F\u0438\u0441\u043E\u043A \u0441 \u043E\u0434\u0438\u043D\u0430\u043A\u043E\u0432\u044B\u043C\u0438 ID, \u0438\u043C\u0435\u043D\u0430\u043C\u0438 \u0438 \u043E\u0442\u043C\u0435\u0442\u043A\u0430\u043C\u0438 \u2014 \u0440\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0439 \u043D\u0435\u0442.\n\n\u041E\u0434\u043D\u043E \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0435 \u043F\u043E \u043C\u043E\u0434\u0435\u043B\u0438 (\u043D\u0435 \u043E\u0448\u0438\u0431\u043A\u0430 \u0441\u0432\u0435\u0440\u043A\u0438): \u0434\u0432\u0430 \u0443\u0440\u043E\u0432\u043D\u044F \u2014 \u00ABLevel 1\u00BB \u0438 \u00ABSC_Eval_L1\u00BB \u2014 \u043D\u0430\u0445\u043E\u0434\u044F\u0442\u0441\u044F \u043D\u0430 \u043E\u0434\u043D\u043E\u0439 \u043E\u0442\u043C\u0435\u0442\u043A\u0435 0 \u043C\u043C. \u0415\u0441\u043B\u0438 \u044D\u0442\u043E \u043D\u0435 \u0437\u0430\u0434\u0443\u043C\u0430\u043D\u043E, \u0441\u0442\u043E\u0438\u0442 \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C, \u043D\u0435 \u0434\u0443\u0431\u043B\u0438\u043A\u0430\u0442 \u043B\u0438 \u044D\u0442\u043E.",
+        "toolCalls": [],
+        "promptTokens": 7601,
+        "completionTokens": 242
+      }
+    }
+  ]
+}

@@ -28,7 +28,7 @@ internal static class AgentParameterValue
         {
             StorageType.Double => MatchesDouble(doc, parameter, condition.Op, value, condition.Unit),
             StorageType.Integer => MatchesInteger(parameter, condition.Op, value),
-            StorageType.ElementId => MatchesElementId(parameter, condition.Op, value),
+            StorageType.ElementId => MatchesElementId(doc, parameter, condition.Op, value),
             _ => MatchesString(parameter.AsString() ?? string.Empty, condition.Op, value)
         };
     }
@@ -147,11 +147,13 @@ internal static class AgentParameterValue
     }
 
     private static bool MatchesElementId(
+        Document doc,
         Parameter parameter,
         QueryOperator op,
         JsonElement value)
     {
-        var actual = parameter.AsElementId().GetValue();
+        var elementId = parameter.AsElementId();
+        var actual = elementId.GetValue();
 
         if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var id))
         {
@@ -159,14 +161,87 @@ internal static class AgentParameterValue
             {
                 QueryOperator.Eq => actual == id,
                 QueryOperator.Neq => actual != id,
-                _ => MatchesString(
-                    parameter.AsValueString() ?? string.Empty,
-                    op,
-                    value)
+                _ => MatchElementIdText(doc, parameter, elementId, op, value)
             };
         }
 
-        return MatchesString(parameter.AsValueString() ?? string.Empty, op, value);
+        return MatchElementIdText(doc, parameter, elementId, op, value);
+    }
+
+    /// <summary>
+    /// String comparison for ElementId parameters. Revit's AsValueString is empty
+    /// for Type/Family parameters of instances (tester report C2), so the
+    /// referenced element name is used as a fallback.
+    /// </summary>
+    private static bool MatchElementIdText(
+        Document doc,
+        Parameter parameter,
+        ElementId elementId,
+        QueryOperator op,
+        JsonElement value)
+    {
+        var candidates = new List<string>(2);
+
+        try
+        {
+            var valueString = parameter.AsValueString();
+            if (!string.IsNullOrWhiteSpace(valueString))
+                candidates.Add(valueString!);
+        }
+        catch (Exception)
+        {
+        }
+
+        if (elementId != ElementId.InvalidElementId)
+        {
+            try
+            {
+                var element = doc.GetElement(elementId);
+                var name = element?.Name;
+                if (!string.IsNullOrWhiteSpace(name) && !candidates.Contains(name!))
+                    candidates.Add(name!);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        if (candidates.Count == 0)
+            return MatchesString(string.Empty, op, value);
+
+        if (op is QueryOperator.In or QueryOperator.NotIn)
+        {
+            var anyIn = false;
+            foreach (var candidate in candidates)
+            {
+                if (MatchesString(candidate, QueryOperator.In, value))
+                {
+                    anyIn = true;
+                    break;
+                }
+            }
+
+            return op == QueryOperator.In ? anyIn : !anyIn;
+        }
+
+        if (op == QueryOperator.Neq)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (!MatchesString(candidate, QueryOperator.Neq, value))
+                    return false;
+            }
+
+            return true;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (MatchesString(candidate, op, value))
+                return true;
+        }
+
+        return false;
     }
 
     private static bool MatchesString(

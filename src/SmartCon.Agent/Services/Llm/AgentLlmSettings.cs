@@ -28,6 +28,13 @@ public sealed class AgentLlmSettings
     /// </summary>
     public int ContextWindowTokens { get; set; } = 200_000;
 
+    /// <summary>
+    /// Send only a BM25 shortlist of tool schemas per turn (core read tools are
+    /// always included; find_tools covers the rest). Disable with
+    /// SMARTCON_AGENT_TOOL_ROUTER=0.
+    /// </summary>
+    public bool UseToolRouter { get; set; } = true;
+
     public bool IsOpenCodeGo =>
         string.Equals(Provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(Provider, "opencode", StringComparison.OrdinalIgnoreCase);
@@ -63,7 +70,9 @@ public sealed class AgentLlmSettings
             ProxyUrl = Get(values, "SMARTCON_LLM_PROXY") ?? string.Empty,
             Temperature = ParseDouble(Get(values, "SMARTCON_LLM_TEMPERATURE"), 0.2),
             MaxOutputTokens = ParseInt(Get(values, "SMARTCON_LLM_MAX_OUTPUT_TOKENS"), 8192),
-            TimeoutSeconds = ParseInt(Get(values, "SMARTCON_LLM_TIMEOUT_SECONDS"), 120)
+            TimeoutSeconds = ParseInt(Get(values, "SMARTCON_LLM_TIMEOUT_SECONDS"), 120),
+            UseToolRouter = !string.Equals(
+                Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal)
         };
     }
 

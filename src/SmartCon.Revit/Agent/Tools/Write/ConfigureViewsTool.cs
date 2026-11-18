@@ -26,8 +26,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             "Applies several view settings in one call. items: [{viewId, newName?, templateId?, " +
             "overwriteTemplate?, viewRange?, crop?, visibility?}] — every field except viewId is " +
             "optional and only the given sections are applied. Order per view: name, template, " +
-            "view range, crop, visibility. dryRun defaults to true; atomic=true rolls the whole " +
-            "batch back on the first failure.",
+            "view range, crop, visibility. A template does not carry the reference view's name: " +
+            "when the user asks to make views 'like a reference view', include newName in the " +
+            "same plan if the naming pattern should be reproduced. dryRun defaults to true; " +
+            "atomic=true rolls the whole batch back on the first failure.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""newName"":{""type"":""string""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""viewRange"":{""type"":""object""},""crop"":{""type"":""object""},""visibility"":{""type"":""object""}},""required"":[""viewId""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"

@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.Agent.Services.Tools;
@@ -7,23 +8,34 @@ namespace SmartCon.Agent.Services.Tools;
 public sealed class AgentToolRegistry : IToolRegistry
 {
     private readonly List<IAgentTool> _tools;
+    private readonly List<AgentToolDefinition> _definitions;
     private readonly Dictionary<string, IAgentTool> _byName;
 
     public AgentToolRegistry(IEnumerable<IAgentTool> tools)
+        : this(tools, null)
+    {
+    }
+
+    public AgentToolRegistry(IEnumerable<IAgentTool> tools, FindToolsTool? findTools)
     {
         if (tools is null) throw new ArgumentNullException(nameof(tools));
 
         _tools = tools.ToList();
         _byName = new Dictionary<string, IAgentTool>(StringComparer.OrdinalIgnoreCase);
+        _definitions = new List<AgentToolDefinition>(_tools.Count);
         foreach (var tool in _tools)
         {
             var name = tool.Definition.Name;
             if (_byName.ContainsKey(name))
                 throw new InvalidOperationException("Duplicate agent tool name: " + name);
 
-            ValidateDefinition(tool.Definition);
+            var definition = AgentToolCatalog.Enrich(tool.Definition);
+            ValidateDefinition(definition);
             _byName[name] = tool;
+            _definitions.Add(definition);
         }
+
+        findTools?.Attach(this);
     }
 
     /// <summary>
@@ -58,6 +70,8 @@ public sealed class AgentToolRegistry : IToolRegistry
     }
 
     public IReadOnlyList<IAgentTool> GetAll() => _tools;
+
+    public IReadOnlyList<AgentToolDefinition> GetDefinitions() => _definitions;
 
     public bool TryGet(string name, out IAgentTool? tool)
     {

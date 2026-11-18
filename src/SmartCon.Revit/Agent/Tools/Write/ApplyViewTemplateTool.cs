@@ -32,6 +32,46 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
     };
 
+    protected override PlanPreflightResult PreflightCore(
+        Document doc,
+        JsonElement args,
+        CancellationToken ct)
+    {
+        var basic = base.PreflightCore(doc, args, ct);
+        if (!basic.Ok)
+            return basic;
+
+        var request = AgentJson.Deserialize<ApplyTemplateRequest>(args);
+        if (request?.Items is null || request.Items.Count == 0)
+            return PlanPreflightResult.Fail("no_items", "The items array is empty.");
+
+        foreach (var item in request.Items)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (doc.GetElement(ElementIdCompat.Create(item.ViewId)) is not View view)
+                return PlanPreflightResult.Fail(
+                    "unresolved_id", "View " + item.ViewId + " does not exist.");
+
+            if (doc.GetElement(ElementIdCompat.Create(item.TemplateId)) is not View template
+                || !template.IsTemplate)
+            {
+                return PlanPreflightResult.Fail(
+                    "invalid_template",
+                    "Element " + item.TemplateId + " is not a view template.");
+            }
+
+            if (!AgentViewWriteHelper.AreFamiliesCompatible(doc, view, template))
+            {
+                return PlanPreflightResult.Fail(
+                    "template_not_applicable",
+                    "Template '" + template.Name + "' belongs to a different view family.");
+            }
+        }
+
+        return PlanPreflightResult.Pass();
+    }
+
     protected override void Apply(
         Document doc,
         JsonElement args,

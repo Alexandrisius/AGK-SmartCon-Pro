@@ -160,6 +160,150 @@ public sealed class AgentReadToolsTests : RevitApiTest
         await Assert.That(card.UniqueId).IsNotEmpty();
     }
 
+    [Test]
+    public async Task ListLevels_TotalMatchesProjectOverviewLevelCount()
+    {
+        var overview = new GetProjectOverviewTool(new StubRevitContext(Doc))
+            .ExecuteForTests(Doc, EmptyArgs(), CancellationToken.None);
+        var levels = new ListLevelsTool(new StubRevitContext(Doc))
+            .ExecuteForTests(Doc, EmptyArgs(), CancellationToken.None);
+
+        await Assert.That(overview.Success).IsTrue();
+        await Assert.That(levels.Success).IsTrue();
+        await Assert.That(levels.Data!.Value.GetProperty("total").GetInt32())
+            .IsEqualTo(overview.Data!.Value.GetProperty("levelCount").GetInt32());
+    }
+
+    [Test]
+    public async Task QueryElements_ContainsByTypeName_ForElementIdParameter()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены — запрос по типу невозможен");
+
+        var wall = Doc.GetElement(new ElementId(_wallId));
+        var type = Doc.GetElement(wall!.GetTypeId());
+        var typeName = type?.Name;
+        if (string.IsNullOrWhiteSpace(typeName))
+            Skip.Test("У стены нет имени типа");
+
+        var needle = typeName!.Length <= 4 ? typeName : typeName.Substring(0, 4);
+        var tool = new QueryElementsTool(new StubRevitContext(Doc));
+        var args = JsonDocument.Parse(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":\"ELEM_TYPE_PARAM\"," +
+            "\"op\":\"contains\",\"value\":\"" + needle.Replace("\"", "\\\"") + "\"}],\"limit\":50}")
+            .RootElement.Clone();
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("total").GetInt32()).IsGreaterThanOrEqualTo(1);
+        var ids = result.Data.Value.GetProperty("elements").EnumerateArray()
+            .Select(card => card.GetProperty("elementId").GetInt64())
+            .ToList();
+        await Assert.That(ids).Contains(_wallId);
+    }
+
+    [Test]
+    public async Task GetViewSettings_WithoutFields_ReturnsCompactSummary()
+    {
+        var tool = new GetViewSettingsTool(new StubRevitContext(Doc));
+        var args = JsonDocument.Parse("{\"viewId\":" + GetSeededViewId() + "}").RootElement.Clone();
+
+        var summary = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+        var full = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse(
+                "{\"viewId\":" + GetSeededViewId() + ",\"compact\":false}").RootElement.Clone(),
+            CancellationToken.None);
+
+        await Assert.That(summary.Success).IsTrue();
+        await Assert.That(full.Success).IsTrue();
+        await Assert.That(summary.Data!.Value.TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
+        await Assert.That(summary.Data.Value.TryGetProperty("hiddenCategories", out _)).IsFalse();
+        await Assert.That(summary.Data.Value.GetRawText().Length)
+            .IsLessThan(full.Data!.Value.GetRawText().Length);
+    }
+
+    [Test]
+    public async Task GetViewSettings_WithFields_ReturnsOnlyRequestedFields()
+    {
+        var tool = new GetViewSettingsTool(new StubRevitContext(Doc));
+        var args = JsonDocument.Parse(
+            "{\"viewId\":" + GetSeededViewId() + ",\"fields\":[\"scale\",\"viewRange\"]}")
+            .RootElement.Clone();
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.TryGetProperty("scale", out _)).IsTrue();
+        await Assert.That(result.Data.Value.TryGetProperty("viewRange", out _)).IsTrue();
+        await Assert.That(result.Data.Value.TryGetProperty("hiddenCategories", out _)).IsFalse();
+        await Assert.That(result.Data.Value.TryGetProperty("uniqueId", out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task GetViewTemplateDetails_DefaultCompact_AndFieldsProjection()
+    {
+        var templateId = CreateSeededTemplate();
+        var tool = new GetViewTemplateDetailsTool(new StubRevitContext(Doc));
+
+        var summary = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse("{\"templateId\":" + templateId + "}").RootElement.Clone(),
+            CancellationToken.None);
+        var projected = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse(
+                "{\"templateId\":" + templateId + ",\"fields\":[\"viewRange\",\"scale\"]}")
+                .RootElement.Clone(),
+            CancellationToken.None);
+        var full = tool.ExecuteForTests(
+            Doc,
+            JsonDocument.Parse(
+                "{\"templateId\":" + templateId + ",\"compact\":false}").RootElement.Clone(),
+            CancellationToken.None);
+
+        await Assert.That(summary.Success).IsTrue();
+        await Assert.That(projected.Success).IsTrue();
+        await Assert.That(full.Success).IsTrue();
+
+        var summaryPayload = summary.Data!.Value;
+        await Assert.That(summaryPayload.GetProperty("settings")
+            .TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
+        await Assert.That(summaryPayload.GetProperty("settings")
+            .TryGetProperty("hiddenCategories", out _)).IsFalse();
+
+        var projectedSettings = projected.Data!.Value.GetProperty("settings");
+        await Assert.That(projectedSettings.TryGetProperty("viewRange", out _)).IsTrue();
+        await Assert.That(projectedSettings.TryGetProperty("hiddenCategories", out _)).IsFalse();
+
+        await Assert.That(summaryPayload.GetRawText().Length)
+            .IsLessThan(full.Data!.Value.GetRawText().Length);
+    }
+
+    private long GetSeededViewId()
+    {
+        return new FilteredElementCollector(Doc)
+            .OfClass(typeof(ViewPlan))
+            .Cast<ViewPlan>()
+            .First(view => view.Name == SeededViewName)
+            .Id.GetValue();
+    }
+
+    private long CreateSeededTemplate()
+    {
+        long templateId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed agent template", doc =>
+        {
+            var plan = (ViewPlan)doc.GetElement(ElementIdCompat.Create(GetSeededViewId()));
+            var template = plan.CreateViewTemplate();
+            template.Name = "SC_Agent_Template";
+            templateId = template.Id.GetValue();
+        });
+
+        return templateId;
+    }
+
     private static JsonElement EmptyArgs()
     {
         using var document = JsonDocument.Parse("{}");

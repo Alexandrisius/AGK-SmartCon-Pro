@@ -166,6 +166,49 @@ public sealed class ViewSettings
     public IReadOnlyList<string> NonControlledParameters { get; init; } = Array.Empty<string>();
 }
 
+/// <summary>
+/// Compact view-settings overview returned when the caller neither asks for
+/// specific fields nor sets compact=false (tester report C4: the full payload
+/// with hundreds of hidden categories dominated the context for simple
+/// questions).
+/// </summary>
+public sealed class ViewSettingsSummary
+{
+    public long ViewId { get; init; }
+
+    public required string Name { get; init; }
+
+    public required string ViewType { get; init; }
+
+    public long? TemplateId { get; init; }
+
+    public string? TemplateName { get; init; }
+
+    public bool HasTemplate { get; init; }
+
+    public int? Scale { get; init; }
+
+    public string? DetailLevel { get; init; }
+
+    public string? Discipline { get; init; }
+
+    public bool HasViewRange { get; init; }
+
+    public bool? CropActive { get; init; }
+
+    public bool? CropVisible { get; init; }
+
+    public bool? CropShapeSet { get; init; }
+
+    public int HiddenCategoryCount { get; init; }
+
+    public int HiddenWorksetCount { get; init; }
+
+    public int ControlledParameterCount { get; init; }
+
+    public int NonControlledParameterCount { get; init; }
+}
+
 public sealed class ViewTemplateCard
 {
     public long TemplateId { get; init; }

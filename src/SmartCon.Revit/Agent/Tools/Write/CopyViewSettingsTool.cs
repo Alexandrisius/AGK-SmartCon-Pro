@@ -27,7 +27,10 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             "\"crop\", \"viewRange\", \"visibility\", \"template\", \"all\"; default is [\"crop\"]. " +
             "Crop copy works across views of the same orientation (the usual 'take the crop " +
             "region from the reference view' case). The template section copies the source " +
-            "view's template onto the targets. dryRun defaults to true.",
+            "view's template onto the targets. Names are never copied: if the user asks to make " +
+            "target views 'like the reference view' and their names should follow the same " +
+            "pattern, include rename_views (or configure_views newName) in the same dry-run plan " +
+            "and tell the user the rename is a separate change. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""sourceViewId"":{""type"":""integer""},""targetViewIds"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""integer""}},""sections"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""crop"",""viewRange"",""visibility"",""template"",""all""]}},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""sourceViewId"",""targetViewIds""],""additionalProperties"":false}"

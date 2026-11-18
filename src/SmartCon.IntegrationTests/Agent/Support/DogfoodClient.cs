@@ -22,6 +22,12 @@ internal sealed class DogfoodResponse
     public string? Error { get; set; }
 
     public List<DogfoodToolCall> ToolCalls { get; } = new();
+
+    public int PromptTokens { get; set; }
+
+    public int CompletionTokens { get; set; }
+
+    public int TotalTokens { get; set; }
 }
 
 /// <summary>
@@ -135,12 +141,32 @@ internal static class DogfoodClient
                 }
             }
 
+            if (document.RootElement.TryGetProperty("usage", out var usage)
+                && usage.ValueKind == JsonValueKind.Object)
+            {
+                result.PromptTokens = ReadInt(usage, "prompt_tokens");
+                result.CompletionTokens = ReadInt(usage, "completion_tokens");
+                result.TotalTokens = ReadInt(usage, "total_tokens");
+            }
+
             return result;
         }
         catch (JsonException ex)
         {
             return new DogfoodResponse { Error = "invalid JSON: " + ex.Message };
         }
+    }
+
+    private static int ReadInt(JsonElement element, string property)
+    {
+        if (element.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out var parsed))
+        {
+            return parsed;
+        }
+
+        return 0;
     }
 }
 
@@ -165,9 +191,10 @@ internal sealed class DogfoodConfig
 
     public string ApiKey { get; }
 
-    public static DogfoodConfig? TryLoad()
+    public static DogfoodConfig? TryLoad(bool requireLiveFlag = true)
     {
-        if (!string.Equals(
+        if (requireLiveFlag
+            && !string.Equals(
                 Environment.GetEnvironmentVariable("SMARTCON_AGENT_LIVE"),
                 "1",
                 StringComparison.Ordinal))

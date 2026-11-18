@@ -55,6 +55,30 @@ internal static class AgentViewSettingsReader
         };
     }
 
+    internal static ViewSettingsSummary CreateSummary(ViewSettings settings)
+    {
+        return new ViewSettingsSummary
+        {
+            ViewId = settings.ViewId,
+            Name = settings.Name,
+            ViewType = settings.ViewType,
+            TemplateId = settings.TemplateId,
+            TemplateName = settings.TemplateName,
+            HasTemplate = settings.HasTemplate,
+            Scale = settings.Scale,
+            DetailLevel = settings.DetailLevel,
+            Discipline = settings.Discipline,
+            HasViewRange = settings.ViewRange is not null,
+            CropActive = settings.Crop?.Active,
+            CropVisible = settings.Crop?.Visible,
+            CropShapeSet = settings.Crop?.ShapeValid,
+            HiddenCategoryCount = settings.HiddenCategories.Count,
+            HiddenWorksetCount = settings.HiddenWorksets.Count,
+            ControlledParameterCount = settings.ControlledParameters.Count,
+            NonControlledParameterCount = settings.NonControlledParameters.Count
+        };
+    }
+
     internal static bool IsTemplateParameterControlled(
         View template,
         BuiltInParameter parameter)

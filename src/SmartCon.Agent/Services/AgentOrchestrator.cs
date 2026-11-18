@@ -4,6 +4,7 @@ using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.UI;
 
@@ -25,6 +26,7 @@ public sealed class AgentOrchestrator
     private readonly AgentPromptBuilder _promptBuilder;
     private readonly IAgentToolCallStore? _toolCallStore;
     private readonly IAgentUsageStore? _usageStore;
+    private readonly IToolRouter? _toolRouter;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -37,7 +39,8 @@ public sealed class AgentOrchestrator
         AgentSessionContext sessionContext,
         AgentPromptBuilder promptBuilder,
         IAgentToolCallStore? toolCallStore = null,
-        IAgentUsageStore? usageStore = null)
+        IAgentUsageStore? usageStore = null,
+        IToolRouter? toolRouter = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -51,6 +54,7 @@ public sealed class AgentOrchestrator
         _promptBuilder = promptBuilder ?? throw new ArgumentNullException(nameof(promptBuilder));
         _toolCallStore = toolCallStore;
         _usageStore = usageStore;
+        _toolRouter = toolRouter;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -66,6 +70,20 @@ public sealed class AgentOrchestrator
             ("Provider", _llm.ProviderName));
 
         var projectContext = await _projectContextProvider.GetAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrEmpty(_sessionContext.DocumentId)
+            && !string.Equals(
+                _sessionContext.DocumentId,
+                projectContext.DocumentId,
+                StringComparison.Ordinal)
+            && _sessionContext.ApprovalMode != AgentApprovalMode.ConfirmWrites)
+        {
+            // The bypass / read-only choice is bound to one document: switching the
+            // active document must never inherit a relaxed confirmation policy.
+            _sessionContext.ApprovalMode = AgentApprovalMode.ConfirmWrites;
+            SmartConLogger.Info(
+                "Agent approval mode reset to ConfirmWrites because the active document changed");
+        }
+
         _sessionContext.DocumentId = projectContext.DocumentId;
         _sessionContext.ConversationId = conversationId;
 
@@ -77,7 +95,9 @@ public sealed class AgentOrchestrator
         var (compacted, _) = AgentHistoryCompactor.Compact(
             working, _settings.ContextWindowTokens);
         working = compacted;
-        var systemMessage = AgentMessage.System(_promptBuilder.Build(projectContext));
+        var systemMessage = AgentMessage.System(
+            _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
+        var definitions = SelectToolDefinitions(userText);
 
         var usage = AgentUsage.Empty;
         var toolCallCount = 0;
@@ -97,7 +117,7 @@ public sealed class AgentOrchestrator
             {
                 Model = _settings.Model,
                 Messages = messages,
-                Tools = _toolRegistry.GetAll().Select(tool => tool.Definition).ToList(),
+                Tools = definitions,
                 Temperature = _settings.Temperature,
                 MaxOutputTokens = _settings.MaxOutputTokens
             };
@@ -311,8 +331,8 @@ public sealed class AgentOrchestrator
                 Id = toolCall.Id,
                 SessionId = conversationId.ToString("D"),
                 ToolName = toolCall.Name,
-                ArgumentsJson = toolCall.ArgumentsJson,
-                ResultJson = serializedResult,
+                ArgumentsJson = AgentRedactor.Redact(toolCall.ArgumentsJson),
+                ResultJson = AgentRedactor.Redact(serializedResult),
                 Status = result.Success ? "ok" : "error",
                 Error = result.ErrorCode,
                 DurationMs = durationMs
@@ -366,7 +386,27 @@ public sealed class AgentOrchestrator
     private static string SerializeToolResult(ToolResult result)
     {
         var json = ToolResultBudget.Serialize(result);
-        return AgentTextSanitizer.Sanitize(json);
+        return AgentTextSanitizer.SanitizeJson(json);
+    }
+
+    private IReadOnlyList<AgentToolDefinition> SelectToolDefinitions(string userText)
+    {
+        var all = _toolRegistry.GetDefinitions();
+        if (_toolRouter is null || !_settings.UseToolRouter || all.Count == 0)
+            return all;
+
+        var decision = _toolRouter.Route(userText, all);
+        if (decision.Fallback)
+        {
+            SmartConLogger.Debug(
+                "Agent tool routing: no signal, full catalog (" + all.Count + " tools)");
+            return all;
+        }
+
+        SmartConLogger.Debug(
+            "Agent tool routing: " + decision.Tools.Count + "/" + all.Count + " tools, topScore " +
+            decision.TopScore.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+        return decision.Tools;
     }
 
     private static List<AgentMessage> TrimHistory(IReadOnlyList<AgentMessage> history)
