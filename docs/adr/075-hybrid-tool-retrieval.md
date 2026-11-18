@@ -113,10 +113,10 @@
 
 Решение **не входит в H1**. H1 (tool catalog v2, паки, `find/load`, freeze,
 context budgeting) остаётся в текущем объёме и проверяется на BM25 + опциональном
-decision reranker. Векторный конвейер — отдельный эпик **H6** после H1:
-
-- триггер: routing-eval на 1000 карточках даёт BM25 top-5 recall <95 %, либо
-  каталог превысил ~200 видимых инструментов;
+decision reranker. Векторный конвейер — отдельный эпик **H6, последний**:
+после H1, H1b (model entity search, ADR-077), H2–H5 и H7; триггер — routing-eval
+на 1000 карточках даёт BM25 top-5 recall <95 %, либо каталог превысил ~200
+видимых инструментов.
 - H6 включает `Bm25ToolRetriever`, `VectorToolRetriever`, `RrfFusion`,
   `DecisionToolReranker`, предвычисленный индекс карточек и UI выбора
   embedding-модели/reranker'а;

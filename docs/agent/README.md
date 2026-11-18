@@ -19,7 +19,7 @@
 | Eval | 40 задач, replay без ключа, gate PASS, routing 97.5 % |
 | Сборка | 7 конфигураций R19–R27, unit 3560 (H1.0), integration R25/R27/net48 |
 
-**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках, code mode / sandbox-интерпретатор / runtime C#. Это roadmap, не факт. Архитектурные решения: retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md), tool surface и code mode — [ADR-076](../adr/076-tool-surface-and-code-mode.md).
+**Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках, code mode / sandbox-интерпретатор / runtime C#, model entity search / BM25-каталог сущностей. Это roadmap, не факт. Архитектурные решения: retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md), tool surface и code mode — [ADR-076](../adr/076-tool-surface-and-code-mode.md), model search — [ADR-077](../adr/077-model-entity-search.md).
 
 ## Карта документов
 
@@ -57,12 +57,13 @@
 | Эпик | Содержание | Документ |
 |---|---|---|
 | **H1 (сейчас)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
+| **H1b (следующий)** | Model entity search: BM25 по категориям/семействам/типам/уровням/видам/параметрам, русский стеммер/синонимы, `search_model_entities` + структурный `query_elements`, ленивый индекс только по одному параметру (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md) |
 | H2 | Memory v1 + FTS5 + skills 100–200 | `harness-ideal-plan.md` P2 |
 | H3 | Policy engine, persisted approvals, atomic plan | `harness-ideal-plan.md` P3 |
 | H4 | Observability, cost caps, eval v2 | `harness-ideal-plan.md` P4–P5 |
 | H5 | UX: steering, timeline, fork/rewind, MCP (backlog) | `harness-ideal-plan.md` P5 |
-| H6 (после H1) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075) | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md); триггер — routing-eval H1 |
-| H7 (после H6) | Tool surface и длинный хвост: intent-tools, generic data tools, запрет runtime C#; typed facade `IRevitOps` + sandbox-интерпретатор (Jint/Lua), промоция скриптов в composite-tools (ADR-076) | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
+| H7 (до H6) | Tool surface и длинный хвост: intent-tools, generic data tools, запрет runtime C#; typed facade `IRevitOps` + sandbox-интерпретатор (Jint/Lua), промоция скриптов в composite-tools (ADR-076) | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
+| H6 (последний) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075); запускается только после H1b и по метрике recall | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md) |
 
 ## Флаги H1
 

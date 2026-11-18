@@ -47,7 +47,13 @@ H1 должен **понимать**, что 500–1000 тулов и 100–200 
 `send_code_to_revit`, per-property tools и обёртки 1:1 по методам Revit API.
 Новый tool — только пользовательское намерение/композитная операция или
 meta-tool; свойства — generic `query/get/set` с проекциями. Code mode и
-sandbox-интерпретатор — эпик **H7** (после H6), не H1.
+sandbox-интерпретатор — эпик **H7** (до H6), не H1.
+
+**Model entity search — H1b, не H1 (ADR-077).** Поиск по семействам/типам/
+категориям/уровням/видам/параметрам (BM25, русский стеммер, синонимы,
+`search_model_entities` + структурный `query_elements`) — следующий эпик
+**H1b** сразу после H1. H1 не индексирует модель, не добавляет поисковый
+каталог сущностей и не расширяется под него.
 
 ## 2. Цель и метрики
 
@@ -370,11 +376,12 @@ SMARTCON_AGENT_EVAL_REPLAY=1 dotnet run --project src/SmartCon.IntegrationTests 
 
 После H1:
 
+- **H1b (следующий):** model entity search — BM25 по семействам/типам/категориям/уровням/видам/параметрам, `search_model_entities` + структурный `query_elements`, ADR-077.
 - **H2:** память (`MEMORY.md`), FTS5, session search, skills 100–200.
 - **H3:** policy engine, persisted grants, atomic plan, verify-on-stop.
 - **H4:** usage ledger v2, cost caps, eval v2, snapshots.
 - **H5:** steering, timeline/rewind, memory inbox, MCP (backlog).
-- **H6:** гибридный retrieval (BM25 ∪ vector → decision reranker), ADR-075 — только после H1-11/H1-12.
 - **H7:** typed facade + sandbox-интерпретатор для длинного хвоста (Jint/Lua поверх `IRevitOps`), ADR-076; без runtime C#.
+- **H6 (последний):** гибридный retrieval (BM25 ∪ vector → decision reranker), ADR-075 — только после H1b и по метрике recall.
 
 Ссылки: `harness-ideal-plan.md` §5 (фазы), §6 (спеки), §7 (схема), §8 (метрики).
