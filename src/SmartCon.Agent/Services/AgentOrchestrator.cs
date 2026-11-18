@@ -93,11 +93,11 @@ public sealed class AgentOrchestrator
         var history = await _conversationStore.GetMessagesAsync(conversationId, ct).ConfigureAwait(false);
         var working = EnsureToolCallPairs(TrimHistory(history));
         var (compacted, _) = AgentHistoryCompactor.Compact(
-            working, _settings.ContextWindowTokens);
+            working, _settings.ContextWindowTokens, _settings.ContextThreshold);
         working = compacted;
         var systemMessage = AgentMessage.System(
             _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
-        var definitions = SelectToolDefinitions(userText);
+        var definitions = await SelectToolDefinitionsAsync(userText, ct);
 
         var usage = AgentUsage.Empty;
         var toolCallCount = 0;
@@ -208,6 +208,22 @@ public sealed class AgentOrchestrator
                 await WriteToolCallAsync(
                         toolCall, result, serializedResult, conversationId, durationMs, ct)
                     .ConfigureAwait(false);
+
+                // find_tools exists to unlock tools outside the routed shortlist:
+                // the model must be able to call what it just discovered, so the
+                // next round sends the full catalog.
+                if (result.Success
+                    && string.Equals(toolCall.Name, "find_tools", StringComparison.Ordinal))
+                {
+                    var fullCatalog = _toolRegistry.GetDefinitions();
+                    if (ExpandsCatalog(definitions, fullCatalog))
+                    {
+                        definitions = fullCatalog;
+                        SmartConLogger.Debug(
+                            "Agent expanded the tool catalog after find_tools: " +
+                            definitions.Count + " definitions for the next round");
+                    }
+                }
 
                 progress?.Report(new AgentProgress
                 {
@@ -389,13 +405,26 @@ public sealed class AgentOrchestrator
         return AgentTextSanitizer.SanitizeJson(json);
     }
 
-    private IReadOnlyList<AgentToolDefinition> SelectToolDefinitions(string userText)
+    private static bool ExpandsCatalog(
+        IReadOnlyList<AgentToolDefinition> current,
+        IReadOnlyList<AgentToolDefinition> fullCatalog)
+    {
+        if (fullCatalog.Count != current.Count)
+            return true;
+
+        return fullCatalog.Any(candidate => !current.Any(existing =>
+            string.Equals(existing.Name, candidate.Name, StringComparison.Ordinal)));
+    }
+
+    private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
+        string userText,
+        CancellationToken ct)
     {
         var all = _toolRegistry.GetDefinitions();
         if (_toolRouter is null || !_settings.UseToolRouter || all.Count == 0)
             return all;
 
-        var decision = _toolRouter.Route(userText, all);
+        var decision = await _toolRouter.RouteAsync(userText, all, 14, ct).ConfigureAwait(false);
         if (decision.Fallback)
         {
             SmartConLogger.Debug(

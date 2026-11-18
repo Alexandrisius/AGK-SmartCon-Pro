@@ -48,6 +48,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         IAgentClipboardService clipboardService,
         AgentConfirmationService confirmationService,
         IDispatcher dispatcher,
+        Services.Tools.AgentSessionContext sessionContext,
         IActiveDocumentChangeNotifier? documentChangeNotifier = null)
     {
         _conversationStore = conversationStore ?? throw new ArgumentNullException(nameof(conversationStore));
@@ -65,6 +66,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         _hasApiKey = settings.HasApiKey;
 
         AttachConfirmationService(_confirmationService);
+        AttachSessionContext(sessionContext);
         Messages.CollectionChanged += OnMessagesChanged;
         Attachments.CollectionChanged += OnAttachmentsChanged;
         if (_documentChangeNotifier is not null)
@@ -459,6 +461,9 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         FireAndForget(
             _dispatcher.InvokeAsync(() =>
             {
+                // Bypass / read-only choices are bound to one document (C1);
+                // the session-mode property is WPF-bound, so reset on the UI thread.
+                ResetApprovalModeForDocumentChange();
                 FireAndForget(
                     RefreshDocumentAndSessionsAsync(),
                     nameof(RefreshDocumentAndSessionsAsync));

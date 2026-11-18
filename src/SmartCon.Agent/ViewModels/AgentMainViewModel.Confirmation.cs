@@ -37,6 +37,12 @@ public sealed partial class AgentMainViewModel
     [ObservableProperty]
     private string _confirmationDigest = string.Empty;
 
+    [ObservableProperty]
+    private string _confirmationRisks = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasConfirmationRisks;
+
     private void OnConfirmationRequested(AgentConfirmationRequest request)
     {
         var show = new Action(() =>
@@ -45,6 +51,8 @@ public sealed partial class AgentMainViewModel
             ConfirmationAffected = request.AffectedCount > 0
                 ? S("Agent_Confirm_Affected", "Объектов:") + " " + request.AffectedCount
                 : string.Empty;
+            ConfirmationRisks = FormatRisks(request.Risks);
+            HasConfirmationRisks = ConfirmationRisks.Length > 0;
             ConfirmationDetails = FormatConfirmationDetails(request.ArgumentsJson);
             ConfirmationDigest = request.Digest.Length > 12
                 ? request.Digest.Substring(0, 12)
@@ -79,6 +87,25 @@ public sealed partial class AgentMainViewModel
 
         IsConfirmationVisible = false;
         _confirmationService.Resolve(AgentConfirmationResult.Cancelled);
+    }
+
+    private string FormatRisks(IReadOnlyList<string> risks)
+    {
+        if (risks.Count == 0)
+            return string.Empty;
+
+        var lines = risks.Select(risk => risk switch
+        {
+            "destructive operation" =>
+                S("Agent_Risk_Destructive", "Деструктивная операция"),
+            "plan contains a destructive, nested or unknown step" =>
+                S("Agent_Risk_Plan", "В плане есть деструктивный или неизвестный шаг"),
+            "closing the change set removes the undo path" =>
+                S("Agent_Risk_Discard", "Закрытие набора удаляет возможность отмены"),
+            _ => risk
+        });
+
+        return S("Agent_Confirm_Risks", "Внимание:") + " " + string.Join("; ", lines);
     }
 
     private static string FormatConfirmationDetails(string argumentsJson)

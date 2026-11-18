@@ -53,6 +53,16 @@ public sealed class AgentPlanExpectation
     public required string Expected { get; init; }
 }
 
+/// <summary>Session values the plan executor needs at execution time.</summary>
+public sealed class AgentPlanExecutionContext
+{
+    public required string DocumentId { get; init; }
+
+    public Guid ConversationId { get; init; }
+
+    public AgentApprovalMode ApprovalMode { get; init; } = AgentApprovalMode.ConfirmWrites;
+}
+
 public sealed class AgentPlanIssue
 {
     public required string Code { get; init; }
@@ -84,16 +94,4 @@ public sealed class PlanPreflightResult
 
     public static PlanPreflightResult Fail(string errorCode, string message) =>
         new() { Ok = false, ErrorCode = errorCode, Message = message };
-}
-
-/// <summary>
-/// Optional L1 preflight implemented by tools whose argument checks are cheaper
-/// than a full dry run (id existence, view family compatibility, limits).
-/// </summary>
-public interface IAgentToolPreflight
-{
-    Task<PlanPreflightResult> PreflightAsync(
-        AgentToolContext context,
-        System.Text.Json.JsonElement args,
-        CancellationToken ct);
 }

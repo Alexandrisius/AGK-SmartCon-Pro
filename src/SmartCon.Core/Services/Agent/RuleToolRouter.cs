@@ -22,10 +22,11 @@ public sealed class ToolRoutingDecision
 /// </summary>
 public interface IToolRouter
 {
-    ToolRoutingDecision Route(
+    Task<ToolRoutingDecision> RouteAsync(
         string query,
         IReadOnlyList<AgentToolDefinition> tools,
-        int maxTools = 14);
+        int maxTools = 14,
+        CancellationToken ct = default);
 }
 
 /// <summary>
@@ -44,13 +45,15 @@ public sealed class RuleToolRouter : IToolRouter
         "query_elements",
         "get_element_details",
         "summarize_elements",
-        "find_tools"
+        "find_tools",
+        "execute_plan"
     };
 
     private static readonly string[] RussianSuffixes =
     {
         "ения", "ении", "ение", "овать", "евать", "ация", "ации", "ацию",
         "ать", "ять", "ить", "еть", "уть", "ыть", "ешь", "ишь", "ует", "уют",
+        "уй", "ай",
         "ый", "ий", "ая", "ое", "ые", "ых", "ым", "ими", "ому", "его", "ого",
         "ам", "ах", "ов", "ев", "ей", "ой", "ую", "юю", "ия", "ии", "ию",
         "ть", "ит", "ет", "ут", "ат", "ят", "ил", "ла", "ло", "ли",
@@ -61,10 +64,20 @@ public sealed class RuleToolRouter : IToolRouter
     private const double B = 0.75;
     private const int NameBoost = 3;
 
-    public ToolRoutingDecision Route(
+    /// <summary>Tools that every routed request keeps (read-around + catalog search).</summary>
+    public static IReadOnlyCollection<string> CoreToolNames => CoreTools;
+
+    public Task<ToolRoutingDecision> RouteAsync(
         string query,
         IReadOnlyList<AgentToolDefinition> tools,
-        int maxTools = 14)
+        int maxTools = 14,
+        CancellationToken ct = default) =>
+        Task.FromResult(RouteCore(query, tools, maxTools));
+
+    private static ToolRoutingDecision RouteCore(
+        string query,
+        IReadOnlyList<AgentToolDefinition> tools,
+        int maxTools)
     {
         if (tools.Count == 0)
             return new ToolRoutingDecision { Tools = Array.Empty<AgentToolDefinition>() };

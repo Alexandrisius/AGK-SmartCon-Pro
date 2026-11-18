@@ -112,7 +112,7 @@ internal sealed partial class AgentEvalRunner : IDisposable
 
             var toolset = CreateToolset(document, transactions, out var changeSets);
             var prompt = Substitute(task.Prompt, seed);
-            ApplyRouting(task, prompt, toolset, result);
+            await ApplyRoutingAsync(task, prompt, toolset, result);
             var messages = new List<Dictionary<string, object?>>
             {
                 new()
@@ -464,89 +464,6 @@ internal sealed partial class AgentEvalRunner : IDisposable
         }
 
         return message;
-    }
-
-    private List<IAgentTool> CreateToolset(
-        Document document,
-        RevitTransactionService transactions,
-        out InMemoryAgentChangeSetStore changeSets)
-    {
-        var context = new StubRevitContext(document);
-        changeSets = new InMemoryAgentChangeSetStore();
-        return new List<IAgentTool>
-        {
-            new GetProjectOverviewTool(context),
-            new ListViewsTool(context),
-            new ListLevelsTool(context),
-            new ListCategoriesTool(context),
-            new QueryElementsTool(context),
-            new GetElementDetailsTool(context),
-            new SummarizeElementsTool(context),
-            new ListViewTemplatesTool(context),
-            new GetViewSettingsTool(context),
-            new GetViewTemplateDetailsTool(context),
-            new GetCurrentViewInfoTool(context),
-            new RenameViewsTool(context, transactions, changeSets),
-            new RenameLevelsTool(context, transactions, changeSets),
-            new ApplyViewTemplateTool(context, transactions, changeSets),
-            new SetViewRangeTool(context, transactions, changeSets),
-            new SetViewCropTool(context, transactions, changeSets),
-            new SetViewVisibilityTool(context, transactions, changeSets),
-            new ConfigureViewsTool(context, transactions, changeSets),
-            new CopyViewSettingsTool(context, transactions, changeSets),
-            new SetParametersTool(context, transactions, changeSets),
-            new RemapParameterValuesTool(context, transactions, changeSets),
-            new UndoLastTool(context, transactions, changeSets)
-        }.Concat(_feedbackTools).ToList();
-    }
-
-    private static void ApplyRouting(
-        AgentEvalTask task,
-        string prompt,
-        IReadOnlyList<IAgentTool> toolset,
-        AgentEvalTaskResult result)
-    {
-        var definitions = toolset
-            .Select(tool => AgentToolCatalog.Enrich(tool.Definition))
-            .ToList();
-        var decision = new RuleToolRouter().Route(prompt, definitions);
-        result.RoutingFallback = decision.Fallback;
-
-        foreach (var expected in task.ExpectedTools)
-        {
-            if (decision.Tools.Any(tool =>
-                    string.Equals(tool.Name, expected, StringComparison.Ordinal)))
-            {
-                continue;
-            }
-
-            if (task.AlternativeTools.Count > 0
-                && decision.Tools.Any(tool =>
-                    task.AlternativeTools.Contains(tool.Name, StringComparer.Ordinal)))
-            {
-                continue;
-            }
-
-            result.RoutingHit = false;
-            break;
-        }
-    }
-
-    private static string SystemRules(AgentEvalTask task)
-    {
-        switch (task.Kind)
-        {
-            case AgentEvalTaskKind.WriteDryRun:
-                return "- This is an evaluation run. The user asks for a change but only the " +
-                       "dry run is allowed: never call a write tool with dryRun=false.\n" +
-                       "- Finish with a short plan: what changes, how many items.";
-            case AgentEvalTaskKind.WriteApplyUndo:
-                return "- This is an evaluation run. Produce the dry-run plan for the requested " +
-                       "change first; the user approves applying it afterwards.";
-            default:
-                return "- This is an evaluation run. Use the tools to read the model and answer " +
-                       "the question in Russian; do not propose changes.";
-        }
     }
 
     private static string Substitute(string prompt, EvalModelSeed seed)

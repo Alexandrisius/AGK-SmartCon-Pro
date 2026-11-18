@@ -155,7 +155,7 @@ public sealed class AgentQueryToolsTests : RevitApiTest
             Skip.Test("План этажа не создан");
 
         var tool = new GetViewSettingsTool(new StubRevitContext(Doc));
-        var args = Parse("""{"viewId":""" + _viewId + "}");
+        var args = Parse("""{"viewId":""" + _viewId + ""","compact":false}""");
 
         var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
 

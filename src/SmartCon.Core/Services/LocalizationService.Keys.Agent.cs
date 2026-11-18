@@ -126,5 +126,29 @@ public static partial class LocalizationService
         en["Agent_Confirm_Reversible"] = "The change can be reverted with undo_last";
         ru["Agent_Confirm_Details"] = "Параметры операции";
         en["Agent_Confirm_Details"] = "Operation arguments";
+        ru["Agent_Confirm_Risks"] = "Внимание:";
+        en["Agent_Confirm_Risks"] = "Risks:";
+        ru["Agent_Approval_Confirm"] = "Подтверждение";
+        en["Agent_Approval_Confirm"] = "Confirm writes";
+        ru["Agent_Approval_Auto"] = "Автоприменение";
+        en["Agent_Approval_Auto"] = "Auto-approve";
+        ru["Agent_Approval_ReadOnly"] = "Только чтение";
+        en["Agent_Approval_ReadOnly"] = "Read only";
+        ru["Agent_Approval_ReadOnlyBanner"] = "Режим «Только чтение»: агент не может изменять модель.";
+        en["Agent_Approval_ReadOnlyBanner"] = "Read-only mode: the agent cannot change the model.";
+        ru["Agent_Approval_AutoBanner"] =
+            "Автоприменение включено: изменения применяются без подтверждения. Undo доступен для каждого набора.";
+        en["Agent_Approval_AutoBanner"] =
+            "Auto-approve is on: changes are applied without confirmation. Undo is available for every change set.";
+        ru["Agent_Approval_Tooltip"] = "Режим подтверждения изменений. Сбрасывается при смене документа.";
+        en["Agent_Approval_Tooltip"] = "Confirmation mode for changes. Resets when the document changes.";
+        ru["Agent_Approval_Disable"] = "Выключить";
+        en["Agent_Approval_Disable"] = "Turn off";
+        ru["Agent_Risk_Destructive"] = "Деструктивная операция";
+        en["Agent_Risk_Destructive"] = "Destructive operation";
+        ru["Agent_Risk_Plan"] = "В плане есть деструктивный или неизвестный шаг";
+        en["Agent_Risk_Plan"] = "The plan contains a destructive or unknown step";
+        ru["Agent_Risk_Discard"] = "Закрытие набора удаляет возможность отмены";
+        en["Agent_Risk_Discard"] = "Closing the change set removes the undo path";
     }
 }

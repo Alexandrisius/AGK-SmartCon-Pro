@@ -21,4 +21,11 @@ public interface IAgentChangeSetStore
     /// but it is no longer reported by <see cref="GetLastAppliedAsync"/>.
     /// </summary>
     Task MarkRolledBackAsync(Guid changeSetId, DateTime rolledBackAt, CancellationToken ct);
+
+    /// <summary>
+    /// Closes a change set without touching the model (C2). Used when its undo is
+    /// permanently blocked by a name/id conflict: the set stops shadowing older
+    /// sets so the next <c>undo_last</c> targets the previous applied set.
+    /// </summary>
+    Task MarkDiscardedAsync(Guid changeSetId, DateTime discardedAt, CancellationToken ct);
 }

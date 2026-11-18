@@ -238,6 +238,44 @@ LIMIT 1;";
         return Task.CompletedTask;
     }
 
+    public Task MarkDiscardedAsync(Guid changeSetId, DateTime discardedAt, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var transaction = connection.BeginTransaction();
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "UPDATE change_sets SET applied_at = NULL WHERE id = @id;";
+                command.Parameters.AddWithValue("@id", changeSetId.ToString("D"));
+                command.ExecuteNonQuery();
+            }
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText =
+                    "UPDATE change_items SET status = @status, error = @error " +
+                    "WHERE change_set_id = @id;";
+                command.Parameters.AddWithValue("@status", ChangeStatus.Discarded.ToString());
+                command.Parameters.AddWithValue("@error", "discarded by user");
+                command.Parameters.AddWithValue("@id", changeSetId.ToString("D"));
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        SmartConLogger.Info(
+            "Agent change set discarded (model untouched): " + changeSetId.ToString("N") +
+            " at " + discardedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        return Task.CompletedTask;
+    }
+
     private static ChangeSetHeader ReadHeader(SqliteDataReader reader)
     {
         return new ChangeSetHeader

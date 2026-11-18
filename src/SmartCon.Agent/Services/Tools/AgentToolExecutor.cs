@@ -5,7 +5,7 @@ using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.Agent.Services.Tools;
 
-public sealed class AgentToolExecutor : IToolExecutor
+public sealed partial class AgentToolExecutor : IToolExecutor
 {
     /// <summary>Bypass never auto-applies more items than this in one call.</summary>
     public const int MaxAutoApproveAffected = 200;
@@ -121,7 +121,20 @@ public sealed class AgentToolExecutor : IToolExecutor
         if (definition.Risk == AgentToolRisk.Destructive)
             return null;
 
-        var affected = CountItems(args);
+        // C2: closing a change set is never auto-approved — it permanently drops
+        // the undo path for that set.
+        if (string.Equals(definition.Name, "discard_change_set", StringComparison.Ordinal))
+            return null;
+
+        var risk = definition.Risk;
+        var affected = CountAffected(definition, args);
+
+        if (string.Equals(definition.Name, "execute_plan", StringComparison.Ordinal)
+            && !TryGetPlanRisk(args, out risk, out _))
+        {
+            return null;
+        }
+
         if (affected > MaxAutoApproveAffected)
             return null;
 
@@ -135,7 +148,7 @@ public sealed class AgentToolExecutor : IToolExecutor
                     new AgentActionRiskRequest
                     {
                         ToolName = definition.Name,
-                        Risk = definition.Risk,
+                        Risk = risk,
                         AffectedCount = affected,
                         Reversible = true,
                         ArgumentSummary = DescribeArguments(args)
@@ -215,6 +228,19 @@ public sealed class AgentToolExecutor : IToolExecutor
         var documentId = _sessionContext.DocumentId ?? string.Empty;
         var digest = AgentActionDigest.Compute(definition.Name, rawArgs, documentId);
 
+        var risks = new List<string>();
+        if (definition.Risk == AgentToolRisk.Destructive)
+            risks.Add("destructive operation");
+
+        if (string.Equals(definition.Name, "execute_plan", StringComparison.Ordinal)
+            && !TryGetPlanRisk(args, out _, out _))
+        {
+            risks.Add("plan contains a destructive, nested or unknown step");
+        }
+
+        if (string.Equals(definition.Name, "discard_change_set", StringComparison.Ordinal))
+            risks.Add("closing the change set removes the undo path");
+
         var request = new AgentConfirmationRequest
         {
             ToolName = definition.Name,
@@ -222,45 +248,12 @@ public sealed class AgentToolExecutor : IToolExecutor
             Summary = definition.Description,
             Digest = digest,
             ArgumentsJson = rawArgs,
-            AffectedCount = CountItems(args),
+            AffectedCount = CountAffected(definition, args),
             Reversible = true,
-            Risks = definition.Risk == AgentToolRisk.Destructive
-                ? new[] { "destructive operation" }
-                : Array.Empty<string>()
+            Risks = risks
         };
 
         return await _confirmation.RequestAsync(request, ct).ConfigureAwait(false);
-    }
-
-    private static int CountItems(JsonElement args)
-    {
-        if (args.ValueKind != JsonValueKind.Object)
-            return 0;
-
-        if (args.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
-            return items.GetArrayLength();
-
-        if (args.TryGetProperty("targetViewIds", out var targets)
-            && targets.ValueKind == JsonValueKind.Array)
-        {
-            return targets.GetArrayLength();
-        }
-
-        if (args.TryGetProperty("mapping", out var mapping) && mapping.ValueKind == JsonValueKind.Array)
-        {
-            var count = mapping.GetArrayLength();
-            if (args.TryGetProperty("filter", out var filter)
-                && filter.ValueKind == JsonValueKind.Object
-                && filter.TryGetProperty("limit", out var limit)
-                && limit.TryGetInt32(out var parsedLimit))
-            {
-                count = Math.Max(count, parsedLimit);
-            }
-
-            return count;
-        }
-
-        return 0;
     }
 
     private async Task WriteAuditAsync(

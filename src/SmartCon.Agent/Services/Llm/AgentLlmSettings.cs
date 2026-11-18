@@ -23,10 +23,17 @@ public sealed class AgentLlmSettings
     public int TimeoutSeconds { get; set; } = 120;
 
     /// <summary>
-    /// Context window used by the history compactor, in tokens. The model has a
-    /// 1M window, but keeping the working set small keeps latency and cost low.
+    /// Working context window used by the history compactor, in tokens. The model
+    /// has a 1M window; the owner confirmed good quality at ~500k. Override with
+    /// SMARTCON_AGENT_CONTEXT_TOKENS (50k..2M).
     /// </summary>
-    public int ContextWindowTokens { get; set; } = 200_000;
+    public int ContextWindowTokens { get; set; } = 500_000;
+
+    /// <summary>
+    /// Share of <see cref="ContextWindowTokens"/> after which old tool results are
+    /// compacted. Override with SMARTCON_AGENT_CONTEXT_THRESHOLD (0.3..0.95).
+    /// </summary>
+    public double ContextThreshold { get; set; } = 0.7;
 
     /// <summary>
     /// Send only a BM25 shortlist of tool schemas per turn (core read tools are
@@ -71,6 +78,16 @@ public sealed class AgentLlmSettings
             Temperature = ParseDouble(Get(values, "SMARTCON_LLM_TEMPERATURE"), 0.2),
             MaxOutputTokens = ParseInt(Get(values, "SMARTCON_LLM_MAX_OUTPUT_TOKENS"), 8192),
             TimeoutSeconds = ParseInt(Get(values, "SMARTCON_LLM_TIMEOUT_SECONDS"), 120),
+            ContextWindowTokens = Math.Max(
+                50_000,
+                Math.Min(
+                    ParseInt(Get(values, "SMARTCON_AGENT_CONTEXT_TOKENS"), 500_000),
+                    2_000_000)),
+            ContextThreshold = Math.Max(
+                0.3,
+                Math.Min(
+                    ParseDouble(Get(values, "SMARTCON_AGENT_CONTEXT_THRESHOLD"), 0.7),
+                    0.95)),
             UseToolRouter = !string.Equals(
                 Get(values, "SMARTCON_AGENT_TOOL_ROUTER"), "0", StringComparison.Ordinal)
         };

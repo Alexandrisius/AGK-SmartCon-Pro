@@ -6,7 +6,10 @@ public enum ChangeStatus
     Applied = 1,
     Failed = 2,
     Skipped = 3,
-    RolledBack = 4
+    RolledBack = 4,
+
+    /// <summary>The whole change set was closed without touching the model (C2).</summary>
+    Discarded = 5
 }
 
 public sealed class ChangeSetHeader

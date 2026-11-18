@@ -7,6 +7,23 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed class AgentHistoryCompactorTests
 {
     [Fact]
+    public void Compact_At500kWindow_UsesConfiguredThreshold()
+    {
+        var messages = BuildHistory(10, payloadLength: 200_000);
+
+        var (result, compacted) = AgentHistoryCompactor.Compact(
+            messages,
+            contextBudgetTokens: 500_000,
+            threshold: 0.7);
+
+        Assert.Equal(6, compacted);
+        Assert.Equal(messages.Count, result.Count);
+        Assert.Contains(
+            "\"compacted\":true",
+            result.First(message => message.Role == AgentRole.Tool).Content);
+    }
+
+    [Fact]
     public void Compact_BelowThreshold_KeepsEverything()
     {
         var messages = BuildHistory(3, payloadLength: 100);

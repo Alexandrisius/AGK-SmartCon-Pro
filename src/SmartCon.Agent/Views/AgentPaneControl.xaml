@@ -423,6 +423,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <Border Width="30" Height="30" CornerRadius="9"
@@ -447,7 +448,18 @@
                            Margin="0,1,0,0"/>
             </StackPanel>
 
-            <Button Grid.Column="2"
+            <ComboBox Grid.Column="2"
+                      ItemsSource="{Binding ApprovalModes}"
+                      SelectedItem="{Binding SelectedApprovalMode}"
+                      DisplayMemberPath="Label"
+                      Width="112"
+                      Height="26"
+                      Margin="0,0,4,0"
+                      VerticalContentAlignment="Center"
+                      Style="{DynamicResource CompactComboBox}"
+                      ToolTip="{Binding ApprovalModeTooltip}"/>
+
+            <Button Grid.Column="3"
                     Command="{Binding NewSessionCommand}"
                     Width="28" Height="28"
                     Style="{DynamicResource FlatIconButton}"
@@ -457,7 +469,7 @@
                                             Foreground="{DynamicResource TextSecondaryBrush}"/>
             </Button>
 
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     Command="{Binding OpenSettingsCommand}"
                     Width="28" Height="28"
                     Style="{DynamicResource FlatIconButton}"
@@ -480,33 +492,69 @@
                   IsEnabled="{Binding IsBusy, Converter={StaticResource InvertBool}}"
                   ToolTip="{loc:Loc Agent_Session_Tooltip}"/>
 
-        <!-- Warning banner -->
-        <Border Grid.Row="2"
-                Margin="0,0,0,6"
-                Padding="10,6"
-                CornerRadius="8"
-                Background="{DynamicResource SurfaceBrush}"
-                BorderBrush="{DynamicResource WarningBrush}"
-                BorderThickness="1"
-                Visibility="{Binding ShowBanner, Converter={StaticResource BoolToVis}}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <iconPacks:PackIconMaterial Kind="AlertOutline"
-                                            Width="15" Height="15"
-                                            Margin="0,1,8,0"
-                                            VerticalAlignment="Top"
-                                            Foreground="{DynamicResource WarningBrush}"/>
-                <TextBlock Grid.Column="1"
-                           Text="{Binding BannerText}"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center"
-                           FontSize="11"
-                           Foreground="{DynamicResource TextSecondaryBrush}"/>
-            </Grid>
-        </Border>
+        <!-- Approval mode + warning banners -->
+        <StackPanel Grid.Row="2">
+            <Border Margin="0,0,0,6"
+                    Padding="10,6"
+                    CornerRadius="8"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    Visibility="{Binding IsApprovalWarningVisible, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                                Width="15" Height="15"
+                                                Margin="0,1,8,0"
+                                                VerticalAlignment="Top"
+                                                Foreground="{DynamicResource WarningBrush}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding ApprovalWarningText}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    <Button Grid.Column="2"
+                            Command="{Binding DisableApprovalBypassCommand}"
+                            Content="{Binding ApprovalDisableText}"
+                            Padding="8,2"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center"
+                            Style="{DynamicResource FlatIconButton}"/>
+                </Grid>
+            </Border>
+
+            <!-- Warning banner -->
+            <Border Margin="0,0,0,6"
+                    Padding="10,6"
+                    CornerRadius="8"
+                    Background="{DynamicResource SurfaceBrush}"
+                    BorderBrush="{DynamicResource WarningBrush}"
+                    BorderThickness="1"
+                    Visibility="{Binding ShowBanner, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <iconPacks:PackIconMaterial Kind="AlertOutline"
+                                                Width="15" Height="15"
+                                                Margin="0,1,8,0"
+                                                VerticalAlignment="Top"
+                                                Foreground="{DynamicResource WarningBrush}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding BannerText}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </Grid>
+            </Border>
+        </StackPanel>
 
         <!-- Chat transcript -->
         <Grid Grid.Row="3">
@@ -865,6 +913,12 @@
                                    Margin="0,3,0,0"
                                    TextWrapping="Wrap"
                                    Foreground="{DynamicResource TextMutedBrush}"/>
+                        <TextBlock Text="{Binding ConfirmationRisks}"
+                                   FontSize="10"
+                                   Margin="0,4,0,0"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding HasConfirmationRisks, Converter={StaticResource BoolToVis}}"
+                                   Foreground="{DynamicResource DangerBrush}"/>
                         <TextBlock Text="{Binding ConfirmationDigest, StringFormat=digest: {0}}"
                                    FontSize="9"
                                    Margin="0,3,0,0"

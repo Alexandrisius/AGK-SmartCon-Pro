@@ -96,6 +96,17 @@ public static class AgentPlanValidator
                 continue;
             }
 
+            if (string.Equals(step.ToolName, "execute_plan", StringComparison.OrdinalIgnoreCase))
+            {
+                errors.Add(new AgentPlanIssue
+                {
+                    Code = "plan_nested_plan_forbidden",
+                    Message = "A plan step cannot be execute_plan itself.",
+                    StepId = step.StepId
+                });
+                continue;
+            }
+
             if (tool.Risk == AgentToolRisk.Destructive && !plan.AllowDestructive)
             {
                 errors.Add(new AgentPlanIssue

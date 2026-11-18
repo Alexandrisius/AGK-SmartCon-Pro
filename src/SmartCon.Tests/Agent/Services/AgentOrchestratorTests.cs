@@ -4,7 +4,9 @@ using SmartCon.Agent.Services;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Tests.Agent.Support;
 
 namespace SmartCon.Tests.Agent.Services;
 
@@ -151,6 +153,121 @@ public sealed class AgentOrchestratorTests
         Assert.Contains("cancelled", toolMessage.Content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RunTurn_FindTools_ExpandsCatalogForNextRound()
+    {
+        var store = new InMemoryConversationStore();
+        var findTools = new CountingTool(name: "find_tools");
+        var rename = new CountingTool(name: "rename_views");
+        var registry = new AgentToolRegistry(new IAgentTool[] { findTools, rename });
+        var executor = CreateExecutor(registry);
+        var router = new RecordingToolRouter
+        {
+            Result = new ToolRoutingDecision { Tools = new[] { findTools.Definition } }
+        };
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "find_tools",
+                    ArgumentsJson = "{\"query\":\"rename views\"}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, toolRouter: router);
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "наведи порядок в именах видов",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(2, llm.Requests.Count);
+        Assert.DoesNotContain(
+            llm.Requests[0].Tools, tool => tool.Name == "rename_views");
+        Assert.Contains(
+            llm.Requests[1].Tools, tool => tool.Name == "rename_views");
+        Assert.Equal(1, findTools.Calls);
+    }
+
+    [Fact]
+    public async Task RunTurn_ActiveDocumentChanged_ResetsApprovalModeToConfirmWrites()
+    {
+        var store = new InMemoryConversationStore();
+        var tool = new CountingTool();
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var executor = CreateExecutor(registry);
+        var session = new AgentSessionContext
+        {
+            DocumentId = "doc-a",
+            ApprovalMode = AgentApprovalMode.AutoApproveSession
+        };
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant("ok");
+
+        var orchestrator = CreateOrchestrator(
+            llm,
+            executor,
+            registry,
+            store,
+            session,
+            new StubProjectContextProvider("doc-b"));
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(AgentApprovalMode.ConfirmWrites, session.ApprovalMode);
+        Assert.Equal("doc-b", session.DocumentId);
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCallTelemetry_RedactsCredentials()
+    {
+        var store = new InMemoryConversationStore();
+        var tool = new CountingTool();
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var executor = CreateExecutor(registry);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall
+                {
+                    Id = "call_1",
+                    Name = "get_test",
+                    ArgumentsJson = "{\"api_key\":\"sk-secret12345678\"}"
+                }
+            });
+        llm.EnqueueAssistant("done");
+        var telemetry = new CapturingToolCallStore();
+
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, toolCallStore: telemetry);
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        var record = Assert.Single(telemetry.Records);
+        Assert.DoesNotContain("sk-secret12345678", record.ArgumentsJson);
+        Assert.Contains(AgentRedactor.Replacement, record.ArgumentsJson);
+    }
+
     private static AgentToolExecutor CreateExecutor(IToolRegistry registry)
     {
         return new AgentToolExecutor(
@@ -172,7 +289,11 @@ public sealed class AgentOrchestratorTests
         FakeAgentLlmClient llm,
         IToolExecutor executor,
         IToolRegistry registry,
-        IAgentConversationStore store)
+        IAgentConversationStore store,
+        AgentSessionContext? session = null,
+        IAgentProjectContextProvider? projectContext = null,
+        IAgentToolCallStore? toolCallStore = null,
+        IToolRouter? toolRouter = null)
     {
         return new AgentOrchestrator(
             llm,
@@ -180,30 +301,34 @@ public sealed class AgentOrchestratorTests
             registry,
             store,
             new NullAuditLog(),
-            new StubProjectContextProvider(),
+            projectContext ?? new StubProjectContextProvider(),
             new AgentLlmSettings { Model = "test-model" },
-            new AgentSessionContext(),
-            new AgentPromptBuilder());
+            session ?? new AgentSessionContext(),
+            new AgentPromptBuilder(),
+            toolCallStore,
+            null,
+            toolRouter);
     }
 
     private sealed class CountingTool : IAgentTool
     {
         private readonly ToolResult _result;
 
-        public CountingTool(ToolResult? result = null)
+        public CountingTool(ToolResult? result = null, string name = "get_test")
         {
             _result = result ?? ToolResult.Ok(null, "ok");
+            Definition = new AgentToolDefinition
+            {
+                Name = name,
+                Description = name + " test tool",
+                Risk = AgentToolRisk.Read,
+                InputSchemaJson = "{\"type\":\"object\",\"properties\":{}}"
+            };
         }
 
         public int Calls { get; private set; }
 
-        public AgentToolDefinition Definition { get; } = new()
-        {
-            Name = "get_test",
-            Description = "test tool",
-            Risk = AgentToolRisk.Read,
-            InputSchemaJson = "{\"type\":\"object\",\"properties\":{}}"
-        };
+        public AgentToolDefinition Definition { get; }
 
         public Task<ToolResult> ExecuteAsync(
             AgentToolContext context,
@@ -241,13 +366,31 @@ public sealed class AgentOrchestratorTests
 
     private sealed class StubProjectContextProvider : IAgentProjectContextProvider
     {
+        private readonly string _documentId;
+
+        public StubProjectContextProvider(string documentId = "doc")
+        {
+            _documentId = documentId;
+        }
+
         public Task<AgentProjectContext> GetAsync(CancellationToken ct) => Task.FromResult(
             new AgentProjectContext
             {
-                DocumentId = "doc",
+                DocumentId = _documentId,
                 Title = "Test document",
                 RevitVersion = "2025"
             });
+    }
+
+    private sealed class CapturingToolCallStore : IAgentToolCallStore
+    {
+        public List<AgentToolCallRecord> Records { get; } = new();
+
+        public Task RecordAsync(AgentToolCallRecord record, CancellationToken ct)
+        {
+            Records.Add(record);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NullAuditLog : IAgentAuditLog

@@ -3,185 +3,16 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
-using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
-using SmartCon.Agent.Services.Tools;
 
-namespace SmartCon.Agent.Services.Plans;
+namespace SmartCon.Core.Services.Agent;
 
-public sealed class AgentPlanStepResult
+public sealed partial class AgentPlanExecutor
 {
-    public required string StepId { get; init; }
-
-    public required string ToolName { get; init; }
-
-    public bool DryRunOk { get; set; }
-
-    public int Changed { get; set; }
-
-    public int Skipped { get; set; }
-
-    public int Failed { get; set; }
-
-    public bool PreflightSkipped { get; set; }
-
-    public bool FidelityChecked { get; set; }
-
-    public bool FidelityMatched { get; set; } = true;
-
-    public ToolResult? DryRunResult { get; set; }
-
-    public ToolResult? ApplyResult { get; set; }
-
-    public ToolResult? ReadBackResult { get; set; }
-}
-
-public sealed class AgentPlanExecutionResult
-{
-    public bool Success { get; init; }
-
-    public bool Approved { get; init; }
-
-    public string? ErrorCode { get; init; }
-
-    public string? Message { get; init; }
-
-    public string PlanDigest { get; init; } = string.Empty;
-
-    public IReadOnlyList<AgentPlanStepResult> Steps { get; init; } =
-        Array.Empty<AgentPlanStepResult>();
-
-    public IReadOnlyList<string> Verified { get; init; } = Array.Empty<string>();
-
-    public IReadOnlyList<string> Mismatches { get; init; } = Array.Empty<string>();
-
-    public int AffectedCount { get; init; }
-
-    public static AgentPlanExecutionResult Fail(string code, string message) =>
-        new() { Success = false, ErrorCode = code, Message = message };
-}
-
-/// <summary>
-/// Executes a validated plan (L0) as: preflight (L1) → dry run with fidelity
-/// check (L4) → single plan approval with nonce/expiry/digest (L3) → apply →
-/// read-back (L6). Plan-level approval replaces per-tool confirmations; the
-/// tools themselves still create change sets so undo_last works.
-/// </summary>
-public sealed class AgentPlanExecutor
-{
-    private readonly IToolRegistry _registry;
-    private readonly IAgentAwaitableEvent _revit;
-    private readonly IAgentConfirmationService _confirmation;
-    private readonly AgentSessionContext _session;
-    private readonly IAgentAuditLog? _audit;
-    private readonly AgentConfirmationLedger _ledger = new();
-    private readonly TimeSpan _approvalLifetime;
-
-    public AgentPlanExecutor(
-        IToolRegistry registry,
-        IAgentAwaitableEvent revit,
-        IAgentConfirmationService confirmation,
-        AgentSessionContext session,
-        IAgentAuditLog? audit = null,
-        TimeSpan? approvalLifetime = null)
-    {
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        _revit = revit ?? throw new ArgumentNullException(nameof(revit));
-        _confirmation = confirmation ?? throw new ArgumentNullException(nameof(confirmation));
-        _session = session ?? throw new ArgumentNullException(nameof(session));
-        _audit = audit;
-        _approvalLifetime = approvalLifetime ?? TimeSpan.FromMinutes(5);
-    }
-
-    public async Task<AgentPlanExecutionResult> ExecuteAsync(
-        AgentPlan plan,
-        CancellationToken ct)
-    {
-        if (_session.ApprovalMode == AgentApprovalMode.ReadOnly)
-            return AgentPlanExecutionResult.Fail(
-                "read_only_mode",
-                "The session is read-only. Switch the approval mode to apply the plan.");
-
-        var validation = AgentPlanValidator.Validate(plan, _registry.GetDefinitions());
-        if (!validation.IsValid)
-        {
-            await WriteAuditAsync(plan, "plan#validate", "invalid", validation.Errors.Count, ct)
-                .ConfigureAwait(false);
-            return AgentPlanExecutionResult.Fail(
-                "plan_invalid",
-                string.Join("; ", validation.Errors.Select(error => error.Code + ": " + error.Message)));
-        }
-
-        await WriteAuditAsync(plan, "plan#validate", "valid", 0, ct).ConfigureAwait(false);
-
-        var order = AgentPlanValidator.OrderSteps(plan);
-        var steps = order
-            .Select(id => plan.Steps.First(step => step.StepId == id))
-            .ToList();
-        var results = steps
-            .Select(step => new AgentPlanStepResult
-            {
-                StepId = step.StepId,
-                ToolName = step.ToolName
-            })
-            .ToList();
-        var resultById = results.ToDictionary(item => item.StepId, StringComparer.Ordinal);
-
-        var preflight = await RunPreflightAsync(steps, results, ct).ConfigureAwait(false);
-        if (preflight is not null)
-            return preflight;
-
-        var dryFailure = await RunDryRunAsync(steps, results, ct).ConfigureAwait(false);
-        if (dryFailure is not null)
-            return dryFailure;
-
-        var writeResults = results
-            .Where(item => IsWrite(item.ToolName))
-            .ToList();
-        var affected = writeResults.Sum(item => item.Changed);
-        var digest = ComputePlanDigest(plan);
-
-        if (writeResults.Count > 0)
-        {
-            var approval = await RequestApprovalAsync(plan, digest, affected, ct)
-                .ConfigureAwait(false);
-            if (approval is not null)
-                return approval;
-        }
-
-        var applyFailure = await RunApplyAsync(steps, results, ct).ConfigureAwait(false);
-        if (applyFailure is not null)
-            return applyFailure;
-
-        var (verified, mismatches) = await RunReadBackAsync(steps, results, ct).ConfigureAwait(false);
-
-        if (mismatches.Count > 0)
-        {
-            SmartConLogger.Warn(
-                "Agent plan " + plan.PlanId.ToString("N") + " read-back mismatches: " +
-                string.Join("; ", mismatches) +
-                " [Action: review the change set with undo_last; the model state differs from the plan]");
-        }
-
-        await WriteAuditAsync(
-                plan, "plan#apply", mismatches.Count == 0 ? "ok" : "mismatch", affected, ct)
-            .ConfigureAwait(false);
-
-        return new AgentPlanExecutionResult
-        {
-            Success = true,
-            Approved = true,
-            PlanDigest = digest,
-            Steps = results,
-            Verified = verified,
-            Mismatches = mismatches,
-            AffectedCount = affected
-        };
-    }
-
     private async Task<AgentPlanExecutionResult?> RunPreflightAsync(
         IReadOnlyList<AgentPlanStep> steps,
         IReadOnlyList<AgentPlanStepResult> results,
+        AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
         foreach (var step in steps)
@@ -210,7 +41,7 @@ public sealed class AgentPlanExecutor
             }
 
             var context = new AgentToolContext(
-                _revit, _session.DocumentId, _session.ConversationId);
+                _revit, execution.DocumentId, execution.ConversationId);
             var check = await preflight.PreflightAsync(context, args, ct).ConfigureAwait(false);
             if (check.Ok)
                 continue;
@@ -226,10 +57,12 @@ public sealed class AgentPlanExecutor
     private async Task<AgentPlanExecutionResult?> RunDryRunAsync(
         IReadOnlyList<AgentPlanStep> steps,
         IReadOnlyList<AgentPlanStepResult> results,
+        AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
         foreach (var step in steps)
         {
+            ct.ThrowIfCancellationRequested();
             if (!IsWrite(step.ToolName))
                 continue;
 
@@ -238,7 +71,7 @@ public sealed class AgentPlanExecutor
                 continue;
 
             var result = results.First(item => item.StepId == step.StepId);
-            var dryResult = await ExecuteToolAsync(tool, WithDryRun(step.ArgumentsJson, true), true, ct)
+            var dryResult = await ExecuteToolAsync(tool, WithDryRun(step.ArgumentsJson, true), true, execution, ct)
                 .ConfigureAwait(false);
             result.DryRunResult = dryResult;
             result.DryRunOk = dryResult.Success;
@@ -259,7 +92,7 @@ public sealed class AgentPlanExecutor
                 if (!result.FidelityMatched)
                 {
                     await WriteAuditAsync(
-                            null, "plan#fidelity", "mismatch", result.Changed, ct)
+                            null, "plan#fidelity", "mismatch", result.Changed, execution, ct)
                         .ConfigureAwait(false);
                     return AgentPlanExecutionResult.Fail(
                         "plan_fidelity_mismatch",
@@ -269,7 +102,7 @@ public sealed class AgentPlanExecutor
             }
         }
 
-        await WriteAuditAsync(null, "plan#fidelity", "match", 0, ct).ConfigureAwait(false);
+        await WriteAuditAsync(null, "plan#fidelity", "match", 0, execution, ct).ConfigureAwait(false);
         return null;
     }
 
@@ -277,6 +110,7 @@ public sealed class AgentPlanExecutor
         AgentPlan plan,
         string digest,
         int affected,
+        AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
         var nonce = Guid.NewGuid().ToString("N");
@@ -295,6 +129,24 @@ public sealed class AgentPlanExecutor
             Timeout = _approvalLifetime
         };
 
+        if (execution.ApprovalMode == AgentApprovalMode.AutoApproveSession
+            && !PlanContainsDiscard(plan))
+        {
+            if (!_ledger.TryConsume(nonce))
+                return AgentPlanExecutionResult.Fail(
+                    "confirmation_replayed", "This plan approval was already used.");
+
+            if (!string.Equals(ComputePlanDigest(plan, execution.DocumentId), digest, StringComparison.Ordinal))
+                return AgentPlanExecutionResult.Fail(
+                    "confirmation_digest_mismatch",
+                    "The plan changed after the dry run; a new confirmation is required.");
+
+            await WriteAuditAsync(
+                    plan, "plan#approval", "auto_approved", affected, execution, ct)
+                .ConfigureAwait(false);
+            return null;
+        }
+
         var decision = await _confirmation.RequestAsync(request, ct).ConfigureAwait(false);
         if (decision != AgentConfirmationResult.Approved)
             return AgentPlanExecutionResult.Fail(
@@ -309,7 +161,7 @@ public sealed class AgentPlanExecutor
             return AgentPlanExecutionResult.Fail(
                 "confirmation_replayed", "This plan approval was already used.");
 
-        if (!string.Equals(ComputePlanDigest(plan), digest, StringComparison.Ordinal))
+        if (!string.Equals(ComputePlanDigest(plan, execution.DocumentId), digest, StringComparison.Ordinal))
             return AgentPlanExecutionResult.Fail(
                 "confirmation_digest_mismatch",
                 "The plan changed after approval; a new confirmaton is required.");
@@ -320,6 +172,7 @@ public sealed class AgentPlanExecutor
     private async Task<AgentPlanExecutionResult?> RunApplyAsync(
         IReadOnlyList<AgentPlanStep> steps,
         IReadOnlyList<AgentPlanStepResult> results,
+        AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
         foreach (var step in steps)
@@ -328,20 +181,30 @@ public sealed class AgentPlanExecutor
             var tool = GetTool(step.ToolName);
             if (tool is null)
                 return AgentPlanExecutionResult.Fail(
-                    "plan_tool_unknown", "Unknown tool '" + step.ToolName + "'.");
+                    "plan_tool_unknown", "Unknown tool '" + step.ToolName + "'.", results);
 
             var result = results.First(item => item.StepId == step.StepId);
             if (!IsWrite(step.ToolName))
             {
                 result.ApplyResult = await ExecuteToolAsync(
-                        tool, step.ArgumentsJson, false, ct)
+                        tool, step.ArgumentsJson, false, execution, ct)
                     .ConfigureAwait(false);
                 result.DryRunOk = result.ApplyResult.Success;
+                if (!result.ApplyResult.Success)
+                {
+                    return AgentPlanExecutionResult.Fail(
+                        "plan_read_failed",
+                        "Step '" + step.StepId + "' (read) failed: " +
+                        (result.ApplyResult.ErrorCode ?? "unknown") + " " +
+                        result.ApplyResult.Message,
+                        results);
+                }
+
                 continue;
             }
 
             var applyResult = await ExecuteToolAsync(
-                    tool, WithDryRun(step.ArgumentsJson, false), true, ct)
+                    tool, WithDryRun(step.ArgumentsJson, false), true, execution, ct)
                 .ConfigureAwait(false);
             result.ApplyResult = applyResult;
             ReadCounts(applyResult, result);
@@ -351,7 +214,8 @@ public sealed class AgentPlanExecutor
                 return AgentPlanExecutionResult.Fail(
                     "plan_apply_failed",
                     "Step '" + step.StepId + "' failed: " +
-                    (applyResult.ErrorCode ?? "unknown") + " " + applyResult.Message);
+                    (applyResult.ErrorCode ?? "unknown") + " " + applyResult.Message,
+                    results);
             }
         }
 
@@ -362,6 +226,7 @@ public sealed class AgentPlanExecutor
         RunReadBackAsync(
             IReadOnlyList<AgentPlanStep> steps,
             IReadOnlyList<AgentPlanStepResult> results,
+            AgentPlanExecutionContext execution,
             CancellationToken ct)
     {
         var verified = new List<string>();
@@ -369,20 +234,22 @@ public sealed class AgentPlanExecutor
 
         foreach (var step in steps)
         {
+            ct.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(step.ReadBackTool))
                 continue;
 
-            var tool = GetTool(step.ReadBackTool);
+            var readBackToolName = step.ReadBackTool!;
+            var tool = GetTool(readBackToolName);
             if (tool is null)
             {
-                mismatches.Add(step.StepId + ": read-back tool '" + step.ReadBackTool +
+                mismatches.Add(step.StepId + ": read-back tool '" + readBackToolName +
                                "' is not registered");
                 continue;
             }
 
             var result = results.First(item => item.StepId == step.StepId);
             var readBack = await ExecuteToolAsync(
-                    tool, step.ArgumentsReadBackJson, false, ct)
+                    tool, step.ArgumentsReadBackJson, false, execution, ct)
                 .ConfigureAwait(false);
             result.ReadBackResult = readBack;
 
@@ -417,6 +284,10 @@ public sealed class AgentPlanExecutor
         return (verified, mismatches);
     }
 
+    private static bool PlanContainsDiscard(AgentPlan plan) =>
+        plan.Steps.Any(step =>
+            string.Equals(step.ToolName, "discard_change_set", StringComparison.OrdinalIgnoreCase));
+
     private bool IsWrite(string toolName) =>
         _registry.TryGet(toolName, out var tool)
         && tool is not null
@@ -429,6 +300,7 @@ public sealed class AgentPlanExecutor
         IAgentTool tool,
         string argumentsJson,
         bool approved,
+        AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
         JsonElement args;
@@ -443,7 +315,7 @@ public sealed class AgentPlanExecutor
             return ToolResult.Fail("invalid_arguments", "Arguments are not valid JSON: " + ex.Message);
         }
 
-        var context = new AgentToolContext(_revit, _session.DocumentId, _session.ConversationId)
+        var context = new AgentToolContext(_revit, execution.DocumentId, execution.ConversationId)
         {
             WriteApproved = approved
         };
@@ -543,76 +415,5 @@ public sealed class AgentPlanExecutor
             JsonValueKind.Null => null,
             _ => current.GetRawText()
         };
-    }
-
-    private static string ComputePlanDigest(AgentPlan plan)
-    {
-        var json = JsonSerializer.Serialize(new
-        {
-            plan.PlanId,
-            plan.Goal,
-            plan.AllowDestructive,
-            steps = plan.Steps.Select(step => new
-            {
-                step.StepId,
-                step.ToolName,
-                step.ArgumentsJson,
-                step.DependsOn,
-                step.DryRun,
-                step.ExpectedChanges,
-                step.ReadBackTool,
-                step.ArgumentsReadBackJson
-            })
-        });
-
-        return AgentActionDigest.Compute("agent_plan", json, string.Empty);
-    }
-
-    private static string DescribePlan(AgentPlan plan)
-    {
-        var steps = plan.Steps.Select(step => new
-        {
-            stepId = step.StepId,
-            tool = step.ToolName,
-            expectedChanges = step.ExpectedChanges,
-            rationale = step.Rationale
-        });
-        return JsonSerializer.Serialize(new { plan.Goal, steps });
-    }
-
-    private async Task WriteAuditAsync(
-        AgentPlan? plan,
-        string tool,
-        string result,
-        int affected,
-        CancellationToken ct)
-    {
-        if (_audit is null)
-            return;
-
-        try
-        {
-            await _audit.WriteAsync(new AgentAuditEntry
-            {
-                Actor = Environment.UserName,
-                DocumentPath = _session.DocumentId,
-                Tool = tool,
-                ArgsHash = plan is null
-                    ? string.Empty
-                    : ComputePlanDigest(plan).Substring(0, 16),
-                Result = result,
-                AffectedCount = affected
-            }, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent plan audit write failed: " + ex.Message +
-                " [Action: check write access to agent.db; the plan result is not affected]");
-        }
     }
 }

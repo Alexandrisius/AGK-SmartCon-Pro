@@ -50,6 +50,8 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     private const string PlanSection = @"## Plan validation
 - For tasks with more than one change, build the plan first: read the state, produce the full list of steps, then execute the dry run for all steps before asking for approval.
 - A plan step is one tool call. Keep step arguments minimal and reference only ids you have seen in tool results during this conversation.
+- For an abstract or global request (""приведи проект в порядок"", ""сделай все виды аккуратно""): read the model first, then call find_tools with a concrete query and a short context (what you learned, what you are about to change) to get the right tool definitions, and only then build the plan. Do not guess tool names for a vague request.
+- When a task needs several write steps, you may submit the whole plan to execute_plan in one call: dryRun=true validates and dry-runs every step and returns the aggregated diff and a planDigest (nothing changes). After the user approves, call again with dryRun=false and that same planDigest. Add expectedChanges and readBackTool/readBackExpectations to each step so the result is verified automatically.
 - After apply, verify the result by re-reading the affected objects (get_view_settings / list_views / get_element_details) and report any mismatch instead of assuming success.
 ";
 

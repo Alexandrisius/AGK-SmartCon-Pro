@@ -115,6 +115,11 @@ public static class AgentToolCatalog
             {
                 "закрыть набор", "забыть изменение", "discard", "abandon", "change set"
             }),
+            ["execute_plan"] = new("Write", true, new[]
+            {
+                "план", "сценарий", "несколько", "шагов", "сразу", "за один раз", "plan",
+                "multi-step"
+            }),
             ["report_tooling_feedback"] = new("Meta", false, new[]
             {
                 "фидбэк", "неудобно", "предложение", "feedback", "improvement"

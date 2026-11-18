@@ -5,6 +5,7 @@ using SmartCon.Agent;
 using SmartCon.Agent.Events;
 using SmartCon.Agent.Services;
 using SmartCon.Agent.Services.Analysis;
+using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Agent.Services.Tools;
@@ -15,6 +16,7 @@ using SmartCon.Agent.Views;
 using SmartCon.App.Events;
 using SmartCon.Core.Logging;
 using SmartCon.App.Services;
+using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Core.Math.FormulaEngine.Solver;
@@ -467,7 +469,13 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
+        services.AddSingleton<IAgentTool, DiscardChangeSetTool>();
         services.AddSingleton<IAgentTool, UndoLastTool>();
+        services.AddSingleton<IAgentTool>(sp => new ExecutePlanTool(
+            () => sp.GetRequiredService<IToolRegistry>(),
+            sp.GetRequiredService<IAgentAwaitableEvent>(),
+            sp.GetRequiredService<IAgentAuditLog>(),
+            sp.GetRequiredService<AgentSessionContext>()));
         services.AddSingleton<IAgentTool, ReportToolingFeedbackTool>();
 
         services.AddSingleton<AgentConfirmationService>();
@@ -477,7 +485,23 @@ public static class ServiceRegistrar
         services.AddSingleton<AgentSessionContext>();
         services.AddSingleton<FindToolsTool>();
         services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<FindToolsTool>());
-        services.AddSingleton<IToolRouter, RuleToolRouter>();
+
+        var decisionsSettings = AgentDecisionsSettings.Load();
+        services.AddSingleton(decisionsSettings);
+        services.AddSingleton<IAgentDecisionClient>(sp =>
+            new HttpDecisionClient(sp.GetRequiredService<AgentDecisionsSettings>()));
+        services.AddSingleton<IToolRouter>(sp =>
+        {
+            var rule = new RuleToolRouter();
+            var settings = sp.GetRequiredService<AgentDecisionsSettings>();
+            return settings.UseRouter && settings.IsAvailable
+                ? new DecisionsToolRouter(rule, sp.GetRequiredService<IAgentDecisionClient>())
+                : rule;
+        });
+
+        if (decisionsSettings.IsAvailable)
+            services.AddSingleton<IActionRiskGate, DecisionsActionRiskGate>();
+
         services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
             sp.GetServices<IAgentTool>(), sp.GetRequiredService<FindToolsTool>()));
         services.AddSingleton<IToolExecutor, AgentToolExecutor>();

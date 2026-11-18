@@ -1,5 +1,63 @@
 ﻿# Handoff — ночной прогон №2 (2026-11-18)
 
+## ⚡ Передача продолжения (финал, 2026-11-18)
+
+### Где мы сейчас
+
+- **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/00-strategy/night-run-2.md`.
+- Ветка `develop`. Фазы P1/P2/A/B/C + A4 и финальный полиш завершены, коммит и push в `develop` сделаны (верхний коммит этой ночи).
+- Валидатор `general` прогонялся 4 раза: 1–3 FAIL → исправлены; 4-й FAIL (локализация Approval UI, `Risks` не показывались в overlay, `AgentEvalRunner` >600 строк) → **всё исправлено**. 5-й прогон по решению владельца **не запускался**.
+- **НЕ добавлять в коммит:** `opencode.json`, `server/`, `tools/allow-revit-network.ps1` (личное/не по задаче). Секреты — только в `%APPDATA%\AGK\SmartCon\Agent\secrets.env`, в репозиторий не попадают.
+
+### Финальная верификация
+
+| Проверка | Результат |
+|---|---|
+| Sweep 7 конфигураций (R19–R27) | 7/7, 0 ошибок |
+| Полный unit (`SmartCon.Tests`, Debug.R25) | 3494/3494 |
+| Integration `AgentPlanExecutionTests` (Revit 2025) | 6/6 |
+| Eval replay 40 задач (Revit 2025) | 40/40, gate PASS |
+| Agent integration R27 | 78 passed, 2 skipped, 0 failed |
+| net48 (Revit 2023) | 245 passed, 12 skipped, 0 failed (платформенный сьют) |
+| A4 offline orchestrator eval | 5/5 |
+| Live abstract (`AbstractTaskLiveTests`) | 1/1 (4 раунда, 2× find_tools с context) |
+| Decision live (`DecisionsLiveTests`) | 3/3 (pplx free через OpenRouter) |
+| Бенчмарк decision-моделей | 27 моделей, free pplx 100 %/100 %, sep 0.990 |
+
+### Что исправлено после 4-го FAIL
+
+- Локализация: 7 ключей `Agent_Approval_*` + `Agent_Confirm_Risks` + 3 `Agent_Risk_*` (ru/en); тест `AgentLocalizationTests` (11 кейсов).
+- Confirmation overlay показывает риски (`ConfirmationRisks`/`HasConfirmationRisks`, DangerBrush); прямой `discard_change_set` теперь даёт риск «closing the change set removes the undo path».
+- `AgentPlanExecutor`: plan-level auto-approve в `AutoApproveSession` больше не пропускает план с `discard_change_set` (defense-in-depth) + unit-тест.
+- `AgentEvalRunner` разбит: `.cs` 535 + `.Toolset.cs` 99 + `.State.cs` 122; `Checks.cs` 522 — все ≤600.
+- Оркестратор расширяет каталог после `find_tools` и при равном количестве, если состав отличается (`ExpandsCatalog`).
+- Новый bypass-тест `set_view_visibility` (100 views × 3 categories > 200).
+- `AgentQueryToolsTests.GetViewSettings_ReturnsSeededPlanSettings` обновлён под C4: `compact=false` для полного payload (R27-падение было устаревшим тестом, не регрессом).
+
+### Что осталось (не блокеры финального коммита)
+
+- 5-й прогон валидатора `general` не проводился — решение владельца.
+- Ручная проверка UI режимов подтверждения в Revit: ComboBox в шапке, баннер, «Выключить», строка рисков в overlay, сброс режима при смене документа.
+- D: `execute_plan` пока не входит в 40 eval-задач; live-запись plan-кейсов не делалась. `docs/agent/00-strategy/eval.md` содержит базовые метрики и заготовку «до/после».
+- Новые Agent-модели/интерфейсы не перенесены в `docs/domain/**` — по правилам проекта docs правятся после ручной приёмки.
+- Production `execute_plan`: single-use nonce/expiry остаются только в прямом API; в tool-пути digest-binding + внешнее подтверждение.
+- L6 mismatch не помечает change set; `plan_id` отдельным полем audit не пишется (digest в `ArgsHash`).
+- Не запускать `build-and-deploy.bat` без ручной приёмки владельца.
+
+### Команды live-проверок (ключ из secrets.env, не печатать)
+
+```bash
+# Decision layer
+SMARTCON_DECIDER_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=20000 \
+  dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --filter "FullyQualifiedName~DecisionsLiveTests"
+
+# Абстрактная задача (реальная модель + find_tools)
+SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=20000 \
+  dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --filter "FullyQualifiedName~AbstractTaskLiveTests"
+```
+
+---
+
 ## Текущий статус (обновляется после каждой фазы)
 
 Ветка `develop`. Прогон идёт по `docs/agent/00-strategy/night-run-2.md`.
@@ -10,11 +68,22 @@
 |---|---|---|
 | 0 Baseline | ✅ | unit 3368/3368; Agent R25 65 pass / 2 skip, 0 fail |
 | P1 hotfix C1–C4 + A1 | ✅ | C2: fallback на имя элемента для ElementId-параметров; C4: `fields`/`compact` у `get_view_settings`/`get_view_template_details`; C1 регресс-тест `list_levels.total == overview.levelCount`; C3 тест «Schedule-шаблон на FloorPlan → template_not_applicable»; A1 правило «имя не переносится шаблоном» в промпте и описаниях |
-| P2 routing v1 | ✅ код + метрика | `AgentToolDefinition.Category/Tags/SupportsBulk`; `AgentToolCatalog` (Core); `RuleToolRouter` (BM25, core-read + cap 14, fallback на полный каталог); `find_tools` meta-tool; оркестратор шлёт shortlist (`SMARTCON_AGENT_TOOL_ROUTER=0` отключает) |
+| P2 routing v1 | ✅ код + метрика | `AgentToolDefinition.Category/Tags/SupportsBulk`; `AgentToolCatalog` (Core); `RuleToolRouter` (BM25, core-read + cap 14, fallback на полный каталог); `find_tools` meta-tool теперь ходит через настроенный `IToolRouter` (JEV/pplx при включении) и принимает `context` — агент ищет инструменты по требованию, уже понимая задачу; оркестратор шлёт shortlist (`SMARTCON_AGENT_TOOL_ROUTER=0` отключает); decision-слой (OpenRouter Decisions, `perplexity/pplx-decider-v1.3:free`) — live-тесты `DecisionsLiveTests` 3/3 + бенчмарк 27 моделей (`docs/agent/00-strategy/decisions-benchmark.md`): free-модель на потолке (100 %/100 %, sep 0.990), JEV/GPT-6 Luna недоступны из региона |
 | A Eval-харнес | ✅ | 40 задач (15 read / 15 dry-run / 10 apply+undo, включая 5 регресс-кейсов); запись fixtures live, replay без ключа/сети; отчёт JSON+MD в `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\<ts>`; порог-гейт; routing accuracy считается |
-| A4 Offline orchestrator | ⏳ | запланирован в `SmartCon.Tests/Agent/Eval` |
-| B Plan validation | ⏳ код | `AgentPlan` + `AgentPlanValidator` (L0) + `IAgentToolPreflight` (L1 в `AgentWriteToolBase`, family-check в `apply_view_template`) + `AgentPlanExecutor` (L3 nonce/digest/expiry, L4 fidelity, L6 read-back); тесты ещё не написаны |
-| C Bypass/надёжность | ⏳ код | `AgentApprovalMode` (ConfirmWrites/AutoApproveSession/ReadOnly), гейт в `AgentToolExecutor` с предохранителями (Destructive, >200, risk gate, fail-closed), сброс режима при смене документа, `AgentRedactor`, `AgentTextSanitizer.SanitizeJson`; `discard_change_set` и тесты ещё не сделаны |
+| A4 Offline orchestrator | ✅ | `SmartCon.Tests/Agent/Eval/AgentOfflineOrchestratorEvalTests` 5/5: multi-round tool loop + pairing, лимит 8 раундов, компакция (digest, последние 4 целы), find_tools→полный каталог, `execute_plan` preview→apply с `planDigest` |
+| B Plan validation | ✅ | L0 (`AgentPlanValidator`: tool unknown, args/schema, duplicate, cycle, >20, destructive, nested plan), L1 preflight (`AgentWriteToolBase.PreflightCore` + `apply_view_template`), L3 (в `AgentPlanExecutor`: nonce/expiry/digest, ledger покрыт unit-тестами; production-путь `execute_plan` связывает preview→apply каноническим `planDigest`, привязанным к документу), L4 fidelity, L6 read-back; `AgentPlanExecutor` в Core (partial: `.cs` + `.Steps.cs` + `.Audit.cs`), `PreviewAsync`; meta-tool `execute_plan` (dryRun/apply, строгая схема аргументов, DI, промпт с `planDigest`, каталог, always-in-shortlist); unit `AgentPlanValidatorTests` + `AgentPlanExecutorTests` + `ExecutePlanToolTests`; integration `AgentPlanExecutionTests` 6/6 (preflight missing view, end-to-end 2-step plan→approve→apply→read-back→undo, discard-after-conflict→next undo, discard without approval, invalid changeSetId, already rolled-back set). L2 critic не включён (опционален по ранбуку) |
+| C Bypass/надёжность | ✅ | `AgentApprovalMode` (ConfirmWrites/AutoApproveSession/ReadOnly) + UI: ComboBox в шапке, баннер с кнопкой «Выключить», сброс при смене документа (VM + orchestrator, unit-тесты); гейт в `AgentToolExecutor` (Destructive, консервативный affected: `configure_views` items×секции, `copy_view_settings` targets×секции, `remap_parameter_values` mapping×limit, `set_view_visibility` categories+worksets; nested-план суммируется, Destructive/allowDestructive/неизвестный шаг → confirm; `discard_change_set` всегда confirm; risk gate fail-closed — unit-тесты); `AgentRedactor` JSON-aware (секретные ключи любого типа, включая `x-api-key`/`openai_api_key`/numeric/object; JSON всегда валиден, кириллица не экранируется) + redaction tool_calls в оркестраторе; `AgentTextSanitizer.SanitizeJson`; `discard_change_set` (I-01: document-id через `context.Revit.RaiseAsync`, `invalid_change_set_id`, `change_set_not_applied`) + `MarkDiscardedAsync` (unit + integration) |
+| Валидация B+C (`general`) | ✅ FAIL×4 → исправлено | 1-й FAIL — net48, I-01, L3, redaction, UI, shortlist, размер файла → исправлено. 2-й FAIL — JSON-redaction numeric/prefixed, обход лимита 200 через configure/copy/remap, digest не канонизирован/не привязан к документу, prompt без `planDigest`, нет schema-валидации плана, discard авто-одобрялся → исправлено. 3-й FAIL — redactor падал на обычной строке с `token:`/`Bearer`, вложенный discard обходил confirm, affected риск-плана = 0 → исправлено. 4-й FAIL — локализация `Agent_Approval_*`, Risks в overlay, `AgentEvalRunner` >600 → исправлено. 5-й прогон не запускался (решение владельца); финальная верификация: sweep 7/7, unit 3494/3494, integration 6/6, eval replay 40/40, R27 Agent 78/2skip/0fail |
+
+### Известные ограничения после валидации B+C
+
+- Production-путь `execute_plan` использует digest-binding + внешнее подтверждение на каждый вызов; single-use nonce/expiry остаются в `AgentPlanExecutor` для прямого API и покрыты unit-тестами, но в tool-пути не задействованы (осознанно, чтобы не плодить второй диалог).
+- L6 mismatch не помечает change set (только `Warn` + audit `plan#apply=mismatch`); поля предупреждения в схеме набора нет.
+- `plan_id` не пишется отдельным полем audit; след плана — 16-символьный digest в `ArgsHash`.
+- `execute_plan` пока не входит в eval-задачи (B5-метрики плана соберутся после добавления кейсов в фазе D).
+- Новые Agent-модели/интерфейсы не перенесены в `docs/domain/**` (по правилам проекта — долг; docs правятся после ручной приёмки).
+- UI режимов подтверждения требует ручной проверки в Revit (ComboBox + баннер + сброс при смене документа).
+- Decision-модели: бенчмарк — `docs/agent/00-strategy/decisions-benchmark.md`; JEV/GPT-6 Luna недоступны из региона (451/502), free pplx — на потолке точности на нашем наборе.
 
 ### Eval-база (зафиксирована)
 
@@ -25,6 +94,7 @@
 
 ### Важные решения этой сессии
 
+- **Рабочий контекст — 500k токенов** (`AgentLlmSettings.ContextWindowTokens`), порог компакции 0.7 → старые tool-результаты сжимаются после ~350k (было 200k/0.6 = 120k). Переопределяется `SMARTCON_AGENT_CONTEXT_TOKENS` (50k..2M) и `SMARTCON_AGENT_CONTEXT_THRESHOLD` (0.3..0.95). DeepSeek стабильно работает на 500k+; system prompt и схемы инструментов в оценке пока не учитываются (на этом масштабе это <1%).
 - **Decision-слой — OpenRouter Decisions API** (`POST https://openrouter.ai/api/alpha/decisions`), модель `perplexity/pplx-decider-v1.3:free`: проверено живьём (HTTP 200 без VPN, `choice`+`noul`, `cost: 0`). JEV/TypeSafe остаётся альтернативным провайдером; всё fail-closed. Причина: JEV early access без VPN недоступен.
 - **Sys prompt вынесен в Core** (`AgentSystemPrompt`) — eval гоняет ровно production-промпт; `AgentPromptBuilder` делегирует.
 - **Eval изолирует задачи**: на каждую задачу новый project document + сид `SC_Eval_*`; fixtures хранят `idMap` (kind/name/category/index) и на replay ремапят ElementId по имени — иначе записанные id невалидны в новом документе.
@@ -33,18 +103,19 @@
 
 ### Следующие шаги (в порядке)
 
-1. Тесты B: L0 (все коды отказов), digest nonce/expiry/replay, fidelity, read-back, end-to-end план→approve→apply→undo (fake tools).
-2. Тесты C: режимы подтверждения, предохранители bypass, read-only, redaction, sanitizer; `discard_change_set` + store `MarkDiscardedAsync` + integration-тест конфликтного undo.
-3. A4 offline orchestrator eval в `SmartCon.Tests/Agent/Eval`.
-4. D: исправить провалы live-прогона, перегенерировать только затронутые fixtures, метрики до/после в `eval.md`.
-5. E: sweep 7 конфигураций, полный unit, R25/R27/net48, HANDOFF, push.
+1. Ручная проверка UI режимов подтверждения в Revit (ComboBox, баннер, «Выключить», риски в overlay, сброс при смене документа).
+2. D: добавить plan-кейсы (`execute_plan`) в eval, записать live-fixtures, метрики до/после в `eval.md`.
+3. Опционально: L2 critic (`SMARTCON_AGENT_PLAN_CRITIC=1`).
+4. Перенести новые Agent-модели/интерфейсы в `docs/domain/**` после ручной приёмки.
+5. Деплой (`build-and-deploy.bat`) — только вручную владельцем.
 
 ### Заметки для продолжения после суммаризации
 
+- Decision-layer live: `SMARTCON_DECIDER_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=20000 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --filter "FullyQualifiedName~DecisionsLiveTests"` (ключ берётся из `secrets.env`, в тесте не печатается). Без `SMARTCON_DECIDER_LIVE=1` тесты — no-op; для TypeSafe/JEV нужен `SMARTCON_DECIDER_PROVIDER=typesafe` + ключ.
 - Eval запуск: `SMARTCON_AGENT_EVAL_REPLAY=1 dotnet run --project src/SmartCon.IntegrationTests -c Debug.R25 --framework net8.0-windows -- --treenode-filter "/*/*/*AgentEvalTests*/*"`.
 - Live-запись: `SMARTCON_AGENT_EVAL_RECORD=1` (+ ключ), подмножество — `SMARTCON_AGENT_EVAL_ONLY=id1,id2`; без `SMARTCON_AGENT_EVAL_SOFT=1` тест падает на порогах.
 - `apply_copy_settings` fixture перезаписан после добавления retry на пустой ответ — не откатывать.
-- Партиальные классы runner: `AgentEvalRunner.cs` (цикл), `.Checks.cs` (оценка/снимки), `.Report.cs` (отчёты).
+- Партиальные классы runner: `AgentEvalRunner.cs` (цикл), `.Toolset.cs` (инструменты + routing + правила), `.State.cs` (снимки состояния), `.Checks.cs` (оценка), `.Report.cs` (отчёты).
 
 ---
 

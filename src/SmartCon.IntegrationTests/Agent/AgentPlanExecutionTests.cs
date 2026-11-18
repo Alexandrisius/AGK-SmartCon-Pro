@@ -1,0 +1,326 @@
+using System.Text.Json;
+using Autodesk.Revit.DB;
+using Nice3point.TUnit.Revit;
+using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
+using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent;
+using SmartCon.Revit.Agent.Tools;
+using SmartCon.Revit.Agent.Tools.Read;
+using SmartCon.Revit.Agent.Tools.Write;
+using SmartCon.Revit.Transactions;
+
+namespace SmartCon.IntegrationTests.Agent;
+
+/// <summary>
+/// L1 preflight, L4 dry-run fidelity and L6 read-back against a real document:
+/// the plan executor must verify the promised diff, apply only after approval
+/// and leave an undoable change set per step.
+/// </summary>
+public sealed class AgentPlanExecutionTests : RevitApiTest
+{
+    private const string LevelName = "SC_Plan_Level";
+    private const string PlanName = "SC_Plan_Plan";
+    private const string TargetName = "SC_Plan_Target";
+    private const string MissingViewId = "987654321";
+
+    private Document? _document;
+    private RevitTransactionService? _transactions;
+    private InMemoryAgentChangeSetStore? _changeSets;
+    private long _planId;
+    private long _targetId;
+
+    private Document Doc => _document!;
+
+    [Before(Test)]
+    public void Seed()
+    {
+        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        if (!ModelSeed.HasFloorPlanViewType(Doc))
+            Skip.Test("В шаблоне проекта по умолчанию нет ViewFamilyType для плана этажа");
+
+        _transactions = new RevitTransactionService(new StubRevitContext(Doc));
+        _changeSets = new InMemoryAgentChangeSetStore();
+
+        _transactions.RunInTransaction(Doc, "Seed agent plan", doc =>
+        {
+            var level = ModelSeed.CreateLevel(doc, 3.0);
+            level.Name = LevelName;
+
+            _planId = ModelSeed.CreateViewPlanChecked(doc, level.Id, PlanName).Id.GetValue();
+            _targetId = ModelSeed.CreateViewPlanChecked(doc, level.Id, TargetName).Id.GetValue();
+        });
+    }
+
+    [After(Test)]
+    public void Close()
+    {
+        Doc.Close(false);
+    }
+
+    [Test]
+    public async Task Preflight_MissingView_IsRejectedBeforeAnyTransaction()
+    {
+        var tool = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var context = new AgentToolContext(
+            new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty);
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + MissingViewId + ",\"newName\":\"SC_Plan_Nope\"}]," +
+            "\"dryRun\":false}");
+
+        var result = await tool.PreflightAsync(context, args, CancellationToken.None);
+
+        await Assert.That(result.Ok).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("unresolved_id");
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
+        await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
+    }
+
+    [Test]
+    public async Task Plan_TwoSteps_DryRunApproveApplyReadBackAndUndo()
+    {
+        var rename = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var settings = new GetViewSettingsTool(new StubRevitContext(Doc));
+        var registry = new TestToolRegistry(new IAgentTool[] { rename, settings });
+        var confirmation = new FixedConfirmation();
+        var executor = new AgentPlanExecutor(
+            registry, new ImmediateAwaitableEvent(), confirmation);
+
+        var plan = new AgentPlan
+        {
+            Goal = "Rename two eval views",
+            Steps = new[]
+            {
+                RenameStep("s1", _targetId, "SC_Plan_RenamedA"),
+                RenameStep("s2", _planId, "SC_Plan_RenamedB")
+            }
+        };
+        var execution = new AgentPlanExecutionContext
+        {
+            DocumentId = AgentDocumentIdentity.GetDocumentId(Doc)
+        };
+
+        var result = await executor.ExecuteAsync(plan, execution, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Approved).IsTrue();
+        await Assert.That(result.AffectedCount).IsEqualTo(2);
+        await Assert.That(confirmation.Requests.Count).IsEqualTo(1);
+        await Assert.That(confirmation.Requests[0].PlanDigest).IsNotNull();
+        await Assert.That(result.Steps.All(step => step.FidelityChecked && step.FidelityMatched))
+            .IsTrue();
+
+        await Assert.That(GetView(_targetId).Name).IsEqualTo("SC_Plan_RenamedA");
+        await Assert.That(GetView(_planId).Name).IsEqualTo("SC_Plan_RenamedB");
+        await Assert.That(result.Verified.Count).IsEqualTo(2);
+        await Assert.That(result.Mismatches.Count).IsEqualTo(0);
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(2);
+
+        var undo = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        await Assert.That(undo.ExecuteForTests(
+                Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None).Success)
+            .IsTrue();
+        await Assert.That(undo.ExecuteForTests(
+                Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None).Success)
+            .IsTrue();
+
+        await Assert.That(GetView(_targetId).Name).IsEqualTo(TargetName);
+        await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
+    }
+
+    [Test]
+    public async Task DiscardChangeSet_AfterUndoConflict_NextUndoRestoresPreviousSet()
+    {
+        var rename = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var first = rename.ExecuteForTests(
+            Parse(RenameArgs(_planId, "SC_Plan_SetA")), approved: true, CancellationToken.None);
+        await Assert.That(first.Success).IsTrue();
+        var firstId = _changeSets!.Last!.Header.Id;
+
+        var second = rename.ExecuteForTests(
+            Parse(RenameArgs(_targetId, "SC_Plan_SetB")), approved: true, CancellationToken.None);
+        await Assert.That(second.Success).IsTrue();
+        var secondId = _changeSets.All.Single(set => set.Header.Id != firstId).Header.Id;
+
+        _transactions!.RunInTransaction(Doc, "Edit the target behind SmartCon's back", doc =>
+        {
+            var target = (View)doc.GetElement(ElementIdCompat.Create(_targetId));
+            target.Name = "SC_Plan_Manual";
+        });
+
+        var undo = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var conflict = undo.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+        await Assert.That(conflict.Success).IsFalse();
+        await Assert.That(conflict.ErrorCode).IsEqualTo("undo_conflict");
+
+        var discard = new DiscardChangeSetTool(new StubRevitContext(Doc), _changeSets!);
+        var discardContext = new AgentToolContext(
+            new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty)
+        {
+            WriteApproved = true
+        };
+        var discarded = await discard.ExecuteAsync(
+            discardContext,
+            Parse("{\"changeSetId\":\"" + secondId.ToString("D") + "\"}"),
+            CancellationToken.None);
+
+        await Assert.That(discarded.Success).IsTrue();
+        var lastApplied = await _changeSets.GetLastAppliedAsync(
+            AgentDocumentIdentity.GetDocumentId(Doc), CancellationToken.None);
+        await Assert.That(lastApplied!.Header.Id).IsEqualTo(firstId);
+
+        var next = undo.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+        await Assert.That(next.Success).IsTrue();
+        await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
+        await Assert.That(GetView(_targetId).Name).IsEqualTo("SC_Plan_Manual");
+    }
+
+    [Test]
+    public async Task DiscardChangeSet_WithoutApproval_IsRejected()
+    {
+        var rename = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var applied = rename.ExecuteForTests(
+            Parse(RenameArgs(_planId, "SC_Plan_NoDiscard")), approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+
+        var discard = new DiscardChangeSetTool(new StubRevitContext(Doc), _changeSets!);
+        var context = new AgentToolContext(
+            new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty);
+
+        var result = await discard.ExecuteAsync(context, Parse("{}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("confirmation_required");
+        await Assert.That(_changeSets!.Last!.Header.AppliedAt).IsNotNull();
+    }
+
+    [Test]
+    public async Task DiscardChangeSet_InvalidId_LeavesLastSetUntouched()
+    {
+        var rename = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var applied = rename.ExecuteForTests(
+            Parse(RenameArgs(_planId, "SC_Plan_InvalidDiscard")), approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+        var lastId = _changeSets!.Last!.Header.Id;
+
+        var discard = new DiscardChangeSetTool(new StubRevitContext(Doc), _changeSets!);
+        var context = new AgentToolContext(
+            new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty)
+        {
+            WriteApproved = true
+        };
+
+        var result = await discard.ExecuteAsync(
+            context, Parse("{\"changeSetId\":\"not-a-guid\"}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("invalid_change_set_id");
+        var lastApplied = await _changeSets.GetLastAppliedAsync(
+            AgentDocumentIdentity.GetDocumentId(Doc), CancellationToken.None);
+        await Assert.That(lastApplied!.Header.Id).IsEqualTo(lastId);
+    }
+
+    [Test]
+    public async Task DiscardChangeSet_AlreadyRolledBackSet_IsRejected()
+    {
+        var rename = new RenameViewsTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var applied = rename.ExecuteForTests(
+            Parse(RenameArgs(_planId, "SC_Plan_RolledBack")), approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+        var setId = _changeSets!.Last!.Header.Id;
+
+        var undo = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undone = undo.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+        await Assert.That(undone.Success).IsTrue();
+
+        var discard = new DiscardChangeSetTool(new StubRevitContext(Doc), _changeSets!);
+        var context = new AgentToolContext(
+            new ImmediateAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty)
+        {
+            WriteApproved = true
+        };
+
+        var result = await discard.ExecuteAsync(
+            context,
+            Parse("{\"changeSetId\":\"" + setId.ToString("D") + "\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("change_set_not_applied");
+    }
+
+    private static AgentPlanStep RenameStep(string id, long viewId, string newName) =>
+        new()
+        {
+            StepId = id,
+            ToolName = "rename_views",
+            ArgumentsJson = RenameArgs(viewId, newName),
+            ExpectedChanges = 1,
+            ReadBackTool = "get_view_settings",
+            ArgumentsReadBackJson = "{\"viewId\":" + viewId + ",\"fields\":[\"name\"]}",
+            ReadBackExpectations = new[]
+            {
+                new AgentPlanExpectation { Path = "name", Expected = newName }
+            }
+        };
+
+    private static string RenameArgs(long viewId, string newName) =>
+        "{\"items\":[{\"viewId\":" + viewId + ",\"newName\":\"" + newName + "\"}],\"dryRun\":false}";
+
+    private View GetView(long id) =>
+        (View)Doc.GetElement(ElementIdCompat.Create(id));
+
+    private static JsonElement Parse(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
+    private sealed class FixedConfirmation : IAgentConfirmationService
+    {
+        public List<AgentConfirmationRequest> Requests { get; } = new();
+
+        public Task<AgentConfirmationResult> RequestAsync(
+            AgentConfirmationRequest request,
+            CancellationToken ct)
+        {
+            Requests.Add(request);
+            return Task.FromResult(AgentConfirmationResult.Approved);
+        }
+    }
+
+    private sealed class TestToolRegistry : IToolRegistry
+    {
+        private readonly List<IAgentTool> _tools;
+        private readonly Dictionary<string, IAgentTool> _byName;
+
+        public TestToolRegistry(IEnumerable<IAgentTool> tools)
+        {
+            _tools = tools.ToList();
+            _byName = _tools.ToDictionary(
+                tool => tool.Definition.Name, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public IReadOnlyList<IAgentTool> GetAll() => _tools;
+
+        public IReadOnlyList<AgentToolDefinition> GetDefinitions() =>
+            _tools.Select(tool => tool.Definition).ToList();
+
+        public bool TryGet(string name, out IAgentTool? tool)
+        {
+            if (_byName.TryGetValue(name, out var found))
+            {
+                tool = found;
+                return true;
+            }
+
+            tool = null;
+            return false;
+        }
+    }
+}

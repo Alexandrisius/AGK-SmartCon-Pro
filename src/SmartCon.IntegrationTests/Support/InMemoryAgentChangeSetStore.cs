@@ -143,4 +143,43 @@ internal sealed class InMemoryAgentChangeSetStore : IAgentChangeSetStore
         };
         return Task.CompletedTask;
     }
+
+    public Task MarkDiscardedAsync(Guid changeSetId, DateTime discardedAt, CancellationToken ct)
+    {
+        if (!_sets.TryGetValue(changeSetId, out var existing))
+            return Task.CompletedTask;
+
+        _sets[changeSetId] = new ChangeSetDetails
+        {
+            Header = new ChangeSetHeader
+            {
+                Id = existing.Header.Id,
+                ConversationId = existing.Header.ConversationId,
+                ToolCallId = existing.Header.ToolCallId,
+                Operation = existing.Header.Operation,
+                DocumentId = existing.Header.DocumentId,
+                DocumentPath = existing.Header.DocumentPath,
+                RevitVersion = existing.Header.RevitVersion,
+                Author = existing.Header.Author,
+                Description = existing.Header.Description,
+                CreatedAt = existing.Header.CreatedAt,
+                AppliedAt = null
+            },
+            Items = existing.Items
+                .Select(item => new ChangeItem
+                {
+                    Id = item.Id,
+                    ChangeSetId = item.ChangeSetId,
+                    UniqueId = item.UniqueId,
+                    ElementId = item.ElementId,
+                    ParameterName = item.ParameterName,
+                    OldValue = item.OldValue,
+                    NewValue = item.NewValue,
+                    Status = ChangeStatus.Discarded,
+                    Error = "discarded by user"
+                })
+                .ToList()
+        };
+        return Task.CompletedTask;
+    }
 }
