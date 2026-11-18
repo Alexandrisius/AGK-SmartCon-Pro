@@ -1,5 +1,25 @@
 # Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Сессия «новые инструменты» — Фаза 3: routing/decision (2026-11-19)
+
+- `real-queries.json` 120 → **170** фраз (r123–r172), гейты: rules top-1 95.9 %,
+  top-5 100 %, top-14 100 %, false tool 0 %, p95 1.70 мс.
+- Decisions live (pplx free через OpenRouter, 20-запросная выборка): top-1 100 %,
+  top-5 100 %, p95 4 129 мс (сеть). `SMARTCON_DECIDER_ENABLED=0` в secrets —
+  live-тест требует явного `SMARTCON_DECIDER_ENABLED=1` и `SMARTCON_DECIDER_LIVE=1`.
+- Новый live-бенчмарк `RoutingLiveBenchmarkTests` (opt-in `SMARTCON_AGENT_LIVE=1`,
+  вне CI): production-оркестратор, 33 скриптованных тула, 16 интентов (10 прямых +
+  6 парафраз), два режима `find_tools`. Результат: expected tool в первом
+  shortlist **16/16** в обоих режимах; задачи 16/16 (rules) и 15/16 (decisions);
+  раундов до первого правильного вызова 3.81/3.07 (avg), всего раундов 7.62/6.25;
+  `find_tools` и `load_tool_pack` — **0** на задачу.
+- **Вердикт:** decision-reranker по умолчанию не включать. BM25 top-5 покрывает
+  парафразы, `find_tools` не вызывается, decision не включается; на routing-уровне
+  decision закрывает top-1 промахи (95.9 % → 100 % на выборке), но p95 ~4 с.
+  Пересмотр — при top-5 <95 % или каталоге >200.
+
+Не проверено: ручной UI-тест (manual pending).
+
 ## ⚡ Сессия «новые инструменты» — Фаза 2: фильтры и overrides (2026-11-19)
 
 Каталог 31 → **33**: `create_view_filter`, `set_filter_overrides`; пак `filters`
