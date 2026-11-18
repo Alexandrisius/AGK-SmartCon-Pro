@@ -69,7 +69,7 @@ internal static class AgentCardProjection
                 continue;
             }
 
-            projected[property] = value?.DeepClone();
+            projected[field] = value?.DeepClone();
             if (!string.Equals(field, property, StringComparison.OrdinalIgnoreCase)
                 && substitutedFields is not null)
             {

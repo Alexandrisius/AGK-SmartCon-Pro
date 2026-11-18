@@ -31,7 +31,7 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
             "summary (template, scale, counts); pass fields to request specific settings or " +
             "compact=false for the full payload. Use it to inspect a reference view before applying " +
             "its settings to other views.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""viewId""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: viewId,name,viewType,templateId,templateName,hasTemplate,scale,detailLevel,discipline,viewRange,crop,hiddenCategories,hiddenWorksets,controlledParameters,nonControlledParameters. Aliases like template resolve to templateName."",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""viewId""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

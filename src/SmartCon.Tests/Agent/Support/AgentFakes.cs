@@ -107,6 +107,9 @@ internal sealed class ScriptedTool : IAgentTool, IAgentToolPreflight
 
         var payload = JsonSerializer.SerializeToElement(new
         {
+            dryRun = !(args.ValueKind == JsonValueKind.Object
+                       && args.TryGetProperty("dryRun", out var dryRun)
+                       && dryRun.ValueKind == JsonValueKind.False),
             changed = Enumerable.Range(0, changed).Select(index => new { id = index }).ToList(),
             skipped = Array.Empty<object>(),
             failed = Array.Empty<object>(),

@@ -47,6 +47,8 @@ public sealed class ExecutePlanToolTests
         Assert.Single(writeTool.Executions);
         Assert.Contains("\"dryRun\":true", writeTool.Executions[0].ArgumentsJson);
         Assert.True(result.Data!.Value.GetProperty("dryRun").GetBoolean());
+        var previewItems = result.Data.Value.GetProperty("steps")[0].GetProperty("items");
+        Assert.True(previewItems.GetProperty("dryRun").GetBoolean());
         Assert.Equal(1, result.Data.Value.GetProperty("affected").GetInt32());
         Assert.False(string.IsNullOrWhiteSpace(
             result.Data.Value.GetProperty("planDigest").GetString()));
@@ -86,6 +88,13 @@ public sealed class ExecutePlanToolTests
         Assert.Contains("\"dryRun\":false", writeTool.Executions[2].ArgumentsJson);
         Assert.True(writeTool.Executions[2].Approved);
         Assert.False(result.Data!.Value.GetProperty("dryRun").GetBoolean());
+        var appliedItems = result.Data.Value.GetProperty("steps")[0].GetProperty("items");
+        Assert.False(appliedItems.GetProperty("dryRun").GetBoolean());
+        Assert.Equal(0, result.Data.Value.GetProperty("expectationsChecked").GetInt32());
+        Assert.Contains(
+            "No read-back expectations",
+            result.Data.Value.GetProperty("hint").GetString(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

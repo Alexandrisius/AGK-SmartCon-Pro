@@ -152,7 +152,7 @@ public sealed class ExecutePlanTool : IAgentTool
             goal = plan.Goal,
             planDigest = result.PlanDigest,
             affected = result.AffectedCount,
-            steps = Steps(result),
+            steps = Steps(result, apply: false),
             hint = "Nothing was changed. Show this diff to the user and call execute_plan with " +
                    "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
                    " only after explicit approval. Per-step dryRun flags do not affect the digest."
@@ -171,17 +171,18 @@ public sealed class ExecutePlanTool : IAgentTool
             dryRun = false,
             planDigest = result.PlanDigest,
             affected = result.AffectedCount,
-            steps = Steps(result),
+            steps = Steps(result, apply: true),
             verified = result.Verified,
             mismatches = result.Mismatches,
             expectationsChecked = result.ExpectationsChecked,
-            hint = result.Mismatches.Count == 0
-                ? "All expectations verified by the read-back." +
-                  (result.ExpectationsChecked == 0
-                      ? " No read-back expectations were declared, so there is nothing to verify."
-                      : string.Empty)
-                : "Read-back found mismatches. Review them and offer undo_last for the " +
+            readBackSteps = result.Steps.Count(step => step.ReadBackExecuted),
+            hint = result.Mismatches.Count > 0
+                ? "Read-back found mismatches. Review them and offer undo_last for the " +
                   "affected step."
+                : result.ExpectationsChecked == 0
+                    ? "No read-back expectations were declared, so there are no verified values; " +
+                      "the change itself was applied."
+                    : "All " + result.ExpectationsChecked + " expectation(s) verified by the read-back."
         }, SerializerOptions);
 
         return ToolResult.Ok(
@@ -191,7 +192,7 @@ public sealed class ExecutePlanTool : IAgentTool
             result.AffectedCount);
     }
 
-    private static IReadOnlyList<object> Steps(AgentPlanExecutionResult result) =>
+    private static IReadOnlyList<object> Steps(AgentPlanExecutionResult result, bool apply) =>
         result.Steps.Select(step => (object)new
         {
             stepId = step.StepId,
@@ -199,7 +200,7 @@ public sealed class ExecutePlanTool : IAgentTool
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,
-            items = StepItems(step),
+            items = StepItems(step, apply),
             readBackExecuted = step.ReadBackExecuted,
             expectationsChecked = step.ExpectationsChecked,
             verified = step.VerifiedCount,
@@ -213,9 +214,13 @@ public sealed class ExecutePlanTool : IAgentTool
     /// cards with id, name, before and after. Without it the model has to re-read
     /// the model just to show the user what will change (live dogfood P1-4).
     /// </summary>
-    private static JsonElement? StepItems(AgentPlanStepResult step)
+    private static JsonElement? StepItems(AgentPlanStepResult step, bool apply)
     {
-        var result = step.DryRunResult ?? step.ApplyResult;
+        // Preview shows the dry-run diff; the applied report must show the apply
+        // result, otherwise every item still says dryRun=true (feedback #2).
+        var result = apply
+            ? step.ApplyResult ?? step.DryRunResult
+            : step.DryRunResult ?? step.ApplyResult;
         if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
             return null;
 

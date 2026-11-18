@@ -31,7 +31,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,inBrowser. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -92,7 +92,11 @@ public sealed class ListViewsTool : AgentReadToolBase
                 summaryOnly = true,
                 byType = GroupBy(matched, view => view.ViewType),
                 byLevel = GroupBy(matched, view => view.LevelName ?? "(no level)"),
-                byFolder = GroupBy(matched, view => view.BrowserFolder ?? "(no folder)")
+                byFolder = GroupBy(
+                    matched,
+                    view => string.IsNullOrWhiteSpace(view.BrowserFolder)
+                        ? "(no folder)"
+                        : view.BrowserFolder!)
             };
 
             return ToolResult.Ok(
@@ -257,7 +261,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         if (sheetNumber is "—" or "-" or "---" or "")
             sheetNumber = null;
 
-        var (browserFolder, inBrowser) = ReadBrowserFolder(browserOrganization, view);
+        var (browserFolder, inBrowser) = ReadBrowserFolder(doc, browserOrganization, view);
 
         return new ViewCard
         {
@@ -281,6 +285,7 @@ public sealed class ListViewsTool : AgentReadToolBase
     }
 
     private static (string? Folder, bool InBrowser) ReadBrowserFolder(
+        Document doc,
         BrowserOrganization? organization,
         View view)
     {
@@ -299,8 +304,12 @@ public sealed class ListViewsTool : AgentReadToolBase
             var parts = new List<string>();
             foreach (var item in items)
             {
-                if (!string.IsNullOrWhiteSpace(item.Name))
-                    parts.Add(item.Name);
+                var name = item.Name;
+                if (IsUnresolvedFolderName(name))
+                    name = ResolveFolderName(doc, GetFolderParameterId(item));
+
+                if (!IsUnresolvedFolderName(name))
+                    parts.Add(name!);
             }
 
             return (string.Join(" / ", parts), true);
@@ -308,6 +317,48 @@ public sealed class ListViewsTool : AgentReadToolBase
         catch (Exception)
         {
             return (null, true);
+        }
+    }
+
+    private static ElementId? GetFolderParameterId(FolderItemInfo item)
+    {
+#if REVIT2026_OR_GREATER
+        var path = item.GetGroupingParameterIdPath();
+        return path is null || path.Count == 0 ? null : path[path.Count - 1];
+#else
+        return item.ElementId;
+#endif
+    }
+
+    private static bool IsUnresolvedFolderName(string? name) =>
+        string.IsNullOrWhiteSpace(name)
+        || name is "???" or "?" or "??? ";
+
+    private static string? ResolveFolderName(Document doc, ElementId? parameterId)
+    {
+        if (parameterId is null || parameterId == ElementId.InvalidElementId)
+            return null;
+
+        try
+        {
+            var value = parameterId.GetValue();
+            if (value < 0)
+            {
+                try
+                {
+                    return LabelUtils.GetLabelFor((BuiltInParameter)value);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
+            return doc.GetElement(parameterId)?.Name;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

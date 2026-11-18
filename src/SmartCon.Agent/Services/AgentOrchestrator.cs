@@ -430,7 +430,7 @@ public sealed class AgentOrchestrator
         if (_toolRouter is null || !_settings.UseToolRouter || all.Count == 0)
             return all;
 
-        var decision = await _toolRouter.RouteAsync(userText, all, 14, ct).ConfigureAwait(false);
+        var decision = await _toolRouter.RouteAsync(userText, all, 16, ct).ConfigureAwait(false);
         if (decision.Fallback)
         {
             SmartConLogger.Debug(
