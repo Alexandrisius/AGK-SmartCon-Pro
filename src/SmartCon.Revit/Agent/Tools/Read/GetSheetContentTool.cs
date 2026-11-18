@@ -175,7 +175,7 @@ public sealed class GetSheetContentTool : AgentReadToolBase
             nextOffset = hasMore ? offset + page.Count : (int?)null,
             truncated = hasMore || offset > 0,
             views = page,
-            placedScheduleCount = schedules.Count,
+            placedScheduleCount = sheetCard.ScheduleCount,
             schedules
         };
 

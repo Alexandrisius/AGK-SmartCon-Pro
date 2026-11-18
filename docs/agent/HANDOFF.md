@@ -1,5 +1,31 @@
 # Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Итог сессии «новые инструменты»: гейты (2026-11-19)
+
+Каталог 27 → **33** (+6 тулов), паки `sheets`, `schedules`, `filters` populated.
+Коммиты: `56e32a53` (read: листы/ведомости), `f2e71a2a` (фильтры/overrides + undo),
+`26b53a68` (routing/decision бенчмарк, 170 фраз).
+
+| Гейт | Результат |
+|---|---|
+| Unit `SmartCon.Tests -c Debug.R25` | **3739/3739** |
+| Integration R25 (полный, replay) | **355 passed, 11 skipped, 0 failed** (366) — прогон до мержа `24fd4c69` |
+| Integration net48 (Revit 2023) | **НЕ ЗАПУСКАЛСЯ** (владелец остановил долгие прогоны) |
+| Integration R27 (net10) | **НЕ ЗАПУСКАЛСЯ** |
+| Build R19 (net48, старейший API) | 0 ошибок (после мержа) |
+| Build R25 | 0 ошибок (до мержа) |
+| Build R27 (net10) | MC3074 `ContextDonut` — известная преходящая гонка WPF-разметки (BG1002-семейство), retry не выполнен по указанию владельца |
+| 7 конфигураций sweep | **НЕ ЗАПУСКАЛСЯ** |
+| Eval replay | **46/46**, schema 149/149, unauthorized 0, gate PASS |
+| Routing rules (170 фраз) | top-1 95.9 %, top-5 100 %, top-14 100 %, p95 1.70 мс |
+| Routing decisions live | top-1 100 % (20 фраз), p95 4 129 мс |
+| Ручной UI-тест в Revit | **manual pending** |
+
+Изменение после полного R25: `get_sheet_content` теперь отдаёт истинный
+`placedScheduleCount` независимо от `includeSchedules` (одна строка,
+покрыта `AgentSheetScheduleToolsTests`; точечный перепрогон не выполнялся в
+этой сессии — владелец остановил прогоны).
+
 ## ⚡ Сессия «новые инструменты» — Фаза 3: routing/decision (2026-11-19)
 
 - `real-queries.json` 120 → **170** фраз (r123–r172), гейты: rules top-1 95.9 %,
