@@ -1,0 +1,43 @@
+{
+  "taskId": "read_schedules",
+  "prompt": "Какие ведомости есть в проекте? Покажи их названия и категории.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {},
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Какие ведомости есть в проекте? Покажи их названия и категории."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_schedules_1",
+            "name": "list_schedules",
+            "argumentsJson": "{}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Какие ведомости есть в проекте? Покажи их названия и категории."
+      },
+      "response": {
+        "content": "В проекте одна ведомость: SC_Eval_Schedule по категории OST_Walls, одно поле «Comments» и три строки.",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

@@ -1,5 +1,37 @@
 ﻿# Handoff — Agent: текущее состояние (2026-11-18)
 
+## ⚡ Сессия «новые инструменты» — Фаза 1: read breadth (2026-11-18)
+
+Каталог 27 → **31**: добавлены `list_sheets`, `get_sheet_content`,
+`list_schedules`, `get_schedule_data`. Паки `sheets` и `schedules` больше не
+заделы (14 populated + 6 reserved, общее число паков 20 неизменно).
+
+- `list_sheets` — номер/имя/размер мм/число видов и ведомостей/placeholder;
+  `limit`+`offset`+`returned`+`nextOffset`+`truncated`; `fields`-проекция с
+  `ignoredFields`/`availableFields`.
+- `get_sheet_content` — видовые окна (координаты и размер в мм) и размещённые
+  ведомости; поиск по `sheetId`/номеру/имени, неоднозначное имя → `ambiguous_sheet`
+  с `candidates`; пагинация по видам.
+- `list_schedules` — имя, категория (`OST_*` + локализованное имя), видимые поля,
+  число строк, `isKeySchedule`/`isTemplate`/ревизионная, номера листов;
+  `unknownCategories` не выбрасываются молча.
+- `get_schedule_data` — колонки (`heading` + `parameterName` + `fieldType`) и
+  страница строк; строка заголовков и пустая строка названия распознаются и
+  пропускаются (`headerRowSkipped`); чтение через `TableView.GetCellText` с
+  fallback на `TableSectionData`, значения — как в ведомости.
+
+Гейты фазы:
+
+| Проверка | Результат |
+|---|---|
+| Unit `Agent.Services` + `Agent.Routing` | 288/288 |
+| Routing (110 реальных запросов) | top-1 96.4 %, top-5 100 %, p95 1.68 мс, false tool 0 |
+| Integration R25 `AgentSheetScheduleToolsTests` | 9/9 (лист создаётся загрузкой Title Block из контент-библиотеки, если в шаблоне его нет) |
+| Eval replay новых задач | 4/4 (`read_sheets`, `read_sheet_content`, `read_schedules`, `read_schedule_data`), schema 4/4 |
+
+Не проверено: полный unit/integration sweep (финальный гейт), ручной UI-тест —
+manual pending.
+
 ## ⚡ Фидбэк-тул удалён + стресс-тест №3 (2026-11-18, текущая сессия)
 
 По решению владельца `report_tooling_feedback` удалён полностью: из системного

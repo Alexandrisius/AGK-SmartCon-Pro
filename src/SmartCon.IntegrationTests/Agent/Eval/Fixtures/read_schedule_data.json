@@ -1,0 +1,43 @@
+{
+  "taskId": "read_schedule_data",
+  "prompt": "Покажи первые строки ведомости SC_Eval_Schedule.",
+  "model": "manual",
+  "provider": "manual",
+  "recordedAt": "2026-11-18T00:00:00Z",
+  "idMap": {},
+  "exchanges": [
+    {
+      "request": {
+        "model": "",
+        "messageCount": 2,
+        "toolNames": [],
+        "lastUserMessage": "Покажи первые строки ведомости SC_Eval_Schedule."
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call_schedule_data_1",
+            "name": "get_schedule_data",
+            "argumentsJson": "{\"scheduleName\":\"SC_Eval_Schedule\",\"limit\":10}"
+          }
+        ],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    },
+    {
+      "request": {
+        "model": "",
+        "messageCount": 4,
+        "toolNames": [],
+        "lastUserMessage": "Покажи первые строки ведомости SC_Eval_Schedule."
+      },
+      "response": {
+        "content": "Ведомость SC_Eval_Schedule содержит колонку «Comments» и три строки со значением SC_Eval_Wall.",
+        "toolCalls": [],
+        "promptTokens": 0,
+        "completionTokens": 0
+      }
+    }
+  ]
+}

@@ -127,6 +127,17 @@
     { "id": "r100", "query": "Добавь префикс ОТ_ к уровням 2 и 3", "expectedTools": ["rename_levels"], "kind": "write" },
 
     { "id": "r101", "query": "Дочитай сохранённый результат по resultHandle", "expectedTools": ["read_tool_result"], "kind": "meta" },
-    { "id": "r102", "query": "Покажи полный результат инструмента, который был обрезан", "expectedTools": ["read_tool_result"], "kind": "meta" }
+    { "id": "r102", "query": "Покажи полный результат инструмента, который был обрезан", "expectedTools": ["read_tool_result"], "kind": "meta" },
+
+    { "id": "r103", "query": "Покажи все листы проекта", "expectedTools": ["list_sheets"], "kind": "read" },
+    { "id": "r104", "query": "Сколько листов в комплекте?", "expectedTools": ["list_sheets"], "kind": "read" },
+    { "id": "r105", "query": "Найди лист с номером АР-101", "expectedTools": ["list_sheets"], "kind": "read" },
+    { "id": "r106", "query": "Что размещено на листе АР-101?", "expectedTools": ["get_sheet_content"], "kind": "read" },
+    { "id": "r107", "query": "Какие виды на листе «План 1 этажа»?", "expectedTools": ["get_sheet_content"], "kind": "read" },
+    { "id": "r108", "query": "Покажи координаты видовых окон на листе", "expectedTools": ["get_sheet_content"], "kind": "read" },
+    { "id": "r109", "query": "Какие ведомости есть в проекте?", "expectedTools": ["list_schedules"], "kind": "read" },
+    { "id": "r110", "query": "Покажи спецификации по стенам", "expectedTools": ["list_schedules"], "kind": "read" },
+    { "id": "r111", "query": "Покажи первые 20 строк ведомости помещений", "expectedTools": ["get_schedule_data"], "kind": "read" },
+    { "id": "r112", "query": "Выведи данные спецификации дверей", "expectedTools": ["get_schedule_data"], "kind": "read" }
   ]
 }

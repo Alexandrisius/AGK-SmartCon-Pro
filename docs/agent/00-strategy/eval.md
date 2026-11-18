@@ -216,3 +216,23 @@ Integration (H1-19): `AgentCompactionStorageTests` — 5 тестов на ре�
 внутри Revit 2025 (blob restart/session isolation, paging, checkpoint store,
 checkpoint→projection, cancellation) — 5/5 PASS. net48 сьют остаётся
 Revit-boundary (Agent-тесты исключены из net48 по конфигурации проекта).
+
+## 2026-11-18 — новые инструменты, фаза 1: листы и ведомости
+
+Каталог 27 → 31. Добавлены read-задачи `read_sheets`, `read_sheet_content`,
+`read_schedules`, `read_schedule_data` (fixtures записаны вручную, replay без
+ключа). Детерминированный seed расширен: ведомость `SC_Eval_Schedule` по стенам
+с полем Comments и лист `SC-EVAL-101` (Title Block подгружается из
+контент-библиотеки Revit, если в шаблоне проекта его нет).
+
+| Метрика | Значение |
+|---|---|
+| Новые eval-задачи (replay) | 4/4 PASS |
+| Schema-valid calls | 4/4 |
+| Routing accuracy новых задач | 100 % |
+| Routing rules, 110 реальных запросов | top-1 96.4 %, top-5 100 %, top-14 100 %, p95 1.68 мс, false tool 0 |
+| Synthetic 1000 карточек | top-1 100 %, top-5 100 %, p95 11.65 мс |
+| Decisions (fake Choice), 110 запросов | visible 110/110, top-1 110, top-5 110 |
+
+Top-1 misses остались те же четыре (r008, r031, r046, r087), все в top-5;
+новые запросы r103–r112 попадают в top-1.

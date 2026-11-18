@@ -110,6 +110,40 @@ public static class AgentEvalTasks
             Notes = "The integration test host has no UI session, so an honest " +
                     "no_active_view is an acceptable outcome."
         },
+        new()
+        {
+            Id = "read_sheets",
+            Kind = AgentEvalTaskKind.Read,
+            Prompt = "Сколько листов в проекте? Перечисли номера и названия.",
+            ExpectedTools = new[] { "list_sheets" },
+            ExpectedDataKeys = new[] { "total", "sheets" }
+        },
+        new()
+        {
+            Id = "read_sheet_content",
+            Kind = AgentEvalTaskKind.Read,
+            Prompt = "Что размещено на листе SC-EVAL-101? Назови виды и их координаты.",
+            ExpectedTools = new[] { "get_sheet_content" },
+            ExpectedDataKeys = new[] { "sheet", "views" },
+            Notes = "Requires a title block type in the project template or the " +
+                    "Revit content library."
+        },
+        new()
+        {
+            Id = "read_schedules",
+            Kind = AgentEvalTaskKind.Read,
+            Prompt = "Какие ведомости есть в проекте? Покажи их названия и категории.",
+            ExpectedTools = new[] { "list_schedules" },
+            ExpectedDataKeys = new[] { "total", "schedules" }
+        },
+        new()
+        {
+            Id = "read_schedule_data",
+            Kind = AgentEvalTaskKind.Read,
+            Prompt = "Покажи первые строки ведомости SC_Eval_Schedule.",
+            ExpectedTools = new[] { "get_schedule_data" },
+            ExpectedDataKeys = new[] { "columns", "rows" }
+        },
 
         // Regression cases from the tester report.
         new()

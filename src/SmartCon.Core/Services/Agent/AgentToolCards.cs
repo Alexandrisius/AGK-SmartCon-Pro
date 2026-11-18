@@ -17,6 +17,8 @@ public static partial class AgentToolCards
         Cards = ModelCards()
             .Concat(ViewCards())
             .Concat(ViewSettingsCards())
+            .Concat(SheetCards())
+            .Concat(ScheduleCards())
             .Concat(WriteCards())
             .ToArray();
 

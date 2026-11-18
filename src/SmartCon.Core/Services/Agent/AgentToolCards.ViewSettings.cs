@@ -167,7 +167,8 @@ public static partial class AgentToolCards
                 NegativeExamples = new[]
                 {
                     "Переименуй только вид 101",
-                    "Скопируй настройки с эталона"
+                    "Скопируй настройки с эталона",
+                    "Примени шаблон к одному виду"
                 },
                 Idempotent = false,
                 TimeoutMs = 120000,

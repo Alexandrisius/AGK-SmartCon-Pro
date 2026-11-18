@@ -22,6 +22,9 @@ internal sealed class EvalModelSeed
     public const string TargetCName = "SC_Eval_C";
     public const string TemplateName = "SC_Eval_Tpl";
     public const string WallComment = "SC_Eval_Wall";
+    public const string ScheduleName = "SC_Eval_Schedule";
+    public const string SheetNumber = "SC-EVAL-101";
+    public const string SheetName = "SC_Eval_Sheet";
 
     private EvalModelSeed()
     {
@@ -44,6 +47,14 @@ internal sealed class EvalModelSeed
     public long TemplateId { get; private init; }
 
     public long WallId { get; private init; }
+
+    public long ScheduleId { get; private init; }
+
+    public long SheetId { get; private init; }
+
+    public bool ScheduleCreated { get; private init; }
+
+    public bool SheetCreated { get; private init; }
 
     public IReadOnlyList<long> WallIds { get; private init; } = Array.Empty<long>();
 
@@ -91,6 +102,14 @@ internal sealed class EvalModelSeed
             template.Name = TemplateName;
             refView.ViewTemplateId = template.Id;
 
+            var schedule = ModelSeed.CreateScheduleChecked(doc);
+            schedule.Name = ScheduleName;
+            schedule.Definition.AddField(
+                ScheduleFieldType.Instance,
+                new ElementId(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS));
+
+            var sheet = CreateSheet(doc, refView, schedule);
+
             result = new EvalModelSeed
             {
                 Level1Id = level1.Id.GetValue(),
@@ -108,11 +127,57 @@ internal sealed class EvalModelSeed
                     ? wallTypeName
                     : wallTypeName.Substring(0, 4),
                 WallsCreated = wallIds.Count > 0,
+                ScheduleId = schedule.Id.GetValue(),
+                ScheduleCreated = true,
+                SheetId = sheet is null ? 0 : sheet.Id.GetValue(),
+                SheetCreated = sheet is not null,
                 DocumentId = AgentDocumentIdentity.GetDocumentId(doc)
             };
         });
 
         return result;
+    }
+
+    private static ViewSheet? CreateSheet(
+        Document document,
+        View refView,
+        ViewSchedule schedule)
+    {
+        var titleBlockId = ModelSeed.FindTitleBlockTypeId(document);
+        if (titleBlockId is null)
+        {
+            try
+            {
+                var titleBlockPath = ModelSeed.FindTitleBlockFamilyFile(
+                    document.Application.VersionNumber);
+                if (titleBlockPath is not null)
+                {
+                    document.LoadFamily(titleBlockPath, out _);
+                    titleBlockId = ModelSeed.FindTitleBlockTypeId(document);
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        if (titleBlockId is null)
+            return null;
+
+        try
+        {
+            var sheet = ViewSheet.Create(document, titleBlockId);
+            sheet.SheetNumber = SheetNumber;
+            sheet.Name = SheetName;
+            Viewport.Create(document, sheet.Id, refView.Id, new XYZ(0.25, 0.25, 0));
+            ScheduleSheetInstance.Create(document, sheet.Id, schedule.Id, new XYZ(0.25, 0.1, 0));
+            return sheet;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static (List<long> Ids, string TypeName) CreateWalls(
