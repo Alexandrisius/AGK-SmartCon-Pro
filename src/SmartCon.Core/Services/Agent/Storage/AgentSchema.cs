@@ -36,7 +36,7 @@ public sealed class AgentSchemaMigration
 /// </summary>
 public static class AgentSchema
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public static IReadOnlyList<AgentSchemaMigration> All { get; } =
         new AgentSchemaMigration[]
@@ -251,6 +251,109 @@ CREATE TABLE IF NOT EXISTS working_states (
                         "ALTER TABLE token_usage ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0;"),
                     AddColumn("token_usage", "context_limit",
                         "ALTER TABLE token_usage ADD COLUMN context_limit INTEGER NOT NULL DEFAULT 0;")
+                }
+            },
+            new()
+            {
+                Version = 5,
+                Name = "v5_job_engine",
+                Statements = new[]
+                {
+                    // Durable job header. spec_json carries the full JobSpec;
+                    // document_id/action/mode/preview_digest are duplicated as
+                    // query columns (job lock, apply lookup by digest).
+                    Statement(@"
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    mode INTEGER NOT NULL,
+    spec_json TEXT NOT NULL,
+    goal TEXT NULL,
+    conversation_id TEXT NULL,
+    state INTEGER NOT NULL,
+    cancel_requested INTEGER NOT NULL DEFAULT 0,
+    preview_digest TEXT NULL,
+    preview_json TEXT NULL,
+    error_code TEXT NULL,
+    error_detail TEXT NULL,
+    last_saved_cursor INTEGER NOT NULL DEFAULT 0,
+    last_saved_at TEXT NULL,
+    totals_json TEXT NULL,
+    lease_until TEXT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    started_at TEXT NULL,
+    finished_at TEXT NULL
+);"),
+                    Statement(@"
+CREATE INDEX IF NOT EXISTS ix_jobs_document
+    ON jobs(document_id, created_at DESC);"),
+                    // One active job per document (A0 job lock). The partial index
+                    // includes Interrupted on purpose: a crashed job keeps the lock
+                    // until it is resumed or cancelled, never silently forgotten.
+                    Statement(@"
+CREATE UNIQUE INDEX IF NOT EXISTS ux_jobs_active_document
+    ON jobs(document_id) WHERE state IN (0, 1, 2, 3, 7, 9);"),
+                    Statement(@"
+CREATE INDEX IF NOT EXISTS ix_jobs_preview_digest
+    ON jobs(document_id, preview_digest);"),
+                    Statement(@"
+CREATE TABLE IF NOT EXISTS job_batches (
+    job_id TEXT NOT NULL,
+    batch_index INTEGER NOT NULL,
+    from_seq INTEGER NOT NULL,
+    to_seq INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    applied_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    saved INTEGER NOT NULL DEFAULT 0,
+    saved_at TEXT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NULL,
+    PRIMARY KEY (job_id, batch_index),
+    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);"),
+                    Statement(@"
+CREATE TABLE IF NOT EXISTS job_items (
+    job_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    unit_key TEXT NOT NULL,
+    args_json TEXT NOT NULL,
+    label TEXT NULL,
+    state INTEGER NOT NULL,
+    preview_json TEXT NULL,
+    expected_json TEXT NULL,
+    actual_json TEXT NULL,
+    undo_json TEXT NULL,
+    error_code TEXT NULL,
+    error_detail TEXT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    batch_index INTEGER NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (job_id, seq),
+    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);"),
+                    // Idempotency: one unit key may appear once per job (A0).
+                    Statement(@"
+CREATE UNIQUE INDEX IF NOT EXISTS ux_job_items_key
+    ON job_items(job_id, unit_key);"),
+                    Statement(@"
+CREATE INDEX IF NOT EXISTS ix_job_items_state
+    ON job_items(job_id, state, seq);"),
+                    // Append-only audit and crash-reconciliation log.
+                    Statement(@"
+CREATE TABLE IF NOT EXISTS job_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    type TEXT NOT NULL,
+    payload_json TEXT NULL,
+    FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);"),
+                    Statement(@"
+CREATE INDEX IF NOT EXISTS ix_job_events_job
+    ON job_events(job_id, id);")
                 }
             }
         };
