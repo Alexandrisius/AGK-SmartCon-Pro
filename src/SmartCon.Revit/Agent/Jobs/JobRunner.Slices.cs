@@ -20,6 +20,14 @@ public sealed partial class JobRunner
 
         while (true)
         {
+            var current = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
+            if (current is null || current.CancelRequested)
+            {
+                // Cancellation is honoured between batches: the state machine
+                // settles the job on the next slice.
+                break;
+            }
+
             var items = Sync(_store.LoadItemsAsync(
                 job.JobId,
                 new[] { JobItemState.Pending },
@@ -95,10 +103,11 @@ public sealed partial class JobRunner
 
         if (stillPending > 0)
         {
+            var latest = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
             return new JobSliceResult
             {
                 JobId = job.JobId,
-                State = JobState.PreviewRunning,
+                State = latest?.CancelRequested == true ? JobState.Cancelling : JobState.PreviewRunning,
                 HasMoreWork = true,
                 ProcessedThisSlice = processed
             };
@@ -154,6 +163,12 @@ public sealed partial class JobRunner
 
         while (true)
         {
+            var current = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
+            if (current is null || current.CancelRequested)
+            {
+                break;
+            }
+
             var items = Sync(_store.LoadItemsAsync(
                 job.JobId,
                 new[] { JobItemState.Previewed },
@@ -204,10 +219,11 @@ public sealed partial class JobRunner
 
         if (pending > 0)
         {
+            var latest = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
             return new JobSliceResult
             {
                 JobId = job.JobId,
-                State = JobState.Running,
+                State = latest?.CancelRequested == true ? JobState.Cancelling : JobState.Running,
                 HasMoreWork = true,
                 ProcessedThisSlice = processed
             };

@@ -256,16 +256,21 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     public JobSliceResult RunToCompletion(Document document, TimeSpan? maxDuration = null)
     {
         var limit = maxDuration ?? TimeSpan.FromMinutes(10);
+        var trackedJobId = _activeJobId;
         var totalStarted = Stopwatch.GetTimestamp();
         var processed = 0;
         JobSliceResult last = JobSliceResult.Idle();
 
         while (true)
         {
-            last = RunSlice(document, TimeSpan.FromMilliseconds(200));
-            processed += last.ProcessedThisSlice;
+            var slice = RunSlice(document, TimeSpan.FromMilliseconds(200));
+            processed += slice.ProcessedThisSlice;
+            if (slice.JobId is not null)
+            {
+                last = slice;
+            }
 
-            if (last.Busy || !last.HasMoreWork || last.Error is not null)
+            if (slice.Busy || !slice.HasMoreWork || slice.Error is not null)
             {
                 break;
             }
@@ -278,6 +283,25 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
                     limit.TotalSeconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) +
                     "s [Action: the job continues when the pump runs again; check get_job_status]");
                 break;
+            }
+        }
+
+        // The trailing slice may be Idle (the job already finished inside Start);
+        // report the stored state so callers never see a null state for a live job.
+        var resolvedJobId = last.JobId ?? trackedJobId;
+        if (resolvedJobId is { } jobId)
+        {
+            var record = Sync(_store.GetAsync(jobId, CancellationToken.None));
+            if (record is not null)
+            {
+                return new JobSliceResult
+                {
+                    JobId = jobId,
+                    State = record.State,
+                    HasMoreWork = JobStateMachine.NeedsPump(record.State),
+                    ProcessedThisSlice = processed,
+                    Error = last.Error
+                };
             }
         }
 

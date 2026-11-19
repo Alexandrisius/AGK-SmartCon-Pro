@@ -405,6 +405,29 @@ public sealed partial class JobRunner
 
         if (transition is not null)
         {
+            var latest = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
+            if (latest is not null && latest.State == JobState.Cancelling)
+            {
+                return new JobSliceResult
+                {
+                    JobId = job.JobId,
+                    State = JobState.Cancelling,
+                    HasMoreWork = true,
+                    ProcessedThisSlice = processed
+                };
+            }
+
+            if (latest is not null && JobStateMachine.IsTerminal(latest.State))
+            {
+                return new JobSliceResult
+                {
+                    JobId = job.JobId,
+                    State = latest.State,
+                    HasMoreWork = false,
+                    ProcessedThisSlice = processed
+                };
+            }
+
             TryFail(job, transition.Code, transition.Message);
             return new JobSliceResult
             {

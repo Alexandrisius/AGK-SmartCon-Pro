@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
@@ -169,8 +169,17 @@ public sealed class RenameViewsJobAction : RevitJobActionBase
             ordered.Add(candidate);
         }
 
+        var tempFirstIds = new HashSet<long>(tempFirst.Keys);
         foreach (var entry in plan.Order)
         {
+            if (tempFirstIds.Contains(entry.Id))
+            {
+                // The planner keeps temp-first entries in Order as well; the unit
+                // already carries the temp name, so emitting it twice would break
+                // the (job_id, unit_key) idempotency index.
+                continue;
+            }
+
             ordered.Add(changing.First(item => item.View.Id.GetValue() == entry.Id));
         }
 
@@ -186,6 +195,13 @@ public sealed class RenameViewsJobAction : RevitJobActionBase
         if (plan.TempFirst.Count > 0)
         {
             warnings.Add(plan.TempFirst.Count + " view(s) are renamed through a temporary name to break a rename cycle");
+        }
+
+        if (rename.Numbering is not null && string.IsNullOrWhiteSpace(rename.Find) && string.IsNullOrWhiteSpace(rename.SetName))
+        {
+            warnings.Add(
+                "numbering assigns names by position in the sorted selection: rerunning the same spec after the " +
+                "names changed may produce a different mapping, so every apply needs a fresh preview");
         }
 
         return new JobExpansion
