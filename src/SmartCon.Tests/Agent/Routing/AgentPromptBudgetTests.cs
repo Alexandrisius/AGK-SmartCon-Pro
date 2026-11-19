@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using SmartCon.Agent.Services;
 using SmartCon.Core.Models.Agent;
@@ -65,7 +65,7 @@ public sealed class AgentPromptBudgetTests
             "packs=" + AgentToolPacks.All.Count + " core=" +
             AgentToolPacks.CoreToolNames.Count + " schemas=" + top.Count);
 
-        Assert.Equal(20, AgentToolPacks.All.Count);
+        Assert.Equal(21, AgentToolPacks.All.Count);
         Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
         Assert.True(
             parts <= PromptTokenGate,
