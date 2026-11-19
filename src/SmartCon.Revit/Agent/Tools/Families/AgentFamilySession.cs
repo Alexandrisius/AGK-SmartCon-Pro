@@ -23,14 +23,11 @@ internal sealed partial class AgentFamilySession : IDisposable
     private AgentFamilySession(Document projectDoc, RevitFamily family, Document familyDoc)
     {
         ProjectDoc = projectDoc;
-        Family = family;
         FamilyDoc = familyDoc;
         FamilyName = family.Name;
     }
 
     public Document ProjectDoc { get; }
-
-    public RevitFamily Family { get; }
 
     public Document FamilyDoc { get; }
 
@@ -246,12 +243,21 @@ internal sealed partial class AgentFamilySession : IDisposable
         var checkedCount = 0;
         var mismatches = 0;
         var instanceSkipped = 0;
+        var elementIdSkipped = 0;
 
         foreach (var expectation in _expectations)
         {
             if (!expectation.IsTypeParameter)
             {
                 instanceSkipped++;
+                continue;
+            }
+
+            if (expectation.StorageType == StorageType.ElementId)
+            {
+                // Material / nested type references get project-side ElementIds on
+                // load-back, so comparing the family-document id would be wrong.
+                elementIdSkipped++;
                 continue;
             }
 
@@ -304,8 +310,16 @@ internal sealed partial class AgentFamilySession : IDisposable
             expected = _expectations.Count,
             verified = checkedCount,
             mismatched = mismatches,
-            instanceSkipped
+            instanceSkipped,
+            elementIdSkipped
         };
+
+        if (elementIdSkipped > 0)
+        {
+            outcome.Warnings.Add(
+                elementIdSkipped + " element-reference value(s) could not be verified: " +
+                "Revit assigns new project ElementIds when the family is loaded back.");
+        }
 
         if (instanceSkipped > 0)
         {
@@ -352,8 +366,7 @@ internal sealed partial class AgentFamilySession : IDisposable
         _disposed = true;
         try
         {
-            if (!FamilyDoc.IsReadOnly)
-                FamilyDoc.Close(false);
+            FamilyDoc.Close(false);
             AddSection("close", "ok", "family document closed without saving");
         }
         catch (Exception ex)

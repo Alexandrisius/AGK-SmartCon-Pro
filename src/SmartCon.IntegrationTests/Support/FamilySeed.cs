@@ -19,6 +19,7 @@ internal sealed class FamilySeed : IDisposable
     public const string FlagParam = "Флаг";
     public const string AreaParam = "Площадь";
     public const string SizeParam = "Размер";
+    public const string PressureParam = "Давление";
     public const string InstanceParam = "Примечание_экз";
     public const string Type1 = "Тип1";
     public const string Type2 = "Тип2";
@@ -106,6 +107,8 @@ internal sealed class FamilySeed : IDisposable
                     CountParam, GroupTypeId.General, SpecTypeId.Int.Integer, false);
                 var flag = manager.AddParameter(
                     FlagParam, GroupTypeId.General, SpecTypeId.Boolean.YesNo, false);
+                manager.AddParameter(
+                    PressureParam, GroupTypeId.General, SpecTypeId.HvacPressure, false);
                 manager.AddParameter(
                     InstanceParam, GroupTypeId.IdentityData, SpecTypeId.String.Text, true);
 

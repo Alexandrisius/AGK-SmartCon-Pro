@@ -183,13 +183,10 @@ public sealed class SetFamilyFormulaTool : AgentFamilyWriteToolBase
                 valueChanges++;
             }
 
-            if (!parameter.IsInstance)
-            {
-                session.AddExpectations(
-                    type.Name,
-                    parameter,
-                    FamilyValueSnapshot.ReadFamilyType(type, parameter));
-            }
+            session.AddExpectations(
+                type.Name,
+                parameter,
+                FamilyValueSnapshot.ReadFamilyType(type, parameter));
         }
 
         outcome.AffectedCount = 1 + valueChanges;

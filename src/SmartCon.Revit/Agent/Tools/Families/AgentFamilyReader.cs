@@ -38,9 +38,25 @@ internal static class AgentFamilyReader
 
         if (familyId.HasValue && familyId.Value > 0)
         {
-            var element = doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(familyId.Value));
+            var element = doc.GetElement(
+                SmartCon.Core.Compatibility.ElementIdCompat.Create(familyId.Value));
             if (element is RevitFamily familyById)
+            {
+                if (!string.IsNullOrWhiteSpace(familyName)
+                    && !string.Equals(
+                        familyById.Name,
+                        familyName!.Trim(),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    errorCode = "invalid_value";
+                    message = "familyId " + familyId.Value + " is family '" +
+                              familyById.Name + "', which does not match familyName '" +
+                              familyName + "'.";
+                    return null;
+                }
+
                 return familyById;
+            }
 
             errorCode = "family_not_found";
             message = "Family element " + familyId.Value + " does not exist in the project. " +

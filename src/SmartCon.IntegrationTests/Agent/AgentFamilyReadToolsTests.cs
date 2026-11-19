@@ -265,6 +265,20 @@ public sealed class AgentFamilyReadToolsTests : RevitApiTest
         await Assert.That(result.ErrorCode).IsEqualTo("invalid_arguments");
     }
 
+    [Test]
+    public async Task FindFamiliesWithParameter_ContainsMatch_FindsLocalizedNames()
+    {
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"ирин\",\"match\":\"contains\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(ContainsFamily(Data(result), Seed.FamilyId)).IsTrue();
+    }
+
     private static JsonElement Parse(string json) =>
         JsonDocument.Parse(json).RootElement.Clone();
 

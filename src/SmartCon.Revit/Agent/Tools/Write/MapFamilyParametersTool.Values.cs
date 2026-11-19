@@ -21,9 +21,7 @@ public sealed partial class MapFamilyParametersTool
         string label,
         ref int changedCount)
     {
-        var sourceKind = AgentFamilySpecs.KindOf(source.Definition, source.StorageType);
-        var targetKind = AgentFamilySpecs.KindOf(target.Definition, target.StorageType);
-        if (sourceKind != targetKind)
+        if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
         {
             Failed(
                 outcome,
@@ -172,13 +170,10 @@ public sealed partial class MapFamilyParametersTool
                     Value = targetOld.ToRaw()
                 });
 
-                if (!plan.Target.IsInstance)
-                {
-                    session.AddExpectations(
-                        type.Name,
-                        plan.Target,
-                        FamilyValueSnapshot.ReadFamilyType(type, plan.Target));
-                }
+                session.AddExpectations(
+                    type.Name,
+                    plan.Target,
+                    FamilyValueSnapshot.ReadFamilyType(type, plan.Target));
             }
         }
     }
@@ -204,6 +199,20 @@ public sealed partial class MapFamilyParametersTool
                 Reason = "The source parameter has no formula; nothing to copy."
             });
             return true;
+        }
+
+        if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
+        {
+            Failed(
+                outcome,
+                label,
+                "spec_mismatch",
+                "Source '" + source.Definition.Name + "' has spec '" +
+                AgentFamilySpecs.SpecName(source.Definition) + "', target '" +
+                target.Definition.Name + "' has spec '" +
+                AgentFamilySpecs.SpecName(target.Definition) + "'. A formula of a different " +
+                "spec would produce numerically wrong values.");
+            return false;
         }
 
         if (!target.CanAssignFormula)
@@ -293,13 +302,10 @@ public sealed partial class MapFamilyParametersTool
                 changedCount++;
             }
 
-            if (!target.IsInstance)
-            {
-                session.AddExpectations(
-                    type.Name,
-                    target,
-                    FamilyValueSnapshot.ReadFamilyType(type, target));
-            }
+            session.AddExpectations(
+                type.Name,
+                target,
+                FamilyValueSnapshot.ReadFamilyType(type, target));
         }
 
         return true;

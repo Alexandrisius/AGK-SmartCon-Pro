@@ -18,15 +18,15 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
 
 | Гейт | Результат |
 |---|---|
-| Unit `SmartCon.Tests -c Debug.R25` | **3812/3812** |
-| Integration R25 — family pack (47: read 12 / write 23 / map+undo 9 / scale 1 / plan 2) | **47/47** |
-| Integration R25 — полный сьют, `SMARTCON_AGENT_EVAL_REPLAY=1` | **414: 403 passed, 11 skipped, 0 failed, 9m33s** (eval replay 46/46 внутри) |
-| Integration R27 net10 (Revit 2027) — family pack | **47/47** |
+| Unit `SmartCon.Tests -c Debug.R25` | **3813/3813** |
+| Integration R25 — family pack (56: read 13 / write 26 / map+undo 14 / scale 1 / plan 2) | **56/56** |
+| Integration R25 — полный сьют, `SMARTCON_AGENT_EVAL_REPLAY=1` | **423: 412 passed, 11 skipped, 0 failed, 9m57s** (eval replay 46/46 внутри) |
+| Integration R27 net10 (Revit 2027) — family pack | **56/56** |
 | Integration net48 (Revit 2023, полный сьют) | **246 passed, 12 skipped, 0 failed** (Agent-тесты исключены из net48 по дизайну) |
 | Eval replay (`SMARTCON_AGENT_EVAL_REPLAY=1`) | **46/46**, schema **149/149**, unauthorized **0**, threshold violations **0** |
 | Release.R25 (NET/IDE-анализаторы) | **0 errors, 0 warnings** |
 | 7 конфигураций (R19/R21/R23/R24/R25/R26/R27) | **7/7 OK** |
-| Регрессия дня (артефакт J) | профиль 43/43; см. ниже |
+| Регрессия дня (артефакт J) | профиль 44/44; см. ниже |
 | Ручной UI-тест / dogfood / A/B | **manual pending** (нет ключей и UI-сессии в ночном прогоне) |
 
 Без `SMARTCON_AGENT_EVAL_REPLAY=1` тест `AgentEvalTests` уходит в live-режим и
@@ -48,6 +48,25 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
   за 38,5 с вместо 73 с; чтение 200×100 — 385 мс; heap +11,9 МБ.
 - `empty_family` недостижим (Revit оставляет ≥1 тип после save/load);
   `family_open_conflict` — только при открытом UI-редакторе.
+
+### Валидация (general): 5 P1 + P2 исправлены
+
+- P1: все-провал/`initialValue`-сбой → family-транзакция откатывается, load-back не
+  выполняется (модель не меняется, change set не пишется); dry-run shared-параметра
+  больше не создаёт определение в файле общих параметров; `KindOf` не сводит
+  неизвестные измеримые spec к Number (fail-closed, `spec_mismatch` по
+  `GetDataType()`); change item пишется до read-back (audit переживает сбой
+  верификации); read-back пропускает ElementId-значения (проектные id не
+  сравниваются).
+- P2: load-back-сбой переводит changed→skipped; `typeId` проверяется на
+  принадлежность семейству; instance-ожидания дают `instanceSkipped`;
+  `OperationCanceledException` пробрасывается; частичный undo сообщает
+  changed+failed и сохраняет change set; legacy-restore проверяет `.rfa`;
+  `ToolResultBudget` обрезает `families/types/matchedTypes`; убран
+  неиспользуемый `Family`-объект; always-close; familyId+familyName сверяются;
+  `includeSystemFamilies` удалён из схемы; shared GUID-конфликты и `guid` без
+  `isShared` отклоняются; backup проверяет ReadOnly.
+- Файлы: `AgentWriteToolBase` и семейные тесты разбиты partial (<600 строк).
 
 ### Исправлено из pre-existing (по указанию владельца)
 

@@ -143,4 +143,32 @@ public sealed class ToolResultBudgetTests
         Assert.Equal("all_items_failed", document.RootElement.GetProperty("errorCode").GetString());
         Assert.True(document.RootElement.GetProperty("data").GetProperty("truncated").GetBoolean());
     }
+
+    [Fact]
+    public void Serialize_LargeFamilyList_TrimsFamiliesArrayHonestly()
+    {
+        var families = Enumerable.Range(0, 1000)
+            .Select(index => new
+            {
+                familyId = index + 1,
+                name = "KR_SHAR_VOLK_" + index + "_with_a_long_descriptive_name",
+                category = "OST_PipeAccessory",
+                typeCount = 12
+            })
+            .ToArray();
+
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { total = families.Length, families }),
+            "big");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 5000);
+
+        Assert.True(json.Length <= 5000, "trimmed json must fit the budget, was " + json.Length);
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        Assert.True(data.GetProperty("familiesTotal").GetInt32() >= 1000);
+        Assert.True(data.GetProperty("familiesReturned").GetInt32() < 1000);
+    }
 }

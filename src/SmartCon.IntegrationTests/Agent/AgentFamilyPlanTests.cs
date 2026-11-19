@@ -88,7 +88,7 @@ public sealed class AgentFamilyPlanTests : RevitApiTest
     }
 
     [Test]
-    public async Task Plan_DuplicateParameter_StopsBeforeApply()
+    public async Task Plan_DuplicateParameter_AppliesFirstStepThenFails()
     {
         var add = CreateAddTool();
         var executor = new AgentPlanExecutor(

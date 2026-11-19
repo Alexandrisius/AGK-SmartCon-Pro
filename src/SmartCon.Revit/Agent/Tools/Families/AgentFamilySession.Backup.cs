@@ -37,6 +37,13 @@ internal sealed partial class AgentFamilySession
             return false;
         }
 
+        if (projectDoc.IsReadOnly)
+        {
+            Fail(outcome, "permission_denied",
+                "The project document is read-only, so its families cannot be edited.");
+            return false;
+        }
+
         if (family.IsInPlace)
         {
             Fail(outcome, "in_place_not_supported",

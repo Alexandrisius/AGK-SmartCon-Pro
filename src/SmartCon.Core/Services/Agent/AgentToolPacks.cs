@@ -163,7 +163,7 @@ public static class AgentToolPacks
     private static readonly Dictionary<string, string> PackNameByTool = BuildToolIndex();
     private static readonly HashSet<string> CoreNameSet = new(CoreNames, StringComparer.Ordinal);
 
-    /// <summary>All packs in the fixed catalog order (11 populated + 9 reserved).</summary>
+    /// <summary>All packs in the fixed catalog order (15 populated + 5 reserved).</summary>
     public static IReadOnlyList<AgentToolPack> All => Packs;
 
     /// <summary>Tools that are always available regardless of the loaded pack.</summary>

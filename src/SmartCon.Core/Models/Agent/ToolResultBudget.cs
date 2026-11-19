@@ -27,7 +27,8 @@ public static class ToolResultBudget
     private static readonly string[] TrimmableArrays =
     {
         "elements", "views", "levels", "groups", "parameters", "cards",
-        "changed", "skipped", "failed", "items", "templates"
+        "changed", "skipped", "failed", "items", "templates",
+        "families", "types", "matchedTypes"
     };
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

@@ -106,6 +106,15 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                 return;
             }
 
+            if (!request.IsShared)
+            {
+                Fail(
+                    outcome,
+                    "invalid_value",
+                    "guid is only valid for a shared parameter; set isShared=true or drop guid.");
+                return;
+            }
+
             guid = parsedGuid;
             var byGuid = manager.get_Parameter(parsedGuid);
             if (byGuid is not null)
@@ -155,6 +164,7 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         }
 
         ExternalDefinition? sharedDefinition = null;
+        var wouldCreateDefinition = false;
         if (request.IsShared)
         {
             sharedDefinition = ResolveSharedDefinition(
@@ -162,9 +172,47 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                 name,
                 spec!,
                 guid,
-                outcome);
-            if (sharedDefinition is null)
+                dryRun,
+                outcome,
+                out wouldCreateDefinition);
+            if (sharedDefinition is null && !wouldCreateDefinition)
                 return;
+
+            if (wouldCreateDefinition)
+            {
+                outcome.Batch.Changed.Add(new WriteItemReport
+                {
+                    Name = name,
+                    NewValue = "shared definition would be created in the shared parameter file",
+                    Detail = dryRun ? "dry run: no shared parameter file change" : null
+                });
+                outcome.AffectedCount = 1;
+                outcome.Data["parameter"] = new
+                {
+                    name,
+                    scope = request.IsInstance ? "instance" : "type",
+                    isShared = true,
+                    guid = guid?.ToString("D"),
+                    storageType = kind switch
+                    {
+                        AgentFamilyValueKind.Length or AgentFamilyValueKind.Angle
+                            or AgentFamilyValueKind.Area or AgentFamilyValueKind.Volume
+                            or AgentFamilyValueKind.Number => "double",
+                        AgentFamilyValueKind.WholeNumber or AgentFamilyValueKind.YesNo => "integer",
+                        AgentFamilyValueKind.Text => "string",
+                        AgentFamilyValueKind.ElementId => "elementId",
+                        _ => "unknown"
+                    },
+                    spec = AgentFamilySpecs.SpecNameOf(spec!),
+                    group = AgentFamilySpecs.GroupNameOf(group!),
+                    wouldCreateDefinition = true
+                };
+                outcome.Warnings.Add(
+                    "Dry run: the shared parameter definition does not exist yet; a real " +
+                    "apply would create it in the shared parameter file (an external file " +
+                    "that cannot be rolled back).");
+                return;
+            }
         }
 
         FamilyParameter? created;
@@ -256,8 +304,11 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         string name,
         ForgeTypeId spec,
         Guid? guid,
-        WriteOutcome outcome)
+        bool dryRun,
+        WriteOutcome outcome,
+        out bool wouldCreateDefinition)
     {
+        wouldCreateDefinition = false;
         DefinitionFile? file;
         try
         {
@@ -289,7 +340,17 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         DefinitionGroup? group;
         try
         {
-            group = file.Groups.get_Item("SmartCon") ?? file.Groups.Create("SmartCon");
+            group = file.Groups.get_Item("SmartCon");
+            if (group is null)
+            {
+                if (dryRun)
+                {
+                    wouldCreateDefinition = true;
+                    return null;
+                }
+
+                group = file.Groups.Create("SmartCon");
+            }
         }
         catch (Exception ex)
         {
@@ -329,7 +390,25 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                 return null;
             }
 
+            if (guid.HasValue && external.GUID != guid.Value)
+            {
+                Fail(
+                    outcome,
+                    "invalid_value",
+                    "The shared parameter definition '" + external.Name + "' already exists " +
+                    "with GUID " + external.GUID.ToString("D") + ", not " +
+                    guid.Value.ToString("D") + ".",
+                    "Drop guid to reuse the existing definition, or use another name.");
+                return null;
+            }
+
             return external;
+        }
+
+        if (dryRun)
+        {
+            wouldCreateDefinition = true;
+            return null;
         }
 
         try
@@ -338,7 +417,17 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
             if (guid.HasValue)
                 options.GUID = guid.Value;
 
-            return group.Definitions.Create(options) as ExternalDefinition;
+            var created = group.Definitions.Create(options) as ExternalDefinition;
+            if (created is null)
+            {
+                Fail(
+                    outcome,
+                    "shared_parameter_file_missing",
+                    "Revit did not create the shared parameter definition.",
+                    "[Action: check the shared parameter file and retry]");
+            }
+
+            return created;
         }
         catch (Exception ex)
         {

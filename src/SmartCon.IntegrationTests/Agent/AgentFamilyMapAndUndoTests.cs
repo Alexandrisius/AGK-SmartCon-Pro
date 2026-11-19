@@ -142,7 +142,7 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
     }
 
     [Test]
-    public async Task MapFormula_TargetWithoutFormulaSupport_ReturnsFormulaNotAllowed()
+    public async Task MapFormula_DifferentSpec_ReturnsSpecMismatch()
     {
         var result = Run(
             CreateMapTool(),
@@ -151,7 +151,7 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
 
         await Assert.That(result.Success).IsFalse();
         await Assert.That(Data(result).GetProperty("failed")[0]
-            .GetProperty("errorCode").GetString()).IsEqualTo("formula_not_allowed");
+            .GetProperty("errorCode").GetString()).IsEqualTo("spec_mismatch");
     }
 
     [Test]
@@ -225,6 +225,130 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
         await Assert.That(undo.ErrorCode).IsEqualTo("backup_unavailable");
     }
 
+    [Test]
+    public async Task UndoLast_AfterRename_RestoresOldName()
+    {
+        var rename = Run(
+            CreateRenameTool(),
+            "{\"familyName\":\"" + Seed.FamilyName + "\",\"parameter\":\"Марка\"," +
+            "\"newName\":\"МаркаИзделия\",\"dryRun\":false}");
+        await Assert.That(rename.Success).IsTrue();
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsTrue();
+        var parameters = await ReadParameters();
+        await Assert.That(FindParameterOrNull(parameters, "Марка")).IsNotNull();
+        await Assert.That(FindParameterOrNull(parameters, "МаркаИзделия")).IsNull();
+    }
+
+    [Test]
+    public async Task UndoLast_AfterValueSet_RestoresOldValue()
+    {
+        var set = Run(
+            CreateSetValuesTool(),
+            "{\"familyName\":\"" + Seed.FamilyName + "\",\"items\":[" +
+            "{\"parameter\":\"Ширина\",\"typeName\":\"Тип1\",\"value\":\"1100\"," +
+            "\"unit\":\"mm\"}],\"dryRun\":false}");
+        await Assert.That(set.Success).IsTrue();
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsTrue();
+        var width = Seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
+        await Assert.That(System.Math.Abs(width!.AsDouble() - 1000.0 / 304.8) < 1e-9).IsTrue();
+    }
+
+    [Test]
+    public async Task UndoLast_AfterFormulaChange_RestoresFormula()
+    {
+        var formula = Run(
+            CreateFormulaTool(),
+            "{\"familyName\":\"" + Seed.FamilyName + "\",\"parameter\":\"Площадь\"," +
+            "\"formula\":\"Ширина * Высота * 2\",\"dryRun\":false}");
+        await Assert.That(formula.Success).IsTrue();
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsTrue();
+        var parameter = FindParameter(await ReadParameters(), FamilySeed.AreaParam);
+        await Assert.That(parameter.GetProperty("formula").GetString())
+            .IsEqualTo("Ширина * Высота");
+    }
+
+    [Test]
+    public async Task UndoLast_LegacyBackup_RestoresFamily()
+    {
+        var header = new ChangeSetHeader
+        {
+            Operation = "add_family_parameter",
+            DocumentId = SmartCon.Revit.Agent.AgentDocumentIdentity.GetDocumentId(Doc)
+        };
+        var changeSetId = await _changeSets!.BeginAsync(header, CancellationToken.None);
+        await _changeSets.AddItemsAsync(
+            changeSetId,
+            new[]
+            {
+                new ChangeItem
+                {
+                    ChangeSetId = changeSetId,
+                    ParameterName = "family",
+                    OldValue = Seed.RfaPath,
+                    NewValue = Seed.FamilyName,
+                    Status = ChangeStatus.Applied
+                }
+            },
+            CancellationToken.None);
+        await _changeSets.MarkAppliedAsync(changeSetId, DateTime.UtcNow, CancellationToken.None);
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(Data(undo).GetProperty("changed").GetArrayLength()).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task UndoLast_PartialFamilyFailure_KeepsChangeSetApplied()
+    {
+        var header = new ChangeSetHeader
+        {
+            Operation = "set_family_parameter_values",
+            DocumentId = SmartCon.Revit.Agent.AgentDocumentIdentity.GetDocumentId(Doc)
+        };
+        var changeSetId = await _changeSets!.BeginAsync(header, CancellationToken.None);
+        var plan =
+            "{\"familyName\":\"" + Seed.FamilyName + "\",\"ops\":[" +
+            "{\"kind\":\"value\",\"parameter\":\"Ширина\",\"scope\":\"type\"," +
+            "\"typeName\":\"Тип1\",\"storage\":\"double\",\"value\":\"1\"}," +
+            "{\"kind\":\"bogus\",\"parameter\":\"X\"}]}";
+        await _changeSets.AddItemsAsync(
+            changeSetId,
+            new[]
+            {
+                new ChangeItem
+                {
+                    ChangeSetId = changeSetId,
+                    ParameterName = "family",
+                    OldValue = plan,
+                    NewValue = Seed.FamilyName,
+                    Status = ChangeStatus.Applied
+                }
+            },
+            CancellationToken.None);
+        await _changeSets.MarkAppliedAsync(changeSetId, DateTime.UtcNow, CancellationToken.None);
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsFalse();
+        await Assert.That(undo.ErrorCode).IsEqualTo("family_undo_partial");
+        var data = Data(undo);
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("failed").GetArrayLength()).IsEqualTo(1);
+
+        var stored = _changeSets.All.Single(set => set.Header.Id == changeSetId);
+        await Assert.That(stored.Header.AppliedAt.HasValue).IsTrue();
+    }
+
     private async Task AddParameter(string name, string storageType)
     {
         var result = Run(
@@ -239,6 +363,15 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private MapFamilyParametersTool CreateMapTool() =>
+        new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private RenameFamilyParameterTool CreateRenameTool() =>
+        new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private SetFamilyParameterValuesTool CreateSetValuesTool() =>
+        new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private SetFamilyFormulaTool CreateFormulaTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private UndoLastTool CreateUndoTool() =>

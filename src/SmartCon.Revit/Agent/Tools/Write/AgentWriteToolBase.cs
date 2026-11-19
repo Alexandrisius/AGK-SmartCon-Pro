@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
@@ -13,7 +13,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// guard document/worksharing → execute on the Revit thread → dry-run as
 /// run-and-rollback → apply in one transaction → persist a change set → report.
 /// </summary>
-public abstract class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
+public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
 {
     private readonly IRevitContext _revitContext;
     private readonly ITransactionService _transactions;
@@ -33,45 +33,6 @@ public abstract class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
 
     protected IAgentChangeSetStore ChangeSets => _changeSets;
 
-    /// <summary>
-    /// Tools that own the document lifecycle (family documents: EditFamily must run
-    /// outside any project transaction) return true and implement
-    /// <see cref="ExecuteOutsideTransaction"/>. Default false keeps the standard
-    /// dry-run/apply transaction pipeline for every existing tool.
-    /// </summary>
-    protected virtual bool ManagesOwnTransactions => false;
-
-    /// <summary>
-    /// Runs the whole operation on the Revit thread when
-    /// <see cref="ManagesOwnTransactions"/> is true. The implementation must set
-    /// <see cref="WriteOutcome.ModelChanged"/> itself.
-    /// </summary>
-    protected virtual void ExecuteOutsideTransaction(
-        Document document,
-        JsonElement args,
-        bool dryRun,
-        WriteOutcome outcome,
-        CancellationToken ct) =>
-        throw new InvalidOperationException(
-            "The tool declares its own transaction pipeline but does not implement it.");
-
-    /// <summary>
-    /// Post-transaction hook that runs outside the transaction, on the Revit thread.
-    /// Used by undo_last to restore family documents, which cannot be loaded back
-    /// while a project transaction is open. Default no-op.
-    /// </summary>
-    protected virtual void AfterTransaction(
-        Document document,
-        JsonElement args,
-        bool dryRun,
-        WriteOutcome outcome,
-        CancellationToken ct)
-    {
-    }
-
-    /// <summary>
-    /// L1 preflight: cheap argument checks on the Revit thread, before any
-    /// transaction and before the dry run.
     /// </summary>
     public async Task<PlanPreflightResult> PreflightAsync(
         AgentToolContext context,

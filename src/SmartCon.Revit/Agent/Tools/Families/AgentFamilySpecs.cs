@@ -136,14 +136,30 @@ internal static class AgentFamilySpecs
                 return AgentFamilyValueKind.ElementId;
         }
 
+        // Unknown measurable or reference specs must not be treated as a
+        // dimensionless number: that would silently write internal units.
         return storageType switch
         {
-            StorageType.Double => AgentFamilyValueKind.Number,
             StorageType.Integer => AgentFamilyValueKind.WholeNumber,
             StorageType.String => AgentFamilyValueKind.Text,
-            StorageType.ElementId => AgentFamilyValueKind.ElementId,
-            _ => AgentFamilyValueKind.Number
+            _ => AgentFamilyValueKind.Unsupported
         };
+    }
+
+    /// <summary>
+    /// True when both definitions describe the same data type. Unlike the coarse
+    /// <see cref="KindOf"/> buckets this distinguishes pressure from mass, etc.
+    /// </summary>
+    internal static bool SameSpec(Definition left, Definition right)
+    {
+        try
+        {
+            return left.GetDataType().Equals(right.GetDataType());
+        }
+        catch (Exception)
+        {
+            return KindOf(left, StorageType.Double) == KindOf(right, StorageType.Double);
+        }
     }
 
     internal static bool TryResolveGroup(

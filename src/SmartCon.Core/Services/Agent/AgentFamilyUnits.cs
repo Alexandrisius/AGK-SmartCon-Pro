@@ -15,7 +15,10 @@ public enum AgentFamilyValueKind
     WholeNumber = 5,
     Text = 6,
     YesNo = 7,
-    ElementId = 8
+    ElementId = 8,
+
+    /// <summary>Spec outside the supported conversion set (pressure, flow, …).</summary>
+    Unsupported = 9
 }
 
 public readonly struct AgentFamilyConvertedValue
@@ -69,6 +72,15 @@ public static class AgentFamilyUnits
 
         var text = raw.Trim();
         var normalizedUnit = NormalizeUnit(unit);
+
+        if (kind == AgentFamilyValueKind.Unsupported)
+        {
+            errorCode = "invalid_value";
+            message = "This parameter spec is not supported for direct value writing. " +
+                      "Supported specs: length, angle, area, volume, number, integer, " +
+                      "text, yesno, material.";
+            return false;
+        }
 
         switch (kind)
         {

@@ -125,6 +125,20 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
                 }
 
                 var kind = AgentFamilySpecs.KindOf(parameter.Definition, parameter.StorageType);
+                if (kind == SmartCon.Core.Services.Agent.AgentFamilyValueKind.Unsupported)
+                {
+                    Failed(
+                        outcome,
+                        report,
+                        "invalid_value",
+                        "The spec of '" + report.Name + "' (" +
+                        AgentFamilySpecs.SpecName(parameter.Definition) + ") is not supported " +
+                        "for direct value writing; supported specs: length, angle, area, " +
+                        "volume, number, integer, text, yesno, material.");
+                    failedCount++;
+                    continue;
+                }
+
                 if (!AgentFamilyUnits.TryConvert(
                         kind,
                         item.Value,
@@ -154,6 +168,23 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
                             report,
                             "type_not_found",
                             "Type id " + item.TypeId.Value + " is not a family type in the project.");
+                        failedCount++;
+                        continue;
+                    }
+
+                    if (symbol.Family is null
+                        || !string.Equals(
+                            symbol.Family.Name,
+                            session.FamilyName,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        Failed(
+                            outcome,
+                            report,
+                            "invalid_value",
+                            "Type id " + item.TypeId.Value + " belongs to family '" +
+                            (symbol.Family?.Name ?? "?") + "', not to '" +
+                            session.FamilyName + "'.");
                         failedCount++;
                         continue;
                     }
@@ -238,8 +269,7 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
                     Value = oldValue.ToRaw()
                 });
 
-                if (!parameter.IsInstance)
-                    session.AddExpectations(type.Name, parameter, actual);
+                session.AddExpectations(type.Name, parameter, actual);
             }
         }
         finally

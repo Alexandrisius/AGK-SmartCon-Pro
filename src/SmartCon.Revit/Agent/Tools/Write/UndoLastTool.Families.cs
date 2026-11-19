@@ -132,9 +132,10 @@ public sealed partial class UndoLastTool
                 for (var index = plan.Ops.Count - 1; index >= 0; index--)
                 {
                     ct.ThrowIfCancellationRequested();
-                    if (TryUndoOperation(manager, plan.Ops[index], out var problem))
+                    if (TryUndoOperation(manager, plan.Ops[index], out var changed, out var problem))
                     {
-                        applied++;
+                        if (changed)
+                            applied++;
                     }
                     else if (!string.IsNullOrEmpty(problem))
                     {
@@ -194,27 +195,46 @@ public sealed partial class UndoLastTool
             }
         }
 
+        if (applied > 0)
+        {
+            report.NewValue = "reverted " + applied + " family operation(s)";
+            outcome.Batch.Changed.Add(report);
+            outcome.AffectedCount += applied;
+            outcome.ModelChanged = true;
+        }
+
         if (problems.Count > 0)
         {
-            report.ErrorCode = "family_undo_partial";
-            report.Reason = string.Join("; ", problems);
-            outcome.Batch.Failed.Add(report);
+            var problemReport = new WriteItemReport
+            {
+                Name = report.Name,
+                ErrorCode = "family_undo_partial",
+                Reason = string.Join("; ", problems)
+            };
+            outcome.Batch.Failed.Add(problemReport);
             outcome.Success = false;
             outcome.ErrorCode ??= "family_undo_partial";
+            // Partially applied undo must keep the change set available: the failed
+            // operations can still be retried, and the applied ones are recorded here.
+            outcome.RollBackChangeSetId = null;
             return;
         }
 
-        report.NewValue = "reverted " + applied + " family operation(s)";
-        outcome.Batch.Changed.Add(report);
-        outcome.AffectedCount += System.Math.Max(1, applied);
-        outcome.ModelChanged = true;
+        if (applied == 0)
+        {
+            report.ErrorCode = "nothing_to_undo";
+            report.Reason = "The family already matches the recorded previous state.";
+            outcome.Batch.Skipped.Add(report);
+        }
     }
 
     private static bool TryUndoOperation(
         RevitFamilyManager manager,
         FamilyUndoOperation operation,
+        out bool changed,
         out string? problem)
     {
+        changed = false;
         problem = null;
         try
         {
@@ -228,6 +248,7 @@ public sealed partial class UndoLastTool
                         return true;
 
                     manager.RemoveParameter(parameter);
+                    changed = true;
                     return true;
                 }
                 case "rename":
@@ -252,6 +273,7 @@ public sealed partial class UndoLastTool
                     }
 
                     manager.RenameParameter(parameter, operation.Parameter!);
+                    changed = true;
                     return true;
                 }
                 case "value":
@@ -285,6 +307,7 @@ public sealed partial class UndoLastTool
                         return false;
                     }
 
+                    changed = true;
                     return true;
                 }
                 case "formula":
@@ -301,10 +324,12 @@ public sealed partial class UndoLastTool
                     manager.SetFormula(
                         parameter,
                         string.IsNullOrEmpty(operation.Formula) ? null : operation.Formula);
+                    changed = true;
                     return true;
                 }
                 default:
-                    return true;
+                    problem = "Unknown undo operation '" + operation.Kind + "'.";
+                    return false;
             }
         }
         catch (Exception ex)
@@ -342,12 +367,37 @@ public sealed partial class UndoLastTool
             return;
         }
 
+        if (!string.Equals(
+                Path.GetExtension(backupPath),
+                ".rfa",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            report.ErrorCode = "backup_unavailable";
+            report.Reason = "The recorded backup path is not a .rfa family file.";
+            outcome.Batch.Failed.Add(report);
+            outcome.Success = false;
+            outcome.ErrorCode ??= "backup_unavailable";
+            return;
+        }
+
         try
         {
             var backupDoc = document.Application.OpenDocumentFile(backupPath);
             RevitFamily? loaded;
             try
             {
+                var backupFamilyName = backupDoc.OwnerFamily?.Name;
+                if (!string.IsNullOrEmpty(backupFamilyName)
+                    && !string.Equals(
+                        backupFamilyName,
+                        restore.FamilyName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "The backup contains family '" + backupFamilyName + "', not '" +
+                        restore.FamilyName + "'.");
+                }
+
                 loaded = backupDoc.LoadFamily(document, new FamilyRestoreLoadOptions());
             }
             finally

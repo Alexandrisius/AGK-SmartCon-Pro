@@ -107,7 +107,11 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 transaction.Start();
                 started = true;
                 ApplyInFamilyDocument(session, args, outcome, dryRun, ct);
-                if (dryRun)
+
+                // A dry run and any no-op/failed batch must not reach the project:
+                // rolling back also discards half-created parameters (for example a
+                // failed initialValue) that the tool could not report as changed.
+                if (dryRun || outcome.AffectedCount == 0)
                 {
                     transaction.RollBack();
                 }
@@ -117,6 +121,13 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 }
 
                 started = false;
+            }
+            catch (OperationCanceledException)
+            {
+                if (started && transaction.HasStarted())
+                    transaction.RollBack();
+
+                throw;
             }
             catch (Exception ex)
             {
@@ -135,22 +146,26 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 return;
             }
 
-            outcome.ModelChanged = !dryRun && outcome.AffectedCount > 0;
             session.MarkEditSection(Definition.Name, dryRun, outcome.AffectedCount);
+            outcome.ModelChanged = false;
 
-            if (dryRun)
+            if (dryRun || outcome.AffectedCount == 0)
                 return;
 
             if (!session.TryLoadBack(outcome))
             {
+                MoveChangedToSkipped(outcome);
+                outcome.AffectedCount = 0;
                 outcome.ModelChanged = false;
                 outcome.Items.Clear();
                 return;
             }
 
-            session.VerifyReadBack(outcome);
+            outcome.ModelChanged = true;
 
-            if (outcome.AffectedCount > 0 && outcome.Items.Count == 0)
+            // Record the undo item before verification: the project already changed,
+            // so the audit trail must survive any failure of the read-back check.
+            if (outcome.Items.Count == 0)
             {
                 outcome.Items.Add(new ChangeItem
                 {
@@ -164,6 +179,20 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 outcome.Description = "Family '" + session.FamilyName + "' (" +
                                       Definition.Name + "); backup: " +
                                       (session.BackupPath ?? "unavailable");
+            }
+
+            try
+            {
+                session.VerifyReadBack(outcome);
+            }
+            catch (Exception ex)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode ??= "read_back_failed";
+                outcome.Warnings.Add(
+                    "The change was applied, but the read-back check failed: " +
+                    ex.GetType().Name + ": " + ex.Message + ". The change set is kept so " +
+                    "undo_last can revert the change.");
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

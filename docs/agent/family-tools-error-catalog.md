@@ -43,6 +43,13 @@
   проекте без экземпляров не проверяются (честное предупреждение).
 - `success=false` при реальной ошибке; чистый no-op → `success=true` и явное
   сообщение «No changes: …» + `skipped[]`.
+- All-failed/validation failure откатывает family-транзакцию и не выполняет
+  load-back: модель не меняется, change set не пишется.
+- `instanceSkipped`/`elementIdSkipped` — значения, которые нельзя проверить в
+  проекте без экземпляров / из-за новых ElementId; в ответе есть warning.
+- Валидатор обновил политику: `ApplyViewTemplateTool.Fail` теперь выставляет
+  `success=false`/`errorCode` и для частичных сбоев (изменённые секции остаются
+  в `changed[]`).
 - При превышении 40 000 символов `ToolResultBudget` обрезает массивы и
   дописывает в `message` `[truncated: N of M …]`.
 
@@ -52,7 +59,7 @@
 |---|---|
 | family / type / instance | `list_families` → familyId; `list_family_types` → typeId; параметр имеет `scope=instance|type` |
 | `scope` в write | если имя встречается дважды, без `scope` → `ambiguous_parameter`; несовпадение → `scope_mismatch` |
-| Числовые значения | обязателен `unit`: length `mm/cm/m/in/ft`, angle `deg/rad`, area `mm2/cm2/m2/ft2`, volume `m3/l/ft3`; без unit → `unit_required`; `number` unit не требует |
+| Числовые значения | обязателен `unit`: length `mm/cm/m/in/ft`, angle `deg/rad`, area `mm2/cm2/m2/ft2`, volume `m3/l/ft3`; без unit → `unit_required`; `number` unit не требует; измеримые spec вне списка (pressure/flow/force) → `invalid_value` (fail-closed) |
 | Формулы | только `CanAssignFormula=true`; чтение значения формульного параметра через `valuesByType`; запись значения → `formula_not_allowed` |
 | Lookup (`size_lookup`) | перед установкой формулы проверяется наличие таблицы в семействе → `lookup_table_missing` |
 | Shared parameters | создаются в файле общих параметров; GUID сохраняется и возвращается; файл не настроен → `shared_parameter_file_missing` |

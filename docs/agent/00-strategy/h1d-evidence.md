@@ -30,7 +30,7 @@
 
 | Req | Требование | Tool | Unit | Integration (R25/R27) | Eval/маршрутизация | Doc |
 |---|---|---|---|---|---|---|
-| R1 | Загруженные семейства, типы, isEditable/isInPlace | `list_families` | `AgentFamilyPackTests` | `ListFamilies_ReturnsSeededFamilyWithTypeCount`, `ListFamilies_NameFilterMatchesLocalizedText` | routing r173/r174 | карточка + §1 |
+| R1 | Загруженные семейства, типы, isEditable/isInPlace | `list_families` | `AgentFamilyPackTests` | `ListFamilies_ReturnsSeededFamilyWithTypeCount`, `ListFamilies_NameFilterMatchesLocalizedText` (case-insensitive фильтр; русские имена проверяются во всех остальных тестах) | routing r173/r174 | карточка + §1 |
 | R2 | Типы, включая неразмещённые | `list_family_types` | `AgentFamilyPackTests` | `ListFamilyTypes_ReturnsBothTypesIncludingUnplaced`, `..._UnknownFamily_ReturnsFamilyNotFound` | r175/r176 | карточка |
 | R3 | Параметры family/type: scope, GUID, formula, lookup, canSet*, значения по типам, пагинация | `get_family_parameters` | `AgentFamilyUnitsTests`, `AgentFamilyTextTests` | `GetFamilyParameters_ReportsFormulaSharedFlagsAndValues`, `..._PaginationIsHonest`, `..._InvalidScope`, `..._ClosesFamilyDocument` | r177/r178 | `family-tools-error-catalog.md` |
 | R4 | Живой поиск по параметру без индекса, exact/contains | `find_families_with_parameter` | `AgentFamilyTextTests` | `FindFamiliesWithParameter_FindsByParameterName`, `..._FindsByValueContains`, `..._UnknownParameter`, `..._MissingArgument` | r179/r180 | ADR-077 + карточка |
@@ -39,13 +39,13 @@
 | R7 | Значения по типам, unit, scope, formula/read-only | `set_family_parameter_values` | `AgentFamilyUnitsTests` (mm/m/deg/…, comma, unit_required) | `SetValues_MissingUnit…`, `..._ApplyPerType_ReadsBack…`, `..._FormulaParameter…`, `..._ScopeMismatch…`, `..._UnknownType…`, `..._SameValue…` | r185/r186 | error catalog |
 | R8 | Формулы: CanAssignFormula, снятие, lookup, diff | `set_family_formula` | `AgentFamilyTextTests` (size_lookup) | `SetFormula_DryRun…`, `..._ApplyAndClear…`, `..._MissingLookupTable…`, `..._InvalidSyntax…`, `..._NonAssignable…` | r187/r188 | error catalog |
 | R9 | map source→target: scope/spec, formula/lookup, per-type | `map_family_parameters` | — | `MapValues_CopiesPerTypeAndIsIdempotent`, `..._ScopeMismatch`, `..._SpecMismatch`, `..._UnknownTarget`, `MapFormula_CopiesFormulaAndValues`, `..._TargetWithoutFormulaSupport` | r189/r190 | карточка |
-| R10 | Контракт ответа: changeSetId всегда при изменении, dry-run не пишет | base + все write | — | все write-тесты проверяют `changed/changeSetId/dryRun`; `AddParameter_DryRun…` (нет change set), `AddParameter_Apply…` (changeSetId + backup), `SetValues_ApplyPerType…` (readBack + changeSet) | eval schema 149/149 | error catalog §1 |
+| R10 | Контракт ответа: changeSetId всегда при изменении, dry-run не пишет | base + все write | — | `AddParameter_DryRun…` (нет change set), `AddParameter_Apply…` (changeSetId + backup + readBack), `SetValues_ApplyPerType…` (readBack + changeSet), `SetValues_PartialFailure_KeepsChangedAndChangeSet` (success=false + changed + changeSetId), `SetValues_AllFailed_RollsBackAndWritesNoChangeSet` (0 changed, нет change set) | eval schema 149/149 | error catalog §1 |
 | R11 | Lifecycle: EditFamily без редактора, backup, close, load-back | session/base | — | `FamilyTools_CloseFamilyDocumentOnSuccessAndFailure`, `AddParameter_Apply…` (backupPath существует), `..._Shared…` | eval replay | runbook |
-| R12 | Read-back после load-back, `read_back_mismatch` | `AgentFamilySession.VerifyReadBack` | — | `readBack.mismatched=0` в apply-тестах add/rename/values/formula/map | — | error catalog |
-| R13 | Undo family-операций | `UndoLastTool.Families.cs` | — | `UndoLast_RestoresFamilyFromBackup`, `..._DryRun_DoesNotRestore`, `..._MissingBackup_ReturnsBackupUnavailable` | — | HANDOFF |
+| R12 | Read-back после load-back, `read_back_mismatch` | `AgentFamilySession.VerifyReadBack` | — | `AddParameter_Apply…` явно проверяет `readBack.mismatched=0`; `readBack.verified` проверяют values/formula/map; ElementId/instance пропускаются с предупреждением | — | error catalog |
+| R13 | Undo family-операций | `UndoLastTool.Families.cs` | — | `UndoLast_AfterRename_RestoresOldName`, `..._AfterValueSet_RestoresOldValue`, `..._AfterFormulaChange_RestoresFormula`, `..._RestoresFamilyFromBackup` (precise plan), `..._LegacyBackup_RestoresFamily`, `..._PartialFamilyFailure_KeepsChangeSetApplied`, `..._DryRun_DoesNotRestore`, `..._MissingBackup_ReturnsBackupUnavailable` | — | HANDOFF |
 | R14 | Масштаб/память: 200×100, 5000 значений map | type-major map + cached read-back | — | `LargeFamily_ReadAndMap_StayWithinBudget` (p95-замеры в §4) | — | §4 |
 | R15 | Маршрутизация семейных интентов | cards+synonyms+examples | `AgentFamilyPackTests`, routing contract | — | 188 фраз (18 семейных), top1 97.3 %, top5 100 %, p95 1.93 мс | §6 |
-| R16 | execute_plan с family-тулами: dry-run/apply/read-back по шагам, steps[] | `AgentPlanExecutor` + base | — | `Plan_AddParameters_AppliesBothStepsAndReadsBack`, `Plan_DuplicateParameter_StopsBeforeApply` | — | §8 |
+| R16 | execute_plan с family-тулами: dry-run/apply/read-back по шагам, steps[] | `AgentPlanExecutor` + base | — | `Plan_AddParameters_AppliesBothStepsAndReadsBack`, `Plan_DuplicateParameter_AppliesFirstStepThenFails` | — | §8 |
 
 ## 3. Негативная матрица (32 кейса)
 
@@ -84,9 +84,9 @@ UI-сессии, обосновано); **M** — ручная проверка 
 | 28 | `workshared_not_supported` | workshared-модель | базовый guard `AgentWriteToolBase` | T (существующий сьют) |
 | 29 | `transaction_rolled_back` | исключение в транзакции | `SetFormula_InvalidSyntax…` (откат проверяется) | T |
 | 30 | `nothing_to_undo` | нечего откатывать | существующие undo-тесты | T (существующий сьют) |
-| 31 | `tool_failed` | непойманное исключение | `AddParameter_HugeName…` (контролируемый отказ), общий catch | T |
+| 31 | `tool_failed` | непойманное исключение | общий catch в base; контролируемые отказы (`invalid_value`) проверяются `AddParameter_HugeName…` | D/M |
 | 32 | `confirmation_required` | dryRun=false без подтверждения | базовый `AgentWriteToolBase` | T (существующий сьют) |
-| 33 | `plan_apply_failed` | сбой шага плана (не атомарно) | `Plan_DuplicateParameter_StopsBeforeApply` (шаг 1 применён, шаг 2 parameter_exists) | T |
+| 33 | `plan_apply_failed` | сбой шага плана (не атомарно) | `Plan_DuplicateParameter_AppliesFirstStepThenFails` (шаг 1 применён, шаг 2 parameter_exists) | T |
 
 Дополнительно (red-team): огромная строка имени (5000 символов) → `invalid_value`
 (`AddParameter_HugeName_IsRejectedGracefully`); локализованные русские имена
@@ -110,7 +110,8 @@ Type-major обход (одно переключение `CurrentType` на ти
 | Инъекция | Что проверено | Артефакт/статус |
 |---|---|---|
 | Исключение в середине транзакции (невалидная формула) | транзакция family-документа откатывается, формула не меняется, family-документ закрывается | `SetFormula_InvalidSyntax_ReturnsFormulaError` |
-| Dry-run | модель не меняется, change set не пишется, backup не создаётся | все `*_DryRun_*`, `AddParameter_DryRun…` |
+| Dry-run | модель не меняется, change set не пишется, backup не создаётся; shared-definition не создаётся | все `*_DryRun_*`, `AddParameter_DryRun…`, `AddParameter_DryRunShared_DoesNotCreateDefinition` |
+| All-failed / validation failure | транзакция откатывается, load-back не выполняется, модель и change set не меняются | `SetValues_AllFailed_RollsBackAndWritesNoChangeSet` |
 | Read-only `.rfa` | v1 редактирует только загруженные семейства; файловый поток — H1d-2 | D (вне scope) |
 | Отсутствующий `.rft` шаблон | тест корректно Skip, продукт не затронут | seed |
 | Повторный open той же family | headless Revit допускает несколько EditFamily-копий; конфликт — только с открытым UI-редактором | D/M |
@@ -137,10 +138,10 @@ Type-major обход (одно переключение `CurrentType` на ти
 
 | Гейт | Результат |
 |---|---|
-| Unit `SmartCon.Tests -c Debug.R25` | **3812/3812** |
-| Integration R25 (family pack) | **47/47** (read 12, write 23, map+undo 9, scale 1, plan 2) |
+| Unit `SmartCon.Tests -c Debug.R25` | **3813/3813** |
+| Integration R25 (family pack) | **56/56** (read 13, write 26, map+undo 14, scale 1, plan 2) |
 | Integration R25 (полный сьют) | см. HANDOFF (финальный прогон) |
-| Integration R27 net10 (family pack) | **45/45** (до добавления plan-тестов; финальный прогон — в HANDOFF) |
+| Integration R27 net10 (family pack) | **56/56** |
 | Integration net48 (Revit 2023, полный сьют) | **246 passed, 12 skipped, 0 failed** (Agent-тесты исключены из net48 по дизайну) |
 | Eval replay (`SMARTCON_AGENT_EVAL_REPLAY=1`) | **46/46**, schema **149/149**, unauthorized **0**, threshold violations **0** |
 | Release.R25 (анализаторы) | **0 errors, 0 warnings** |
@@ -161,7 +162,26 @@ Type-major обход (одно переключение `CurrentType` на ти
    восстановления.
 4. `family_open_conflict` воспроизводим только при открытом UI-редакторе
    семейства; headless EditFamily допускает несколько копий.
-5. Файловый поток (правка `.rfa` на диске, `OpenDocumentFile`) не входит в 9
+5. Если два загруженных семейства имеют одинаковое имя, project-snapshot
+   read-back индексирует типы по имени семейства и может прочитать тип соседнего
+   семейства; Revit-имена семейств в проекте уникальны на практике.
+6. Файловый поток (правка `.rfa` на диске, `OpenDocumentFile`) не входит в 9
    тулов этой сессии: `backup .bak-<timestamp>` создаётся рядом с исходным
    `.rfa`, если путь известен; иначе снимок в
    `%APPDATA%\SmartCon\Agent\family-backups`.
+7. `execute_plan` не атомарен (P0 B): при сбое шага N шаги 1..N−1 применены;
+   `steps[]` содержит честные статусы; `rollbackOnFailure` /
+   `ITransactionGroupSession` — stretch-очередь.
+8. После load-back Revit может выдать семейству новый ElementId: повторные
+   вызовы с прежним `familyId` получают `family_not_found` с подсказкой
+   «вызовите list_families или передайте familyName». В планах и долгих
+   диалогах предпочтительно `familyName`.
+9. Undo ищет параметры по имени+scope, а не по внутренней identity: если
+   параметр переименовали вручную между вызовом и undo, операция `add` может
+   не найти его (считается уже отменённой), а `rename` — сообщить
+   `family_undo_partial`. Для shared-параметров GUID сохраняется в плане, но
+   matching в v1 идёт по имени.
+10. Создание определения shared-параметра происходит в файле общих параметров
+    (вне family-транзакции и вне Revit undo). В dry-run определение не
+    создаётся; при реальном apply, если добавление параметра затем упадёт,
+    созданное определение останется в файле (безвредно и переиспользуемо).
