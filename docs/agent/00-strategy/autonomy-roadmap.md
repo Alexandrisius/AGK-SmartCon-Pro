@@ -43,6 +43,7 @@
 | Метрика — число тулов/паков; «95 % job» | truthfulness 100 %, per-item success ≥99.5 %, job terminal without human, false-done 0, rollback/resume/idempotency 100 % | Tool count не отражает полезность; 95 % на 500 items = 99.99 % per item |
 | Атомарность плана — «когда-нибудь» | Явная rollback matrix: change set на job/батч, `TransactionGroup` только на срез, family snapshot/backup+undo | Нельзя обещать атомарность там, где Revit её не даёт |
 | B (надёжность) после A | **A0 входит в A как предусловие**; B остаётся recovery/UX | Непроверенная запись × N элементов — недопустимый риск |
+| Resume «с последнего применённого элемента» | Resume **с последнего сохранённого** (`Document.Save`); иначе последний батч переделывается | В Revit изменения живут в памяти: без Save закрытие/краш теряет всё, а SQLite будет врать «done» |
 
 ## 4. Новый порядок эпиков
 
@@ -95,9 +96,12 @@
   "limits": {"sliceMs": 1500, "maxItemsPerSlice": 50, "maxWallClockMs": 86400000, "maxFailures": 20},
   "onError": "stop",
   "rollback": "on_error",
+  "savePolicy": {"mode": "after_each_batch", "intervalMinutes": 10},
   "preview": {"digest": "sha256...", "expiresAt": "..."}
 }
 ```
+
+- `savePolicy`: `after_each_batch` (default) | `every_n_minutes` | `never`. Для `never` job помечается `volatile`: прогресс не гарантирован, закрытие/краш теряет всё.
 
 - `selector` — frozen ids + count + hash; никаких «все элементы модели».
 - `mode`: `preview` | `apply`; apply принимает только preview с тем же digest, documentId и не истёкшим expiry.
@@ -111,8 +115,8 @@
 
 ### 5.3 Хранение (agent.db v4)
 
-- `jobs(id, document_id, spec_json, state, created_at, started_at, finished_at, cursor, totals_json, preview_digest, error)`
-- `job_batches(job_id, batch_index, state, started_at, finished_at, counts_json)`
+- `jobs(id, document_id, spec_json, state, created_at, started_at, finished_at, cursor, last_saved_cursor, last_saved_at, totals_json, preview_digest, error)`
+- `job_batches(job_id, batch_index, state, started_at, finished_at, saved_at, counts_json)`
 - `job_items(job_id, batch_index, item_id, status, attempts, error_code, before_json, expected_json, after_json, undo_json, verified)`
 - `job_events(job_id, seq, kind, payload_json, created_at)` — append-only лог для аудита и resume.
 
@@ -124,8 +128,9 @@
 - **Curated `IJobAction`, а не вызов произвольных тулов.** Action выполняется внутри уже открытого pump-колбэка (без `RaiseAsync`), сам пишет per-item change items и undo. Change set — на job/батч, а не на каждый элемент: иначе 500 change sets/undo-записей и таймауты по 30 с.
 - **Time-slice на `Execute` 1–2 с.** После каждого юнита проверяется время; бюджет исчерпан — выйти и снова `Raise()`. Никаких `Thread.Sleep`, `.Result`, `.Wait()`.
 - **Транзакция/`TransactionGroup` на срез** (один атомарный юнит); `Commit`/`Assimilate` проверяется по статусу. `TransactionGroup` не на весь job.
-- **Crash-окна:** intent (`expected`/undo) пишется в SQLite до изменения модели; после `Assimilate` и до записи статуса resume делает read-back по `expected_json` — совпало → `applied`, иначе повтор; после статуса — ничего.
-- **Family-юниты:** 1 семейство = `EditFamily` → правка копии → read-back → `LoadFamily`/save. До `LoadFamily` откат — `Close(false)`; после — это изменение проекта. Закрывать каждый family document; пачки 10–20, перезапуск Revit каждые ~100 (деградация после 32–100 открытий).
+- **Durability:** после батча — `Document.Save()` (по `savePolicy`), и только после успешного Save обновляется `last_saved_cursor`. `cursor` без Save — «сделано в памяти», не прогресс.
+- **Crash-окна:** intent (`expected`/undo) пишется в SQLite до изменения модели; после `Assimilate` и до записи статуса resume делает read-back по `expected_json` — совпало → `applied`, иначе повтор. После Save — durable; до Save — батч переделывается.
+- **Family-юниты:** 1 семейство = `EditFamily` → правка копии → read-back → `LoadFamily`/save. До `LoadFamily` откат — `Close(false)`; после — это изменение проекта. Закрывать каждый family document. Перезапуск Revit — **только если замеры показывают деградацию** (для пачки 50 открыть-изменить-загрузить-закрыть обычно не требуется; для тысяч в одной сессии — да).
 - **Исключения внутри `Execute` проглатываются Revit** — обязательный `try/catch/log`.
 - **`ExternalEvent` может висеть `Pending`** без фокуса/при модальном состоянии; watchdog: >5 с warn, >30 с stalled.
 - **Для >1000 `.rfa`/часовых прогонов** in-process недостаточен: внешний orchestrator (Revit Batch Processor pattern) или APS Design Automation — эпик A3.
@@ -154,9 +159,11 @@
 ### 5.7 Приёмка A
 
 - 500 project-элементов (значения/имена), батчи по 100–300, UI tick p95 ≤200 мс, p95 `Execute` ≤2 с.
-- 100 семейств за сессию: пачки 10–20, каждый family doc закрыт, память не растёт; 100+ — перезапуск Revit и resume.
+- 100 семейств за сессию: пачки 10–20, каждый family doc закрыт; перезапуск Revit — только если замеры памяти показывают деградацию.
 - Отмена на середине: terminal ≤2 с, применённые юниты откатаны при `rollbackOnError=true`.
-- kill -9 на середине: `resume` без дублей и потерь (read-back по expected).
+- kill -9 **после Save**: `resume` с `last_saved_cursor`, без дублей; потеря ≤1 батча.
+- kill -9 **до Save**: последний батч переделывается, `false-done` 0.
+- Save запрещён/не удался (read-only, workshared, отказ): job `volatile`, явное предупреждение, прогресс не гарантируется.
 - Повторный apply: no-op 100 %; смена документа в процессе — abort.
 - Failure injection: ошибка в 7-м элементе → честный отчёт + rollback/continue.
 - Workshared-документ: preflight-отказ или отдельный сценарий, не молчаливая запись.
@@ -200,7 +207,8 @@
 | Job terminal without human | ≥95 % |
 | Zero-intervention (сверх batch-approval) | ≥80 % job'ов |
 | Rollback correctness (20 injections) | 100 % |
-| Resume correctness (10 kill -9) | 100 % |
+| Resume correctness (10 kill -9) | 100 % с последнего Save |
+| Потеря работы при kill -9 | ≤1 батч |
 | Idempotency (повторный apply → no-op) | 100 % |
 | False-done / scope violations | 0 / 0 |
 | p95 `ExternalEvent.Execute` / UI tick | ≤2 с / ≤200 мс |
@@ -248,5 +256,6 @@
 3. Time-sliced pump 1–2 с вместо batchSize 20 / 120 с; отдельный `IExternalEventHandler`, не общий `ProcessQueue`.
 4. Frozen preview envelope (count+sample+selectorHash+documentId+expectedHash+expiry).
 5. Метрики: truthfulness, per-item success, false-done, pass^3, LLM calls ≤3 — вместо «95 % job».
+6. **Durability = `Document.Save`**, а не «тул отработал»: cursor обновляется только после Save; resume — с последнего сохранённого, иначе последний батч переделывается. Для `savePolicy=never` job `volatile`.
 6. C split: C1 selectors сейчас, C2 search только по гейту; vector последним.
 7. E сужен до approvals + job recipes; память/skills — после A–E по метрике (selective memory помогает на трудных и вредит на лёгких).

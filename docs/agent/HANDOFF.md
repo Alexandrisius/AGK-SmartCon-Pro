@@ -16,6 +16,7 @@ C1 resolve_entities → D breadth → C2 search (по гейту) → E approval
 - **Time-sliced pump 1–2 с** на отдельном `ExternalEventHandler`; `ExternalEvent` блокирует UI; для >1000 `.rfa` — внешний orchestrator (A3).
 - **Frozen preview**: count+sample+selectorHash+documentId+expectedHash+expiry.
 - Метрики: truthfulness 100 %, per-item ≥99.5 %, false-done 0, resume/idempotency 100 %, LLM calls ≤3.
+- **Durability = `Document.Save`**: cursor обновляется только после успешного Save; resume — с последнего сохранённого; kill до Save переделывает последний батч, `savePolicy=never` → job `volatile`.
 - C1/C2 split: selectors сейчас, search только по гейту; vector последним.
 
 ## ⚡ Открытые хвосты стресс-теста harness (2026-11-19)
