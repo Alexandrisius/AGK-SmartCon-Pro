@@ -324,7 +324,9 @@ public sealed partial class AgentOrchestrator
                     Messages = messages,
                     Tools = definitions,
                     Temperature = _settings.Temperature,
-                    MaxOutputTokens = _settings.MaxOutputTokens
+                    MaxOutputTokens = _settings.MaxOutputTokens,
+                    ConversationId = conversationId,
+                    CacheKey = conversationId.ToString("N")
                 };
 
                 AgentChatResponse? completion = null;

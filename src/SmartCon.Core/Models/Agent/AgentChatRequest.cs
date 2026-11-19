@@ -11,6 +11,19 @@ public sealed class AgentChatRequest
     public double? Temperature { get; init; }
 
     public int? MaxOutputTokens { get; init; }
+
+    /// <summary>
+    /// Conversation this request belongs to. Drives the per-request session
+    /// header and the default cache key, so a dialogue keeps one provider cache
+    /// namespace (P.5).
+    /// </summary>
+    public Guid? ConversationId { get; init; }
+
+    /// <summary>Explicit cache key; defaults to <see cref="ConversationId"/>.</summary>
+    public string? CacheKey { get; init; }
+
+    /// <summary>Extra top-level request fields for the provider, merged last.</summary>
+    public IReadOnlyDictionary<string, object?>? ProviderOptions { get; init; }
 }
 
 public sealed class AgentUsage
