@@ -5,6 +5,7 @@ public sealed class AgentLlmSettings
     public const string DefaultOpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     public const string DefaultOpenCodeGoBaseUrl = "https://opencode.ai/inference/go/openai/v1";
     public const string DefaultModel = "deepseek/deepseek-v4.1-flash-1017";
+    public const string DefaultOpenCodeGoModel = "deepseek-v4.1-flash";
 
     public string Provider { get; set; } = "openrouter";
 
@@ -58,6 +59,9 @@ public sealed class AgentLlmSettings
         string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, "opencode", StringComparison.OrdinalIgnoreCase);
 
+    public static string DefaultModelFor(string? provider) =>
+        IsOpenCodeGoProvider(provider) ? DefaultOpenCodeGoModel : DefaultModel;
+
     public bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey);
 
     public static AgentLlmSettings Load()
@@ -79,7 +83,7 @@ public sealed class AgentLlmSettings
         return new AgentLlmSettings
         {
             Provider = provider,
-            Model = Get(values, "SMARTCON_LLM_MODEL") ?? DefaultModel,
+            Model = Get(values, "SMARTCON_LLM_MODEL") ?? DefaultModelFor(provider),
             BaseUrl = baseUrl.TrimEnd('/'),
             ApiKey = apiKey,
             Temperature = ParseDouble(Get(values, "SMARTCON_LLM_TEMPERATURE"), 0.2),
@@ -115,8 +119,10 @@ public sealed class AgentLlmSettings
         var providerChanged = !string.Equals(Provider, targetProvider, StringComparison.OrdinalIgnoreCase);
 
         Provider = targetProvider;
-        Model = string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim();
-        BaseUrl = IsOpenCodeGo ? DefaultOpenCodeGoBaseUrl : DefaultOpenRouterBaseUrl;
+        Model = string.IsNullOrWhiteSpace(model) ? DefaultModelFor(targetProvider) : model.Trim();
+
+        if (providerChanged || string.IsNullOrWhiteSpace(BaseUrl))
+            BaseUrl = IsOpenCodeGo ? DefaultOpenCodeGoBaseUrl : DefaultOpenRouterBaseUrl;
 
         if (!string.IsNullOrWhiteSpace(apiKey))
         {

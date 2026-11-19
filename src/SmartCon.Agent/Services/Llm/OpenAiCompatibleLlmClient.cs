@@ -16,7 +16,8 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
     private const int MaxAttempts = 3;
 
     private readonly AgentLlmSettings _settings;
-    private readonly string? _openCodeSession;
+    private readonly string _openCodeSession;
+    private readonly string _userAgent;
     private readonly HttpClient _http;
 
     public OpenAiCompatibleLlmClient(AgentLlmSettings settings, HttpMessageHandler? handler = null)
@@ -24,7 +25,9 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = TimeSpan.FromSeconds(Math.Max(10, settings.TimeoutSeconds));
-        _openCodeSession = settings.IsOpenCodeGo ? Guid.NewGuid().ToString("N") : null;
+        _openCodeSession = "ses_" + Guid.NewGuid().ToString("N");
+        _userAgent = "SmartCon-Agent/" +
+            (typeof(OpenAiCompatibleLlmClient).Assembly.GetName().Version?.ToString(3) ?? "1.0");
     }
 
     public string ProviderName => _settings.Provider;
@@ -134,7 +137,8 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey);
             httpRequest.Headers.TryAddWithoutValidation("X-Title", "SmartCon");
-            if (_openCodeSession is not null)
+            httpRequest.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
+            if (_settings.IsOpenCodeGo)
                 httpRequest.Headers.TryAddWithoutValidation("x-opencode-session", _openCodeSession);
             httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
@@ -153,7 +157,8 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
                 var retryAfter = GetRetryAfter(response);
                 response.Dispose();
 
-                var message = "LLM request failed: HTTP " + status + ": " + Truncate(body, 800);
+                var message = "LLM request failed: HTTP " + status + ": " + Truncate(body, 800) +
+                    BuildFailureHint(status, body);
                 if (!IsTransient(statusCode) || attempt == MaxAttempts - 1)
                     throw new AgentLlmException(message, status);
 
@@ -189,6 +194,20 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
             "LLM request failed after retries: " + (lastError?.Message ?? "unknown error"),
             null,
             lastError);
+    }
+
+    private string BuildFailureHint(int status, string body)
+    {
+        if (status == 400 && body.IndexOf("MissingSessionID", StringComparison.Ordinal) >= 0)
+        {
+            return " [Action: OpenCode Go требует заголовок x-opencode-session — " +
+                "перезапустите Revit, чтобы клиент пересоздал сессию]";
+        }
+
+        if (status == 401 || status == 403)
+            return " [Action: проверьте API-ключ провайдера " + _settings.Provider + "]";
+
+        return string.Empty;
     }
 
     private static bool IsTransient(HttpStatusCode statusCode)

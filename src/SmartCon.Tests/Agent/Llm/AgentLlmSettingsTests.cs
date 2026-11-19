@@ -79,6 +79,51 @@ public sealed class AgentLlmSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Apply_ProviderSwitchWithBlankModel_UsesTargetProviderDefault()
+    {
+        AgentLlmSettings.StoredKeyProvider = _ => null;
+        var settings = new AgentLlmSettings
+        {
+            Provider = "openrouter",
+            ApiKey = "sk-or-current"
+        };
+
+        settings.Apply("opencode-go", "   ", string.Empty);
+
+        Assert.Equal(AgentLlmSettings.DefaultOpenCodeGoModel, settings.Model);
+    }
+
+    [Fact]
+    public void Apply_ProviderSwitchWithTypedModel_KeepsTypedName()
+    {
+        AgentLlmSettings.StoredKeyProvider = _ => null;
+        var settings = new AgentLlmSettings
+        {
+            Provider = "openrouter",
+            ApiKey = "sk-or-current"
+        };
+
+        settings.Apply("opencode-go", "qwen4-max", string.Empty);
+
+        Assert.Equal("qwen4-max", settings.Model);
+    }
+
+    [Fact]
+    public void Apply_SameProviderWithCustomBaseUrl_KeepsBaseUrl()
+    {
+        var settings = new AgentLlmSettings
+        {
+            Provider = "openrouter",
+            ApiKey = "sk-or-current",
+            BaseUrl = "https://proxy.local/v1"
+        };
+
+        settings.Apply("openrouter", "new-model", string.Empty);
+
+        Assert.Equal("https://proxy.local/v1", settings.BaseUrl);
+    }
+
+    [Fact]
     public void SummarySettings_HaveCompactionDefaults()
     {
         var settings = new AgentLlmSettings();
