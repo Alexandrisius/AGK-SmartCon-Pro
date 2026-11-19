@@ -6,6 +6,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services.Storage;
 using SmartCon.Core.Compatibility;
 
 using static SmartCon.Core.Units;
@@ -69,16 +70,23 @@ public sealed class PipeConnectSessionBuilder(
         // ── S1.1: Dynamic connector type ─────────────────────────────────────
         if (!IsKnownTypeDefinition(dynamicProxy))
         {
-            var result = EnsureTypeCode(doc, dynamicProxy, virtualCtcStore);
-            if (result is null) return null;
-            dynamicProxy = connectorSvc.GetNearestFreeConnector(
-                doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
-            dynamicProxy = dynamicProxy with
+            if (ShouldPromptForConnectorType())
             {
-                ConnectionTypeCode = new ConnectionTypeCode(result.Code),
-                ConnectionName = result.Name,
-                ConnectionDescription = result.Description,
-            };
+                var result = EnsureTypeCode(doc, dynamicProxy, virtualCtcStore);
+                if (result is null) return null;
+                dynamicProxy = connectorSvc.GetNearestFreeConnector(
+                    doc, dynamicProxy.OwnerElementId, dynamicProxy.Origin) ?? dynamicProxy;
+                dynamicProxy = dynamicProxy with
+                {
+                    ConnectionTypeCode = new ConnectionTypeCode(result.Code),
+                    ConnectionName = result.Name,
+                    ConnectionDescription = result.Description,
+                };
+            }
+            else
+            {
+                dynamicProxy = ApplyImplicitStandardType(dynamicProxy);
+            }
         }
 
         // ── S2: Static element ───────────────────────────────────────────────
@@ -98,16 +106,23 @@ public sealed class PipeConnectSessionBuilder(
         // ── S2.1: Static connector type ──────────────────────────────────────
         if (!IsKnownTypeDefinition(staticProxy))
         {
-            var result = EnsureTypeCode(doc, staticProxy, virtualCtcStore);
-            if (result is null) return null;
-            staticProxy = connectorSvc.GetNearestFreeConnector(
-                doc, staticProxy.OwnerElementId, staticProxy.Origin) ?? staticProxy;
-            staticProxy = staticProxy with
+            if (ShouldPromptForConnectorType())
             {
-                ConnectionTypeCode = new ConnectionTypeCode(result.Code),
-                ConnectionName = result.Name,
-                ConnectionDescription = result.Description,
-            };
+                var result = EnsureTypeCode(doc, staticProxy, virtualCtcStore);
+                if (result is null) return null;
+                staticProxy = connectorSvc.GetNearestFreeConnector(
+                    doc, staticProxy.OwnerElementId, staticProxy.Origin) ?? staticProxy;
+                staticProxy = staticProxy with
+                {
+                    ConnectionTypeCode = new ConnectionTypeCode(result.Code),
+                    ConnectionName = result.Name,
+                    ConnectionDescription = result.Description,
+                };
+            }
+            else
+            {
+                staticProxy = ApplyImplicitStandardType(staticProxy);
+            }
         }
 
         // ── S3: alignment (pure math) ────────────────────────────────────────
@@ -166,6 +181,33 @@ public sealed class PipeConnectSessionBuilder(
     {
         var parsed = ConnectorDescription.FromProxy(proxy);
         return ConnectorDescription.IsKnownTypeDefinition(parsed, mappingRepo.GetConnectorTypes());
+    }
+
+    /// <summary>
+    /// True when the mapping has user-configured types or fitting/reducer families,
+    /// i.e. the connector type choice can actually change the fitting selection.
+    /// With the out-of-the-box mapping there is nothing to choose and nothing to
+    /// write into the model — the connection is direct.
+    /// </summary>
+    private bool ShouldPromptForConnectorType()
+        => !MappingDefaults.IsUnconfigured(
+            mappingRepo.GetConnectorTypes(),
+            mappingRepo.GetMappingRules());
+
+    /// <summary>
+    /// In-memory standard type for an undefined connector. Never persisted: the
+    /// pipe type "Описание" parameter and family connector descriptions stay untouched.
+    /// </summary>
+    private static ConnectorProxy ApplyImplicitStandardType(ConnectorProxy proxy)
+    {
+        if (proxy.ConnectionTypeCode.IsDefined) return proxy;
+
+        return proxy with
+        {
+            ConnectionTypeCode = new ConnectionTypeCode(MappingDefaults.StandardTypeCode),
+            ConnectionName = MappingDefaults.StandardTypeName,
+            ConnectionDescription = string.Empty,
+        };
     }
 
     private ConnectorTypeDefinition? EnsureTypeCode(

@@ -7,6 +7,7 @@ using SmartCon.Core.Math;
 using SmartCon.Core.Models;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services.Storage;
 using SmartCon.PipeConnect.Services;
 
 namespace SmartCon.PipeConnect.ViewModels;
@@ -206,6 +207,13 @@ public sealed partial class PipeConnectEditorViewModel
     {
         var effectiveCtc = GetEffectiveCtcForConnector(proxy);
         if (IsKnownTypeCode(effectiveCtc))
+            return true;
+
+        // Out-of-the-box mapping: the type choice cannot change the result (no fitting
+        // families), so do not prompt and do not write CTC into the model.
+        if (MappingDefaults.IsUnconfigured(
+                _mappingRepo.GetConnectorTypes(),
+                _mappingRepo.GetMappingRules()))
             return true;
 
         var types = _mappingRepo.GetConnectorTypes();

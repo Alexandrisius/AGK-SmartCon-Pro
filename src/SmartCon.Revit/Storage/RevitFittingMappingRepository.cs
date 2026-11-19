@@ -93,23 +93,27 @@ public sealed class RevitFittingMappingRepository : IFittingMappingRepository
         {
             var schema = FittingMappingSchema.GetOrCreate();
             var storage = FindDataStorage(doc, schema);
-            if (storage is null) return MappingPayload.Empty;
+            if (storage is null) return MappingDefaults.CreatePayload();
 
             using var entity = storage.GetEntity(schema);
-            if (!entity.IsValid()) return MappingPayload.Empty;
+            if (!entity.IsValid()) return MappingDefaults.CreatePayload();
 
             var payloadJson = entity.Get<string>(FittingMappingSchema.FieldPayload);
-            return FittingMappingJsonSerializer.Deserialize(payloadJson);
+            var payload = FittingMappingJsonSerializer.Deserialize(payloadJson);
+
+            return payload.ConnectorTypes.Count == 0
+                ? MappingDefaults.CreatePayload()
+                : payload;
         }
         catch (System.Text.Json.JsonException ex)
         {
-            SmartConLogger.Error($"Mapping.LoadPayload: Corrupted payload: {ex.Message}. Returning empty payload.");
-            return MappingPayload.Empty;
+            SmartConLogger.Error($"Mapping.LoadPayload: Corrupted payload: {ex.Message}. Returning default payload.");
+            return MappingDefaults.CreatePayload();
         }
         catch (Exception ex)
         {
-            SmartConLogger.Error($"Mapping.LoadPayload: failed: {ex.GetType().Name}: {ex.Message}");
-            return MappingPayload.Empty;
+            SmartConLogger.Error($"Mapping.LoadPayload: failed: {ex.GetType().Name}: {ex.Message}. Returning default payload.");
+            return MappingDefaults.CreatePayload();
         }
     }
 
