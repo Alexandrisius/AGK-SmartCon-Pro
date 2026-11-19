@@ -56,6 +56,12 @@
     <!-- Временно подавить MSB3277 для первой net48-сборки, затем изучить и убрать -->
     <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
     <NoWarn>$(NoWarn);CA1001;CA1010;CA1305;CA1310;CA1707;CA1711;CA1716;CA1805;CA1822;CA1851;CA1852;CA1854;CA1859;CA1860;CA1861;CA1862;CA1866;CA1869</NoWarn>
+    <!-- CA1510/CA1845/CA1846/CA1850/CA1865/CA2249 suggest .NET 8+ APIs
+         (ArgumentNullException.ThrowIfNull, string.Contains(char/StringComparison),
+         Concat(ReadOnlySpan...), SHA256.HashData, EndsWith(char)); the same sources
+         must compile for net48 (Revit 2019-2024), where those APIs do not exist,
+         so the analyzer suggestions cannot be applied project-wide. -->
+    <NoWarn>$(NoWarn);CA1510;CA1845;CA1846;CA1850;CA1865;CA2249</NoWarn>
 
     <!-- Central Package Management: allow PackageVersion entries in Directory.Packages.props to
          override transitive dependencies declared in nested package metadata (e.g. Microsoft.Data.Sqlite

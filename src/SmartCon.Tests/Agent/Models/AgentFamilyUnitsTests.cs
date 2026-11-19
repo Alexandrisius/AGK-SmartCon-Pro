@@ -127,11 +127,11 @@ public sealed class AgentFamilyUnitsTests
     public void Integer_IsParsedAndFractionRejected()
     {
         Assert.True(AgentFamilyUnits.TryConvert(
-            AgentFamilyValueKind.Integer, "-3", null, out var value, out _, out _));
+            AgentFamilyValueKind.WholeNumber, "-3", null, out var value, out _, out _));
         Assert.Equal(-3, value.IntegerValue);
 
         Assert.False(AgentFamilyUnits.TryConvert(
-            AgentFamilyValueKind.Integer, "4.5", null, out _, out var errorCode, out _));
+            AgentFamilyValueKind.WholeNumber, "4.5", null, out _, out var errorCode, out _));
         Assert.Equal("invalid_value", errorCode);
     }
 

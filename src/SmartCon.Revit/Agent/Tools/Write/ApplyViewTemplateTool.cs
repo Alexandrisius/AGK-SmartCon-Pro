@@ -34,11 +34,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
     };
 
     protected override PlanPreflightResult PreflightCore(
-        Document doc,
+        Document document,
         JsonElement args,
         CancellationToken ct)
     {
-        var basic = base.PreflightCore(doc, args, ct);
+        var basic = base.PreflightCore(document, args, ct);
         if (!basic.Ok)
             return basic;
 
@@ -50,11 +50,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         {
             ct.ThrowIfCancellationRequested();
 
-            if (doc.GetElement(ElementIdCompat.Create(item.ViewId)) is not View view)
+            if (document.GetElement(ElementIdCompat.Create(item.ViewId)) is not View view)
                 return PlanPreflightResult.Fail(
                     "unresolved_id", "View " + item.ViewId + " does not exist.");
 
-            if (doc.GetElement(ElementIdCompat.Create(item.TemplateId)) is not View template
+            if (document.GetElement(ElementIdCompat.Create(item.TemplateId)) is not View template
                 || !template.IsTemplate)
             {
                 return PlanPreflightResult.Fail(
@@ -62,7 +62,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                     "Element " + item.TemplateId + " is not a view template.");
             }
 
-            if (!AgentViewWriteHelper.AreFamiliesCompatible(doc, view, template))
+            if (!AgentViewWriteHelper.AreFamiliesCompatible(document, view, template))
             {
                 return PlanPreflightResult.Fail(
                     "template_not_applicable",

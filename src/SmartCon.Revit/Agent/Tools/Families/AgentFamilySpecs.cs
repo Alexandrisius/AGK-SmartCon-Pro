@@ -66,7 +66,7 @@ internal static class AgentFamilySpecs
             case "целое":
             case "целочисленный":
                 spec = SpecTypeId.Int.Integer;
-                kind = AgentFamilyValueKind.Integer;
+                kind = AgentFamilyValueKind.WholeNumber;
                 return true;
             case "angle":
             case "угол":
@@ -129,7 +129,7 @@ internal static class AgentFamilySpecs
             if (SpecTypeId.Boolean.YesNo.Equals(spec))
                 return AgentFamilyValueKind.YesNo;
             if (SpecTypeId.Int.Integer.Equals(spec))
-                return AgentFamilyValueKind.Integer;
+                return AgentFamilyValueKind.WholeNumber;
             if (SpecTypeId.String.Text.Equals(spec))
                 return AgentFamilyValueKind.Text;
             if (SpecTypeId.Reference.Material.Equals(spec))
@@ -139,7 +139,7 @@ internal static class AgentFamilySpecs
         return storageType switch
         {
             StorageType.Double => AgentFamilyValueKind.Number,
-            StorageType.Integer => AgentFamilyValueKind.Integer,
+            StorageType.Integer => AgentFamilyValueKind.WholeNumber,
             StorageType.String => AgentFamilyValueKind.Text,
             StorageType.ElementId => AgentFamilyValueKind.ElementId,
             _ => AgentFamilyValueKind.Number

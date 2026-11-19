@@ -12,7 +12,7 @@ public enum AgentFamilyValueKind
     Angle = 2,
     Area = 3,
     Volume = 4,
-    Integer = 5,
+    WholeNumber = 5,
     Text = 6,
     YesNo = 7,
     ElementId = 8
@@ -110,7 +110,7 @@ public static class AgentFamilyUnits
                 };
                 return true;
 
-            case AgentFamilyValueKind.Integer:
+            case AgentFamilyValueKind.WholeNumber:
                 if (normalizedUnit != null)
                 {
                     errorCode = "invalid_value";
@@ -281,7 +281,7 @@ public static class AgentFamilyUnits
         if (string.IsNullOrWhiteSpace(unit))
             return null;
 
-        var normalized = unit.Trim().ToLowerInvariant();
+        var normalized = unit!.Trim().ToLowerInvariant();
         if (normalized.Length == 0)
             return null;
 

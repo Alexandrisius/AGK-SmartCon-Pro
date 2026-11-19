@@ -446,7 +446,7 @@ internal static class AgentFamilyValues
                 or AgentFamilyValueKind.Length or AgentFamilyValueKind.Angle
                 or AgentFamilyValueKind.Area or AgentFamilyValueKind.Volume
                 => StorageType.Double,
-            AgentFamilyValueKind.Integer or AgentFamilyValueKind.YesNo => StorageType.Integer,
+            AgentFamilyValueKind.WholeNumber or AgentFamilyValueKind.YesNo => StorageType.Integer,
             AgentFamilyValueKind.Text => StorageType.String,
             _ => StorageType.ElementId
         },

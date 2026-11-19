@@ -70,7 +70,11 @@ public sealed class HttpDecisionClient : IAgentDecisionClient, IDisposable
         request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + _settings.ApiKey);
 
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+#if NET8_0_OR_GREATER
+        var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+#else
         var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
