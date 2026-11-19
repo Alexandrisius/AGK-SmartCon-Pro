@@ -44,7 +44,8 @@ internal static class AgentFamilyReader
 
             errorCode = "family_not_found";
             message = "Family element " + familyId.Value + " does not exist in the project. " +
-                      "Use list_families to get valid familyId values.";
+                      "Revit may assign a new familyId after a family edit (load-back): call " +
+                      "list_families again, or pass familyName instead of familyId.";
             return null;
         }
 

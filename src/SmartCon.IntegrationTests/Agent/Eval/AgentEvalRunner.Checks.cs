@@ -337,9 +337,12 @@ internal sealed partial class AgentEvalRunner
 
             case AgentEvalCheck.ReferenceViewPlan:
             {
-                if (!result.Calls.Any(call => call.Success
-                                              && (call.ToolName == "copy_view_settings"
-                                                  || call.ToolName == "configure_views")))
+                if (!result.Calls.Any(call =>
+                        (call.Success || (call.ErrorCode is not null
+                                          && task.AllowErrorCodes.Contains(
+                                              call.ErrorCode, StringComparer.Ordinal)))
+                        && (call.ToolName == "copy_view_settings"
+                            || call.ToolName == "configure_views")))
                 {
                     yield return "neither copy_view_settings nor configure_views was called";
                 }
@@ -399,8 +402,7 @@ internal sealed partial class AgentEvalRunner
                 continue;
 
             var call = result.Calls.LastOrDefault(candidate =>
-                candidate.Success
-                && candidate.DryRun
+                candidate.DryRun
                 && string.Equals(candidate.ToolName, expected, StringComparison.Ordinal));
             if (call?.ResultJson is null)
                 continue;

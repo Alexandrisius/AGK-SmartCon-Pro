@@ -145,7 +145,18 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                 // the model — they must be recorded so undo_last can revert them.
                 if (applied.Count > 0)
                 {
+                    var appliedReport = new WriteItemReport
+                    {
+                        Id = report.Id,
+                        Name = report.Name,
+                        Detail = "partial: applied " +
+                                 string.Join(", ", applied.Select(entry => entry.Key)),
+                        OldValue = string.Join(" | ", applied.Select(entry => entry.Change.OldValue)),
+                        NewValue = string.Join(" | ", applied.Select(entry => entry.Change.NewValue))
+                    };
+
                     AddChangeItems(outcome, view, applied);
+                    outcome.Batch.Changed.Add(appliedReport);
                     outcome.AffectedCount++;
                     report.Detail = "partial: applied " + string.Join(", ", applied.Select(entry => entry.Key));
                     outcome.Warnings.Add(

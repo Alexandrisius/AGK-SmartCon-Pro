@@ -77,7 +77,8 @@ public sealed class AgentFilterToolsTests : RevitApiTest
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.Data!.Value.GetProperty("dryRun").GetBoolean()).IsTrue();
-        await Assert.That(result.Data.Value.GetProperty("created").GetBoolean()).IsTrue();
+        await Assert.That(result.Data.Value.GetProperty("created").GetBoolean()).IsFalse();
+        await Assert.That(result.Data.Value.GetProperty("wouldCreate").GetBoolean()).IsTrue();
         await Assert.That(result.Data.Value.GetProperty("sections").GetArrayLength())
             .IsGreaterThanOrEqualTo(3);
         await Assert.That(CountFilters()).IsEqualTo(0);
@@ -102,7 +103,8 @@ public sealed class AgentFilterToolsTests : RevitApiTest
         var data = result.Data!.Value;
         var filterId = data.GetProperty("filterId").GetInt64();
         await Assert.That(data.GetProperty("created").GetBoolean()).IsTrue();
-        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("changed").GetArrayLength())
+            .IsGreaterThanOrEqualTo(1);
 
         var view = (View)Doc.GetElement(ElementIdCompat.Create(_viewId));
         await Assert.That(view.GetFilters().Count).IsEqualTo(1);

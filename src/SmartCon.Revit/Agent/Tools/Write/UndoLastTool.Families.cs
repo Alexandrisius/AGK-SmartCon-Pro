@@ -138,7 +138,7 @@ public sealed partial class UndoLastTool
                     }
                     else if (!string.IsNullOrEmpty(problem))
                     {
-                        problems.Add(problem);
+                        problems.Add(problem!);
                     }
                 }
 

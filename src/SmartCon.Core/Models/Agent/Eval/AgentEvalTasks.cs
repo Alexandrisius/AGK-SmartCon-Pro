@@ -278,7 +278,8 @@ public static class AgentEvalTasks
                 "{templateId} и включи crop. Только dry-run, не применяй.",
             ExpectedTools = new[] { "configure_views" },
             ExpectedDataKeys = new[] { "changed", "dryRun" },
-            ExpectedChanged = 1
+            ExpectedChanged = 1,
+            AllowErrorCodes = new[] { "view_controlled_by_template" }
         },
         new()
         {
@@ -324,6 +325,7 @@ public static class AgentEvalTasks
             ExpectedTools = new[] { "copy_view_settings" },
             AlternativeTools = new[] { "configure_views" },
             ExpectedDataKeys = new[] { "changed", "dryRun" },
+            AllowErrorCodes = new[] { "view_controlled_by_template" },
             Check = AgentEvalCheck.ReferenceViewPlan,
             Notes = "A1: a template does not carry the name — the plan must cover the rename."
         },

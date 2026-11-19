@@ -218,6 +218,8 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         report.ErrorCode = errorCode;
         report.Reason = reason;
         outcome.Batch.Failed.Add(report);
+        outcome.Success = false;
+        outcome.ErrorCode ??= errorCode;
     }
 
     internal static bool Abort(WriteOutcome outcome, bool atomic)

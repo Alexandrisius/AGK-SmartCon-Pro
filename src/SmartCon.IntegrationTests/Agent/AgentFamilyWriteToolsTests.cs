@@ -403,6 +403,25 @@ public sealed class AgentFamilyWriteToolsTests : RevitApiTest
         await Assert.That(
             result.ErrorCode == "invalid_formula" ||
             result.ErrorCode == "formula_not_allowed").IsTrue();
+
+        var parameter = FindParameterOrNull(await ReadParameters(), "Размер");
+        await Assert.That(parameter).IsNotNull();
+        await Assert.That(
+            parameter!.Value.TryGetProperty("formula", out var currentFormula)).IsFalse();
+    }
+
+    [Test]
+    public async Task AddParameter_HugeName_IsRejectedGracefully()
+    {
+        var hugeName = new string('X', 5000);
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"" + hugeName + "\"," +
+            "\"storageType\":\"text\",\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsNotNull();
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
     }
 
     [Test]

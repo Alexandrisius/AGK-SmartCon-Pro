@@ -51,6 +51,15 @@ public sealed class RenameFamilyParameterTool : AgentFamilyWriteToolBase
         }
 
         var newName = request.NewName!.Trim();
+        if (newName.Length > 255)
+        {
+            Fail(
+                outcome,
+                "invalid_value",
+                "The new name is " + newName.Length + " characters long; parameter names " +
+                "are limited to 255 characters.");
+            return;
+        }
         var parameter = AgentFamilyReader.FindParameter(
             manager,
             request.Parameter,

@@ -16,6 +16,7 @@ namespace SmartCon.Revit.Agent.Tools.Families;
 public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
 {
     private const int MaxExistenceChecks = 20;
+    private const int MaxNameLength = 255;
 
     public AddFamilyParameterTool(
         IRevitContext revitContext,
@@ -56,6 +57,16 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         }
 
         var name = request.Name!.Trim();
+        if (name.Length > MaxNameLength)
+        {
+            Fail(
+                outcome,
+                "invalid_value",
+                "The parameter name is " + name.Length + " characters long; names are " +
+                "limited to " + MaxNameLength + " characters.");
+            return;
+        }
+
         if (!AgentFamilySpecs.TryResolveSpec(
                 request.StorageType,
                 out var spec,

@@ -490,7 +490,7 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
         var failed = result.Data!.Value.GetProperty("failed");
         await Assert.That(failed.GetArrayLength()).IsEqualTo(1);
         await Assert.That(failed[0].GetProperty("errorCode").GetString())
-            .IsEqualTo("template_not_applicable");
+            .IsEqualTo("template_view_type_mismatch");
         await Assert.That(GetView(_targetId).ViewTemplateId)
             .IsEqualTo(ElementId.InvalidElementId);
     }
