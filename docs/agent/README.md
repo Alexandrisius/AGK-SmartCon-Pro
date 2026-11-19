@@ -33,6 +33,8 @@
 | [`00-strategy/harness-ideal-plan.md`](00-strategy/harness-ideal-plan.md) | Долгосрочная стратегия: gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики |
 | [`00-strategy/harness-development-approach.md`](00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики |
 | [`00-strategy/autonomy-roadmap.md`](00-strategy/autonomy-roadmap.md) | **Актуальный план:** job engine → надёжность → targeted search → breadth → memory; порядок, дизайн и метрики |
+| [`00-strategy/task-family-batch-v1.md`](00-strategy/task-family-batch-v1.md) | **Задача сейчас:** `run_family_batch` — пачки семейств, preview/apply/Save/rollback |
+| [`00-strategy/night-run-3.md`](00-strategy/night-run-3.md) | Ночной прогон 12 ч: A0 → job core → A1 → A2 → B/C1 |
 | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) | **H1d**: матрица requirement→artifact, негативная матрица, масштаб, гейты |
 | [`family-tools-error-catalog.md`](family-tools-error-catalog.md) | Каталог ошибок и контракт ответа family-тулов |
 | [`family-editing-runbook.md`](family-editing-runbook.md) | Ручная приёмка family editing pack (чек-лист, pending UI) |
