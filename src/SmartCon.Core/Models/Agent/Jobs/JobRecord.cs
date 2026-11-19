@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Models.Agent.Jobs;
+﻿namespace SmartCon.Core.Models.Agent.Jobs;
 
 /// <summary>Persisted per-unit row.</summary>
 public sealed class JobItem
@@ -81,6 +81,9 @@ public sealed class JobTotals
 
     public int Pending { get; init; }
 
+    /// <summary>Units still in flight (Pending/Applying/Undoing): a job with these is not finished.</summary>
+    public int Incomplete { get; init; }
+
     public static JobTotals FromItems(IReadOnlyList<JobItem> items)
     {
         var totals = new JobTotals { Total = items.Count };
@@ -93,6 +96,7 @@ public sealed class JobTotals
         var undone = 0;
         var undoFailed = 0;
         var pending = 0;
+        var incomplete = 0;
 
         foreach (var item in items)
         {
@@ -107,12 +111,14 @@ public sealed class JobTotals
             {
                 case JobItemState.Pending:
                     pending++;
+                    incomplete++;
                     break;
                 case JobItemState.Previewed:
                     willChange++;
                     break;
                 case JobItemState.Applying:
                     willChange++;
+                    incomplete++;
                     break;
                 case JobItemState.Done:
                     willChange++;
@@ -147,7 +153,8 @@ public sealed class JobTotals
             Mismatch = mismatch,
             Undone = undone,
             UndoFailed = undoFailed,
-            Pending = pending
+            Pending = pending,
+            Incomplete = incomplete
         };
     }
 }

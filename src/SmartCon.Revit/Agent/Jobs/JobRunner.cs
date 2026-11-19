@@ -25,9 +25,12 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     private readonly ITransactionService _transactions;
     private readonly object _gate = new();
 
+    private readonly HashSet<string> _reconciledDocuments = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, List<string>> _previewWarnings = new();
+
     private Guid? _activeJobId;
-    private bool _sliceInFlight;
-    private bool _wantsPump;
+    private volatile bool _sliceInFlight;
+    private volatile bool _wantsPump;
     private Action? _onRaise;
 
     public JobRunner(
@@ -117,57 +120,61 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             return false;
         }
 
-        Sync(_store.SetCancelRequestedAsync(jobId, true, CancellationToken.None));
-
         // Preview or an interrupted job: nothing is being applied, so the runner
-        // can settle the state immediately. A running job goes through Cancelling
-        // so the pump stops between units and can roll back if asked.
+        // settles the state immediately. A running job goes through Cancelling so
+        // an in-flight slice stops between batches and can roll back if asked.
         if (job.State is JobState.PreviewRunning or JobState.PreviewReady
             or JobState.Interrupted or JobState.AwaitingApproval)
         {
-            var target = job.State == JobState.PreviewRunning
-                ? JobState.Cancelled
-                : JobState.Cancelled;
-
-            var error = Sync(_store.TransitionAsync(
+            var cancelled = Sync(_store.TransitionAsync(
                 jobId,
                 job.State,
-                target,
+                JobState.Cancelled,
                 JobErrorCodes.CancelledByUser,
                 JobErrors.Cancelled().ToMessage(),
                 CancellationToken.None));
 
-            if (error is null)
+            if (cancelled is not null)
             {
-                Sync(_store.MarkFinishedAsync(
-                    jobId,
-                    target,
-                    JobErrorCodes.CancelledByUser,
-                    JobErrors.Cancelled().ToMessage(),
-                    CancellationToken.None));
-                Sync(_store.AppendEventAsync(jobId, JobEventTypes.Cancelled, null, CancellationToken.None));
-                return true;
+                return false;
             }
-        }
-        else if (job.State == JobState.Running)
-        {
-            var error = Sync(_store.TransitionAsync(
+
+            Sync(_store.MarkFinishedAsync(
                 jobId,
-                JobState.Running,
-                JobState.Cancelling,
-                null,
-                null,
+                JobState.Cancelled,
+                JobErrorCodes.CancelledByUser,
+                JobErrors.Cancelled().ToMessage(),
                 CancellationToken.None));
-            if (error is null)
-            {
-                _wantsPump = true;
-                _activeJobId = jobId;
-                EnsurePump();
-                return true;
-            }
+            Sync(_store.AppendEventAsync(jobId, JobEventTypes.Cancelled, null, CancellationToken.None));
+            return true;
         }
 
-        return false;
+        if (job.State != JobState.Running)
+        {
+            return false;
+        }
+
+        // The flag is the in-flight slice's stop signal; the state transition is
+        // what makes the cancel durable and lets the next slice settle it.
+        Sync(_store.SetCancelRequestedAsync(jobId, true, CancellationToken.None));
+
+        var error = Sync(_store.TransitionAsync(
+            jobId,
+            JobState.Running,
+            JobState.Cancelling,
+            null,
+            null,
+            CancellationToken.None));
+
+        if (error is not null)
+        {
+            return false;
+        }
+
+        _wantsPump = true;
+        _activeJobId = jobId;
+        EnsurePump();
+        return true;
     }
 
     /// <summary>
@@ -176,6 +183,8 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     /// </summary>
     public JobSliceResult RunSlice(Document document, TimeSpan budget)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "RunSlice"));
+
         lock (_gate)
         {
             if (_sliceInFlight)
@@ -190,6 +199,15 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         try
         {
             var documentId = AgentDocumentIdentity.GetDocumentId(document);
+
+            // One reconciliation per document per process: a job left Running by a
+            // previous Revit session must be marked Interrupted (and resumed
+            // explicitly) before any slice may apply more units to it.
+            if (_reconciledDocuments.Add(documentId))
+            {
+                Reconcile(document);
+            }
+
             var job = LoadActiveJob(documentId);
             if (job is null)
             {
@@ -226,7 +244,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         {
             _wantsPump = false;
             SmartConLogger.Error(
-                "[AgentJob] Slice failed: " + ex.GetType().Name + ": " + ex.Message +
+                "Slice failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: run get_job_status; the job is marked failed to avoid a silent partial state]");
 
             var job = TryLoadActiveJobAfterFailure(document);
@@ -255,6 +273,8 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     /// </summary>
     public JobSliceResult RunToCompletion(Document document, TimeSpan? maxDuration = null)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "RunToCompletion"));
+
         var limit = maxDuration ?? TimeSpan.FromMinutes(10);
         var trackedJobId = _activeJobId;
         var totalStarted = Stopwatch.GetTimestamp();
@@ -279,7 +299,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             if (elapsed * 1000.0 / Stopwatch.Frequency > limit.TotalMilliseconds)
             {
                 SmartConLogger.Warn(
-                    "[AgentJob] RunToCompletion exceeded " +
+                    "RunToCompletion exceeded " +
                     limit.TotalSeconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) +
                     "s [Action: the job continues when the pump runs again; check get_job_status]");
                 break;
@@ -318,6 +338,8 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     /// <summary>Reconciliation entry point for a document that was just opened or re-activated.</summary>
     public IReadOnlyList<Guid> Reconcile(Document document)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "Reconcile"));
+
         var documentId = AgentDocumentIdentity.GetDocumentId(document);
         var active = Sync(_store.GetActiveAsync(documentId, CancellationToken.None));
         if (active is null)
@@ -348,7 +370,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
                     "{\"fromState\":" + (int)active.State + "}",
                     CancellationToken.None));
                 SmartConLogger.Warn(
-                    "[AgentJob] Job " + active.JobId.ToString("D") + " (" + active.Spec.Action +
+                    "Job " + active.JobId.ToString("D") + " (" + active.Spec.Action +
                     ") was interrupted; " + active.LastSavedCursor + " units are durable " +
                     "[Action: call start_job with mode=resume and the jobId to continue]");
                 return new[] { active.JobId };
@@ -363,7 +385,9 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         if (_activeJobId is { } id)
         {
             var job = Sync(_store.GetAsync(id, CancellationToken.None));
-            if (job is not null && !JobStateMachine.IsTerminal(job.State))
+            if (job is not null
+                && !JobStateMachine.IsTerminal(job.State)
+                && string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal))
             {
                 return job;
             }
@@ -390,7 +414,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                "[AgentJob] Could not reload the active job after a slice failure: " +
+                "Could not reload the active job after a slice failure: " +
                 ex.GetType().Name + " [Action: run get_job_status to inspect the stored state]");
             return null;
         }
@@ -461,7 +485,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         if (idleSeconds > 30)
         {
             SmartConLogger.Warn(
-                "[AgentJob] Job " + job.JobId.ToString("D") + " has not advanced for " +
+                "Job " + job.JobId.ToString("D") + " has not advanced for " +
                 idleSeconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) +
                 "s (state " + job.State + ") " +
                 "[Action: check that Revit has focus; the pump resumes on the next idle cycle, " +
@@ -471,18 +495,40 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
 
     private void TryFail(JobRecord job, string code, string detail)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "TryFail"));
+
         try
         {
+            var latest = Sync(_store.GetAsync(job.JobId, CancellationToken.None));
+            if (latest is not null && JobStateMachine.IsTerminal(latest.State))
+            {
+                return;
+            }
+
             Sync(_store.MarkFinishedAsync(job.JobId, JobState.Failed, code, detail, CancellationToken.None));
             Sync(_store.AppendEventAsync(job.JobId, JobEventTypes.Failed, null, CancellationToken.None));
         }
         catch (Exception ex)
         {
             SmartConLogger.Error(
-                "[AgentJob] Could not mark job " + job.JobId.ToString("D") + " as failed: " +
+                "Could not mark job " + job.JobId.ToString("D") + " as failed: " +
                 ex.GetType().Name + ": " + ex.Message +
                 " [Action: inspect agent.db jobs table and cancel the job manually]");
         }
+    }
+
+    private IReadOnlyList<string> TakePreviewWarnings(Guid jobId)
+    {
+        lock (_gate)
+        {
+            if (_previewWarnings.TryGetValue(jobId, out var warnings))
+            {
+                _previewWarnings.Remove(jobId);
+                return warnings;
+            }
+        }
+
+        return Array.Empty<string>();
     }
 
     internal static JobPreview? ParsePreview(string? json)

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
@@ -44,6 +44,7 @@ public sealed partial class MapFamilyParametersJobAction
         var symbols = CollectSymbols(context.Document, family);
         var actual = new FamilyMapState();
         var mismatches = new List<string>();
+        var checkedTargets = 0;
 
         foreach (var typeState in expected.Types)
         {
@@ -83,12 +84,28 @@ public sealed partial class MapFamilyParametersJobAction
                     Value = current
                 });
 
+                checkedTargets++;
+
                 if (!ValuesEqual(value.Value, current, value.Storage))
                 {
                     mismatches.Add("target '" + value.Name + "' of type '" + typeState.TypeName + "' is '" +
                                    current + "' instead of '" + value.Value + "'");
                 }
             }
+        }
+
+        if (checkedTargets == 0)
+        {
+            // Fail closed: a unit whose targets cannot be read back from the project
+            // side (instance scope / element references) is never silently "done".
+            return new JobUnitVerification
+            {
+                Verified = false,
+                ActualJson = Json(actual),
+                MismatchReason =
+                    "No target can be verified from the project side (instance scope or elementId storage)" +
+                    " [Action: verify these values in the Family Editor, or map type-scope targets only]"
+            };
         }
 
         return new JobUnitVerification
@@ -212,8 +229,17 @@ public sealed partial class MapFamilyParametersJobAction
                         }
                     }
 
-                    transaction.Commit();
+                    var commitStatus = transaction.Commit();
                     started = false;
+                    if (commitStatus != TransactionStatus.Committed)
+                    {
+                        return new JobUnitUndo
+                        {
+                            ErrorCode = JobErrorCodes.RollbackFailed,
+                            ErrorDetail = "Revit rolled back the family undo transaction (status " +
+                                          commitStatus + "); nothing was restored"
+                        };
+                    }
                 }
                 catch (OperationCanceledException)
                 {

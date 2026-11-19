@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
 
@@ -27,11 +27,31 @@ public sealed class JobReportBuilder
         _actions = map;
     }
 
-    public JobReport? Build(Document document, Guid jobId, int offset, int limit, bool readBack)
+    public JobReport? Build(
+        Document document,
+        Guid jobId,
+        int offset,
+        int limit,
+        bool readBack,
+        out JobError? error)
     {
+        error = null;
         var job = _store.GetAsync(jobId, CancellationToken.None).GetAwaiter().GetResult();
         if (job is null)
         {
+            error = new JobError(
+                JobErrorCodes.JobNotFound,
+                "Job '" + jobId.ToString("D") + "' was not found",
+                "call get_job_status to list recent jobs");
+            return null;
+        }
+
+        var documentId = AgentDocumentIdentity.GetDocumentId(document);
+        if (!string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal))
+        {
+            // Reading (and especially writing mismatch states) for another document's
+            // job would corrupt that job with values from the wrong model.
+            error = JobErrors.DocumentMismatch(job.Spec.DocumentId, documentId);
             return null;
         }
 
@@ -50,8 +70,9 @@ public sealed class JobReportBuilder
         var totals = JobTotals.FromItems(items);
         var maxSeq = items.Count == 0 ? 0 : items[items.Count - 1].Seq;
         var unsaved = maxSeq - job.LastSavedCursor;
-        var saved = job.LastSavedCursor > 0 && job.LastSavedAt is not null && unsaved <= 0;
         var isVolatile = job.Spec.Options.SavePolicy == JobSavePolicy.Never;
+        var saved = !isVolatile && unsaved <= 0 &&
+                    (job.LastSavedCursor > 0 || job.LastSavedAt is not null || totals.Done == 0);
 
         var warnings = new List<string>();
         if (isVolatile)

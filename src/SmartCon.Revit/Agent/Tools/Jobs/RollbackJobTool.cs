@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces;
@@ -42,8 +42,14 @@ public sealed class RollbackJobTool : IAgentTool
         JsonElement args,
         CancellationToken ct)
     {
-        var jobId = await JobToolResolution.ResolveAsync(_store, args, context.DocumentId, ct)
+        var (jobId, resolveError) = await JobToolResolution
+            .ResolveAsync(_store, args, context.DocumentId, ct)
             .ConfigureAwait(false);
+        if (resolveError is not null)
+        {
+            return resolveError;
+        }
+
         if (jobId is null)
         {
             return ToolResult.Fail(
@@ -104,24 +110,29 @@ public sealed class RollbackJobTool : IAgentTool
 /// <summary>Resolves a job id from arguments or falls back to the most recent job.</summary>
 internal static class JobToolResolution
 {
-    internal static async Task<Guid?> ResolveAsync(
+    internal static async Task<(Guid? JobId, ToolResult? Error)> ResolveAsync(
         IJobStore store,
         JsonElement args,
         string documentId,
         CancellationToken ct)
     {
-        if (JobToolPayloads.TryParseJobId(args, out var explicitId))
+        if (JobToolPayloads.TryReadJobId(args, out var explicitId, out var parseError))
         {
-            return explicitId;
+            return (explicitId, null);
+        }
+
+        if (parseError is not null)
+        {
+            return (null, parseError);
         }
 
         var active = await store.GetActiveAsync(documentId, ct).ConfigureAwait(false);
         if (active is not null)
         {
-            return active.JobId;
+            return (active.JobId, null);
         }
 
         var recent = await store.ListRecentAsync(documentId, 1, ct).ConfigureAwait(false);
-        return recent.Count == 0 ? null : recent[0].JobId;
+        return (recent.Count == 0 ? null : recent[0].JobId, null);
     }
 }

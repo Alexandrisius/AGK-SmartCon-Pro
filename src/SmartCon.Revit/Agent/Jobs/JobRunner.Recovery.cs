@@ -18,6 +18,8 @@ public sealed partial class JobRunner
     /// </summary>
     private ReconcileOutcome ReconcilePendingItems(JobRecord job, Document document)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "ReconcilePendingItems"));
+
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
         var items = Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None));
@@ -96,7 +98,7 @@ public sealed partial class JobRunner
             CancellationToken.None));
 
         SmartConLogger.Info(
-            "[AgentJob] Reconciled job " + job.JobId.ToString("D") + ": kept=" + kept + ", redo=" + redone +
+            "Reconciled job " + job.JobId.ToString("D") + ": kept=" + kept + ", redo=" + redone +
             ", durableCursor=" + job.LastSavedCursor);
 
         return new ReconcileOutcome { Kept = kept, Redone = redone };
@@ -105,6 +107,8 @@ public sealed partial class JobRunner
     /// <summary>Explicit rollback of an applied job (B.2).</summary>
     public JobRollbackResult Rollback(Document document, Guid jobId, bool dryRun)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "Rollback"));
+
         var job = Sync(_store.GetAsync(jobId, CancellationToken.None));
         if (job is null)
         {
@@ -153,7 +157,8 @@ public sealed partial class JobRunner
 
         var items = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
         var undoable = items
-            .Where(item => item.State is JobItemState.Done or JobItemState.Mismatch)
+            .Where(item => item.State is JobItemState.Done or JobItemState.Mismatch
+                or JobItemState.Applying or JobItemState.UndoFailed)
             .ToList();
 
         if (undoable.Count == 0)
@@ -195,7 +200,7 @@ public sealed partial class JobRunner
                 catch (Exception ex)
                 {
                     SmartConLogger.Warn(
-                        "[AgentJob] Undo dry run failed for unit " + item.UnitKey + ": " +
+                        "Undo dry run failed for unit " + item.UnitKey + ": " +
                         ex.GetType().Name + ": " + ex.Message +
                         " [Action: fix the cause, then run rollback_job without dryRun]");
                     failed++;
@@ -216,8 +221,48 @@ public sealed partial class JobRunner
 
         Sync(_store.AppendEventAsync(jobId, JobEventTypes.RollbackStarted, null, CancellationToken.None));
 
-        var outcome = RunUndoBatches(job, document, TimeSpan.FromMinutes(5), Stopwatch.GetTimestamp(), onlyUndoing: false);
-        var target = outcome.UndoFailed > 0 ? JobState.RollbackPartial : JobState.RolledBack;
+        var outcome = RunUndoBatches(
+            job,
+            document,
+            TimeSpan.FromSeconds(45),
+            Stopwatch.GetTimestamp(),
+            onlyUndoing: false);
+
+        if (outcome.HasMoreWork)
+        {
+            var partial = Sync(_store.TransitionAsync(
+                jobId,
+                job.State,
+                JobState.RollbackPartial,
+                JobErrorCodes.RollbackFailed,
+                "Rollback is still in progress; " + outcome.Restored + " unit(s) restored so far",
+                CancellationToken.None));
+
+            if (partial is null)
+            {
+                Sync(_store.UpdateTotalsAsync(
+                    jobId,
+                    JobJson.Serialize(JobTotals.FromItems(
+                        Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None)))),
+                    CancellationToken.None));
+            }
+
+            return new JobRollbackResult
+            {
+                JobId = jobId,
+                Success = false,
+                Restored = outcome.Restored,
+                RestoreFailed = outcome.UndoFailed,
+                Skipped = outcome.Skipped,
+                State = partial is null ? JobState.RollbackPartial : job.State,
+                ErrorCode = JobErrorCodes.RollbackFailed,
+                ErrorDetail = "Rollback did not finish within the time slice; call rollback_job again to continue"
+            };
+        }
+
+        var target = outcome.UndoFailed > 0 || outcome.SaveError is not null
+            ? JobState.RollbackPartial
+            : JobState.RolledBack;
 
         var transition = Sync(_store.TransitionAsync(
             jobId,
@@ -328,8 +373,6 @@ public sealed partial class JobRunner
             };
         }
 
-        Sync(_store.ResetItemsAsync(jobId, failed, JobItemState.Previewed, CancellationToken.None));
-
         var transition = Sync(_store.TransitionAsync(
             jobId,
             job.State,
@@ -343,7 +386,7 @@ public sealed partial class JobRunner
             return new JobRetryResult
             {
                 JobId = jobId,
-                Reset = failed.Count,
+                Reset = 0,
                 TotalFailed = failed.Count,
                 State = job.State,
                 ErrorCode = transition.Code,
@@ -351,6 +394,9 @@ public sealed partial class JobRunner
             };
         }
 
+        Sync(_store.ResetItemsAsync(jobId, failed, JobItemState.Previewed, CancellationToken.None));
+
+        Sync(_store.SetCancelRequestedAsync(jobId, false, CancellationToken.None));
         Sync(_store.AppendEventAsync(
             jobId,
             JobEventTypes.Resumed,
@@ -385,6 +431,8 @@ public sealed partial class JobRunner
         long started,
         bool onlyUndoing)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "RunUndoBatches"));
+
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
         var batchSize = Math.Max(1, job.Spec.Options.BatchSize);
@@ -393,7 +441,11 @@ public sealed partial class JobRunner
         {
             var applied = Sync(_store.LoadItemsAsync(
                 job.JobId,
-                new[] { JobItemState.Done, JobItemState.Mismatch },
+                new[]
+                {
+                    JobItemState.Done, JobItemState.Mismatch,
+                    JobItemState.Applying, JobItemState.UndoFailed
+                },
                 0,
                 int.MaxValue,
                 CancellationToken.None));
@@ -495,7 +547,25 @@ public sealed partial class JobRunner
                     }
                 }
 
-                scope?.Commit();
+                if (scope is not null)
+                {
+                    var status = scope.Commit();
+                    if (status != TransactionStatus.Committed)
+                    {
+                        undoFailed += items.Count;
+                        updates.Clear();
+                        foreach (var item in items)
+                        {
+                            updates.Add(new JobItemUpdate
+                            {
+                                Seq = item.Seq,
+                                State = JobItemState.UndoFailed,
+                                ErrorCode = JobErrorCodes.RollbackFailed,
+                                ErrorDetail = "Revit rolled back the undo batch (status " + status + ")"
+                            });
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -514,7 +584,7 @@ public sealed partial class JobRunner
                 }
 
                 SmartConLogger.Error(
-                    "[AgentJob] Rollback batch failed: " + ex.GetType().Name + ": " + ex.Message +
+                    "Rollback batch failed: " + ex.GetType().Name + ": " + ex.Message +
                     " [Action: run rollback_job again or restore the model from the backup file]");
             }
             finally
@@ -535,9 +605,10 @@ public sealed partial class JobRunner
             1,
             CancellationToken.None)).Count;
 
-        if (restored > 0 || undoFailed > 0)
+        JobError? saveError = null;
+        if (restored > 0)
         {
-            SaveNow(job, document, job.LastSavedCursor);
+            saveError = SaveNow(job, document, job.LastSavedCursor);
         }
 
         return new UndoOutcome
@@ -546,7 +617,8 @@ public sealed partial class JobRunner
             UndoFailed = undoFailed,
             Skipped = skipped,
             Processed = restored + undoFailed + skipped,
-            HasMoreWork = remaining > 0
+            HasMoreWork = remaining > 0,
+            SaveError = saveError
         };
     }
 
@@ -568,5 +640,7 @@ public sealed partial class JobRunner
         public int Processed { get; init; }
 
         public bool HasMoreWork { get; init; }
+
+        public JobError? SaveError { get; init; }
     }
 }

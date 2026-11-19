@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Models.Agent.Jobs;
+﻿namespace SmartCon.Core.Models.Agent.Jobs;
 
 /// <summary>
 /// The only legal state transitions of a job. Every transition goes through
@@ -44,7 +44,7 @@ public static class JobStateMachine
             {
                 JobState.RolledBack, JobState.RollbackPartial, JobState.Running
             },
-            [JobState.Failed] = new[] { JobState.RolledBack, JobState.RollbackPartial },
+            [JobState.Failed] = new[] { JobState.Running, JobState.RolledBack, JobState.RollbackPartial },
             [JobState.Cancelled] = new[] { JobState.RolledBack, JobState.RollbackPartial },
             [JobState.RollbackPartial] = new[] { JobState.RolledBack },
             [JobState.RolledBack] = Array.Empty<JobState>()

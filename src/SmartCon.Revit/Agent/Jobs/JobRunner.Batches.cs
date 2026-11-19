@@ -17,6 +17,8 @@ public sealed partial class JobRunner
         JobActionContext context,
         IReadOnlyList<JobItem> items)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "ApplyBatch"));
+
         var fromSeq = items[0].Seq;
         var toSeq = items[items.Count - 1].Seq;
         var batchIndex = Sync(_store.BeginBatchAsync(job.JobId, fromSeq, toSeq, CancellationToken.None));
@@ -35,6 +37,20 @@ public sealed partial class JobRunner
                         JobErrorCodes.PreviewRequired,
                         "Unit '" + item.UnitKey + "' has no usable preview data",
                         "run start_job with mode=preview again")
+                });
+                continue;
+            }
+
+            if (!preview.Skipped && string.IsNullOrWhiteSpace(preview.UndoJson))
+            {
+                plans.Add(new BatchPlan
+                {
+                    Item = item,
+                    Preview = preview,
+                    Error = new JobError(
+                        "job_undo_unavailable",
+                        "Unit '" + item.UnitKey + "' has no undo payload, so it cannot be written safely",
+                        "run the preview again; a unit without undo data is never applied (J-04)")
                 });
                 continue;
             }
@@ -97,12 +113,17 @@ public sealed partial class JobRunner
                 try
                 {
                     var unit = ToUnit(plan.Item);
+                    Action<string>? persistUndo =
+                        action.Scope is JobActionScope.FamilyDefinition or JobActionScope.RfaFile
+                            ? payload => PersistUndoIntent(job, plan.Item.Seq, payload)
+                            : null;
+
                     var result = action.Apply(
                                      context,
                                      unit,
                                      plan.Preview,
                                      plan.Item.Attempts + 1,
-                                     payload => PersistUndoIntent(job, plan.Item.Seq, payload))
+                                     persistUndo)
                                  ?? new JobUnitApply
                                  {
                                      ErrorCode = JobErrorCodes.ItemFailed,
@@ -145,7 +166,7 @@ public sealed partial class JobRunner
                     if (status != TransactionStatus.Committed)
                     {
                         SmartConLogger.Warn(
-                            "[AgentJob] Batch " + batchIndex + " of job " + job.JobId.ToString("D") +
+                            "Batch " + batchIndex + " of job " + job.JobId.ToString("D") +
                             " was rolled back by Revit (status " + status + ") " +
                             "[Action: none of the units in the batch were applied; inspect the failures and retry]");
                         return new ApplyBatchOutcome
@@ -165,7 +186,7 @@ public sealed partial class JobRunner
         {
             scope?.RollBack();
             SmartConLogger.Error(
-                "[AgentJob] Batch " + batchIndex + " apply failed: " + ex.GetType().Name + ": " + ex.Message +
+                "Batch " + batchIndex + " apply failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: none of the units in the batch were applied; run get_job_report]");
             MarkApplyingAsFailed(job, plans);
             Sync(_store.CompleteBatchAsync(
@@ -275,6 +296,7 @@ public sealed partial class JobRunner
                 Seq = plan.Item.Seq,
                 State = result.Skipped || plan.Preview.Skipped ? JobItemState.Skipped : JobItemState.Done,
                 ActualJson = verification.ActualJson,
+                UndoJson = result.UndoJson ?? plan.Preview.UndoJson,
                 ErrorCode = null,
                 ErrorDetail = null,
                 BatchIndex = batchIndex
@@ -282,6 +304,11 @@ public sealed partial class JobRunner
         }
 
         Sync(_store.UpdateItemsAsync(job.JobId, updates, CancellationToken.None));
+        Sync(_store.UpdateTotalsAsync(
+            job.JobId,
+            JobJson.Serialize(JobTotals.FromItems(
+                Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None)))),
+            CancellationToken.None));
 
         var saved = false;
         JobError? saveError = null;
@@ -390,6 +417,7 @@ public sealed partial class JobRunner
         Sync(_store.UpdateTotalsAsync(job.JobId, JobJson.Serialize(totals), CancellationToken.None));
 
         var finalState = totals.Mismatch > 0 || totals.Failed > 0 || totals.UndoFailed > 0
+                         || totals.Incomplete > 0
             ? JobState.CompletedWithFailures
             : JobState.Completed;
 
@@ -399,7 +427,8 @@ public sealed partial class JobRunner
             finalState,
             finalState == JobState.CompletedWithFailures ? JobErrorCodes.ItemFailed : null,
             finalState == JobState.CompletedWithFailures
-                ? "failed=" + totals.Failed + ", mismatch=" + totals.Mismatch
+                ? "failed=" + totals.Failed + ", mismatch=" + totals.Mismatch +
+                  ", incomplete=" + totals.Incomplete
                 : null,
             CancellationToken.None));
 
@@ -468,6 +497,8 @@ public sealed partial class JobRunner
 
     private JobError? SaveNow(JobRecord job, Document document, int cursor)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "SaveNow"));
+
         if (job.Spec.Options.SavePolicy == JobSavePolicy.Never)
         {
             return null;
@@ -492,7 +523,7 @@ public sealed partial class JobRunner
                 "{\"cursor\":" + cursor + ",\"error\":\"" + ex.GetType().Name + "\"}",
                 CancellationToken.None));
             SmartConLogger.Error(
-                "[AgentJob] Save failed for job " + job.JobId.ToString("D") + ": " +
+                "Save failed for job " + job.JobId.ToString("D") + ": " +
                 ex.GetType().Name + ": " + ex.Message +
                 " [Action: save the document manually, then resume the job]");
             return error;

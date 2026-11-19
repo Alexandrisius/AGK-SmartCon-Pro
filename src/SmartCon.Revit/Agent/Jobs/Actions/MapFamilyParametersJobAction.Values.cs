@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
 using SmartCon.Core.Compatibility;
@@ -204,8 +204,15 @@ public sealed partial class MapFamilyParametersJobAction
                     return ApplyFail(JobErrorCodes.ItemFailed, applyError);
                 }
 
-                transaction.Commit();
+                var commitStatus = transaction.Commit();
                 started = false;
+                if (commitStatus != TransactionStatus.Committed)
+                {
+                    return ApplyFail(
+                        JobErrorCodes.ItemFailed,
+                        "Revit rolled back the family transaction (status " + commitStatus +
+                        "); nothing was changed [Action: inspect the family and run the preview again]");
+                }
             }
             catch (OperationCanceledException)
             {

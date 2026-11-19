@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using SmartCon.Core.Models.Agent;
@@ -47,7 +47,14 @@ public sealed class GetJobReportTool : IAgentTool
         JsonElement args,
         CancellationToken ct)
     {
-        var jobId = await ResolveJobIdAsync(args, context.DocumentId, ct).ConfigureAwait(false);
+        var (jobId, resolveError) = await JobToolResolution
+            .ResolveAsync(_store, args, context.DocumentId, ct)
+            .ConfigureAwait(false);
+        if (resolveError is not null)
+        {
+            return resolveError;
+        }
+
         if (jobId is null)
         {
             return ToolResult.Fail(
@@ -61,15 +68,17 @@ public sealed class GetJobReportTool : IAgentTool
         var readBack = AgentJson.GetBool(args, "readBack", true);
 
         JobReport? report;
+        JobError? buildError = null;
         try
         {
             report = await context.Revit.RaiseAsync(
                 _ => _builder.Build(
                     _revitContext.GetDocument(),
                     jobId.Value,
-                    0,
+                    format.Equals("csv", StringComparison.OrdinalIgnoreCase) ? 0 : offset,
                     format.Equals("csv", StringComparison.OrdinalIgnoreCase) ? int.MaxValue : limit,
-                    readBack),
+                    readBack,
+                    out buildError),
                 ct).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -83,8 +92,8 @@ public sealed class GetJobReportTool : IAgentTool
         if (report is null)
         {
             return ToolResult.Fail(
-                JobErrorCodes.JobNotFound,
-                "Job '" + jobId.Value.ToString("D") + "' was not found");
+                buildError?.Code ?? JobErrorCodes.JobNotFound,
+                buildError?.ToMessage() ?? "Job '" + jobId.Value.ToString("D") + "' was not found");
         }
 
         if (format.Equals("csv", StringComparison.OrdinalIgnoreCase))
@@ -135,23 +144,6 @@ public sealed class GetJobReportTool : IAgentTool
             message,
             affectedCount: report.Items.Count,
             warnings: report.Warnings.Count == 0 ? null : report.Warnings);
-    }
-
-    private async Task<Guid?> ResolveJobIdAsync(JsonElement args, string documentId, CancellationToken ct)
-    {
-        if (JobToolPayloads.TryParseJobId(args, out var explicitId))
-        {
-            return explicitId;
-        }
-
-        var active = await _store.GetActiveAsync(documentId, ct).ConfigureAwait(false);
-        if (active is not null)
-        {
-            return active.JobId;
-        }
-
-        var recent = await _store.ListRecentAsync(documentId, 1, ct).ConfigureAwait(false);
-        return recent.Count == 0 ? null : recent[0].JobId;
     }
 
     private static string WriteCsv(Guid jobId, string csv)

@@ -1,4 +1,4 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using SmartCon.Core.Logging;
 
 namespace SmartCon.Revit.Agent.Jobs;
@@ -35,6 +35,8 @@ public sealed class JobPumpEventHandler : IExternalEventHandler, IDisposable
 
     public void Execute(UIApplication app)
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJobPump", ("Method", "Execute"));
+
         if (Interlocked.Exchange(ref _executing, 1) == 1)
         {
             return;
@@ -57,7 +59,7 @@ public sealed class JobPumpEventHandler : IExternalEventHandler, IDisposable
         catch (Exception ex)
         {
             SmartConLogger.Error(
-                "[AgentJobPump] Execute failed: " + ex.GetType().Name + ": " + ex.Message +
+                "Execute failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: run get_job_status; the job is stopped rather than left in a silent partial state]");
         }
         finally
@@ -72,6 +74,8 @@ public sealed class JobPumpEventHandler : IExternalEventHandler, IDisposable
 
     private void RaiseAgain()
     {
+        using var _scope = SmartConLogger.BeginScope("AgentJobPump", ("Method", "RaiseAgain"));
+
         var externalEvent = _event;
         if (externalEvent is null)
         {
@@ -88,7 +92,7 @@ public sealed class JobPumpEventHandler : IExternalEventHandler, IDisposable
         catch (Exception ex)
         {
             SmartConLogger.Warn(
-                "[AgentJobPump] Re-raise failed: " + ex.GetType().Name + ": " + ex.Message +
+                "Re-raise failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: call get_job_status; the keep-alive timer retries every 2 seconds]");
         }
     }

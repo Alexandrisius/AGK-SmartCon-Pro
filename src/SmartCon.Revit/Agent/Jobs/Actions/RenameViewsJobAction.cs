@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Revit.Agent.Tools.Write;
 
@@ -293,6 +294,22 @@ public sealed class RenameViewsJobAction : RevitJobActionBase
             };
         }
 
+        // Preview-stale guard: the undo payload restores the value read at preview
+        // time, so applying over a newer change would silently lose it. A unit in
+        // a temp-name state is mid-cycle after a crash and is allowed.
+        var previewActual = ReadValue(preview.ActualJson);
+        if (previewActual is not null
+            && !string.Equals(current, previewActual, StringComparison.Ordinal)
+            && !string.Equals(current, args.TempName, StringComparison.Ordinal))
+        {
+            return new JobUnitApply
+            {
+                ErrorCode = JobErrorCodes.PreviewStale,
+                ErrorDetail = JobErrors.PreviewStale(unit.UnitKey).ToMessage() +
+                              " (the view is named '" + current + "')"
+            };
+        }
+
         try
         {
             if (!string.IsNullOrWhiteSpace(args.TempName))
@@ -318,6 +335,22 @@ public sealed class RenameViewsJobAction : RevitJobActionBase
         }
         catch (Exception ex)
         {
+            // A failure after the temp rename must not leave a __sc_tmp_ name behind.
+            if (!string.Equals(view.Name, current, StringComparison.Ordinal))
+            {
+                try
+                {
+                    view.Name = current;
+                }
+                catch (Exception restoreEx)
+                {
+                    SmartConLogger.Warn(
+                        "Job rename could not restore '" + current + "': " +
+                        restoreEx.GetType().Name + ": " + restoreEx.Message +
+                        " [Action: rename the view manually; it may still carry a __sc_tmp_ name]");
+                }
+            }
+
             return new JobUnitApply
             {
                 ErrorCode = "rename_failed",

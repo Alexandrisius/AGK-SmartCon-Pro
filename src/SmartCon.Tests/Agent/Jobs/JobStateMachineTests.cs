@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent.Jobs;
+﻿using SmartCon.Core.Models.Agent.Jobs;
 using Xunit;
 
 namespace SmartCon.Tests.Agent.Jobs;
@@ -21,6 +21,7 @@ public sealed class JobStateMachineTests
     [InlineData(JobState.Interrupted, JobState.Running)]
     [InlineData(JobState.Completed, JobState.RolledBack)]
     [InlineData(JobState.CompletedWithFailures, JobState.Running)]
+    [InlineData(JobState.Failed, JobState.Running)]
     [InlineData(JobState.RollbackPartial, JobState.RolledBack)]
     public void Allows_expected_transitions(JobState from, JobState to)
     {
@@ -39,7 +40,6 @@ public sealed class JobStateMachineTests
     [InlineData(JobState.Completed, JobState.Cancelled)]
     [InlineData(JobState.Cancelled, JobState.Running)]
     [InlineData(JobState.RolledBack, JobState.Running)]
-    [InlineData(JobState.Failed, JobState.Running)]
     public void Rejects_illegal_transitions(JobState from, JobState to)
     {
         Assert.False(JobStateMachine.CanTransition(from, to));

@@ -68,6 +68,11 @@ public sealed partial class JobRunner
             return JobStartResult.Fail(error);
         }
 
+        lock (_gate)
+        {
+            _previewWarnings[record.JobId] = expansion.Warnings.ToList();
+        }
+
         Sync(_store.AddUnitsAsync(record.JobId, Normalize(expansion.Units), CancellationToken.None));
         Sync(_store.AppendEventAsync(
             record.JobId,
@@ -154,6 +159,7 @@ public sealed partial class JobRunner
             return JobStartResult.Fail(transition);
         }
 
+        Sync(_store.SetCancelRequestedAsync(job.JobId, false, CancellationToken.None));
         Sync(_store.MarkStartedAsync(job.JobId, DateTime.UtcNow, CancellationToken.None));
         Sync(_store.AppendEventAsync(job.JobId, JobEventTypes.ApplyStarted, null, CancellationToken.None));
 
@@ -214,6 +220,23 @@ public sealed partial class JobRunner
         }
 
         var from = job.State;
+        if (from == JobState.Failed)
+        {
+            var restart = Sync(_store.TransitionAsync(
+                job.JobId,
+                JobState.Failed,
+                JobState.Running,
+                null,
+                null,
+                CancellationToken.None));
+            if (restart is not null)
+            {
+                return JobStartResult.Fail(restart);
+            }
+
+            from = JobState.Running;
+        }
+
         if (from == JobState.Interrupted)
         {
             // A job killed during preview resumes into the preview phase; anything
@@ -234,13 +257,29 @@ public sealed partial class JobRunner
                 return JobStartResult.Fail(start);
             }
         }
-        else if (from is not (JobState.Running or JobState.CompletedWithFailures))
+        else if (from == JobState.CompletedWithFailures)
+        {
+            var retry = RetryFailed(document, job.JobId);
+            if (retry.ErrorCode is not null)
+            {
+                return JobStartResult.Fail(new JobError(
+                    retry.ErrorCode,
+                    retry.ErrorDetail ?? "Retry failed",
+                    "run get_job_status and get_job_report to inspect the job"));
+            }
+
+            var retried = Sync(_store.GetAsync(job.JobId, CancellationToken.None)) ?? job;
+            _wantsPump = JobStateMachine.NeedsPump(retried.State);
+            return JobStartResult.Ok(retried);
+        }
+        else if (from is not (JobState.Running or JobState.Failed))
         {
             return JobStartResult.Fail(JobErrors.InvalidState(
                 "resume requires an interrupted or retryable job, but it is '" + from + "'",
                 "check get_job_status; a completed job cannot be resumed"));
         }
 
+        Sync(_store.SetCancelRequestedAsync(job.JobId, false, CancellationToken.None));
         Sync(_store.MarkStartedAsync(job.JobId, DateTime.UtcNow, CancellationToken.None));
         Sync(_store.AppendEventAsync(job.JobId, JobEventTypes.Resumed, null, CancellationToken.None));
 

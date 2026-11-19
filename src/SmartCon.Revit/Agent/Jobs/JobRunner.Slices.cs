@@ -14,9 +14,41 @@ public sealed partial class JobRunner
     {
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: true);
-        var batchSize = Math.Max(1, job.Spec.Options.BatchSize);
+        var batchSize = EffectiveBatchSize(job, action);
         var processed = 0;
         var cursor = 0;
+
+        if (job.CancelRequested)
+        {
+            var cancelled = Sync(_store.TransitionAsync(
+                job.JobId,
+                JobState.PreviewRunning,
+                JobState.Cancelled,
+                JobErrorCodes.CancelledByUser,
+                JobErrors.Cancelled().ToMessage(),
+                CancellationToken.None));
+
+            if (cancelled is null)
+            {
+                Sync(_store.MarkFinishedAsync(
+                    job.JobId,
+                    JobState.Cancelled,
+                    JobErrorCodes.CancelledByUser,
+                    JobErrors.Cancelled().ToMessage(),
+                    CancellationToken.None));
+                Sync(_store.AppendEventAsync(
+                    job.JobId, JobEventTypes.Cancelled, null, CancellationToken.None));
+            }
+
+            _wantsPump = false;
+            return new JobSliceResult
+            {
+                JobId = job.JobId,
+                State = JobState.Cancelled,
+                HasMoreWork = false,
+                ProcessedThisSlice = processed
+            };
+        }
 
         while (true)
         {
@@ -114,7 +146,7 @@ public sealed partial class JobRunner
         }
 
         var all = Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None));
-        var envelope = BuildPreviewEnvelope(job, all);
+        var envelope = BuildPreviewEnvelope(job, all, TakePreviewWarnings(job.JobId));
         Sync(_store.UpdatePreviewAsync(job.JobId, JobJson.Serialize(envelope), CancellationToken.None));
         Sync(_store.UpdateTotalsAsync(
             job.JobId,
@@ -155,11 +187,30 @@ public sealed partial class JobRunner
     {
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
-        var batchSize = Math.Max(1, job.Spec.Options.BatchSize);
+        var batchSize = EffectiveBatchSize(job, action);
         var processed = 0;
         var lastSeq = 0;
         var changedAny = false;
         var savedAny = false;
+
+        if (job.CancelRequested)
+        {
+            Sync(_store.TransitionAsync(
+                job.JobId,
+                JobState.Running,
+                JobState.Cancelling,
+                null,
+                null,
+                CancellationToken.None));
+
+            return new JobSliceResult
+            {
+                JobId = job.JobId,
+                State = JobState.Cancelling,
+                HasMoreWork = true,
+                ProcessedThisSlice = processed
+            };
+        }
 
         while (true)
         {
@@ -195,6 +246,7 @@ public sealed partial class JobRunner
             if (result.Error is not null)
             {
                 _wantsPump = false;
+                TryFail(job, result.Error.Code, result.Error.ToMessage());
                 return new JobSliceResult
                 {
                     JobId = job.JobId,
@@ -361,7 +413,10 @@ public sealed partial class JobRunner
         return items.Count == 0 ? 0 : items[items.Count - 1].Seq;
     }
 
-    private static JobPreview BuildPreviewEnvelope(JobRecord job, IReadOnlyList<JobItem> items)
+    private static JobPreview BuildPreviewEnvelope(
+        JobRecord job,
+        IReadOnlyList<JobItem> items,
+        IReadOnlyList<string> expansionWarnings)
     {
         var units = items.Select(item => new JobUnit
         {
@@ -403,10 +458,34 @@ public sealed partial class JobRunner
             })
             .ToList();
 
-        var warnings = new List<string>();
+        var warnings = new List<string>(expansionWarnings);
         if (failed > 0)
         {
             warnings.Add(failed + " units failed the dry run and will be reported as failed, not applied");
+        }
+
+        // Per-unit dry-run warnings (e.g. "instance-scope targets are not verifiable")
+        // must reach the operator, not only the stored item.
+        foreach (var item in items)
+        {
+            var itemPreview = JobJson.Deserialize<JobUnitPreview>(item.PreviewJson);
+            if (itemPreview is null)
+            {
+                continue;
+            }
+
+            foreach (var warning in itemPreview.Warnings)
+            {
+                if (!warnings.Contains(warning))
+                {
+                    warnings.Add(warning);
+                }
+            }
+
+            if (warnings.Count >= 15)
+            {
+                break;
+            }
         }
 
         if (items.Count > 500)
@@ -454,6 +533,14 @@ public sealed partial class JobRunner
         ErrorCode = code,
         ErrorDetail = detail
     };
+
+    private static int EffectiveBatchSize(JobRecord job, IJobAction action)
+    {
+        var configured = Math.Max(1, job.Spec.Options.BatchSize);
+        return action.Scope is JobActionScope.FamilyDefinition or JobActionScope.RfaFile
+            ? 1
+            : configured;
+    }
 
     private static bool IsOverBudget(long started, TimeSpan budget)
     {

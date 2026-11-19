@@ -22,7 +22,7 @@ internal sealed class RoutingQueryFixture
 
 /// <summary>
 /// Builds the two catalogs used by the H1-11/H1-12 routing eval: the real
-/// 42-card catalog and a deterministic 1000-card synthetic catalog. The
+/// card catalog and a deterministic synthetic catalog (packs x cards). The
 /// synthetic card tokens are shared with <c>synthetic-queries.json</c>; the
 /// formula must stay in sync with that fixture generator.
 /// </summary>

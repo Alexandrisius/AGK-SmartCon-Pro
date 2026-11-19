@@ -125,14 +125,27 @@ public sealed class SetParametersJobAction : RevitJobActionBase
             expectedRaw = normalized;
         }
         var currentRaw = AgentParameterWriteHelper.RawValue(parameter);
-        var undoJson = string.IsNullOrWhiteSpace(preview.UndoJson) ? Value(currentRaw) : preview.UndoJson!;
         if (RawMatches(parameter.StorageType, currentRaw, expectedRaw))
         {
             return new JobUnitApply
             {
-                Success = true, Skipped = true, ExpectedJson = Value(expectedRaw), UndoJson = undoJson
+                Success = true,
+                Skipped = true,
+                ExpectedJson = Value(expectedRaw),
+                UndoJson = string.IsNullOrWhiteSpace(preview.UndoJson) ? Value(currentRaw) : preview.UndoJson
             };
         }
+
+        var previewActual = ReadValue(preview.ActualJson);
+        if (previewActual is not null && !RawMatches(parameter.StorageType, currentRaw, previewActual))
+        {
+            return ApplyFail(
+                JobErrorCodes.PreviewStale,
+                JobErrors.PreviewStale(unit.UnitKey).ToMessage() +
+                " (the parameter now reads '" + currentRaw + "')");
+        }
+
+        var undoJson = string.IsNullOrWhiteSpace(preview.UndoJson) ? Value(currentRaw) : preview.UndoJson!;
         persistUndo?.Invoke(undoJson);
         try
         {

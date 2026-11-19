@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -37,7 +37,13 @@ public sealed class CancelJobTool : IAgentTool
         JsonElement args,
         CancellationToken ct)
     {
-        Guid? jobId = JobToolPayloads.TryParseJobId(args, out var explicitId) ? explicitId : null;
+        var hasExplicitId = JobToolPayloads.TryReadJobId(args, out var explicitId, out var parseError);
+        if (parseError is not null)
+        {
+            return parseError;
+        }
+
+        Guid? jobId = hasExplicitId ? explicitId : null;
         if (jobId is null)
         {
             var active = await _store.GetActiveAsync(context.DocumentId, ct).ConfigureAwait(false);

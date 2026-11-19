@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces;
@@ -42,8 +42,14 @@ public sealed class RetryFailedItemsTool : IAgentTool
         JsonElement args,
         CancellationToken ct)
     {
-        var jobId = await JobToolResolution.ResolveAsync(_store, args, context.DocumentId, ct)
+        var (jobId, resolveError) = await JobToolResolution
+            .ResolveAsync(_store, args, context.DocumentId, ct)
             .ConfigureAwait(false);
+        if (resolveError is not null)
+        {
+            return resolveError;
+        }
+
         if (jobId is null)
         {
             return ToolResult.Fail(

@@ -1,5 +1,6 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
+using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
 
@@ -75,11 +76,37 @@ internal static class JobToolPayloads
         _ => "call get_job_status"
     };
 
-    internal static bool TryParseJobId(JsonElement args, out Guid jobId)
+    /// <summary>
+    /// Strict jobId reader: an absent/empty id means "use the most recent job",
+    /// but a non-empty malformed id is an error — silently falling back to another
+    /// job would let rollback/retry hit the wrong target.
+    /// </summary>
+    internal static bool TryReadJobId(JsonElement args, out Guid jobId, out ToolResult? error)
     {
         jobId = Guid.Empty;
-        var text = AgentJson.GetString(args, "jobId");
-        return !string.IsNullOrWhiteSpace(text) && Guid.TryParse(text, out jobId);
+        error = null;
+
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("jobId", out var value))
+        {
+            return false;
+        }
+
+        var text = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (Guid.TryParse(text, out jobId))
+        {
+            return true;
+        }
+
+        error = ToolResult.Fail(
+            "invalid_arguments",
+            "jobId '" + text + "' is not a valid job GUID. " +
+            "[Action: pass the jobId returned by start_job, or omit it to use the most recent job]");
+        return false;
     }
 
     internal static string FormatPercent(int done, int total) =>

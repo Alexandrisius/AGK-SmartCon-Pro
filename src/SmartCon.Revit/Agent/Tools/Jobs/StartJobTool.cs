@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Models.Agent;
@@ -92,6 +92,12 @@ public sealed class StartJobTool : IAgentTool
             ? specElement.GetRawText()
             : "{}";
 
+        var (options, optionsError) = ReadOptions(args);
+        if (optionsError is not null)
+        {
+            return optionsError;
+        }
+
         var spec = new JobSpec
         {
             DocumentId = context.DocumentId,
@@ -102,7 +108,7 @@ public sealed class StartJobTool : IAgentTool
             PreviewDigest = digest,
             ResumeJobId = resumeId,
             ConversationId = context.ConversationId == Guid.Empty ? null : context.ConversationId,
-            Options = ReadOptions(args)
+            Options = options
         };
 
         JobStartResult result;
@@ -151,25 +157,30 @@ public sealed class StartJobTool : IAgentTool
             affectedCount: preview?.Count ?? 0);
     }
 
-    private static JobOptions ReadOptions(JsonElement args)
+    private static (JobOptions Options, ToolResult? Error) ReadOptions(JsonElement args)
     {
         var savePolicy = JobSavePolicy.AfterEachBatch;
         var policyText = AgentJson.GetString(args, "savePolicy");
         if (!string.IsNullOrWhiteSpace(policyText) &&
-            Enum.TryParse<JobSavePolicy>(policyText, true, out var parsedPolicy))
+            !TryParseSavePolicy(policyText!, out savePolicy))
         {
-            savePolicy = parsedPolicy;
+            return (new JobOptions(), ToolResult.Fail(
+                "invalid_arguments",
+                "savePolicy '" + policyText + "' is not supported. " +
+                "[Action: pass after_each_batch, every_n_minutes or never]"));
         }
 
         var onError = JobOnError.Continue;
         var onErrorText = AgentJson.GetString(args, "onError");
         if (!string.IsNullOrWhiteSpace(onErrorText) &&
-            Enum.TryParse<JobOnError>(onErrorText, true, out var parsedOnError))
+            !Enum.TryParse(onErrorText, true, out onError))
         {
-            onError = parsedOnError;
+            return (new JobOptions(), ToolResult.Fail(
+                "invalid_arguments",
+                "onError '" + onErrorText + "' is not supported. [Action: pass continue or abort]"));
         }
 
-        return new JobOptions
+        return (new JobOptions
         {
             BatchSize = AgentJson.GetInt(args, "batchSize", 50),
             SliceBudgetMs = 1500,
@@ -177,6 +188,24 @@ public sealed class StartJobTool : IAgentTool
             RollbackOnError = AgentJson.GetBool(args, "rollbackOnError", false),
             SavePolicy = savePolicy,
             MaxItems = AgentJson.GetInt(args, "maxItems", 1000)
-        };
+        }, null);
+    }
+
+    private static bool TryParseSavePolicy(string text, out JobSavePolicy policy)
+    {
+        switch (text.Trim().ToLowerInvariant())
+        {
+            case "after_each_batch":
+                policy = JobSavePolicy.AfterEachBatch;
+                return true;
+            case "every_n_minutes":
+                policy = JobSavePolicy.EveryNMinutes;
+                return true;
+            case "never":
+                policy = JobSavePolicy.Never;
+                return true;
+            default:
+                return Enum.TryParse(text, true, out policy);
+        }
     }
 }

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -50,7 +50,12 @@ public sealed class GetJobStatusTool : IAgentTool
         _scheduler.EnsurePump();
 
         JobRecord? job = null;
-        var hasExplicitId = JobToolPayloads.TryParseJobId(args, out var explicitId);
+        var hasExplicitId = JobToolPayloads.TryReadJobId(args, out var explicitId, out var parseError);
+        if (parseError is not null)
+        {
+            return parseError;
+        }
+
 
         var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
         while (true)

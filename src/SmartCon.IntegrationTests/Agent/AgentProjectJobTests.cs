@@ -330,7 +330,7 @@ public sealed class AgentProjectJobTests : RevitApiTest
         Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
 
         var report = new JobReportBuilder(Store, _actions!)
-            .Build(Doc, job.JobId, offset: 0, limit: 50, readBack: true);
+            .Build(Doc, job.JobId, offset: 0, limit: 50, readBack: true, out _);
 
         await Assert.That(report).IsNotNull();
         await Assert.That(report!.Truthful).IsTrue();
@@ -417,8 +417,160 @@ public sealed class AgentProjectJobTests : RevitApiTest
         await Assert.That(record.LastSavedAt).IsNotNull();
 
         var report = new JobReportBuilder(Store, _actions!)
-            .Build(Doc, job.JobId, offset: 0, limit: 10, readBack: true);
+            .Build(Doc, job.JobId, offset: 0, limit: 10, readBack: true, out _);
         await Assert.That(report!.Saved).IsTrue();
+    }
+
+    [Test]
+    public async Task Job_PreviewStale_RefusesToOverwriteNewerChange()
+    {
+        var preview = Runner.Start(
+            RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
+            Doc);
+        await Assert.That(preview.Success).IsTrue();
+
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+
+        // A user renames one view after the preview: that unit must not be
+        // overwritten by the frozen plan.
+        var target = new FilteredElementCollector(Doc)
+            .OfClass(typeof(View))
+            .Cast<View>()
+            .First(view => view.Name == ViewPrefix + "1");
+        var staleUniqueId = target.UniqueId;
+        _transactions!.RunInTransaction(Doc, "External rename", _ => target.Name = "SC_Job_External_1");
+
+        var digest = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!.Digest;
+        Runner.Start(
+            RenameViewSpec(JobMode.Apply, digest, Options(JobSavePolicy.Never, 50)),
+            Doc);
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+
+        await Assert.That(result.State).IsEqualTo(JobState.CompletedWithFailures);
+
+        var items = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        var stale = items.Single(item => item.UnitKey == staleUniqueId);
+        await Assert.That(stale.State).IsEqualTo(JobItemState.Failed);
+        await Assert.That(stale.ErrorCode).IsEqualTo(JobErrorCodes.PreviewStale);
+
+        var externallyRenamed = Doc.GetElement(staleUniqueId) as View;
+        await Assert.That(externallyRenamed!.Name).IsEqualTo("SC_Job_External_1");
+    }
+
+    [Test]
+    public async Task Job_ReportPagination_RespectsOffset()
+    {
+        var job = PrepareApplyJob(JobSavePolicy.Never, batchSize: 50);
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+
+        var first = new JobReportBuilder(Store, _actions!)
+            .Build(Doc, job.JobId, offset: 0, limit: 100, readBack: false, out var firstError);
+        var second = new JobReportBuilder(Store, _actions!)
+            .Build(Doc, job.JobId, offset: 100, limit: 50, readBack: false, out var secondError);
+
+        await Assert.That(firstError).IsNull();
+        await Assert.That(secondError).IsNull();
+        await Assert.That(first!.Items.Count).IsEqualTo(100);
+        await Assert.That(first.NextOffset).IsEqualTo(100);
+        await Assert.That(second!.Items.Count).IsEqualTo(50);
+        await Assert.That(second.Items[0].Seq).IsEqualTo(101);
+        await Assert.That(second.NextOffset).IsEqualTo(150);
+    }
+
+    [Test]
+    public async Task Job_ReportForForeignDocument_IsRejected()
+    {
+        var job = PrepareApplyJob(JobSavePolicy.Never, batchSize: 50);
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+
+        var other = Application.NewProjectDocument(UnitSystem.Metric);
+        try
+        {
+            var report = new JobReportBuilder(Store, _actions!)
+                .Build(other, job.JobId, offset: 0, limit: 10, readBack: true, out var error);
+
+            await Assert.That(report).IsNull();
+            await Assert.That(error).IsNotNull();
+            await Assert.That(error!.Code).IsEqualTo(JobErrorCodes.DocumentMismatch);
+        }
+        finally
+        {
+            other.Close(false);
+        }
+    }
+
+    [Test]
+    public async Task Job_FirstSliceAfterRestart_MarksCrashedJobInterrupted()
+    {
+        var slowRunner = CreateRunner(new SlowAction(new RenameViewsJobAction(), 1));
+        var preview = slowRunner.Start(
+            RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
+            Doc);
+        await Assert.That(preview.Success).IsTrue();
+
+        var jobId = preview.Job!.JobId;
+        slowRunner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+        var record = await Store.GetAsync(jobId, CancellationToken.None);
+        var digest = JobJson.Deserialize<JobPreview>(record!.PreviewJson)!.Digest;
+
+        slowRunner.Start(
+            RenameViewSpec(JobMode.Apply, digest, Options(JobSavePolicy.Never, 50)),
+            Doc);
+        slowRunner.RunSlice(Doc, TimeSpan.FromMilliseconds(200));
+
+        var doneBefore = (await Store.LoadAllItemsAsync(jobId, CancellationToken.None))
+            .Count(item => item.State == JobItemState.Done);
+
+        // A brand-new runner (simulated process restart) must reconcile on its
+        // first slice, without an explicit Reconcile call.
+        var restarted = CreateRunner(new RenameViewsJobAction());
+        restarted.RunSlice(Doc, TimeSpan.FromMilliseconds(200));
+
+        var after = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(after!.State).IsEqualTo(JobState.Interrupted);
+
+        var doneAfter = (await Store.LoadAllItemsAsync(jobId, CancellationToken.None))
+            .Count(item => item.State == JobItemState.Done);
+        await Assert.That(doneAfter).IsEqualTo(doneBefore);
+    }
+
+    [Test]
+    public async Task Job_RetryFailed_FromFailedState_TransitionsAndRetries()
+    {
+        var job = PrepareApplyJob(JobSavePolicy.Never, batchSize: 50);
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+
+        // Force the recovery state: one failed unit and a job in Failed.
+        var items = await Store.LoadAllItemsAsync(job.JobId, CancellationToken.None);
+        var victim = items.First();
+        await Store.UpdateItemsAsync(
+            job.JobId,
+            new[]
+            {
+                new JobItemUpdate
+                {
+                    Seq = victim.Seq,
+                    State = JobItemState.Failed,
+                    ErrorCode = "injected",
+                    ErrorDetail = "injected failure for the retry test"
+                }
+            },
+            CancellationToken.None);
+        await Store.MarkFinishedAsync(
+            job.JobId, JobState.Failed, "injected", "injected failure", CancellationToken.None);
+
+        var retry = Runner.RetryFailed(Doc, job.JobId);
+
+        await Assert.That(retry.ErrorCode).IsNull();
+        await Assert.That(retry.Reset).IsEqualTo(1);
+        await Assert.That(retry.State).IsIn(
+            new[] { JobState.Completed, JobState.CompletedWithFailures, JobState.Running });
+
+        var after = await Store.GetAsync(job.JobId, CancellationToken.None);
+        await Assert.That(after!.State).IsNotEqualTo(JobState.Failed);
     }
 
     private JobRecord PrepareApplyJob(JobSavePolicy policy, int batchSize)
