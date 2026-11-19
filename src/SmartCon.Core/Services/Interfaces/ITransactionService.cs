@@ -46,4 +46,26 @@ public interface ITransactionService
     /// Void overload for side-effect-free trial operations.
     /// </summary>
     bool RunAndRollback(string name, Action<Document> action);
+
+    /// <summary>
+    /// Opens a transaction scope with explicit commit/rollback control.
+    /// Needed by the batch job engine: one transaction per slice, where the
+    /// decision to commit or roll back depends on per-item results (J-03).
+    /// The scope must be disposed; disposing an open scope rolls it back.
+    /// </summary>
+    ITransactionScope BeginTransaction(Document document, string name);
+}
+
+/// <summary>
+/// Explicit transaction control (I-03 compliant: created only by
+/// <see cref="ITransactionService"/>). Always commit or roll back before dispose.
+/// </summary>
+public interface ITransactionScope : IDisposable
+{
+    bool IsActive { get; }
+
+    /// <summary>Commits and returns the real Revit status (RolledBack is possible without an exception).</summary>
+    TransactionStatus Commit();
+
+    void RollBack();
 }

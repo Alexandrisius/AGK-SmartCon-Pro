@@ -66,24 +66,30 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 
 | ID | Задача | Issue | Почему сейчас |
 |---|---|---|---|
-| `P.1` | Cache-лог и baseline | #353 | Фокус: сначала измерить кэш, потом менять порядок контекста |
-| `P.2` | Turn-context отдельным сообщением | #354 | Динамика не переписывает user-сообщение |
-| `P.3` | Статический system + session context | #355 | Волатильное — в хвост, префикс стабилен |
-| `P.4` | Заморозка tools на диалог | #356 | Набор tools не меняется внутри диалога |
-| `P.5` | Session cache key и provider policy | #357 | Ключ кэша на диалог для KV-кэша |
-| `A.1` | A0: контракт verification & idempotency | #306 | Следующий крупный блок после кэша |
+| `A.1` | A0: контракт verification & idempotency | #306 | **Фокус ночного прогона 4:** фундамент job engine |
+| `A.2` | Job spec, state machine и Core-модели | #307 | Следом за A.1 |
+| `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | #308 | Durable state job'а |
+| `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | #309 | Без него нет массовых операций |
+| `A.5` | Save policy, durable cursor и crash resume | #310 | Durability = Document.Save |
+| `A.6` | A1 project bulk: rename_views и set_parameters | #311 | Первые доверенные действия |
+| `A.7` | A2 family batch: map_family_parameters | #312 | Тяжёлый action-класс |
+| `A.8` | Tool surface job'а и приёмка эпика | #313 | LLM-вызовов на job ≤3 |
+| `B.1` | get_job_report: JSON/CSV с diff | #316 | Оператор видит, что изменилось |
+| `B.2` | rollback_job и retry_failed_items | #317 | Восстановление после сбоя |
+| `B.3` | False-done guard и crash reconciliation | #318 | Truthfulness 100 % |
 | `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
 | `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Последний полный гейт не прогнан |
 
-**Фокус сейчас — P: порядок динамического контекста и KV-кэш.**
-P.1 → P.2 → P.3 → P.4 → P.5 последовательно: сначала baseline, затем стабильный префикс.
-A.1 можно начинать параллельно вторым исполнителем; R.1/R.2 — после P.
+**Фокус сейчас — A: job engine (ночной прогон 4).**
+A.1 → A.2 → A.3 → A.4 → A.5 → **A.6 (rename_views + set_parameters)** → A.7 → A.8, затем B.1–B.3.
+Приоритет — 3–5 пакетных операций, которым можно доверять без человека; stretch-лестница (Tier-2 actions, C.1, D.1/D.2) — только после обязательного бара.
+**P (prompt cache) — отдельная сессия, после A.** Q.1/Q.2 — по готовности A/B.
 
 ## 5. Эпики
 
 | ID | Эпик | Prio | Статус | Issue | Задач | Зависимости |
 |---|---|---|---|---|---|---|
-| **A** | Job engine: A0 → движок → project/family bulk | P0 | `ready` | #289 | 8 | H1, H1c, H1d закрыты. A0 (A.1) — жёсткое предусловие для A.4–A.8. |
+| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 8 | H1, H1c, H1d закрыты. A0 (A.1) — жёсткое предусловие для A.4–A.8. |
 | **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `backlog` | #291 | 4 | Эпик A (A.5 минимум). |
 | **P** | Prompt cache & context ordering: стабильный префикс | P0 | `ready` | #298 | 9 | Независим от A; можно делать параллельно. |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
@@ -105,13 +111,13 @@ A.1 можно начинать параллельно вторым исполн
 
 ### A — Job engine: A0 → движок → project/family bulk
 
-Эпик: #289 · приоритет `P0` · статус `ready`
+Эпик: #289 · приоритет `P0` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `A.1` | A0: контракт verification & idempotency | P0 | `ready` | #306 |
-| `A.2` | Job spec, state machine и Core-модели | P0 | `backlog` | #307 |
-| `A.3` | SQLite v4: jobs, job_batches, job_items, job_events | P0 | `backlog` | #308 |
+| `A.1` | A0: контракт verification & idempotency | P0 | `in-progress` | #306 |
+| `A.2` | Job spec, state machine и Core-модели | P0 | `ready` | #307 |
+| `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | P0 | `backlog` | #308 |
 | `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | P0 | `backlog` | #309 |
 | `A.5` | Save policy, durable cursor и crash resume | P0 | `backlog` | #310 |
 | `A.6` | A1 project bulk: rename_views и set_parameters на движке | P0 | `backlog` | #311 |

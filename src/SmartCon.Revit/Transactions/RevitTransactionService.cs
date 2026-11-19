@@ -127,4 +127,92 @@ public sealed class RevitTransactionService : ITransactionService
         });
         return result.HasValue && result.Value;
     }
+
+    public ITransactionScope BeginTransaction(Document document, string name)
+    {
+        if (document.IsModifiable)
+        {
+            throw new InvalidOperationException(
+                "Cannot begin transaction '" + name + "': the document already has an open " +
+                "transaction or transaction group. " +
+                "[Action: close the outer transaction before starting a batch slice]");
+        }
+
+        var transaction = new Transaction(document, name);
+        var options = transaction.GetFailureHandlingOptions();
+        options.SetFailuresPreprocessor(new SmartConFailurePreprocessor());
+        transaction.SetFailureHandlingOptions(options);
+
+        var status = transaction.Start();
+        if (status != TransactionStatus.Started)
+        {
+            transaction.Dispose();
+            throw new InvalidOperationException(
+                "Transaction '" + name + "' did not start (status: " + status + "). " +
+                "[Action: check that the document is not read-only and has no open transaction]");
+        }
+
+        return new RevitTransactionScope(transaction, name);
+    }
+
+    private sealed class RevitTransactionScope : ITransactionScope
+    {
+        private readonly Transaction _transaction;
+        private readonly string _name;
+        private bool _finished;
+
+        public RevitTransactionScope(Transaction transaction, string name)
+        {
+            _transaction = transaction;
+            _name = name;
+        }
+
+        public bool IsActive => !_finished && _transaction.HasStarted();
+
+        public TransactionStatus Commit()
+        {
+            if (_finished)
+            {
+                throw new InvalidOperationException(
+                    "Transaction '" + _name + "' is already finished. " +
+                    "[Action: commit or roll back exactly once per scope]");
+            }
+
+            _finished = true;
+            var status = _transaction.Commit();
+            if (status != TransactionStatus.Committed)
+            {
+                SmartConLogger.Warn(
+                    $"Transaction '{_name}' was silently rolled back by Revit " +
+                    $"(Commit status: {status}) — the document was NOT modified. " +
+                    "[Action: check the operation's preconditions and retry the batch]");
+            }
+
+            return status;
+        }
+
+        public void RollBack()
+        {
+            if (_finished)
+            {
+                return;
+            }
+
+            _finished = true;
+            if (_transaction.HasStarted())
+            {
+                _transaction.RollBack();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!_finished)
+            {
+                RollBack();
+            }
+
+            _transaction.Dispose();
+        }
+    }
 }
