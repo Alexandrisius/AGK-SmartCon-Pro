@@ -85,7 +85,7 @@ A.1 можно начинать параллельно вторым исполн
 |---|---|---|---|---|---|---|
 | **A** | Job engine: A0 → движок → project/family bulk | P0 | `ready` | #289 | 8 | H1, H1c, H1d закрыты. A0 (A.1) — жёсткое предусловие для A.4–A.8. |
 | **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `backlog` | #291 | 4 | Эпик A (A.5 минимум). |
-| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `ready` | #298 | 9 | Независим от A; можно делать параллельно. |
+| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 9 | P.1–P.5 закрыты 2026-11-20; остались P.6–P.9 (P2). |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
@@ -136,11 +136,11 @@ A.1 можно начинать параллельно вторым исполн
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `P.1` | Cache-лог и baseline | P0 | `ready` | #353 |
-| `P.2` | Turn-context отдельным сообщением | P0 | `ready` | #354 |
-| `P.3` | Статический system + session context | P0 | `ready` | #355 |
-| `P.4` | Заморозка tools на диалог | P0 | `ready` | #356 |
-| `P.5` | Session cache key и provider policy | P0 | `ready` | #357 |
+| `P.1` | Cache-лог и baseline | P0 | `done` | #353 |
+| `P.2` | Turn-context отдельным сообщением | P0 | `done` | #354 |
+| `P.3` | Статический system + session context | P0 | `done` | #355 |
+| `P.4` | Заморозка tools на диалог | P0 | `done` | #356 |
+| `P.5` | Session cache key и provider policy | P0 | `done` | #357 |
 | `P.6` | Persist FrozenToolNames per conversation | P2 | `backlog` | #358 |
 | `P.7` | Summary-запрос с тем же префиксом и cache-aware компакция | P2 | `backlog` | #359 |
 | `P.8` | UI cache-метрики и ADR-078 | P2 | `backlog` | #360 |
