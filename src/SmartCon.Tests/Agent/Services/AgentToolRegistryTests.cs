@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 using System.Text.Json;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
@@ -69,7 +69,7 @@ public sealed class AgentToolRegistryTests
 
         var registry = new AgentToolRegistry(tools);
 
-        Assert.Equal(55, registry.GetDefinitions().Count);
+        Assert.Equal(61, registry.GetDefinitions().Count);
         Assert.All(registry.GetDefinitions(), definition =>
         {
             Assert.True(AgentToolCards.TryGet(definition.Name, out var card));

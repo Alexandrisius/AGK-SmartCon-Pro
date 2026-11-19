@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent;
+﻿using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Core.Services.Agent;
 
@@ -23,6 +23,7 @@ public static partial class AgentToolCards
             .Concat(FamilyCards())
             .Concat(AdminCards())
             .Concat(WriteCards())
+            .Concat(JobCards())
             .ToArray();
 
         CardsByName = new Dictionary<string, AgentToolCard>(Cards.Length, StringComparer.Ordinal);

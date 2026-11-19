@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Services.Agent;
+﻿namespace SmartCon.Core.Services.Agent;
 
 /// <summary>A named tool pack exposed by the catalog v2 router (runbook §7.2).</summary>
 public sealed class AgentToolPack
@@ -84,6 +84,16 @@ public static class AgentToolPacks
             Name = "changes",
             Description = "Откат и закрытие наборов изменений SmartCon.",
             Tools = new[] { "undo_last", "discard_change_set" }
+        },
+        new()
+        {
+            Name = "jobs",
+            Description = "Массовые операции движком заданий: старт, статус, отмена, отчёт, откат и повтор.",
+            Tools = new[]
+            {
+                "start_job", "get_job_status", "cancel_job",
+                "get_job_report", "rollback_job", "retry_failed_items"
+            }
         },
         new()
         {

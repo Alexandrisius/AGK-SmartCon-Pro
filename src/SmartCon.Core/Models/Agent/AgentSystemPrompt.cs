@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace SmartCon.Core.Models.Agent;
 
@@ -53,6 +53,15 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - After apply, verify the result by re-reading the affected objects (get_view_settings / list_views / get_element_details) and report any mismatch instead of assuming success.
 ";
 
+
+    private const string JobsSection = @"## Bulk jobs
+- Never run a bulk operation element by element: one start_job call replaces hundreds of per-element calls.
+- start_job with dryRun=true previews the whole operation (nothing changes) and returns count, sample, warnings and previewDigest. Read the preview, then call start_job again with dryRun=false and that exact previewDigest to apply.
+- After apply starts, poll get_job_status with waitSeconds (max 25) instead of repeating start_job. One active job per document; start_job reports job_already_active instead of queuing a second one.
+- Report with get_job_report (per-item expected/actual/verified; format=""csv"" writes a file and returns its path). rollback_job previews first (dryRun=true is the default) and restores per-item undo data. retry_failed_items retries only failed units. cancel_job stops between units and returns a partial report.
+- If a job reports interrupted (Revit closed during the run), resume it with start_job(action, resumeJobId, dryRun=false); already applied units are re-verified and not duplicated.
+";
+
     private const string ToolCatalogV2Section = @"## Tool catalog
 - Only the core tools plus a bounded set of recent and relevant tools are available in each request.
 - If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools with an empty query lists the whole catalog (name, description, pack) without schemas, paged with offset/nextOffset.
@@ -99,6 +108,8 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         var builder = new StringBuilder(BasePrompt);
         builder.AppendLine();
         builder.Append(ModeSection(mode));
+        builder.AppendLine();
+        builder.Append(JobsSection);
         builder.AppendLine();
         builder.Append(PlanSection);
         builder.AppendLine();

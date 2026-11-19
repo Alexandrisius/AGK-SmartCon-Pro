@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using SmartCon.Core.Models.Agent;
@@ -28,7 +28,7 @@ internal sealed class RoutingQueryFixture
 /// </summary>
 internal static class RoutingCatalogFactory
 {
-    public const int Packs = 20;
+    public const int Packs = 21;
     public const int CardsPerPack = 50;
     public const int SyntheticCardCount = Packs * CardsPerPack;
 

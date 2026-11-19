@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent;
+﻿using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using Xunit;
 
@@ -62,13 +62,19 @@ public sealed class AgentToolCardsTests
         "set_view_parameters",
         "rename_filter",
         "get_schedule_definition",
-        "list_shared_parameters"
+        "list_shared_parameters",
+        "start_job",
+        "get_job_status",
+        "cancel_job",
+        "get_job_report",
+        "rollback_job",
+        "retry_failed_items"
     };
 
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(55, AgentToolCards.Count);
+        Assert.Equal(61, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

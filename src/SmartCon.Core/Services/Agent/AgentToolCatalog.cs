@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent;
+﻿using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Core.Services.Agent;
 
@@ -266,6 +266,36 @@ public static class AgentToolCatalog
             {
                 "общие параметры", "ФОП", "shared parameters", "активный ФОП",
                 "файл общих параметров", "определения параметров"
+            }),
+            ["start_job"] = new("Write", true, new[]
+            {
+                "массово", "пакетно", "batch", "bulk", "job", "задание", "движок", "все элементы",
+                "сотни", "по правилу", "массовая операция", "прогон"
+            }),
+            ["get_job_status"] = new("Read", true, new[]
+            {
+                "статус", "прогресс", "progress", "status", "готово ли", "сколько осталось",
+                "состояние задания", "wait", "подождать", "poll", "опрос", "job status"
+            }),
+            ["cancel_job"] = new("Write", true, new[]
+            {
+                "отмена", "остановить", "прервать", "cancel", "stop", "abort", "стоп",
+                "завершить задание", "прекратить", "не продолжать"
+            }),
+            ["get_job_report"] = new("Read", true, new[]
+            {
+                "отчёт", "отчет", "report", "diff", "что изменилось", "csv", "проверка",
+                "верификация", "verified", "mismatch", "расхождения", "результат задания"
+            }),
+            ["rollback_job"] = new("Write", true, new[]
+            {
+                "откат", "откатить", "rollback", "вернуть как было", "undo job", "восстановить",
+                "обратно", "отменить задание", "restore", "реверс"
+            }),
+            ["retry_failed_items"] = new("Write", true, new[]
+            {
+                "повтор", "повторить", "retry", "доделать", "перезапустить", "failed",
+                "ошибки задания", "упавшие элементы", "продолжить", "retry failed"
             })
         };
 
