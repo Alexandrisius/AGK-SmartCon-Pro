@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Services;
+﻿namespace SmartCon.Core.Services;
 
 public static partial class LocalizationService
 {
@@ -82,8 +82,8 @@ public static partial class LocalizationService
         en["Agent_Tool_Error"] = "error";
         ru["Agent_User"] = "Вы";
         en["Agent_User"] = "You";
-        ru["Agent_Assistant"] = "SmartCon Agent";
-        en["Agent_Assistant"] = "SmartCon Agent";
+        ru["Agent_Assistant"] = "BIM Agent";
+        en["Agent_Assistant"] = "BIM Agent";
         ru["Agent_Error"] = "Ошибка";
         en["Agent_Error"] = "Error";
         ru["Agent_NewChatTitle"] = "Новый чат";
@@ -158,16 +158,16 @@ public static partial class LocalizationService
         en["Agent_Confirm_Risks"] = "Risks:";
         ru["Agent_Approval_Confirm"] = "Подтверждение";
         en["Agent_Approval_Confirm"] = "Confirm writes";
-        ru["Agent_Approval_Auto"] = "Без подтверждений";
-        en["Agent_Approval_Auto"] = "No confirmations";
+        ru["Agent_Approval_Auto"] = "Всё разрешено";
+        en["Agent_Approval_Auto"] = "Allow all";
         ru["Agent_Approval_ReadOnly"] = "Только чтение";
         en["Agent_Approval_ReadOnly"] = "Read only";
         ru["Agent_Approval_ReadOnlyBanner"] = "Режим «Только чтение»: агент не может изменять модель.";
         en["Agent_Approval_ReadOnlyBanner"] = "Read-only mode: the agent cannot change the model.";
         ru["Agent_Approval_AutoBanner"] =
-            "Режим «Без подтверждений»: все изменения применяются сразу, включая разрушительные. Откат — undo_last / change set.";
+            "Режим «Всё разрешено»: изменения применяются сразу, включая разрушительные. Откат — undo_last / change set.";
         en["Agent_Approval_AutoBanner"] =
-            "No-confirmations mode: every change is applied immediately, including destructive ones. Undo via undo_last / change sets.";
+            "Allow-all mode: every change is applied immediately, including destructive ones. Undo via undo_last / change sets.";
         ru["Agent_Approval_Tooltip"] = "Режим подтверждения изменений. Сбрасывается при смене документа.";
         en["Agent_Approval_Tooltip"] = "Confirmation mode for changes. Resets when the document changes.";
         ru["Agent_Approval_Disable"] = "Выключить";

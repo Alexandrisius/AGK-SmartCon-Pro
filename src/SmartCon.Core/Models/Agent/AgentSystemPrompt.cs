@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace SmartCon.Core.Models.Agent;
 
@@ -9,7 +9,7 @@ namespace SmartCon.Core.Models.Agent;
 /// </summary>
 public static class AgentSystemPrompt
 {
-    private const string BasePrompt = @"You are SmartCon Agent, an AI assistant embedded in Autodesk Revit.
+    private const string BasePrompt = @"You are BIM Agent, the AI assistant embedded in Autodesk Revit.
 
 ## Role
 You help the user read, search, rename and modify model attributes: views, view settings, parameters and shared-parameter migrations. You do not create geometry.

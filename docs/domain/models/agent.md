@@ -93,6 +93,18 @@ module: agent
 
 Карточки write-тулов (dry-run по умолчанию, confirmation gate).
 
+## AgentToolCards.Admin
+
+Карточки admin-тулов (P0-стресс-тест): `list_filters`, `get_filter_details`,
+`set_filter_rules`, `delete_filter`, `delete_views`, `delete_sheets`,
+`delete_family_types`, `remove_family_parameter`, `set_view_parameters`,
+`rename_filter`, `get_schedule_definition`, `list_shared_parameters`.
+
+## AgentToolDisplayNames
+
+Локализованные человекочитаемые названия тулов (tool name → «Список видов»)
+для компактных заголовков tool-call в UI.
+
 ## AgentToolCatalog
 
 Каталог тулов: реестр определений, BM25-retrieval shortlist, паки, recency (`TouchTool`).

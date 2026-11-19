@@ -107,13 +107,13 @@ public static class RibbonBuilder
 
         var agentButton = new PushButtonData(
             name: "SmartConAgent",
-            text: "SmartCon\nAgent",
+            text: "\u00A0\u00A0BIM\u00A0\u00A0\n\u00A0\u00A0Agent\u00A0\u00A0",
             assemblyName: agentAssembly,
             className: "SmartCon.Agent.Commands.AgentCommand")
         {
-            ToolTip = "AI assistant for reading and modifying model attributes",
-            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.Info_32x32.png"),
-            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.Info_16x16.png")
+            ToolTip = "BIM Agent — AI assistant for reading and modifying model attributes",
+            LargeImage = GetEmbeddedImage("SmartCon.App.Resources.Icons.AgentBot_32x32.png"),
+            Image = GetEmbeddedImage("SmartCon.App.Resources.Icons.AgentBot_16x16.png")
         };
 
         agentPanel.AddItem(agentButton);

@@ -2,7 +2,7 @@
 <RevitAddIns>
   <AddIn Type="Application">
     <Name>SmartCon</Name>
-    <Assembly>%APPDATA%\SmartCon\2021-2023\SmartCon.App.dll</Assembly>
+    <Assembly>%APPDATA%\SmartCon\2023\SmartCon.App.dll</Assembly>
     <AddInId>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</AddInId>
     <FullClassName>SmartCon.App.App</FullClassName>
     <VendorId>AGK</VendorId>

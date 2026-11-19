@@ -53,12 +53,15 @@
 
 ## Shipping artifacts
 
-Публичная автоматизация сборки и релизов оперирует четырьмя grouped artifacts:
+Публичная автоматизация сборки и релизов оперирует семью grouped artifacts:
 
 - `R19` → Revit 2019-2020 (`net48`, RevitAPI 2020 baseline)
-- `R21` → Revit 2021-2023 (`net48`, единый бинарник для трёх версий)
+- `R21` → Revit 2021-2022 (`net48`, единый бинарник для двух версий)
+- `R23` → Revit 2023 (`net48`, отдельный бинарник — первая версия с AI-агентом)
 - `R24` → Revit 2024 (`net48`, отдельный бинарник из-за API / `ElementId` differences)
 - `R25` → Revit 2025 (`net8.0-windows`)
+- `R26` → Revit 2026 (`net8.0-windows`, Conductor* wire model)
+- `R27` → Revit 2027 (`net10.0-windows`)
 
 ## Настройки сборки (Directory.Build.props)
 

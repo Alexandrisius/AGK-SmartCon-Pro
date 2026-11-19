@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.Agent.Services.Storage;
@@ -67,9 +68,13 @@ ORDER BY updated_at DESC
 LIMIT @limit;";
             command.Parameters.AddWithValue("@documentId", documentId);
             command.Parameters.AddWithValue("@limit", safeLimit);
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-                result.Add(ReadHeader(reader));
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                    result.Add(ReadHeader(reader));
+            }
+
+            BackfillLegacyTitles(connection, result);
         }
 
         return Task.FromResult<IReadOnlyList<AgentConversationHeader>>(result);
@@ -237,6 +242,57 @@ ORDER BY rowid;";
             UpdatedAt = Parse(reader.GetString(6)),
             TokenCount = reader.GetInt32(7)
         };
+    }
+
+    /// <summary>
+    /// Sessions created before the 200-char title policy still carry the old
+    /// 60-char cut (61 with the ellipsis). Rebuild those titles from the first
+    /// user message once, so existing sessions also use the panel width.
+    /// </summary>
+    private static void BackfillLegacyTitles(
+        SqliteConnection connection,
+        List<AgentConversationHeader> headers)
+    {
+        for (var i = 0; i < headers.Count; i++)
+        {
+            var header = headers[i];
+            if (header.Title.Length != 61
+                || !header.Title.EndsWith("…", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            using var read = connection.CreateCommand();
+            read.CommandText = @"
+SELECT content FROM messages
+WHERE session_id = @id AND role = 'User' AND length(content) > 60
+ORDER BY rowid LIMIT 1;";
+            read.Parameters.AddWithValue("@id", header.Id.ToString("D"));
+            if (read.ExecuteScalar() is not string content)
+                continue;
+
+            var title = AgentConversationTitle.FromFirstMessage(content);
+            if (title.Length <= header.Title.Length)
+                continue;
+
+            using var update = connection.CreateCommand();
+            update.CommandText = "UPDATE sessions SET title = @title WHERE id = @id;";
+            update.Parameters.AddWithValue("@title", title);
+            update.Parameters.AddWithValue("@id", header.Id.ToString("D"));
+            update.ExecuteNonQuery();
+
+            headers[i] = new AgentConversationHeader
+            {
+                Id = header.Id,
+                Title = title,
+                DocumentId = header.DocumentId,
+                DocumentPath = header.DocumentPath,
+                RevitVersion = header.RevitVersion,
+                CreatedAt = header.CreatedAt,
+                UpdatedAt = header.UpdatedAt,
+                TokenCount = header.TokenCount
+            };
+        }
     }
 
     private static AgentMessage ReadMessage(SqliteDataReader reader)

@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Text.Json;
@@ -9,6 +9,7 @@ using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.UI;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -88,6 +89,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         AttachSessionContext(sessionContext);
         Messages.CollectionChanged += OnMessagesChanged;
         Attachments.CollectionChanged += OnAttachmentsChanged;
+        LocalizationService.LanguageChanged += OnLanguageChanged;
         if (_documentChangeNotifier is not null)
             _documentChangeNotifier.ActiveDocumentChanged += OnActiveDocumentChanged;
 
@@ -203,6 +205,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         DetachConfirmationService(_confirmationService);
         Messages.CollectionChanged -= OnMessagesChanged;
         Attachments.CollectionChanged -= OnAttachmentsChanged;
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
         _turnCancellation?.Cancel();
         _turnCancellation?.Dispose();
         _turnCancellation = null;
@@ -619,7 +622,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                     {
                         Messages.Add(new AgentChatItemViewModel(AgentChatItemKind.Assistant)
                         {
-                            Header = S("Agent_Assistant", "SmartCon Agent"),
+                            Header = S("Agent_Assistant", "BIM Agent"),
                             Text = message.Content!
                         });
                     }

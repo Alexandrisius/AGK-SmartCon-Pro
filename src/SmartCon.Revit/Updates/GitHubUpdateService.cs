@@ -98,6 +98,7 @@ public sealed partial class GitHubUpdateService : IUpdateService
         {
             "R19" => Path.Combine(s_smartConDir, "2019-2020"),
             "R21" => Path.Combine(s_smartConDir, "2021-2023"),
+            "R23" => Path.Combine(s_smartConDir, "2023"),
             "R24" => Path.Combine(s_smartConDir, "2024"),
             "R25" => Path.Combine(s_smartConDir, "2025"),
             "R26" => Path.Combine(s_smartConDir, "2026"),
@@ -113,8 +114,12 @@ public sealed partial class GitHubUpdateService : IUpdateService
 
         if (installed.Contains(2019) || installed.Contains(2020))
             tags.Add("R19");
-        if (installed.Contains(2021) || installed.Contains(2022) || installed.Contains(2023))
+        if (installed.Contains(2021) || installed.Contains(2022))
             tags.Add("R21");
+        // Revit 2023 gets its own binary: the shared R21 build has no AI agent
+        // (SmartCon.Agent is referenced only for RevitVersion >= 2023).
+        if (installed.Contains(2023))
+            tags.Add("R23");
         if (installed.Contains(2024))
             tags.Add("R24");
         if (installed.Contains(2025))
@@ -125,7 +130,7 @@ public sealed partial class GitHubUpdateService : IUpdateService
             tags.Add("R27");
 
         if (tags.Count == 0)
-            tags = ["R19", "R21", "R24", "R25", "R26", "R27"];
+            tags = ["R19", "R21", "R23", "R24", "R25", "R26", "R27"];
 
         return tags;
     }

@@ -8,17 +8,20 @@
 ## Общая схема
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                       4 shipping-артефакта сборки                     │
-├────────────────┬──────────────────┬────────────────┬─────────────────┤
-│      R19       │       R21        │      R24       │      R25        │
-│     net48      │      net48       │     net48      │   net8.0-win    │
-│ Revit 2019-20  │ Revit 2021-2023  │   Revit 2024   │   Revit 2025    │
-│ RevitAPI 2020  │  RevitAPI 2021   │ RevitAPI 2024  │ RevitAPI 2025   │
-│ ElementId(int) │  ElementId(int)  │ ElementId(long)│ ElementId(long) │
-└────────────────┴──────────────────┴────────────────┴─────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        7 shipping-артефактов сборки                        │
+├────────────────┬──────────────────┬────────────────┬────────────────┬────────┤
+│      R19       │       R21        │      R23       │      R24       │ R25–27 │
+│     net48      │      net48       │     net48      │     net48      │ net8/10│
+│ Revit 2019-20  │ Revit 2021-2022  │   Revit 2023   │   Revit 2024   │ 25–27  │
+│ RevitAPI 2020  │  RevitAPI 2021   │  RevitAPI 2023 │  RevitAPI 2024 │ 25–27  │
+│ ElementId(int) │  ElementId(int)  │  ElementId(int)│ ElementId(long)│ (long) │
+└────────────────┴──────────────────┴────────────────┴────────────────┴────────┘
 
-Один исходный код → 4 shipping-бинарника. Дублирование НЕ НУЖНО.
+> R23 — отдельный бинарник: AI-агент (`SmartCon.Agent`) подключается только для
+> Revit 2023+, поэтому общий R21-бинарник для 2021–2022 его не содержит.
+
+Один исходный код → 7 shipping-бинарников. Дублирование НЕ НУЖНО.
 ```
 
 ---
@@ -237,14 +240,15 @@ ElementId restored = ElementIdCompat.Create(serialized);
 ```
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25           → Revit 2025
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24           → Revit 2024
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21           → Revit 2021-2023
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R23           → Revit 2023
+dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21           → Revit 2021-2022
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19           → Revit 2019-2020
 dotnet build src/SmartCon.Updater/SmartCon.Updater.csproj -c Debug -f net8.0 → Updater
 ```
 
 ### Для релиза (release.ps1)
 
-Автоматически собирает 4 shipping-конфигурации (`R19 / R21 / R24 / R25`), прогоняет тесты на `Release.R25`, создаёт ZIP и Inno Setup EXE.
+Автоматически собирает 7 shipping-конфигураций (`R19 / R21 / R23 / R24 / R25 / R26 / R27`), прогоняет тесты на `Release.R25`, создаёт ZIP и Inno Setup EXE.
 
 ---
 

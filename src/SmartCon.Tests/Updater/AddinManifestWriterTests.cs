@@ -8,10 +8,12 @@ public class AddinManifestWriterTests
 {
     [Theory]
     [InlineData("2019-2020", new[] { 2019, 2020 })]
-    [InlineData("2021-2023", new[] { 2021, 2022, 2023 })]
+    [InlineData("2021-2023", new[] { 2021, 2022 })]
+    [InlineData("2023", new[] { 2023 })]
     [InlineData("2024", new[] { 2024 })]
     [InlineData("2025", new[] { 2025 })]
     [InlineData("2026", new[] { 2026 })]
+    [InlineData("2027", new[] { 2027 })]
     [InlineData("unknown", new int[0])]
     public void GetYearsForTargetFolder_Maps(string folder, int[] expected)
     {
@@ -69,8 +71,8 @@ public class AddinManifestWriterTests
         {
             var written = AddinManifestWriter.WriteManifests(appData, "2021-2023", _ => { });
 
-            Assert.Equal(3, written);
-            foreach (var year in new[] { 2021, 2022, 2023 })
+            Assert.Equal(2, written);
+            foreach (var year in new[] { 2021, 2022 })
             {
                 var path = Path.Combine(appData, "Autodesk", "Revit", "Addins", year.ToString(), "SmartCon.addin");
                 Assert.True(File.Exists(path));

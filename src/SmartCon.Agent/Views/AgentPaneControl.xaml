@@ -23,6 +23,68 @@
             <converters:InvertBoolConverter x:Key="InvertBool"/>
             <converters:MarkdownToFlowDocumentConverter x:Key="MarkdownToFlow"/>
 
+            <!-- Agent robot: angular head, antenna, square eyes, bust (same artwork as
+                 AgentBot_16x16/32x32 ribbon icons, vector here so it can be recolored). -->
+            <ControlTemplate x:Key="AgentBotIcon" TargetType="ContentControl">
+                <Viewbox Stretch="Uniform">
+                    <Canvas Width="32" Height="32">
+                        <Path Data="M16,0.3 L17.6,1.9 L16,3.5 L14.4,1.9 Z"
+                              Fill="{TemplateBinding Foreground}"/>
+                        <Path Data="M16,2.6 L16,7.3"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.2"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                        <Path Data="M9,7 L23,7 L26.5,10.5 L26.5,18 L23,21.5 L9,21.5 L5.5,18 L5.5,10.5 Z"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.2"
+                              StrokeLineJoin="Round"
+                              Fill="Transparent"/>
+                        <Rectangle Canvas.Left="2.4" Canvas.Top="12.2"
+                                   Width="3.2" Height="4.6"
+                                   RadiusX="0.8" RadiusY="0.8"
+                                   Fill="{TemplateBinding Foreground}"/>
+                        <Rectangle Canvas.Left="26.4" Canvas.Top="12.2"
+                                   Width="3.2" Height="4.6"
+                                   RadiusX="0.8" RadiusY="0.8"
+                                   Fill="{TemplateBinding Foreground}"/>
+                        <Rectangle Canvas.Left="10.4" Canvas.Top="12.6"
+                                   Width="3.2" Height="3.2"
+                                   RadiusX="0.5" RadiusY="0.5"
+                                   Fill="{TemplateBinding Foreground}"/>
+                        <Rectangle Canvas.Left="18.4" Canvas.Top="12.6"
+                                   Width="3.2" Height="3.2"
+                                   RadiusX="0.5" RadiusY="0.5"
+                                   Fill="{TemplateBinding Foreground}"/>
+                        <Path Data="M13.2,18.2 L18.8,18.2"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                        <Path Data="M12.6,21.5 L12.6,23.2 M19.4,21.5 L19.4,23.2"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.1"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                        <Path Data="M10,23.2 L22,23.2 L23.6,25.2 L23.6,29 L8.4,29 L8.4,25.2 Z"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.2"
+                              StrokeLineJoin="Round"
+                              Fill="Transparent"/>
+                        <Path Data="M13.4,26.2 L18.6,26.2"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="0.9"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                    </Canvas>
+                </Viewbox>
+            </ControlTemplate>
+
+            <Style x:Key="AgentBotIconStyle" TargetType="ContentControl">
+                <Setter Property="Template" Value="{StaticResource AgentBotIcon}"/>
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+
             <Style x:Key="RoundIconButton" TargetType="Button">
                 <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
                 <Setter Property="Foreground" Value="White"/>
@@ -236,11 +298,10 @@
                         <Border Width="26" Height="26" CornerRadius="13"
                                 Background="{DynamicResource AccentBrush}"
                                 VerticalAlignment="Top" Margin="0,16,8,0">
-                            <iconPacks:PackIconMaterial Kind="Robot"
-                                                        Width="15" Height="15"
-                                                        Foreground="White"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"/>
+                            <ContentControl Width="16" Height="16"
+                                            Style="{StaticResource AgentBotIconStyle}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"/>
                         </Border>
 
                         <StackPanel Grid.Column="1" HorizontalAlignment="Left" MaxWidth="520">
@@ -560,23 +621,23 @@
             <Border Width="30" Height="30" CornerRadius="9"
                     Background="{DynamicResource AccentBrush}"
                     Margin="0,0,8,0">
-                <iconPacks:PackIconMaterial Kind="Robot"
-                                            Width="17" Height="17"
-                                            Foreground="White"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"/>
+                <ContentControl Width="19" Height="19"
+                                Style="{StaticResource AgentBotIconStyle}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
             </Border>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock Text="{loc:Loc Agent_Assistant}"
-                           FontSize="13"
+                           FontSize="17"
                            FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"
                            Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <TextBlock Text="{Binding ProviderLabel}"
                            FontSize="10"
                            Foreground="{DynamicResource TextMutedBrush}"
                            TextTrimming="CharacterEllipsis"
-                           Margin="0,1,0,0"/>
+                           Margin="0,0,0,0"/>
             </StackPanel>
 
             <Button Grid.Column="2"
@@ -604,14 +665,22 @@
         <ComboBox Grid.Row="1"
                   ItemsSource="{Binding Sessions}"
                   SelectedItem="{Binding SelectedSession}"
-                  DisplayMemberPath="Title"
                   ItemContainerStyle="{StaticResource SessionComboBoxItem}"
                   VerticalContentAlignment="Center"
                   Height="26"
                   Margin="0,0,0,4"
                   Style="{DynamicResource CompactComboBox}"
                   IsEnabled="{Binding IsBusy, Converter={StaticResource InvertBool}}"
-                  ToolTip="{loc:Loc Agent_Session_Tooltip}"/>
+                  ToolTip="{loc:Loc Agent_Session_Tooltip}"
+                  Tag="{Binding ActualWidth, RelativeSource={RelativeSource Self}}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Title}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding Title}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
 
         <!-- Approval mode + warning banners -->
         <StackPanel Grid.Row="2">
@@ -697,12 +766,12 @@
                         BorderBrush="{DynamicResource BorderAltBrush}"
                         BorderThickness="1"
                         HorizontalAlignment="Center">
-                    <iconPacks:PackIconMaterial Kind="RobotOutline"
-                                                Width="28" Height="28"
-                                                Opacity="0.7"
-                                                Foreground="{DynamicResource AccentBrush}"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"/>
+                    <ContentControl Width="30" Height="30"
+                                    Style="{StaticResource AgentBotIconStyle}"
+                                    Foreground="{DynamicResource AccentBrush}"
+                                    Opacity="0.7"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"/>
                 </Border>
                 <TextBlock Text="{loc:Loc Agent_Empty_Title}"
                            FontSize="14"
@@ -732,11 +801,10 @@
             <Border Width="26" Height="26" CornerRadius="13"
                     Background="{DynamicResource AccentBrush}"
                     VerticalAlignment="Top" Margin="0,2,8,0">
-                <iconPacks:PackIconMaterial Kind="Robot"
-                                            Width="15" Height="15"
-                                            Foreground="White"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"/>
+                <ContentControl Width="16" Height="16"
+                                Style="{StaticResource AgentBotIconStyle}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"/>
             </Border>
 
             <Border Grid.Column="1"
@@ -878,7 +946,7 @@
         <!-- Composer -->
         <Border Grid.Row="6"
                 Margin="0,8,0,0"
-                Padding="9,7,7,7"
+                Padding="7,7,7,7"
                 CornerRadius="11"
                 Background="{DynamicResource SurfaceBrush}"
                 BorderBrush="{DynamicResource BorderAltBrush}"
@@ -926,11 +994,22 @@
                     <Button Grid.Column="0"
                             Command="{Binding AttachFilesCommand}"
                             Width="26" Height="26"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,2,0"
                             Style="{DynamicResource FlatIconButton}"
                             ToolTip="{loc:Loc Agent_Attach}">
-                        <Viewbox Width="13" Height="13" Stretch="Uniform">
-                            <Path Data="M16.5,6V17.5C16.5,19.71 14.71,21.5 12.5,21.5C10.29,21.5 8.5,19.71 8.5,17.5V5C8.5,3.62 9.62,2.5 11,2.5C12.38,2.5 13.5,3.62 13.5,5V15.5C13.5,16.05 13.05,16.5 12.5,16.5C11.95,16.5 11.5,16.05 11.5,15.5V6H10V15.5C10,16.88 11.12,18 12.5,18C13.88,18 15,16.88 15,15.5V5C15,2.79 13.21,1 11,1C8.79,1 7,2.79 7,5V17.5C7,20.54 9.46,23 12.5,23C15.54,23 18,20.54 18,17.5V6H16.5Z"
-                                  Fill="{DynamicResource TextMutedBrush}"/>
+                        <Viewbox Width="14" Height="14"
+                                 Stretch="Uniform"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center">
+                            <Canvas Width="16" Height="16">
+                                <Path Data="M5.4,4.6 V11.0 A2.6,2.6 0 0 0 10.6,11.0 V4.2 A1.8,1.8 0 0 0 7.0,4.2 V10.2 A1.0,1.0 0 0 0 9.0,10.2 V5.6"
+                                      Stroke="{DynamicResource TextSecondaryBrush}"
+                                      StrokeThickness="1.4"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Fill="Transparent"/>
+                            </Canvas>
                         </Viewbox>
                     </Button>
 
@@ -938,7 +1017,7 @@
                               ItemsSource="{Binding ApprovalModes}"
                               SelectedItem="{Binding SelectedApprovalMode}"
                               DisplayMemberPath="Label"
-                              Width="132"
+                              MinWidth="132"
                               Height="26"
                               Margin="4,0,4,0"
                               VerticalContentAlignment="Center"
@@ -1047,15 +1126,20 @@
                             Width="30" Height="30"
                             Style="{StaticResource RoundIconButton}"
                             ToolTip="{Binding PrimaryActionTooltip}">
-                        <Grid Width="15" Height="15">
-                            <iconPacks:PackIconMaterial Kind="Send"
-                                                        Width="15" Height="15"
-                                                        Foreground="White"
-                                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
-                            <iconPacks:PackIconMaterial Kind="Stop"
-                                                        Width="14" Height="14"
-                                                        Foreground="{DynamicResource DangerBrush}"
-                                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
+                        <Grid Width="16" Height="16">
+                            <Path Data="M2,21L23,12L2,3V10L17,12L2,14V21Z"
+                                  Fill="White"
+                                  Width="14" Height="14"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}"/>
+                            <Border Width="9" Height="9"
+                                    CornerRadius="2.5"
+                                    Background="White"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"/>
                         </Grid>
                     </Button>
                 </Grid>

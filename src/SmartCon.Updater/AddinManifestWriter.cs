@@ -15,7 +15,8 @@ internal static class AddinManifestWriter
     public static IReadOnlyList<int> GetYearsForTargetFolder(string folderName) => folderName switch
     {
         "2019-2020" => new[] { 2019, 2020 },
-        "2021-2023" => new[] { 2021, 2022, 2023 },
+        "2021-2023" => new[] { 2021, 2022 },
+        "2023" => new[] { 2023 },
         "2024" => new[] { 2024 },
         "2025" => new[] { 2025 },
         "2026" => new[] { 2026 },
