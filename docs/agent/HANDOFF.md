@@ -19,9 +19,9 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
 | Гейт | Результат |
 |---|---|
 | Unit `SmartCon.Tests -c Debug.R25` | **3813/3813** |
-| Integration R25 — family pack (56: read 13 / write 26 / map+undo 14 / scale 1 / plan 2) | **56/56** |
-| Integration R25 — полный сьют, `SMARTCON_AGENT_EVAL_REPLAY=1` | **423: 412 passed, 11 skipped, 0 failed, 9m57s** (eval replay 46/46 внутри) |
-| Integration R27 net10 (Revit 2027) — family pack | **56/56** |
+| Integration R25 — family pack (61: read 13 / write 30 / map+undo 15 / scale 1 / plan 2) | **61/61** |
+| Integration R25 — полный сьют, `SMARTCON_AGENT_EVAL_REPLAY=1` | **428: 417 passed, 11 skipped, 0 failed, 10m03s** (eval replay 46/46 внутри) |
+| Integration R27 net10 (Revit 2027) — family pack | **61/61** |
 | Integration net48 (Revit 2023, полный сьют) | **246 passed, 12 skipped, 0 failed** (Agent-тесты исключены из net48 по дизайну) |
 | Eval replay (`SMARTCON_AGENT_EVAL_REPLAY=1`) | **46/46**, schema **149/149**, unauthorized **0**, threshold violations **0** |
 | Release.R25 (NET/IDE-анализаторы) | **0 errors, 0 warnings** |
@@ -67,6 +67,16 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
   `includeSystemFamilies` удалён из схемы; shared GUID-конфликты и `guid` без
   `isShared` отклоняются; backup проверяет ReadOnly.
 - Файлы: `AgentWriteToolBase` и семейные тесты разбиты partial (<600 строк).
+- Второй проход валидатора (P0/P1 нет): shared-определение ищется по всем группам
+  файла общих параметров (кросс-групповой GUID/имя), read-tool ловит
+  `Autodesk.Revit.Exceptions.*`, удалён оборванный XML-doc после split,
+  legacy-restore проверяет расширение и в dry-run, файлы тестов <600 строк,
+  пути eval-артефакта в HANDOFF исправлены на `%LOCALAPPDATA%`.
+  Добавлены тесты: `AddParameter_Shared_FindsDefinitionInAnotherGroup`,
+  `SetValues_InstanceParameter_ReportsInstanceSkipped`,
+  `SetValues_ForeignTypeId_ReturnsInvalidValue`,
+  `AddParameter_FamilyIdAndNameMismatch_ReturnsInvalidValue`,
+  `UndoLast_LegacyNonRfaPath_ReturnsBackupUnavailable`.
 
 ### Исправлено из pre-existing (по указанию владельца)
 
@@ -87,7 +97,7 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
 
 ### Артефакты последней ночи
 
-- `%APPDATA%\AGK\SmartCon\Agent\eval\20261119-065747\report.json` — eval replay
+- `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\20261119-065747\report.json` — eval replay
   46/46 (schema 149/149).
 - `%TEMP%\<session>\smartcon-family-scale.txt` — замеры scale-теста.
 - `docs/agent/00-strategy/h1d-evidence.md` — полная матрица и счётчики.
@@ -227,7 +237,7 @@ manual pending.
 
 ## ⚡ Фидбэк самого агента: где лежит и как читать (2026-11-18)
 
-`report_tooling_feedback` пишет в `%APPDATA%\Roaming\SmartCon\Agent\agent.db`,
+`report_tooling_feedback` пишет в `%APPDATA%\SmartCon\Agent\agent.db`,
 таблица `agent_feedback` (дубль — `smartcon.log`). Автоматического читателя нет:
 `AgentFrictionAnalyzer` зарегистрирован в DI, но нигде не вызывается — таблица
 была write-only. На 2026-11-18 в ней 22 записи (включая стресс-тесты №1/№2).

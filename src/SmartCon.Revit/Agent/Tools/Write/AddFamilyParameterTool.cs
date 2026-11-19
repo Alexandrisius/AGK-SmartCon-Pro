@@ -337,20 +337,80 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
             return null;
         }
 
+        ExternalDefinition? existing = null;
+        try
+        {
+            foreach (DefinitionGroup candidate in file.Groups)
+            {
+                foreach (Definition definition in candidate.Definitions)
+                {
+                    if (definition is not ExternalDefinition external)
+                        continue;
+
+                    var sameGuid = guid.HasValue && external.GUID == guid.Value;
+                    var sameName = string.Equals(
+                        external.Name,
+                        name,
+                        StringComparison.OrdinalIgnoreCase);
+                    if (!sameGuid && !sameName)
+                        continue;
+
+                    existing = external;
+                    break;
+                }
+
+                if (existing is not null)
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Fail(
+                outcome,
+                "shared_parameter_file_missing",
+                "The shared parameter file could not be read: " + ex.Message,
+                "[Action: check the shared parameter file and retry]");
+            return null;
+        }
+
+        if (existing is not null)
+        {
+            if (!existing.GetDataType().Equals(spec))
+            {
+                Fail(
+                    outcome,
+                    "invalid_value",
+                    "The shared parameter definition '" + existing.Name + "' already exists " +
+                    "with a different data type.",
+                    "Use another name or fix the definition in the shared parameter file.");
+                return null;
+            }
+
+            if (guid.HasValue && existing.GUID != guid.Value)
+            {
+                Fail(
+                    outcome,
+                    "invalid_value",
+                    "The shared parameter definition '" + existing.Name + "' already exists " +
+                    "with GUID " + existing.GUID.ToString("D") + ", not " +
+                    guid.Value.ToString("D") + ".",
+                    "Drop guid to reuse the existing definition, or use another name.");
+                return null;
+            }
+
+            return existing;
+        }
+
+        if (dryRun)
+        {
+            wouldCreateDefinition = true;
+            return null;
+        }
+
         DefinitionGroup? group;
         try
         {
-            group = file.Groups.get_Item("SmartCon");
-            if (group is null)
-            {
-                if (dryRun)
-                {
-                    wouldCreateDefinition = true;
-                    return null;
-                }
-
-                group = file.Groups.Create("SmartCon");
-            }
+            group = file.Groups.get_Item("SmartCon") ?? file.Groups.Create("SmartCon");
         }
         catch (Exception ex)
         {
@@ -366,48 +426,6 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         {
             Fail(outcome, "shared_parameter_file_missing",
                 "The shared parameter group 'SmartCon' could not be created.");
-            return null;
-        }
-
-        foreach (Definition definition in group.Definitions)
-        {
-            if (definition is not ExternalDefinition external)
-                continue;
-
-            var sameGuid = guid.HasValue && external.GUID == guid.Value;
-            var sameName = string.Equals(external.Name, name, StringComparison.OrdinalIgnoreCase);
-            if (!sameGuid && !sameName)
-                continue;
-
-            if (!external.GetDataType().Equals(spec))
-            {
-                Fail(
-                    outcome,
-                    "invalid_value",
-                    "The shared parameter definition '" + external.Name + "' already exists " +
-                    "with a different data type.",
-                    "Use another name or fix the definition in the shared parameter file.");
-                return null;
-            }
-
-            if (guid.HasValue && external.GUID != guid.Value)
-            {
-                Fail(
-                    outcome,
-                    "invalid_value",
-                    "The shared parameter definition '" + external.Name + "' already exists " +
-                    "with GUID " + external.GUID.ToString("D") + ", not " +
-                    guid.Value.ToString("D") + ".",
-                    "Drop guid to reuse the existing definition, or use another name.");
-                return null;
-            }
-
-            return external;
-        }
-
-        if (dryRun)
-        {
-            wouldCreateDefinition = true;
             return null;
         }
 

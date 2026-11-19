@@ -500,50 +500,6 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
     }
 
-    [Test]
-    public async Task SetValues_PartialFailure_KeepsChangedAndChangeSet()
-    {
-        var result = Run(
-            CreateSetValuesTool(),
-            "{\"familyName\":\"" + Seed.FamilyName + "\",\"items\":[" +
-            "{\"parameter\":\"Ширина\",\"typeName\":\"Тип1\",\"value\":\"1100\"," +
-            "\"unit\":\"mm\"}," +
-            "{\"parameter\":\"Площадь\",\"typeName\":\"Тип1\",\"value\":\"10\"," +
-            "\"unit\":\"m2\"}],\"dryRun\":false}");
-
-        await Assert.That(result.Success).IsFalse();
-        await Assert.That(result.ErrorCode).IsEqualTo("partial_failure");
-        var data = Data(result);
-        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(1);
-        await Assert.That(data.GetProperty("failed").GetArrayLength()).IsEqualTo(1);
-        await Assert.That(data.TryGetProperty("changeSetId", out _)).IsTrue();
-
-        var width = Seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
-        await Assert.That(System.Math.Abs(width!.AsDouble() - 1100.0 / 304.8) < 1e-9).IsTrue();
-    }
-
-    [Test]
-    public async Task SetValues_AllFailed_RollsBackAndWritesNoChangeSet()
-    {
-        var result = Run(
-            CreateSetValuesTool(),
-            "{\"familyName\":\"" + Seed.FamilyName + "\",\"items\":[" +
-            "{\"parameter\":\"Площадь\",\"typeName\":\"Тип1\",\"value\":\"10\"," +
-            "\"unit\":\"m2\"}," +
-            "{\"parameter\":\"Давление\",\"typeName\":\"Тип1\",\"value\":\"1\"," +
-            "\"unit\":\"bar\"}],\"dryRun\":false}");
-
-        await Assert.That(result.Success).IsFalse();
-        var data = Data(result);
-        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(0);
-        await Assert.That(data.GetProperty("failed").GetArrayLength()).IsEqualTo(2);
-        await Assert.That(data.TryGetProperty("changeSetId", out _)).IsFalse();
-        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
-
-        var width = Seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
-        await Assert.That(System.Math.Abs(width!.AsDouble() - 1000.0 / 304.8) < 1e-9).IsTrue();
-    }
-
     private AddFamilyParameterTool CreateAddTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 

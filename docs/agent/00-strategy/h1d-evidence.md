@@ -35,7 +35,7 @@
 | R3 | Параметры family/type: scope, GUID, formula, lookup, canSet*, значения по типам, пагинация | `get_family_parameters` | `AgentFamilyUnitsTests`, `AgentFamilyTextTests` | `GetFamilyParameters_ReportsFormulaSharedFlagsAndValues`, `..._PaginationIsHonest`, `..._InvalidScope`, `..._ClosesFamilyDocument` | r177/r178 | `family-tools-error-catalog.md` |
 | R4 | Живой поиск по параметру без индекса, exact/contains | `find_families_with_parameter` | `AgentFamilyTextTests` | `FindFamiliesWithParameter_FindsByParameterName`, `..._FindsByValueContains`, `..._UnknownParameter`, `..._MissingArgument` | r179/r180 | ADR-077 + карточка |
 | R5 | Переименование instance/type, конфликты | `rename_family_parameter` | — | `RenameParameter_DryRun…`, `..._Apply…`, `..._DuplicateName`, `..._UnknownParameter` | r181/r182 | error catalog |
-| R6 | Добавление normal/shared, GUID, дубликат | `add_family_parameter` | `AgentFamilyUnitsTests` | `AddParameter_DryRun…`, `..._Apply…`, `..._Duplicate`, `..._Shared_CreatesGuid…`, `..._SharedWithoutFile…` | r183/r184 | error catalog |
+| R6 | Добавление normal/shared, GUID, дубликат | `add_family_parameter` | `AgentFamilyUnitsTests` | `AddParameter_DryRun…`, `..._Apply…`, `..._Duplicate`, `..._Shared_CreatesGuid…`, `..._SharedWithoutFile…`, `..._Shared_FindsDefinitionInAnotherGroup` | r183/r184 | error catalog |
 | R7 | Значения по типам, unit, scope, formula/read-only | `set_family_parameter_values` | `AgentFamilyUnitsTests` (mm/m/deg/…, comma, unit_required) | `SetValues_MissingUnit…`, `..._ApplyPerType_ReadsBack…`, `..._FormulaParameter…`, `..._ScopeMismatch…`, `..._UnknownType…`, `..._SameValue…` | r185/r186 | error catalog |
 | R8 | Формулы: CanAssignFormula, снятие, lookup, diff | `set_family_formula` | `AgentFamilyTextTests` (size_lookup) | `SetFormula_DryRun…`, `..._ApplyAndClear…`, `..._MissingLookupTable…`, `..._InvalidSyntax…`, `..._NonAssignable…` | r187/r188 | error catalog |
 | R9 | map source→target: scope/spec, formula/lookup, per-type | `map_family_parameters` | — | `MapValues_CopiesPerTypeAndIsIdempotent`, `..._ScopeMismatch`, `..._SpecMismatch`, `..._UnknownTarget`, `MapFormula_CopiesFormulaAndValues`, `..._TargetWithoutFormulaSupport` | r189/r190 | карточка |
@@ -66,10 +66,11 @@ UI-сессии, обосновано); **M** — ручная проверка 
 | 10 | `save_failed` | LoadFamily не удался | код возврата в `TryLoadBack` | D/M |
 | 11 | `read_back_mismatch` | проект не совпал после reload | проверка реализована; инъекция расхождения невозможна | D/M |
 | 12 | `backup_failed` | бэкап не создан | fail-closed ветка | D/M |
-| 13 | `backup_unavailable` | undo без плана и без файла | `UndoLast_MissingBackup…` | T |
+| 13 | `backup_unavailable` | undo без плана/файла, не-.rfa путь | `UndoLast_MissingBackup…`, `UndoLast_LegacyNonRfaPath…` | T |
 | 14 | `shared_parameter_file_missing` | нет shared parameter file | `AddParameter_SharedWithout…` | T |
 | 15 | `duplicate_name` | переименование в занятое имя | `RenameParameter_DuplicateName…` | T |
 | 16 | `type_not_found` | неизвестный тип | `SetValues_UnknownType…` | T |
+| 16a | `invalid_value` | typeId чужого семейства / familyId+familyName mismatch | `SetValues_ForeignTypeId…`, `AddParameter_FamilyIdAndNameMismatch…` | T |
 | 17 | `empty_family` | семейство без типов | защитный код; проба: Revit оставляет ≥1 тип после save/load | D |
 | 18 | `lookup_table_missing` | size_lookup на отсутствующую таблицу | `SetFormula_MissingLookupTable…` | T |
 | 19 | `permission_denied` | doc Modifiable/ReadOnly | guard в session | D/M |
@@ -139,7 +140,7 @@ Type-major обход (одно переключение `CurrentType` на ти
 | Гейт | Результат |
 |---|---|
 | Unit `SmartCon.Tests -c Debug.R25` | **3813/3813** |
-| Integration R25 (family pack) | **56/56** (read 13, write 26, map+undo 14, scale 1, plan 2) |
+| Integration R25 (family pack) | **61/61** (read 13, write 30, map+undo 15, scale 1, plan 2) |
 | Integration R25 (полный сьют) | см. HANDOFF (финальный прогон) |
 | Integration R27 net10 (family pack) | **56/56** |
 | Integration net48 (Revit 2023, полный сьют) | **246 passed, 12 skipped, 0 failed** (Agent-тесты исключены из net48 по дизайну) |

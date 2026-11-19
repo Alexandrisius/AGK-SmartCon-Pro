@@ -47,7 +47,4 @@ public abstract partial class AgentWriteToolBase
     {
     }
 
-    /// <summary>
-    /// L1 preflight: cheap argument checks on the Revit thread, before any
-    /// transaction and before the dry run.
 }

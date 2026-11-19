@@ -360,13 +360,6 @@ public sealed partial class UndoLastTool
             return;
         }
 
-        if (dryRun)
-        {
-            report.NewValue = "would restore from backup";
-            outcome.Batch.Changed.Add(report);
-            return;
-        }
-
         if (!string.Equals(
                 Path.GetExtension(backupPath),
                 ".rfa",
@@ -377,6 +370,13 @@ public sealed partial class UndoLastTool
             outcome.Batch.Failed.Add(report);
             outcome.Success = false;
             outcome.ErrorCode ??= "backup_unavailable";
+            return;
+        }
+
+        if (dryRun)
+        {
+            report.NewValue = "would restore from backup";
+            outcome.Batch.Changed.Add(report);
             return;
         }
 

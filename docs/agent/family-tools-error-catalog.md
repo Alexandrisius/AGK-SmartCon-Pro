@@ -62,7 +62,7 @@
 | Числовые значения | обязателен `unit`: length `mm/cm/m/in/ft`, angle `deg/rad`, area `mm2/cm2/m2/ft2`, volume `m3/l/ft3`; без unit → `unit_required`; `number` unit не требует; измеримые spec вне списка (pressure/flow/force) → `invalid_value` (fail-closed) |
 | Формулы | только `CanAssignFormula=true`; чтение значения формульного параметра через `valuesByType`; запись значения → `formula_not_allowed` |
 | Lookup (`size_lookup`) | перед установкой формулы проверяется наличие таблицы в семействе → `lookup_table_missing` |
-| Shared parameters | создаются в файле общих параметров; GUID сохраняется и возвращается; файл не настроен → `shared_parameter_file_missing` |
+| Shared parameters | определение ищется по GUID/имени во ВСЕХ группах файла общих параметров; при отсутствии создаётся в группе SmartCon; GUID сохраняется и возвращается; файл не настроен → `shared_parameter_file_missing`; конфликт имени с другим типом/GUID → `invalid_value` |
 | Имена | максимум 255 символов (`invalid_value`), дубликат → `parameter_exists`/`duplicate_name` |
 
 ## 3. Коды ошибок

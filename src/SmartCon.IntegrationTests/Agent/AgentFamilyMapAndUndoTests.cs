@@ -308,6 +308,41 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
     }
 
     [Test]
+    public async Task UndoLast_LegacyNonRfaPath_ReturnsBackupUnavailable()
+    {
+        var textPath = Path.Combine(Path.GetTempPath(), "SmartConFamilyTests", "backup.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(textPath)!);
+        File.WriteAllText(textPath, "not a family");
+
+        var header = new ChangeSetHeader
+        {
+            Operation = "add_family_parameter",
+            DocumentId = SmartCon.Revit.Agent.AgentDocumentIdentity.GetDocumentId(Doc)
+        };
+        var changeSetId = await _changeSets!.BeginAsync(header, CancellationToken.None);
+        await _changeSets.AddItemsAsync(
+            changeSetId,
+            new[]
+            {
+                new ChangeItem
+                {
+                    ChangeSetId = changeSetId,
+                    ParameterName = "family",
+                    OldValue = textPath,
+                    NewValue = Seed.FamilyName,
+                    Status = ChangeStatus.Applied
+                }
+            },
+            CancellationToken.None);
+        await _changeSets.MarkAppliedAsync(changeSetId, DateTime.UtcNow, CancellationToken.None);
+
+        var undo = Run(CreateUndoTool(), "{\"dryRun\":false}");
+
+        await Assert.That(undo.Success).IsFalse();
+        await Assert.That(undo.ErrorCode).IsEqualTo("backup_unavailable");
+    }
+
+    [Test]
     public async Task UndoLast_PartialFamilyFailure_KeepsChangeSetApplied()
     {
         var header = new ChangeSetHeader

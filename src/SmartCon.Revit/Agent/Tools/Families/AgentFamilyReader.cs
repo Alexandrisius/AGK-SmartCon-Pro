@@ -151,14 +151,14 @@ internal static class AgentFamilyReader
         {
             familyDoc = projectDoc.EditFamily(family);
         }
-        catch (InvalidOperationException ex)
+        catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
         {
             errorCode = "family_open_conflict";
             message = "Revit refused to open the family document: " + ex.Message +
                       " Close the Family Editor and retry.";
             return false;
         }
-        catch (ArgumentException ex)
+        catch (Autodesk.Revit.Exceptions.ArgumentException ex)
         {
             errorCode = "family_not_editable";
             message = "Revit refused to open the family document: " + ex.Message;
