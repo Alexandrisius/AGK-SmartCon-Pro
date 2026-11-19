@@ -60,7 +60,8 @@ public sealed class GetSelectedElementsTool : AgentReadToolBase
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             total == 0
-                ? "Nothing is selected."
+                ? "Nothing is selected. Select one or more elements in Revit, then call " +
+                  "get_selected_elements again."
                 : "Selected " + total + " element(s); returned " + cards.Count + ".");
     }
 }

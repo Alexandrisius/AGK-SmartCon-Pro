@@ -35,6 +35,13 @@ public sealed class AgentPlanStep
     /// <summary>Expected changed-item count for L4 fidelity (null = not checked).</summary>
     public int? ExpectedChanges { get; init; }
 
+    /// <summary>
+    /// Minimum changed-item count for composite operations whose exact count is
+    /// not predictable (for example a formula change that also recalculates every
+    /// family type). Mutually exclusive with <see cref="ExpectedChanges"/>.
+    /// </summary>
+    public int? ExpectedChangesAtLeast { get; init; }
+
     /// <summary>Read tool used for L6 verification after apply.</summary>
     public string? ReadBackTool { get; init; }
 
@@ -61,6 +68,13 @@ public sealed class AgentPlanExecutionContext
     public Guid ConversationId { get; init; }
 
     public AgentApprovalMode ApprovalMode { get; init; } = AgentApprovalMode.ConfirmWrites;
+
+    /// <summary>
+    /// Family ids that changed during this plan (previous → new). Revit recreates
+    /// the family element on load-back, so a later step that still carries the
+    /// id from the preview is re-targeted to the new id automatically.
+    /// </summary>
+    public IDictionary<long, long> FamilyIdAliases { get; } = new Dictionary<long, long>();
 }
 
 public sealed class AgentPlanIssue

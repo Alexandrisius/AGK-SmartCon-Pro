@@ -32,7 +32,7 @@ public sealed class SetFamilyFormulaTool : AgentFamilyWriteToolBase
             "type.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""parameter"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""guid"":{""type"":""string""},""formula"":{""type"":[""string"",""null""]},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""parameter""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""parameter"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""guid"":{""type"":""string""},""formula"":{""type"":[""string"",""null""]},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""parameter""],""additionalProperties"":false}"
     };
 
     private protected override void ApplyInFamilyDocument(

@@ -88,6 +88,45 @@ public sealed class AgentFamilyPlanTests : RevitApiTest
     }
 
     [Test]
+    public async Task Plan_FamilyIdAcrossLoadBack_IsRetargeted()
+    {
+        var add = CreateAddTool();
+        var executor = new AgentPlanExecutor(
+            new TestToolRegistry(new IAgentTool[] { add }),
+            new ImmediateAwaitableEvent(),
+            new FixedConfirmation());
+
+        var familyId = Seed.FamilyId;
+        var plan = new AgentPlan
+        {
+            Goal = "Add two parameters by familyId across a load-back",
+            Steps = new[]
+            {
+                AddStepById("s1", familyId, "AliasOne"),
+                AddStepById("s2", familyId, "AliasTwo", "s1")
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            plan,
+            new AgentPlanExecutionContext
+            {
+                DocumentId = SmartCon.Revit.Agent.AgentDocumentIdentity.GetDocumentId(Doc)
+            },
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.PreviewIncomplete).IsTrue();
+        await Assert.That(result.NotPreviewed.Contains("s2")).IsTrue();
+        await Assert.That(result.Steps[1].ApplyResult?.Success).IsTrue();
+        await Assert.That(result.AffectedCount).IsEqualTo(2);
+
+        var parameters = await ReadParameters();
+        await Assert.That(HasParameter(parameters, "AliasOne")).IsTrue();
+        await Assert.That(HasParameter(parameters, "AliasTwo")).IsTrue();
+    }
+
+    [Test]
     public async Task Plan_DuplicateParameter_AppliesFirstStepThenFails()
     {
         var add = CreateAddTool();
@@ -128,6 +167,21 @@ public sealed class AgentFamilyPlanTests : RevitApiTest
 
     private AddFamilyParameterTool CreateAddTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private AgentPlanStep AddStepById(
+        string stepId,
+        long familyId,
+        string name,
+        params string[] dependsOn) => new()
+    {
+        StepId = stepId,
+        ToolName = "add_family_parameter",
+        ArgumentsJson =
+            "{\"familyId\":" + familyId + ",\"name\":\"" + name + "\"," +
+            "\"storageType\":\"text\",\"group\":\"PG_IDENTITY_DATA\",\"dryRun\":true}",
+        DependsOn = dependsOn,
+        ExpectedChanges = 1
+    };
 
     private AgentPlanStep AddStep(string stepId, string name, bool readBack) => new()
     {

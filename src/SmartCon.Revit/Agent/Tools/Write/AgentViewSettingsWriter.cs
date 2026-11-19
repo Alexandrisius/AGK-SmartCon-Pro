@@ -132,13 +132,14 @@ internal static class AgentViewSettingsWriter
         }
 
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
-                view, BuiltInParameter.PLAN_VIEW_RANGE, out _, out var rangeTemplate))
+                view, BuiltInParameter.PLAN_VIEW_RANGE, out var rangeTemplateId, out var rangeTemplate))
         {
             return Change.Error(
                 "view_controlled_by_template",
                 "The view range of '" + view.Name + "' is controlled by template '" +
-                rangeTemplate + "'; writing it on the view has no effect. Change the template " +
-                "instead (or exclude the view range from its control).");
+                rangeTemplate + "'; writing it on the view has no effect. Detach it with " +
+                "set_view_template_inclusion(templateId=" + rangeTemplateId +
+                ", parameters=[\"viewRange\"], included=false), then retry.");
         }
 
         ViewRangeSpec? before;
@@ -191,8 +192,9 @@ internal static class AgentViewSettingsWriter
             return Change.Error(
                 "view_controlled_by_template",
                 "The crop region of '" + view.Name + "' is controlled by template '" +
-                cropTemplate + "'; writing it on the view has no effect. Change the template " +
-                "instead (or exclude the crop region from its control).");
+                cropTemplate + "'; writing it on the view has no effect. Revit does not allow " +
+                "detaching crop from a template (and a template's crop cannot be edited through " +
+                "the API): remove the template from this view, then set the crop.");
         }
 
         ViewCropState before;
@@ -275,13 +277,14 @@ internal static class AgentViewSettingsWriter
             return Change.Skip("No visibility settings specified.");
 
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
-                view, BuiltInParameter.VIS_GRAPHICS_MODEL, out _, out var visibilityTemplate))
+                view, BuiltInParameter.VIS_GRAPHICS_MODEL, out var visibilityTemplateId, out var visibilityTemplate))
         {
             return Change.Error(
                 "view_controlled_by_template",
                 "Category visibility of '" + view.Name + "' is controlled by template '" +
-                visibilityTemplate + "'; writing it on the view has no effect. Change the " +
-                "template instead (or exclude V/G overrides from its control).");
+                visibilityTemplate + "'; writing it on the view has no effect. Detach it with " +
+                "set_view_template_inclusion(templateId=" + visibilityTemplateId +
+                ", parameters=[\"visibility\"], included=false), then retry.");
         }
 
         var before = AgentViewWriteHelper.ReadVisibility(doc, view);
@@ -315,13 +318,14 @@ internal static class AgentViewSettingsWriter
     internal static Change MirrorVisibility(Document doc, View source, View target, List<string> warnings)
     {
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
-                target, BuiltInParameter.VIS_GRAPHICS_MODEL, out _, out var targetTemplate))
+                target, BuiltInParameter.VIS_GRAPHICS_MODEL, out var targetTemplateId, out var targetTemplate))
         {
             return Change.Error(
                 "view_controlled_by_template",
                 "Category visibility of '" + target.Name + "' is controlled by template '" +
-                targetTemplate + "'; copying visibility onto it has no effect. Change the " +
-                "template instead (or exclude V/G overrides from its control).");
+                targetTemplate + "'; copying visibility onto it has no effect. Detach it with " +
+                "set_view_template_inclusion(templateId=" + targetTemplateId +
+                ", parameters=[\"visibility\"], included=false), then retry.");
         }
 
         var before = AgentViewWriteHelper.ReadVisibility(doc, target);

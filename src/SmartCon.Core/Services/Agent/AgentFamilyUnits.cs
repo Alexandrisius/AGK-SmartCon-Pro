@@ -77,8 +77,8 @@ public static class AgentFamilyUnits
         {
             errorCode = "invalid_value";
             message = "This parameter spec is not supported for direct value writing. " +
-                      "Supported specs: length, angle, area, volume, number, integer, " +
-                      "text, yesno, material.";
+                      "Supported specs: length, ductSize, pipeSize, distance, angle, area, " +
+                      "volume, number, integer, text, yesno, material.";
             return false;
         }
 

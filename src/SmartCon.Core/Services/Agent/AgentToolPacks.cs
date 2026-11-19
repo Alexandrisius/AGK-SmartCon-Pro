@@ -44,8 +44,12 @@ public static class AgentToolPacks
         new()
         {
             Name = "templates",
-            Description = "Шаблоны видов: список, состав и назначение.",
-            Tools = new[] { "list_view_templates", "get_view_template_details", "apply_view_template" }
+            Description = "Шаблоны видов: список, состав, назначение и Include in template.",
+            Tools = new[]
+            {
+                "list_view_templates", "get_view_template_details", "apply_view_template",
+                "set_view_template_inclusion"
+            }
         },
         new()
         {

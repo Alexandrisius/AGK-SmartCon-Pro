@@ -156,7 +156,7 @@ public sealed class AgentTurnContextBuilderTests
 
         var text = AgentTurnContextBuilder.Build(state, Context());
 
-        Assert.Contains("abc\uFFFDdef", text);
+        Assert.Contains("abc\\u202Edef", text);
         Assert.DoesNotContain(text, character => character == '\u202E');
     }
 

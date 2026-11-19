@@ -90,9 +90,13 @@ public sealed class ExecutePlanToolTests
         Assert.False(result.Data!.Value.GetProperty("dryRun").GetBoolean());
         var appliedItems = result.Data.Value.GetProperty("steps")[0].GetProperty("items");
         Assert.False(appliedItems.GetProperty("dryRun").GetBoolean());
-        Assert.Equal(0, result.Data.Value.GetProperty("expectationsChecked").GetInt32());
+        Assert.Equal(
+            0,
+            result.Data.Value.GetProperty("planReadBack")
+                .GetProperty("expectationsChecked")
+                .GetInt32());
         Assert.Contains(
-            "No read-back expectations",
+            "No plan read-back expectations",
             result.Data.Value.GetProperty("hint").GetString(),
             StringComparison.Ordinal);
     }

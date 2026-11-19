@@ -472,6 +472,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, RenameViewsTool>();
         services.AddSingleton<IAgentTool, RenameLevelsTool>();
         services.AddSingleton<IAgentTool, ApplyViewTemplateTool>();
+        services.AddSingleton<IAgentTool, SetViewTemplateInclusionTool>();
         services.AddSingleton<IAgentTool, SetViewRangeTool>();
         services.AddSingleton<IAgentTool, SetViewCropTool>();
         services.AddSingleton<IAgentTool, SetViewVisibilityTool>();

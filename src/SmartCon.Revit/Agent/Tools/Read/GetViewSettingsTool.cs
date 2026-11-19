@@ -12,7 +12,9 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
 {
     private const string CompactHint =
         "Compact summary. Pass fields=[\"scale\",\"viewRange\",\"crop\",\"hiddenCategories\",...] " +
-        "for selected settings or compact=false for the full payload.";
+        "for selected settings or compact=false for the full payload. The hidden-category list " +
+        "is omitted from the full payload unless expandHiddenCategories=true; " +
+        "hiddenCategoryCount is always present.";
 
     public GetViewSettingsTool(IRevitContext revitContext)
         : base(revitContext)
@@ -29,9 +31,11 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
             "plan view range (levels and offsets in mm), crop region box (mm), hidden categories " +
             "and hidden worksets. Without fields and with compact=true (default) it returns a compact " +
             "summary (template, scale, counts); pass fields to request specific settings or " +
-            "compact=false for the full payload. Use it to inspect a reference view before applying " +
-            "its settings to other views.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: viewId,name,viewType,templateId,templateName,hasTemplate,scale,detailLevel,discipline,viewRange,crop,hiddenCategories,hiddenWorksets,controlledParameters,nonControlledParameters. Aliases like template resolve to templateName."",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""viewId""],""additionalProperties"":false}"
+            "compact=false for the full payload. hiddenCategories is omitted from the full " +
+            "payload unless expandHiddenCategories=true (the count is always present); a " +
+            "fields request for hiddenCategories expands it. Use it to inspect a reference " +
+            "view before applying its settings to other views.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: viewId,name,viewType,templateId,templateName,hasTemplate,scale,detailLevel,discipline,viewRange,crop,hiddenCategories,hiddenCategoryCount,hiddenWorksets,controlledParameters,nonControlledParameters. Aliases like template resolve to templateName."",""items"":{""type"":""string""}},""expandHiddenCategories"":{""type"":""boolean"",""default"":false},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""viewId""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -52,6 +56,11 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
 
         var settings = AgentViewSettingsReader.Read(doc, view);
         var fields = AgentJson.GetStringArray(args, "fields");
+        var expandHiddenCategories = AgentJson.GetBool(args, "expandHiddenCategories", false)
+                                    || fields.Any(field => string.Equals(
+                                        field,
+                                        "hiddenCategories",
+                                        StringComparison.OrdinalIgnoreCase));
 
         if (fields.Count > 0)
         {
@@ -63,9 +72,17 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
 
         if (!AgentJson.GetBool(args, "compact", true))
         {
+            var full = AgentJson.Serialize(settings);
+            if (!expandHiddenCategories)
+                full = OmitHiddenCategories(full);
+
             return ToolResult.Ok(
-                AgentJson.Serialize(settings),
-                "Read the full settings of view '" + view.Name + "'.");
+                full,
+                "Read the full settings of view '" + view.Name + "'." +
+                (expandHiddenCategories
+                    ? string.Empty
+                    : " Hidden categories are summarized by hiddenCategoryCount; pass " +
+                      "expandHiddenCategories=true to include the list."));
         }
 
         var summary = AgentViewSettingsReader.CreateSummary(settings);
@@ -92,6 +109,20 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
         if (substituted.Count > 0)
             node["substitutedFields"] = JsonSerializer.SerializeToNode(substituted);
 
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    private static JsonElement OmitHiddenCategories(JsonElement full)
+    {
+        if (full.ValueKind != JsonValueKind.Object)
+            return full;
+
+        var node = JsonNode.Parse(full.GetRawText()) as JsonObject;
+        if (node is null)
+            return full;
+
+        node.Remove("hiddenCategories");
+        node["hiddenCategoriesOmitted"] = true;
         return JsonSerializer.SerializeToElement(node);
     }
 

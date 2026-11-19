@@ -141,12 +141,26 @@ public sealed class LoadToolPackTool : IAgentTool
         }
 
         var appliedTo = loaded.Count > 0 ? "next_round" : "none";
+        var available = new HashSet<string>(_sessionContext.LoadedToolNames, StringComparer.Ordinal);
+        available.UnionWith(inRequest);
+        available.UnionWith(loaded);
+        var remainingByPack = registry.GetDefinitions()
+            .Where(definition => !AgentToolPacks.IsCore(definition.Name))
+            .Where(definition => !available.Contains(definition.Name))
+            .GroupBy(definition => !string.IsNullOrWhiteSpace(definition.Pack)
+                ? definition.Pack!
+                : AgentToolPacks.PackOfTool(definition.Name)?.Name ?? "(none)")
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count());
+        var remainingAvailable = remainingByPack.Values.Sum();
         var result = new
         {
             loaded,
             alreadyLoaded,
             pack = packNames.Count == 0 ? null : string.Join(",", packNames),
             totalTools = _sessionContext.LoadedToolNames.Count,
+            remainingAvailable,
+            remainingByPack,
             appliedTo,
             hint = appliedTo == "none"
                 ? "All requested tools are already available in this request."

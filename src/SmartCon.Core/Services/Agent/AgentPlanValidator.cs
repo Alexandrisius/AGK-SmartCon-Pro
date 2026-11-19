@@ -131,6 +131,17 @@ public static class AgentPlanValidator
                 });
             }
 
+            if (step.ExpectedChanges.HasValue && step.ExpectedChangesAtLeast.HasValue)
+            {
+                errors.Add(new AgentPlanIssue
+                {
+                    Code = "plan_expected_changes_conflict",
+                    Message = "Step '" + step.StepId + "' sets both ExpectedChanges and " +
+                              "ExpectedChangesAtLeast; use one.",
+                    StepId = step.StepId
+                });
+            }
+
             if (!step.DryRun)
             {
                 warnings.Add(new AgentPlanIssue
@@ -142,7 +153,9 @@ public static class AgentPlanValidator
                 });
             }
 
-            if (tool.Risk != AgentToolRisk.Read && step.ExpectedChanges is null)
+            if (tool.Risk != AgentToolRisk.Read
+                && step.ExpectedChanges is null
+                && step.ExpectedChangesAtLeast is null)
             {
                 warnings.Add(new AgentPlanIssue
                 {

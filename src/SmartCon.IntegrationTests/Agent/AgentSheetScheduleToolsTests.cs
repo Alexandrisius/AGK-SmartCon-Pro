@@ -94,6 +94,63 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task InvisibleSheetNumber_ListAndLookupReturnCandidates()
+    {
+        if (!_sheetCreated)
+            Skip.Test("Лист не создался в шаблоне проекта");
+
+        var titleBlockId = ModelSeed.FindTitleBlockTypeId(Doc);
+        if (titleBlockId is null)
+            Skip.Test("Основная надпись недоступна");
+
+        var hiddenNumber = SheetNumber + "\u200B";
+        try
+        {
+            _transactions!.RunInTransaction(Doc, "Seed invisible sheet number", doc =>
+            {
+                var sheet = ViewSheet.Create(doc, titleBlockId);
+                sheet.SheetNumber = hiddenNumber;
+                sheet.Name = "SC_Agent_Sheet_Invisible";
+            });
+        }
+        catch (Exception)
+        {
+            Skip.Test("Revit не разрешает номер листа с невидимым символом");
+        }
+
+        var list = new ListSheetsTool(new StubRevitContext(Doc));
+        var listResult = list.ExecuteForTests(
+            Doc,
+            Parse("{\"numberContains\":\"" + SheetNumber + "\"}"),
+            CancellationToken.None);
+
+        await Assert.That(listResult.Success).IsTrue();
+        var cards = listResult.Data!.Value.GetProperty("sheets").EnumerateArray().ToList();
+        var invisible = cards.FirstOrDefault(card =>
+            card.GetProperty("hasInvisibleCharacters").GetBoolean());
+        await Assert.That(invisible.ValueKind).IsNotEqualTo(JsonValueKind.Undefined);
+        await Assert.That(invisible.GetProperty("numberVisual").GetString())
+            .IsEqualTo(SheetNumber);
+        await Assert.That(invisible.GetProperty("numberCodePoints").GetArrayLength())
+            .IsGreaterThan(0);
+        await Assert.That(
+                listResult.Data.Value.GetProperty("visualDuplicates").GetArrayLength())
+            .IsGreaterThanOrEqualTo(1);
+
+        var content = new GetSheetContentTool(new StubRevitContext(Doc));
+        var contentResult = content.ExecuteForTests(
+            Doc,
+            Parse("{\"number\":\"" + SheetNumber + "\"}"),
+            CancellationToken.None);
+
+        await Assert.That(contentResult.Success).IsFalse();
+        await Assert.That(contentResult.ErrorCode).IsEqualTo("ambiguous_sheet");
+        await Assert.That(
+                contentResult.Data!.Value.GetProperty("candidates").GetArrayLength())
+            .IsGreaterThanOrEqualTo(2);
+    }
+
+    [Test]
     public async Task ListSchedules_ReturnsSeededScheduleWithFieldsAndRows()
     {
         if (!_scheduleCreated)

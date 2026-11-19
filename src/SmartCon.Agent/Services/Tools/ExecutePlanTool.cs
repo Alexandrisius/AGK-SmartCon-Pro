@@ -47,16 +47,18 @@ public sealed class ExecutePlanTool : IAgentTool
             "changes. Show that diff to the user. Call again with dryRun=false and the " +
             "planDigest from the preview only after the user approves: the steps are applied in " +
             "dependency order, one change set per step (undo_last works per step) and a " +
-            "read-back verifies the result. Never include execute_plan as a step. " +
-            "readBackExpectations.path is dot-addressed from the tool result root (for example " +
-            "data.views.byId[123].templateName); use byId[<elementId>].property when the " +
-            "read-back returns an array (index access can check the wrong element).",
+            "read-back verifies the result. Steps that depend on an earlier write are marked " +
+            "preview_skipped in the preview and run only during apply. Never include " +
+            "execute_plan as a step. readBackExpectations.path is dot-addressed from the " +
+            "read-back tool's data object (for example views.byId[123].templateName); use " +
+            "byId[<elementId>].property when the read-back returns an array (index access " +
+            "can check the wrong element).",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         Category = "Write",
         Tags = new[] { "план", "сценарий", "несколько", "шагов", "сразу", "plan", "multi-step" },
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""goal"":{""type"":""string""},""allowDestructive"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""planDigest"":{""type"":""string""},""steps"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""stepId"":{""type"":""string""},""toolName"":{""type"":""string""},""arguments"":{""type"":""object""},""dependsOn"":{""type"":""array"",""items"":{""type"":""string""}},""expectedChanges"":{""type"":""integer"",""minimum"":0},""rationale"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true},""readBackTool"":{""type"":""string""},""readBackArguments"":{""type"":""object""},""readBackExpectations"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""path"":{""type"":""string""},""expected"":{""type"":""string""}},""required"":[""path"",""expected""],""additionalProperties"":false}}},""required"":[""stepId"",""toolName"",""arguments""],""additionalProperties"":false}}},""required"":[""goal"",""steps""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""goal"":{""type"":""string""},""allowDestructive"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""planDigest"":{""type"":""string""},""steps"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""stepId"":{""type"":""string""},""toolName"":{""type"":""string""},""arguments"":{""type"":""object""},""dependsOn"":{""type"":""array"",""items"":{""type"":""string""}},""expectedChanges"":{""type"":""integer"",""minimum"":0},""expectedChangesAtLeast"":{""type"":""integer"",""minimum"":1},""rationale"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true},""readBackTool"":{""type"":""string""},""readBackArguments"":{""type"":""object""},""readBackExpectations"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""path"":{""type"":""string""},""expected"":{""type"":""string""}},""required"":[""path"",""expected""],""additionalProperties"":false}}},""required"":[""stepId"",""toolName"",""arguments""],""additionalProperties"":false}}},""required"":[""goal"",""steps""],""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -139,10 +141,46 @@ public sealed class ExecutePlanTool : IAgentTool
         {
             return ToolResult.Fail(
                 result.ErrorCode ?? "plan_failed",
-                result.Message ?? "The plan could not be executed.");
+                result.Message ?? "The plan could not be executed.",
+                data: FailureResult(plan, result, digest, dryRun));
         }
 
         return dryRun ? PreviewResult(plan, result) : ApplyResult(result);
+    }
+
+    private static JsonElement FailureResult(
+        AgentPlan plan,
+        AgentPlanExecutionResult result,
+        string digest,
+        bool dryRun)
+    {
+        var failedStepId = result.Steps
+            .FirstOrDefault(step =>
+                (dryRun ? step.DryRunResult : step.ApplyResult) is { Success: false })
+            ?.StepId;
+
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            dryRun,
+            phase = dryRun ? "preview" : "apply",
+            goal = plan.Goal,
+            planDigest = digest,
+            errorCode = result.ErrorCode,
+            message = result.Message,
+            affected = result.AffectedCount > 0
+                ? result.AffectedCount
+                : result.Steps.Sum(step => step.Changed),
+            failedStepId,
+            steps = Steps(result, apply: !dryRun),
+            previewIncomplete = result.PreviewIncomplete,
+            notPreviewed = result.NotPreviewed,
+            hint = dryRun
+                ? "Nothing was changed. Fix the failed step and preview again."
+                : "Steps with status 'applied' already have their own change sets; use " +
+                  "undo_last to revert them. Steps with status 'not_run' were not executed."
+        }, SerializerOptions);
+
+        return payload;
     }
 
     private static ToolResult PreviewResult(AgentPlan plan, AgentPlanExecutionResult result)
@@ -153,16 +191,27 @@ public sealed class ExecutePlanTool : IAgentTool
             goal = plan.Goal,
             planDigest = result.PlanDigest,
             affected = result.AffectedCount,
+            previewIncomplete = result.PreviewIncomplete,
+            notPreviewed = result.NotPreviewed,
             steps = Steps(result, apply: false),
-            hint = "Nothing was changed. Show this diff to the user and call execute_plan with " +
-                   "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
-                   " only after explicit approval. Per-step dryRun flags do not affect the digest."
+            hint = result.PreviewIncomplete
+                ? "Nothing was changed. Step(s) " + string.Join(", ", result.NotPreviewed) +
+                  " depend on an earlier write and were skipped in the preview " +
+                  "(status preview_skipped); they run only during apply. Show the previewed " +
+                  "diff and call execute_plan with the same steps, dryRun=false and planDigest=" +
+                  result.PlanDigest + " only after explicit approval."
+                : "Nothing was changed. Show this diff to the user and call execute_plan with " +
+                  "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
+                  " only after explicit approval. Per-step dryRun flags do not affect the digest."
         }, SerializerOptions);
 
         return ToolResult.Ok(
             payload,
             "Plan preview: " + plan.Steps.Count + " step(s), " + result.AffectedCount +
-            " change(s), dry run rolled back.");
+            " change(s), dry run rolled back." +
+            (result.PreviewIncomplete
+                ? " " + result.NotPreviewed.Count + " dependent step(s) were not previewed."
+                : string.Empty));
     }
 
     private static ToolResult ApplyResult(AgentPlanExecutionResult result)
@@ -172,18 +221,26 @@ public sealed class ExecutePlanTool : IAgentTool
             dryRun = false,
             planDigest = result.PlanDigest,
             affected = result.AffectedCount,
+            previewIncomplete = result.PreviewIncomplete,
+            notPreviewed = result.NotPreviewed,
             steps = Steps(result, apply: true),
+            planReadBack = new
+            {
+                executedSteps = result.Steps.Count(step => step.ReadBackExecuted),
+                expectationsChecked = result.ExpectationsChecked,
+                verified = result.Verified.Count,
+                mismatches = result.Mismatches.Count
+            },
             verified = result.Verified,
             mismatches = result.Mismatches,
-            expectationsChecked = result.ExpectationsChecked,
-            readBackSteps = result.Steps.Count(step => step.ReadBackExecuted),
             hint = result.Mismatches.Count > 0
                 ? "Read-back found mismatches. Review them and offer undo_last for the " +
                   "affected step."
                 : result.ExpectationsChecked == 0
-                    ? "No read-back expectations were declared, so there are no verified values; " +
-                      "the change itself was applied."
-                    : "All " + result.ExpectationsChecked + " expectation(s) verified by the read-back."
+                    ? "No plan read-back expectations were declared, so there are no verified " +
+                      "values; tool-internal read-back (if any) is in each step's toolReadBack."
+                    : "All " + result.ExpectationsChecked +
+                      " plan read-back expectation(s) verified."
         }, SerializerOptions);
 
         return ToolResult.Ok(
@@ -198,17 +255,58 @@ public sealed class ExecutePlanTool : IAgentTool
         {
             stepId = step.StepId,
             toolName = step.ToolName,
+            status = Status(step, apply),
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,
             items = StepItems(step, apply),
-            readBackExecuted = step.ReadBackExecuted,
-            expectationsChecked = step.ExpectationsChecked,
-            verified = step.VerifiedCount,
-            mismatches = step.MismatchCount,
-            fidelityMatched = step.FidelityChecked ? step.FidelityMatched : (bool?)null,
-            preflightSkipped = step.PreflightSkipped
+            toolReadBack = ToolReadBack(step, apply),
+            planReadBack = new
+            {
+                executed = step.ReadBackExecuted,
+                expectationsChecked = step.ExpectationsChecked,
+                verified = step.VerifiedCount,
+                mismatches = step.MismatchCount
+            },
+            fidelity = step.FidelityChecked
+                ? new
+                {
+                    expected = step.FidelityExpected,
+                    matched = step.FidelityMatched
+                }
+                : null,
+            preflightSkipped = step.PreflightSkipped,
+            preflightDeferred = step.PreflightDeferred,
+            previewSkipped = step.PreviewSkipped,
+            previewSkipReason = step.PreviewSkipReason
         }).ToList();
+
+    private static string Status(AgentPlanStepResult step, bool apply)
+    {
+        if (apply)
+        {
+            if (step.ApplyResult is null)
+                return "not_run";
+
+            return step.ApplyResult.Success ? "applied" : "failed";
+        }
+
+        if (step.DryRunResult is not null)
+            return step.DryRunResult.Success ? "previewed" : "preview_failed";
+
+        return step.PreviewSkipped ? "preview_skipped" : "not_previewed";
+    }
+
+    private static JsonElement? ToolReadBack(AgentPlanStepResult step, bool apply)
+    {
+        var result = apply
+            ? step.ApplyResult ?? step.DryRunResult
+            : step.DryRunResult ?? step.ApplyResult;
+        if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
+            return null;
+
+        return data.TryGetProperty("readBack", out var readBack) ? readBack : null;
+    }
 
     /// <summary>
     /// Per-item diff from the step's dry run (or apply): changed / skipped / failed
@@ -275,6 +373,7 @@ public sealed class ExecutePlanTool : IAgentTool
                 ArgumentsJson = arguments.GetRawText(),
                 DependsOn = GetStringArray(stepElement, "dependsOn"),
                 ExpectedChanges = GetInt(stepElement, "expectedChanges"),
+                ExpectedChangesAtLeast = GetInt(stepElement, "expectedChangesAtLeast"),
                 Rationale = GetString(stepElement, "rationale"),
                 DryRun = GetBool(stepElement, "dryRun", true),
                 ReadBackTool = GetString(stepElement, "readBackTool"),

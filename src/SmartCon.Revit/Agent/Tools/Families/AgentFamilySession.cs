@@ -2,6 +2,7 @@ using System.Globalization;
 using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Revit.Agent.Tools.Write;
 
@@ -38,6 +39,14 @@ internal sealed partial class AgentFamilySession : IDisposable
     public string? SourceBackupPath { get; private set; }
 
     public bool LoadedBack { get; private set; }
+
+    /// <summary>
+    /// Element id of the family after LoadFamily. Revit recreates the family
+    /// element on reload, so the id captured before the edit becomes stale.
+    /// </summary>
+    public long? LoadedFamilyId { get; private set; }
+
+    public string? LoadedFamilyUniqueId { get; private set; }
 
     public IReadOnlyList<SectionReport> Sections => _sections;
 
@@ -209,6 +218,8 @@ internal sealed partial class AgentFamilySession : IDisposable
             }
 
             LoadedBack = true;
+            LoadedFamilyId = loaded.Id.GetValue();
+            LoadedFamilyUniqueId = loaded.UniqueId;
             AddSection("loadBack", "ok", "family loaded back into the project");
             return true;
         }
@@ -242,14 +253,14 @@ internal sealed partial class AgentFamilySession : IDisposable
         var snapshot = ProjectFamilySnapshot.Capture(ProjectDoc, FamilyName);
         var checkedCount = 0;
         var mismatches = 0;
-        var instanceSkipped = 0;
-        var elementIdSkipped = 0;
+        var instanceNotVerifiable = 0;
+        var elementIdNotVerifiable = 0;
 
         foreach (var expectation in _expectations)
         {
             if (!expectation.IsTypeParameter)
             {
-                instanceSkipped++;
+                instanceNotVerifiable++;
                 continue;
             }
 
@@ -257,7 +268,7 @@ internal sealed partial class AgentFamilySession : IDisposable
             {
                 // Material / nested type references get project-side ElementIds on
                 // load-back, so comparing the family-document id would be wrong.
-                elementIdSkipped++;
+                elementIdNotVerifiable++;
                 continue;
             }
 
@@ -305,32 +316,42 @@ internal sealed partial class AgentFamilySession : IDisposable
             });
         }
 
+        var notVerifiable = instanceNotVerifiable + elementIdNotVerifiable;
         outcome.Data["readBack"] = new
         {
             expected = _expectations.Count,
             verified = checkedCount,
             mismatched = mismatches,
-            instanceSkipped,
-            elementIdSkipped
+            notVerifiable,
+            notVerifiableReasons = new
+            {
+                instanceParameter = instanceNotVerifiable,
+                elementReference = elementIdNotVerifiable
+            }
         };
 
-        if (elementIdSkipped > 0)
+        if (elementIdNotVerifiable > 0)
         {
             outcome.Warnings.Add(
-                elementIdSkipped + " element-reference value(s) could not be verified: " +
+                elementIdNotVerifiable + " element-reference value(s) are not verifiable: " +
                 "Revit assigns new project ElementIds when the family is loaded back.");
         }
 
-        if (instanceSkipped > 0)
+        if (instanceNotVerifiable > 0)
         {
             outcome.Warnings.Add(
-                instanceSkipped + " instance parameter value(s) were written into the family " +
-                "type defaults but cannot be verified from the project without instances.");
+                instanceNotVerifiable + " instance parameter value(s) are not verifiable from " +
+                "the project: they are family type defaults and no project instance carries " +
+                "the written value yet.");
         }
 
         if (mismatches == 0)
         {
-            AddSection("readBack", "ok", checkedCount + " value(s) verified");
+            AddSection(
+                "readBack",
+                "ok",
+                checkedCount + " value(s) verified" +
+                (notVerifiable > 0 ? ", " + notVerifiable + " not verifiable" : string.Empty));
             return;
         }
 

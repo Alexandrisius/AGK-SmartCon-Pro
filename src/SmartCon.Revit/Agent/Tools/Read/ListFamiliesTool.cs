@@ -26,7 +26,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
     {
         Name = "list_families",
         Description =
-            "Lists the loadable families loaded in the project: familyId, name, category, " +
+            "Lists the loadable families loaded in the project: familyId, uniqueId, name, category, " +
             "number of types, isEditable and isInPlace. Families are not types and not " +
             "instances: use list_family_types for the types of a family.",
         Risk = AgentToolRisk.Read,
@@ -74,6 +74,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             matches.Add(new Dictionary<string, object?>
             {
                 ["familyId"] = family.Id.GetValue(),
+                ["uniqueId"] = family.UniqueId,
                 ["name"] = family.Name,
                 ["category"] = categoryName,
                 ["categoryId"] = family.FamilyCategory?.Id.GetValue(),

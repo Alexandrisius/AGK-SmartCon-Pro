@@ -22,10 +22,11 @@ public sealed class GetSheetContentTool : AgentReadToolBase
         Description =
             "Shows what is placed on one sheet: views with viewport coordinates and box size in " +
             "millimetres, and placed schedules (including revision schedules) with their points. " +
-            "Identify the sheet by sheetId, exact number or exact name; an ambiguous name returns " +
-            "candidates. Paged over views: limit (default 200, max 500), offset, returned, " +
-            "nextOffset, truncated. Coordinates are paper-space millimetres from the sheet's " +
-            "bottom-left corner.",
+            "Identify the sheet by sheetId, exact number or exact name; an ambiguous name or a " +
+            "number that only matches after removing invisible characters returns candidates " +
+            "(with numberCodePoints) instead of silently picking one. Paged over views: limit " +
+            "(default 200, max 500), offset, returned, nextOffset, truncated. Coordinates are " +
+            "paper-space millimetres from the sheet's bottom-left corner.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""sheetId"":{""type"":""integer""},""number"":{""type"":""string""},""name"":{""type"":""string""},""includeSchedules"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
@@ -164,7 +165,9 @@ public sealed class GetSheetContentTool : AgentReadToolBase
         var page = AgentPaging.Slice(views, offset, limit);
         var hasMore = offset + page.Count < views.Count;
         var scheduleCounts = AgentSheetReader.CountPlacedSchedules(doc);
-        var sheetCard = AgentSheetReader.CreateCard(sheet, scheduleCounts);
+        var allSheets = AgentSheetReader.Collect(doc, excludePlaceholders: false);
+        var visualDuplicates = AgentSheetReader.FindVisualDuplicateNumbers(allSheets);
+        var sheetCard = AgentSheetReader.CreateCard(sheet, scheduleCounts, visualDuplicates);
 
         var payload = new
         {

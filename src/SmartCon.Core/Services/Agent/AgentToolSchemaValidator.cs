@@ -86,7 +86,16 @@ public static class AgentToolSchemaValidator
 
             if (!matched)
             {
-                errors.Add(path + ": value is not one of the allowed options");
+                var options = new List<string>();
+                foreach (var option in allowed.EnumerateArray())
+                {
+                    options.Add(option.ValueKind == JsonValueKind.String
+                        ? "\"" + option.GetString() + "\""
+                        : option.GetRawText());
+                }
+
+                errors.Add(path + ": value is not one of the allowed options (allowed: " +
+                           string.Join(", ", options) + ")");
                 return;
             }
         }

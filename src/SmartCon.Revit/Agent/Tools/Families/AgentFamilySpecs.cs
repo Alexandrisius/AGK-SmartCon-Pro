@@ -22,8 +22,8 @@ internal static class AgentFamilySpecs
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            message = "storageType is required: length, number, text, yesno, integer, " +
-                      "angle, area, volume or material.";
+            message = "storageType is required: length, ductSize, pipeSize, distance, number, text, " +
+                      "yesno, integer, angle, area, volume or material.";
             return false;
         }
 
@@ -35,6 +35,25 @@ internal static class AgentFamilySpecs
             case "mm":
             case "мм":
                 spec = SpecTypeId.Length;
+                kind = AgentFamilyValueKind.Length;
+                return true;
+            case "ductsize":
+            case "duct size":
+            case "duct_size":
+            case "размер воздуховода":
+                spec = SpecTypeId.DuctSize;
+                kind = AgentFamilyValueKind.Length;
+                return true;
+            case "pipesize":
+            case "pipe size":
+            case "pipe_size":
+            case "размер трубы":
+                spec = SpecTypeId.PipeSize;
+                kind = AgentFamilyValueKind.Length;
+                return true;
+            case "distance":
+            case "расстояние":
+                spec = SpecTypeId.Distance;
                 kind = AgentFamilyValueKind.Length;
                 return true;
             case "number":
@@ -70,6 +89,9 @@ internal static class AgentFamilySpecs
                 return true;
             case "angle":
             case "угол":
+            case "rotation":
+            case "rotationangle":
+            case "поворот":
                 spec = SpecTypeId.Angle;
                 kind = AgentFamilyValueKind.Angle;
                 return true;
@@ -95,8 +117,8 @@ internal static class AgentFamilySpecs
                           "create it in the Family Editor instead.";
                 return false;
             default:
-                message = "Unknown storageType '" + name + "'. Use length, number, text, " +
-                          "yesno, integer, angle, area, volume or material.";
+                message = "Unknown storageType '" + name + "'. Use length, ductSize, pipeSize, distance, " +
+                          "number, text, yesno, integer, angle, area, volume or material.";
                 return false;
         }
     }
@@ -134,6 +156,45 @@ internal static class AgentFamilySpecs
                 return AgentFamilyValueKind.Text;
             if (SpecTypeId.Reference.Material.Equals(spec))
                 return AgentFamilyValueKind.ElementId;
+
+            // Custom / ADSK specs (for example autodesk.spec.aec.hvac:ductSize-2.0.0)
+            // do not compare equal to the built-in ForgeTypeId even when they
+            // describe the same quantity. Classify by the spec key so MEP size
+            // parameters accept millimetres instead of failing as unsupported.
+            switch (SpecKey(spec))
+            {
+                case "length":
+                case "distance":
+                case "ductsize":
+                case "pipesize":
+                case "conduitsize":
+                case "ductinsulationthickness":
+                case "ductliningthickness":
+                case "insulationthickness":
+                case "reinforcementcover":
+                    return AgentFamilyValueKind.Length;
+                case "angle":
+                case "rotation":
+                case "rotationangle":
+                    return AgentFamilyValueKind.Angle;
+                case "area":
+                    return AgentFamilyValueKind.Area;
+                case "volume":
+                    return AgentFamilyValueKind.Volume;
+                case "number":
+                    return AgentFamilyValueKind.Number;
+                case "boolean":
+                case "yesno":
+                    return AgentFamilyValueKind.YesNo;
+                case "integer":
+                case "int":
+                    return AgentFamilyValueKind.WholeNumber;
+                case "text":
+                case "string":
+                    return AgentFamilyValueKind.Text;
+                case "material":
+                    return AgentFamilyValueKind.ElementId;
+            }
         }
 
         // Unknown measurable or reference specs must not be treated as a
@@ -147,14 +208,43 @@ internal static class AgentFamilySpecs
     }
 
     /// <summary>
+    /// The unqualified spec name from a ForgeTypeId typeid: the segment after the
+    /// last ':' and before the version dash. "autodesk.spec.aec.hvac:ductSize-2.0.0"
+    /// yields "ductsize"; this makes custom and built-in specs comparable.
+    /// </summary>
+    internal static string SpecKey(ForgeTypeId? spec)
+    {
+        var typeId = spec?.TypeId;
+        if (string.IsNullOrEmpty(typeId))
+            return string.Empty;
+
+        var colon = typeId!.LastIndexOf(':');
+        var start = colon >= 0 ? colon + 1 : 0;
+        var dash = typeId.IndexOf('-', start);
+        var key = dash > start
+            ? typeId.Substring(start, dash - start)
+            : typeId.Substring(start);
+        return key.ToLowerInvariant();
+    }
+
+    /// <summary>
     /// True when both definitions describe the same data type. Unlike the coarse
     /// <see cref="KindOf"/> buckets this distinguishes pressure from mass, etc.
+    /// Custom and built-in specs with the same key (ADSK length vs. common
+    /// length) are treated as the same quantity.
     /// </summary>
     internal static bool SameSpec(Definition left, Definition right)
     {
         try
         {
-            return left.GetDataType().Equals(right.GetDataType());
+            var leftSpec = left.GetDataType();
+            var rightSpec = right.GetDataType();
+            if (leftSpec.Equals(rightSpec))
+                return true;
+
+            var leftKey = SpecKey(leftSpec);
+            return leftKey.Length > 0
+                   && string.Equals(leftKey, SpecKey(rightSpec), StringComparison.Ordinal);
         }
         catch (Exception)
         {
@@ -333,7 +423,29 @@ internal static class AgentFamilySpecs
         if (SpecTypeId.Int.Integer.Equals(spec)) return "integer";
         if (SpecTypeId.String.Text.Equals(spec)) return "text";
         if (SpecTypeId.Reference.Material.Equals(spec)) return "material";
-        return spec.TypeId ?? "unknown";
+
+        return SpecKey(spec) switch
+        {
+            "length" => "length",
+            "distance" => "distance",
+            "ductsize" => "ductSize",
+            "pipesize" => "pipeSize",
+            "conduitsize" => "conduitSize",
+            "angle" => "angle",
+            "rotation" => "rotation",
+            "rotationangle" => "rotationAngle",
+            "area" => "area",
+            "volume" => "volume",
+            "number" => "number",
+            "boolean" => "yesno",
+            "yesno" => "yesno",
+            "integer" => "integer",
+            "int" => "integer",
+            "text" => "text",
+            "string" => "text",
+            "material" => "material",
+            _ => spec.TypeId ?? "unknown"
+        };
     }
 
     internal static bool IsRevitArgumentException(Exception ex) =>

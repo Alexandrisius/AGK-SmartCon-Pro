@@ -46,11 +46,12 @@ public sealed class FindToolsTool : IAgentTool
         var query = GetString(args, "query");
 
         if (string.IsNullOrWhiteSpace(query))
-            return ExecuteListing(args);
+            return ExecuteListing(args, context);
 
         var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 5), 10));
         return await ExecuteSearchAsync(
-                context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
+                context, query!, GetString(args, "context"), GetString(args, "pack"),
+                GetStringArray(args, "fields"), limit, ct)
             .ConfigureAwait(false);
     }
 
@@ -59,6 +60,7 @@ public sealed class FindToolsTool : IAgentTool
         string query,
         string? contextText,
         string? packName,
+        IReadOnlyList<string> fields,
         int limit,
         CancellationToken ct)
     {
@@ -128,23 +130,9 @@ public sealed class FindToolsTool : IAgentTool
         {
             total = returned.Count,
             packs = PacksOf(returned),
+            fields = fields.Count == 0 ? null : fields,
             hint = CatalogHint,
-            tools = returned.Select(definition => new
-            {
-                name = definition.Name,
-                description = definition.Description,
-                risk = definition.Risk.ToString(),
-                supportsDryRun = definition.SupportsDryRun,
-                pack = definition.Pack,
-                purpose = definition.Purpose,
-                whenToUse = definition.WhenToUse,
-                whenNotToUse = definition.WhenNotToUse,
-                examples = definition.Examples,
-                synonyms = definition.Synonyms,
-                timeoutMs = definition.TimeoutMs,
-                alreadyAvailable = context.ActiveToolNames.Contains(definition.Name),
-                inputSchema = ParseSchema(definition.InputSchemaJson)
-            }).ToList()
+            tools = Cards(returned, fields, context, listing: false)
         };
 
         try
@@ -162,7 +150,7 @@ public sealed class FindToolsTool : IAgentTool
         }
     }
 
-    private ToolResult ExecuteListing(JsonElement args)
+    private ToolResult ExecuteListing(JsonElement args, AgentToolContext context)
     {
         var registry = _registry;
         if (registry is null)
@@ -196,6 +184,7 @@ public sealed class FindToolsTool : IAgentTool
         var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 50), 100));
         var page = all.Skip(offset).Take(limit).ToList();
         int? nextOffset = offset + page.Count < total ? offset + page.Count : null;
+        var fields = GetStringArray(args, "fields");
         var payload = new
         {
             mode = "listing",
@@ -207,14 +196,9 @@ public sealed class FindToolsTool : IAgentTool
             truncated = nextOffset is not null,
             packs = AgentToolPacks.All.Select(pack => pack.Name).ToList(),
             toolsPacks = PacksOf(page),
+            fields = fields.Count == 0 ? null : fields,
             hint = ListingHint,
-            tools = page.Select(definition => new
-            {
-                name = definition.Name,
-                description = definition.Description,
-                pack = definition.Pack,
-                risk = definition.Risk.ToString()
-            }).ToList()
+            tools = Cards(page, fields, context, listing: true)
         };
 
         try
@@ -251,7 +235,9 @@ public sealed class FindToolsTool : IAgentTool
             @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0," +
             @"""description"":""Listing mode offset; use nextOffset from the previous page""}," +
             @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
-            @"""enum"":[""name"",""description""]}}}," +
+            @"""enum"":[""name"",""description"",""pack"",""risk"",""purpose"",""whenToUse""," +
+            @"""whenNotToUse"",""examples"",""synonyms"",""supportsDryRun"",""timeoutMs""," +
+            @"""alreadyAvailable"",""inputSchema""]}}}," +
             @"""additionalProperties"":false}";
 
         return new AgentToolDefinition
@@ -264,7 +250,8 @@ public sealed class FindToolsTool : IAgentTool
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
                 "chosen tools for the next round. An empty query returns the whole catalog " +
                 "(name, description, pack, risk) without schemas, paged with offset/nextOffset; " +
-                "add pack to browse one pack.",
+                "add pack to browse one pack. fields=[...] projects each card onto the listed " +
+                "properties (for example fields=[\"name\",\"pack\"]).",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",
@@ -283,6 +270,56 @@ public sealed class FindToolsTool : IAgentTool
             trimmed = trimmed.Substring(0, maxContext);
 
         return query + "\n\nContext:\n" + trimmed;
+    }
+
+    private static List<Dictionary<string, object?>> Cards(
+        IEnumerable<AgentToolDefinition> definitions,
+        IReadOnlyList<string> fields,
+        AgentToolContext context,
+        bool listing)
+    {
+        var defaultFields = listing
+            ? new[] { "name", "description", "pack", "risk" }
+            : null;
+        var selected = fields.Count > 0 ? fields : defaultFields;
+        var result = new List<Dictionary<string, object?>>();
+
+        foreach (var definition in definitions)
+        {
+            var card = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["name"] = definition.Name,
+                ["description"] = definition.Description,
+                ["risk"] = definition.Risk.ToString(),
+                ["supportsDryRun"] = definition.SupportsDryRun,
+                ["pack"] = definition.Pack,
+                ["purpose"] = definition.Purpose,
+                ["whenToUse"] = definition.WhenToUse,
+                ["whenNotToUse"] = definition.WhenNotToUse,
+                ["examples"] = definition.Examples,
+                ["synonyms"] = definition.Synonyms,
+                ["timeoutMs"] = definition.TimeoutMs,
+                ["alreadyAvailable"] = context.ActiveToolNames.Contains(definition.Name),
+                ["inputSchema"] = ParseSchema(definition.InputSchemaJson)
+            };
+
+            if (selected is null)
+            {
+                result.Add(card);
+                continue;
+            }
+
+            var projected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in selected)
+            {
+                if (card.TryGetValue(field, out var value))
+                    projected[field] = value;
+            }
+
+            result.Add(projected);
+        }
+
+        return result;
     }
 
     private static JsonElement ParseSchema(string schemaJson)

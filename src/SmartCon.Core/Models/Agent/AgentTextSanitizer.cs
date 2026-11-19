@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,12 +7,12 @@ namespace SmartCon.Core.Models.Agent;
 
 /// <summary>
 /// Neutralizes control and bidirectional formatting characters in text that
-/// comes from the Revit model before it reaches the LLM prompt.
+/// comes from the Revit model before it reaches the LLM prompt. Unsafe code
+/// units are escaped visibly ("\u000B") instead of being replaced by U+FFFD:
+/// two different model strings must never collapse into the same prompt text.
 /// </summary>
 public static class AgentTextSanitizer
 {
-    private const char Replacement = '\uFFFD';
-
     public const int DefaultMaxStringLength = 400;
 
     public static string Sanitize(string? value)
@@ -24,14 +25,28 @@ public static class AgentTextSanitizer
         for (var i = 0; i < text.Length; i++)
         {
             var ch = text[i];
-            if (IsAllowed(ch))
+            if (char.IsHighSurrogate(ch))
             {
-                builder?.Append(ch);
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    builder?.Append(ch).Append(text[i + 1]);
+                    i++;
+                    continue;
+                }
+
+                builder ??= new StringBuilder(text.Length + 8).Append(text, 0, i);
+                AppendEscape(builder, ch);
                 continue;
             }
 
-            builder ??= new StringBuilder(text.Length).Append(text, 0, i);
-            builder.Append(Replacement);
+            if (char.IsLowSurrogate(ch) || !IsAllowed(ch))
+            {
+                builder ??= new StringBuilder(text.Length + 8).Append(text, 0, i);
+                AppendEscape(builder, ch);
+                continue;
+            }
+
+            builder?.Append(ch);
         }
 
         return builder?.ToString() ?? text;
@@ -47,21 +62,25 @@ public static class AgentTextSanitizer
         if (string.IsNullOrEmpty(json))
             return string.Empty;
 
-        JsonNode? node;
         try
         {
-            node = JsonNode.Parse(json!);
+            var node = JsonNode.Parse(json!);
+            if (node is null)
+                return string.Empty;
+
+            SanitizeNode(node, System.Math.Max(32, maxStringLength));
+            return node.ToJsonString();
         }
         catch (JsonException)
         {
             return Sanitize(json);
         }
-
-        if (node is null)
-            return string.Empty;
-
-        SanitizeNode(node, System.Math.Max(32, maxStringLength));
-        return node.ToJsonString();
+        catch (InvalidOperationException)
+        {
+            // A lone surrogate escape parsed as JSON but cannot be read back as
+            // a .NET string; keep the payload instead of failing the tool chain.
+            return Sanitize(json);
+        }
     }
 
     private static void SanitizeNode(JsonNode node, int maxStringLength)
@@ -101,20 +120,39 @@ public static class AgentTextSanitizer
         }
     }
 
-    private static string Cap(string value, int max) =>
-        value.Length <= max ? value : value.Substring(0, max) + "…";
+    private static void AppendEscape(StringBuilder builder, char ch)
+    {
+        builder.Append("\\u");
+        builder.Append(((int)ch).ToString("X4", CultureInfo.InvariantCulture));
+    }
+
+    private static string Cap(string value, int max)
+    {
+        if (value.Length <= max)
+            return value;
+
+        var cut = max;
+        if (cut > 0
+            && cut < value.Length
+            && char.IsHighSurrogate(value[cut - 1])
+            && char.IsLowSurrogate(value[cut]))
+        {
+            cut--;
+        }
+
+        return cut <= 0
+            ? "…"
+            : value.Substring(0, cut) + "…";
+    }
 
     private static bool IsAllowed(char ch)
     {
         if (char.IsControl(ch) && ch is not '\r' and not '\n' and not '\t')
             return false;
 
-        return ch switch
-        {
-            '\u200E' or '\u200F' or '\u061C' => false,
-            '\u202A' or '\u202B' or '\u202C' or '\u202D' or '\u202E' => false,
-            '\u2066' or '\u2067' or '\u2068' or '\u2069' => false,
-            _ => true
-        };
+        // Every Unicode format character is invisible by definition: zero-width
+        // spaces/joiners, bidi controls, BOM. Escaping all of them keeps distinct
+        // model strings distinct in the prompt.
+        return CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.Format;
     }
 }

@@ -20,9 +20,19 @@ public sealed class AgentPlanStepResult
 
     public bool PreflightSkipped { get; set; }
 
+    /// <summary>Preflight could not resolve an id that an earlier write step creates.</summary>
+    public bool PreflightDeferred { get; set; }
+
+    /// <summary>Preview deliberately did not run this step (depends on an unapplied write).</summary>
+    public bool PreviewSkipped { get; set; }
+
+    public string? PreviewSkipReason { get; set; }
+
     public bool FidelityChecked { get; set; }
 
     public bool FidelityMatched { get; set; } = true;
+
+    public int? FidelityExpected { get; set; }
 
     public ToolResult? DryRunResult { get; set; }
 
@@ -67,6 +77,14 @@ public sealed class AgentPlanExecutionResult
     public int ExpectationsChecked { get; init; }
 
     public int AffectedCount { get; init; }
+
+    /// <summary>
+    /// A preview that did not cover every write step because a step depends on a
+    /// change that a dry run cannot commit. The apply still runs those steps.
+    /// </summary>
+    public bool PreviewIncomplete { get; init; }
+
+    public IReadOnlyList<string> NotPreviewed { get; init; } = Array.Empty<string>();
 
     public static AgentPlanExecutionResult Fail(
         string code,
@@ -163,7 +181,12 @@ public sealed partial class AgentPlanExecutor
             Verified = verified,
             Mismatches = mismatches,
             ExpectationsChecked = results.Sum(item => item.ExpectationsChecked),
-            AffectedCount = writeResults.Sum(item => item.Changed)
+            AffectedCount = writeResults.Sum(item => item.Changed),
+            PreviewIncomplete = results.Any(item => item.PreviewSkipped),
+            NotPreviewed = results
+                .Where(item => item.PreviewSkipped)
+                .Select(item => item.StepId)
+                .ToList()
         };
     }
 
@@ -197,7 +220,12 @@ public sealed partial class AgentPlanExecutor
             Steps = prepared.Results,
             AffectedCount = prepared.Results
                 .Where(item => IsWrite(item.ToolName))
-                .Sum(item => item.Changed)
+                .Sum(item => item.Changed),
+            PreviewIncomplete = prepared.Results.Any(item => item.PreviewSkipped),
+            NotPreviewed = prepared.Results
+                .Where(item => item.PreviewSkipped)
+                .Select(item => item.StepId)
+                .ToList()
         };
     }
 
@@ -252,6 +280,10 @@ public sealed partial class AgentPlanExecutor
         var dryFailure = await RunDryRunAsync(steps, results, execution, ct).ConfigureAwait(false);
         if (dryFailure is not null)
             return (steps, results, dryFailure);
+
+        var conflict = FindStepConflict(steps, results);
+        if (conflict is not null)
+            return (steps, results, conflict);
 
         return (steps, results, null);
     }

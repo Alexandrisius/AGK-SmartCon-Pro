@@ -31,7 +31,7 @@ public sealed class ListFamilyTypesTool : AgentReadToolBase
             "typeId, name, isPlaced and a short parameter list.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -40,6 +40,7 @@ public sealed class ListFamilyTypesTool : AgentReadToolBase
             doc,
             TryGetLong(args, "familyId"),
             AgentJson.GetString(args, "familyName"),
+            AgentJson.GetString(args, "familyUniqueId"),
             out var errorCode,
             out var message);
         if (family is null)

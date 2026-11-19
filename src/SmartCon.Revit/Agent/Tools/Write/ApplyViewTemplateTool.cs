@@ -25,12 +25,13 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         Name = "apply_view_template",
         Description =
             "Applies an existing view template to views. items: [{viewId, templateId, " +
-            "overwriteTemplate?}]. A view that already has a different template is skipped " +
-            "unless overwriteTemplate=true. The template must belong to the same view family. " +
-            "dryRun defaults to true.",
+            "overwriteTemplate?}] or select: {type?, levelId?, folder?, nameContains?, templateId?} " +
+            "with a top-level templateId (select resolves the view set for you). A view that " +
+            "already has a different template is skipped unless overwriteTemplate=true. The " +
+            "template must belong to the same view family. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""}},""additionalProperties"":false},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override PlanPreflightResult PreflightCore(
@@ -43,10 +44,15 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return basic;
 
         var request = AgentJson.Deserialize<ApplyTemplateRequest>(args);
-        if (request?.Items is null || request.Items.Count == 0)
-            return PlanPreflightResult.Fail("no_items", "The items array is empty.");
+        var items = ExpandItems(document, request, out var itemsError, out var itemsMessage);
+        if (items is null)
+        {
+            return PlanPreflightResult.Fail(
+                itemsError ?? "invalid_arguments",
+                itemsMessage ?? "Invalid items.");
+        }
 
-        foreach (var item in request.Items)
+        foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -81,12 +87,12 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         CancellationToken ct)
     {
         var request = AgentJson.Deserialize<ApplyTemplateRequest>(args);
-        var items = request?.Items;
-        if (items is null || items.Count == 0)
+        var items = ExpandItems(doc, request, out var itemsError, out var itemsMessage);
+        if (items is null)
         {
             outcome.Success = false;
-            outcome.ErrorCode = "no_items";
-            outcome.Message = "The items array is empty; pass at least one {viewId,templateId} pair.";
+            outcome.ErrorCode = itemsError ?? "invalid_arguments";
+            outcome.Message = itemsMessage ?? "Invalid items.";
             return;
         }
 
@@ -96,6 +102,12 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             outcome.ErrorCode = "limit_exceeded";
             outcome.Message = "At most " + MaxItems + " items per call are allowed; split the list.";
             return;
+        }
+
+        if (request?.Select is not null)
+        {
+            outcome.Data["selectedViewIds"] = items.Select(item => item.ViewId).ToList();
+            outcome.Data["selectorMatched"] = items.Count;
         }
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
@@ -145,6 +157,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
 
             var before = AgentViewSettingsReader.Read(doc, view);
             var after = AgentViewSettingsReader.Read(doc, template);
+            var visibilityControlled =
+                AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.VIS_GRAPHICS_MODEL)
+                || AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.VIS_GRAPHICS_ANNOTATION);
             var delta = new
             {
                 viewId = view.Id.GetValue(),
@@ -159,7 +176,15 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 hiddenCategoriesAdded = Math.Max(
                     0, after.HiddenCategories.Count - before.HiddenCategories.Count),
                 controlledParameters = after.ControlledParameters.Count,
-                overwritten = after.ControlledParameters
+                overwritten = after.ControlledParameters,
+                controls = new
+                {
+                    crop = AgentViewSettingsReader.IsTemplateParameterControlled(
+                        template, BuiltInParameter.VIEWER_CROP_REGION),
+                    visibility = visibilityControlled,
+                    viewRange = AgentViewSettingsReader.IsTemplateParameterControlled(
+                        template, BuiltInParameter.PLAN_VIEW_RANGE)
+                }
             };
 
             if (outcome.Data["delta"] is not List<object> deltaList)
@@ -235,9 +260,74 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         return true;
     }
 
+    private static List<ApplyTemplateItem>? ExpandItems(
+        Document doc,
+        ApplyTemplateRequest? request,
+        out string? errorCode,
+        out string? message)
+    {
+        errorCode = null;
+        message = null;
+
+        if (request is null)
+        {
+            errorCode = "invalid_arguments";
+            message = "Arguments are required.";
+            return null;
+        }
+
+        var explicitItems = request.Items ?? new List<ApplyTemplateItem>();
+        var hasSelect = request.Select.HasValue
+                        && request.Select.Value.ValueKind == JsonValueKind.Object;
+
+        if (explicitItems.Count > 0 && hasSelect)
+        {
+            errorCode = "invalid_arguments";
+            message = "Pass items or select, not both.";
+            return null;
+        }
+
+        if (explicitItems.Count > 0)
+            return explicitItems;
+
+        if (!hasSelect)
+        {
+            errorCode = "invalid_arguments";
+            message = "Pass items or a select filter with a top-level templateId.";
+            return null;
+        }
+
+        if (!request.TemplateId.HasValue || request.TemplateId.Value <= 0)
+        {
+            errorCode = "invalid_arguments";
+            message = "select requires a top-level templateId.";
+            return null;
+        }
+
+        var viewIds = AgentViewSelector.Resolve(
+            doc, request.Select!.Value, out errorCode, out message);
+        if (errorCode is not null)
+            return null;
+
+        return viewIds
+            .Select(viewId => new ApplyTemplateItem
+            {
+                ViewId = viewId,
+                TemplateId = request.TemplateId.Value,
+                OverwriteTemplate = request.OverwriteTemplate
+            })
+            .ToList();
+    }
+
     private sealed class ApplyTemplateRequest
     {
         public List<ApplyTemplateItem>? Items { get; set; }
+
+        public JsonElement? Select { get; set; }
+
+        public long? TemplateId { get; set; }
+
+        public bool OverwriteTemplate { get; set; }
     }
 }
 

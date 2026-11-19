@@ -275,6 +275,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             Name = parameter.Definition?.Name ?? string.Empty,
             Value = TryReadRawValue(parameter),
             DisplayValue = TryReadDisplayValue(doc, parameter),
+            Unit = TryReadUnitLabel(doc, parameter),
             StorageType = parameter.StorageType.ToString(),
             IsReadOnly = parameter.IsReadOnly,
             IsShared = isShared,

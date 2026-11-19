@@ -37,7 +37,7 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""guid"":{""type"":""string""},""typeName"":{""type"":""string""},""typeId"":{""type"":""integer""},""value"":{""type"":""string""},""unit"":{""type"":""string""}},""required"":[""parameter"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""guid"":{""type"":""string""},""typeName"":{""type"":""string""},""typeId"":{""type"":""integer""},""value"":{""type"":""string""},""unit"":{""type"":""string""}},""required"":[""parameter"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     private protected override void ApplyInFamilyDocument(
@@ -133,8 +133,8 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
                         "invalid_value",
                         "The spec of '" + report.Name + "' (" +
                         AgentFamilySpecs.SpecName(parameter.Definition) + ") is not supported " +
-                        "for direct value writing; supported specs: length, angle, area, " +
-                        "volume, number, integer, text, yesno, material.");
+                        "for direct value writing; supported specs: length, ductSize, pipeSize, " +
+                        "distance, angle, area, volume, number, integer, text, yesno, material.");
                     failedCount++;
                     continue;
                 }

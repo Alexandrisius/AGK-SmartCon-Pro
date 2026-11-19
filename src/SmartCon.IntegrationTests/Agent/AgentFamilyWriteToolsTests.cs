@@ -71,6 +71,20 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         var changeSetId = data.GetProperty("changeSetId").GetString();
         await Assert.That(string.IsNullOrEmpty(changeSetId)).IsFalse();
 
+        var previousFamilyId = data.GetProperty("previousFamilyId").GetInt64();
+        var familyId = data.GetProperty("familyId").GetInt64();
+        await Assert.That(previousFamilyId).IsGreaterThan(0);
+        await Assert.That(familyId).IsGreaterThan(0);
+        await Assert.That(data.GetProperty("familyIdChanged").GetBoolean())
+            .IsEqualTo(familyId != previousFamilyId);
+        await Assert.That(string.IsNullOrWhiteSpace(
+                data.GetProperty("familyUniqueId").GetString()))
+            .IsFalse();
+        var reloaded = Doc.GetElement(
+            SmartCon.Core.Compatibility.ElementIdCompat.Create(familyId)) as Family;
+        await Assert.That(reloaded).IsNotNull();
+        await Assert.That(reloaded!.Name).IsEqualTo(Seed.FamilyName);
+
         var backupPath = data.GetProperty("backupPath").GetString();
         await Assert.That(backupPath).IsNotNull();
         await Assert.That(File.Exists(backupPath!)).IsTrue();
@@ -103,6 +117,40 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         await Assert.That(hasReadBack).IsTrue();
         await Assert.That(
             data.GetProperty("readBack").GetProperty("mismatched").GetInt32()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AddParameter_ByFamilyUniqueId_ResolvesFamily()
+    {
+        var family = new FilteredElementCollector(Doc)
+            .OfClass(typeof(Family))
+            .Cast<Family>()
+            .First(item => string.Equals(
+                item.Name, Seed.FamilyName, StringComparison.OrdinalIgnoreCase));
+
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyUniqueId\":\"" + family.UniqueId + "\"," +
+            "\"name\":\"ЗаказчикUnique\",\"storageType\":\"text\",\"dryRun\":true}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Data(result).GetProperty("familyUniqueId").GetString())
+            .IsEqualTo(family.UniqueId);
+    }
+
+    [Test]
+    public async Task AddParameter_DuctSizeStorageType_CreatesParameter()
+    {
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyName\":\"" + Seed.FamilyName + "\"," +
+            "\"name\":\"DuctSizeAdded\",\"storageType\":\"ductsize\",\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsTrue();
+        var parameter = FindParameterOrNull(await ReadParameters(), "DuctSizeAdded");
+        await Assert.That(parameter is not null).IsTrue();
+        await Assert.That(parameter!.Value.GetProperty("spec").GetString())
+            .IsEqualTo("ductSize");
     }
 
     [Test]
@@ -267,6 +315,33 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         var height = Seed.GetProjectParameter(FamilySeed.Type2, FamilySeed.HeightParam);
         await Assert.That(System.Math.Abs(width!.AsDouble() - 1100.0 / 304.8) < 1e-9).IsTrue();
         await Assert.That(System.Math.Abs(height!.AsDouble() - 1900.0 / 304.8) < 1e-9).IsTrue();
+    }
+
+    [Test]
+    public async Task SetValues_DuctSizeAndPipeSize_AcceptMillimetres()
+    {
+        var items =
+            "\"items\":[" +
+            "{\"parameter\":\"" + FamilySeed.DuctSizeParam +
+            "\",\"typeName\":\"Тип1\",\"value\":\"450\",\"unit\":\"mm\"}," +
+            "{\"parameter\":\"" + FamilySeed.PipeSizeParam +
+            "\",\"typeName\":\"Тип1\",\"value\":\"50\",\"unit\":\"mm\"}" +
+            "],\"dryRun\":false";
+
+        var result = Run(
+            CreateSetValuesTool(),
+            "{\"familyId\":" + Seed.FamilyId + "," + items + "}");
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("readBack").GetProperty("verified").GetInt32())
+            .IsEqualTo(2);
+
+        var duct = Seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.DuctSizeParam);
+        var pipe = Seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.PipeSizeParam);
+        await Assert.That(System.Math.Abs(duct!.AsDouble() - 450.0 / 304.8) < 1e-9).IsTrue();
+        await Assert.That(System.Math.Abs(pipe!.AsDouble() - 50.0 / 304.8) < 1e-9).IsTrue();
     }
 
     [Test]

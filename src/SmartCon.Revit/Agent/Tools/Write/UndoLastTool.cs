@@ -338,7 +338,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         var key = item.ParameterName ?? string.Empty;
 
         if (key is "view_template" or "view_range" or "crop" or "visibility"
-            or "viewRange" or "template")
+            or "viewRange" or "template" or "view_template_inclusion")
         {
             if (element is not View view)
                 return (false, "unsupported_element", "Element " + item.ElementId + " is not a view.");
@@ -348,6 +348,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 "view_template" or "template" => RevertTemplate(doc, view, item, force),
                 "view_range" or "viewRange" => RevertViewRange(view, item, force),
                 "crop" => RevertCrop(view, item, force),
+                "view_template_inclusion" => RevertTemplateInclusion(view, item, force),
                 _ => RevertVisibility(doc, view, item, force)
             };
         }
@@ -394,6 +395,56 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
 
         view.ViewTemplateId = ElementIdCompat.Create(id);
         return (true, null, null);
+    }
+
+    private static (bool, string?, string?) RevertTemplateInclusion(
+        View template,
+        ChangeItem item,
+        bool force)
+    {
+        if (!template.IsTemplate)
+            return (false, "unsupported_element",
+                "Element " + item.ElementId + " is not a view template.");
+
+        var oldIds = ParseIdSet(item.OldValue);
+        var newIds = ParseIdSet(item.NewValue);
+        if (oldIds is null || newIds is null)
+            return (false, "invalid_change_item",
+                "The recorded template inclusion is not a list of parameter ids.");
+
+        var current = new HashSet<long>(
+            template.GetNonControlledTemplateParameterIds().Select(id => id.GetValue()));
+        if (current.SetEquals(oldIds))
+            return (false, null, "The template inclusion already matches the recorded previous state.");
+
+        if (!force && !current.SetEquals(newIds))
+        {
+            return (false, "undo_conflict",
+                "The template inclusion of '" + template.Name +
+                "' changed after the operation (conflict).");
+        }
+
+        var restored = template.GetTemplateParameterIds()
+            .Where(id => oldIds.Contains(id.GetValue()))
+            .ToList();
+        template.SetNonControlledTemplateParameterIds(restored);
+        return (true, null, null);
+    }
+
+    private static HashSet<long>? ParseIdSet(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            var ids = JsonSerializer.Deserialize<long[]>(json!);
+            return ids is null ? null : new HashSet<long>(ids);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static (bool, string?, string?) RevertViewRange(View view, ChangeItem item, bool force)

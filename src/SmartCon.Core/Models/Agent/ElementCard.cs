@@ -31,6 +31,9 @@ public sealed class ParameterValueInfo
 
     public string? DisplayValue { get; init; }
 
+    /// <summary>Unit label of a measurable parameter (for example "мм").</summary>
+    public string? Unit { get; init; }
+
     public string? StorageType { get; init; }
 
     public bool IsReadOnly { get; init; }

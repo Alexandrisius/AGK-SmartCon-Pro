@@ -30,11 +30,52 @@ internal static class AgentFamilyReader
         Document doc,
         long? familyId,
         string? familyName,
+        string? familyUniqueId,
         out string? errorCode,
         out string? message)
     {
         errorCode = null;
         message = null;
+
+        if (!string.IsNullOrWhiteSpace(familyUniqueId))
+        {
+            var element = doc.GetElement(familyUniqueId!.Trim());
+            if (element is RevitFamily familyByUniqueId)
+            {
+                if (familyId.HasValue
+                    && familyId.Value > 0
+                    && familyId.Value != familyByUniqueId.Id.GetValue())
+                {
+                    errorCode = "invalid_value";
+                    message = "familyUniqueId '" + familyUniqueId + "' is family '" +
+                              familyByUniqueId.Name + "' (" +
+                              familyByUniqueId.Id.GetValue() +
+                              "), which does not match familyId " + familyId.Value + ".";
+                    return null;
+                }
+
+                if (!string.IsNullOrWhiteSpace(familyName)
+                    && !string.Equals(
+                        familyByUniqueId.Name,
+                        familyName!.Trim(),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    errorCode = "invalid_value";
+                    message = "familyUniqueId '" + familyUniqueId + "' is family '" +
+                              familyByUniqueId.Name + "', which does not match familyName '" +
+                              familyName + "'.";
+                    return null;
+                }
+
+                return familyByUniqueId;
+            }
+
+            errorCode = "family_not_found";
+            message = "No family has uniqueId '" + familyUniqueId + "'. Pass the uniqueId " +
+                      "returned by list_families; it can change if the family was reloaded or " +
+                      "recreated since it was read.";
+            return null;
+        }
 
         if (familyId.HasValue && familyId.Value > 0)
         {
@@ -60,15 +101,15 @@ internal static class AgentFamilyReader
 
             errorCode = "family_not_found";
             message = "Family element " + familyId.Value + " does not exist in the project. " +
-                      "Revit may assign a new familyId after a family edit (load-back): call " +
-                      "list_families again, or pass familyName instead of familyId.";
+                      "A family write returns a new familyId after load-back (previousFamilyId " +
+                      "in the same response): use that id, familyUniqueId, or familyName.";
             return null;
         }
 
         if (string.IsNullOrWhiteSpace(familyName))
         {
             errorCode = "invalid_arguments";
-            message = "Pass familyId or familyName.";
+            message = "Pass familyId, familyUniqueId or familyName.";
             return null;
         }
 
@@ -399,6 +440,44 @@ internal static class AgentFamilyReader
         }
     }
 
+    internal static string? DisplayValue(
+        Document? doc,
+        FamilyType? type,
+        FamilyParameter parameter)
+    {
+        var value = DisplayValue(type, parameter);
+        if (doc is null || value is null || parameter.StorageType != StorageType.Double)
+            return value;
+
+        var unit = UnitOf(doc, parameter);
+        if (unit is null || value.IndexOf(unit, StringComparison.OrdinalIgnoreCase) >= 0)
+            return value;
+
+        return value + " " + unit;
+    }
+
+    internal static string? UnitOf(Document? doc, FamilyParameter parameter)
+    {
+        if (doc is null || parameter.StorageType != StorageType.Double)
+            return null;
+
+        try
+        {
+            var spec = parameter.Definition.GetDataType();
+            var format = doc.GetUnits().GetFormatOptions(spec);
+            var unit = format?.GetUnitTypeId();
+            if (unit is null)
+                return null;
+
+            var label = LabelUtils.GetLabelForUnit(unit);
+            return string.IsNullOrWhiteSpace(label) ? null : label;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     internal static bool HasValue(FamilyType? type, FamilyParameter parameter)
     {
         try
@@ -415,7 +494,8 @@ internal static class AgentFamilyReader
         FamilyParameter parameter,
         IReadOnlyList<FamilyType> types,
         bool includeValues,
-        int maxValues)
+        int maxValues,
+        Document? doc = null)
     {
         var report = new FamilyParameterReport
         {
@@ -443,11 +523,16 @@ internal static class AgentFamilyReader
             for (var i = 0; i < take; i++)
             {
                 var type = types[i];
+                var hasValue = HasValue(type, parameter);
                 values.Add(new FamilyTypeValueReport
                 {
                     TypeName = type.Name,
-                    Value = DisplayValue(type, parameter),
-                    HasValue = HasValue(type, parameter)
+                    Value = hasValue
+                        ? FamilyValueSnapshot.ReadFamilyType(type, parameter).ToRaw()
+                        : null,
+                    DisplayValue = hasValue ? DisplayValue(doc, type, parameter) : null,
+                    Unit = UnitOf(doc, parameter),
+                    HasValue = hasValue
                 });
             }
 

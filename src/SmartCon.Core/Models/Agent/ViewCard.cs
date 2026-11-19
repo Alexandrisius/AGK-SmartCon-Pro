@@ -192,6 +192,9 @@ public sealed class ViewSettings
     public IReadOnlyList<CategoryVisibilityInfo> HiddenCategories { get; init; } =
         Array.Empty<CategoryVisibilityInfo>();
 
+    /// <summary>Total hidden categories, present even when the list is omitted.</summary>
+    public int HiddenCategoryCount { get; init; }
+
     public IReadOnlyList<string> HiddenWorksets { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> ControlledParameters { get; init; } = Array.Empty<string>();

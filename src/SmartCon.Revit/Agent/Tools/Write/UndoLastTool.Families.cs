@@ -64,6 +64,12 @@ public sealed partial class UndoLastTool
                 if (dryRun)
                 {
                     report.NewValue = "would revert " + plan.Ops.Count + " family operation(s)";
+                    report.Detail = DescribeOps(plan.Ops);
+                    report.Sections = plan.Ops.Select(op => new SectionReport
+                    {
+                        Section = (op.Kind ?? "operation") + ":" + (op.Parameter ?? string.Empty),
+                        Status = "would_revert"
+                    }).ToList();
                     outcome.Batch.Changed.Add(report);
                     continue;
                 }
@@ -96,6 +102,7 @@ public sealed partial class UndoLastTool
         WriteItemReport report,
         CancellationToken ct)
     {
+        report.Detail = DescribeOps(plan.Ops);
         var family = ResolveFamilyByName(projectDoc, plan.FamilyName);
         if (family is null)
         {
@@ -422,6 +429,31 @@ public sealed partial class UndoLastTool
             outcome.Success = false;
             outcome.ErrorCode ??= "family_restore_failed";
         }
+    }
+
+    private static string DescribeOps(IReadOnlyList<FamilyUndoOperation> ops)
+    {
+        var parts = new List<string>(ops.Count);
+        foreach (var op in ops)
+        {
+            parts.Add(op.Kind switch
+            {
+                "add" => "remove parameter '" + op.Parameter + "'",
+                "rename" => "rename '" + op.NewName + "' back to '" + op.Parameter + "'",
+                "value" => "restore '" + op.Parameter + "'" +
+                           (string.IsNullOrWhiteSpace(op.TypeName)
+                               ? string.Empty
+                               : " (" + op.TypeName + ")") +
+                           " = " + op.Value,
+                "formula" => "restore formula of '" + op.Parameter + "'" +
+                             (string.IsNullOrWhiteSpace(op.Formula)
+                                 ? " (clear)"
+                                 : " = " + op.Formula),
+                _ => (op.Kind ?? "operation") + " '" + op.Parameter + "'"
+            });
+        }
+
+        return string.Join("; ", parts);
     }
 
     private static RevitFamily? ResolveFamilyByName(Document document, string? familyName)

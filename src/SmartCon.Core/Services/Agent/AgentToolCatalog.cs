@@ -78,6 +78,11 @@ public static class AgentToolCatalog
             {
                 "применить", "шаблон", "назначить", "template", "apply"
             }),
+            ["set_view_template_inclusion"] = new("Write", true, new[]
+            {
+                "шаблон", "не контролирует", "открепить", "отвязать", "include", "in template",
+                "detach", "включить", "исключить", "template inclusion", "include in template"
+            }),
             ["set_view_range"] = new("Write", true, new[]
             {
                 "view range", "диапазон", "отметки", "top", "cut plane", "bottom", "глубина"

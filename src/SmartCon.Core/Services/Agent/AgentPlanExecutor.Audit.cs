@@ -18,7 +18,8 @@ public sealed partial class AgentPlanExecutor
                 step.ToolName,
                 ArgumentsJson = CanonicalizeWithoutDryRun(step.ArgumentsJson),
                 DependsOn = step.DependsOn.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
-                step.ExpectedChanges
+                step.ExpectedChanges,
+                step.ExpectedChangesAtLeast
                 // Read-back fields are deliberately excluded: they do not change
                 // the model, so adding them after the preview must not invalidate
                 // the approved digest (stress test #2).
@@ -77,6 +78,7 @@ public sealed partial class AgentPlanExecutor
             tool = step.ToolName,
             arguments = step.ArgumentsJson,
             expectedChanges = step.ExpectedChanges,
+            expectedChangesAtLeast = step.ExpectedChangesAtLeast,
             rationale = step.Rationale
         });
         return JsonSerializer.Serialize(new { plan.Goal, steps });

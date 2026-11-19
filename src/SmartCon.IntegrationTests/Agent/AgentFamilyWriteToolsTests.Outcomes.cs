@@ -64,7 +64,7 @@ public sealed partial class AgentFamilyWriteToolsTests
     }
 
     [Test]
-    public async Task SetValues_InstanceParameter_ReportsInstanceSkipped()
+    public async Task SetValues_InstanceParameter_ReportsNotVerifiable()
     {
         var result = Run(
             CreateSetValuesTool(),
@@ -74,7 +74,12 @@ public sealed partial class AgentFamilyWriteToolsTests
 
         await Assert.That(result.Success).IsTrue();
         var readBack = Data(result).GetProperty("readBack");
-        await Assert.That(readBack.GetProperty("instanceSkipped").GetInt32())
+        await Assert.That(readBack.GetProperty("notVerifiable").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+        await Assert.That(
+                readBack.GetProperty("notVerifiableReasons")
+                    .GetProperty("instanceParameter")
+                    .GetInt32())
             .IsGreaterThanOrEqualTo(1);
     }
 

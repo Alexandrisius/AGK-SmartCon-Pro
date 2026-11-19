@@ -449,6 +449,225 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task SetViewTemplateInclusion_DetachesViewRangeAndAllowsWrite()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        _transactions!.RunInTransaction(Doc, "Assign template", doc =>
+            GetView(_targetId).ViewTemplateId = ElementIdCompat.Create(_templateId));
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"viewRange\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        if (!result.Success)
+        {
+            throw new InvalidOperationException(
+                result.ErrorCode + ": " + result.Message + " data=" + result.Data);
+        }
+
+        await Assert.That(result.Data!.Value.GetProperty("affectedViewCount").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+
+        var template = (View)Doc.GetElement(ElementIdCompat.Create(_templateId));
+        var rangeId = new ElementId(BuiltInParameter.PLAN_VIEW_RANGE).GetValue();
+        await Assert.That(template.GetNonControlledTemplateParameterIds()
+                .Any(id => id.GetValue() == rangeId))
+            .IsTrue();
+        await Assert.That(_changeSets!.Last!.Items[0].ParameterName)
+            .IsEqualTo("view_template_inclusion");
+
+        var rangeTool = new SetViewRangeTool(
+            new StubRevitContext(Doc), _transactions, _changeSets!);
+        var rangeResult = rangeTool.ExecuteForTests(
+            Parse("{\"items\":[{\"viewId\":" + _targetId +
+                  ",\"viewRange\":{\"top\":{\"levelId\":" + _levelId + ",\"offsetMm\":2500}," +
+                  "\"cutPlane\":{\"levelId\":" + _levelId + ",\"offsetMm\":1000}," +
+                  "\"bottom\":{\"levelId\":" + _levelId + ",\"offsetMm\":0}," +
+                  "\"viewDepth\":{\"levelId\":" + _levelId + ",\"offsetMm\":-1200}}}]," +
+                  "\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(rangeResult.Success).IsTrue();
+        var plan = (ViewPlan)GetView(_targetId);
+        var range = plan.GetViewRange();
+        var topMm = UnitUtils.ConvertFromInternalUnits(
+            range.GetOffset(PlanViewPlane.TopClipPlane),
+            UnitTypeId.Millimeters);
+        await Assert.That(Math.Round(topMm)).IsEqualTo(2500);
+    }
+
+    [Test]
+    public async Task SetViewTemplateInclusion_CropCannotBeDetached()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        _transactions!.RunInTransaction(Doc, "Assign template", doc =>
+            GetView(_targetId).ViewTemplateId = ElementIdCompat.Create(_templateId));
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"crop\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("parameter_not_in_template");
+        await Assert.That(result.Message).Contains("Crop Region");
+    }
+
+    [Test]
+    public async Task SetViewTemplateInclusion_DryRun_DoesNotChangeTemplate()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"viewRange\"],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var template = (View)Doc.GetElement(ElementIdCompat.Create(_templateId));
+        var rangeId = new ElementId(BuiltInParameter.PLAN_VIEW_RANGE).GetValue();
+        await Assert.That(template.GetNonControlledTemplateParameterIds()
+                .Any(id => id.GetValue() == rangeId))
+            .IsFalse();
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetViewTemplateInclusion_Undo_RestoresControl()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"viewRange\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+
+        var undo = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undoResult = undo.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undoResult.Success).IsTrue();
+        var template = (View)Doc.GetElement(ElementIdCompat.Create(_templateId));
+        var rangeId = new ElementId(BuiltInParameter.PLAN_VIEW_RANGE).GetValue();
+        await Assert.That(template.GetNonControlledTemplateParameterIds()
+                .Any(id => id.GetValue() == rangeId))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task ApplyViewTemplate_Select_ResolvesViewSet()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new ApplyViewTemplateTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"select\":{\"type\":\"FloorPlan\",\"nameContains\":\"SC_AgentWrite\"}," +
+                  "\"templateId\":" + _templateId + ",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var selected = result.Data!.Value.GetProperty("selectedViewIds");
+        await Assert.That(selected.GetArrayLength()).IsGreaterThanOrEqualTo(2);
+        await Assert.That(result.Data.Value.GetProperty("selectorMatched").GetInt32())
+            .IsEqualTo(selected.GetArrayLength());
+        await Assert.That(GetView(_targetId).ViewTemplateId)
+            .IsEqualTo(ElementId.InvalidElementId);
+    }
+
+    [Test]
+    public async Task ConfigureViews_Select_ResolvesViewSet()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new ConfigureViewsTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"select\":{\"type\":\"FloorPlan\",\"nameContains\":\"SC_AgentWrite\"}," +
+                  "\"settings\":{\"templateId\":" + _templateId + "},\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var selected = result.Data!.Value.GetProperty("selectedViewIds");
+        await Assert.That(selected.GetArrayLength()).IsGreaterThanOrEqualTo(2);
+    }
+
+    [Test]
+    public async Task SetViewTemplateInclusion_ByViewId_UsesAssignedTemplate()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        _transactions!.RunInTransaction(Doc, "Assign template", doc =>
+            GetView(_targetId).ViewTemplateId = ElementIdCompat.Create(_templateId));
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"viewId\":" + _targetId +
+                  ",\"parameters\":[\"visibility\"],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("templateId").GetInt64())
+            .IsEqualTo(_templateId);
+    }
+
+    [Test]
+    public async Task SetViewTemplateInclusion_Include_RestoresControl()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        var tool = new SetViewTemplateInclusionTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var detach = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"viewRange\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(detach.Success).IsTrue();
+
+        var restore = tool.ExecuteForTests(
+            Parse("{\"templateId\":" + _templateId +
+                  ",\"parameters\":[\"viewRange\"],\"included\":true,\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(restore.Success).IsTrue();
+
+        var template = (View)Doc.GetElement(ElementIdCompat.Create(_templateId));
+        var rangeId = new ElementId(BuiltInParameter.PLAN_VIEW_RANGE).GetValue();
+        await Assert.That(template.GetNonControlledTemplateParameterIds()
+                .Any(id => id.GetValue() == rangeId))
+            .IsFalse();
+    }
+
+    [Test]
     public async Task ApplyViewTemplate_NonTemplateArgument_ReturnsInvalidTemplate()
     {
         var tool = new ApplyViewTemplateTool(new StubRevitContext(Doc), _transactions!, _changeSets!);

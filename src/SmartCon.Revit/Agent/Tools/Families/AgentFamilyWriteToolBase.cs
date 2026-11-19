@@ -53,6 +53,7 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 document,
                 TryGetLong(args, "familyId"),
                 AgentJson.GetString(args, "familyName"),
+                AgentJson.GetString(args, "familyUniqueId"),
                 out var errorCode,
                 out var message);
             if (family is null)
@@ -65,6 +66,8 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
 
             var familyId = family.Id.GetValue();
             var familyUniqueId = family.UniqueId;
+            outcome.Data["familyId"] = familyId;
+            outcome.Data["familyUniqueId"] = familyUniqueId;
 
             string? backupPath = null;
             string? sourceBackupPath = null;
@@ -162,6 +165,23 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
             }
 
             outcome.ModelChanged = true;
+
+            // LoadFamily deletes and recreates the family element: the id the
+            // caller passed is no longer valid. Return the new key together with
+            // the previous one so multi-step plans and the model can re-target.
+            if (session.LoadedFamilyId.HasValue)
+            {
+                outcome.Data["previousFamilyId"] = familyId;
+                outcome.Data["familyId"] = session.LoadedFamilyId.Value;
+                outcome.Data["familyIdChanged"] =
+                    session.LoadedFamilyId.Value != familyId;
+            }
+
+            if (!string.IsNullOrEmpty(session.LoadedFamilyUniqueId))
+            {
+                outcome.Data["previousFamilyUniqueId"] = familyUniqueId;
+                outcome.Data["familyUniqueId"] = session.LoadedFamilyUniqueId!;
+            }
 
             // Record the undo item before verification: the project already changed,
             // so the audit trail must survive any failure of the read-back check.

@@ -15,6 +15,7 @@ internal static class AgentViewSettingsReader
         var hasTemplate = templateId != ElementId.InvalidElementId;
         var template = hasTemplate ? doc.GetElement(templateId) : null;
 
+        var hiddenCategories = ReadHiddenCategories(doc, view);
         return new ViewSettings
         {
             ViewId = view.Id.GetValue(),
@@ -29,7 +30,8 @@ internal static class AgentViewSettingsReader
             Discipline = view.Discipline.ToString(),
             ViewRange = ReadViewRange(doc, view),
             Crop = ReadCrop(view),
-            HiddenCategories = ReadHiddenCategories(doc, view),
+            HiddenCategories = hiddenCategories,
+            HiddenCategoryCount = hiddenCategories.Count,
             HiddenWorksets = ReadHiddenWorksets(doc, view),
             ControlledParameters = ReadTemplateParameters(view, controlled: true),
             NonControlledParameters = ReadTemplateParameters(view, controlled: false)

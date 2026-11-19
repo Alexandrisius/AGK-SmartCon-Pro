@@ -1,5 +1,5 @@
 {
-  "description": "H1-11 routing eval: real Russian BIM user intents, 42-tool catalog. expectedTools lists acceptable tool names (1-3); kind is the intent class.",
+  "description": "H1-11 routing eval: real Russian BIM user intents, 43-tool catalog. expectedTools lists acceptable tool names (1-3); kind is the intent class.",
   "queries": [
     {
       "id": "r001",
@@ -1526,6 +1526,22 @@
       "query": "Скопируй формулу из параметра Ширина в Ширина_расч",
       "expectedTools": [
         "map_family_parameters"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r191",
+      "query": "Отвяжи диапазон вида от шаблона «АР_План», чтобы я поправил его на виде",
+      "expectedTools": [
+        "set_view_template_inclusion"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r192",
+      "query": "Шаблон не должен контролировать видимость категорий",
+      "expectedTools": [
+        "set_view_template_inclusion"
       ],
       "kind": "write"
     }

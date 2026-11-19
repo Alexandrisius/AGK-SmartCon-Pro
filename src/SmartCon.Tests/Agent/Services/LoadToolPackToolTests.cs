@@ -230,6 +230,29 @@ public sealed class LoadToolPackToolTests
     }
 
     [Fact]
+    public async Task Execute_ReportsRemainingAvailableTools()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(
+            session,
+            new FakeToolRegistry(
+                new ScriptedTool("list_views"),
+                new ScriptedTool("get_current_view_info"),
+                new ScriptedTool("rename_views"),
+                new ScriptedTool("get_view_settings")));
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"views\"}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        Assert.Equal(1, data.GetProperty("remainingAvailable").GetInt32());
+        Assert.Equal(
+            1,
+            data.GetProperty("remainingByPack").GetProperty("view_settings").GetInt32());
+    }
+
+    [Fact]
     public async Task Execute_WithoutAttachedRegistry_FailsClosed()
     {
         var tool = new LoadToolPackTool(new AgentSessionContext());

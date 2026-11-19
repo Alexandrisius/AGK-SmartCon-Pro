@@ -170,8 +170,8 @@ public sealed class FindToolsToolTests
             Assert.False(entry.TryGetProperty("inputSchema", out _));
             Assert.True(entry.TryGetProperty("name", out _));
             Assert.True(entry.TryGetProperty("description", out _));
-            Assert.True(entry.TryGetProperty("pack", out _));
-            Assert.True(entry.TryGetProperty("risk", out _));
+            Assert.False(entry.TryGetProperty("pack", out _));
+            Assert.False(entry.TryGetProperty("risk", out _));
         }
 
         Assert.False(string.IsNullOrWhiteSpace(data.GetProperty("hint").GetString()));
@@ -294,5 +294,33 @@ public sealed class FindToolsToolTests
             .ToList();
         Assert.DoesNotContain("list_views", names);
         Assert.Contains("set_view_crop", names);
+    }
+
+    [Fact]
+    public async Task FindToolsV2_Fields_ProjectsListedCards()
+    {
+        var registry = new AgentToolRegistry(new IAgentTool[]
+        {
+            new ScriptedTool("list_views"),
+            new ScriptedTool("get_current_view_info"),
+            new ScriptedTool("rename_views")
+        });
+        var tool = CreateTool(registry);
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"pack\":\"views\",\"fields\":[\"name\",\"pack\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var tools = result.Data!.Value.GetProperty("tools");
+        Assert.Equal(3, tools.GetArrayLength());
+        foreach (var entry in tools.EnumerateArray())
+        {
+            Assert.True(entry.TryGetProperty("name", out _));
+            Assert.True(entry.TryGetProperty("pack", out _));
+            Assert.False(entry.TryGetProperty("description", out _));
+            Assert.False(entry.TryGetProperty("risk", out _));
+        }
     }
 }

@@ -205,6 +205,41 @@ public static partial class AgentToolCards
                 TimeoutMs = 120000,
                 RequiredContext = "active_view",
                 Bulk = true
+            },
+            new AgentToolCard
+            {
+                ToolName = "set_view_template_inclusion",
+                Pack = "templates",
+                Purpose =
+                    "Управление тем, какие настройки шаблон вида контролирует " +
+                    "(Revit Include in template).",
+                WhenToUse =
+                    "Когда вид с шаблоном не даёт изменить подрезку, видимость или диапазон: " +
+                    "открепите настройку от шаблона, измените вид, затем верните контроль.",
+                WhenNotToUse =
+                    "Когда нужно назначить шаблон (apply_view_template) или прочитать его " +
+                    "состав (get_view_template_details).",
+                Examples = new[]
+                {
+                    "Отвяжи диапазон вида от шаблона «АР_План», чтобы я поправил его на виде 72812",
+                    "Шаблон не должен контролировать видимость категорий",
+                    "Верни контроль диапазона вида шаблону «План_АР»",
+                    "Какие виды затронет изменение шаблона «Разрез_АР»?"
+                },
+                Synonyms = new[]
+                {
+                    "include in template", "include в шаблоне", "не контролирует шаблон",
+                    "открепить параметр", "отвязать настройку", "detach setting",
+                    "шаблон забирает диапазон", "template inclusion"
+                },
+                NegativeExamples = new[]
+                {
+                    "Примени шаблон к виду",
+                    "Покажи состав шаблона"
+                },
+                Idempotent = true,
+                TimeoutMs = 60000,
+                Bulk = true
             }
         };
 }

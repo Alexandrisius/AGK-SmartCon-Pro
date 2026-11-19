@@ -33,7 +33,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -42,6 +42,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             doc,
             TryGetLong(args, "familyId"),
             AgentJson.GetString(args, "familyName"),
+            AgentJson.GetString(args, "familyUniqueId"),
             out var errorCode,
             out var message);
         if (family is null)
@@ -118,7 +119,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                     parameter,
                     types,
                     includeValues,
-                    maxValues));
+                    maxValues,
+                    familyDoc));
             }
 
             var nextOffset = offset + reports.Count;

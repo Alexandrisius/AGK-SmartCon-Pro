@@ -25,14 +25,17 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
         Description =
             "Applies several view settings in one call. items: [{viewId, newName?, templateId?, " +
             "overwriteTemplate?, viewRange?, crop?, visibility?}] — every field except viewId is " +
-            "optional and only the given sections are applied. Order per view: name, template, " +
-            "view range, crop, visibility. A template does not carry the reference view's name: " +
-            "when the user asks to make views 'like a reference view', include newName in the " +
-            "same plan if the naming pattern should be reproduced. dryRun defaults to true; " +
-            "atomic=true rolls the whole batch back on the first failure.",
+            "optional and only the given sections are applied. Alternatively select: {type?, " +
+            "levelId?, folder?, nameContains?, templateId?} plus settings: {templateId?, " +
+            "overwriteTemplate?, viewRange?, crop?, visibility?} applies one settings block to " +
+            "every matched view (newName is not allowed with select). Order per view: name, " +
+            "template, view range, crop, visibility. A template does not carry the reference " +
+            "view's name: when the user asks to make views 'like a reference view', include " +
+            "newName in the same plan if the naming pattern should be reproduced. dryRun " +
+            "defaults to true; atomic=true rolls the whole batch back on the first failure.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""newName"":{""type"":""string""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""viewRange"":{""type"":""object""},""crop"":{""type"":""object""},""visibility"":{""type"":""object""}},""required"":[""viewId""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":100,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""newName"":{""type"":""string""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""viewRange"":{""type"":""object""},""crop"":{""type"":""object""},""visibility"":{""type"":""object""}},""required"":[""viewId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""}},""additionalProperties"":false},""settings"":{""type"":""object"",""properties"":{""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""viewRange"":{""type"":""object""},""crop"":{""type"":""object""},""visibility"":{""type"":""object""}},""additionalProperties"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -43,12 +46,12 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
         CancellationToken ct)
     {
         var request = AgentJson.Deserialize<ConfigureViewsRequest>(args);
-        var items = request?.Items;
-        if (items is null || items.Count == 0)
+        var items = ExpandItems(doc, request, out var itemsError, out var itemsMessage);
+        if (items is null)
         {
             outcome.Success = false;
-            outcome.ErrorCode = "no_items";
-            outcome.Message = "The items array is empty; pass at least one item with viewId.";
+            outcome.ErrorCode = itemsError ?? "invalid_arguments";
+            outcome.Message = itemsMessage ?? "Invalid items.";
             return;
         }
 
@@ -58,6 +61,12 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             outcome.ErrorCode = "limit_exceeded";
             outcome.Message = "At most " + MaxItems + " views per call are allowed; split the list.";
             return;
+        }
+
+        if (request?.Select is not null)
+        {
+            outcome.Data["selectedViewIds"] = items.Select(item => item.ViewId).ToList();
+            outcome.Data["selectorMatched"] = items.Count;
         }
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
@@ -79,6 +88,7 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             report.Name = view.Name;
             var applied = new List<(string Key, AgentViewSettingsWriter.Change Change)>();
             AgentViewSettingsWriter.Change? failure = null;
+            string? failedSection = null;
 
             if (!string.IsNullOrWhiteSpace(item.NewName))
             {
@@ -95,7 +105,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                         : AgentViewSettingsWriter.Rename(view, item.NewName);
 
                 if (change.ErrorCode is not null)
+                {
                     failure = change;
+                    failedSection = "view_name";
+                }
                 else if (change.Changed)
                     applied.Add(("view_name", change));
             }
@@ -105,7 +118,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                 var change = AgentViewSettingsWriter.ApplyTemplate(
                     doc, view, item.TemplateId.Value, item.OverwriteTemplate);
                 if (change.ErrorCode is not null)
+                {
                     failure = change;
+                    failedSection = "view_template";
+                }
                 else if (change.Changed)
                     applied.Add(("view_template", change));
             }
@@ -114,7 +130,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             {
                 var change = AgentViewSettingsWriter.ApplyViewRange(view, item.ViewRange);
                 if (change.ErrorCode is not null)
+                {
                     failure = change;
+                    failedSection = "view_range";
+                }
                 else if (change.Changed)
                     applied.Add(("view_range", change));
             }
@@ -124,7 +143,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                 var change = AgentViewSettingsWriter.ApplyCrop(
                     doc, view, item.Crop, outcome.Warnings);
                 if (change.ErrorCode is not null)
+                {
                     failure = change;
+                    failedSection = "crop";
+                }
                 else if (change.Changed)
                     applied.Add(("crop", change));
             }
@@ -134,7 +156,10 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                 var change = AgentViewSettingsWriter.ApplyVisibility(
                     doc, view, item.Visibility, outcome.Warnings);
                 if (change.ErrorCode is not null)
+                {
                     failure = change;
+                    failedSection = "visibility";
+                }
                 else if (change.Changed)
                     applied.Add(("visibility", change));
             }
@@ -152,7 +177,8 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
                         Detail = "partial: applied " +
                                  string.Join(", ", applied.Select(entry => entry.Key)),
                         OldValue = string.Join(" | ", applied.Select(entry => entry.Change.OldValue)),
-                        NewValue = string.Join(" | ", applied.Select(entry => entry.Change.NewValue))
+                        NewValue = string.Join(" | ", applied.Select(entry => entry.Change.NewValue)),
+                        Sections = BuildSections(applied, failedSection, failure)
                     };
 
                     AddChangeItems(outcome, view, applied);
@@ -178,6 +204,7 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             }
 
             report.Detail = "sections: " + string.Join(", ", applied.Select(entry => entry.Key));
+            report.Sections = BuildSections(applied, failedSection: null, failure: null);
             report.OldValue = string.Join(" | ", applied.Select(entry => entry.Change.OldValue));
             report.NewValue = string.Join(" | ", applied.Select(entry => entry.Change.NewValue));
             outcome.Batch.Changed.Add(report);
@@ -185,6 +212,34 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
 
             AddChangeItems(outcome, view, applied);
         }
+    }
+
+    private static List<SectionReport> BuildSections(
+        IReadOnlyList<(string Key, AgentViewSettingsWriter.Change Change)> applied,
+        string? failedSection,
+        AgentViewSettingsWriter.Change? failure)
+    {
+        var sections = new List<SectionReport>(applied.Count + 1);
+        foreach (var entry in applied)
+        {
+            sections.Add(new SectionReport
+            {
+                Section = entry.Key,
+                Status = "applied"
+            });
+        }
+
+        if (failedSection is not null)
+        {
+            sections.Add(new SectionReport
+            {
+                Section = failedSection,
+                Status = "failed",
+                Reason = failure?.Reason
+            });
+        }
+
+        return sections;
     }
 
     private static void AddChangeItems(
@@ -206,8 +261,88 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
         }
     }
 
+    private static List<ConfigureViewItem>? ExpandItems(
+        Document doc,
+        ConfigureViewsRequest? request,
+        out string? errorCode,
+        out string? message)
+    {
+        errorCode = null;
+        message = null;
+
+        if (request is null)
+        {
+            errorCode = "invalid_arguments";
+            message = "Arguments are required.";
+            return null;
+        }
+
+        var explicitItems = request.Items ?? new List<ConfigureViewItem>();
+        var hasSelect = request.Select.HasValue
+                        && request.Select.Value.ValueKind == JsonValueKind.Object;
+
+        if (explicitItems.Count > 0 && hasSelect)
+        {
+            errorCode = "invalid_arguments";
+            message = "Pass items or select+settings, not both.";
+            return null;
+        }
+
+        if (explicitItems.Count > 0)
+            return explicitItems;
+
+        if (!hasSelect)
+        {
+            errorCode = "invalid_arguments";
+            message = "Pass items or select+settings.";
+            return null;
+        }
+
+        var settings = request.Settings;
+        if (settings is null)
+        {
+            errorCode = "invalid_arguments";
+            message = "select requires a settings object with the sections to apply.";
+            return null;
+        }
+
+        var viewIds = AgentViewSelector.Resolve(
+            doc, request.Select!.Value, out errorCode, out message);
+        if (errorCode is not null)
+            return null;
+
+        return viewIds
+            .Select(viewId => new ConfigureViewItem
+            {
+                ViewId = viewId,
+                TemplateId = settings.TemplateId,
+                OverwriteTemplate = settings.OverwriteTemplate,
+                ViewRange = settings.ViewRange,
+                Crop = settings.Crop,
+                Visibility = settings.Visibility
+            })
+            .ToList();
+    }
+
     private sealed class ConfigureViewsRequest
     {
         public List<ConfigureViewItem>? Items { get; set; }
+
+        public JsonElement? Select { get; set; }
+
+        public ConfigureViewsSettings? Settings { get; set; }
+    }
+
+    private sealed class ConfigureViewsSettings
+    {
+        public long? TemplateId { get; set; }
+
+        public bool OverwriteTemplate { get; set; }
+
+        public ViewRangeSpec? ViewRange { get; set; }
+
+        public ViewCropSpec? Crop { get; set; }
+
+        public ViewVisibilitySpec? Visibility { get; set; }
     }
 }

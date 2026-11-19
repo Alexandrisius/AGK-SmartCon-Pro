@@ -529,6 +529,176 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public async Task FamilyIdAlias_ReTargetsLaterApplySteps()
+    {
+        const string schema =
+            @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""}," +
+            @"""dryRun"":{""type"":""boolean""}},""additionalProperties"":false}";
+        var writeTool = new ScriptedTool(
+            "family_write_tool",
+            handler: args =>
+            {
+                var dryRun = args.TryGetProperty("dryRun", out var flag)
+                             && flag.ValueKind == JsonValueKind.True;
+                var payload = dryRun
+                    ? JsonSerializer.SerializeToElement(new
+                    {
+                        dryRun = true,
+                        changed = new[] { new { id = 1 } },
+                        skipped = Array.Empty<object>(),
+                        failed = Array.Empty<object>(),
+                        total = 1,
+                        affected = 1
+                    })
+                    : JsonSerializer.SerializeToElement(new
+                    {
+                        dryRun = false,
+                        familyId = 2,
+                        previousFamilyId = 1,
+                        changed = new[] { new { id = 1 } },
+                        skipped = Array.Empty<object>(),
+                        failed = Array.Empty<object>(),
+                        total = 1,
+                        affected = 1
+                    });
+                return ToolResult.Ok(payload, "ok", 1);
+            },
+            schema: schema);
+        var executor = CreateExecutor(
+            writeTool,
+            ReadTool(),
+            new RecordingConfirmation(),
+            new RecordingAuditLog());
+
+        var steps = new[]
+        {
+            new AgentPlanStep
+            {
+                StepId = "s1",
+                ToolName = "family_write_tool",
+                ArgumentsJson = @"{""familyId"":1}",
+                ExpectedChanges = 1
+            },
+            new AgentPlanStep
+            {
+                StepId = "s2",
+                ToolName = "family_write_tool",
+                ArgumentsJson = @"{""familyId"":1}",
+                ExpectedChanges = 1,
+                DependsOn = new[] { "s1" }
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(steps), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.PreviewIncomplete);
+        Assert.Contains("s2", result.NotPreviewed);
+        Assert.Equal(3, writeTool.Executions.Count);
+        Assert.Contains("\"familyId\":2", writeTool.Executions[^1].ArgumentsJson);
+    }
+
+    [Fact]
+    public async Task PlanStepConflict_TemplateControlsCrop()
+    {
+        var templateTool = new ScriptedTool(
+            "apply_view_template",
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    changed = new[] { new { id = 1 } },
+                    skipped = Array.Empty<object>(),
+                    failed = Array.Empty<object>(),
+                    total = 1,
+                    affected = 1,
+                    delta = new[]
+                    {
+                        new
+                        {
+                            viewId = 1,
+                            templateId = 9,
+                            templateName = "T",
+                            controls = new { crop = true, visibility = true, viewRange = true }
+                        }
+                    }
+                }),
+                "template"));
+        var cropTool = new ScriptedTool("set_view_crop");
+        var registry = new AgentToolRegistry(
+            new IAgentTool[] { templateTool, cropTool, ReadTool() });
+        var executor = new AgentPlanExecutor(
+            registry,
+            new ImmediateAwaitableEvent(),
+            new RecordingConfirmation(),
+            new RecordingAuditLog());
+
+        var steps = new[]
+        {
+            new AgentPlanStep
+            {
+                StepId = "tpl",
+                ToolName = "apply_view_template",
+                ArgumentsJson = @"{""items"":[{""viewId"":1,""templateId"":9}]}",
+                ExpectedChanges = 1
+            },
+            new AgentPlanStep
+            {
+                StepId = "crop",
+                ToolName = "set_view_crop",
+                ArgumentsJson = @"{""items"":[{""viewId"":1,""crop"":{}}]}",
+                ExpectedChanges = 1,
+                DependsOn = new[] { "tpl" }
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(steps), Context(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("plan_step_conflict", result.ErrorCode);
+        Assert.Contains("crop", result.Message, StringComparison.Ordinal);
+        Assert.Contains("tpl", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExpectedChangesAtLeast_AcceptsMoreChanges()
+    {
+        var writeTool = new ScriptedTool(
+            "write_tool",
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    changed = new[] { new { id = 1 }, new { id = 2 } },
+                    skipped = Array.Empty<object>(),
+                    failed = Array.Empty<object>(),
+                    total = 2,
+                    affected = 2
+                }),
+                "two changes"));
+        var executor = CreateExecutor(
+            writeTool,
+            ReadTool(),
+            new RecordingConfirmation(),
+            new RecordingAuditLog());
+
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = WriteArguments,
+            ExpectedChangesAtLeast = 2
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(step), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.Steps[0].FidelityMatched);
+        Assert.Equal(2, result.Steps[0].FidelityExpected);
+    }
+
+    [Fact]
     public void ConfirmationLedger_ConsumesNonceOnce()
     {
         var ledger = new AgentConfirmationLedger();

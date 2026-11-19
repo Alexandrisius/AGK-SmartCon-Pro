@@ -145,6 +145,12 @@ internal sealed class FamilyTypeValueReport
 
     public string? Value { get; set; }
 
+    /// <summary>Localized value with its unit label when the parameter is measurable.</summary>
+    public string? DisplayValue { get; set; }
+
+    /// <summary>Unit label of a measurable parameter (for example "мм").</summary>
+    public string? Unit { get; set; }
+
     public bool HasValue { get; set; }
 }
 

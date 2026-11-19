@@ -99,7 +99,8 @@ public sealed class ListViewsTool : AgentReadToolBase
                     matched,
                     view => string.IsNullOrWhiteSpace(view.BrowserFolder)
                         ? "(no folder)"
-                        : view.BrowserFolder!)
+                        : view.BrowserFolder!),
+                folderTree = BuildFolderTree(matched)
             };
 
             return ToolResult.Ok(
@@ -161,6 +162,68 @@ public sealed class ListViewsTool : AgentReadToolBase
                 : string.Empty));
     }
 
+    private static List<FolderNode> BuildFolderTree(IReadOnlyList<ViewCard> cards)
+    {
+        var roots = new List<FolderNode>();
+        foreach (var card in cards)
+        {
+            var path = card.BrowserFolderPath;
+            if (path is null || path.Count == 0)
+            {
+                var ungrouped = FindOrAdd(roots, "(no folder)");
+                ungrouped.Count++;
+                continue;
+            }
+
+            var level = roots;
+            foreach (var segment in path)
+            {
+                var node = FindOrAdd(level, segment);
+                node.Count++;
+                level = node.Children;
+            }
+        }
+
+        Sort(roots);
+        return roots;
+
+        static FolderNode FindOrAdd(List<FolderNode> nodes, string name)
+        {
+            foreach (var node in nodes)
+            {
+                if (string.Equals(node.Name, name, StringComparison.OrdinalIgnoreCase))
+                    return node;
+            }
+
+            var created = new FolderNode { Name = name };
+            nodes.Add(created);
+            return created;
+        }
+
+        static void Sort(List<FolderNode> nodes)
+        {
+            nodes.Sort((left, right) =>
+            {
+                var byCount = right.Count.CompareTo(left.Count);
+                return byCount != 0
+                    ? byCount
+                    : string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
+            });
+
+            foreach (var node in nodes)
+                Sort(node.Children);
+        }
+    }
+
+    private sealed class FolderNode
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public int Count { get; set; }
+
+        public List<FolderNode> Children { get; set; } = new();
+    }
+
     private static IReadOnlyList<object> GroupBy(
         IReadOnlyList<ViewCard> cards,
         Func<ViewCard, string> keySelector)
@@ -178,7 +241,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         return result;
     }
 
-    private static bool IsSupportedView(View view)
+    internal static bool IsSupportedView(View view)
     {
         return view.ViewType != ViewType.DrawingSheet
                && view.ViewType != ViewType.Internal
@@ -187,7 +250,7 @@ public sealed class ListViewsTool : AgentReadToolBase
                && view.ViewType != ViewType.Undefined;
     }
 
-    private static bool MatchesType(View view, IReadOnlyList<string> requestedTypes)
+    internal static bool MatchesType(View view, IReadOnlyList<string> requestedTypes)
     {
         if (requestedTypes.Count == 0)
             return true;
@@ -202,7 +265,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         return false;
     }
 
-    private static bool MatchesLevel(View view, IReadOnlyList<long> levelIds)
+    internal static bool MatchesLevel(View view, IReadOnlyList<long> levelIds)
     {
         if (levelIds.Count == 0)
             return true;
@@ -215,7 +278,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         return levelIds.Contains(id);
     }
 
-    private static bool MatchesName(View view, string? nameContains)
+    internal static bool MatchesName(View view, string? nameContains)
     {
         if (string.IsNullOrWhiteSpace(nameContains))
             return true;
@@ -227,7 +290,7 @@ public sealed class ListViewsTool : AgentReadToolBase
 #endif
     }
 
-    private static bool MatchesFolder(ViewCard card, IReadOnlyList<string> folders)
+    internal static bool MatchesFolder(ViewCard card, IReadOnlyList<string> folders)
     {
         if (folders.Count == 0)
             return true;
@@ -253,7 +316,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         return false;
     }
 
-    private static ViewCard CreateCard(
+    internal static ViewCard CreateCard(
         Document doc,
         View view,
         BrowserOrganization? browserOrganization)

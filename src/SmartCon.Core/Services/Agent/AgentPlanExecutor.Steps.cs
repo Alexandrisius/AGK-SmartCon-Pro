@@ -15,6 +15,7 @@ public sealed partial class AgentPlanExecutor
         AgentPlanExecutionContext execution,
         CancellationToken ct)
     {
+        var byId = steps.ToDictionary(step => step.StepId, StringComparer.Ordinal);
         foreach (var step in steps)
         {
             ct.ThrowIfCancellationRequested();
@@ -46,6 +47,16 @@ public sealed partial class AgentPlanExecutor
             if (check.Ok)
                 continue;
 
+            // A step may reference the id of an element that an earlier write
+            // step creates. The dry run cannot commit that element, so preflight
+            // is deferred to apply instead of rejecting a valid plan.
+            if (string.Equals(check.ErrorCode, "unresolved_id", StringComparison.Ordinal)
+                && DependsOnWrite(step, byId))
+            {
+                result.PreflightDeferred = true;
+                continue;
+            }
+
             return AgentPlanExecutionResult.Fail(
                 check.ErrorCode ?? "plan_preflight_failed",
                 "Step '" + step.StepId + "' preflight failed: " + check.Message);
@@ -61,6 +72,7 @@ public sealed partial class AgentPlanExecutor
         CancellationToken ct)
     {
         var mismatches = new List<string>();
+        var byId = steps.ToDictionary(step => step.StepId, StringComparer.Ordinal);
         foreach (var step in steps)
         {
             ct.ThrowIfCancellationRequested();
@@ -72,6 +84,17 @@ public sealed partial class AgentPlanExecutor
                 continue;
 
             var result = results.First(item => item.StepId == step.StepId);
+
+            // Every dry run is rolled back, so a step that consumes the output of
+            // an earlier write step cannot be previewed honestly. It is reported
+            // as preview_skipped and executed for real during apply.
+            if (DependsOnWrite(step, byId))
+            {
+                result.PreviewSkipped = true;
+                result.PreviewSkipReason = "depends_on_unapplied_step";
+                continue;
+            }
+
             var dryResult = await ExecuteToolAsync(tool, WithDryRun(step.ArgumentsJson, true), true, execution, ct)
                 .ConfigureAwait(false);
             result.DryRunResult = dryResult;
@@ -88,18 +111,24 @@ public sealed partial class AgentPlanExecutor
                     results);
             }
 
-            if (step.ExpectedChanges.HasValue)
+            if (step.ExpectedChanges.HasValue || step.ExpectedChangesAtLeast.HasValue)
             {
                 result.FidelityChecked = true;
-                result.FidelityMatched = result.Changed == step.ExpectedChanges.Value;
+                result.FidelityExpected = step.ExpectedChanges ?? step.ExpectedChangesAtLeast;
+                result.FidelityMatched = step.ExpectedChanges.HasValue
+                    ? result.Changed == step.ExpectedChanges.Value
+                    : result.Changed >= step.ExpectedChangesAtLeast!.Value;
                 if (!result.FidelityMatched)
                 {
                     await WriteAuditAsync(
                             null, "plan#fidelity", "mismatch", result.Changed, execution, ct)
                         .ConfigureAwait(false);
                     mismatches.Add(
-                        "Step '" + step.StepId + "' promised " + step.ExpectedChanges.Value +
-                        " change(s), the dry run produced " + result.Changed);
+                        "Step '" + step.StepId + "' promised " +
+                        (step.ExpectedChanges.HasValue
+                            ? step.ExpectedChanges.Value + " change(s)"
+                            : "at least " + step.ExpectedChangesAtLeast!.Value + " change(s)") +
+                        ", the dry run produced " + result.Changed);
                 }
             }
         }
@@ -222,6 +251,7 @@ public sealed partial class AgentPlanExecutor
                 .ConfigureAwait(false);
             result.ApplyResult = applyResult;
             ReadCounts(applyResult, result);
+            CollectFamilyAliases(applyResult, execution.FamilyIdAliases);
 
             if (!applyResult.Success)
             {
@@ -325,7 +355,7 @@ public sealed partial class AgentPlanExecutor
         try
         {
             using var document = JsonDocument.Parse(
-                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : ApplyFamilyAliases(argumentsJson, execution.FamilyIdAliases));
             args = document.RootElement.Clone();
         }
         catch (JsonException ex)
@@ -356,163 +386,4 @@ public sealed partial class AgentPlanExecutor
         }
     }
 
-    private static string WithDryRun(string argumentsJson, bool dryRun)
-    {
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
-        }
-        catch (JsonException)
-        {
-            return argumentsJson;
-        }
-
-        if (node is not JsonObject obj)
-            return argumentsJson;
-
-        obj["dryRun"] = dryRun;
-        return obj.ToJsonString();
-    }
-
-    private static void ReadCounts(ToolResult result, AgentPlanStepResult step)
-    {
-        if (result.Data is not { ValueKind: JsonValueKind.Object } data)
-            return;
-
-        step.Changed = ReadArrayLength(data, "changed");
-        step.Skipped = ReadArrayLength(data, "skipped");
-        step.Failed = ReadArrayLength(data, "failed");
-        if (step.Changed == 0 && data.TryGetProperty("affected", out var affected)
-            && affected.ValueKind == JsonValueKind.Number
-            && affected.TryGetInt32(out var parsed))
-        {
-            step.Changed = parsed;
-        }
-    }
-
-    private static int ReadArrayLength(JsonElement data, string property)
-    {
-        return data.TryGetProperty(property, out var value)
-               && value.ValueKind == JsonValueKind.Array
-            ? value.GetArrayLength()
-            : 0;
-    }
-
-    private static string? ResolvePath(JsonElement element, string path)
-    {
-        var current = element;
-        foreach (var segment in path.Split('.'))
-        {
-            if (TryResolveById(current, segment, out var byId))
-            {
-                current = byId;
-                continue;
-            }
-
-            if (current.ValueKind == JsonValueKind.Object
-                && current.TryGetProperty(segment, out var property))
-            {
-                current = property;
-                continue;
-            }
-
-            if (current.ValueKind == JsonValueKind.Array
-                && int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture,
-                    out var index)
-                && index >= 0
-                && index < current.GetArrayLength())
-            {
-                current = current[index];
-                continue;
-            }
-
-            return null;
-        }
-
-        return current.ValueKind switch
-        {
-            JsonValueKind.String => current.GetString(),
-            JsonValueKind.Number => current.GetRawText(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Null => null,
-            _ => current.GetRawText()
-        };
-    }
-
-    /// <summary>
-    /// Addresses a specific element inside an array: <c>byId[1704789].name</c>.
-    /// Read-back results are arrays of cards, so index-based access easily checks
-    /// the wrong object (live dogfood P0-2); byId matches the "id", "viewId",
-    /// "elementId" or "levelId" property of an object anywhere in the current node.
-    /// </summary>
-    private static bool TryResolveById(JsonElement current, string segment, out JsonElement found)
-    {
-        found = default;
-        if (!segment.StartsWith("byId[", StringComparison.Ordinal)
-            || !segment.EndsWith("]", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var raw = segment.Substring(5, segment.Length - 6).Trim().Trim('"', '\'');
-        if (raw.Length == 0)
-            return false;
-
-        return TryFindById(current, raw, out found);
-    }
-
-    private static bool TryFindById(JsonElement element, string id, out JsonElement found)
-    {
-        found = default;
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                foreach (var property in element.EnumerateObject())
-                {
-                    if (IsIdProperty(property.Name)
-                        && PropertyMatches(property.Value, id))
-                    {
-                        found = element;
-                        return true;
-                    }
-
-                    if (TryFindById(property.Value, id, out found))
-                        return true;
-                }
-
-                return false;
-
-            case JsonValueKind.Array:
-                foreach (var item in element.EnumerateArray())
-                {
-                    if (TryFindById(item, id, out found))
-                        return true;
-                }
-
-                return false;
-
-            default:
-                return false;
-        }
-    }
-
-    private static bool IsIdProperty(string name) =>
-        string.Equals(name, "id", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(name, "viewId", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(name, "elementId", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(name, "levelId", StringComparison.OrdinalIgnoreCase);
-
-    private static bool PropertyMatches(JsonElement value, string id)
-    {
-        return value.ValueKind switch
-        {
-            JsonValueKind.Number => string.Equals(
-                value.GetRawText(), id, StringComparison.Ordinal),
-            JsonValueKind.String => string.Equals(
-                value.GetString(), id, StringComparison.Ordinal),
-            _ => false
-        };
-    }
 }

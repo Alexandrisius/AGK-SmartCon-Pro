@@ -6,135 +6,6 @@ using SmartCon.Core.Compatibility;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
-/// <summary>
-/// Resolves filterable parameters for a category set and exposes them by the
-/// localized name (what the user types) and by the BuiltInParameter enum name.
-/// </summary>
-internal sealed class FilterParameterCatalog
-{
-    private readonly Dictionary<string, ElementId> _byName;
-
-    private FilterParameterCatalog(
-        Dictionary<string, ElementId> byName,
-        IReadOnlyList<string> names)
-    {
-        _byName = byName;
-        Names = names;
-    }
-
-    public IReadOnlyList<string> Names { get; }
-
-    public static FilterParameterCatalog Build(
-        Document doc,
-        IEnumerable<ElementId> categories)
-    {
-        var byName = new Dictionary<string, ElementId>(StringComparer.OrdinalIgnoreCase);
-        var names = new List<string>();
-
-        ICollection<ElementId> filterable;
-        try
-        {
-            filterable = ParameterFilterUtilities.GetFilterableParametersInCommon(
-                doc, new List<ElementId>(categories));
-        }
-        catch (Exception)
-        {
-            return new FilterParameterCatalog(byName, names);
-        }
-
-        foreach (var id in filterable)
-        {
-            var value = id.GetValue();
-            var labels = new List<string>(2);
-            if (value < 0)
-            {
-                var builtIn = (BuiltInParameter)value;
-                labels.Add(builtIn.ToString());
-                try
-                {
-                    var localized = LabelUtils.GetLabelFor(builtIn);
-                    if (!string.IsNullOrWhiteSpace(localized))
-                        labels.Add(localized);
-                }
-                catch (Exception)
-                {
-                    // Some built-in parameters have no label.
-                }
-            }
-            else
-            {
-                var element = doc.GetElement(ElementIdCompat.Create(value));
-                if (element is not null && !string.IsNullOrWhiteSpace(element.Name))
-                    labels.Add(element.Name);
-            }
-
-            foreach (var label in labels)
-            {
-                var key = Normalize(label);
-                if (key.Length == 0 || byName.ContainsKey(key))
-                    continue;
-                byName.Add(key, id);
-                names.Add(label);
-            }
-        }
-
-        names.Sort(StringComparer.OrdinalIgnoreCase);
-        return new FilterParameterCatalog(byName, names);
-    }
-
-    public bool TryResolve(string? name, out ElementId id)
-    {
-        id = ElementId.InvalidElementId;
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
-        if (_byName.TryGetValue(Normalize(name!), out var found) && found is not null)
-        {
-            id = found;
-            return true;
-        }
-
-        return false;
-    }
-
-    public bool Contains(ElementId id)
-    {
-        foreach (var candidate in _byName.Values)
-        {
-            if (candidate.GetValue() == id.GetValue())
-                return true;
-        }
-
-        return false;
-    }
-
-    public IReadOnlyList<string> Sample(int max)
-    {
-        if (Names.Count <= max)
-            return Names;
-
-        var sample = new List<string>(max);
-        for (var index = 0; index < max; index++)
-            sample.Add(Names[index]);
-        return sample;
-    }
-
-    private static string Normalize(string value) =>
-        value.Trim().ToLowerInvariant().Replace('ё', 'е').Replace("  ", " ");
-}
-
-internal sealed class FilterRuleBuildResult
-{
-    public ElementFilter? Filter { get; init; }
-
-    public string? ErrorCode { get; init; }
-
-    public string? Reason { get; init; }
-
-    public IReadOnlyList<string> AvailableParameters { get; init; } = Array.Empty<string>();
-
-    public bool Ok => ErrorCode is null;
-}
 
 /// <summary>
 /// Turns the generic filter DSL into a Revit ElementFilter: one
@@ -217,11 +88,22 @@ internal static class AgentFilterRuleBuilder
         var parameterId = ResolveParameterId(field, condition, catalog);
         if (parameterId is null)
         {
+            var name = condition.Parameter ?? field;
+            if (catalog.ExistsInDocument(name))
+            {
+                return new FilterRuleBuildResult
+                {
+                    ErrorCode = "parameter_not_filterable",
+                    Reason = "Parameter '" + name + "' exists in the model but Revit does not " +
+                             "allow filtering the requested categories by it.",
+                    AvailableParameters = catalog.Sample(60)
+                };
+            }
+
             return new FilterRuleBuildResult
             {
                 ErrorCode = "parameter_not_found",
-                Reason = "Parameter '" + (condition.Parameter ?? field) +
-                         "' is not filterable for the requested categories.",
+                Reason = "Parameter '" + name + "' is not filterable for the requested categories.",
                 AvailableParameters = catalog.Sample(60)
             };
         }

@@ -20,6 +20,8 @@ internal sealed class FamilySeed : IDisposable
     public const string AreaParam = "Площадь";
     public const string SizeParam = "Размер";
     public const string PressureParam = "Давление";
+    public const string DuctSizeParam = "Размер_воздуховода";
+    public const string PipeSizeParam = "Размер_трубы";
     public const string InstanceParam = "Примечание_экз";
     public const string Type1 = "Тип1";
     public const string Type2 = "Тип2";
@@ -109,6 +111,10 @@ internal sealed class FamilySeed : IDisposable
                     FlagParam, GroupTypeId.General, SpecTypeId.Boolean.YesNo, false);
                 manager.AddParameter(
                     PressureParam, GroupTypeId.General, SpecTypeId.HvacPressure, false);
+                var ductSize = manager.AddParameter(
+                    DuctSizeParam, GroupTypeId.General, SpecTypeId.DuctSize, false);
+                var pipeSize = manager.AddParameter(
+                    PipeSizeParam, GroupTypeId.General, SpecTypeId.PipeSize, false);
                 manager.AddParameter(
                     InstanceParam, GroupTypeId.IdentityData, SpecTypeId.String.Text, true);
 
@@ -132,6 +138,8 @@ internal sealed class FamilySeed : IDisposable
                 manager.Set(count, 1);
                 manager.Set(flag, 1);
                 manager.Set(size, 500.0 / 304.8);
+                manager.Set(ductSize, 400.0 / 304.8);
+                manager.Set(pipeSize, 25.0 / 304.8);
 
                 manager.CurrentType = type2;
                 manager.Set(width, Type2WidthMm / 304.8);
@@ -140,6 +148,8 @@ internal sealed class FamilySeed : IDisposable
                 manager.Set(count, 2);
                 manager.Set(flag, 0);
                 manager.Set(size, 750.0 / 304.8);
+                manager.Set(ductSize, 500.0 / 304.8);
+                manager.Set(pipeSize, 32.0 / 304.8);
 
                 manager.SetFormula(area, WidthParam + " * " + HeightParam);
                 transaction.Commit();
