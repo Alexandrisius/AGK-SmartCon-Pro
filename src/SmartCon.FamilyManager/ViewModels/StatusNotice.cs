@@ -1,20 +1,6 @@
+using SmartCon.Core.Models.FamilyManager;
+
 namespace SmartCon.FamilyManager.ViewModels;
-
-/// <summary>
-/// Severity of a <see cref="StatusNotice"/>. Declaration order matters:
-/// the worst severity of a notice list is computed as <c>Max()</c>.
-/// </summary>
-public enum StatusNoticeSeverity
-{
-    /// <summary>Neutral fact (dependency-of, marker-resolved version).</summary>
-    Info,
-
-    /// <summary>Something needs attention but does not block the workflow.</summary>
-    Warning,
-
-    /// <summary>Blocking problem (import block, failed dependencies).</summary>
-    Error,
-}
 
 /// <summary>
 /// One entry of the clickable status-badge details dialog (#210):

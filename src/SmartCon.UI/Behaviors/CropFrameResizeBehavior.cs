@@ -2,12 +2,11 @@ using System.Windows;
 using System.Windows.Controls.Primitives;
 using Microsoft.Xaml.Behaviors;
 using SmartCon.Core.Services.FamilyManager;
-using SmartCon.FamilyManager.ViewModels;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
-/// Forwards corner-handle drag deltas to <see cref="CropAvatarViewModel.ResizeFrame"/>
+/// Forwards corner-handle drag deltas to <see cref="ICropAvatarController.ResizeFrame"/>
 /// (free-aspect frame resize, issue #131 rev 2). The <see cref="Corner"/> property
 /// tells which corner of the frame the handle represents.
 /// </summary>
@@ -40,7 +39,7 @@ public sealed class CropFrameResizeBehavior : Behavior<Thumb>
         // DragDelta is a BUBBLING routed event: ignore drags of other thumbs
         // (the frame-move thumb hosts these corner handles in its template).
         if (!ReferenceEquals(e.OriginalSource, AssociatedObject)) return;
-        if (AssociatedObject.DataContext is CropAvatarViewModel vm)
+        if (AssociatedObject.DataContext is ICropAvatarController vm)
             vm.ResizeFrame(Corner, e.HorizontalChange, e.VerticalChange);
     }
 }

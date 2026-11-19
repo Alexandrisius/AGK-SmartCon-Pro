@@ -5,7 +5,6 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.FamilyManager.Selectors;
 using SmartCon.UI;
 
 namespace SmartCon.FamilyManager.ViewModels;

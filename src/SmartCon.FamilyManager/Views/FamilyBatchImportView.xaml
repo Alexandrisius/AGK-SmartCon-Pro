@@ -1,7 +1,6 @@
 <controls:DialogWindowBase x:Class="SmartCon.FamilyManager.Views.FamilyBatchImportView"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
@@ -433,7 +432,7 @@
                                                     <Setter Property="Foreground" Value="#FB8C00"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding ProblemBadgeSeverity}"
-                                                                     Value="{x:Static vm:StatusNoticeSeverity.Error}">
+                                                                     Value="{x:Static fmModels:StatusNoticeSeverity.Error}">
                                                             <Setter Property="Kind" Value="CloseCircleOutline"/>
                                                             <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
                                                         </DataTrigger>

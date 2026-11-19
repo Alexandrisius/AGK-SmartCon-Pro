@@ -3,7 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SmartCon.Agent.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Redirects mouse-wheel scrolling from an inner scrollable control

@@ -2,15 +2,15 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Microsoft.Xaml.Behaviors;
-using SmartCon.FamilyManager.ViewModels;
+using SmartCon.Core.Services.FamilyManager;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Dims everything outside the crop frame (issue #131): builds a
 /// <see cref="CombinedGeometry"/> (viewport rect minus frame hole) and assigns
 /// it to the attached <see cref="Path"/>. Frame geometry is bound to the ViewModel;
-/// viewport size comes from <see cref="CropAvatarViewModel"/> constants.
+/// viewport size comes from <see cref="CropViewportMetrics"/> constants.
 /// </summary>
 public sealed class CropDimmingBehavior : Behavior<Path>
 {
@@ -24,11 +24,11 @@ public sealed class CropDimmingBehavior : Behavior<Path>
 
     public static readonly DependencyProperty FrameWidthProperty =
         DependencyProperty.Register(nameof(FrameWidth), typeof(double), typeof(CropDimmingBehavior),
-            new PropertyMetadata(CropAvatarViewModel.DefaultFrameWidth, OnFrameChanged));
+            new PropertyMetadata(CropViewportMetrics.DefaultFrameWidth, OnFrameChanged));
 
     public static readonly DependencyProperty FrameHeightProperty =
         DependencyProperty.Register(nameof(FrameHeight), typeof(double), typeof(CropDimmingBehavior),
-            new PropertyMetadata(CropAvatarViewModel.DefaultFrameHeight, OnFrameChanged));
+            new PropertyMetadata(CropViewportMetrics.DefaultFrameHeight, OnFrameChanged));
 
     private RectangleGeometry? _outer;
     private RectangleGeometry? _hole;
@@ -79,7 +79,7 @@ public sealed class CropDimmingBehavior : Behavior<Path>
     private void UpdateGeometry()
     {
         if (_outer is null || _hole is null) return;
-        _outer.Rect = new Rect(0, 0, CropAvatarViewModel.ViewportWidth, CropAvatarViewModel.ViewportHeight);
+        _outer.Rect = new Rect(0, 0, CropViewportMetrics.ViewportWidth, CropViewportMetrics.ViewportHeight);
         _hole.Rect = new Rect(FrameX, FrameY, FrameWidth, FrameHeight);
     }
 }

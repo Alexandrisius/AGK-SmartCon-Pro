@@ -10,7 +10,6 @@ using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.FamilyManager.Events;
-using SmartCon.FamilyManager.Selectors;
 using SmartCon.FamilyManager.Services;
 using SmartCon.FamilyManager.Services.LocalCatalog;
 using SmartCon.FamilyManager.Services.Stale;

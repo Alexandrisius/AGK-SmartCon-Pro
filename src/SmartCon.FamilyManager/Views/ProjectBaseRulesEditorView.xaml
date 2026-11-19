@@ -4,7 +4,6 @@
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
-        xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels.ProjectBase"
         Title="{loc:Loc FM_PBase_Title}"
         Width="750" Height="620" MinWidth="650" MinHeight="520"
         WindowStartupLocation="CenterScreen"

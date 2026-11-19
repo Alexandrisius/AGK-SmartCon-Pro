@@ -1,18 +1,18 @@
 using System.Windows;
 using Microsoft.Xaml.Behaviors;
-using SmartCon.FamilyManager.ViewModels;
+using SmartCon.Core.Services.FamilyManager;
 using Cursors = System.Windows.Input.Cursors;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using MouseWheelEventArgs = System.Windows.Input.MouseWheelEventArgs;
 using Point = System.Windows.Point;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Pan &amp; zoom behavior for the avatar crop dialog viewport (issue #131):
 /// mouse wheel zooms around the cursor, left-drag pans the image.
-/// All state changes go through <see cref="CropAvatarViewModel"/> — no logic in code-behind (I-10).
+/// All state changes go through <see cref="ICropAvatarController"/> — no logic in code-behind (I-10).
 /// </summary>
 public sealed class CropPanZoomBehavior : Behavior<FrameworkElement>
 {
@@ -43,7 +43,7 @@ public sealed class CropPanZoomBehavior : Behavior<FrameworkElement>
 
     private void OnMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (AssociatedObject.DataContext is not CropAvatarViewModel vm) return;
+        if (AssociatedObject.DataContext is not ICropAvatarController vm) return;
         var factor = e.Delta > 0 ? WheelZoomFactor : 1 / WheelZoomFactor;
         var pos = e.GetPosition(AssociatedObject);
         vm.ZoomAt(factor, pos.X, pos.Y);
@@ -52,7 +52,7 @@ public sealed class CropPanZoomBehavior : Behavior<FrameworkElement>
 
     private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (AssociatedObject.DataContext is not CropAvatarViewModel) return;
+        if (AssociatedObject.DataContext is not ICropAvatarController) return;
         _panning = true;
         _lastPosition = e.GetPosition(AssociatedObject);
         AssociatedObject.CaptureMouse();
@@ -62,7 +62,7 @@ public sealed class CropPanZoomBehavior : Behavior<FrameworkElement>
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
-        if (!_panning || AssociatedObject.DataContext is not CropAvatarViewModel vm) return;
+        if (!_panning || AssociatedObject.DataContext is not ICropAvatarController vm) return;
         var pos = e.GetPosition(AssociatedObject);
         vm.PanBy(pos.X - _lastPosition.X, pos.Y - _lastPosition.Y);
         _lastPosition = pos;

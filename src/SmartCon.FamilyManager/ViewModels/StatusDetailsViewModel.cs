@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Core.Models.FamilyManager;
 using SmartCon.Core.Services.Interfaces;
 
 namespace SmartCon.FamilyManager.ViewModels;

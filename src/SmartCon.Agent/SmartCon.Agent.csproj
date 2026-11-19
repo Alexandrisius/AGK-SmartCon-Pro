@@ -41,10 +41,10 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
-  <!-- Icon pack — same visual language as the FamilyManager dockable panel -->
+  <!-- Icon pack — same visual language as the FamilyManager dockable panel.
+       Markdig перенесён в SmartCon.UI вместе с MarkdownFlowDocumentRenderer. -->
   <ItemGroup>
     <PackageReference Include="MahApps.Metro.IconPacks.Material" />
-    <PackageReference Include="Markdig" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">

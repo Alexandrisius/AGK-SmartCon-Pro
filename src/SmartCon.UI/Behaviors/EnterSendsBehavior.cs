@@ -2,7 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace SmartCon.Agent.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 public static class EnterSendsBehavior
 {

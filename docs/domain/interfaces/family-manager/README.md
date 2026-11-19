@@ -23,6 +23,7 @@ module: family-manager-interfaces-index
 | [`validation.md`](validation.md) | Import Validation Gate (ADR-059): `IValidationRuleRepository`, `IFamilyValidationEngine`, `IFamilyHealthChecker`, `IFamilyImportValidationService`, `ICategoryChangeGateService` |
 | [`dependencies.md`](dependencies.md) | Зависимости parent→child (ADR-066, V29): `IFamilyDependencyRepository`, `IFamilyDependencyCollector` |
 | [`assignment-rules.md`](assignment-rules.md) | Автоназначение категории (#241, ADR-070, V31): `ICategoryAutoAssignEngine`, `ICategoryAutoAssignService`, `IAssignmentRuleRepository`, `IRevitCategoryLabelService` |
+| [`presentation-contracts.md`](presentation-contracts.md) | Presentation-контракты build-speedup (ADR-078): `ICatalogTreeNode`, `ICategoryNode`, `ICropAvatarController` (WPF-free, ради устранения local-type XAML) |
 
 ## См. также
 

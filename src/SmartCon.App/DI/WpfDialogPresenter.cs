@@ -1,6 +1,4 @@
-#if NET48
 using SmartCon.App.Diagnostics;
-#endif
 using SmartCon.Core.Logging;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Context;
@@ -126,10 +124,8 @@ public sealed class WpfDialogPresenter : IDialogPresenter
             }
         };
 
-#if NET48
         var recovery = BatchDialogRenderRecovery.Attach(window);
         window.Closed += (_, _) => recovery.Dispose();
-#endif
         window.Show();
     }
 
@@ -179,9 +175,7 @@ public sealed class WpfDialogPresenter : IDialogPresenter
         bool? result;
         try
         {
-#if NET48
             using var _recovery = BatchDialogRenderRecovery.Attach(window);
-#endif
             result = window.ShowDialog();
         }
         catch (Exception ex)

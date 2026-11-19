@@ -5,7 +5,7 @@ using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel
+public sealed partial class CategoryNodeViewModel : CatalogTreeNodeViewModel, ICategoryNode
 {
     public override bool IsCategory => true;
 

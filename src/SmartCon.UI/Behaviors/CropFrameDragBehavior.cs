@@ -1,11 +1,11 @@
 using System.Windows.Controls.Primitives;
 using Microsoft.Xaml.Behaviors;
-using SmartCon.FamilyManager.ViewModels;
+using SmartCon.Core.Services.FamilyManager;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
-/// Forwards crop-frame Thumb drag deltas to <see cref="CropAvatarViewModel.MoveFrame"/>
+/// Forwards crop-frame Thumb drag deltas to <see cref="ICropAvatarController.MoveFrame"/>
 /// (issue #131). Clamping stays in the ViewModel / CropViewportMath.
 /// </summary>
 public sealed class CropFrameDragBehavior : Behavior<Thumb>
@@ -27,7 +27,7 @@ public sealed class CropFrameDragBehavior : Behavior<Thumb>
         // DragDelta is a BUBBLING routed event: corner-resize thumbs nested inside
         // the frame's template also raise it here. Handle only our own drag.
         if (!ReferenceEquals(e.OriginalSource, AssociatedObject)) return;
-        if (AssociatedObject.DataContext is CropAvatarViewModel vm)
+        if (AssociatedObject.DataContext is ICropAvatarController vm)
             vm.MoveFrame(e.HorizontalChange, e.VerticalChange);
     }
 }

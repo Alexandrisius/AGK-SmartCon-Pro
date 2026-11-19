@@ -18,21 +18,22 @@ namespace SmartCon.FamilyManager.ViewModels;
 /// <see cref="MoveFrame"/>. Invariant (enforced by CropViewportMath): the
 /// displayed image always fully covers the crop frame.
 /// </summary>
-public sealed partial class CropAvatarViewModel : ObservableObject, IObservableRequestClose
+public sealed partial class CropAvatarViewModel : ObservableObject, IObservableRequestClose, ICropAvatarController
 {
-    /// <summary>Viewport width in WPF units (matches CropAvatarView).</summary>
-    public const double ViewportWidth = 600;
+    /// <summary>Viewport width in WPF units (matches CropAvatarView). Canonical value in
+    /// <see cref="CropViewportMetrics"/> so SmartCon.UI behaviors share it without referencing this VM.</summary>
+    public const double ViewportWidth = CropViewportMetrics.ViewportWidth;
 
     /// <summary>Viewport height in WPF units (matches CropAvatarView).</summary>
-    public const double ViewportHeight = 450;
+    public const double ViewportHeight = CropViewportMetrics.ViewportHeight;
 
     /// <summary>Default crop frame width in WPF units (4:3). The frame is freely resizable
     /// via corner handles; the output is always rendered to 560×420 with cover semantics
     /// (overflow edges are cropped) — see ADR-047 rev 2.</summary>
-    public const double DefaultFrameWidth = 400;
+    public const double DefaultFrameWidth = CropViewportMetrics.DefaultFrameWidth;
 
     /// <summary>Default crop frame height in WPF units (4:3).</summary>
-    public const double DefaultFrameHeight = 300;
+    public const double DefaultFrameHeight = CropViewportMetrics.DefaultFrameHeight;
 
     /// <summary>Minimum crop frame size in WPF units (free aspect resize clamp).</summary>
     public const double MinFrameSize = 60;

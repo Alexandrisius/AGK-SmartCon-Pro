@@ -1,10 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
+using SmartCon.Core.Models.FamilyManager;
 
 namespace SmartCon.FamilyManager.ViewModels;
 
-public abstract partial class CatalogTreeNodeViewModel : ObservableObject
+public abstract partial class CatalogTreeNodeViewModel : ObservableObject, ICatalogTreeNode
 {
     [ObservableProperty] private string _displayName = string.Empty;
     [ObservableProperty] private bool _isExpanded;
@@ -85,4 +86,10 @@ public abstract partial class CatalogTreeNodeViewModel : ObservableObject
 
     public abstract bool IsCategory { get; }
     public virtual bool IsType => false;
+
+    // Explicit ICatalogTreeNode implementation: the concrete Parent/Children types
+    // are covariantly assignable to the interface's ICatalogTreeNode abstractions,
+    // letting SmartCon.UI selectors/behaviors avoid referencing this concrete VM.
+    ICatalogTreeNode? ICatalogTreeNode.Parent => Parent;
+    IEnumerable<ICatalogTreeNode> ICatalogTreeNode.Children => Children;
 }

@@ -1,4 +1,4 @@
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Чистая логика построения каскада прилипающих заголовков с учётом занятой

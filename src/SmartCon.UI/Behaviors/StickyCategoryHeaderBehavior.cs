@@ -5,7 +5,6 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Globalization;
 using SmartCon.Core.Logging;
-using SmartCon.FamilyManager.ViewModels;
 using System.Linq;
 using TreeView = System.Windows.Controls.TreeView;
 using TreeViewItem = System.Windows.Controls.TreeViewItem;
@@ -17,7 +16,7 @@ using Point = System.Windows.Point;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Attached behavior: приклеивает Category-заголовки к верху TreeView при вертикальном скролле,

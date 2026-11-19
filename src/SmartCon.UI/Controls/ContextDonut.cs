@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Media;
 
-namespace SmartCon.Agent.Views.Controls;
+namespace SmartCon.UI.Controls;
 
 /// <summary>
 /// Small circular context-usage indicator: a track ring plus a progress arc.

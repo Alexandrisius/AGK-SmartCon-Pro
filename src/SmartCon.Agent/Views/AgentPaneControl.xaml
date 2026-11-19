@@ -5,10 +5,8 @@
              xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
              xmlns:uiBehaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
              xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
-             xmlns:vm="clr-namespace:SmartCon.Agent.ViewModels"
-             xmlns:agentConverters="clr-namespace:SmartCon.Agent.Converters"
-             xmlns:behaviors="clr-namespace:SmartCon.Agent.Behaviors"
-             xmlns:controls="clr-namespace:SmartCon.Agent.Views.Controls"
+             xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
+             xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              Background="{DynamicResource BackgroundBrush}"
              FontFamily="Segoe UI"
@@ -22,7 +20,7 @@
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:InvertBoolConverter x:Key="InvertBool"/>
-            <agentConverters:MarkdownToFlowDocumentConverter x:Key="MarkdownToFlow"/>
+            <converters:MarkdownToFlowDocumentConverter x:Key="MarkdownToFlow"/>
 
             <Style x:Key="RoundIconButton" TargetType="Button">
                 <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
@@ -144,7 +142,7 @@
                 <Setter Property="TextWrapping" Value="Wrap"/>
             </Style>
 
-            <DataTemplate DataType="{x:Type vm:AgentChatItemViewModel}">
+            <DataTemplate x:Key="AgentChatItemTemplate">
                 <Grid Margin="0,5">
 
                     <!-- Assistant message -->
@@ -603,7 +601,8 @@
                           HorizontalScrollBarVisibility="Disabled"
                           Padding="2,0"
                           behaviors:ChatAutoScrollBehavior.ItemsSource="{Binding Messages}">
-                <ItemsControl ItemsSource="{Binding Messages}" Focusable="False"/>
+                <ItemsControl ItemsSource="{Binding Messages}" Focusable="False"
+                              ItemTemplate="{StaticResource AgentChatItemTemplate}"/>
             </ScrollViewer>
 
             <StackPanel Panel.ZIndex="500"

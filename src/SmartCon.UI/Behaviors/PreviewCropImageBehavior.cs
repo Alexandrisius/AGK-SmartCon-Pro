@@ -9,7 +9,7 @@ using BitmapCreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions;
 using Int32Rect = System.Windows.Int32Rect;
 using Path = System.IO.Path;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 /// <summary>
 /// Live preview of the crop dialog (issue #131 rev 6): sets the attached Image's

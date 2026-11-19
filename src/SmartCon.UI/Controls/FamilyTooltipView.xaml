@@ -1,11 +1,11 @@
-<UserControl x:Class="SmartCon.FamilyManager.Views.FamilyTooltipView"
+<UserControl x:Class="SmartCon.UI.Controls.FamilyTooltipView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
-             xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
-             xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
+             xmlns:loc="clr-namespace:SmartCon.UI.Localization"
+             xmlns:converters="clr-namespace:SmartCon.UI.Converters"
              mc:Ignorable="d"
              d:DesignWidth="336" d:DesignHeight="320">
 

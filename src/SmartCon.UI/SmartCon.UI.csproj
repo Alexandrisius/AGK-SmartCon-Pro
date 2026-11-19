@@ -18,6 +18,16 @@
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
   </ItemGroup>
 
+  <!-- Markdig: рендер markdown в FlowDocument (MarkdownFlowDocumentRenderer /
+       MarkdownToFlowDocumentConverter, перенесены из SmartCon.Agent для устранения
+       local-type XAML ссылок и WPF _wpftmp double-compile). Loose-пакет, не merged. -->
+  <ItemGroup>
+    <PackageReference Include="Markdig" />
+    <!-- Crop-поведения (Behavior<T>) и FamilyTooltipView (i:Interaction), перенесены
+         из FamilyManager для устранения local-type XAML / WPF _wpftmp double-compile. -->
+    <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" />
+  </ItemGroup>
+
   <!-- Generic.xaml must be embedded as raw XAML for XamlReader.Load (works on net48 when loaded via Assembly.LoadFrom) -->
   <ItemGroup>
     <EmbeddedResource Include="Generic.xaml" />

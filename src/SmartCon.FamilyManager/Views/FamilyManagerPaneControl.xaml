@@ -3,14 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:SmartCon.UI;assembly=SmartCon.UI"
         xmlns:controls="clr-namespace:SmartCon.UI.Controls;assembly=SmartCon.UI"
-        xmlns:vm="clr-namespace:SmartCon.FamilyManager.ViewModels"
         xmlns:coremodels="clr-namespace:SmartCon.Core.Models.FamilyManager;assembly=SmartCon.Core"
         xmlns:behaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
-        xmlns:fmbehaviors="clr-namespace:SmartCon.FamilyManager.Behaviors"
+        xmlns:fmbehaviors="clr-namespace:SmartCon.UI.Behaviors;assembly=SmartCon.UI"
         xmlns:loc="clr-namespace:SmartCon.UI.Localization;assembly=SmartCon.UI"
         xmlns:converters="clr-namespace:SmartCon.UI.Converters;assembly=SmartCon.UI"
-        xmlns:selectors="clr-namespace:SmartCon.FamilyManager.Selectors"
-        xmlns:views="clr-namespace:SmartCon.FamilyManager.Views"
+        xmlns:selectors="clr-namespace:SmartCon.UI.Selectors;assembly=SmartCon.UI"
         xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
          Background="{DynamicResource BackgroundBrush}">
@@ -101,7 +99,7 @@
                 </Setter>
             </Style>
 
-            <DataTemplate x:Key="DbGeneralTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+            <DataTemplate x:Key="DbGeneralTemplate" DataType="{x:Type coremodels:DatabaseListItem}">
                 <StackPanel Orientation="Horizontal">
                     <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
                         <iconPacks:PackIconMaterial Kind="Database"
@@ -112,7 +110,7 @@
                 </StackPanel>
             </DataTemplate>
 
-            <DataTemplate x:Key="DbProjectMatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+            <DataTemplate x:Key="DbProjectMatchTemplate" DataType="{x:Type coremodels:DatabaseListItem}">
                 <StackPanel Orientation="Horizontal">
                     <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
                         <Path Data="{StaticResource FolderIconGeometry}"
@@ -122,7 +120,7 @@
                 </StackPanel>
             </DataTemplate>
 
-            <DataTemplate x:Key="DbProjectMismatchTemplate" DataType="{x:Type selectors:DatabaseListItem}">
+            <DataTemplate x:Key="DbProjectMismatchTemplate" DataType="{x:Type coremodels:DatabaseListItem}">
                 <StackPanel Orientation="Horizontal" ToolTip="{Binding MismatchReason}">
                     <Viewbox Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0">
                         <iconPacks:PackIconMaterial Kind="Lock"
@@ -994,7 +992,7 @@
                     FamilyStyle="{StaticResource FamilyLeafNodeItemStyle}"
                     TypeStyle="{StaticResource FamilyTypeNodeItemStyle}"/>
 
-                <HierarchicalDataTemplate DataType="{x:Type vm:CategoryNodeViewModel}"
+                <HierarchicalDataTemplate x:Key="CategoryNodeTemplate"
                                            ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
@@ -1097,7 +1095,7 @@
                     </Grid>
                 </HierarchicalDataTemplate>
 
-                <HierarchicalDataTemplate DataType="{x:Type vm:FamilyLeafNodeViewModel}"
+                <HierarchicalDataTemplate x:Key="FamilyLeafNodeTemplate"
                                                ItemsSource="{Binding Children}">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal">
@@ -1105,7 +1103,7 @@
                                 <ToolTip Content="{Binding TooltipViewModel}">
                                     <ToolTip.ContentTemplate>
                                         <DataTemplate>
-                                            <views:FamilyTooltipView />
+                                            <controls:FamilyTooltipView />
                                         </DataTemplate>
                                     </ToolTip.ContentTemplate>
                                 </ToolTip>
@@ -1235,7 +1233,7 @@
                     </Grid>
                 </HierarchicalDataTemplate>
 
-                <DataTemplate DataType="{x:Type vm:FamilyTypeNodeViewModel}">
+                <DataTemplate x:Key="FamilyTypeNodeTemplate">
                     <Grid HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <!-- #187: presence dot — grey = not in project,
@@ -1414,8 +1412,16 @@
                         </StackPanel>
                     </Grid>
                 </DataTemplate>
+
+                <selectors:CatalogTreeNodeTemplateSelector x:Key="CatalogTreeNodeTemplateSelector"
+                    CategoryTemplate="{StaticResource CategoryNodeTemplate}"
+                    FamilyTemplate="{StaticResource FamilyLeafNodeTemplate}"
+                    TypeTemplate="{StaticResource FamilyTypeNodeTemplate}"/>
             </TreeView.Resources>
 
+            <TreeView.ItemTemplateSelector>
+                <StaticResourceExtension ResourceKey="CatalogTreeNodeTemplateSelector"/>
+            </TreeView.ItemTemplateSelector>
             <TreeView.ItemContainerStyleSelector>
                 <StaticResourceExtension ResourceKey="FamilyTreeItemStyleSelector"/>
             </TreeView.ItemContainerStyleSelector>

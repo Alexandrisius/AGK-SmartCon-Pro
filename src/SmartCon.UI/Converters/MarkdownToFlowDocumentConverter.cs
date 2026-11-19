@@ -1,8 +1,7 @@
 using System.Globalization;
 using System.Windows.Data;
-using SmartCon.Agent.Services.UI;
 
-namespace SmartCon.Agent.Converters;
+namespace SmartCon.UI.Converters;
 
 public sealed class MarkdownToFlowDocumentConverter : IValueConverter
 {

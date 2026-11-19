@@ -186,4 +186,50 @@
     <Error Condition="'$(RevitVersion)' != '2019' And '$(RevitVersion)' != '2021' And '$(RevitVersion)' != '2022' And '$(RevitVersion)' != '2023' And '$(RevitVersion)' != '2024'"
             Text="Неизвестная версия RevitVersion=$(RevitVersion). Поддерживаемые значения для net48: 2019, 2021, 2022, 2023, 2024." />
   </Target>
+
+  <!-- ============================================================ -->
+  <!-- WPF incremental build fix (dotnet/wpf #11579 / #5458 / #5448) -->
+  <!-- ============================================================ -->
+  <!-- MarkupCompilePass1 receives References="@(ReferencePath)", whose identities are
+       IMPLEMENTATION dlls. IncrementalCompileAnalyzer does IsFileListChanged(References)
+       => RecompileCategory.All whenever any referenced project recompiles, even for an
+       implementation-only change that leaves the public API (ref assembly) identical.
+       That forces a full XAML recompile and, for projects with local-type XAML, a second
+       full CoreCompile via GenerateTemporaryTargetAssembly (_wpftmp). The temp project also
+       overbuilds referenced projects (#5448), refreshing their impl timestamps and making
+       the cascade self-perpetuating.
+
+       Fix: feed pass1 the REF assembly paths (stable across impl-only recompiles) instead of
+       impl paths, then restore @(ReferencePath) so downstream targets (CoreCompile, RAR,
+       copy) are unaffected. Output IL is identical — this only changes pass1's incremental
+       decision, not compilation (CoreCompile already uses ReferencePathWithRefAssemblies).
+
+       No-op on net48 (R19-R24): ref assemblies are not produced there, so the per-item
+       Exists('%(ReferenceAssembly)') condition is false and nothing is swapped.
+       Applies only to WPF projects (Page/ApplicationDefinition present).
+       This removes the reference cascade (trigger #1). The inherent local-type-XAML
+       temp double-compile on .cs changes (trigger #2) is addressed separately by
+       externalizing local-type XAML references. See docs/adr (build-speedup). -->
+  <Target Name="_SmartConUseRefAssembliesForMarkupCompile"
+          BeforeTargets="MarkupCompilePass1"
+          Condition="'@(Page)' != '' Or '@(ApplicationDefinition)' != ''">
+    <ItemGroup>
+      <_SmartConOrigRefPathForMarkup Include="@(ReferencePath)" />
+      <_SmartConRefPathWithRefAsm Include="@(ReferencePath)"
+                                  Condition="'%(ReferencePath.ReferenceAssembly)' != '' And Exists('%(ReferencePath.ReferenceAssembly)')" />
+      <ReferencePath Remove="@(_SmartConRefPathWithRefAsm)" />
+      <ReferencePath Include="@(_SmartConRefPathWithRefAsm->'%(ReferenceAssembly)')" />
+      <_SmartConRefPathWithRefAsm Remove="@(_SmartConRefPathWithRefAsm)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_SmartConRestoreRefsAfterMarkupCompile"
+          AfterTargets="MarkupCompilePass1"
+          Condition="'@(_SmartConOrigRefPathForMarkup)' != ''">
+    <ItemGroup>
+      <ReferencePath Remove="@(ReferencePath)" />
+      <ReferencePath Include="@(_SmartConOrigRefPathForMarkup)" />
+      <_SmartConOrigRefPathForMarkup Remove="@(_SmartConOrigRefPathForMarkup)" />
+    </ItemGroup>
+  </Target>
 </Project>

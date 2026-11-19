@@ -1,4 +1,3 @@
-#if NET48
 using System;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -32,8 +31,10 @@ namespace SmartCon.App.Diagnostics;
 ///         it as a fallback.</item>
 /// </list>
 ///
-/// Enabled on net48 only (Revit 2019–2024). Revit 2025+ runs on
-/// net8.0-windows where the bug has not been observed.
+/// Enabled on net48 AND net8/net10 (Revit 2019–2027). The render-thread
+/// death after a family upgrade is NOT net48-specific: it reproduces on
+/// Revit 2025 (net8) too when importing older-version families (confirmed
+/// 2026-11-19, 10/10 white batch dialogs; manual resize wakes rendering).
 /// </summary>
 internal sealed class BatchDialogRenderRecovery : IDisposable
 {
@@ -253,4 +254,3 @@ internal sealed class BatchDialogRenderRecovery : IDisposable
         _fallbackTimer.Tick -= OnFallbackTick;
     }
 }
-#endif

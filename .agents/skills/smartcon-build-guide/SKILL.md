@@ -165,6 +165,20 @@ local `.vscode/settings.json`.
 Инкрементальный билд исправен. «10 минут на сборку» — это холодная сборка
 конфигурации/App и/или sweep, а не обычная итерация по модулю.
 
+**WPF double-compile устранён (ADR-078, 2026-11-19).** Ранее правка `.cs` в
+`SmartCon.FamilyManager` занимала ~169 с из-за WPF local-type XAML: каждая итерация
+запускала `GenerateTemporaryTargetAssembly` (`_wpftmp`) = вторую полную компиляцию,
+а `MarkupCompilePass1` каскадил по implementation-ссылкам Core/UI. Теперь:
+- FM/Agent XAML ссылается только на внешние типы (Core presentation-контракты +
+  helpers в UI), `.lref`/`_wpftmp` отсутствуют → **одна** компиляция:
+  FM `.cs` ≈ 40 с, Agent ≈ 1.4 с.
+- ref-assembly workaround в `src/Directory.Build.targets` убирает каскад от правок
+  Core/UI (правка Core impl-only → FM не пересобирается, ~22 с).
+- `SmartCon.UI` получила небольшой temp (`FamilyTooltipView`, 4.7k строк, редко
+  правится) — осознанный trade-off.
+- render-recovery #95 включён на net8/net10 (белый диалог после апгрейда семейства).
+Не удалять ref-assembly таргеты и не возвращать local-type XAML в FM/Agent без ADR.
+
 **Правила (для любого модуля и любого агента):**
 
 1. **Один конфиг на итерацию.** Разработка — `Debug.R25`. `Debug.R23` (net48) и

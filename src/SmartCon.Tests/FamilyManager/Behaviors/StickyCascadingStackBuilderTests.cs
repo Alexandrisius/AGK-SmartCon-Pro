@@ -1,4 +1,4 @@
-using SmartCon.FamilyManager.Behaviors;
+using SmartCon.UI.Behaviors;
 using Xunit;
 
 namespace SmartCon.Tests.FamilyManager.Behaviors;

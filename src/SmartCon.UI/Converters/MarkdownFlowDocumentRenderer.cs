@@ -15,7 +15,7 @@ using WpfTable = System.Windows.Documents.Table;
 using WpfTableCell = System.Windows.Documents.TableCell;
 using WpfTableRow = System.Windows.Documents.TableRow;
 
-namespace SmartCon.Agent.Services.UI;
+namespace SmartCon.UI.Converters;
 
 /// <summary>
 /// Renders CommonMark/GFM markdown (as produced by the LLM) into a

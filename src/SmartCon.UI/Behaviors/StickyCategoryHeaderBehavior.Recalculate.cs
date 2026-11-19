@@ -5,7 +5,7 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Globalization;
 using SmartCon.Core.Logging;
-using SmartCon.FamilyManager.ViewModels;
+using SmartCon.Core.Models.FamilyManager;
 using System.Linq;
 using TreeView = System.Windows.Controls.TreeView;
 using TreeViewItem = System.Windows.Controls.TreeViewItem;
@@ -17,12 +17,12 @@ using Point = System.Windows.Point;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 
-namespace SmartCon.FamilyManager.Behaviors;
+namespace SmartCon.UI.Behaviors;
 
 public static partial class StickyCategoryHeaderBehavior
 {
     /// <summary>
-    /// Рекурсивно собирает все <see cref="TreeViewItem"/> с <see cref="CategoryNodeViewModel"/>
+    /// Рекурсивно собирает все <see cref="TreeViewItem"/> с <see cref="ICategoryNode"/>
     /// из текущего visual tree. Всегда возвращает АКТУАЛЬНЫЙ список — это критично, потому что
     /// вложенные TVI создаются/удаляются при expand/collapse, а root TreeView.ItemContainerGenerator
     /// не уведомляет об изменениях в дочерних генераторах.
@@ -33,7 +33,7 @@ public static partial class StickyCategoryHeaderBehavior
         for (int i = 0; i < count; i++)
         {
             var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is TreeViewItem tvi && tvi.DataContext is CategoryNodeViewModel)
+            if (child is TreeViewItem tvi && tvi.DataContext is ICategoryNode)
                 output.Add(tvi);
 
             CollectCategoryItems(child, output);
@@ -59,8 +59,8 @@ public static partial class StickyCategoryHeaderBehavior
         var categoryItems = new List<TreeViewItem>(16);
         CollectCategoryItems(state.Tree, categoryItems);
 
-        // Собрать ВСЕ CategoryNodeViewModel из дерева (по VM-иерархии, не по TVI).
-        var allCategoryVMs = new List<CategoryNodeViewModel>();
+        // Собрать ВСЕ ICategoryNode из дерева (по VM-иерархии, не по TVI).
+        var allCategoryVMs = new List<ICategoryNode>();
         CollectCategoryVMs(state.Tree.Items, allCategoryVMs);
 
         var viewportHeight = state.ScrollViewer.ViewportHeight;
@@ -76,10 +76,10 @@ public static partial class StickyCategoryHeaderBehavior
         }
 
         // Маппинг VM → TVI для тех, у которых есть materialised TreeViewItem.
-        var vmToTvi = new Dictionary<CategoryNodeViewModel, TreeViewItem>(categoryItems.Count);
+        var vmToTvi = new Dictionary<ICategoryNode, TreeViewItem>(categoryItems.Count);
         foreach (var tvi in categoryItems)
         {
-            if (tvi.DataContext is CategoryNodeViewModel cat)
+            if (tvi.DataContext is ICategoryNode cat)
                 vmToTvi[cat] = tvi;
         }
 
@@ -112,7 +112,7 @@ public static partial class StickyCategoryHeaderBehavior
                 heightsList.Add(FallbackHeaderHeight);
             }
 
-            if (vm.Parent is CategoryNodeViewModel parentVm)
+            if (vm.Parent is ICategoryNode parentVm)
             {
                 var parentIdx = allCategoryVMs.IndexOf(parentVm);
                 parentIndicesList.Add(parentIdx);
@@ -162,7 +162,7 @@ public static partial class StickyCategoryHeaderBehavior
             LogStickyStateOnChange(state, signature, allCategoryVMs, topsList, heightsList, parentIndicesList, categoryItems.Count, scrollOffset, viewportHeight, stackIndices, overlay.Children.Count);
     }
 
-    private static string FormatStackNames(IReadOnlyList<int> indices, IReadOnlyList<CategoryNodeViewModel> vms)
+    private static string FormatStackNames(IReadOnlyList<int> indices, IReadOnlyList<ICategoryNode> vms)
     {
         var sb = new System.Text.StringBuilder(indices.Count * 24);
         for (int i = 0; i < indices.Count; i++)
@@ -192,7 +192,7 @@ public static partial class StickyCategoryHeaderBehavior
     private static void LogStickyStateOnChange(
         StickyState state,
         string signature,
-        List<CategoryNodeViewModel> allCategoryVMs,
+        List<ICategoryNode> allCategoryVMs,
         List<double> topsList,
         List<double> heightsList,
         List<int> parentIndicesList,
@@ -250,7 +250,7 @@ public static partial class StickyCategoryHeaderBehavior
         SmartConLogger.Debug(sb.ToString());
     }
 
-    private static int ComputeDepth(List<CategoryNodeViewModel> allCategoryVMs, List<int> parentIndicesList, int idx)
+    private static int ComputeDepth(List<ICategoryNode> allCategoryVMs, List<int> parentIndicesList, int idx)
     {
         var depth = 0;
         var current = idx;
@@ -263,14 +263,14 @@ public static partial class StickyCategoryHeaderBehavior
     }
 
     /// <summary>
-    /// Рекурсивно собирает все CategoryNodeViewModel из Items коллекции
+    /// Рекурсивно собирает все ICategoryNode из Items коллекции
     /// (TreeView.Items или vm.Children). FamilyLeafNodeViewModel пропускаются.
     /// </summary>
-    private static void CollectCategoryVMs(System.Collections.IEnumerable items, List<CategoryNodeViewModel> output)
+    private static void CollectCategoryVMs(System.Collections.IEnumerable items, List<ICategoryNode> output)
     {
         foreach (var item in items)
         {
-            if (item is CategoryNodeViewModel cat)
+            if (item is ICategoryNode cat)
             {
                 output.Add(cat);
                 CollectCategoryVMs(cat.Children, output);

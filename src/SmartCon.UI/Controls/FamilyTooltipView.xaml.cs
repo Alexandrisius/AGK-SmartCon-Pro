@@ -1,4 +1,4 @@
-namespace SmartCon.FamilyManager.Views;
+namespace SmartCon.UI.Controls;
 
 public partial class FamilyTooltipView : System.Windows.Controls.UserControl
 {
