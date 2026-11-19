@@ -26,6 +26,10 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 (the Tests project is pinned to net8.0-windows — do NOT build it under R27: NU1201/NU1202;
 in the sln its R27 configurations are mapped to R25, honored only in VS)
 
+**Важно:** таблица выше — деплой-сборки `SmartCon.App` (весь граф + WPF + ILRepack).
+Для итерации по модулю App не собирать: `dotnet build
+src/SmartCon.<Module>/SmartCon.<Module>.csproj -c Debug.R25 -f net8.0-windows` — см. §6.
+
 **All 6 configs in parallel (no deploy):**
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`
 (used by `build-and-deploy.bat`; per-config logs in `%TEMP%\smartcon-build`)
@@ -146,32 +150,60 @@ fails on both). Fix ladder: (1) re-run `dotnet build` — usually enough; (2) if
 VS Code closed. Prevention: `files.watcherExclude` for `**/obj/**` / `**/bin/**` in the
 local `.vscode/settings.json`.
 
-### 6. Incremental Build / Fast Loop
+### 6. Incremental Build / Fast Loop (главное правило)
 
-- Each configuration has isolated `obj\<Configuration>\` and its own
-  `project.assets.json`. Switching `-c` no longer rewrites another configuration's
-  graph: measured 2026-11-17 — R25 after a full R19 sweep is a **1–2 s no-op**
-  (previously 300+ s).
-- The ILRepack merge is cached in `obj/<Config>/<TFM>/merged/` and reused while its
-  inputs are byte-identical (pre-merge dll, `project.assets.json`,
-  `ILRepack.targets`). Do NOT delete that folder manually — it only forces a re-merge.
-- `Debug.*` builds skip NET analyzers and IDE code style
-  (`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false`). Source generators and
-  package analyzers stay enabled; `Release.*` (CI, `release.ps1`) keeps the full set.
-- First build after checkout / `dotnet clean` / `git clean` is full (~3–5 min per
-  configuration). A repeat build with no changes is 1–2 s.
-- `dotnet test --filter ...` does NOT shorten the build — it only filters execution.
-  After one successful build use `dotnet run --no-build` / `dotnet test --no-build`.
-- Different configurations may build in parallel — that is what
-  `tools\build-all-configs.ps1` does. Never run two builds of the SAME configuration
-  concurrently (file locks).
-- Real code changes rebuild the affected project and its downstream in each
-  configuration — expected. The plugin must build on ALL 6 configurations immediately
-  after any change (§1); incremental build only removes redundant work.
-- Antivirus: exclude the repo, `%USERPROFILE%\.nuget\packages`,
-  `%LOCALAPPDATA%\NuGet\v3-cache`, `%TEMP%\NuGetScratch`, and
-  `dotnet.exe` / `VBCSCompiler.exe`. Without exclusions full builds are several times
-  slower (Kaspersky was measured on this repo).
+**Замерено 2026-11-19 (Debug.R25, `--no-restore`):**
+
+| Сценарий | Время |
+|---|---|
+| no-op сборка `SmartCon.Revit` (модуль агента) | **1 с** |
+| повторная сборка `SmartCon.App` (steady state) | **2 с** |
+| первая сборка App после паузы | **27 с** |
+| холодная сборка одной конфигурации с нуля | **3–5 мин** |
+| 7 конфигураций подряд (sweep) | **20–30 мин** |
+
+Инкрементальный билд исправен. «10 минут на сборку» — это холодная сборка
+конфигурации/App и/или sweep, а не обычная итерация по модулю.
+
+**Правила (для любого модуля и любого агента):**
+
+1. **Один конфиг на итерацию.** Разработка — `Debug.R25`. `Debug.R23` (net48) и
+   `Debug.R27` (net10) — только если правка реально условно-компилируемая, по
+   одному прогону. Полный sweep R19–R27 — только релизный гейт/CI, не после
+   каждой правки.
+2. **Собирать только затронутый модуль:**
+   `dotnet build src/SmartCon.<Module>/SmartCon.<Module>.csproj -c Debug.R25 -f net8.0-windows --no-restore`
+   (`--no-restore` — только когда per-config assets уже созданы). `SmartCon.App`
+   тянет весь граф, WPF XAML и ILRepack: в цикле разработки модуля он запрещён,
+   App собирается один раз на деплой/финальный гейт.
+3. **После первой сборки — только `--no-build`** для `dotnet run` / `dotnet test`.
+   `--filter` не ускоряет сборку — он только фильтрует выполнение.
+4. **Один запуск Revit на пакет тестов**, а не на тест: старт хоста ~1.5–2 мин.
+   Несколько классов — объединять в один `--treenode-filter`.
+5. **UI-итерации — без пересборки App и без рестарта Revit:** RevitAddInManager /
+   RevitDevTool (collectible AssemblyLoadContext, Revit 2025+) грузят новую
+   сборку по F5 прямо в открытом Revit.
+6. **Если сборка внезапно стала медленной — не перезапускать вслепую:**
+   `dotnet build ... -bl:build.binlog` и искать в логе `Building target ...
+   completely`, `is newer than output`, `Target Performance Summary`. Это покажет
+   конкретный таргет и конкретный входной файл.
+7. Каждая конфигурация имеет изолированные `obj\<Configuration>\` и свой
+   `project.assets.json`: переключение `-c` не перезаписывает чужой граф.
+   ILRepack-merge кэшируется в `obj/<Config>/<TFM>/merged/` и переиспользуется,
+   пока входы байт-идентичны (pre-merge dll, `project.assets.json`,
+   `ILRepack.targets`). Не удалять этот каталог без причины — это форсирует re-merge.
+8. `Debug.*` пропускает NET-анализаторы и IDE code style
+   (`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false`); генераторы и
+   пакетные анализаторы остаются. `Release.*` (CI, `release.ps1`) — полный набор.
+9. Первая сборка после checkout / `dotnet clean` / `git clean` — полная (~3–5 мин
+   на конфигурацию); повторная без изменений — 1–2 с.
+10. Кросс-конфигурационная проверка (R23/R27) — в конце задачи или в CI, не в
+    каждой итерации. Разные конфигурации можно собирать параллельно
+    (`tools\build-all-configs.ps1`), одну и ту же — никогда.
+11. Antivirus: исключить репозиторий, `%USERPROFILE%\.nuget\packages`,
+    `%LOCALAPPDATA%\NuGet\v3-cache`, `%TEMP%\NuGetScratch`, процессы `dotnet.exe` /
+    `VBCSCompiler.exe`. Без исключений полные сборки в разы медленнее (Kaspersky
+    измерен на этом репозитории).
 
 ## CI/CD
 
