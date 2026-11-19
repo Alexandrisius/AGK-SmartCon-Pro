@@ -1,5 +1,23 @@
 # Handoff — Agent: текущее состояние (2026-11-19)
 
+## ⚡ План развития обновлён: `autonomy-roadmap.md` (2026-11-19)
+
+Старый план (`h1b-tool-packs.md`) и H1-runbook перенесены в
+`00-strategy/archive/` с баннерами. Новый SSOT исполнения —
+[`00-strategy/autonomy-roadmap.md`](00-strategy/autonomy-roadmap.md).
+
+Порядок: **A0 verification/idempotency → A job engine → B trust/recovery →
+C1 resolve_entities → D breadth → C2 search (по гейту) → E approvals/recipes**.
+Поиск и vector больше не первые; главный bottleneck — массовое исполнение.
+
+План валидирован двумя исследованиями (Exa/официальные docs):
+- **A0 до движка**: без read-back/idempotency/per-item undo batch ускоряет порчу модели.
+- **Curated `IJobAction`**, не вызовы существующих тулов на каждый элемент (иначе 500 change sets и таймауты).
+- **Time-sliced pump 1–2 с** на отдельном `ExternalEventHandler`; `ExternalEvent` блокирует UI; для >1000 `.rfa` — внешний orchestrator (A3).
+- **Frozen preview**: count+sample+selectorHash+documentId+expectedHash+expiry.
+- Метрики: truthfulness 100 %, per-item ≥99.5 %, false-done 0, resume/idempotency 100 %, LLM calls ≤3.
+- C1/C2 split: selectors сейчас, search только по гейту; vector последним.
+
 ## ⚡ Открытые хвосты стресс-теста harness (2026-11-19)
 
 Исправления P0–P3 — `fbd94b6d`; OpenCode Go — `a1823f0b`. Ниже **только

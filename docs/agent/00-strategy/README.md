@@ -8,10 +8,10 @@
 
 | Документ | Роль | Когда читать |
 |---|---|---|
+| [`autonomy-roadmap.md`](autonomy-roadmap.md) | **Исполнение сейчас:** job engine, надёжность, поиск, breadth, память — порядок и гейты | Перед планированием любого эпика |
 | [`harness-ideal-plan.md`](harness-ideal-plan.md) | Долгосрочная стратегия: as-is, gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед любым крупным решением по харнесу |
 | [`harness-development-approach.md`](harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, статусы документов, роли, эпики | Перед стартом любой задачи по харнесу |
-| [`initial-improvement-runbook.md`](initial-improvement-runbook.md) | Эпик **H1**: первый большой рывок (tool catalog v2 + context budgeting + WorkingState) | Перед реализацией H1; содержит задачи, файлы, приёмку, команды |
-| [`h1b-tool-packs.md`](h1b-tool-packs.md) | **H1b–H1d**: model search, view configuration, family editing, реальные кейсы; cyclic → H8 | Перед этапом после H1; границы и приёмка |
+| [`h1d-evidence.md`](h1d-evidence.md) | Доказательства и метрики H1d (family editing) | При аудите family-тулов |
 | [`eval.md`](eval.md) | Журнал eval-прогонов и baseline-метрик | При измерении «до/после» |
 | [`decisions-benchmark.md`](decisions-benchmark.md) | Research note: бенчмарк decision-моделей | При выборе роутера/модели |
 
@@ -22,6 +22,8 @@
 | [`archive/mvp-plan.md`](archive/mvp-plan.md) | Исторический MVP-план; заменён `harness-ideal-plan.md` |
 | [`archive/autonomous-execution-plan.md`](archive/autonomous-execution-plan.md) | Runbook первого MVP-прогона; выполнен |
 | [`archive/night-run-2.md`](archive/night-run-2.md) | Ночной прогон №2; завершён |
+| [`archive/initial-improvement-runbook.md`](archive/initial-improvement-runbook.md) | H1 выполнен; заменён `autonomy-roadmap.md` |
+| [`archive/h1b-tool-packs.md`](archive/h1b-tool-packs.md) | H1c/H1d закрыты, H1b отложен; заменён `autonomy-roadmap.md` |
 
 В архивных документах внутренние ссылки могут быть историческими. Актуальные ссылки — только в этом индексе и `docs/agent/README.md`.
 
@@ -42,7 +44,7 @@
 |---|---|
 | «Куда движется харнес?» | `harness-ideal-plan.md` |
 | «Как мы ведём разработку?» | `harness-development-approach.md` |
-| «Что делать прямо сейчас?» | `initial-improvement-runbook.md` |
+| «Что делать прямо сейчас?» | `autonomy-roadmap.md` |
 | «Что уже сделано и что сломано?» | `../HANDOFF.md` |
 | «Какие цифры на eval?» | `eval.md` |
 | «Почему архитектурно так?» | ADR в `docs/adr/` |
@@ -50,7 +52,7 @@
 
 ## Правила
 
-1. **Не дублировать план в трёх местах.** Стратегия — в `harness-ideal-plan.md`, исполнение — в runbook, состояние — в `HANDOFF.md`.
+1. **Не дублировать план в трёх местах.** Стратегия — в `harness-ideal-plan.md`, исполнение — в `autonomy-roadmap.md`, состояние — в `../HANDOFF.md`.
 2. **Каждый новый документ — с шапкой:** статус, дата, владелец, что заменяет.
 3. **Завершённый runbook — в `archive/`** с баннером и ссылкой на актуальный документ.
 4. **Ссылки — относительные**, от файла; после перемещения — обновить индекс.

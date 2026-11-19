@@ -11,14 +11,15 @@
 |---|---|
 | Чат-панель | DockablePane, WPF MVVM, вложения/скриншоты, streaming |
 | LLM | OpenAI-compatible streaming, DeepSeek V4.1 Flash через OpenRouter/OpenCode Go, reasoning |
-| Инструменты | 28 тулов (24 Revit + 4 meta), каталог v2: 20 паков, карточки, BM25 top-5 + `find_tools` + `load_tool_pack`; гибридный retrieval 500–1000 — ADR-075, ещё не реализован |
-| Запись | dry-run → подтверждение → change set → `undo_last`/`discard_change_set` |
-| План | `execute_plan` L0–L6 (L2 нет, L5 не атомарен — план H1/H3) |
+| Инструменты | 45 тулов (42 Revit + 3 meta), каталог v2: 20 паков, карточки, BM25 top-5 + `find_tools` + `load_tool_pack`; семейства, листы/ведомости, фильтры/overrides |
+| Запись | dry-run → подтверждение → change set → `undo_last`/`discard_change_set`; family backup/snapshot + undo |
+| План | `execute_plan` L0–L6 (≤20 шагов, не атомарен); массовые операции — job engine (эпик A, ещё не реализован) |
+| Автономность | без лимитов раундов/времени; Stop, LoopGuard, compaction; массовые операции пока через вызовы агента |
 | Approvals | ConfirmWrites / AutoApproveSession / ReadOnly, digest-binding |
 | Контекст | WorkingState + `<turn_context>`, store-and-reference (`tool_result_blobs` + `read_tool_result`), compaction v2 (mask → 9-section checkpoint → hard shrink, persisted/restored) |
 | Память | Сессии в SQLite; долговременной памяти и FTS пока нет |
-| Eval | 40 задач replay, gate PASS; routing 102 запроса — top-1 95.1 %, top-5 100 %, p95 2.05 мс; 1000 карточек 100 % |
-| Сборка | 7 конфигураций R19–R27, unit 3743, integration R25/R27/net48 |
+| Eval | 46 задач replay, gate PASS; routing 170 фраз — top-1 95.9 %, top-5 100 %, p95 1.7 мс |
+| Сборка | 7 конфигураций R19–R27, unit 3739, integration R25 (355 passed / 0 failed), net48/R27 — по запросу |
 
 **Не заявлять как готовое:** L2-critic, атомарный план, память между сессиями, skills 100–200, MCP, run-time policy engine, гибридный retrieval (vector + embeddings), выбор embedding-модели/reranker'а в настройках, code mode / sandbox-интерпретатор / runtime C#, model entity search / BM25-каталог сущностей. Это roadmap, не факт. Архитектурные решения: retrieval — [ADR-075](../adr/075-hybrid-tool-retrieval.md), tool surface и code mode — [ADR-076](../adr/076-tool-surface-and-code-mode.md), model search — [ADR-077](../adr/077-model-entity-search.md).
 
@@ -31,8 +32,7 @@
 | [`00-strategy/README.md`](00-strategy/README.md) | Индекс стратегии и статусов |
 | [`00-strategy/harness-ideal-plan.md`](00-strategy/harness-ideal-plan.md) | Долгосрочная стратегия: gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики |
 | [`00-strategy/harness-development-approach.md`](00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики |
-| [`00-strategy/initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) | Эпик **H1** — первый большой рывок, исполнимый runbook |
-| [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) | **H1b–H1d**: model search, view configuration, family editing, кейсы и границы (cyclic → H8) |
+| [`00-strategy/autonomy-roadmap.md`](00-strategy/autonomy-roadmap.md) | **Актуальный план:** job engine → надёжность → targeted search → breadth → memory; порядок, дизайн и метрики |
 | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) | **H1d**: матрица requirement→artifact, негативная матрица, масштаб, гейты |
 | [`family-tools-error-catalog.md`](family-tools-error-catalog.md) | Каталог ошибок и контракт ответа family-тулов |
 | [`family-editing-runbook.md`](family-editing-runbook.md) | Ручная приёмка family editing pack (чек-лист, pending UI) |
@@ -48,12 +48,14 @@
 | [`00-strategy/archive/mvp-plan.md`](00-strategy/archive/mvp-plan.md) | archived: исторический MVP |
 | [`00-strategy/archive/autonomous-execution-plan.md`](00-strategy/archive/autonomous-execution-plan.md) | archived: runbook первого прогона |
 | [`00-strategy/archive/night-run-2.md`](00-strategy/archive/night-run-2.md) | archived: ночной прогон №2 |
+| [`00-strategy/archive/initial-improvement-runbook.md`](00-strategy/archive/initial-improvement-runbook.md) | archived: H1 выполнен |
+| [`00-strategy/archive/h1b-tool-packs.md`](00-strategy/archive/h1b-tool-packs.md) | archived: H1c/H1d закрыты, H1b отложен |
 
 ## С чего начать
 
 | Кто ты | Порядок чтения |
 |---|---|
-| Новый агент-исполнитель | этот файл → `HANDOFF.md` → `00-strategy/harness-development-approach.md` → `00-strategy/initial-improvement-runbook.md` |
+| Новый агент-исполнитель | этот файл → `HANDOFF.md` → `00-strategy/harness-development-approach.md` → `00-strategy/autonomy-roadmap.md` |
 | Владелец/ревьюер | этот файл → `00-strategy/harness-ideal-plan.md` §1–§4 → `00-strategy/eval.md` |
 | Архитектор | `harness-ideal-plan.md` §3/§6/§7 + ADR в `docs/adr/` |
 
@@ -61,17 +63,17 @@
 
 | Эпик | Содержание | Документ |
 |---|---|---|
-| **H1 (закрыт)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 — готово | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
-| **H1b (следующий)** | Живой поиск по модели без индекса: нормализация запроса (стеммер/синонимы/алиасы), `list_family_types`, `find_families_with_parameter`, `list_parameters`, `query_elements` с `parameterContainsAny`; 100k экземпляров — scoped-проход, one-shot cache (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md), [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) |
-| **H1c** | View configuration: шаблон или текущий вид, visibility категорий/осей, фильтры по условиям, overrides (покрасить стены), crop/scope boxes | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §3 |
-| **H1d (закрыт 2026-11-19)** | Family editing pack: 9 тулов, EditFamily без UI, shared/формулы/lookup, map, точный undo, бэкап; ручной UI-тест pending | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md), [`family-tools-error-catalog.md`](family-tools-error-catalog.md), [`family-editing-runbook.md`](family-editing-runbook.md) |
-| H8 (после H1d) | Bulk/cyclic job engine: select + action + батчи, прогресс/отмена/resume; альтернатива — sandbox-скрипт (H7), не runtime C#. Отдельный дизайн, не в H1 | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §5 |
-| H2 | Memory v1 + FTS5 + skills 100–200 | `harness-ideal-plan.md` P2 |
-| H3 | Policy engine, persisted approvals, atomic plan | `harness-ideal-plan.md` P3 |
-| H4 | Observability, cost caps, eval v2 | `harness-ideal-plan.md` P4–P5 |
-| H5 | UX: steering, timeline, fork/rewind, MCP (backlog) | `harness-ideal-plan.md` P5 |
-| H7 (до H6) | Tool surface и длинный хвост: intent-tools, generic data tools, запрет runtime C#; typed facade `IRevitOps` + sandbox-интерпретатор (Jint/Lua), промоция скриптов в composite-tools (ADR-076) | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
-| H6 (последний) | Гибридный retrieval 500–1000: vector + BM25 ∪ RRF + decision reranker, выбор embedding-модели/reranker'а в настройках (ADR-075); запускается только после H1b и по метрике recall | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md) |
+| **H1 (закрыт)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 | архив |
+| **H1c (закрыт)** | View configuration: фильтры, overrides, visibility, crop | архив |
+| **H1d (закрыт 2026-11-19)** | Family editing pack: 9 тулов, EditFamily без UI, shared/формулы/lookup, map, undo, backup | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) |
+| **A — Job engine (следующий)** | Массовые операции: job spec, батчи 10–50, прогресс/отмена/resume, preview digest, per-item rollback, UI не блокируется | [`00-strategy/autonomy-roadmap.md`](00-strategy/autonomy-roadmap.md) §5 |
+| **B — Reliability** | Единый read-back, идемпотентность, crash recovery, аудит, job-панель | roadmap §6 |
+| **C — Targeted search** | `search_catalog` по семействам/типам/параметрам/видам/листам; без индекса элементов; decision только при неоднозначности | roadmap §7 |
+| **D — Breadth** | Помещения, worksets, warnings, связи; массовые — через job | roadmap §8 |
+| **E — Memory/skills/policy** | Долговременная память, skills 10–20, persisted approvals | roadmap §9 |
+| **H1b (отложен)** | Полный поиск по модели/элементам не делаем; заменён targeted search (C) | архив |
+| H7 (до H6) | Typed facade `IRevitOps` + sandbox (Jint/Lua), промоция скриптов в composite-tools; не runtime C# | [`../adr/076-tool-surface-and-code-mode.md`](../adr/076-tool-surface-and-code-mode.md) |
+| H6 (последний) | Vector только при каталоге >200 видимых тулов или recall <95 % | [`../adr/075-hybrid-tool-retrieval.md`](../adr/075-hybrid-tool-retrieval.md) |
 
 ## Поведение H1 (без флагов)
 
