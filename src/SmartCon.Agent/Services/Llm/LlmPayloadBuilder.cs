@@ -17,7 +17,12 @@ internal static class LlmPayloadBuilder
 
         if (request.Tools.Count > 0)
         {
-            payload["tools"] = request.Tools.Select(BuildTool).ToList();
+            // Canonical name order: the tool block must be byte-identical between
+            // requests with the same set, otherwise the provider cache misses (P.4).
+            payload["tools"] = request.Tools
+                .OrderBy(tool => tool.Name, StringComparer.Ordinal)
+                .Select(BuildTool)
+                .ToList();
         }
 
         if (request.Temperature.HasValue)

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Core.Services.Agent;
@@ -41,10 +42,74 @@ public static class AgentPromptHash
         foreach (var tool in tools.OrderBy(tool => tool.Name, StringComparer.Ordinal))
         {
             builder.Append(tool.Name ?? string.Empty).Append('\n');
-            builder.Append(tool.InputSchemaJson ?? string.Empty).Append('\n');
+            builder.Append(CanonicalSchema(tool.InputSchemaJson)).Append('\n');
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Schema JSON with recursively sorted object keys: the same logical schema
+    /// always hashes to the same value regardless of how the author ordered its
+    /// properties (P.4). Array order, numbers and strings are preserved.
+    /// </summary>
+    private static string CanonicalSchema(string? schemaJson)
+    {
+        if (string.IsNullOrWhiteSpace(schemaJson))
+            return string.Empty;
+
+        using var document = JsonDocument.Parse(schemaJson);
+        var builder = new StringBuilder(schemaJson!.Length);
+        WriteCanonical(document.RootElement, builder);
+        return builder.ToString();
+    }
+
+    private static void WriteCanonical(JsonElement element, StringBuilder builder)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                builder.Append('{');
+                var firstProperty = true;
+                foreach (var property in element.EnumerateObject()
+                             .OrderBy(candidate => candidate.Name, StringComparer.Ordinal))
+                {
+                    if (!firstProperty)
+                        builder.Append(',');
+                    firstProperty = false;
+                    builder.Append(JsonSerializer.Serialize(property.Name)).Append(':');
+                    WriteCanonical(property.Value, builder);
+                }
+
+                builder.Append('}');
+                break;
+
+            case JsonValueKind.Array:
+                builder.Append('[');
+                var firstItem = true;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (!firstItem)
+                        builder.Append(',');
+                    firstItem = false;
+                    WriteCanonical(item, builder);
+                }
+
+                builder.Append(']');
+                break;
+
+            case JsonValueKind.String:
+                builder.Append(JsonSerializer.Serialize(element.GetString()));
+                break;
+
+            case JsonValueKind.Null:
+                builder.Append("null");
+                break;
+
+            default:
+                builder.Append(element.GetRawText());
+                break;
+        }
     }
 
     private static string Hash(string value)

@@ -181,12 +181,7 @@ public sealed partial class AgentOrchestrator
 
             var systemMessage = AgentMessage.System(_promptBuilder.BuildStatic());
             var staticHash = AgentPromptHash.ComputeStatic(systemMessage.Content ?? string.Empty);
-            var definitions = await SelectToolDefinitionsAsync(
-                    userText,
-                    _sessionContext.PendingToolNames.Count == 0
-                        ? null
-                        : _sessionContext.PendingToolNames.ToList(),
-                    ct)
+            var definitions = await ResolveToolDefinitionsAsync(userText, ct)
                 .ConfigureAwait(false);
             SetActiveToolNames(definitions);
             var toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
@@ -246,10 +241,13 @@ public sealed partial class AgentOrchestrator
 
                 if (_sessionContext.PendingToolNames.Count > 0)
                 {
-                    definitions = await ApplyPendingToolSetAsync(
-                            userText, definitions.Count, ct)
-                        .ConfigureAwait(false);
+                    var previousHash = toolSetHash;
+                    definitions = ApplyPendingToolSet();
                     toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
+                    SmartConLogger.Info(
+                        "Agent tool set changed: " + definitions.Count + " tools, " +
+                        previousHash.Substring(0, 8) + " -> " + toolSetHash.Substring(0, 8) +
+                        ", cache invalidated");
                 }
 
                 var reserveTokens = AgentContextStatus.EstimatedTokens + 160;

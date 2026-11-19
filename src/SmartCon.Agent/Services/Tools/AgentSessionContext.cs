@@ -15,10 +15,39 @@ public sealed class AgentSessionContext
     public AgentApprovalMode ApprovalMode { get; set; } = AgentApprovalMode.ConfirmWrites;
 
     /// <summary>
-    /// Tools sent to the model in the current turn (routed shortlist or the full
-    /// catalog after find_tools). find_tools marks matching results as available.
+    /// Tools sent to the model in the current turn (frozen for the conversation
+    /// and re-sorted by name before every request). find_tools marks matching
+    /// results as available.
     /// </summary>
     public IReadOnlyCollection<string> ActiveToolNames { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Tool set of the conversation (P.4). Chosen once from the first user text
+    /// plus the always-available tools and every loaded tool, then only extended
+    /// by <c>load_tool_pack</c> at a round boundary. The payload is built from
+    /// this set in name order, so the tool block stays byte-identical between
+    /// turns and the provider cache survives.
+    /// </summary>
+    public List<string> FrozenToolNames { get; } = new();
+
+    /// <summary>
+    /// True once the conversation tool set has been chosen. An intentionally
+    /// empty set (no always-available tool and no shortlist match in a synthetic
+    /// registry) must not be re-selected on the next turn.
+    /// </summary>
+    public bool ToolSetFrozen { get; set; }
+
+    public bool FreezeTool(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return false;
+
+        if (FrozenToolNames.Contains(name, StringComparer.Ordinal))
+            return false;
+
+        FrozenToolNames.Add(name);
+        return true;
+    }
 
     /// <summary>
     /// Tools enabled through load_tool_pack in this conversation, ordered from the
@@ -76,6 +105,8 @@ public sealed class AgentSessionContext
     {
         LoadedToolNames.Clear();
         PendingToolNames.Clear();
+        FrozenToolNames.Clear();
+        ToolSetFrozen = false;
         LastDocumentVersion = null;
     }
 
