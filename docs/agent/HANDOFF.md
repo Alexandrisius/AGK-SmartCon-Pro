@@ -1,5 +1,44 @@
 # Handoff — Agent: текущее состояние (2026-11-19)
 
+## ⚡ Открытые хвосты стресс-теста harness (2026-11-19)
+
+Исправления P0–P3 — `fbd94b6d`; OpenCode Go — `a1823f0b`. Ниже **только
+незакрытое**, чтобы не перечитывать историю фиксов.
+
+### Функциональные пробелы (отдельный эпик)
+
+- [ ] **delete-инструменты**: элементы, листы, ведомости. Нужны `dryRun`,
+  guard, change set и `undo_last`. Кейс: мусорные спецификации/ведомости в модели.
+- [ ] **запись спецификаций**: create/delete/edit полей и фильтров. Сейчас
+  `list_schedules`/`get_schedule_data` — только чтение.
+- [ ] **общие параметры уровня проекта**: create/sync, чтение SPF. Сейчас —
+  только внутри семейства.
+- [ ] **семейства**: duplicate type, load family, purge, replace type. Без
+  duplicate type `set_family_parameter_values` меняет все экземпляры типа.
+
+### Ограничения и незакрытые проверки
+
+- [ ] **crop нельзя отвязать от шаблона**: `Crop Region` нет в
+  `View.GetTemplateParameterIds()`, `SetNonControlledTemplateParameterIds`
+  игнорирует ids вне списка, `View.CropBox` шаблона не пишется. Сейчас —
+  явный `parameter_not_in_template`; нужен продуктовый сценарий
+  «снять шаблон → изменить crop» или отдельный `set_view_template_crop`.
+- [ ] **полный preview зависимых шагов** не сделан: шаги, читающие id
+  предыдущего write, помечаются `preview_skipped`; plan-level транзакция —
+  возможное будущее.
+- [ ] **inter-step conflict** покрыт только для шаблон ↔ crop/visibility/
+  viewRange; зависимости «созданный id → следующий шаг» (фильтр → overrides)
+  в preview не видны.
+- [ ] **`select`** есть только у `apply_view_template`/`configure_views`;
+  у `set_view_crop`/`set_view_visibility`/`set_view_range` набора видов нет.
+- [ ] **интеграционный тест `parameter_not_filterable`** отсутствует: нужен
+  проектный параметр, существующий в модели, но не фильтруемый для категорий.
+- [ ] **финальный полный гейт** после последних правок не прогнан: полный R25
+  (с `SMARTCON_AGENT_EVAL_REPLAY=1`), net48 и R27 при установленном Revit 2027.
+  Последний полный R25 — 428 passed / 12 skipped / 1 failed (свой тест crop
+  шаблона, удалён).
+- [ ] **ручной UI-тест в Revit и деплой** — за владельцем.
+
 ## ⚡ H1d «Family editing pack» — ЗАКРЫТ (2026-11-19, ночная сессия)
 
 9 тулов в паке `families` (каталог 33 → 42), единый конверт
