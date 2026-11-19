@@ -5,7 +5,8 @@ namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
 /// Renders <see cref="WorkingState"/> as the bounded &lt;turn_context&gt; block that
-/// is prepended to the outgoing user message. Pure: no Revit API, no WPF.
+/// is persisted once per turn as its own message before the raw user message.
+/// Pure: no Revit API, no WPF.
 /// </summary>
 public static class AgentTurnContextBuilder
 {

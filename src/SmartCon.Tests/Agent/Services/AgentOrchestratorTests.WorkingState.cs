@@ -10,7 +10,7 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed partial class AgentOrchestratorTests
 {
     [Fact]
-    public async Task RunTurn_InjectsTurnContextButPersistsOriginalUserText()
+    public async Task RunTurn_PersistsTurnContextAsASeparateMessageAndKeepsUserTextRaw()
     {
         const string userText = "Переименуй виды, не трогай листы";
         var projectContext = new StubProjectContextProvider("doc-ws");
@@ -36,11 +36,21 @@ public sealed partial class AgentOrchestratorTests
             null,
             CancellationToken.None);
 
-        var user = llm.Requests[0].Messages.Last(message => message.Role == AgentRole.User);
+        var request = llm.Requests[0].Messages;
+        var user = request.Last(message => message.Role == AgentRole.User);
+        Assert.Equal(userText, user.Content);
 
-        Assert.StartsWith("<turn_context>", user.Content);
-        Assert.Contains("goal: " + userText, user.Content);
-        Assert.EndsWith("\n\n" + userText, user.Content);
+        var turnContext = Assert.Single(request, message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).StartsWith("<turn_context>", StringComparison.Ordinal));
+        Assert.Contains("goal: " + userText, turnContext.Content);
+        var ordered = request.ToList();
+        Assert.True(
+            ordered.IndexOf(turnContext) < ordered.IndexOf(user),
+            "the turn context must precede the user message it describes");
+
+        Assert.DoesNotContain(request, message =>
+            (message.Content ?? string.Empty).Contains("<progress", StringComparison.Ordinal));
 
         Assert.Contains(
             store.Messages,
@@ -49,6 +59,11 @@ public sealed partial class AgentOrchestratorTests
             store.Messages,
             message => message.Role == AgentRole.User
                 && (message.Content ?? string.Empty).Contains(
+                    "<turn_context>", StringComparison.Ordinal));
+        Assert.Contains(
+            store.Messages,
+            message => message.Role == AgentRole.System
+                && (message.Content ?? string.Empty).StartsWith(
                     "<turn_context>", StringComparison.Ordinal));
 
         var saved = Assert.Single(workingStore.Saved);
@@ -104,8 +119,12 @@ public sealed partial class AgentOrchestratorTests
 
         var user = secondLlm.Requests[0].Messages.Last(
             message => message.Role == AgentRole.User);
-        Assert.Contains("goal: Почини имена видов", user.Content);
-        Assert.EndsWith("\n\nпродолжай", user.Content);
+        Assert.Equal("продолжай", user.Content);
+
+        var turnContext = secondLlm.Requests[0].Messages.Last(message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).StartsWith("<turn_context>", StringComparison.Ordinal));
+        Assert.Contains("goal: Почини имена видов", turnContext.Content);
     }
 
     [Fact]
@@ -194,8 +213,13 @@ public sealed partial class AgentOrchestratorTests
 
         var secondUser = llm.Requests[1].Messages.Last(
             message => message.Role == AgentRole.User);
-        Assert.Contains("goal: Другая задача", secondUser.Content);
-        Assert.DoesNotContain("Почини имена видов", secondUser.Content);
+        Assert.Equal("Другая задача", secondUser.Content);
+
+        var secondTurnContext = llm.Requests[1].Messages.Last(message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).StartsWith("<turn_context>", StringComparison.Ordinal));
+        Assert.Contains("goal: Другая задача", secondTurnContext.Content);
+        Assert.DoesNotContain("Почини имена видов", secondTurnContext.Content);
 
         Assert.Equal("Другая задача", session.WorkingState!.Goal);
         Assert.Equal(2, workingStore.Saved.Count);

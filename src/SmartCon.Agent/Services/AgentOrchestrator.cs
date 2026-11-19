@@ -115,9 +115,6 @@ public sealed partial class AgentOrchestrator
             }
 
             var userMessage = AgentMessage.User(userText, attachments);
-            await _conversationStore
-                .AppendMessageAsync(conversationId, userMessage, ct)
-                .ConfigureAwait(false);
 
             // The cached state belongs to the previous conversation: never
             // leak its goal/constraints into a different chat.
@@ -126,6 +123,21 @@ public sealed partial class AgentOrchestrator
 
             workingState = await PrepareWorkingStateAsync(
                     conversationId, userText, projectContext, ct)
+                .ConfigureAwait(false);
+
+            // The turn context is appended to the history once per turn, before
+            // the raw user message. It belongs to the append-only history, so
+            // the prefix of the previous request stays cacheable; the per-round
+            // status further down is ephemeral and is never persisted.
+            await _conversationStore
+                .AppendMessageAsync(
+                    conversationId,
+                    AgentMessage.System(AgentTurnContextBuilder.Build(workingState, projectContext)),
+                    ct)
+                .ConfigureAwait(false);
+
+            await _conversationStore
+                .AppendMessageAsync(conversationId, userMessage, ct)
                 .ConfigureAwait(false);
 
             var history = await _conversationStore
@@ -237,11 +249,7 @@ public sealed partial class AgentOrchestrator
                     toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
                 }
 
-                var turnContextBase = workingState is null
-                    ? string.Empty
-                    : AgentTurnContextBuilder.Build(workingState, projectContext);
-                var reserveTokens = AgentTokenEstimator.EstimateText(turnContextBase)
-                                    + AgentContextStatus.EstimatedTokens + 160;
+                var reserveTokens = AgentContextStatus.EstimatedTokens + 160;
 
                 var compaction = await CompactContextAsync(
                         working, workingState, conversationId, baseRowId, reserveTokens,
@@ -284,15 +292,8 @@ public sealed partial class AgentOrchestrator
                 lastContextTokens = contextTokens;
                 lastContextLimit = contextLimit;
 
-                var messages = new List<AgentMessage>(working.Count + 2) { systemMessage };
+                var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
-
-                if (!string.IsNullOrEmpty(turnContextBase))
-                {
-                    ApplyTurnContext(
-                        messages, turnContextBase, round, elapsedMinutes,
-                        contextTokens, contextLimit);
-                }
 
                 messages.Add(AgentContextStatus.BuildMessage(
                     round, elapsedMinutes, contextTokens, contextLimit, lastCompaction));
