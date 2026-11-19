@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # Runbook: ручная приёмка family editing pack (H1d)
 
 > Все автотесты — детерминированные; этот чек-лист покрывает то, что нельзя
@@ -102,7 +105,7 @@
       -c Debug.R25 --no-build --filter "FullyQualifiedName~FamilyRoutingAbLiveTests"`
       → rules 64 %/92 %, pplx 100 %/100 %, chat-модель 43/100 ответов, 32 верных (57 запросов без tool call);
       отчёт `%TEMP%\smartcon-family-ab\<timestamp>.md`.
-- [x] Результаты внесены в `docs/agent/00-strategy/h1d-evidence.md` §6.
+- [x] Результаты внесены в `docs/agent/archive/00-strategy/h1d-evidence.md` §6.
 - [ ] Ручной UI-тест в интерактивном Revit — за владельцем после деплоя.
 
 ## 7. Триаж ошибок
@@ -115,4 +118,4 @@
 | параметр не появился после undo | новый change set (точный план) vs legacy (reload сохраняет удалённые параметры) |
 | бэкап не создан | права на `%APPDATA%\SmartCon\Agent\family-backups`; при известном `.rfa` — рядом с файлом `.bak-<timestamp>` |
 
-Все автоматические гейты и счётчики: `docs/agent/00-strategy/h1d-evidence.md`.
+Все автоматические гейты и счётчики: `docs/agent/archive/00-strategy/h1d-evidence.md`.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-18  
 **Status:** accepted  
-**Related:** ADR-006 (ExternalEvent), [benchmark decision-моделей](../agent/00-strategy/decisions-benchmark.md), [harness-ideal-plan §3.3](../agent/00-strategy/harness-ideal-plan.md), H1-08/H1-11/H1-12 в [initial-improvement-runbook](../agent/00-strategy/initial-improvement-runbook.md)
+**Related:** ADR-006 (ExternalEvent), [benchmark decision-моделей](../agent/archive/00-strategy/decisions-benchmark.md), [harness-ideal-plan §3.3](../agent/archive/00-strategy/harness-ideal-plan.md), H1-08/H1-11/H1-12 в [initial-improvement-runbook (архив)](../agent/archive/00-strategy/archive/initial-improvement-runbook.md)
 
 ## Context
 

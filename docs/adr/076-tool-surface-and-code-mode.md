@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-18  
 **Status:** accepted  
-**Related:** ADR-075 (hybrid retrieval), [harness-ideal-plan §3.3](../agent/00-strategy/harness-ideal-plan.md), [H1 runbook](../agent/00-strategy/initial-improvement-runbook.md), [AGENT-FEEDBACK](../agent/AGENT-FEEDBACK.md)
+**Related:** ADR-075 (hybrid retrieval), [harness-ideal-plan §3.3](../agent/archive/00-strategy/harness-ideal-plan.md), [H1 runbook (архив)](../agent/archive/00-strategy/archive/initial-improvement-runbook.md), [AGENT-FEEDBACK](../agent/archive/AGENT-FEEDBACK.md)
 
 ## Context
 

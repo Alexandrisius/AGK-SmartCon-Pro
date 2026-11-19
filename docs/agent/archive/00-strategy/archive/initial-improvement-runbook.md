@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # H1 — Первичное улучшение харнеса: масштаб и контекст
 
 > **Статус:** ARCHIVED · 2026-11-19 · H1 выполнен; актуальный план — [`../autonomy-roadmap.md`](../autonomy-roadmap.md)
@@ -25,7 +28,7 @@ H1 закрывает **фундамент**: каталог тулов, сжа�
 
 H1 должен **понимать**, что 500–1000 тулов и 100–200 навыков невозможно
 обслуживать одним BM25 — целевая схема зафиксирована в
-[ADR-075](../../adr/075-hybrid-tool-retrieval.md): два независимых ретривера
+[ADR-075](../../../adr/075-hybrid-tool-retrieval.md): два независимых ретривера
 (BM25 ∪ vector), RRF-слияние и decision-модель как reranker на 100–200
 кандидатах.
 
@@ -99,8 +102,8 @@ sandbox-интерпретатор — эпик **H7** (до H6), не H1.
 ## 4. Порядок чтения для исполнителя
 
 1. `docs/agent/README.md` — контекст модуля.
-2. `docs/agent/HANDOFF.md` — текущее состояние.
-3. `docs/agent/00-strategy/harness-development-approach.md` — процесс и гейты.
+2. `docs/agent/archive/HANDOFF.md` — текущее состояние.
+3. `docs/agent/archive/00-strategy/harness-development-approach.md` — процесс и гейты.
 4. Этот runbook — задачи H1.
 5. `docs/invariants.md` + `docs/architecture/dependency-rule.md` — жёсткие правила.
 6. `harness-ideal-plan.md` §3.3, §6.1–§6.5, §7 — детали.

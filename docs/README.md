@@ -70,12 +70,12 @@ SmartCon — плагин для Autodesk Revit, автоматизирующи�
 
 | Документ | Описание | Когда загружать |
 |---|---|---|
-| [`agent/README.md`](agent/README.md) | Индекс модуля, текущий статус, карта документов, команды | При любой работе с агентом |
-| [`agent/00-strategy/README.md`](agent/00-strategy/README.md) | Индекс стратегии, статусы документов, архив | Перед крупным решением |
-| [`agent/00-strategy/harness-ideal-plan.md`](agent/00-strategy/harness-ideal-plan.md) | Долгосрочный план: gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед планированием |
-| [`agent/00-strategy/harness-development-approach.md`](agent/00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики | Перед стартом задачи |
-| [`agent/00-strategy/initial-improvement-runbook.md`](agent/00-strategy/initial-improvement-runbook.md) | Эпик H1: tool catalog v2, WorkingState, store-and-reference, compaction v2 | Перед реализацией H1 |
-| [`agent/HANDOFF.md`](agent/HANDOFF.md) | Текущее состояние и следующие шаги | При продолжении работы |
+| [`agent/ROADMAP.md`](agent/ROADMAP.md) | **Единственный рабочий документ:** north star, приоритеты, эпики/задачи, `ID ↔ GitHub issue ↔ статус` | Перед любой задачей по агенту |
+| [`agent/README.md`](agent/README.md) | Краткий индекс модуля: фокус, ограничения, команды | При работе с агентом |
+| [`agent/archive/`](agent/archive/) | Исторические планы, runbook'и, evidence и фидбэк. Не руководство к действию | Только для истории |
+
+> Конкретная работа по агенту и её статусы ведутся в **GitHub Issues** (метка `agent`).
+> Актуальная карта и контекст — `agent/ROADMAP.md`; архив для решений не используется.
 
 ### FloorHeating (модуль тёплого пола, в разработке)
 

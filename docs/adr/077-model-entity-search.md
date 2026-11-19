@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-18  
 **Status:** accepted  
-**Related:** ADR-076 (tool surface), ADR-075 (hybrid retrieval только для каталога тулов/навыков), [H1b–H1d plan](../agent/00-strategy/h1b-tool-packs.md), [harness-ideal-plan §3.3](../agent/00-strategy/harness-ideal-plan.md)
+**Related:** ADR-076 (tool surface), ADR-075 (hybrid retrieval только для каталога тулов/навыков), [H1b–H1d plan](../agent/archive/00-strategy/h1b-tool-packs.md), [harness-ideal-plan §3.3](../agent/archive/00-strategy/harness-ideal-plan.md)
 
 ## Context
 

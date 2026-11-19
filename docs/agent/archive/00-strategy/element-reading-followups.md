@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # Element reading profile — P1/P2 follow-ups
 
 > **Статус:** active backlog · 2026-11-19 · ветка `develop`

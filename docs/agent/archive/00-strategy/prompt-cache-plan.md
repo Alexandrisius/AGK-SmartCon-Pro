@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # Prompt cache: стабильный префикс и cache-aware контекст — план реализации
 
 > **Статус:** active · 2026-11-19 · владелец: владелец продукта.
@@ -59,6 +62,14 @@ OpenCode (для ориентира): Anthropic-маркеры ставятся 
 4. **Session id на диалог:** `x-opencode-session = conversationId`; для OpenAI — `prompt_cache_key`; для Anthropic через OpenRouter — `cache_control`.
 5. **Cache-aware компакция:** порог ближе к окну; запрос суммаризатора использует тот же system+tools+history, инструкция — в конце; keep-хвост; учитывать usage суммаризатора.
 6. **Метрики и UI:** cache hit rate, cost per turn, breakdown; алерт при падении.
+
+### 2.1 Сессии, паки и кеш: что важно, а что нет
+
+- Кеш провайдера привязан к **префиксу + модели/namespace**. Смена сессии, модели или документа — это другой префикс/namespace; там кеш холодный by design. Сброс паков при **новой** сессии кешу не вредит: нового диалога ещё нет в кеше.
+- Проблема не в сбросе, а в **возврате в старую сессию**: если паки не восстановлены, набор tools другой → даже тёплый кеш промахнётся. Поэтому набор tools должен принадлежать **диалогу** и восстанавливаться при возврате. Это следующий шаг (persist `FrozenToolNames` per conversation), в одну сессию не входит.
+- Смена модели/усилия: у модели свой кеш; сохранять нечего. Логировать `cache namespace changed`.
+- Смена активного проекта: если это новый диалог/документ — холодный кеш; сброс паков нормален. Если хочется сохранять паки при смене проекта в том же диалоге — отдельное решение, не для этой сессии.
+- Аналоги: Claude Code держит tool list с первого запроса диалога и начинает новую сессию с чистого контекста; Codex — `prompt_cache_key` на сессию; OpenCode — `sessionID`/`promptCacheKey` на диалог; Cline — per-task file cache, сбрасывается с новой задачей. Никто не тащит кеш между сессиями; возврат к тёплой сессии ценен только при совпадении префикса.
 
 ## 3. Текущее состояние кода (карта для изменений)
 
@@ -124,6 +135,7 @@ OpenCode (для ориентира): Anthropic-маркеры ставятся 
 - В каждом следующем ходу: definitions строятся из `FrozenToolNames`, **сортируются по имени**; порядок не зависит от recency/`TouchTool`.
 - `load_tool_pack` добавляет имена в `FrozenToolNames` и применяет на границе хода; лог: `tool set changed: oldHash → newHash, cache invalidated`.
 - `find_tools` не меняет payload.
+- **Набор tools принадлежит диалогу, а не процессу.** Новая сессия начинается с начального набора — это нормально: кеш там всё равно холодный. При возврате в старую сессию `FrozenToolNames` нужно восстанавливать (persist per conversation — следующий шаг), иначе тёплый кеш промахнётся из-за другого набора tools.
 - `ToolSetMode` (config): `FrozenShortlist` (по умолчанию) или `FullCatalog` (если `EstimateTools(all) < 10–15% контекстного окна`).
 - **Детерминизм схем:** сериализовать JSON schema с фиксированным key order, без timestamp/GUID/локали в описаниях; один и тот же набор tools должен давать байт-идентичный блок. Добавить тест `tool schema serialization is stable`.
 - **Не убирать tools на финальном шаге.** Если нужно запретить вызовы — ставить `toolChoice: "none"` (OpenCode `session/runner/llm.ts:279`), а не удалять определения.
@@ -153,49 +165,55 @@ OpenCode (для ориентира): Anthropic-маркеры ставятся 
 - Background precompute (OpenCode `compaction.ts:338-343`): считать summary заранее, но **не применять**, пока не наступил порог; проверять возраст кеша (`CACHE_LIFETIME=5m`/`cache.ttl`). Опционально, после стабилизации.
 - Entity-dedupe (семейства/виды) — **не в этом плане**. OpenCode не дедуплицирует повторные чтения; если делать, только в tail и при экономии > стоимости re-cache.
 
-## 6. План по фазам
+## 6. План на одну сессию (60 минут)
 
-### Фаза 0 — baseline и метрики (1 день, без изменения поведения)
+**Правило:** делать только 5 задач ниже; всё остальное — в «Дальше». После каждой задачи — сборка/тест. Время вышло — остановиться после завершённой задачи, не начинать следующую. Не делать commit/deploy без просьбы.
 
-- [ ] Создать `docs/adr/078-prompt-cache-stable-prefix.md` (решение: стабильный префикс, заморозка tools, cache-aware компакция) — если владелец согласен.
-- [ ] В `AgentOrchestrator` на каждый LLM-ответ логировать: `round`, `request_id`, `prompt_tokens`, `cached_tokens`, `cache_write_tokens`, `cost`, `staticHash`, `toolSetHash`, `messageCount`, `toolCount`. Использовать `AgentPromptHash.ComputeStatic/ComputeToolSet`.
-- [ ] `CompactionId` заполнять в `AgentUsageRecord` (сейчас всегда null).
-- [ ] Прогнать 5 диалогов по 10–20 ходов на реальном провайдере; записать baseline: hit rate, cost/turn, staticHash/toolHash изменения.
-- [ ] Записать baseline в этот файл (раздел «Журнал») или `eval.md`.
-- [ ] Docs hygiene: исправить «45 тулов» в `docs/agent/README.md`, `autonomy-roadmap.md`, `night-run-3.md` (актуально 55 каталожных + `load_tool_pack`).
+### Задача 1 (10 мин) — cache-лог
 
-**Приёмка:** в логе есть cached/miss по каждому запросу; baseline зафиксирован; поведение не изменилось.
+- [ ] В `AgentOrchestrator` на каждый LLM-ответ логировать: `round`, `request_id`, `prompt_tokens`, `cached_tokens`, `cache_write_tokens`, `cost`, `staticHash`, `toolSetHash`.
+- [ ] Использовать `AgentPromptHash.ComputeStatic/ComputeToolSet` (сейчас только тесты); заполнить `CompactionId` в `AgentUsageRecord`.
+- Приёмка: в `smartcon.log` есть строка на каждый запрос; baseline можно снять.
 
-### Фаза 1 — стабильный префикс (2–3 дня)
+### Задача 2 (15 мин) — turn context в хвост, без переписывания user
 
-- [ ] `AgentSystemPrompt`: `BuildStatic()` (роль/правила/инварианты/tool policy), `BuildSessionContext(projectContext)` (title/id/version/units/workshared), `BuildTurnContext(turnState)` (date/active view/selection/mode/plan/counts). `BuildStatic` не содержит mode/plan/document. `Build` больше не склеивает всё в один system.
-- [ ] `AgentProjectContext`: убрать `IsModified` из промпта; TopCategories — только по запросу (`get_project_overview`) или в turn context, не в static.
-- [ ] `AgentOrchestrator.RunTurnAsync`: system = `BuildStatic()`; session context — один раз на диалог, персистится; turn context — один раз на ход, персистится; per-round status — в конце, не персистится.
-- [ ] `ApplyTurnContext`: удалить переписывание user-сообщения; заменить на добавление отдельного сообщения. Не дублировать `<progress>` и `<context_status>`.
-- [ ] `AgentSessionContext`/`AgentOrchestrator.Tools`: `FrozenToolNames`, `FrozenToolSetHash`; выбор один раз; canonical sort по имени в `LlmPayloadBuilder` (или перед ним); убрать per-turn top-5 из payload; `load_tool_pack` — на границе хода + лог инвалидации.
-- [ ] `AgentChatRequest` + `OpenAiCompatibleLlmClient`: `ConversationId`; `x-opencode-session` на диалог; `prompt_cache_key` для OpenAI-подобных; `cache_control` для Anthropic-маршрутов OpenRouter.
-- [ ] `AgentPromptHash` использовать в production; логировать `staticHash`/`toolSetHash`; тест: hash не меняется при смене active view/mode (mode — delta).
+- [ ] `AgentOrchestrator.WorkingState.ApplyTurnContext`: не заменять последнее user-сообщение; добавлять отдельное сообщение с `<turn_context>`/`<progress>` (per-round, не персистить).
+- [ ] Убрать дубль `<progress>` и `<context_status>`.
+- Приёмка: в payload user-сообщение = raw; turn context — отдельное последнее сообщение; 3-ходовой тест: на 2-м ходе `cached_tokens > 0`.
 
-**Приёмка:**
-- unit: 10 ходов без изменений → `staticHash` и `toolSetHash` одинаковы; смена active view/mode не меняет staticHash; turn context — последнее сообщение перед user; tools отсортированы.
-- live: второй и последующие запросы дают `cached_tokens > 0`; первый — cache write/miss.
-- routing eval: top-1 ≥80%, top-5 ≥95% (не хуже baseline).
+### Задача 3 (15 мин) — статический system
 
-### Фаза 2 — cache-aware компакция (2–3 дня)
+- [ ] `AgentSystemPrompt`: `BuildStatic()` без mode/plan/document/active view/counts/`IsModified`; `BuildSessionContext()` — title/documentId/RevitVersion/units/workshared; `BuildTurnContext()` — date/active view/selection/mode/plan/counts.
+- [ ] `AgentProjectContext.BuildPromptSection()` больше не попадает в static; volatile — в turn context.
+- Приёмка: `staticHash` одинаков на 5 ходах, при смене active view и mode; mode/plan — delta в хвосте.
 
-- [ ] `LlmAgentSummarizer`: строить запрос из того же system+tools+history; инструкция — последним сообщением; писать usage суммаризатора.
-- [ ] `AgentContextCompactor`: порог 0.80–0.85 (замерить); mask только при economics-guard; keep tail 15k (или TailTokens — выбрать одно); не компактить при 60%.
-- [ ] Лог: `compaction before/after tokens`, `cache hit on summarizer`, `savings vs recache cost`.
-- [ ] Тест: суммаризатор получает тот же префикс (hash совпадает с основным запросом), кроме последней инструкции; usage записан.
+### Задача 4 (15 мин) — заморозка tools на диалог
 
-**Приёмка:** compaction-запрос имеет cache hit >0; стоимость хода после компакции не выше, чем при keep-all на 10 ходов (замер).
+- [ ] `AgentSessionContext`: `FrozenToolNames`; выбор один раз (core + initial shortlist + loaded); canonical sort по имени перед отправкой; убрать per-turn top-5 из payload.
+- [ ] `load_tool_pack` добавляет в frozen-набор на границе хода; лог `tool set changed: old → new`.
+- Приёмка: `toolSetHash` одинаков на 5 ходах без `load_tool_pack`; порядок по имени; routing eval не хуже baseline.
 
-### Фаза 3 — метрики/UI/алерты (1–2 дня)
+### Задача 5 (5 мин) — session key
 
-- [ ] `token_usage`: добавить `cache_hit_rate` (или вычислять в SQL/UI), `rounds`, `compaction_id` (заполнять).
-- [ ] UI: header «tokens / cost / cache %», клик — breakdown; контекст: system/tools/history/summary.
-- [ ] Алерт: hit rate < 50% на 5 запросах → WARN с причиной (static/tool hash change, compaction, model switch).
-- [ ] Eval: 5 кейсов — same prefix; active-view change; tool change; model change; compaction. Живые тесты — gated.
+- [ ] `AgentChatRequest` + `OpenAiCompatibleLlmClient`: `x-opencode-session = "ses_" + conversationId` (на запрос, не на процесс).
+- [ ] Для OpenAI-подобных — `prompt_cache_key = conversationId` (≤64 символов).
+- Приёмка: заголовок/поле в запросе; лог.
+
+### Проверка в конце (10 мин)
+
+- [ ] `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --filter "FullyQualifiedName~SmartCon.Tests.Agent"` — зелёный.
+- [ ] `RoutingEvalTests` — top-1/top-5 не хуже baseline.
+- [ ] Если есть ключ: 3-ходовой live-прогон, на 2-м ходе `cached_tokens > 0`; static/tool hash не меняются.
+- [ ] Если live нет — честно написать «live не проверялся».
+
+### Дальше (не в этой сессии)
+
+- persist `FrozenToolNames` per conversation (возврат в тёплую сессию);
+- summary-запрос с тем же префиксом + usage суммаризатора;
+- cache-aware порог компакции и economics-guard;
+- UI cache %, алерты;
+- entity-dedupe;
+- ADR-078.
 
 ## 7. Что НЕ делать
 
@@ -262,7 +280,7 @@ dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25 --no-build --f
 - Cache-aware compaction economics: https://www.nikibirkner.com/ai-lessons/compaction-economics/
 - `clear_at_least` экономика: https://dreaming.press/posts/tune-clear-at-least-context-editing-prompt-cache.html
 
-## 11. Журнал baseline (заполнить в фазе 0)
+## 11. Журнал baseline (заполнить в задаче 1)
 
 | Дата | Модель/провайдер | Ходов | cached/prompt | cache write | cost/turn | staticHash менялся | toolHash менялся | Комментарий |
 |---|---|---|---|---|---|---|---|---|

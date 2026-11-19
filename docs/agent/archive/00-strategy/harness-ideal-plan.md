@@ -1,8 +1,15 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # План доведения AI-харнеса SmartCon до идеала
 
-> **Статус:** draft для ревью · 2026-11-18 · ветка `develop`
+> **Статус:** active · 2026-11-19 · владелец: продукт · ветка `develop`
+> **Это главный документ стратегии:** что строим, какие фазы и паттерны, схемы и метрики.
 > **Базис:** аудит собственного кода (4 агента: orchestration/LLM, tools, memory/storage, plan/policy/eval), source-code разбор 10 харнесов (OpenCode, Codex, OpenHands, Cline, Roo Code, Aider, goose, Gemini CLI, Claude Code, ZCode), исследование `arXiv:2609.00006` (11 систем, 29 паттернов), отдельные разборы memory/compaction/prompt-cache.
-> **Не заменяет:** исторические `archive/mvp-plan.md` и `archive/night-run-2.md`. **Исполнение:** [`initial-improvement-runbook.md`](initial-improvement-runbook.md) (эпик H1). **Процесс:** [`harness-development-approach.md`](harness-development-approach.md).
+> **Не заменяет:** исторические `archive/mvp-plan.md` и `archive/night-run-2.md`.
+> **Порядок исполнения:** [`autonomy-roadmap.md`](autonomy-roadmap.md).
+> **Карта работ и статусы:** [`../ROADMAP.md`](../../ROADMAP.md) + GitHub Issues (метка `agent`).
+> **Процесс:** [`harness-development-approach.md`](harness-development-approach.md).
 > **Правило документа:** ничего из этого не считается реализованным до зелёной сборки, тестов, eval и ручной приёмки в Revit (см. §10).
 
 ---
@@ -1058,10 +1065,10 @@ P1-12 (1M profile) ──► P4-5 (cost/cache)
 
 **Внутренние документы**
 
-- `docs/agent/00-strategy/archive/mvp-plan.md` — исходный scope.
-- `docs/agent/00-strategy/archive/night-run-2.md` — тактический прогон.
-- `docs/agent/00-strategy/eval.md` — текущие метрики.
-- `docs/agent/HANDOFF.md` — состояние на 2026-11-18.
+- `docs/agent/archive/00-strategy/archive/mvp-plan.md` — исходный scope.
+- `docs/agent/archive/00-strategy/archive/night-run-2.md` — тактический прогон.
+- `docs/agent/archive/00-strategy/eval.md` — текущие метрики.
+- `docs/agent/archive/HANDOFF.md` — состояние на 2026-11-18.
 - `docs/invariants.md` — I-01…I-17.
 - `docs/architecture/dependency-rule.md` — куда класть код.
 

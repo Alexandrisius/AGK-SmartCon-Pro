@@ -1,4 +1,5 @@
-> **ARCHIVED (2026-11-18).** Исторический runbook первого MVP-прогона. Актуальная стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
 
 # Autonomous Execution Plan (Runbook)
 
@@ -30,7 +31,7 @@
 3. `docs/invariants.md` — I-01..I-17
 4. `docs/architecture/dependency-rule.md`
 5. `docs/known-workarounds.md`
-6. `docs/agent/00-strategy/mvp-plan.md`
+6. `docs/agent/archive/00-strategy/mvp-plan.md`
 7. Этот runbook
 8. Skills:
    - `smartcon-build-guide`

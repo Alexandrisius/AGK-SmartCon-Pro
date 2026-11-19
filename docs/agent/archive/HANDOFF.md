@@ -1,4 +1,11 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # Handoff — Agent: текущее состояние (2026-11-19)
+
+> **С 2026-11-19 работа ведётся через GitHub Issues.** Этот файл — только состояние
+> сессии: что сделано, что сломано, следующий шаг. Планы и статусы задач — в issues;
+> карта работ — [`ROADMAP.md`](ROADMAP.md). Новые задачи сюда не дописывать.
 
 ## ⚡ План развития обновлён: `autonomy-roadmap.md` (2026-11-19)
 
@@ -169,7 +176,7 @@ rules 64 %/92 %, pplx **100 %/100 %**, вторая chat-модель 43/100 о�
 - `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\20261119-065747\report.json` — eval replay
   46/46 (schema 149/149).
 - `%TEMP%\<session>\smartcon-family-scale.txt` — замеры scale-теста.
-- `docs/agent/00-strategy/h1d-evidence.md` — полная матрица и счётчики.
+- `docs/agent/archive/00-strategy/h1d-evidence.md` — полная матрица и счётчики.
 
 ## ⚡ Итог сессии «новые инструменты»: гейты (2026-11-19)
 
@@ -450,7 +457,7 @@ manual pending.
 - **H1-08**: при `ToolCatalogV2=1` payload = core 9 + загруженные + BM25 top-5 (≤16); `find_tools` — только discovery (top-5, pack-фильтр, listing `fields=["name","description"]`), не расширяет payload; `load_tool_pack` пишет pending/loaded, применяет на границе раунда и логирует cache invalidation.
 - **H1-09**: валидация аргументов перед выполнением + tolerant repair (aliases/coerce/scalar↔array/unknown fields), `_repairs[]` в tool-result и `tool_calls.repairs_json`, unknown-tool suggestions.
 - **H1-10**: `LoopGuard` (2 одинаковые ошибки → warn, 3 одинаковых вызова → `loop_detected`, 5 → abort хода), per-tool timeout (cooperative cancel + grace), watchdog `AgentAwaitableEvent`.
-- **H1-11/12/13** (детали — `docs/agent/00-strategy/eval.md`): rules — top-1 95 %, top-5 100 %, p95 1.28 мс; decisions live (20 запросов) — 95 %/100 %; 1000 карточек — top-5 100 %, p95 11 мс; prompt с паками 4 118 токенов (≤8k); static/tool-set hash стабильны. **Вердикт: vector-ветка (H6) пока не нужна** — BM25 top-14 100 %, видимый каталог 27 < 200.
+- **H1-11/12/13** (детали — `docs/agent/archive/00-strategy/eval.md`): rules — top-1 95 %, top-5 100 %, p95 1.28 мс; decisions live (20 запросов) — 95 %/100 %; 1000 карточек — top-5 100 %, p95 11 мс; prompt с паками 4 118 токенов (≤8k); static/tool-set hash стабильны. **Вердикт: vector-ветка (H6) пока не нужна** — BM25 top-14 100 %, видимый каталог 27 < 200.
 - **H1-04**: live baseline 5 read + 5 write — 10/10, tool selection 100 %, schema 20/20, prompt 202 173 / completion 4 427 токенов.
 
 ### Гейты H1.1 (все зелёные)
@@ -486,8 +493,8 @@ manual pending.
 
 ### Где мы сейчас
 
-- **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/00-strategy/initial-improvement-runbook.md`.
-- **Актуальные документы:** `docs/agent/README.md` (индекс) → `00-strategy/harness-ideal-plan.md` (стратегия) → `00-strategy/harness-development-approach.md` (процесс) → `00-strategy/initial-improvement-runbook.md` (эпик H1).
+- **Порядок чтения после суммаризации:** этот блок → `git status` → `git log -1` → таблица фаз ниже → `docs/agent/archive/00-strategy/archive/initial-improvement-runbook.md`.
+- **Актуальные документы:** `docs/agent/README.md` (индекс) → `00-strategy/harness-ideal-plan.md` (стратегия) → `00-strategy/harness-development-approach.md` (процесс) → `00-strategy/archive/initial-improvement-runbook.md` (эпик H1).
 - Ветка `develop`. Фазы P1/P2/A/B/C + A4 и финальный полиш завершены. Коммиты: `c64a9109` (plan validation, bypass modes, tool discovery), `5fe44e41` (UI polish + live-session feedback), запушены в `develop`.
 - Валидатор `general` прогонялся 4 раза: 1–3 FAIL → исправлены; 4-й FAIL (локализация Approval UI, `Risks` не показывались в overlay, `AgentEvalRunner` >600 строк) → **всё исправлено**. 5-й прогон по решению владельца **не запускался**.
 - **НЕ добавлять в коммит:** `opencode.json`, `server/`, `tools/allow-revit-network.ps1` (личное/не по задаче). Секреты — только в `%APPDATA%\AGK\SmartCon\Agent\secrets.env`, в репозиторий не попадают.
@@ -547,7 +554,7 @@ Agent feedback (P0–P2):
 
 - 5-й прогон валидатора `general` не проводился — решение владельца.
 - Ручная проверка UI в Revit: режим подтверждения в композере, выбор decision-модели, вложения (превью/ховер/просмотр), строка рисков в overlay, сброс режима при смене документа.
-- D: `execute_plan` пока не входит в 40 eval-задач; live-запись plan-кейсов не делалась. `docs/agent/00-strategy/eval.md` содержит базовые метрики и заготовку «до/после».
+- D: `execute_plan` пока не входит в 40 eval-задач; live-запись plan-кейсов не делалась. `docs/agent/archive/00-strategy/eval.md` содержит базовые метрики и заготовку «до/после».
 - Новые Agent-модели/интерфейсы не перенесены в `docs/domain/**` — по правилам проекта docs правятся после ручной приёмки.
 - Production `execute_plan`: single-use nonce/expiry остаются только в прямом API; в tool-пути digest-binding + внешнее подтверждение.
 - L6 mismatch не помечает change set; `plan_id` отдельным полем audit не пишется (digest в `ArgsHash`).
@@ -569,7 +576,7 @@ SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=200
 
 ## Текущий статус (обновляется после каждой фазы)
 
-Ветка `develop`. Прогон завершён; новый цикл — `docs/agent/00-strategy/initial-improvement-runbook.md`.
+Ветка `develop`. Прогон завершён; новый цикл — `docs/agent/archive/00-strategy/archive/initial-improvement-runbook.md`.
 
 ### Сделано и проверено
 
@@ -577,7 +584,7 @@ SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=200
 |---|---|---|
 | 0 Baseline | ✅ | unit 3368/3368; Agent R25 65 pass / 2 skip, 0 fail |
 | P1 hotfix C1–C4 + A1 | ✅ | C2: fallback на имя элемента для ElementId-параметров; C4: `fields`/`compact` у `get_view_settings`/`get_view_template_details`; C1 регресс-тест `list_levels.total == overview.levelCount`; C3 тест «Schedule-шаблон на FloorPlan → template_not_applicable»; A1 правило «имя не переносится шаблоном» в промпте и описаниях |
-| P2 routing v1 | ✅ код + метрика | `AgentToolDefinition.Category/Tags/SupportsBulk`; `AgentToolCatalog` (Core); `RuleToolRouter` (BM25, core-read + cap 14, fallback на полный каталог); `find_tools` meta-tool теперь ходит через настроенный `IToolRouter` (JEV/pplx при включении) и принимает `context` — агент ищет инструменты по требованию, уже понимая задачу; оркестратор шлёт shortlist (`SMARTCON_AGENT_TOOL_ROUTER=0` отключает); decision-слой (OpenRouter Decisions, `perplexity/pplx-decider-v1.3:free`) — live-тесты `DecisionsLiveTests` 3/3 + бенчмарк 27 моделей (`docs/agent/00-strategy/decisions-benchmark.md`): free-модель на потолке (100 %/100 %, sep 0.990), JEV/GPT-6 Luna недоступны из региона |
+| P2 routing v1 | ✅ код + метрика | `AgentToolDefinition.Category/Tags/SupportsBulk`; `AgentToolCatalog` (Core); `RuleToolRouter` (BM25, core-read + cap 14, fallback на полный каталог); `find_tools` meta-tool теперь ходит через настроенный `IToolRouter` (JEV/pplx при включении) и принимает `context` — агент ищет инструменты по требованию, уже понимая задачу; оркестратор шлёт shortlist (`SMARTCON_AGENT_TOOL_ROUTER=0` отключает); decision-слой (OpenRouter Decisions, `perplexity/pplx-decider-v1.3:free`) — live-тесты `DecisionsLiveTests` 3/3 + бенчмарк 27 моделей (`docs/agent/archive/00-strategy/decisions-benchmark.md`): free-модель на потолке (100 %/100 %, sep 0.990), JEV/GPT-6 Luna недоступны из региона |
 | A Eval-харнес | ✅ | 40 задач (15 read / 15 dry-run / 10 apply+undo, включая 5 регресс-кейсов); запись fixtures live, replay без ключа/сети; отчёт JSON+MD в `%LOCALAPPDATA%\AGK\SmartCon\Agent\eval\<ts>`; порог-гейт; routing accuracy считается |
 | A4 Offline orchestrator | ✅ | `SmartCon.Tests/Agent/Eval/AgentOfflineOrchestratorEvalTests` 5/5: multi-round tool loop + pairing, лимит 8 раундов, компакция (digest, последние 4 целы), find_tools→полный каталог, `execute_plan` preview→apply с `planDigest` |
 | B Plan validation | ✅ | L0 (`AgentPlanValidator`: tool unknown, args/schema, duplicate, cycle, >20, destructive, nested plan), L1 preflight (`AgentWriteToolBase.PreflightCore` + `apply_view_template`), L3 (в `AgentPlanExecutor`: nonce/expiry/digest, ledger покрыт unit-тестами; production-путь `execute_plan` связывает preview→apply каноническим `planDigest`, привязанным к документу), L4 fidelity, L6 read-back; `AgentPlanExecutor` в Core (partial: `.cs` + `.Steps.cs` + `.Audit.cs`), `PreviewAsync`; meta-tool `execute_plan` (dryRun/apply, строгая схема аргументов, DI, промпт с `planDigest`, каталог, always-in-shortlist); unit `AgentPlanValidatorTests` + `AgentPlanExecutorTests` + `ExecutePlanToolTests`; integration `AgentPlanExecutionTests` 6/6 (preflight missing view, end-to-end 2-step plan→approve→apply→read-back→undo, discard-after-conflict→next undo, discard without approval, invalid changeSetId, already rolled-back set). L2 critic не включён (опционален по ранбуку) |
@@ -592,7 +599,7 @@ SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=200
 - `execute_plan` пока не входит в eval-задачи (B5-метрики плана соберутся после добавления кейсов в фазе D).
 - Новые Agent-модели/интерфейсы не перенесены в `docs/domain/**` (по правилам проекта — долг; docs правятся после ручной приёмки).
 - UI режимов подтверждения требует ручной проверки в Revit (ComboBox + баннер + сброс при смене документа).
-- Decision-модели: бенчмарк — `docs/agent/00-strategy/decisions-benchmark.md`; JEV/GPT-6 Luna недоступны из региона (451/502), free pplx — на потолке точности на нашем наборе.
+- Decision-модели: бенчмарк — `docs/agent/archive/00-strategy/decisions-benchmark.md`; JEV/GPT-6 Luna недоступны из региона (451/502), free pplx — на потолке точности на нашем наборе.
 
 ### Eval-база (зафиксирована)
 
@@ -691,7 +698,7 @@ SMARTCON_AGENT_LIVE=1 SMARTCON_DECIDER_ENABLED=1 SMARTCON_DECIDER_TIMEOUT_MS=200
   10–11 русских задач, бюджет 30 LLM-запросов, транскрипт в `%TEMP%\smartcon-agent-dogfood`.
 - **Итоги прогона 1** (11 задач, 10 ответов, 3 feedback): исправлены 3 замечания —
   алиасы проекций + `ignoredFields`, округление mm до 0.1, дедупликация параметров и
-  единицы в displayValue. Подробно — `docs/agent/AGENT-FEEDBACK.md`.
+  единицы в displayValue. Подробно — `docs/agent/archive/AGENT-FEEDBACK.md`.
 
 ## Проверено (в этой сессии)
 
@@ -806,7 +813,7 @@ Agent-интеграционные тесты **не компилируются 
 
 ## Долг / что осталось
 
-**Следующий прогон:** `docs/agent/00-strategy/initial-improvement-runbook.md` (эпик H1: tool catalog v2 + context budgeting + WorkingState).
+**Следующий прогон:** `docs/agent/archive/00-strategy/archive/initial-improvement-runbook.md` (эпик H1: tool catalog v2 + context budgeting + WorkingState).
 
 1. Ручная приёмка в Revit (владелец): write-flow, оверлей подтверждения, undo.
 2. **Фаза G** (частично сделано): token_usage persistence ✅, порог компакции —

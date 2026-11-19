@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # Night Run 3 — 12 часов: 6 эпиков размера H1
 
 > **Статус:** active · 2026-11-19 · владелец: продукт
@@ -10,7 +13,7 @@
 - Работай в `D:\Project\dotNET\AGK-SmartCon-Pro`, ветка `develop`.
 - Вопросов не задавай; при неоднозначности — безопасный вариант (fail-closed), решение в HANDOFF.
 - В T+11:00 прекрати код; последний час — гейты, HANDOFF, отчёт.
-- После каждого эпика: локальный коммит + `docs/agent/HANDOFF.md`.
+- После каждого эпика: локальный коммит + `docs/agent/archive/HANDOFF.md`.
 - Не пушить, не PR, не запускать `build-and-deploy.bat`.
 - Не трогать `opencode.json`, `server/`, секреты, docs вне `docs/agent`.
 - Сборка: только затронутые проекты/конфигурации; 7 конфигураций — один раз в финале.
@@ -19,9 +22,9 @@
 ## 1. Читать сначала
 
 1. `docs/agent/README.md`
-2. `docs/agent/HANDOFF.md`
-3. `docs/agent/00-strategy/autonomy-roadmap.md`
-4. `docs/agent/00-strategy/task-family-batch-v1.md`
+2. `docs/agent/archive/HANDOFF.md`
+3. `docs/agent/archive/00-strategy/autonomy-roadmap.md`
+4. `docs/agent/archive/00-strategy/task-family-batch-v1.md`
 5. `docs/invariants.md`, `docs/architecture/dependency-rule.md`
 6. `docs/adr/076-tool-surface-and-code-mode.md`, `docs/adr/075-hybrid-tool-retrieval.md`
 7. `src/SmartCon.Revit/Agent/Tools/Families/` — `AgentFamilySession`, `AgentFamilyUndo`, backup

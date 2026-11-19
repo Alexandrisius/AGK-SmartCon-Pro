@@ -1,5 +1,10 @@
-﻿# Agent feedback — live dogfooding
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
 
+# Agent feedback — live dogfooding
+
+> **Роль:** источник фидбэка и сложных незафикшенных багов. **Не трекер:** каждый
+> незафикшенный пункт обязан иметь GitHub Issue (метка `agent`); карта — `ROADMAP.md`.
 > Источник: `AgentLiveDogfoodTests` (интеграционный тест в реальном Revit 2025,
 > read-only). Запуск: `SMARTCON_AGENT_LIVE=1` + ключ в `%APPDATA%\AGK\SmartCon\Agent\secrets.env`
 > или `SMARTCON_AGENT_API_KEY`. Транскрипт: `%TEMP%\smartcon-agent-dogfood\<timestamp>.md`.

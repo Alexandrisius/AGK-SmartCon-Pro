@@ -1,10 +1,11 @@
-> **ARCHIVED (2026-11-18).** Прогон завершён. Актуальное состояние — [`../../HANDOFF.md`](../../HANDOFF.md), стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
 
 # Ночной прогон №2 — runbook (eval-first, 12–15 часов)
 
 > Читать первым. Этот файл — самодостаточный бриф: фазы, тайм-боксы, критерии
 > приёмки, команды, стоп-условия. Предыдущий прогон (A–H) закрыт, write-layer
-> прошёл валидацию `general` (PASS), см. `docs/agent/HANDOFF.md`.
+> прошёл валидацию `general` (PASS), см. `docs/agent/archive/HANDOFF.md`.
 
 ## Цель ночи
 
@@ -48,7 +49,7 @@ codegen, MCP-сервер, FTS5-индекс (только stretch).
 - Любая запись: dry-run по умолчанию, подтверждение пользователя, change set,
   `undo_last` только для наших изменений, никаких delete-all; workshared → отказ.
 - После каждой фазы — валидация субагентом `general` (PASS обязателен), коммит,
-  обновление `docs/agent/HANDOFF.md`.
+  обновление `docs/agent/archive/HANDOFF.md`.
 - `build-and-deploy.bat` НЕ запускать; деплой утром у владельца.
 - Не трогать `docs/` вне `docs/agent/`, ADR и changelog; не коммитить
   `opencode.json` и `server/`.
@@ -139,7 +140,7 @@ codegen, MCP-сервер, FTS5-индекс (только stretch).
 
 ## Фаза 0 — Baseline (0:00–0:40)
 
-1. Прочитать: `docs/agent/HANDOFF.md`, этот файл, `docs/invariants.md`,
+1. Прочитать: `docs/agent/archive/HANDOFF.md`, этот файл, `docs/invariants.md`,
    `docs/architecture/dependency-rule.md`, `docs/known-workarounds.md`,
    skill `smartcon-testing` → `references/integration-testing.md`.
 2. Прогнать:
@@ -196,7 +197,7 @@ codegen, MCP-сервер, FTS5-индекс (только stretch).
   mismatch %, routing accuracy (JEV/shortlist/все схемы), fallback rate,
   confirmation rate, false-approve, средние/95p latency и токены (из
   `token_usage`), список провалов с задачей и фактическим вызовом.
-- Запись в `docs/agent/00-strategy/eval.md` (дата, модель, метрики, топ-провалы).
+- Запись в `docs/agent/archive/00-strategy/eval.md` (дата, модель, метрики, топ-провалы).
 - Порог-гейт для ночи: read ≥ 85 %, write dry-run ≥ 80 %, schema-valid = 100 %,
   unauthorized write = 0. Ниже — фаза D обязательна.
 
@@ -289,7 +290,7 @@ codegen, MCP-сервер, FTS5-индекс (только stretch).
   `Risk=Write`, `SupportsDryRun=false`, требует подтверждения; пишет audit.
 - Integration: конфликтный undo → discard → неименованный `undo_last` уходит
   к предыдущему набору.
-- Обновить `docs/agent/HANDOFF.md`: ограничение permanent-failed снимается.
+- Обновить `docs/agent/archive/HANDOFF.md`: ограничение permanent-failed снимается.
 
 ### C3. Read-only режим сессии (9:10–9:40)
 

@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
+
 # H1b–H1d: поиск и инструменты под реальные кейсы
 
 > **Статус:** ARCHIVED · 2026-11-19 · заменён [`../autonomy-roadmap.md`](../autonomy-roadmap.md)
@@ -111,9 +114,9 @@ override стен; crop/scope box; integration-тест на 5 видах.
 > **Реализовано 2026-11-19:** 9 тулов в паке `families` (каталог 42), точный
 > undo через обратные операции, бэкап в отдельном family-документе, read-back
 > после load-back. Матрица доказательств и негативные кейсы:
-> `docs/agent/00-strategy/h1d-evidence.md`; каталог ошибок:
-> `docs/agent/family-tools-error-catalog.md`; ручной runbook:
-> `docs/agent/family-editing-runbook.md`. Файловый поток (`.rfa` →
+> `docs/agent/archive/00-strategy/h1d-evidence.md`; каталог ошибок:
+> `docs/agent/archive/family-tools-error-catalog.md`; ручной runbook:
+> `docs/agent/archive/family-editing-runbook.md`. Файловый поток (`.rfa` →
 > `OpenDocumentFile`) остаётся за рамками 9 тулов — backup рядом с исходным
 > `.rfa` делается, если путь известен.
 

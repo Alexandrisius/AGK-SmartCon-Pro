@@ -1,4 +1,5 @@
-> **ARCHIVED (2026-11-18).** Исторический MVP-план. Актуальная стратегия — [`../harness-ideal-plan.md`](../harness-ideal-plan.md), первый эпик — [`../initial-improvement-runbook.md`](../initial-improvement-runbook.md).
+> **ARCHIVED (2026-11-19).** Исторический документ. Не руководство к действию.
+> Актуально: [`ROADMAP.md`](../../../ROADMAP.md) + GitHub Issues (метка `agent`). Внутренние ссылки исторические.
 
 # Agent MVP — детальный план
 
@@ -937,7 +938,7 @@ Handoff пишется **до** компакции, без домыслов; х�
 
 - 30–50 реальных запросов (русский).
 - Метрики: task success, tool selection accuracy, dry-run accuracy, false positives.
-- Прогон после каждой фазы; результаты — в `docs/agent/00-strategy/eval.md` (создать позже).
+- Прогон после каждой фазы; результаты — в `docs/agent/archive/00-strategy/eval.md` (создать позже).
 
 ---
 
