@@ -1736,6 +1736,22 @@
         "get_schedule_definition"
       ],
       "kind": "read"
+    },
+    {
+      "id": "r217",
+      "query": "Можно ли отфильтровать трубы и фитинги по имени системы?",
+      "expectedTools": [
+        "list_filterable_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r218",
+      "query": "Какие параметры доступны для фильтра по категории стены?",
+      "expectedTools": [
+        "list_filterable_parameters"
+      ],
+      "kind": "read"
     }
   ]
 }

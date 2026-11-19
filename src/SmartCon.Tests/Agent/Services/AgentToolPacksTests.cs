@@ -51,7 +51,8 @@ public sealed class AgentToolPacksTests
             ["schedules"] = new[] { "list_schedules", "get_schedule_data", "get_schedule_definition" },
             ["filters"] = new[]
             {
-                "list_filters", "get_filter_details", "create_view_filter", "set_filter_rules",
+                "list_filters", "get_filter_details", "list_filterable_parameters",
+                "create_view_filter", "set_filter_rules",
                 "rename_filter", "delete_filter", "set_filter_overrides"
             },
             ["families"] = new[]
@@ -87,7 +88,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(55, placements.Length);
+        Assert.Equal(56, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
@@ -104,8 +105,14 @@ public sealed class AgentToolPacksTests
             Assert.Equal(
                 expectedTools.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
                 pack!.Tools.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+            // ToolsInPack also enables the pack bootstrap tools: they belong to
+            // another pack but must be callable before the first step (#400).
             Assert.Equal(
-                expectedTools.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+                expectedTools
+                    .Concat(pack.Bootstrap)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray(),
                 AgentToolPacks.ToolsInPack(packName)
                     .OrderBy(name => name, StringComparer.Ordinal)
                     .ToArray());

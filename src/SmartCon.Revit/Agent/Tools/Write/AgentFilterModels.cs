@@ -69,6 +69,9 @@ internal sealed class ViewFilterEntry
 
     public string? Name { get; set; }
 
+    /// <summary>«Фильтр включён» (View.GetIsFilterEnabled), not «Видимость».</summary>
+    public bool Enabled { get; set; } = true;
+
     public bool Visible { get; set; }
 
     public ViewOverrideState Overrides { get; set; } = new();

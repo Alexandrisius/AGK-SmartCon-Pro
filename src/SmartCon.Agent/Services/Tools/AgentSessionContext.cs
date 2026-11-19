@@ -64,6 +64,13 @@ public sealed class AgentSessionContext
     public HashSet<string> PendingToolNames { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Packs whose skill markdown was already returned by load_tool_pack in this
+    /// conversation (#400). The skill is sent once: repeating it would burn the
+    /// context and repeat identical lines word for word.
+    /// </summary>
+    public HashSet<string> SentPackSkills { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Marks a tool as loaded and moves it to the most-recent position, so an
     /// explicit load or an actual call survives the request cap even when the
     /// conversation has already loaded more tools than one request can carry.
@@ -105,6 +112,7 @@ public sealed class AgentSessionContext
     {
         LoadedToolNames.Clear();
         PendingToolNames.Clear();
+        SentPackSkills.Clear();
         FrozenToolNames.Clear();
         ToolSetFrozen = false;
         LastDocumentVersion = null;

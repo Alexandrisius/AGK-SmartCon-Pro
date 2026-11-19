@@ -32,7 +32,11 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
             "the parameters used and the views the filter is applied to (paged with " +
             "appliedViewsLimit/appliedViewsOffset, appliedViewsTotal shows the full count). " +
             "includeOverrides=true adds per-view visibility and graphic overrides (what the " +
-            "filter actually hides or colours). includeAppliedViews=false skips the view scan " +
+            "filter actually hides or colours). Each applied view reports both Revit UI " +
+            "checkboxes: filterEnabled (View.GetIsFilterEnabled) and visible " +
+            "(View.GetFilterVisibility), plus the mode they mean: hide = enabled and not " +
+            "visible, show = enabled and visible, none = filter disabled. " +
+            "includeAppliedViews=false skips the view scan " +
             "(appliedViewCount is then \"notComputed\"). Use list_filters to find filterId or " +
             "filterName first.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""includeOverrides"":{""type"":""boolean"",""default"":false},""appliedViewsLimit"":{""type"":""integer"",""default"":100,""maximum"":500},""appliedViewsOffset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
@@ -115,12 +119,19 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
                  index++)
             {
                 var view = views[index];
+                var enabled = AgentFilterViewState.ReadEnabled(view, filter.Id);
+                var visible = AgentFilterViewState.ReadVisible(view, filter.Id);
                 var row = new Dictionary<string, object?>
                 {
                     ["viewId"] = view.Id.GetValue(),
                     ["viewName"] = view.Name,
                     ["viewType"] = view.ViewType.ToString(),
-                    ["visible"] = ReadVisibility(view, filter.Id)
+                    // Two independent Revit UI checkboxes (#400): without
+                    // filterEnabled a filter applied with visibility=none looks
+                    // exactly like an enabled one.
+                    ["filterEnabled"] = enabled,
+                    ["visible"] = visible,
+                    ["mode"] = AgentFilterViewState.ModeName(enabled, visible)
                 };
 
                 if (includeOverrides)
@@ -164,18 +175,6 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
             AgentJson.Serialize(payload),
             "Read view filter '" + filter.Name + "': " + ruleCount + " rule(s), " +
             categoryIds.Count + " category(ies).");
-    }
-
-    private static bool ReadVisibility(View view, ElementId filterId)
-    {
-        try
-        {
-            return view.GetFilterVisibility(filterId);
-        }
-        catch (Exception)
-        {
-            return true;
-        }
     }
 
     private static ViewOverrideState? ReadOverrides(

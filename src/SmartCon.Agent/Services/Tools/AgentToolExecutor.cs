@@ -207,6 +207,17 @@ public sealed partial class AgentToolExecutor : IToolExecutor
         if (string.Equals(definition.Name, "discard_change_set", StringComparison.Ordinal))
             risks.Add("closing the change set removes the undo path");
 
+        // #400: the rule tree is not restorable through the change set, so the
+        // overlay must carry the same line the dry-run warnings have.
+        var rulesNotUndoable =
+            string.Equals(definition.Name, "set_filter_rules", StringComparison.Ordinal);
+        if (rulesNotUndoable)
+        {
+            risks.Add(
+                "undo_last не откатит изменение правил фильтра: откат — повторный вызов " +
+                "set_filter_rules с previousRules/previousCategories из dry-run");
+        }
+
         var request = new AgentConfirmationRequest
         {
             ToolName = definition.Name,
@@ -215,7 +226,7 @@ public sealed partial class AgentToolExecutor : IToolExecutor
             Digest = digest,
             ArgumentsJson = rawArgs,
             AffectedCount = CountAffected(definition, args),
-            Reversible = true,
+            Reversible = !rulesNotUndoable,
             Risks = risks
         };
 
