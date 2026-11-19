@@ -9,6 +9,8 @@
 | Документ | Роль | Когда читать |
 |---|---|---|
 | [`autonomy-roadmap.md`](autonomy-roadmap.md) | **Исполнение сейчас:** job engine, надёжность, поиск, breadth, память — порядок и гейты | Перед планированием любого эпика |
+| [`task-family-batch-v1.md`](task-family-batch-v1.md) | Текущая задача: `run_family_batch` — пачки 20–50 семейств, preview/apply/Save/rollback | Перед стартом Family Batch v1 |
+| [`night-run-3.md`](night-run-3.md) | Ночной прогон 12 ч: A0 → job core → A1 → A2 → B/C1, 6 срезов | Перед ночным запуском |
 | [`harness-ideal-plan.md`](harness-ideal-plan.md) | Долгосрочная стратегия: as-is, gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед любым крупным решением по харнесу |
 | [`harness-development-approach.md`](harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, статусы документов, роли, эпики | Перед стартом любой задачи по харнесу |
 | [`h1d-evidence.md`](h1d-evidence.md) | Доказательства и метрики H1d (family editing) | При аудите family-тулов |
