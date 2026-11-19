@@ -132,7 +132,7 @@ public sealed class AgentLlmSettings
         {
             // Never carry the previous provider's key over to another provider: load the
             // key stored for the target provider, or clear it so the UI asks for one.
-            ApiKey = LoadStoredKey(targetProvider);
+            ApiKey = GetStoredKeyFor(targetProvider);
         }
     }
 
@@ -149,7 +149,12 @@ public sealed class AgentLlmSettings
     private static IReadOnlyDictionary<string, string> LoadEnvValues() =>
         EnvValuesProvider is not null ? EnvValuesProvider() : AgentEnvFile.Load();
 
-    private static string LoadStoredKey(string provider)
+    /// <summary>
+    /// Key stored for the given provider (environment first, then secrets.env).
+    /// The settings UI uses it to show that a key already exists when the user
+    /// switches the provider dropdown.
+    /// </summary>
+    internal static string GetStoredKeyFor(string provider)
     {
         if (StoredKeyProvider is not null)
             return StoredKeyProvider(provider) ?? string.Empty;

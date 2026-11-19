@@ -12,10 +12,14 @@
 | [`task-family-batch-v1.md`](task-family-batch-v1.md) | Текущая задача: `run_family_batch` — пачки 20–50 семейств, preview/apply/Save/rollback | Перед стартом Family Batch v1 |
 | [`night-run-3.md`](night-run-3.md) | Ночной прогон 12 ч: A0 → job core → A1 → A2 → B/C1, 6 срезов | Перед ночным запуском |
 | [`harness-ideal-plan.md`](harness-ideal-plan.md) | Долгосрочная стратегия: as-is, gap-анализ, фазы P0–P5, 29 паттернов, схема БД, метрики | Перед любым крупным решением по харнесу |
+| [`prompt-cache-plan.md`](prompt-cache-plan.md) | План prompt cache: стабильный префикс, заморозка tools, provider policy, cache-aware компакция, метрики; карта кода и фазы | Перед работами по стоимости/контексту и при аудите кеша |
 | [`harness-development-approach.md`](harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, статусы документов, роли, эпики | Перед стартом любой задачи по харнесу |
 | [`h1d-evidence.md`](h1d-evidence.md) | Доказательства и метрики H1d (family editing) | При аудите family-тулов |
 | [`eval.md`](eval.md) | Журнал eval-прогонов и baseline-метрик | При измерении «до/после» |
 | [`decisions-benchmark.md`](decisions-benchmark.md) | Research note: бенчмарк decision-моделей | При выборе роутера/модели |
+| [`stress-test-followups.md`](stress-test-followups.md) | Разбор стресс-теста 42 тулов: фиксы, очередь улучшений, handoff крупных фич | Перед работой над найденными дефектами |
+| [`real-cases-benchmark.md`](real-cases-benchmark.md) | Реальные кейсы проектировщика: 5 задач без имён инструментов, протокол прогона, журнал эволюции харнеса | Перед приёмочным прогоном и при добавлении новых возможностей |
+| [`element-reading-followups.md`](element-reading-followups.md) | **Backlog P1/P2** после P0 «definition-first чтение элемента»: list_types, list_parameters, essence в карточках, протокол, eval | Перед следующей итерацией по чтению/поиску элементов |
 
 ## Архив (не руководство к действию)
 

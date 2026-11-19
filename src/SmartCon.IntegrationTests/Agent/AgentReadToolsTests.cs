@@ -163,6 +163,7 @@ public sealed class AgentReadToolsTests : RevitApiTest
         await Assert.That(card.Category).IsEqualTo("OST_Walls");
         await Assert.That(card.LevelName).IsEqualTo(SeededLevelName);
         await Assert.That(card.UniqueId).IsNotEmpty();
+        await Assert.That(card.TypeId).IsNotNull();
     }
 
     [Test]

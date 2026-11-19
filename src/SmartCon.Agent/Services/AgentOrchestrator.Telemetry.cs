@@ -20,6 +20,8 @@ public sealed partial class AgentOrchestrator
         long turnStartedAt,
         string? requestId,
         int estimatedPromptTokens,
+        int contextTokens,
+        int contextLimit,
         CancellationToken ct)
     {
         if (_usageStore is null)
@@ -40,7 +42,9 @@ public sealed partial class AgentOrchestrator
                     Status = status,
                     LatencyMs = latencyMs,
                     RequestId = requestId,
-                    EstimatedPromptTokens = estimatedPromptTokens
+                    EstimatedPromptTokens = estimatedPromptTokens,
+                    ContextTokens = contextTokens,
+                    ContextLimit = contextLimit
                 }, ct)
                 .ConfigureAwait(false);
         }

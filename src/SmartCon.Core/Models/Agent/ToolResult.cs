@@ -18,6 +18,13 @@ public sealed class ToolResult
     public int AffectedCount { get; init; }
 
     /// <summary>
+    /// Opaque marker of the document state the result was produced on
+    /// (DocumentVersion GUID + save number). The model compares it between calls
+    /// to distinguish "the object does not exist" from "the model changed".
+    /// </summary>
+    public string? DocumentVersion { get; init; }
+
+    /// <summary>
     /// Argument repairs applied by the executor before the tool ran (H1-09).
     /// The JSON payload exposes them as <c>_repairs</c> only when non-empty
     /// (through <see cref="RepairsPayload"/>).
@@ -75,6 +82,42 @@ public sealed class ToolResult
         return Copy(repairs);
     }
 
+    public ToolResult WithDocumentVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version) || DocumentVersion is not null)
+            return this;
+
+        return new ToolResult
+        {
+            Success = Success,
+            Data = Data,
+            Message = Message,
+            Warnings = Warnings,
+            ErrorCode = ErrorCode,
+            AffectedCount = AffectedCount,
+            DocumentVersion = version,
+            Repairs = Repairs
+        };
+    }
+
+    public ToolResult WithMessageSuffix(string suffix)
+    {
+        if (string.IsNullOrEmpty(suffix))
+            return this;
+
+        return new ToolResult
+        {
+            Success = Success,
+            Data = Data,
+            Message = (Message ?? string.Empty) + suffix,
+            Warnings = Warnings,
+            ErrorCode = ErrorCode,
+            AffectedCount = AffectedCount,
+            DocumentVersion = DocumentVersion,
+            Repairs = Repairs
+        };
+    }
+
     public ToolResult WithWarnings(IReadOnlyList<string>? warnings)
     {
         if (warnings is null || warnings.Count == 0)
@@ -95,6 +138,7 @@ public sealed class ToolResult
         Warnings = warnings ?? Warnings,
         ErrorCode = ErrorCode,
         AffectedCount = AffectedCount,
+        DocumentVersion = DocumentVersion,
         Repairs = repairs ?? Repairs
     };
 }

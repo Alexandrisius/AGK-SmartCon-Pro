@@ -109,6 +109,35 @@ public sealed class SqliteAgentConversationStoreTests
     }
 
     [Fact]
+    public async Task DeleteConversation_RemovesSessionScopedUsageRows()
+    {
+        using var fixture = new DatabaseFixture();
+        fixture.Database.Initialize();
+        var store = new SqliteAgentConversationStore(fixture.Database);
+        var usageStore = new SqliteAgentUsageStore(fixture.Database);
+        var id = await store.CreateConversationAsync(Header("doc", "Чат"), CancellationToken.None);
+
+        await usageStore.RecordAsync(new AgentUsageRecord
+        {
+            SessionId = id.ToString("D"),
+            Provider = "openrouter",
+            Model = "test",
+            Status = "ok",
+            ContextTokens = 1200,
+            ContextLimit = 350000
+        }, CancellationToken.None);
+
+        var snapshot = await usageStore.GetLastContextAsync(id, CancellationToken.None);
+        Assert.NotNull(snapshot);
+        Assert.Equal(1200, snapshot!.Tokens);
+
+        await store.DeleteConversationAsync(id, CancellationToken.None);
+
+        Assert.Null(await usageStore.GetLastContextAsync(id, CancellationToken.None));
+        Assert.Equal(0m, await usageStore.GetSessionCostAsync(id, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ChangeSetStore_RoundTripsHeaderAndItems()
     {
         using var fixture = new DatabaseFixture();

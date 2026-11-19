@@ -56,7 +56,7 @@ public sealed class AgentDatabaseMigrationTests
     }
 
     [Fact]
-    public void Initialize_StaleV3WithoutNewColumn_SelfHealsWithoutBackup()
+    public void Initialize_StaleV3WithoutNewColumn_MigratesAndSelfHeals()
     {
         using var fixture = new DatabaseFixture();
         CreateStaleV3Database(fixture.DatabasePath);
@@ -64,15 +64,17 @@ public sealed class AgentDatabaseMigrationTests
 
         fixture.Database.Initialize();
 
+        // v4 is a real upgrade, so the backup policy applies; the missing v3
+        // column is repaired by self-heal on top of the new version.
         Assert.True(ColumnExists(fixture.DatabasePath, "token_usage", "estimated_prompt_tokens"));
-        Assert.Equal(3, ReadUserVersion(fixture.DatabasePath));
-        Assert.Empty(Directory.GetFiles(fixture.DirectoryPath, "*.bak-*"));
+        Assert.Equal(AgentSchema.CurrentVersion, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(1, CountBackups(fixture.DirectoryPath, 3));
 
         fixture.Database.Initialize();
 
         Assert.True(ColumnExists(fixture.DatabasePath, "token_usage", "estimated_prompt_tokens"));
-        Assert.Equal(3, ReadUserVersion(fixture.DatabasePath));
-        Assert.Empty(Directory.GetFiles(fixture.DirectoryPath, "*.bak-*"));
+        Assert.Equal(AgentSchema.CurrentVersion, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(1, CountBackups(fixture.DirectoryPath, 3));
     }
 
     [Fact]

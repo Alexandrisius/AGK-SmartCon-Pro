@@ -35,11 +35,15 @@ internal static class AgentElementCardFactory
 
         var level = TryGetLevel(doc, element);
         var (family, typeName) = ReadFamilyAndType(element);
+        var (typeId, familyId, familyUniqueId) = ReadTypeIdentity(element);
 
         return new ElementCard
         {
             UniqueId = element.UniqueId,
             ElementId = element.Id.GetValue(),
+            TypeId = typeId,
+            FamilyId = familyId,
+            FamilyUniqueId = familyUniqueId,
             Category = GetCategoryName(element.Category),
             Family = family,
             Type = typeName,
@@ -106,6 +110,25 @@ internal static class AgentElementCardFactory
             return null;
 
         return doc.GetElement(levelId) as Level;
+    }
+
+    private static (long? TypeId, long? FamilyId, string? FamilyUniqueId) ReadTypeIdentity(
+        Element element)
+    {
+        var symbol = element as FamilySymbol ?? (element as FamilyInstance)?.Symbol;
+        if (symbol is not null)
+        {
+            var family = symbol.Family;
+            return (
+                symbol.Id.GetValue(),
+                family?.Id.GetValue(),
+                family?.UniqueId);
+        }
+
+        var typeId = element.GetTypeId();
+        return typeId == ElementId.InvalidElementId
+            ? (null, null, null)
+            : (typeId.GetValue(), null, null);
     }
 
     private static (string? Family, string? Type) ReadFamilyAndType(Element element)

@@ -172,30 +172,6 @@ internal sealed class RecordingToolRouter : IToolRouter
     }
 }
 
-internal sealed class FakeRiskGate : IActionRiskGate{
-    public AgentRiskDecision Decision { get; set; } = AgentRiskDecision.Confirm;
-
-    public bool Throw { get; set; }
-
-    public List<AgentActionRiskRequest> Requests { get; } = new();
-
-    public Task<AgentActionRiskAssessment> AssessAsync(
-        AgentActionRiskRequest request,
-        CancellationToken ct)
-    {
-        Requests.Add(request);
-        if (Throw)
-            throw new InvalidOperationException("decision model unavailable");
-
-        return Task.FromResult(new AgentActionRiskAssessment
-        {
-            Decision = Decision,
-            Confidence = Decision == AgentRiskDecision.Auto ? 0.93 : 0.4,
-            Source = "decision-model"
-        });
-    }
-}
-
 internal sealed class StubDecisionClient : IAgentDecisionClient
 {
     public bool Enabled { get; set; } = true;

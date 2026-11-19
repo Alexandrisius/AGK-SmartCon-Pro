@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Core.Compatibility;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 
@@ -347,7 +348,278 @@ public sealed class AgentFilterToolsTests : RevitApiTest
         await Assert.That(applied).IsFalse();
     }
 
-    private CreateViewFilterTool CreateTool() =>
+    [Test]
+    public async Task ListFilters_WithScheduleInTheModel_DoesNotFail()
+    {
+        // External run 6, P0: View.GetFilters() throws
+        // "The view type does not support Visibility/Graphics Overriddes" for a
+        // schedule, and one such view failed the whole usage map.
+        _transactions!.RunInTransaction(Doc, "Seed schedule", doc =>
+            ModelSeed.CreateScheduleChecked(doc));
+
+        var tool = new ListFiltersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(Doc, Parse("{}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("appliedViewCountComputed")
+            .GetBoolean()).IsTrue();
+    }
+
+    [Test]
+    public async Task ListFilters_ViewId_NarrowsTheListToOneFilter()
+    {
+        var appliedId = CreateFilterElement("SC_Filter_Applied");
+        CreateFilterElement("SC_Filter_NotApplied");
+        _transactions!.RunInTransaction(Doc, "Apply filter to view", doc =>
+        {
+            var view = (View)doc.GetElement(ElementIdCompat.Create(_viewId));
+            view.AddFilter(ElementIdCompat.Create(appliedId));
+        });
+
+        var tool = new ListFiltersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{\"viewId\":" + _viewId + "}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("narrowedByView").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("total").GetInt32()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("filters")[0].GetProperty("filterId").GetInt64())
+            .IsEqualTo(appliedId);
+        await Assert.That(data.GetProperty("filters")[0].GetProperty("appliedViewCount")
+            .GetInt32()).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ListFilters_WithoutAppliedViews_ReportsNotComputed()
+    {
+        CreateFilterElement("SC_Filter_NotComputed");
+
+        var tool = new ListFiltersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{\"includeAppliedViews\":false}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("appliedViewCountComputed").GetBoolean()).IsFalse();
+        await Assert.That(data.GetProperty("filters")[0].GetProperty("appliedViewCount")
+            .GetString()).IsEqualTo("notComputed");
+    }
+
+    [Test]
+    public async Task GetFilterDetails_WithScheduleInTheModel_ReturnsTheFilter()
+    {
+        var filterId = CreateFilterElement("SC_Filter_Details");
+        _transactions!.RunInTransaction(Doc, "Seed schedule", doc =>
+            ModelSeed.CreateScheduleChecked(doc));
+
+        var tool = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("name").GetString()).IsEqualTo("SC_Filter_Details");
+        await Assert.That(data.GetProperty("appliedViewCount").GetInt32()).IsEqualTo(0);
+        await Assert.That(data.GetProperty("appliedViewCountComputed").GetBoolean()).IsTrue();
+    }
+
+    [Test]
+    public async Task GetFilterDetails_AppliedViews_ArePaged()
+    {
+        var filterId = CreateFilterElement("SC_Filter_Paged");
+        _transactions!.RunInTransaction(Doc, "Seed second view and apply filter", doc =>
+        {
+            var second = ModelSeed.CreateViewPlanChecked(
+                doc,
+                ElementIdCompat.Create(_levelId),
+                "SC_FilterPlan2");
+            foreach (var viewId in new[] { _viewId, second.Id.GetValue() })
+            {
+                var view = (View)doc.GetElement(ElementIdCompat.Create(viewId));
+                view.AddFilter(ElementIdCompat.Create(filterId));
+            }
+        });
+
+        var tool = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var first = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"filterId\":" + filterId +
+                ",\"appliedViewsLimit\":1,\"appliedViewsOffset\":0}"),
+            CancellationToken.None);
+
+        await Assert.That(first.Success).IsTrue();
+        var data = first.Data!.Value;
+        await Assert.That(data.GetProperty("appliedViewsTotal").GetInt32()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("appliedViewsReturned").GetInt32()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("appliedViewsOffset").GetInt32()).IsEqualTo(0);
+        await Assert.That(data.GetProperty("appliedViewsNextOffset").GetInt32()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("appliedViewsTruncated").GetBoolean()).IsTrue();
+
+        var second = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"filterId\":" + filterId +
+                ",\"appliedViewsLimit\":1,\"appliedViewsOffset\":1}"),
+            CancellationToken.None);
+
+        await Assert.That(second.Success).IsTrue();
+        var secondData = second.Data!.Value;
+        await Assert.That(secondData.GetProperty("appliedViewsReturned").GetInt32())
+            .IsEqualTo(1);
+        await Assert.That(secondData.GetProperty("appliedViewsTruncated").GetBoolean())
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task GetFilterDetails_WithoutArguments_AsksForIdOrName()
+    {
+        var tool = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(Doc, Parse("{}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("filter_not_found");
+        await Assert.That(result.Message!.Contains("Pass filterId or filterName")).IsTrue();
+    }
+
+    [Test]
+    public async Task SetFilterRules_DryRun_ReturnsThePreviousRuleTree()
+    {
+        var filterId = CreateFilterWithRule("SC_Filter_WithRule");
+
+        var tool = new SetFilterRulesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"filterId\":" + filterId + ",\"conditions\":[],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        var previous = data.GetProperty("previousRules");
+        await Assert.That(previous.GetProperty("type").GetString()).IsEqualTo("parameter");
+        var rules = previous.GetProperty("rules");
+        await Assert.That(rules.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(rules[0].GetProperty("parameterId").GetInt64()).IsLessThan(0);
+        await Assert.That(
+            !string.IsNullOrEmpty(rules[0].GetProperty("parameterName").GetString())).IsTrue();
+        await Assert.That(rules[0].GetProperty("op").GetString()!.Contains("Equals")).IsTrue();
+        await Assert.That(rules[0].GetProperty("value").GetString()).IsEqualTo("x");
+        await Assert.That(data.GetProperty("previousCategories").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("previousCategoryIds").GetArrayLength()).IsEqualTo(1);
+    }
+
+    [Test]
+public async Task ListFilters_ReportsRulesDigestAndDuplicateGroups()
+{
+    CreateFilterWithRule("SC_Dup_A");
+    CreateFilterWithRule("SC_Dup_B");
+
+    var tool = new ListFiltersTool(new StubRevitContext(Doc));
+    var result = tool.ExecuteForTests(Doc, Parse("{}"), CancellationToken.None);
+
+    await Assert.That(result.Success).IsTrue();
+    var data = result.Data!.Value;
+    string? digestA = null;
+    string? digestB = null;
+    foreach (var filter in data.GetProperty("filters").EnumerateArray())
+    {
+        var name = filter.GetProperty("name").GetString();
+        if (name == "SC_Dup_A")
+            digestA = filter.GetProperty("rulesDigest").GetString();
+        else if (name == "SC_Dup_B")
+            digestB = filter.GetProperty("rulesDigest").GetString();
+    }
+
+    await Assert.That(string.IsNullOrEmpty(digestA)).IsFalse();
+    await Assert.That(digestA).IsEqualTo(digestB);
+
+    var groups = data.GetProperty("duplicateGroups");
+    await Assert.That(groups.GetArrayLength()).IsGreaterThanOrEqualTo(1);
+    await Assert.That(data.GetProperty("duplicateGroupCount").GetInt32())
+        .IsGreaterThanOrEqualTo(1);
+}
+
+[Test]
+public async Task GetFilterDetails_IncludeOverrides_ReportsPerViewValues()
+{
+    var filterId = CreateFilterElement("SC_Filter_OverridesRead");
+    _transactions!.RunInTransaction(Doc, "Apply filter with overrides", doc =>
+    {
+        var view = (View)doc.GetElement(ElementIdCompat.Create(_viewId));
+        var elementId = ElementIdCompat.Create(filterId);
+        view.AddFilter(elementId);
+        var settings = new OverrideGraphicSettings();
+        settings.SetProjectionLineColor(new Color(255, 0, 0));
+        settings.SetSurfaceTransparency(25);
+        view.SetFilterOverrides(elementId, settings);
+    });
+
+    var tool = new GetFilterDetailsTool(new StubRevitContext(Doc));
+    var result = tool.ExecuteForTests(
+        Doc,
+        Parse("{\"filterId\":" + filterId + ",\"includeOverrides\":true}"),
+        CancellationToken.None);
+
+    await Assert.That(result.Success).IsTrue();
+    var applied = result.Data!.Value.GetProperty("appliedViews");
+    await Assert.That(applied.GetArrayLength()).IsEqualTo(1);
+    await Assert.That(applied[0].GetProperty("visible").GetBoolean()).IsTrue();
+    var overrides = applied[0].GetProperty("overrides");
+    await Assert.That(overrides.GetProperty("projectionLineColor").GetString())
+        .IsEqualTo("#FF0000");
+    await Assert.That(overrides.GetProperty("transparency").GetInt32()).IsEqualTo(25);
+}
+
+[Test]
+public async Task RenameFilter_Apply_AndUndoRestoresTheName()
+{
+    var filterId = CreateFilterElement("SC_Filter_Rename");
+
+    var tool = new RenameFilterTool(
+        new StubRevitContext(Doc), _transactions!, _changeSets!);
+    var result = tool.ExecuteForTests(
+        Parse("{\"filterId\":" + filterId + ",\"newName\":\"SC_Filter_Renamed\"," +
+              "\"dryRun\":false}"),
+        approved: true,
+        CancellationToken.None);
+
+    await Assert.That(result.Success).IsTrue();
+    var renamed = (ParameterFilterElement)Doc.GetElement(ElementIdCompat.Create(filterId));
+    await Assert.That(renamed.Name).IsEqualTo("SC_Filter_Renamed");
+    await Assert.That(_changeSets!.All.Count).IsEqualTo(1);
+
+    var undo = new UndoLastTool(
+        new StubRevitContext(Doc), _transactions!, _changeSets!);
+    var undoResult = undo.ExecuteForTests(
+        Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+    await Assert.That(undoResult.Success).IsTrue();
+    await Assert.That(renamed.Name).IsEqualTo("SC_Filter_Rename");
+}
+
+[Test]
+public async Task RenameFilter_DuplicateName_IsRefused()
+{
+    CreateFilterElement("SC_Filter_Taken");
+    var filterId = CreateFilterElement("SC_Filter_Free");
+
+    var tool = new RenameFilterTool(
+        new StubRevitContext(Doc), _transactions!, _changeSets!);
+    var result = tool.ExecuteForTests(
+        Parse("{\"filterId\":" + filterId + ",\"newName\":\"SC_Filter_Taken\"," +
+              "\"dryRun\":false}"),
+        approved: true,
+        CancellationToken.None);
+
+    await Assert.That(result.Success).IsFalse();
+    await Assert.That(result.ErrorCode).IsEqualTo("duplicate_name");
+    var filter = (ParameterFilterElement)Doc.GetElement(ElementIdCompat.Create(filterId));
+    await Assert.That(filter.Name).IsEqualTo("SC_Filter_Free");
+}
+
+private CreateViewFilterTool CreateTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private SetFilterOverridesTool CreateOverridesTool() =>
@@ -384,5 +656,24 @@ public sealed class AgentFilterToolsTests : RevitApiTest
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private long CreateFilterWithRule(string name)
+    {
+        long id = 0;
+        _transactions!.RunInTransaction(Doc, "Seed filter with rule", doc =>
+        {
+            var rule = ParameterFilterRuleFactory.CreateEqualsRule(
+                new ElementId(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "x");
+            var elementFilter = new ElementParameterFilter(rule);
+            var filter = ParameterFilterElement.Create(
+                doc,
+                name,
+                new List<ElementId> { new(BuiltInCategory.OST_Walls) },
+                elementFilter);
+            id = filter.Id.GetValue();
+        });
+        return id;
     }
 }

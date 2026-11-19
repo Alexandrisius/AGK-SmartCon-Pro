@@ -27,10 +27,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     {
         Name = "get_family_parameters",
         Description =
-            "Lists family parameters with their scope (instance/type), shared GUID, storage " +
-            "type, formula, lookup tables, canSetValue/canSetFormula and the value of each " +
-            "family type. Opens the family document in the background; the Family Editor is " +
-            "never shown.",
+            "Lists family parameters with their scope (instance/type), shared GUID, isBuiltIn " +
+            "(built-in parameters cannot be removed), storage type, formula, lookup tables, " +
+            "canSetValue/canSetFormula and the value of each family type. Opens the family " +
+            "document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"

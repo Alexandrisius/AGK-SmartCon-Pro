@@ -61,6 +61,7 @@ public sealed class SetParametersTool : AgentWriteToolBase
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
         outcome.Description = "Set " + items.Count + " parameter value(s)";
+        var typeIds = new HashSet<long>();
 
         foreach (var item in items)
         {
@@ -117,6 +118,9 @@ public sealed class SetParametersTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
 
+            if (resolution.IsTypeScope && parameter.Element is not null)
+                typeIds.Add(parameter.Element.Id.GetValue());
+
             // A type-scope write belongs to the type element; storing the instance id would
             // break undo when the instance is deleted or retyped.
             var owner = resolution.IsTypeScope && parameter.Element is not null
@@ -133,6 +137,45 @@ public sealed class SetParametersTool : AgentWriteToolBase
                 Status = ChangeStatus.Applied
             });
         }
+
+        if (typeIds.Count > 0)
+            DescribeBlastRadius(doc, typeIds, outcome);
+    }
+
+    private static void DescribeBlastRadius(
+        Document doc,
+        HashSet<long> typeIds,
+        WriteOutcome outcome)
+    {
+        var affected = 0;
+        var samples = new List<long>();
+        foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+        {
+            var typeId = element.GetTypeId();
+            if (typeId == ElementId.InvalidElementId)
+                continue;
+
+            if (!typeIds.Contains(typeId.GetValue()))
+                continue;
+
+            affected++;
+            if (samples.Count < 10)
+                samples.Add(element.Id.GetValue());
+        }
+
+        outcome.Data["blastRadius"] = new
+        {
+            affectedTypes = typeIds.Count,
+            affectedInstances = affected,
+            sampleInstanceIds = samples,
+            countCapped = false,
+            undoReturnsAllInstances = true,
+            familyReload = false,
+            note = "Direct instances only; parts, assemblies and linked models are not counted."
+        };
+        outcome.Warnings.Add(
+            "Type-scope write: " + affected + " instance(s) of " + typeIds.Count +
+            " type(s) change; undo_last reverts all of them.");
     }
 
     private sealed class SetParametersRequest

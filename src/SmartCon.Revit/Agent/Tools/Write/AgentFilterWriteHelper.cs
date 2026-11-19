@@ -3,6 +3,7 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Agent.Query;
+using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -97,17 +98,7 @@ internal static class AgentFilterWriteHelper
         return name + " (" + Guid.NewGuid().ToString("N").Substring(0, 6) + ")";
     }
 
-    internal static bool SupportsFilters(View view)
-    {
-        if (view is ViewSheet or ViewSchedule)
-            return false;
-
-        return view.ViewType != ViewType.DrawingSheet
-               && view.ViewType != ViewType.Internal
-               && view.ViewType != ViewType.ProjectBrowser
-               && view.ViewType != ViewType.SystemBrowser
-               && view.ViewType != ViewType.Undefined;
-    }
+    internal static bool SupportsFilters(View view) => AgentFilterUsage.SupportsFilters(view);
 
     /// <summary>
     /// True when the view template controls V/G overrides, so a filter added to
@@ -132,8 +123,9 @@ internal static class AgentFilterWriteHelper
     internal static ViewFilterState ReadState(View view)
     {
         var state = new ViewFilterState();
-        foreach (var filterId in view.GetFilters())
+        foreach (var rawFilterId in AgentFilterUsage.FiltersOf(view))
         {
+            var filterId = ElementIdCompat.Create(rawFilterId);
             var filter = view.Document.GetElement(filterId);
             var entry = new ViewFilterEntry
             {

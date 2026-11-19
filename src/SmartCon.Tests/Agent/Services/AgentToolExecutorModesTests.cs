@@ -19,8 +19,7 @@ public sealed class AgentToolExecutorModesTests
         IAgentTool tool,
         RecordingConfirmation confirmation,
         RecordingAuditLog audit,
-        AgentApprovalMode mode,
-        IActionRiskGate? riskGate = null)
+        AgentApprovalMode mode)
     {
         var registry = new AgentToolRegistry(new[] { tool });
         return new AgentToolExecutor(
@@ -28,8 +27,7 @@ public sealed class AgentToolExecutorModesTests
             new ImmediateAwaitableEvent(),
             new AgentSessionContext { DocumentId = "doc", ApprovalMode = mode },
             confirmation,
-            audit,
-            riskGate);
+            audit);
     }
 
     [Fact]
@@ -80,7 +78,7 @@ public sealed class AgentToolExecutorModesTests
     }
 
     [Fact]
-    public async Task AutoApprove_DestructiveRisk_StillConfirms()
+    public async Task AutoApprove_DestructiveRisk_AppliesWithoutDialog()
     {
         var tool = new ScriptedTool("danger_tool", AgentToolRisk.Destructive);
         var confirmation = new RecordingConfirmation();
@@ -88,227 +86,54 @@ public sealed class AgentToolExecutorModesTests
         var executor = CreateExecutor(
             tool, confirmation, audit, AgentApprovalMode.AutoApproveSession);
 
-        await executor.ExecuteAsync(
+        var result = await executor.ExecuteAsync(
             "danger_tool", Args(@"{""items"":[{""viewId"":1}],""dryRun"":false}"),
             CancellationToken.None);
 
-        Assert.Single(confirmation.Requests);
-        Assert.DoesNotContain(audit.Entries, entry =>
+        Assert.True(result.Success);
+        Assert.Empty(confirmation.Requests);
+        Assert.Contains(audit.Entries, entry =>
             entry.Tool == "danger_tool#auto_approved");
     }
 
     [Fact]
-    public async Task AutoApprove_AboveAffectedThreshold_StillConfirms()
+    public async Task AutoApprove_AboveAffectedThreshold_AppliesWithoutDialog()
     {
         var tool = new ScriptedTool("write_tool");
         var confirmation = new RecordingConfirmation();
         var audit = new RecordingAuditLog();
         var executor = CreateExecutor(
             tool, confirmation, audit, AgentApprovalMode.AutoApproveSession);
-        var items = string.Join(",", Enumerable.Range(0, 201)
+        var items = string.Join(",", Enumerable.Range(0, 500)
             .Select(index => "{\"viewId\":" + index + "}"));
         var args = Args("{\"items\":[" + items + "],\"dryRun\":false}");
 
-        await executor.ExecuteAsync("write_tool", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_RiskGateAuto_SkipsDialog()
-    {
-        var tool = new ScriptedTool("write_tool");
-        var confirmation = new RecordingConfirmation();
-        var audit = new RecordingAuditLog();
-        var gate = new FakeRiskGate { Decision = AgentRiskDecision.Auto };
-        var executor = CreateExecutor(
-            tool, confirmation, audit, AgentApprovalMode.AutoApproveSession, gate);
-
-        var result = await executor.ExecuteAsync(
-            "write_tool", Args(@"{""items"":[{""viewId"":1}],""dryRun"":false}"),
-            CancellationToken.None);
+        var result = await executor.ExecuteAsync("write_tool", args, CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Empty(confirmation.Requests);
-        Assert.Single(gate.Requests);
         Assert.Contains(audit.Entries, entry =>
             entry.Tool == "write_tool#auto_approved"
-            && entry.Result == "auto_approved:risk_gate");
+            && entry.Result == "auto_approved:bypass");
     }
 
     [Fact]
-    public async Task AutoApprove_RiskGateThrows_FailsClosedToDialog()
-    {
-        var tool = new ScriptedTool("write_tool");
-        var confirmation = new RecordingConfirmation();
-        var gate = new FakeRiskGate { Throw = true };
-        var executor = CreateExecutor(
-            tool, confirmation, new RecordingAuditLog(),
-            AgentApprovalMode.AutoApproveSession, gate);
-
-        await executor.ExecuteAsync(
-            "write_tool", Args(@"{""items"":[{""viewId"":1}],""dryRun"":false}"),
-            CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-    }
-
-    [Fact]
-    public async Task AutoApprove_NestedPlanAboveThreshold_StillConfirms()
-    {
-        var nested = new ScriptedTool("write_tool");
-        var planTool = new ScriptedTool("execute_plan", schema: "{}");
-        var registry = new AgentToolRegistry(new IAgentTool[] { nested, planTool });
-        var confirmation = new RecordingConfirmation();
-        var executor = new AgentToolExecutor(
-            registry,
-            new ImmediateAwaitableEvent(),
-            new AgentSessionContext { DocumentId = "doc", ApprovalMode = AgentApprovalMode.AutoApproveSession },
-            confirmation,
-            new RecordingAuditLog());
-        var items = string.Join(",", Enumerable.Range(0, 150)
-            .Select(index => "{\"viewId\":" + index + "}"));
-        var args = Args(
-            "{\"goal\":\"big\",\"dryRun\":false,\"steps\":[" +
-            "{\"stepId\":\"s1\",\"toolName\":\"write_tool\",\"arguments\":{\"items\":[" + items + "]}}," +
-            "{\"stepId\":\"s2\",\"toolName\":\"write_tool\",\"arguments\":{\"items\":[" + items + "]}}]}");
-
-        await executor.ExecuteAsync("execute_plan", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_NestedDestructiveStep_StillConfirms()
-    {
-        var destructive = new ScriptedTool("danger_tool", AgentToolRisk.Destructive);
-        var planTool = new ScriptedTool("execute_plan", schema: "{}");
-        var registry = new AgentToolRegistry(new IAgentTool[] { destructive, planTool });
-        var confirmation = new RecordingConfirmation();
-        var executor = new AgentToolExecutor(
-            registry,
-            new ImmediateAwaitableEvent(),
-            new AgentSessionContext { DocumentId = "doc", ApprovalMode = AgentApprovalMode.AutoApproveSession },
-            confirmation,
-            new RecordingAuditLog());
-        var args = Args(
-            "{\"goal\":\"danger\",\"dryRun\":false,\"steps\":[" +
-            "{\"stepId\":\"s1\",\"toolName\":\"danger_tool\",\"arguments\":{\"items\":[{\"viewId\":1}]}}]}");
-
-        await executor.ExecuteAsync("execute_plan", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-    }
-
-    [Fact]
-    public async Task AutoApprove_ConfigureViewsManySections_StillConfirms()
-    {
-        var tool = new ScriptedTool("configure_views");
-        var confirmation = new RecordingConfirmation();
-        var executor = CreateExecutor(
-            tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
-        var items = string.Join(",", Enumerable.Range(0, 100).Select(index =>
-            "{\"viewId\":" + index +
-            ",\"newName\":\"V" + index + "\",\"crop\":{\"visible\":true},\"visibility\":{\"categories\":[]}}"));
-        var args = Args("{\"items\":[" + items + "],\"dryRun\":false}");
-
-        await executor.ExecuteAsync("configure_views", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_SetVisibilityManyCategories_StillConfirms()
-    {
-        var tool = new ScriptedTool("set_view_visibility");
-        var confirmation = new RecordingConfirmation();
-        var executor = CreateExecutor(
-            tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
-        var items = string.Join(",", Enumerable.Range(0, 100).Select(index =>
-            "{\"viewId\":" + index +
-            ",\"visibility\":{\"categories\":[1,2,3],\"worksets\":[]}}"));
-        var args = Args("{\"items\":[" + items + "],\"dryRun\":false}");
-
-        await executor.ExecuteAsync("set_view_visibility", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_CopySettingsAllSections_StillConfirms()
-    {
-        var tool = new ScriptedTool("copy_view_settings", schema: "{}");
-        var confirmation = new RecordingConfirmation();
-        var executor = CreateExecutor(
-            tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
-        var targets = string.Join(",", Enumerable.Range(0, 100));
-        var args = Args(
-            "{\"sourceViewId\":0,\"targetViewIds\":[" + targets +
-            "],\"sections\":[\"all\"],\"dryRun\":false}");
-
-        await executor.ExecuteAsync("copy_view_settings", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_RemapWithoutLimit_StillConfirms()
-    {
-        var tool = new ScriptedTool("remap_parameter_values", schema: "{}");
-        var confirmation = new RecordingConfirmation();
-        var executor = CreateExecutor(
-            tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
-        var args = Args(
-            "{\"mapping\":[{\"target\":{\"name\":\"Тип\"}}],\"dryRun\":false}");
-
-        await executor.ExecuteAsync("remap_parameter_values", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount > 200);
-    }
-
-    [Fact]
-    public async Task AutoApprove_DiscardChangeSet_StillConfirms()
+    public async Task AutoApprove_DiscardChangeSet_AppliesWithoutDialog()
     {
         var tool = new ScriptedTool("discard_change_set", supportsDryRun: false);
         var confirmation = new RecordingConfirmation();
         var executor = CreateExecutor(
             tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
 
-        await executor.ExecuteAsync("discard_change_set", Args("{}"), CancellationToken.None);
+        var result = await executor.ExecuteAsync(
+            "discard_change_set", Args("{}"), CancellationToken.None);
 
-        Assert.Single(confirmation.Requests);
+        Assert.True(result.Success);
+        Assert.Empty(confirmation.Requests);
     }
 
     [Fact]
-    public async Task AutoApprove_NestedDiscardStep_StillConfirms()
-    {
-        var discard = new ScriptedTool("discard_change_set", supportsDryRun: false);
-        var planTool = new ScriptedTool("execute_plan", schema: "{}");
-        var registry = new AgentToolRegistry(new IAgentTool[] { discard, planTool });
-        var confirmation = new RecordingConfirmation();
-        var executor = new AgentToolExecutor(
-            registry,
-            new ImmediateAwaitableEvent(),
-            new AgentSessionContext { DocumentId = "doc", ApprovalMode = AgentApprovalMode.AutoApproveSession },
-            confirmation,
-            new RecordingAuditLog());
-        var args = Args(
-            "{\"goal\":\"close old set\",\"dryRun\":false,\"steps\":[" +
-            "{\"stepId\":\"s1\",\"toolName\":\"discard_change_set\",\"arguments\":{}}]}");
-
-        await executor.ExecuteAsync("execute_plan", args, CancellationToken.None);
-
-        Assert.Single(confirmation.Requests);
-    }
-
-    [Fact]
-    public async Task AutoApprove_DestructivePlan_ReportsConservativeAffectedCount()
+    public async Task AutoApprove_DestructivePlan_AppliesWithoutDialog()
     {
         var destructive = new ScriptedTool("danger_tool", AgentToolRisk.Destructive);
         var planTool = new ScriptedTool("execute_plan", schema: "{}");
@@ -325,14 +150,28 @@ public sealed class AgentToolExecutorModesTests
             "{\"stepId\":\"s1\",\"toolName\":\"danger_tool\",\"expectedChanges\":300," +
             "\"arguments\":{\"items\":[{\"viewId\":1}]}}]}");
 
-        await executor.ExecuteAsync("execute_plan", args, CancellationToken.None);
+        var result = await executor.ExecuteAsync("execute_plan", args, CancellationToken.None);
 
-        Assert.Single(confirmation.Requests);
-        Assert.Contains(confirmation.Requests, request => request.AffectedCount >= 300);
-        Assert.Contains(confirmation.Requests[0].Risks, risk => risk.Contains("destructive"));
+        Assert.True(result.Success);
+        Assert.Empty(confirmation.Requests);
     }
 
     [Fact]
+    public async Task AutoApprove_ManyConfigureViewsSections_AppliesWithoutDialog()
+    {
+        var tool = new ScriptedTool("configure_views");
+        var confirmation = new RecordingConfirmation();
+        var executor = CreateExecutor(
+            tool, confirmation, new RecordingAuditLog(), AgentApprovalMode.AutoApproveSession);
+        var items = string.Join(",", Enumerable.Range(0, 100).Select(index =>
+            "{\"viewId\":" + index +
+            ",\"newName\":\"V" + index + "\",\"crop\":{\"visible\":true},\"visibility\":{\"categories\":[]}}"));
+        var args = Args("{\"items\":[" + items + "],\"dryRun\":false}");
+
+        await executor.ExecuteAsync("configure_views", args, CancellationToken.None);
+
+        Assert.Empty(confirmation.Requests);
+    }    [Fact]
     public async Task ConfirmWrites_Mode_StillAsksTheUser()
     {
         var tool = new ScriptedTool("write_tool");

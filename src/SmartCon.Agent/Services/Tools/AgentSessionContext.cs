@@ -66,5 +66,13 @@ public sealed class AgentSessionContext
     {
         LoadedToolNames.Clear();
         PendingToolNames.Clear();
+        LastDocumentVersion = null;
     }
+
+    /// <summary>
+    /// documentVersion marker of the last tool call. A *_not_found failure whose
+    /// marker differs from the previous call means the model changed between the
+    /// calls (rollback, reopen, undo) rather than the id being invalid.
+    /// </summary>
+    public string? LastDocumentVersion { get; set; }
 }

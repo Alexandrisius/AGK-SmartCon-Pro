@@ -361,7 +361,8 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             outcome = new WriteOutcome
             {
                 DocumentPath = document.PathName,
-                RevitVersion = document.Application.VersionNumber
+                RevitVersion = document.Application.VersionNumber,
+                DocumentVersion = AgentDocumentState.Capture(document)
             };
 
             if (ManagesOwnTransactions)
@@ -437,6 +438,29 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
         catch (WriteAbortSignal)
         {
             committed = false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // An unexpected exception must not erase the report: failed[] and the
+            // per-item reasons are the only useful part of the answer (external
+            // run 6: create_view_filter returned tool_failed with failed[]=[]).
+            SmartConLogger.Error(
+                "Agent tool '" + Definition.Name + "' failed while applying: " +
+                ex.GetType().Name + ": " + ex.Message);
+            committed = false;
+            outcome.Success = false;
+            outcome.ErrorCode ??= "tool_failed";
+            outcome.Message = (string.IsNullOrWhiteSpace(outcome.Message)
+                    ? string.Empty
+                    : outcome.Message + " ") +
+                ex.GetType().Name + ": " + ex.Message;
+            outcome.Warnings.Add(
+                "The operation failed unexpectedly and the transaction was rolled back; " +
+                "see failed[] for the per-item reasons.");
         }
 
         if (!committed)
@@ -526,6 +550,42 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             // model does not treat an empty result as a success.
             outcome.Success = false;
             outcome.ErrorCode ??= "all_items_failed";
+            if (string.Equals(outcome.ErrorCode, "all_items_failed", StringComparison.Ordinal))
+            {
+                // A batch where every item failed for the same actionable reason should
+                // surface that code at the top level, not hide it in failed[] (rename_views
+                // returned all_items_failed while the real cause was duplicate_name). A
+                // dominant cause (≥60 % of failures) is promoted too, so a stray second
+                // code cannot bury the useful one.
+                var codes = outcome.Batch.Failed
+                    .Select(item => item.ErrorCode)
+                    .Where(code => !string.IsNullOrEmpty(code))
+                    .ToList();
+                if (codes.Count > 0)
+                {
+                    var groups = codes
+                        .GroupBy(code => code!, StringComparer.Ordinal)
+                        .OrderByDescending(group => group.Count())
+                        .ThenBy(group => group.Key, StringComparer.Ordinal)
+                        .ToList();
+                    if (groups.Count == 1 || groups[0].Count() * 100 >= codes.Count * 60)
+                        outcome.ErrorCode = groups[0].Key;
+                    outcome.Data["errorCodes"] = groups
+                        .Select(group => new { code = group.Key, count = group.Count() })
+                        .ToList();
+                }
+            }
+            if (string.IsNullOrWhiteSpace(outcome.Message))
+            {
+                var first = outcome.Batch.Failed[0];
+                outcome.Message = outcome.Batch.Failed.Count + " item(s) failed";
+                if (!string.IsNullOrWhiteSpace(first.Name))
+                    outcome.Message += "; first: " + first.Name;
+                if (!string.IsNullOrWhiteSpace(first.ErrorCode))
+                    outcome.Message += " (" + first.ErrorCode + ")";
+                if (!string.IsNullOrWhiteSpace(first.Reason))
+                    outcome.Message += " — " + first.Reason;
+            }
         }
 
         outcome.Data["dryRun"] = dryRun;
@@ -552,13 +612,22 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
                   outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
                   " failed.");
 
-        return outcome.Success
+        var result = outcome.Success
             ? ToolResult.Ok(data, summary, outcome.AffectedCount, outcome.Warnings)
             : ToolResult.Fail(
                 outcome.ErrorCode ?? "write_failed",
                 summary,
                 outcome.Warnings,
                 data);
+        if (!outcome.Success
+            && outcome.ErrorCode is not null
+            && outcome.ErrorCode.EndsWith("_not_found", StringComparison.Ordinal))
+        {
+            result = result.WithMessageSuffix(
+                AgentDocumentState.NotFoundHint(outcome.DocumentVersion));
+        }
+
+        return result.WithDocumentVersion(outcome.DocumentVersion);
     }
 
     private sealed class WriteAbortSignal : Exception

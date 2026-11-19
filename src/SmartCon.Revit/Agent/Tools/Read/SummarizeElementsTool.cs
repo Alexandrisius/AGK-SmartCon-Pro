@@ -29,8 +29,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             "Use it for questions like 'how many walls are on each level' or " +
             "'total door width per fire rating'. Returns at most topN groups " +
             "(default 20, largest first); excludeInternal=true (default) drops the " +
-            "'(no category)' bucket. Query rules are the same as in query_elements.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
+            "'(no category)' bucket. Query rules are the same as in query_elements. " +
+            "includeZeroCount=true adds count:0 groups for every requested category " +
+            "(proves 'the category is empty' in one call).",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""includeZeroCount"":{""type"":""boolean"",""default"":false},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -145,6 +147,28 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             return ToolResult.Fail("unknown_parameter", message, data: data);
         }
 
+        var includeZeroCount = AgentJson.GetBool(args, "includeZeroCount", false);
+        if (includeZeroCount
+            && groupBy == "category"
+            && spec.Categories.Count > 0)
+        {
+            // "There are no elements of this category" is a valid and frequent answer
+            // (empty schedules): return explicit zero rows for the requested categories
+            // instead of forcing one call per category (external benchmark, task 4).
+            var unknownForZero = new List<string>();
+            var requestedIds = AgentCategoryResolver.Resolve(
+                doc, spec.Categories, unknownForZero);
+            foreach (var categoryId in requestedIds)
+            {
+                var category = Category.GetCategory(doc, categoryId);
+                var name = category?.Name;
+                if (string.IsNullOrWhiteSpace(name) || groups.ContainsKey(name!))
+                    continue;
+
+                groups[name!] = new GroupAccumulator();
+            }
+        }
+
         var grouped = groups
             .Select(pair => new ElementSummaryGroup
             {
@@ -175,6 +199,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             groupBy,
             groupsTotal = grouped.Count,
             groupsSkippedInternal = skippedInternal,
+            zeroCountIncluded = includeZeroCount,
             groupsTruncated = grouped.Count > topN,
             groups = grouped.Take(topN).ToList()
         };

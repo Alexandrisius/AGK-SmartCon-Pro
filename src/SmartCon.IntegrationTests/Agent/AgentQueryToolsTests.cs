@@ -96,20 +96,21 @@ public sealed class AgentQueryToolsTests : RevitApiTest
         await Assert.That(result.Success).IsTrue();
         var element = result.Data!.Value.GetProperty("elements")[0];
         await Assert.That(element.GetProperty("elementId").GetInt64()).IsEqualTo(_wallId);
-        var parameters = element.GetProperty("parameters");
-        await Assert.That(parameters.GetArrayLength()).IsGreaterThan(0);
+        var typeId = element.GetProperty("typeId").GetInt64();
+        await Assert.That(typeId).IsGreaterThan(0);
+        await Assert.That(element.GetProperty("instanceParameters").GetArrayLength())
+            .IsGreaterThan(0);
 
-        var hasTypeScope = false;
-        foreach (var parameter in parameters.EnumerateArray())
+        var types = result.Data!.Value.GetProperty("types");
+        await Assert.That(types.GetArrayLength()).IsEqualTo(1);
+        var type = types[0];
+        await Assert.That(type.GetProperty("typeId").GetInt64()).IsEqualTo(typeId);
+        var typeParameters = type.GetProperty("parameters");
+        await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+        foreach (var parameter in typeParameters.EnumerateArray())
         {
-            if (parameter.GetProperty("scope").GetString() == "type")
-            {
-                hasTypeScope = true;
-                break;
-            }
+            await Assert.That(parameter.GetProperty("scope").GetString()).IsEqualTo("type");
         }
-
-        await Assert.That(hasTypeScope).IsTrue();
     }
 
     [Test]
@@ -127,8 +128,13 @@ public sealed class AgentQueryToolsTests : RevitApiTest
 
         await Assert.That(result.Success).IsTrue();
         var element = result.Data!.Value.GetProperty("elements")[0];
-        await Assert.That(element.GetProperty("parameters").GetArrayLength()).IsLessThanOrEqualTo(1);
-        await Assert.That(element.GetProperty("parametersTruncated").GetBoolean()).IsTrue();
+        await Assert.That(element.GetProperty("instanceParameters").GetArrayLength())
+            .IsLessThanOrEqualTo(1);
+        await Assert.That(element.GetProperty("instanceParametersTruncated").GetBoolean()).IsTrue();
+
+        var type = result.Data!.Value.GetProperty("types")[0];
+        await Assert.That(type.GetProperty("parameters").GetArrayLength()).IsLessThanOrEqualTo(1);
+        await Assert.That(type.GetProperty("parametersTruncated").GetBoolean()).IsTrue();
     }
 
     [Test]

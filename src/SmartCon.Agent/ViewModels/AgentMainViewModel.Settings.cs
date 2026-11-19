@@ -1,19 +1,30 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SmartCon.Agent.Services.Decisions;
+using SmartCon.Agent.Services.Llm;
 
 namespace SmartCon.Agent.ViewModels;
 
 public sealed partial class AgentMainViewModel
 {
-    private static readonly string[] KnownDecisionModels =
-    {
-        "perplexity/pplx-decider-v1.3:free",
-        "perplexity/pplx-decider-latest",
-        "jev-1.13.0"
-    };
+    private static readonly Dictionary<string, string[]> KnownDecisionModels =
+        new(StringComparer.Ordinal)
+        {
+            ["openrouter"] = new[]
+            {
+                AgentDecisionsSettings.DefaultOpenRouterModel,
+                "perplexity/pplx-decider-latest",
+                "microsoft/microsoft-decision-1.1"
+            },
+            ["perplexity"] = new[] { AgentDecisionsSettings.DefaultPerplexityModel },
+            ["typesafe"] = new[] { AgentDecisionsSettings.DefaultTypeSafeModel }
+        };
 
     public IReadOnlyList<string> ProviderOptions { get; } = new[] { "openrouter", "opencode-go" };
+
+    public IReadOnlyList<string> DecisionProviderOptions { get; } =
+        AgentDecisionsSettings.Providers;
 
     public ObservableCollection<AgentDecisionModelOption> DecisionModelOptions { get; } = new();
 
@@ -32,6 +43,12 @@ public sealed partial class AgentMainViewModel
     private string _settingsApiKeyInput = string.Empty;
 
     [ObservableProperty]
+    private string _settingsDecisionProvider = "openrouter";
+
+    [ObservableProperty]
+    private string _settingsDecisionApiKeyInput = string.Empty;
+
+    [ObservableProperty]
     private AgentDecisionModelOption? _selectedDecisionModel;
 
     [RelayCommand]
@@ -39,8 +56,10 @@ public sealed partial class AgentMainViewModel
     {
         SettingsProvider = _settings.Provider;
         SettingsModel = _settings.Model;
-        SettingsApiKeyInput = string.Empty;
+        SettingsApiKeyInput = _settings.ApiKey;
+        SettingsDecisionProvider = _decisionsSettings.Provider;
         RebuildDecisionOptions();
+        SettingsDecisionApiKeyInput = _decisionsSettings.ApiKey;
         IsSettingsOpen = true;
     }
 
@@ -48,6 +67,7 @@ public sealed partial class AgentMainViewModel
     private void CloseSettings()
     {
         SettingsApiKeyInput = string.Empty;
+        SettingsDecisionApiKeyInput = string.Empty;
         IsSettingsOpen = false;
     }
 
@@ -56,10 +76,14 @@ public sealed partial class AgentMainViewModel
     {
         _settings.Apply(SettingsProvider, SettingsModel, SettingsApiKeyInput);
         _settings.Save();
-        _decisionsSettings.Apply(SelectedDecisionModel?.Value);
+        _decisionsSettings.Apply(
+            SettingsDecisionProvider,
+            SelectedDecisionModel?.Value,
+            SettingsDecisionApiKeyInput);
 
         _hasApiKey = _settings.HasApiKey;
         SettingsApiKeyInput = string.Empty;
+        SettingsDecisionApiKeyInput = string.Empty;
         IsSettingsOpen = false;
 
         OnPropertyChanged(nameof(HasApiKey));
@@ -71,6 +95,21 @@ public sealed partial class AgentMainViewModel
         HasError = false;
     }
 
+    partial void OnSettingsProviderChanged(string value)
+    {
+        if (IsSettingsOpen)
+            SettingsApiKeyInput = AgentLlmSettings.GetStoredKeyFor(value);
+    }
+
+    partial void OnSettingsDecisionProviderChanged(string value)
+    {
+        if (!IsSettingsOpen)
+            return;
+
+        SettingsDecisionApiKeyInput = AgentDecisionsSettings.GetStoredKeyFor(value);
+        RebuildDecisionOptions();
+    }
+
     private void RebuildDecisionOptions()
     {
         DecisionModelOptions.Clear();
@@ -78,12 +117,17 @@ public sealed partial class AgentMainViewModel
             null,
             S("Agent_Decision_Off", "Не использовать")));
 
-        foreach (var model in KnownDecisionModels)
+        var provider = AgentDecisionsSettings.NormalizeProvider(SettingsDecisionProvider);
+        var known = KnownDecisionModels.TryGetValue(provider, out var models)
+            ? models
+            : Array.Empty<string>();
+
+        foreach (var model in known)
             DecisionModelOptions.Add(new AgentDecisionModelOption(model, model));
 
         var current = _decisionsSettings.Model;
         if (_decisionsSettings.Enabled
-            && !KnownDecisionModels.Contains(current, StringComparer.Ordinal))
+            && !known.Contains(current, StringComparer.Ordinal))
         {
             DecisionModelOptions.Add(new AgentDecisionModelOption(current, current));
         }
@@ -91,6 +135,7 @@ public sealed partial class AgentMainViewModel
         SelectedDecisionModel = _decisionsSettings.Enabled
             ? DecisionModelOptions.FirstOrDefault(option =>
                 string.Equals(option.Value, current, StringComparison.Ordinal))
+              ?? DecisionModelOptions[DecisionModelOptions.Count > 1 ? 1 : 0]
             : DecisionModelOptions[0];
     }
 }

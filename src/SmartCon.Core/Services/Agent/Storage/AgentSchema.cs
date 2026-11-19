@@ -36,7 +36,7 @@ public sealed class AgentSchemaMigration
 /// </summary>
 public static class AgentSchema
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     public static IReadOnlyList<AgentSchemaMigration> All { get; } =
         new AgentSchemaMigration[]
@@ -237,6 +237,20 @@ CREATE TABLE IF NOT EXISTS working_states (
     state_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );")
+                }
+            },
+            new()
+            {
+                Version = 4,
+                Name = "v4_context_snapshot",
+                Statements = new[]
+                {
+                    // Last measured context fill of a conversation, so the panel
+                    // restores its donut after a Revit restart and on session switch.
+                    AddColumn("token_usage", "context_tokens",
+                        "ALTER TABLE token_usage ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0;"),
+                    AddColumn("token_usage", "context_limit",
+                        "ALTER TABLE token_usage ADD COLUMN context_limit INTEGER NOT NULL DEFAULT 0;")
                 }
             }
         };

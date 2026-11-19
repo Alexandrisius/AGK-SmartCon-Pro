@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -274,6 +275,21 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             }
 
             case "visibility":
+                if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                        source,
+                        BuiltInParameter.VIS_GRAPHICS_MODEL,
+                        out var sourceTemplateId,
+                        out var sourceTemplate))
+                {
+                    return AgentViewSettingsWriter.Change.Error(
+                        "source_controlled_by_template",
+                        "Visibility of the source view '" + source.Name + "' is controlled by " +
+                        "template '" + sourceTemplate + "', so the view itself stores no hidden " +
+                        "categories and copying would silently show everything. Copy the " +
+                        "template instead (sections=[\"template\"], templateId=" +
+                        sourceTemplateId + ") or edit the template's visibility.");
+                }
+
                 return AgentViewSettingsWriter.MirrorVisibility(
                     doc, source, target, outcome.Warnings);
 

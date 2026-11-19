@@ -95,41 +95,4 @@ public sealed class DecisionsLiveTests
         Assert.True(decision.Tools.Count <= 14);
     }
 
-    [Fact]
-    public async Task LiveRiskGate_SmallRenameVsLargeDestructiveChange()
-    {
-        var settings = LiveSettings();
-        if (settings is null)
-            return;
-
-        using var client = new HttpDecisionClient(settings);
-        var gate = new DecisionsActionRiskGate(client);
-
-        var small = await gate.AssessAsync(
-            new AgentActionRiskRequest
-            {
-                ToolName = "rename_views",
-                Risk = AgentToolRisk.Write,
-                AffectedCount = 3,
-                Reversible = true,
-                ArgumentSummary = "items:array(3), dryRun:boolean"
-            },
-            CancellationToken.None);
-
-        Assert.NotEqual("unavailable", small.Source);
-        Assert.True(small.Confidence > 0);
-
-        var large = await gate.AssessAsync(
-            new AgentActionRiskRequest
-            {
-                ToolName = "batch_rewrite",
-                Risk = AgentToolRisk.Destructive,
-                AffectedCount = 900,
-                Reversible = false,
-                ArgumentSummary = "rebuild model geometry for 900 elements"
-            },
-            CancellationToken.None);
-
-        Assert.Equal(AgentRiskDecision.Confirm, large.Decision);
-    }
 }

@@ -31,12 +31,14 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         Name = "add_family_parameter",
         Description =
             "Adds a parameter to a family: normal or shared, instance or type, with a parameter " +
-            "group and storage type. Checks duplicate names, creates the shared definition when " +
-            "needed (GUID preserved) and reports the new parameter. Dry run by default.",
+            "group and storage type. For a shared parameter the definition must already exist " +
+            "in the active shared parameter file (list_shared_parameters shows what is there); " +
+            "pass createDefinition=true to add a missing definition to that file. Checks " +
+            "duplicate names, preserves the GUID and reports the new parameter. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""name"":{""type"":""string""},""storageType"":{""type"":""string"",""description"":""length | ductSize | pipeSize | distance | area | volume | angle | number | integer | text | yesno | material""},""group"":{""type"":""string"",""description"":""Revit group id, e.g. PG_GENERAL, PG_IDENTITY_DATA, PG_TEXT, PG_CONSTRAINTS, PG_DATA; localized Russian names are accepted""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name"",""storageType""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""name"":{""type"":""string""},""storageType"":{""type"":""string"",""description"":""length | ductSize | pipeSize | distance | area | volume | angle | number | integer | text | yesno | material""},""group"":{""type"":""string"",""description"":""Revit group id, e.g. PG_GENERAL, PG_IDENTITY_DATA, PG_TEXT, PG_CONSTRAINTS, PG_DATA; localized Russian names are accepted""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""createDefinition"":{""type"":""boolean"",""default"":false,""description"":""Create a missing shared definition in the active shared parameter file; false reports definition_not_found""},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name"",""storageType""],""additionalProperties"":false}"
     };
 
     private protected override void ApplyInFamilyDocument(
@@ -172,6 +174,7 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                 name,
                 spec!,
                 guid,
+                request.CreateDefinition,
                 dryRun,
                 outcome,
                 out wouldCreateDefinition);
@@ -304,6 +307,7 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         string name,
         ForgeTypeId spec,
         Guid? guid,
+        bool createDefinition,
         bool dryRun,
         WriteOutcome outcome,
         out bool wouldCreateDefinition)
@@ -401,6 +405,26 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
             return existing;
         }
 
+        if (!createDefinition)
+        {
+            // Default: never write into the active shared parameter file. A typo in a
+            // customer's ФОП cannot be rolled back (external file), so a missing
+            // definition is reported with close matches instead.
+            var suggestions = SuggestDefinitions(file, name);
+            Fail(
+                outcome,
+                "definition_not_found",
+                "The active shared parameter file has no definition named '" + name + "'" +
+                (guid.HasValue ? " with GUID " + guid.Value.ToString("D") : string.Empty) + ".",
+                "Existing definitions are listed by list_shared_parameters" +
+                (suggestions.Count == 0
+                    ? "."
+                    : "; closest: " + string.Join(", ", suggestions) + ".") +
+                " Pass createDefinition=true to add the definition to " + file.Filename +
+                " (this changes an external file and cannot be undone by undo_last).");
+            return null;
+        }
+
         if (dryRun)
         {
             wouldCreateDefinition = true;
@@ -457,6 +481,68 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                 "duplicate names]");
             return null;
         }
+    }
+
+    private static List<string> SuggestDefinitions(DefinitionFile file, string name)
+    {
+        var candidates = new List<string>();
+        try
+        {
+            foreach (DefinitionGroup group in file.Groups)
+            {
+                foreach (Definition definition in group.Definitions)
+                {
+                    if (definition is ExternalDefinition external
+                        && !string.IsNullOrWhiteSpace(external.Name))
+                    {
+                        candidates.Add(external.Name);
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            return new List<string>();
+        }
+
+        var normalized = name.Trim().ToLowerInvariant();
+        var threshold = System.Math.Max(3, normalized.Length / 2);
+        return candidates
+            .Select(candidate => (
+                Name: candidate,
+                Distance: Distance(normalized, candidate.ToLowerInvariant())))
+            .Where(pair => pair.Distance <= threshold)
+            .OrderBy(pair => pair.Distance)
+            .ThenBy(pair => pair.Name, StringComparer.Ordinal)
+            .Take(5)
+            .Select(pair => pair.Name)
+            .ToList();
+    }
+
+    private static int Distance(string left, string right)
+    {
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+        for (var index = 0; index <= right.Length; index++)
+            previous[index] = index;
+
+        for (var row = 1; row <= left.Length; row++)
+        {
+            current[0] = row;
+            for (var column = 1; column <= right.Length; column++)
+            {
+                var cost = left[row - 1] == right[column - 1] ? 0 : 1;
+                current[column] = System.Math.Min(
+                    System.Math.Min(current[column - 1] + 1, previous[column] + 1),
+                    previous[column - 1] + cost);
+            }
+
+            var swap = previous;
+            previous = current;
+            current = swap;
+        }
+
+        return previous[right.Length];
     }
 
     private static void Fail(

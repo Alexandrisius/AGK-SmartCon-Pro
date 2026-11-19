@@ -2,6 +2,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.UI;
 
 namespace SmartCon.Agent.ViewModels;
@@ -180,9 +181,13 @@ public sealed partial class AgentMainViewModel
                 if (_currentAssistant is not null)
                     _currentAssistant.IsStreaming = false;
                 _currentAssistant = null;
+                var toolLabel = AgentToolDisplayNames.Get(progress.ToolName);
+                if (string.IsNullOrEmpty(toolLabel))
+                    toolLabel = "tool";
                 var toolCard = new AgentChatItemViewModel(AgentChatItemKind.Tool, progress.ToolCallId)
                 {
-                    Header = progress.ToolName ?? "tool",
+                    Header = toolLabel,
+                    ToolName = progress.ToolName,
                     Text = S("Agent_Tool_Running", "Выполняется…"),
                     StatusText = "…",
                     IsStreaming = true
@@ -191,7 +196,7 @@ public sealed partial class AgentMainViewModel
                 if (progress.ToolCallId is not null)
                     _toolCards[progress.ToolCallId] = toolCard;
 
-                StatusText = Format("Agent_Status_ToolPrefix", "Инструмент: {0}", progress.ToolName ?? "");
+                StatusText = Format("Agent_Status_ToolPrefix", "Инструмент: {0}", toolLabel);
                 break;
 
             case AgentProgressKind.ToolCompleted:
@@ -206,7 +211,11 @@ public sealed partial class AgentMainViewModel
                     if (!string.IsNullOrWhiteSpace(progress.Text))
                         completedCard.Text = progress.Text!;
                     if (!string.IsNullOrWhiteSpace(progress.Details))
-                        completedCard.Details = progress.Details!;
+                    {
+                        completedCard.Details = WithToolName(
+                            completedCard.ToolName ?? progress.ToolName,
+                            progress.Details!);
+                    }
                 }
 
                 StatusText = progress.Success

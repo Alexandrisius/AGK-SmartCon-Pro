@@ -160,9 +160,9 @@ internal static class AgentParameterWriteHelper
                 {
                     errorCode = "invalid_value";
                     reason = "Numeric value '" + text + "' for parameter '" +
-                             parameter.Definition?.Name + "' needs an explicit unit: pass " +
-                             "unit=\"mm\" (or \"m\", \"ft\", \"m2\", \"m3\"), or unit=\"raw\" " +
-                             "to write internal Revit units as-is.";
+                             parameter.Definition?.Name + "' needs an explicit unit: for a " +
+                             "dimensionless parameter pass unit=\"raw\"; otherwise pass " +
+                             "\"mm\", \"cm\", \"m\", \"ft\", \"m2\" or \"m3\".";
                     return false;
                 }
 
@@ -173,7 +173,7 @@ internal static class AgentParameterWriteHelper
                     reason = double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
                         ? "Unit '" + unit + "' is not supported for parameter '" +
                           parameter.Definition?.Name +
-                          "'; use mm, cm, m, ft, m2, m3 or raw."
+                          "'; use mm, cm, m, ft, m2, m3, or raw for a dimensionless parameter."
                         : "'" + text + "' is not a valid number for parameter '" +
                           parameter.Definition?.Name + "'.";
                     return false;

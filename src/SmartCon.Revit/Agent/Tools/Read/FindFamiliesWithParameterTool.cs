@@ -16,6 +16,15 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
     private const int DefaultLimit = 100;
     private const int MaxLimit = 500;
 
+    /// <summary>
+    /// Inline cap per family: a family with hundreds of matching types must not
+    /// push the whole answer over the context budget (the trimmed envelope then
+    /// looked like "nothing found": families=[] with familiesTotal>0).
+    /// </summary>
+    private const int DefaultMaxMatchedTypes = 10;
+
+    private const int MaxMatchedTypes = 50;
+
     public FindFamiliesWithParameterTool(IRevitContext revitContext) : base(revitContext)
     {
     }
@@ -27,10 +36,13 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             "Finds loaded families whose family types expose a parameter with the given name " +
             "(exact or contains match) and optional value. Scans the live project on every " +
             "call — no index; unplaced types are included. Searches parameters visible on " +
-            "family types; instance values of placed instances are not scanned.",
+            "family types; instance values of placed instances are not scanned. " +
+            "matchedTypes is capped per family by maxMatchedTypes (default 10, max 50); the " +
+            "totals and matchedTypesTruncated show how many matches exist in full. " +
+            "compact=true returns matchedTypeNames instead of full matchedTypes rows.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""parameterName"":{""type"":""string""},""match"":{""type"":""string"",""enum"":[""exact"",""contains""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""required"":[""parameterName""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""parameterName"":{""type"":""string""},""match"":{""type"":""string"",""enum"":[""exact"",""contains""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""maxMatchedTypes"":{""type"":""integer"",""default"":10,""minimum"":1,""maximum"":50},""compact"":{""type"":""boolean"",""default"":false},""offset"":{""type"":""integer"",""default"":0}},""required"":[""parameterName""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -52,6 +64,12 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             AgentJson.GetInt(args, "limit", DefaultLimit),
             DefaultLimit,
             MaxLimit);
+        var maxMatchedTypes = Math.Max(
+            1,
+            Math.Min(
+                AgentJson.GetInt(args, "maxMatchedTypes", DefaultMaxMatchedTypes),
+                MaxMatchedTypes));
+        var compact = AgentJson.GetBool(args, "compact", false);
 
         var families = new Dictionary<long, FamilyMatch>();
         var familiesSeen = new HashSet<long>();
@@ -77,7 +95,9 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                 continue;
             }
 
-            var matches = new List<Dictionary<string, object?>>();
+            FamilyMatch? familyMatch = null;
+            var matchTotal = 0;
+            var seenParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (Parameter parameter in symbol.Parameters)
             {
                 var name = parameter.Definition?.Name;
@@ -97,7 +117,31 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                     continue;
                 }
 
-                matches.Add(new Dictionary<string, object?>
+                if (!seenParameterNames.Add(name!))
+                    continue;
+
+                matchTotal++;
+                if (familyMatch is null)
+                {
+                    if (!families.TryGetValue(family.Id.GetValue(), out familyMatch))
+                    {
+                        familyMatch = new FamilyMatch
+                        {
+                            FamilyId = family.Id.GetValue(),
+                            FamilyUniqueId = family.UniqueId,
+                            FamilyName = family.Name,
+                            Category = family.FamilyCategory?.Name
+                        };
+                        families.Add(family.Id.GetValue(), familyMatch);
+                    }
+                }
+
+                // The cap belongs to the family, not to one type: a door family with
+                // 40 matching types used to return 40 rows (external run 6, P2).
+                if (familyMatch.Matches.Count >= maxMatchedTypes)
+                    continue;
+
+                familyMatch.Matches.Add(new Dictionary<string, object?>
                 {
                     ["typeId"] = symbol.Id.GetValue(),
                     ["typeName"] = symbol.Name,
@@ -106,21 +150,10 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                 });
             }
 
-            if (matches.Count == 0)
+            if (matchTotal == 0 || familyMatch is null)
                 continue;
 
-            if (!families.TryGetValue(family.Id.GetValue(), out var familyMatch))
-            {
-                familyMatch = new FamilyMatch
-                {
-                    FamilyId = family.Id.GetValue(),
-                    FamilyName = family.Name,
-                    Category = family.FamilyCategory?.Name
-                };
-                families.Add(family.Id.GetValue(), familyMatch);
-            }
-
-            familyMatch.Matches.AddRange(matches);
+            familyMatch.MatchedTypesTotal += matchTotal;
         }
 
         var ordered = new List<FamilyMatch>(families.Values);
@@ -135,9 +168,15 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             {
                 ["familyId"] = item.FamilyId,
                 ["familyName"] = item.FamilyName,
+                ["familyUniqueId"] = item.FamilyUniqueId,
                 ["category"] = item.Category,
-                ["matchedTypeCount"] = item.Matches.Count,
-                ["matchedTypes"] = item.Matches
+                ["matchedTypeCount"] = item.MatchedTypesTotal,
+                ["matchedTypesReturned"] = item.Matches.Count,
+                ["matchedTypesTruncated"] = item.MatchedTypesTotal > item.Matches.Count,
+                ["matchedTypeNames"] = compact
+                    ? item.Matches.Select(match => match["typeName"]).ToList()
+                    : null,
+                ["matchedTypes"] = compact ? null : item.Matches
             });
         }
 
@@ -146,6 +185,7 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
         {
             ["parameterName"] = parameterName,
             ["match"] = contains ? "contains" : "exact",
+            ["compact"] = compact,
             ["families"] = page,
             ["total"] = ordered.Count,
             ["returned"] = page.Count,
@@ -186,9 +226,13 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
     {
         public long FamilyId { get; init; }
 
+        public required string FamilyUniqueId { get; init; }
+
         public required string FamilyName { get; init; }
 
         public string? Category { get; init; }
+
+        public int MatchedTypesTotal { get; set; }
 
         public List<Dictionary<string, object?>> Matches { get; } = new();
     }

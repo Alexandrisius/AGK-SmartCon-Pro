@@ -73,6 +73,12 @@ public sealed class WriteOutcome
 
     public string? Description { get; set; }
 
+    /// <summary>
+    /// DocumentVersion marker captured on the Revit thread when the tool ran; the
+    /// tool result exposes it as <c>documentVersion</c>.
+    /// </summary>
+    public string? DocumentVersion { get; set; }
+
     /// <summary>undo_last reverses a change set instead of recording a new one.</summary>
     public bool SuppressChangeSet { get; set; }
 

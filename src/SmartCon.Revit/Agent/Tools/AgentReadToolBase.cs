@@ -67,7 +67,16 @@ public abstract class AgentReadToolBase : IAgentTool
 
         try
         {
-            return Execute(document, args, ct);
+            var version = AgentDocumentState.Capture(document);
+            var result = Execute(document, args, ct);
+            if (!result.Success
+                && result.ErrorCode is not null
+                && result.ErrorCode.EndsWith("_not_found", StringComparison.Ordinal))
+            {
+                result = result.WithMessageSuffix(AgentDocumentState.NotFoundHint(version));
+            }
+
+            return result.WithDocumentVersion(version);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

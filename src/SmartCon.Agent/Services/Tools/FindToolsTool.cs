@@ -83,7 +83,7 @@ public sealed class FindToolsTool : IAgentTool
                 return ToolResult.Fail(
                     "invalid_arguments",
                     "Unknown pack '" + packName + "'. Known packs: " +
-                    string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + ".");
+                    string.Join(", ", AgentToolPacks.Populated.Select(candidate => candidate.Name)) + ".");
             }
 
             var packTools = new HashSet<string>(
@@ -171,7 +171,7 @@ public sealed class FindToolsTool : IAgentTool
                 return ToolResult.Fail(
                     "invalid_arguments",
                     "Unknown pack '" + packName + "'. Known packs: " +
-                    string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + ".");
+                    string.Join(", ", AgentToolPacks.Populated.Select(candidate => candidate.Name)) + ".");
             }
 
             var packTools = new HashSet<string>(
@@ -194,7 +194,7 @@ public sealed class FindToolsTool : IAgentTool
             limit,
             nextOffset,
             truncated = nextOffset is not null,
-            packs = AgentToolPacks.All.Select(pack => pack.Name).ToList(),
+            packs = AgentToolPacks.Populated.Select(pack => pack.Name).ToList(),
             toolsPacks = PacksOf(page),
             fields = fields.Count == 0 ? null : fields,
             hint = ListingHint,

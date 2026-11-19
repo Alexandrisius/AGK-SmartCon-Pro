@@ -165,6 +165,7 @@ public sealed class ExecutePlanTool : IAgentTool
             phase = dryRun ? "preview" : "apply",
             goal = plan.Goal,
             planDigest = digest,
+            planDigestAlgorithm = "sha256",
             errorCode = result.ErrorCode,
             message = result.Message,
             affected = result.AffectedCount > 0
@@ -190,6 +191,7 @@ public sealed class ExecutePlanTool : IAgentTool
             dryRun = true,
             goal = plan.Goal,
             planDigest = result.PlanDigest,
+            planDigestAlgorithm = "sha256",
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
@@ -220,6 +222,7 @@ public sealed class ExecutePlanTool : IAgentTool
         {
             dryRun = false,
             planDigest = result.PlanDigest,
+            planDigestAlgorithm = "sha256",
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,

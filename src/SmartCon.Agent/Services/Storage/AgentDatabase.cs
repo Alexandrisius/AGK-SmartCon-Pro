@@ -86,6 +86,12 @@ public sealed class AgentDatabase
                 version = migration.Version;
             }
 
+            // An older database may be marked with a version whose additive
+            // column never landed (intermediate build). Repair those columns for
+            // every version up to the current one, without another backup.
+            if (initialVersion > 0)
+                SelfHeal(connection, version);
+
             if (initialVersion == 0)
             {
                 SmartConLogger.Info(
@@ -176,23 +182,20 @@ public sealed class AgentDatabase
     /// </summary>
     private void SelfHeal(SqliteConnection connection, int version)
     {
-        AgentSchemaMigration? migration = null;
-        foreach (var candidate in _migrations)
-        {
-            if (candidate.Version == version)
-            {
-                migration = candidate;
-                break;
-            }
-        }
+        var migrations = _migrations
+            .Where(candidate => candidate.Version <= version)
+            .OrderBy(candidate => candidate.Version)
+            .ToList();
 
-        if (migration is null)
+        if (migrations.Count == 0)
             return;
 
         using var transaction = connection.BeginTransaction(deferred: false);
         try
         {
-            ApplyStatements(connection, transaction, migration);
+            foreach (var migration in migrations)
+                ApplyStatements(connection, transaction, migration);
+
             transaction.Commit();
             SmartConLogger.Debug(
                 "Agent database schema self-heal completed for v" + version + ": " +

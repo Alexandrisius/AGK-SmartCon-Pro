@@ -10,6 +10,12 @@ public static partial class LocalizationService
         en["Agent_Session_Refresh"] = "Refresh sessions";
         ru["Agent_Session_Tooltip"] = "Сессии текущего документа";
         en["Agent_Session_Tooltip"] = "Sessions of the current document";
+        ru["Agent_Session_Delete"] = "Удалить сессию";
+        en["Agent_Session_Delete"] = "Delete session";
+        ru["Agent_Session_DeleteConfirmHint"] = "Нажмите галочку, чтобы удалить сессию";
+        en["Agent_Session_DeleteConfirmHint"] = "Click the check to delete the session";
+        ru["Agent_Session_Deleted"] = "Сессия удалена";
+        en["Agent_Session_Deleted"] = "Session deleted";
         ru["Agent_Attach"] = "Прикрепить изображение";
         en["Agent_Attach"] = "Attach image";
         ru["Agent_Send"] = "Отправить";
@@ -84,8 +90,8 @@ public static partial class LocalizationService
         en["Agent_NewChatTitle"] = "New chat";
         ru["Agent_Banner_NoDocument"] = "Откройте проект Revit — агент сразу получит контекст документа.";
         en["Agent_Banner_NoDocument"] = "Open a Revit project — the agent will pick up the document context automatically.";
-        ru["Agent_Banner_NoApiKey"] = "Ключ LLM не настроен. Задайте SMARTCON_OPENROUTER_API_KEY или заполните secrets.env.";
-        en["Agent_Banner_NoApiKey"] = "LLM key is not configured. Set SMARTCON_OPENROUTER_API_KEY or fill secrets.env.";
+        ru["Agent_Banner_NoApiKey"] = "Ключ LLM не настроен. Откройте настройки агента (⚙) и задайте ключ провайдера.";
+        en["Agent_Banner_NoApiKey"] = "LLM key is not configured. Open the agent settings (⚙) and set the provider key.";
         ru["Agent_Tooltip_RemoveAttachment"] = "Убрать";
         en["Agent_Tooltip_RemoveAttachment"] = "Remove";
         ru["Agent_Status_StepLimit"] = "Достигнут лимит шагов";
@@ -110,14 +116,20 @@ public static partial class LocalizationService
         en["Agent_Settings_Model"] = "Model";
         ru["Agent_Settings_ApiKey"] = "API-ключ";
         en["Agent_Settings_ApiKey"] = "API key";
-        ru["Agent_Settings_ApiKeyHint"] = "Оставьте пустым, чтобы сохранить текущий ключ";
-        en["Agent_Settings_ApiKeyHint"] = "Leave empty to keep the current key";
-        ru["Agent_Settings_DecisionModel"] = "Decision-модель";
-        en["Agent_Settings_DecisionModel"] = "Decision model";
+        ru["Agent_Settings_ApiKeyHint"] =
+            "Сохранённый ключ показан точками. Введите новый, чтобы заменить его.";
+        en["Agent_Settings_ApiKeyHint"] =
+            "A stored key is shown as dots. Type a new one to replace it.";
+        ru["Agent_Settings_DecisionProvider"] = "Поиск инструментов: провайдер";
+        en["Agent_Settings_DecisionProvider"] = "Tool search: provider";
+        ru["Agent_Settings_DecisionModel"] = "Поиск инструментов: модель";
+        en["Agent_Settings_DecisionModel"] = "Tool search: model";
+        ru["Agent_Settings_DecisionApiKey"] = "Поиск инструментов: API-ключ";
+        en["Agent_Settings_DecisionApiKey"] = "Tool search: API key";
         ru["Agent_Settings_DecisionHint"] =
-            "Быстрый роутер инструментов и оценка риска. «Не использовать» — обычный BM25-роутер.";
+            "Decision-модель только ищет подходящие инструменты под запрос. Оценка рисков не используется: в режиме «Без подтверждений» агент ничего не спрашивает. «Не использовать» — обычный BM25-роутер.";
         en["Agent_Settings_DecisionHint"] =
-            "Fast tool router and risk gate. \"Don't use\" keeps the deterministic BM25 router.";
+            "The decision model only picks matching tools for the request. It is not used for risk assessment: in \"No confirmations\" mode the agent never asks. \"Don't use\" keeps the deterministic BM25 router.";
         ru["Agent_Decision_Off"] = "Не использовать";
         en["Agent_Decision_Off"] = "Don't use";
         ru["Agent_Settings_Cancel"] = "Отмена";
@@ -146,16 +158,16 @@ public static partial class LocalizationService
         en["Agent_Confirm_Risks"] = "Risks:";
         ru["Agent_Approval_Confirm"] = "Подтверждение";
         en["Agent_Approval_Confirm"] = "Confirm writes";
-        ru["Agent_Approval_Auto"] = "Автоприменение";
-        en["Agent_Approval_Auto"] = "Auto-approve";
+        ru["Agent_Approval_Auto"] = "Без подтверждений";
+        en["Agent_Approval_Auto"] = "No confirmations";
         ru["Agent_Approval_ReadOnly"] = "Только чтение";
         en["Agent_Approval_ReadOnly"] = "Read only";
         ru["Agent_Approval_ReadOnlyBanner"] = "Режим «Только чтение»: агент не может изменять модель.";
         en["Agent_Approval_ReadOnlyBanner"] = "Read-only mode: the agent cannot change the model.";
         ru["Agent_Approval_AutoBanner"] =
-            "Автоприменение включено: изменения применяются без подтверждения. Undo доступен для каждого набора.";
+            "Режим «Без подтверждений»: все изменения применяются сразу, включая разрушительные. Откат — undo_last / change set.";
         en["Agent_Approval_AutoBanner"] =
-            "Auto-approve is on: changes are applied without confirmation. Undo is available for every change set.";
+            "No-confirmations mode: every change is applied immediately, including destructive ones. Undo via undo_last / change sets.";
         ru["Agent_Approval_Tooltip"] = "Режим подтверждения изменений. Сбрасывается при смене документа.";
         en["Agent_Approval_Tooltip"] = "Confirmation mode for changes. Resets when the document changes.";
         ru["Agent_Approval_Disable"] = "Выключить";

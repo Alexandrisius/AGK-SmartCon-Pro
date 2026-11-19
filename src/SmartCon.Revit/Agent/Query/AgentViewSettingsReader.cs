@@ -33,8 +33,8 @@ internal static class AgentViewSettingsReader
             HiddenCategories = hiddenCategories,
             HiddenCategoryCount = hiddenCategories.Count,
             HiddenWorksets = ReadHiddenWorksets(doc, view),
-            ControlledParameters = ReadTemplateParameters(view, controlled: true),
-            NonControlledParameters = ReadTemplateParameters(view, controlled: false)
+            ControlledParameters = ReadTemplateParameters(doc, view, controlled: true),
+            NonControlledParameters = ReadTemplateParameters(doc, view, controlled: false)
         };
     }
 
@@ -273,7 +273,10 @@ internal static class AgentViewSettingsReader
         return hidden;
     }
 
-    private static IReadOnlyList<string> ReadTemplateParameters(View view, bool controlled)
+    private static IReadOnlyList<string> ReadTemplateParameters(
+        Document doc,
+        View view,
+        bool controlled)
     {
         if (!view.IsTemplate)
             return Array.Empty<string>();
@@ -289,7 +292,7 @@ internal static class AgentViewSettingsReader
             {
                 var isControlled = !excluded.Contains(id.GetValue());
                 if (isControlled == controlled)
-                    names.Add(AgentBuiltInParameterNames.GetName(id));
+                    names.Add(DescribeTemplateParameter(doc, id));
             }
 
             return names;
@@ -298,5 +301,31 @@ internal static class AgentViewSettingsReader
         {
             return Array.Empty<string>();
         }
+    }
+
+    /// <summary>
+    /// A template parameter is often a project/shared parameter element, not a
+    /// built-in: its id is positive and AgentBuiltInParameterNames falls back to
+    /// "#13122". Resolve the element name so the model does not have to map ids to
+    /// names by hand (external benchmark, tasks 1 and 3).
+    /// </summary>
+    private static string DescribeTemplateParameter(Document doc, ElementId id)
+    {
+        var name = AgentBuiltInParameterNames.GetName(id);
+        if (!name.StartsWith("#", StringComparison.Ordinal))
+            return name;
+
+        try
+        {
+            var element = doc.GetElement(id);
+            if (element is not null && !string.IsNullOrWhiteSpace(element.Name))
+                return element.Name + " (#" + id.GetValue() + ")";
+        }
+        catch (Exception)
+        {
+            // Fall back to the raw id below.
+        }
+
+        return name;
     }
 }

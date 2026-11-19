@@ -217,7 +217,8 @@ public sealed partial class AgentOrchestratorTests
         IAgentWorkingStateStore? workingStateStore = null,
         IAgentToolResultBlobStore? toolResultBlobStore = null,
         IAgentContextCompactor? contextCompactor = null,
-        IAgentCompactionStore? compactionStore = null)
+        IAgentCompactionStore? compactionStore = null,
+        IDynamicToolRanker? dynamicRanker = null)
     {
         return new AgentOrchestrator(
             llm,
@@ -234,7 +235,8 @@ public sealed partial class AgentOrchestratorTests
             workingStateStore,
             toolResultBlobStore,
             contextCompactor,
-            compactionStore);
+            compactionStore,
+            dynamicRanker);
     }
 
     private sealed class CountingTool : IAgentTool
@@ -339,6 +341,23 @@ public sealed partial class AgentOrchestratorTests
                 .Where(record => string.Equals(
                     record.SessionId, sessionId.ToString("D"), StringComparison.Ordinal))
                 .Sum(record => record.Usage?.CostUsd ?? 0m));
+
+        public Task<AgentContextSnapshot?> GetLastContextAsync(
+            Guid sessionId,
+            CancellationToken ct)
+        {
+            var last = Records.LastOrDefault(record =>
+                string.Equals(record.SessionId, sessionId.ToString("D"), StringComparison.Ordinal)
+                && record.ContextTokens > 0);
+
+            return Task.FromResult(last is null
+                ? null
+                : new AgentContextSnapshot
+                {
+                    Tokens = last.ContextTokens,
+                    Limit = last.ContextLimit
+                });
+        }
     }
 
     private sealed class InMemoryWorkingStateStore : IAgentWorkingStateStore

@@ -66,7 +66,7 @@ public sealed class AgentPromptBudgetTests
             AgentToolPacks.CoreToolNames.Count + " schemas=" + top.Count);
 
         Assert.Equal(20, AgentToolPacks.All.Count);
-        Assert.Equal(8, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
         Assert.True(
             parts <= PromptTokenGate,
             "packs+core+schemas " + parts.ToString(CultureInfo.InvariantCulture) +

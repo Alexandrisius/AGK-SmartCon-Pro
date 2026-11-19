@@ -463,10 +463,14 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, GetSheetContentTool>();
         services.AddSingleton<IAgentTool, ListSchedulesTool>();
         services.AddSingleton<IAgentTool, GetScheduleDataTool>();
+        services.AddSingleton<IAgentTool, GetScheduleDefinitionTool>();
         services.AddSingleton<IAgentTool, ListFamiliesTool>();
         services.AddSingleton<IAgentTool, ListFamilyTypesTool>();
         services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
         services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
+        services.AddSingleton<IAgentTool, ListSharedParametersTool>();
+        services.AddSingleton<IAgentTool, ListFiltersTool>();
+        services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();
@@ -479,6 +483,14 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, ConfigureViewsTool>();
         services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
         services.AddSingleton<IAgentTool, CreateViewFilterTool>();
+        services.AddSingleton<IAgentTool, SetFilterRulesTool>();
+        services.AddSingleton<IAgentTool, RenameFilterTool>();
+        services.AddSingleton<IAgentTool, DeleteFilterTool>();
+        services.AddSingleton<IAgentTool, SetViewParametersTool>();
+        services.AddSingleton<IAgentTool, DeleteViewsTool>();
+        services.AddSingleton<IAgentTool, DeleteSheetsTool>();
+        services.AddSingleton<IAgentTool, DeleteFamilyTypesTool>();
+        services.AddSingleton<IAgentTool, RemoveFamilyParameterTool>();
         services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
@@ -509,9 +521,12 @@ public static class ServiceRegistrar
 
         var decisionsSettings = AgentDecisionsSettings.Load();
         services.AddSingleton(decisionsSettings);
+        services.AddSingleton<DecisionCostTracker>();
         services.AddSingleton<IAgentDecisionClient>(sp =>
-            new HttpDecisionClient(sp.GetRequiredService<AgentDecisionsSettings>()));
-        services.AddSingleton<IToolRouter>(sp =>
+            new HttpDecisionClient(
+                sp.GetRequiredService<AgentDecisionsSettings>(),
+                costTracker: sp.GetRequiredService<DecisionCostTracker>()));
+        services.AddSingleton(sp =>
         {
             // Always wrapped: the decision router falls back to BM25 when the
             // decision layer is disabled at startup, and picks the model chosen in
@@ -519,11 +534,11 @@ public static class ServiceRegistrar
             return new DecisionsToolRouter(
                 new RuleToolRouter(), sp.GetRequiredService<IAgentDecisionClient>());
         });
-
-        // Registered unconditionally: when disabled the gate returns Auto and the
-        // executor behaves as before, but enabling it in the settings UI works
-        // without a restart.
-        services.AddSingleton<IActionRiskGate, DecisionsActionRiskGate>();
+        services.AddSingleton<IToolRouter>(sp => sp.GetRequiredService<DecisionsToolRouter>());
+        // Turn-start dynamic slots: the decision model ranks the non-core catalog
+        // per user prompt; the always-available hot set stays untouched.
+        services.AddSingleton<IDynamicToolRanker>(sp =>
+            sp.GetRequiredService<DecisionsToolRouter>());
 
         services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
             sp.GetServices<IAgentTool>(),

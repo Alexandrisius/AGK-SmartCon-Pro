@@ -57,6 +57,13 @@ internal sealed class AddFamilyParameterRequest
 
     public bool IsShared { get; set; }
 
+    /// <summary>
+    /// When true and the shared definition does not exist, it is created in the
+    /// active shared parameter file. Default false: a typo must not pollute the
+    /// customer's ФОП (external file, not rollback-able).
+    /// </summary>
+    public bool CreateDefinition { get; set; }
+
     public string? Guid { get; set; }
 
     /// <summary>Optional initial value applied to the current type only.</summary>
@@ -164,6 +171,12 @@ internal sealed class FamilyParameterReport
     public bool IsInstance { get; set; }
 
     public bool IsShared { get; set; }
+
+    /// <summary>
+    /// True for Revit built-in parameters (Comments, Mark, …). They cannot be
+    /// removed and must not be offered for removal (external run 6, P1).
+    /// </summary>
+    public bool IsBuiltIn { get; set; }
 
     public string? Guid { get; set; }
 

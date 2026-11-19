@@ -68,6 +68,7 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
             var familyUniqueId = family.UniqueId;
             outcome.Data["familyId"] = familyId;
             outcome.Data["familyUniqueId"] = familyUniqueId;
+            DescribeBlastRadius(document, family, outcome, dryRun);
 
             string? backupPath = null;
             string? sourceBackupPath = null;
@@ -175,6 +176,14 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 outcome.Data["familyId"] = session.LoadedFamilyId.Value;
                 outcome.Data["familyIdChanged"] =
                     session.LoadedFamilyId.Value != familyId;
+                if (session.LoadedFamilyId.Value != familyId)
+                {
+                    outcome.Data["familyIdNote"] =
+                        "familyId and familyUniqueId are not stable: Revit recreates the family " +
+                        "element on load-back, so both change. Use familyName for follow-up " +
+                        "calls, or the ids returned in this response (previous ones are in " +
+                        "previousFamilyId/previousFamilyUniqueId).";
+                }
             }
 
             if (!string.IsNullOrEmpty(session.LoadedFamilyUniqueId))
@@ -266,6 +275,56 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
         }
 
         return result;
+    }
+
+    private static void DescribeBlastRadius(
+        Document document,
+        RevitFamily family,
+        WriteOutcome outcome,
+        bool dryRun)
+    {
+        var typeIds = new HashSet<long>();
+        foreach (var typeId in family.GetFamilySymbolIds())
+            typeIds.Add(typeId.GetValue());
+
+        var affected = 0;
+        var samples = new List<long>();
+        if (typeIds.Count > 0)
+        {
+            foreach (var element in new FilteredElementCollector(document)
+                         .WhereElementIsNotElementType())
+            {
+                var typeId = element.GetTypeId();
+                if (typeId == ElementId.InvalidElementId)
+                    continue;
+
+                if (!typeIds.Contains(typeId.GetValue()))
+                    continue;
+
+                affected++;
+                if (samples.Count < 10)
+                    samples.Add(element.Id.GetValue());
+            }
+        }
+
+        outcome.Data["familyReload"] = true;
+        outcome.Data["blastRadius"] = new
+        {
+            affectedTypes = typeIds.Count,
+            affectedInstances = affected,
+            sampleInstanceIds = samples,
+            countCapped = false,
+            undoReturnsAllInstances = true,
+            familyReload = true,
+            projected = true,
+            dryRun,
+            note = "Conservative projection: a family edit reloads every type on success; " +
+                   "parts, assemblies, nested families and linked models are not counted."
+        };
+        outcome.Warnings.Add(
+            "Family edit would reload the family: " + affected + " instance(s) across " +
+            typeIds.Count + " type(s) are affected on load-back; familyId/uniqueId change " +
+            "after load-back.");
     }
 
     protected static void MoveChangedToSkipped(WriteOutcome outcome)

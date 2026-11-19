@@ -334,7 +334,61 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
         await Assert.That(unknown.GetArrayLength()).IsEqualTo(1);
     }
 
-    private static JsonElement Parse(string json)
+    [Test]
+public async Task GetScheduleDefinition_ReturnsFieldsFiltersAndSorting()
+{
+    if (!_scheduleCreated)
+        Skip.Test("Спецификация не создана");
+
+    _transactions!.RunInTransaction(Doc, "Add schedule filter and sort", doc =>
+    {
+        var schedule = (ViewSchedule)doc.GetElement(ElementIdCompat.Create(_scheduleId));
+        var definition = schedule.Definition;
+        var fieldId = definition.GetFieldId(0);
+        definition.AddFilter(new ScheduleFilter(
+            fieldId, ScheduleFilterType.Equal, WallComment));
+        definition.AddSortGroupField(new ScheduleSortGroupField(fieldId));
+    });
+
+    var tool = new GetScheduleDefinitionTool(new StubRevitContext(Doc));
+    var result = tool.ExecuteForTests(
+        Doc,
+        Parse("{\"scheduleId\":" + _scheduleId + "}"),
+        CancellationToken.None);
+
+    await Assert.That(result.Success).IsTrue();
+    var data = result.Data!.Value;
+    await Assert.That(data.GetProperty("name").GetString()).IsEqualTo(ScheduleName);
+    await Assert.That(data.GetProperty("fieldCount").GetInt32()).IsGreaterThanOrEqualTo(1);
+    await Assert.That(data.GetProperty("fields").GetArrayLength())
+        .IsEqualTo(data.GetProperty("fieldCount").GetInt32());
+
+    await Assert.That(data.GetProperty("filterCount").GetInt32()).IsEqualTo(1);
+    var filter = data.GetProperty("filters")[0];
+    await Assert.That(filter.GetProperty("op").GetString()).IsEqualTo("Equal");
+    await Assert.That(filter.GetProperty("value").GetString()).IsEqualTo(WallComment);
+
+    await Assert.That(data.GetProperty("sortGroupFieldCount").GetInt32()).IsEqualTo(1);
+    await Assert.That(
+        string.IsNullOrEmpty(
+            data.GetProperty("sortGroupFields")[0].GetProperty("order").GetString()))
+        .IsFalse();
+}
+
+[Test]
+public async Task GetScheduleDefinition_UnknownSchedule_ReturnsScheduleNotFound()
+{
+    var tool = new GetScheduleDefinitionTool(new StubRevitContext(Doc));
+    var result = tool.ExecuteForTests(
+        Doc,
+        Parse("{\"scheduleName\":\"SC_NoSuchSchedule\"}"),
+        CancellationToken.None);
+
+    await Assert.That(result.Success).IsFalse();
+    await Assert.That(result.ErrorCode).IsEqualTo("schedule_not_found");
+}
+
+private static JsonElement Parse(string json)
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();

@@ -102,7 +102,9 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
         var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
 
         await Assert.That(result.Success).IsFalse();
-        await Assert.That(result.ErrorCode).IsEqualTo("all_items_failed");
+        // The dominant per-item code is promoted to the top (external run 6): a
+        // duplicate_name hidden inside failed[] was the reason for this change.
+        await Assert.That(result.ErrorCode).IsEqualTo("duplicate_name");
         await Assert.That(GetView(_planId).Name).IsEqualTo(PlanName);
         await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
     }

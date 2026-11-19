@@ -10,8 +10,13 @@ namespace SmartCon.Revit.Agent;
 public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
 {
     private const int TopCategoryCount = 8;
+    private static readonly TimeSpan CategoryCacheLifetime = TimeSpan.FromSeconds(15);
 
     private readonly IAgentAwaitableEvent _revit;
+    private readonly object _categoryCacheLock = new();
+    private string? _categoryCacheKey;
+    private DateTime _categoryCacheAtUtc;
+    private IReadOnlyList<string>? _categoryCache;
 
     public AgentProjectContextProvider(IAgentAwaitableEvent revit)
     {
@@ -24,14 +29,50 @@ public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
         return _revit.RaiseAsync(app => Build(app, ct), ct);
     }
 
-    private static AgentProjectContext Build(object app, CancellationToken ct)
+    private AgentProjectContext Build(object app, CancellationToken ct)
     {
         var uiApplication = app as UIApplication;
-        return BuildDocument(uiApplication?.ActiveUIDocument?.Document, ct);
+        var doc = uiApplication?.ActiveUIDocument?.Document;
+        if (doc is null)
+            return BuildDocument(null, ct, null, out _);
+
+        var key = AgentDocumentIdentity.GetDocumentId(doc) + "|" +
+                  AgentDocumentState.Capture(doc);
+        IReadOnlyList<string>? cachedCategories = null;
+        lock (_categoryCacheLock)
+        {
+            if (_categoryCache is not null
+                && string.Equals(_categoryCacheKey, key, StringComparison.Ordinal)
+                && DateTime.UtcNow - _categoryCacheAtUtc < CategoryCacheLifetime)
+            {
+                cachedCategories = _categoryCache;
+            }
+        }
+
+        var context = BuildDocument(doc, ct, cachedCategories, out var topCategories);
+        if (cachedCategories is null)
+        {
+            lock (_categoryCacheLock)
+            {
+                _categoryCacheKey = key;
+                _categoryCacheAtUtc = DateTime.UtcNow;
+                _categoryCache = topCategories;
+            }
+        }
+
+        return context;
     }
 
-    internal static AgentProjectContext BuildDocument(Document? doc, CancellationToken ct)
+    internal static AgentProjectContext BuildDocument(Document? doc, CancellationToken ct) =>
+        BuildDocument(doc, ct, null, out _);
+
+    private static AgentProjectContext BuildDocument(
+        Document? doc,
+        CancellationToken ct,
+        IReadOnlyList<string>? cachedTopCategories,
+        out IReadOnlyList<string> topCategories)
     {
+        topCategories = Array.Empty<string>();
         if (doc is null)
         {
             return new AgentProjectContext
@@ -61,27 +102,35 @@ public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
             .OfClass(typeof(ViewSheet))
             .GetElementCount();
 
-        var categories = new Dictionary<string, int>(StringComparer.Ordinal);
-        var scanned = 0;
-        foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+        if (cachedTopCategories is null)
         {
-            if (++scanned % 1000 == 0)
-                ct.ThrowIfCancellationRequested();
+            var categories = new Dictionary<string, int>(StringComparer.Ordinal);
+            var scanned = 0;
+            foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+            {
+                if (++scanned % 1000 == 0)
+                    ct.ThrowIfCancellationRequested();
 
-            var name = AgentElementCardFactory.GetCategoryName(element.Category);
-            if (string.IsNullOrEmpty(name))
-                continue;
+                var name = AgentElementCardFactory.GetCategoryName(element.Category);
+                if (string.IsNullOrEmpty(name))
+                    continue;
 
-            var categoryName = name!;
-            categories.TryGetValue(categoryName, out var count);
-            categories[categoryName] = count + 1;
+                var categoryName = name!;
+                categories.TryGetValue(categoryName, out var count);
+                categories[categoryName] = count + 1;
+            }
+
+            topCategories = categories
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Take(TopCategoryCount)
+                .Select(pair => pair.Key)
+                .ToList();
         }
-
-        var topCategories = categories
-            .OrderByDescending(pair => pair.Value)
-            .Take(TopCategoryCount)
-            .Select(pair => pair.Key)
-            .ToList();
+        else
+        {
+            topCategories = cachedTopCategories;
+        }
 
         var activeView = doc.ActiveView;
 

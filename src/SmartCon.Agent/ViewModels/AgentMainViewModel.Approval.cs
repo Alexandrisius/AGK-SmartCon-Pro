@@ -21,7 +21,7 @@ public sealed partial class AgentMainViewModel
             S("Agent_Approval_Confirm", "Подтверждение")),
         new AgentApprovalModeOption(
             AgentApprovalMode.AutoApproveSession,
-            S("Agent_Approval_Auto", "Автоприменение")),
+            S("Agent_Approval_Auto", "Без подтверждений")),
         new AgentApprovalModeOption(
             AgentApprovalMode.ReadOnly,
             S("Agent_Approval_ReadOnly", "Только чтение"))
@@ -41,8 +41,8 @@ public sealed partial class AgentMainViewModel
                 "Режим «Только чтение»: агент не может изменять модель.")
             : S(
                 "Agent_Approval_AutoBanner",
-                "Автоприменение включено: изменения применяются без подтверждения. " +
-                "Undo доступен для каждого набора.");
+                "Режим «Без подтверждений»: все изменения применяются сразу, включая " +
+                "разрушительные операции. Откат — через undo_last / change set.");
 
     public string ApprovalModeTooltip => S(
         "Agent_Approval_Tooltip",

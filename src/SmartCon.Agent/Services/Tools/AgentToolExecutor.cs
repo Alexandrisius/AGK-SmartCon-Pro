@@ -8,30 +8,24 @@ namespace SmartCon.Agent.Services.Tools;
 
 public sealed partial class AgentToolExecutor : IToolExecutor
 {
-    /// <summary>Bypass never auto-applies more items than this in one call.</summary>
-    public const int MaxAutoApproveAffected = 200;
-
     private readonly IToolRegistry _registry;
     private readonly IAgentAwaitableEvent _revit;
     private readonly AgentSessionContext _sessionContext;
     private readonly IAgentConfirmationService _confirmation;
     private readonly IAgentAuditLog? _auditLog;
-    private readonly IActionRiskGate? _riskGate;
 
     public AgentToolExecutor(
         IToolRegistry registry,
         IAgentAwaitableEvent revit,
         AgentSessionContext sessionContext,
         IAgentConfirmationService confirmation,
-        IAgentAuditLog? auditLog = null,
-        IActionRiskGate? riskGate = null)
+        IAgentAuditLog? auditLog = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _revit = revit ?? throw new ArgumentNullException(nameof(revit));
         _sessionContext = sessionContext ?? throw new ArgumentNullException(nameof(sessionContext));
         _confirmation = confirmation ?? throw new ArgumentNullException(nameof(confirmation));
         _auditLog = auditLog;
-        _riskGate = riskGate;
     }
 
     public async Task<ToolResult> ExecuteAsync(string name, JsonElement args, CancellationToken ct)
@@ -115,97 +109,55 @@ public sealed partial class AgentToolExecutor : IToolExecutor
 
         var result = await ExecuteWithTimeoutAsync(tool, context, args, ct)
             .ConfigureAwait(false);
-        return result.WithRepairs(preparation.Repairs);
+        return TrackDocumentState(result.WithRepairs(preparation.Repairs));
     }
 
     /// <summary>
-    /// Auto-approval is allowed only in <see cref="AgentApprovalMode.AutoApproveSession"/>
-    /// and only after the hard guards: destructive risk, more than
-    /// <see cref="MaxAutoApproveAffected"/> items, and the optional risk gate
-    /// (fail-closed). Returns the audit reason or null when a dialog is required.
+    /// Remembers the documentVersion marker of every tool result and explains a
+    /// *_not_found failure when the model actually changed between two calls:
+    /// "the id is stale, re-read the model" instead of a silent not-found.
     /// </summary>
-    private async Task<string?> TryAutoApproveAsync(
+    private ToolResult TrackDocumentState(ToolResult result)
+    {
+        var previous = _sessionContext.LastDocumentVersion;
+        var current = result.DocumentVersion;
+        if (!string.IsNullOrWhiteSpace(current))
+            _sessionContext.LastDocumentVersion = current;
+
+        if (result.Success
+            || string.IsNullOrWhiteSpace(previous)
+            || string.IsNullOrWhiteSpace(current)
+            || string.Equals(previous, current, StringComparison.Ordinal)
+            || result.ErrorCode is null
+            || !result.ErrorCode.EndsWith("_not_found", StringComparison.Ordinal)
+            || (result.Message?.IndexOf("documentVersion", StringComparison.Ordinal) ?? -1) >= 0)
+        {
+            return result;
+        }
+
+        return result.WithMessageSuffix(
+            " The document changed since the previous tool call (documentVersion " +
+            previous + " → " + current + "): the id may be stale — re-read the model " +
+            "with the matching list_* tool and retry.");
+    }
+
+    /// <summary>
+    /// Bypass (AutoApproveSession) means the operator took the risk and left the
+    /// desk: no dialog and no decision-model risk gate for any tool, including
+    /// destructive ones and change-set discards. Every write still records a
+    /// change set, so undo_last can revert it. Anything short of bypass keeps the
+    /// normal confirmation flow.
+    /// </summary>
+    private Task<string?> TryAutoApproveAsync(
         AgentToolDefinition definition,
         JsonElement args,
         CancellationToken ct)
     {
-        if (_sessionContext.ApprovalMode != AgentApprovalMode.AutoApproveSession)
-            return null;
-
-        if (definition.Risk == AgentToolRisk.Destructive)
-            return null;
-
-        // C2: closing a change set is never auto-approved — it permanently drops
-        // the undo path for that set.
-        if (string.Equals(definition.Name, "discard_change_set", StringComparison.Ordinal))
-            return null;
-
-        var risk = definition.Risk;
-        var affected = CountAffected(definition, args);
-
-        if (string.Equals(definition.Name, "execute_plan", StringComparison.Ordinal)
-            && !TryGetPlanRisk(args, out risk, out _))
-        {
-            return null;
-        }
-
-        if (affected > MaxAutoApproveAffected)
-            return null;
-
-        if (_riskGate is null)
-            return "bypass";
-
-        try
-        {
-            var assessment = await _riskGate
-                .AssessAsync(
-                    new AgentActionRiskRequest
-                    {
-                        ToolName = definition.Name,
-                        Risk = risk,
-                        AffectedCount = affected,
-                        Reversible = true,
-                        ArgumentSummary = DescribeArguments(args)
-                    },
-                    ct)
-                .ConfigureAwait(false);
-
-            return assessment.Decision == AgentRiskDecision.Auto ? "risk_gate" : null;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent risk gate failed for '" + definition.Name + "': " + ex.Message +
-                " [Action: the action will require explicit confirmation (fail-closed)]");
-            return null;
-        }
-    }
-
-    private static string DescribeArguments(JsonElement args)
-    {
-        if (args.ValueKind != JsonValueKind.Object)
-            return "{}";
-
-        var keys = new List<string>();
-        foreach (var property in args.EnumerateObject())
-        {
-            var shape = property.Value.ValueKind switch
-            {
-                JsonValueKind.Array => "array(" + property.Value.GetArrayLength() + ")",
-                JsonValueKind.Object => "object",
-                JsonValueKind.String => "string",
-                JsonValueKind.Number => "number",
-                JsonValueKind.True or JsonValueKind.False => "boolean",
-                _ => "null"
-            };
-            keys.Add(property.Name + ":" + shape);
-        }
-
-        return "{" + string.Join(",", keys) + "}";
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(
+            _sessionContext.ApprovalMode == AgentApprovalMode.AutoApproveSession
+                ? "bypass"
+                : null);
     }
 
     private static bool RequiresConfirmation(AgentToolDefinition definition, JsonElement args)

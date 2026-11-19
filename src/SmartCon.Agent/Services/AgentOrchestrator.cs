@@ -27,6 +27,7 @@ public sealed partial class AgentOrchestrator
     private readonly IAgentToolResultBlobStore? _toolResultBlobStore;
     private readonly IAgentContextCompactor? _contextCompactor;
     private readonly IAgentCompactionStore? _compactionStore;
+    private readonly IDynamicToolRanker? _dynamicToolRanker;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -43,7 +44,8 @@ public sealed partial class AgentOrchestrator
         IAgentWorkingStateStore? workingStateStore = null,
         IAgentToolResultBlobStore? toolResultBlobStore = null,
         IAgentContextCompactor? contextCompactor = null,
-        IAgentCompactionStore? compactionStore = null)
+        IAgentCompactionStore? compactionStore = null,
+        IDynamicToolRanker? dynamicToolRanker = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -61,6 +63,7 @@ public sealed partial class AgentOrchestrator
         _toolResultBlobStore = toolResultBlobStore;
         _contextCompactor = contextCompactor;
         _compactionStore = compactionStore;
+        _dynamicToolRanker = dynamicToolRanker;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -78,6 +81,8 @@ public sealed partial class AgentOrchestrator
         var turnStartedAt = Stopwatch.GetTimestamp();
         var usage = AgentUsage.Empty;
         var estimatedPromptTokens = 0;
+        var lastContextTokens = 0;
+        var lastContextLimit = 0;
         string? lastRequestId = null;
         WorkingState? workingState = null;
 
@@ -268,6 +273,8 @@ public sealed partial class AgentOrchestrator
                 // Measured on the same working set the compactor triggers on;
                 // the turn context/status reserve is internal headroom.
                 var contextTokens = rawEstimator(working);
+                lastContextTokens = contextTokens;
+                lastContextLimit = contextLimit;
 
                 var messages = new List<AgentMessage>(working.Count + 2) { systemMessage };
                 messages.AddRange(working);
@@ -394,7 +401,7 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
@@ -514,7 +521,7 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
@@ -530,7 +537,8 @@ public sealed partial class AgentOrchestrator
         {
             await WriteUsageAsync(
                 conversationId, usage, "cancelled", turnStartedAt,
-                lastRequestId, estimatedPromptTokens, CancellationToken.None)
+                lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit,
+                CancellationToken.None)
                 .ConfigureAwait(false);
             throw;
         }
@@ -538,7 +546,8 @@ public sealed partial class AgentOrchestrator
         {
             await WriteUsageAsync(
                 conversationId, usage, "error", turnStartedAt,
-                lastRequestId, estimatedPromptTokens, CancellationToken.None)
+                lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit,
+                CancellationToken.None)
                 .ConfigureAwait(false);
             throw;
         }

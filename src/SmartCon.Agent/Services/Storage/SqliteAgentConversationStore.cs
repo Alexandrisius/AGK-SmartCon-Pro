@@ -199,6 +199,10 @@ ORDER BY rowid;";
 
             Execute(connection, transaction, "DELETE FROM messages WHERE session_id = @id;", conversationId);
             Execute(connection, transaction, "DELETE FROM tool_calls WHERE session_id = @id;", conversationId);
+            Execute(connection, transaction, "DELETE FROM token_usage WHERE session_id = @id;", conversationId);
+            Execute(connection, transaction, "DELETE FROM compactions WHERE session_id = @id;", conversationId);
+            Execute(connection, transaction, "DELETE FROM tool_result_blobs WHERE session_id = @id;", conversationId);
+            Execute(connection, transaction, "DELETE FROM working_states WHERE session_id = @id;", conversationId);
             Execute(connection, transaction, "DELETE FROM sessions WHERE id = @id;", conversationId);
 
             transaction.Commit();

@@ -26,14 +26,18 @@ public static class AgentToolPacks
         new()
         {
             Name = "views",
-            Description = "Поиск, просмотр и переименование видов; активный вид.",
-            Tools = new[] { "list_views", "get_current_view_info", "rename_views" }
+            Description = "Поиск, просмотр, переименование и удаление видов; активный вид.",
+            Tools = new[] { "list_views", "get_current_view_info", "rename_views", "delete_views" }
         },
         new()
         {
             Name = "view_settings",
-            Description = "Чтение и изменение настроек вида: диапазон, подрезка, видимость.",
-            Tools = new[] { "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility" }
+            Description = "Чтение и изменение настроек вида: диапазон, подрезка, видимость, параметры.",
+            Tools = new[]
+            {
+                "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility",
+                "set_view_parameters"
+            }
         },
         new()
         {
@@ -97,7 +101,7 @@ public static class AgentToolPacks
         {
             Name = "sheets",
             Description = "Листы и размещение видов.",
-            Tools = new[] { "list_sheets", "get_sheet_content" }
+            Tools = new[] { "list_sheets", "get_sheet_content", "delete_sheets" }
         },
         new()
         {
@@ -106,22 +110,27 @@ public static class AgentToolPacks
             Tools = new[]
             {
                 "list_families", "list_family_types", "get_family_parameters",
-                "find_families_with_parameter", "rename_family_parameter",
-                "add_family_parameter", "set_family_parameter_values", "set_family_formula",
-                "map_family_parameters"
+                "find_families_with_parameter", "list_shared_parameters",
+                "rename_family_parameter", "add_family_parameter",
+                "set_family_parameter_values", "set_family_formula",
+                "map_family_parameters", "delete_family_types", "remove_family_parameter"
             }
         },
         new()
         {
             Name = "schedules",
-            Description = "Ведомости и спецификации: список и данные.",
-            Tools = new[] { "list_schedules", "get_schedule_data" }
+            Description = "Ведомости и спецификации: список, данные и определение (поля/фильтры/сортировка).",
+            Tools = new[] { "list_schedules", "get_schedule_data", "get_schedule_definition" }
         },
         new()
         {
             Name = "filters",
-            Description = "Фильтры видов: создание по условиям и графические overrides.",
-            Tools = new[] { "create_view_filter", "set_filter_overrides" }
+            Description = "Фильтры видов: чтение, создание, правила, переименование, удаление и overrides.",
+            Tools = new[]
+            {
+                "list_filters", "get_filter_details", "create_view_filter", "set_filter_rules",
+                "rename_filter", "delete_filter", "set_filter_overrides"
+            }
         },
         new()
         {
@@ -157,6 +166,7 @@ public static class AgentToolPacks
         "list_views",
         "list_levels",
         "query_elements",
+        "get_element_details",
         "find_tools",
         "execute_plan",
         "rename_views",
@@ -166,9 +176,18 @@ public static class AgentToolPacks
     private static readonly Dictionary<string, AgentToolPack> PacksByName = BuildPackIndex();
     private static readonly Dictionary<string, string> PackNameByTool = BuildToolIndex();
     private static readonly HashSet<string> CoreNameSet = new(CoreNames, StringComparer.Ordinal);
+    private static readonly AgentToolPack[] PopulatedPacks =
+        Packs.Where(pack => pack.Tools.Count > 0).ToArray();
 
     /// <summary>All packs in the fixed catalog order (15 populated + 5 reserved).</summary>
     public static IReadOnlyList<AgentToolPack> All => Packs;
+
+    /// <summary>
+    /// Packs the model can actually load. Reserved packs are kept in the schema
+    /// for forward compatibility but must not be advertised: listing five empty
+    /// packs looks like broken discovery (stress-test #7).
+    /// </summary>
+    public static IReadOnlyList<AgentToolPack> Populated => PopulatedPacks;
 
     /// <summary>Tools that are always available regardless of the loaded pack.</summary>
     public static IReadOnlyCollection<string> CoreToolNames => CoreNames;

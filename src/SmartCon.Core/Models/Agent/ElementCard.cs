@@ -6,6 +6,12 @@ public sealed class ElementCard
 
     public long ElementId { get; init; }
 
+    public long? TypeId { get; init; }
+
+    public long? FamilyId { get; init; }
+
+    public string? FamilyUniqueId { get; init; }
+
     public string? Category { get; init; }
 
     public string? Family { get; init; }
@@ -36,7 +42,12 @@ public sealed class ParameterValueInfo
 
     public string? StorageType { get; init; }
 
+    /// <summary>system | shared | family</summary>
+    public string? ParameterClass { get; init; }
+
     public bool IsReadOnly { get; init; }
+
+    public string? ReadOnlyReason { get; init; }
 
     public bool IsShared { get; init; }
 
@@ -51,6 +62,18 @@ public sealed class ElementDetails
 
     public long ElementId { get; init; }
 
+    /// <summary>instance | type | element</summary>
+    public string Kind { get; init; } = "element";
+
+    public long? TypeId { get; init; }
+
+    public long? FamilyId { get; init; }
+
+    public string? FamilyUniqueId { get; init; }
+
+    /// <summary>loadable | in-place | system</summary>
+    public string? FamilyKind { get; init; }
+
     public string? Category { get; init; }
 
     public string? Family { get; init; }
@@ -59,11 +82,56 @@ public sealed class ElementDetails
 
     public string? Name { get; init; }
 
+    public long? LevelId { get; init; }
+
     public string? LevelName { get; init; }
 
     public string? Room { get; init; }
 
-    public bool ParametersTruncated { get; init; }
+    public IReadOnlyList<ParameterValueInfo> Essence { get; init; } =
+        Array.Empty<ParameterValueInfo>();
 
-    public IReadOnlyList<ParameterValueInfo> Parameters { get; init; } = Array.Empty<ParameterValueInfo>();
+    public IReadOnlyList<ParameterValueInfo> InstanceParameters { get; init; } =
+        Array.Empty<ParameterValueInfo>();
+
+    public int InstanceParametersTotal { get; init; }
+
+    public int InstanceParametersReturned { get; init; }
+
+    public bool InstanceParametersTruncated { get; init; }
+
+    public int FamilyParametersOmitted { get; init; }
+}
+
+public sealed class ElementTypeDetails
+{
+    public long TypeId { get; init; }
+
+    public string? UniqueId { get; init; }
+
+    public string? Name { get; init; }
+
+    public string? FamilyName { get; init; }
+
+    public long? FamilyId { get; init; }
+
+    public string? FamilyUniqueId { get; init; }
+
+    /// <summary>loadable | in-place | system</summary>
+    public string? FamilyKind { get; init; }
+
+    public string? Category { get; init; }
+
+    public IReadOnlyList<ParameterValueInfo> Essence { get; init; } =
+        Array.Empty<ParameterValueInfo>();
+
+    public IReadOnlyList<ParameterValueInfo>? Parameters { get; init; }
+
+    public int? ParametersTotal { get; init; }
+
+    public int? ParametersReturned { get; init; }
+
+    public bool? ParametersTruncated { get; init; }
+
+    public int FamilyParametersOmitted { get; init; }
 }

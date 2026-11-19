@@ -42,7 +42,8 @@ public static class AgentToolCatalog
             }),
             ["get_element_details"] = new("Read", false, new[]
             {
-                "детали", "параметры", "элемент", "details", "parameters", "element"
+                "детали", "параметры", "элемент", "details", "parameters", "element",
+                "прочитать", "read", "тип", "семейство", "typeId", "familyId", "essence"
             }),
             ["summarize_elements"] = new("Read", false, new[]
             {
@@ -209,6 +210,62 @@ public static class AgentToolCatalog
             {
                 "сохранённый результат", "полный результат", "resulthandle", "дочитать",
                 "продолжить результат", "stored result"
+            }),
+            ["list_filters"] = new("Read", false, new[]
+            {
+                "фильтры видов", "список фильтров", "view filters", "list filters",
+                "где применён фильтр"
+            }),
+            ["get_filter_details"] = new("Read", false, new[]
+            {
+                "правила фильтра", "filter details", "filter rules", "категории фильтра",
+                "из чего состоит фильтр"
+            }),
+            ["set_filter_rules"] = new("Write", false, new[]
+            {
+                "изменить фильтр", "правила фильтра", "set filter rules", "очистить фильтр",
+                "настроить фильтр"
+            }),
+            ["delete_filter"] = new("Write", false, new[]
+            {
+                "удалить фильтр", "убрать фильтр", "delete filter", "remove filter"
+            }),
+            ["delete_views"] = new("Write", true, new[]
+            {
+                "удалить вид", "убрать вид", "delete view", "remove view", "почистить виды"
+            }),
+            ["delete_sheets"] = new("Write", true, new[]
+            {
+                "удалить лист", "убрать лист", "delete sheet", "remove sheet", "почистить листы"
+            }),
+            ["delete_family_types"] = new("Write", true, new[]
+            {
+                "удалить типоразмер", "удалить тип", "delete family type", "remove type"
+            }),
+            ["remove_family_parameter"] = new("Write", false, new[]
+            {
+                "удалить параметр семейства", "remove family parameter", "убрать параметр",
+                "почистить параметры"
+            }),
+            ["set_view_parameters"] = new("Write", true, new[]
+            {
+                "параметры вида", "set view parameters", "назначение вида", "раздел",
+                "папка браузера", "имя вида в штампе"
+            }),
+            ["rename_filter"] = new("Write", false, new[]
+            {
+                "переименовать фильтр", "rename filter", "имя фильтра", "название фильтра",
+                "переименование фильтра"
+            }),
+            ["get_schedule_definition"] = new("Read", false, new[]
+            {
+                "фильтры спецификации", "определение спецификации", "schedule definition",
+                "почему спецификация пустая", "поля спецификации", "сортировка спецификации"
+            }),
+            ["list_shared_parameters"] = new("Read", false, new[]
+            {
+                "общие параметры", "ФОП", "shared parameters", "активный ФОП",
+                "файл общих параметров", "определения параметров"
             })
         };
 

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
+using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Tests.Agent.Support;
 using Xunit;
 
@@ -47,15 +49,16 @@ public sealed class LoadToolPackToolTests
         var loaded = data.GetProperty("loaded").EnumerateArray()
             .Select(item => item.GetString()!)
             .ToList();
-        Assert.Equal(3, loaded.Count);
+        Assert.Equal(4, loaded.Count);
         Assert.Contains("rename_views", loaded);
+        Assert.Contains("delete_views", loaded);
         Assert.Equal("views", data.GetProperty("pack").GetString());
-        Assert.Equal(3, data.GetProperty("totalTools").GetInt32());
+        Assert.Equal(4, data.GetProperty("totalTools").GetInt32());
         Assert.Equal("next_round", data.GetProperty("appliedTo").GetString());
         Assert.False(string.IsNullOrWhiteSpace(data.GetProperty("hint").GetString()));
 
-        Assert.Equal(3, session.PendingToolNames.Count);
-        Assert.Equal(3, session.LoadedToolNames.Count);
+        Assert.Equal(4, session.PendingToolNames.Count);
+        Assert.Equal(4, session.LoadedToolNames.Count);
         Assert.Contains("get_current_view_info", session.PendingToolNames);
     }
 
@@ -83,7 +86,7 @@ public sealed class LoadToolPackToolTests
             .ToList();
         Assert.Contains("rename_views", loaded);
         Assert.Contains("rename_levels", loaded);
-        Assert.Equal(5, session.PendingToolNames.Count);
+        Assert.Equal(6, session.PendingToolNames.Count);
     }
 
     [Fact]
@@ -146,9 +149,9 @@ public sealed class LoadToolPackToolTests
             .Select(item => item.GetString()!)
             .ToList();
         Assert.Equal(new[] { "apply_view_template" }, loaded);
-        Assert.Equal(4, data.GetProperty("totalTools").GetInt32());
+        Assert.Equal(5, data.GetProperty("totalTools").GetInt32());
         Assert.Equal("next_round", data.GetProperty("appliedTo").GetString());
-        Assert.Equal(4, session.LoadedToolNames.Count);
+        Assert.Equal(5, session.LoadedToolNames.Count);
     }
 
     [Fact]
@@ -164,7 +167,7 @@ public sealed class LoadToolPackToolTests
         // "already loaded" from the model's point of view.
         session.ActiveToolNames = new[]
         {
-            "list_views", "get_current_view_info", "rename_views"
+            "list_views", "get_current_view_info", "rename_views", "delete_views"
         };
 
         var second = await tool.ExecuteAsync(
@@ -173,9 +176,9 @@ public sealed class LoadToolPackToolTests
         Assert.True(second.Success);
         var data = second.Data!.Value;
         Assert.Equal(0, data.GetProperty("loaded").GetArrayLength());
-        Assert.Equal(3, data.GetProperty("alreadyLoaded").GetArrayLength());
+        Assert.Equal(4, data.GetProperty("alreadyLoaded").GetArrayLength());
         Assert.Equal("none", data.GetProperty("appliedTo").GetString());
-        Assert.Equal(3, session.PendingToolNames.Count);
+        Assert.Equal(4, session.PendingToolNames.Count);
     }
 
     [Fact]
@@ -250,6 +253,52 @@ public sealed class LoadToolPackToolTests
         Assert.Equal(
             1,
             data.GetProperty("remainingByPack").GetProperty("view_settings").GetInt32());
+    }
+
+    [Fact]
+    public async Task Execute_CountersAddUpToTheCatalogAndSchemasAreReturned()
+    {
+        // External run 6, P2: totalTools (loaded) + remainingAvailable did not add
+        // up to the catalog because core tools were counted nowhere. The payload now
+        // spells the equation out: catalog = core + loaded + inRequest + remaining.
+        var session = new AgentSessionContext();
+        var tools = AgentToolPacks.CoreToolNames
+            .Select(name => (IAgentTool)new ScriptedTool(name))
+            .ToList();
+        tools.Add(new ScriptedTool("list_view_templates"));
+        tools.Add(new ScriptedTool("get_view_template_details"));
+        tools.Add(new ScriptedTool("set_view_template_inclusion"));
+        var registry = new FakeToolRegistry(tools.ToArray());
+        var tool = CreateTool(session, registry);
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"templates\"}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        var catalogTotal = data.GetProperty("catalogTotal").GetInt32();
+        var core = data.GetProperty("coreTools").GetInt32();
+        var loaded = data.GetProperty("loadedTools").GetInt32();
+        var inRequest = data.GetProperty("inRequestTools").GetInt32();
+        var remaining = data.GetProperty("remainingAvailable").GetInt32();
+
+        Assert.Equal(catalogTotal, core + loaded + inRequest + remaining);
+        // apply_view_template is core and belongs to the templates pack, so it is
+        // counted as loaded; coreTools counts the always-available tools not loaded.
+        Assert.Equal(4, loaded);
+        Assert.Equal(8, core);
+        Assert.Equal(0, remaining);
+        Assert.Equal(
+            "catalogTotal = coreTools + loadedTools + inRequestTools + remainingAvailable",
+            data.GetProperty("counting").GetString());
+
+        var schemas = data.GetProperty("schemas");
+        Assert.Equal(4, schemas.GetArrayLength());
+        Assert.Equal("apply_view_template", schemas[0].GetProperty("name").GetString());
+        Assert.Equal(
+            "object",
+            schemas[0].GetProperty("inputSchema").GetProperty("type").GetString());
+        Assert.False(data.GetProperty("schemasTruncated").GetBoolean());
     }
 
     [Fact]

@@ -43,6 +43,10 @@ public sealed class FamilyRoutingAbLiveTests
 
         var catalog = AgentToolCards.All
             .Where(card => string.Equals(card.Pack, "families", StringComparison.Ordinal))
+            // Keep the benchmark on the original nine editing tools: the delete tools and
+            // the shared-parameter file reader are not part of the 100-phrase fixture.
+            .Where(card => card.ToolName is not ("delete_family_types"
+                or "remove_family_parameter" or "list_shared_parameters"))
             .Select(card => AgentToolCatalog.Enrich(new AgentToolDefinition
             {
                 Name = card.ToolName,

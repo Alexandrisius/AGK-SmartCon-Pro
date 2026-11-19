@@ -174,6 +174,7 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
             CreateAddTool(),
             "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"ОбщийКод\"," +
             "\"storageType\":\"text\",\"group\":\"PG_IDENTITY_DATA\",\"isShared\":true," +
+            "\"createDefinition\":true," +
             "\"guid\":\"" + guid.ToString("D") + "\",\"dryRun\":false}");
 
         await Assert.That(result.Success).IsTrue();
@@ -565,7 +566,8 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         var result = Run(
             CreateAddTool(),
             "{\"familyName\":\"" + Seed.FamilyName + "\",\"name\":\"ОбщийКод\"," +
-            "\"storageType\":\"text\",\"isShared\":true,\"dryRun\":true}");
+            "\"storageType\":\"text\",\"isShared\":true,\"createDefinition\":true," +
+            "\"dryRun\":true}");
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(
@@ -575,7 +577,22 @@ public sealed partial class AgentFamilyWriteToolsTests : RevitApiTest
         await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
     }
 
-    private AddFamilyParameterTool CreateAddTool() =>
+    [Test]
+public async Task AddParameter_SharedWithoutDefinition_IsRefusedByDefault()
+{
+    using var scope = CreateSharedFileScope();
+
+    var result = Run(
+        CreateAddTool(),
+        "{\"familyName\":\"" + Seed.FamilyName + "\",\"name\":\"ОбщийКодБезОпределения\"," +
+        "\"storageType\":\"text\",\"isShared\":true,\"dryRun\":true}");
+
+    await Assert.That(result.Success).IsFalse();
+    await Assert.That(result.ErrorCode).IsEqualTo("definition_not_found");
+    await Assert.That(result.Message!.Contains("createDefinition=true")).IsTrue();
+}
+
+private AddFamilyParameterTool CreateAddTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private RenameFamilyParameterTool CreateRenameTool() =>

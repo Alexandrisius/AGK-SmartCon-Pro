@@ -126,70 +126,6 @@ public sealed class DecisionsLayerTests
         };
 
     [Fact]
-    public async Task RiskGate_HighConfidenceYes_AutoApproves()
-    {
-        var client = new StubDecisionClient();
-        client.Answers["auto_safe"] = new AgentDecisionAnswer { Type = "noul", Noul = 0.95 };
-        var gate = new DecisionsActionRiskGate(client);
-
-        var assessment = await gate.AssessAsync(
-            new AgentActionRiskRequest { ToolName = "rename_views", Risk = AgentToolRisk.Write },
-            CancellationToken.None);
-
-        Assert.Equal(AgentRiskDecision.Auto, assessment.Decision);
-        Assert.Equal("decision-model", assessment.Source);
-    }
-
-    [Theory]
-    [InlineData(0.84)]
-    [InlineData(0.5)]
-    public async Task RiskGate_Uncertain_AsksForConfirmation(double probability)
-    {
-        var client = new StubDecisionClient();
-        client.Answers["auto_safe"] = new AgentDecisionAnswer { Type = "noul", Noul = probability };
-        var gate = new DecisionsActionRiskGate(client);
-
-        var assessment = await gate.AssessAsync(
-            new AgentActionRiskRequest { ToolName = "set_parameters", Risk = AgentToolRisk.Write },
-            CancellationToken.None);
-
-        Assert.Equal(AgentRiskDecision.Confirm, assessment.Decision);
-    }
-
-    [Fact]
-    public async Task RiskGate_Refusal_FailsClosed()
-    {
-        var client = new StubDecisionClient();
-        client.Answers["auto_safe"] = new AgentDecisionAnswer
-        {
-            Type = "refusal",
-            Error = "refusal"
-        };
-        var gate = new DecisionsActionRiskGate(client);
-
-        var assessment = await gate.AssessAsync(
-            new AgentActionRiskRequest { ToolName = "rename_views" },
-            CancellationToken.None);
-
-        Assert.Equal(AgentRiskDecision.Confirm, assessment.Decision);
-        Assert.Equal("unavailable", assessment.Source);
-    }
-
-    [Fact]
-    public async Task RiskGate_TransportError_FailsClosed()
-    {
-        var client = new StubDecisionClient { Throw = true };
-        var gate = new DecisionsActionRiskGate(client);
-
-        var assessment = await gate.AssessAsync(
-            new AgentActionRiskRequest { ToolName = "rename_views" },
-            CancellationToken.None);
-
-        Assert.Equal(AgentRiskDecision.Confirm, assessment.Decision);
-        Assert.Equal("unavailable", assessment.Source);
-    }
-
-    [Fact]
     public async Task DecisionRouter_ChoiceIsAddedToCoreReadSet()
     {
         var client = new StubDecisionClient();
@@ -261,6 +197,22 @@ public sealed class DecisionsLayerTests
         Assert.Equal(0.998, answers["is_ru"].Noul!.Value, 3);
         Assert.Equal("refusal", answers["refused"].Error);
         Assert.False(answers["refused"].IsAnswered);
+    }
+
+    [Fact]
+    public void HttpDecisionClient_ParsesUsageCostIntoTracker()
+    {
+        const string json = """
+        {"answers":{"tool":{"type":"choice","choice":"list_views","confidence":0.9}},
+         "usage":{"input_tokens":128,"output_tokens":0,"cost":0.0000384}}
+        """;
+
+        var tracker = new DecisionCostTracker();
+        var answers = HttpDecisionClient.Parse(json, out var costUsd, tracker);
+
+        Assert.Equal("list_views", answers["tool"].Choice);
+        Assert.Equal(0.0000384m, costUsd);
+        Assert.Equal(0.0000384m, tracker.TotalUsd);
     }
 }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -16,12 +17,17 @@ public sealed class HttpDecisionClient : IAgentDecisionClient, IDisposable
     private readonly AgentDecisionsSettings _settings;
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
+    private readonly DecisionCostTracker? _costTracker;
 
-    public HttpDecisionClient(AgentDecisionsSettings settings, HttpClient? http = null)
+    public HttpDecisionClient(
+        AgentDecisionsSettings settings,
+        HttpClient? http = null,
+        DecisionCostTracker? costTracker = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _http = http ?? new HttpClient();
         _ownsHttpClient = http is null;
+        _costTracker = costTracker;
         _http.Timeout = TimeSpan.FromMilliseconds(settings.TimeoutMilliseconds);
     }
 
@@ -82,14 +88,32 @@ public sealed class HttpDecisionClient : IAgentDecisionClient, IDisposable
                 (text.Length <= 200 ? text : text.Substring(0, 200)));
         }
 
-        return Parse(text);
+        return Parse(text, out var costUsd, _costTracker);
     }
 
     internal static IReadOnlyDictionary<string, AgentDecisionAnswer> Parse(string json)
     {
+        return Parse(json, out _, null);
+    }
+
+    internal static IReadOnlyDictionary<string, AgentDecisionAnswer> Parse(
+        string json,
+        out decimal costUsd,
+        DecisionCostTracker? costTracker = null)
+    {
+        costUsd = 0m;
         var answers = new Dictionary<string, AgentDecisionAnswer>(StringComparer.Ordinal);
 
         using var document = JsonDocument.Parse(json);
+
+        if (document.RootElement.TryGetProperty("usage", out var usageElement)
+            && usageElement.ValueKind == JsonValueKind.Object)
+        {
+            costUsd = ReadCost(usageElement);
+            if (costUsd > 0m)
+                costTracker?.Add(costUsd);
+        }
+
         if (!document.RootElement.TryGetProperty("answers", out var answersElement)
             || answersElement.ValueKind != JsonValueKind.Object)
         {
@@ -158,6 +182,24 @@ public sealed class HttpDecisionClient : IAgentDecisionClient, IDisposable
         }
 
         return answers;
+    }
+
+    private static decimal ReadCost(JsonElement usage)
+    {
+        if (!usage.TryGetProperty("cost", out var costElement))
+            return 0m;
+
+        if (costElement.ValueKind == JsonValueKind.Number)
+            return (decimal)costElement.GetDouble();
+
+        if (costElement.ValueKind == JsonValueKind.String
+            && decimal.TryParse(costElement.GetString(), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return 0m;
     }
 
     public void Dispose()

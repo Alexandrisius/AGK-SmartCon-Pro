@@ -21,17 +21,18 @@ public sealed class AgentToolPacksTests
     private static readonly string[] ExpectedCoreToolNames =
     {
         "get_project_overview", "list_views", "list_levels", "query_elements",
-        "find_tools", "execute_plan", "rename_views",
+        "get_element_details", "find_tools", "execute_plan", "rename_views",
         "apply_view_template"
     };
 
     private static readonly IReadOnlyDictionary<string, string[]> ExpectedToolsByPack =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["views"] = new[] { "list_views", "get_current_view_info", "rename_views" },
+            ["views"] = new[] { "list_views", "get_current_view_info", "rename_views", "delete_views" },
             ["view_settings"] = new[]
             {
-                "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility"
+                "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility",
+                "set_view_parameters"
             },
             ["view_edit"] = new[] { "configure_views", "copy_view_settings" },
             ["templates"] = new[]
@@ -46,15 +47,20 @@ public sealed class AgentToolPacksTests
             ["changes"] = new[] { "undo_last", "discard_change_set" },
             ["plans"] = new[] { "execute_plan" },
             ["meta"] = new[] { "find_tools", "read_tool_result" },
-            ["sheets"] = new[] { "list_sheets", "get_sheet_content" },
-            ["schedules"] = new[] { "list_schedules", "get_schedule_data" },
-            ["filters"] = new[] { "create_view_filter", "set_filter_overrides" },
+            ["sheets"] = new[] { "list_sheets", "get_sheet_content", "delete_sheets" },
+            ["schedules"] = new[] { "list_schedules", "get_schedule_data", "get_schedule_definition" },
+            ["filters"] = new[]
+            {
+                "list_filters", "get_filter_details", "create_view_filter", "set_filter_rules",
+                "rename_filter", "delete_filter", "set_filter_overrides"
+            },
             ["families"] = new[]
             {
                 "list_families", "list_family_types", "get_family_parameters",
-                "find_families_with_parameter", "rename_family_parameter",
-                "add_family_parameter", "set_family_parameter_values", "set_family_formula",
-                "map_family_parameters"
+                "find_families_with_parameter", "list_shared_parameters",
+                "rename_family_parameter", "add_family_parameter",
+                "set_family_parameter_values", "set_family_formula",
+                "map_family_parameters", "delete_family_types", "remove_family_parameter"
             }
         };
 
@@ -81,7 +87,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(43, placements.Length);
+        Assert.Equal(55, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
@@ -134,9 +140,9 @@ public sealed class AgentToolPacksTests
     }
 
     [Fact]
-    public void CoreToolNames_AreExactlyTheSpecifiedEight()
+    public void CoreToolNames_AreExactlyTheSpecifiedNine()
     {
-        Assert.Equal(8, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
         Assert.Equal(
             ExpectedCoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
             AgentToolPacks.CoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray());

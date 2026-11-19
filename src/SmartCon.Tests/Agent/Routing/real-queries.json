@@ -1544,6 +1544,198 @@
         "set_view_template_inclusion"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r193",
+      "query": "Поменяй условие фильтра ТЕСТ на систему Т2",
+      "expectedTools": [
+        "set_filter_rules"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r194",
+      "query": "Удали тестовый фильтр ТЕСТ_Атомарность",
+      "expectedTools": [
+        "delete_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r195",
+      "query": "Удали тестовый вид 72812",
+      "expectedTools": [
+        "delete_views"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r196",
+      "query": "Удали тестовый лист из проекта",
+      "expectedTools": [
+        "delete_sheets"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r197",
+      "query": "Удали тестовый типоразмер 1704694",
+      "expectedTools": [
+        "delete_family_types"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r198",
+      "query": "Удали параметр ТЕСТ_Параметр из семейства",
+      "expectedTools": [
+        "remove_family_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r199",
+      "query": "Проставь параметр Назначение вида для вида 72812",
+      "expectedTools": [
+        "set_view_parameters"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r200",
+      "query": "Сколько фильтров в модели и какие категории они фильтруют?",
+      "expectedTools": [
+        "list_filters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r201",
+      "query": "Покажи дерево правил фильтра и список видов, где он применён",
+      "expectedTools": [
+        "get_filter_details"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r202",
+      "query": "Замени правила фильтра: скрой только трубы Т1",
+      "expectedTools": [
+        "set_filter_rules"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r203",
+      "query": "Убери из проекта фильтр по стальным трубам",
+      "expectedTools": [
+        "delete_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r204",
+      "query": "Сотри ненужные тестовые виды из модели",
+      "expectedTools": [
+        "delete_views"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r205",
+      "query": "Удали лист с тестовым штампом",
+      "expectedTools": [
+        "delete_sheets"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r206",
+      "query": "Удали типоразмер, который больше не используется",
+      "expectedTools": [
+        "delete_family_types"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r207",
+      "query": "Убери из семейства параметр, который добавляли для теста",
+      "expectedTools": [
+        "remove_family_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r208",
+      "query": "Разложи виды по разделам: запиши параметр Раздел",
+      "expectedTools": [
+        "set_view_parameters"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r209",
+      "query": "Покажи все фильтры видов в проекте",
+      "expectedTools": [
+        "list_filters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r210",
+      "query": "Какие правила у фильтра ТЕСТ_Атомарность и где он применён?",
+      "expectedTools": [
+        "get_filter_details"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r211",
+      "query": "Какой файл общих параметров сейчас подключён и что в нём есть?",
+      "expectedTools": [
+        "list_shared_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r212",
+      "query": "Покажи общие параметры из активного ФОП, содержащие Наименование",
+      "expectedTools": [
+        "list_shared_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r213",
+      "query": "Переименуй фильтр ТЕСТ_Атомарность в Вентиляция_Приток",
+      "expectedTools": [
+        "rename_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r214",
+      "query": "Дай фильтру 74621 понятное имя по его правилу",
+      "expectedTools": [
+        "rename_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r215",
+      "query": "Почему спецификация пустая, если трубы в модели есть?",
+      "expectedTools": [
+        "get_schedule_definition"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r216",
+      "query": "Покажи фильтры и сортировку спецификации О_ОВ_Оборудование",
+      "expectedTools": [
+        "get_schedule_definition"
+      ],
+      "kind": "read"
     }
   ]
 }

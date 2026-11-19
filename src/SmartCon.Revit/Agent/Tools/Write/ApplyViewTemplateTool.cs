@@ -26,12 +26,13 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         Description =
             "Applies an existing view template to views. items: [{viewId, templateId, " +
             "overwriteTemplate?}] or select: {type?, levelId?, folder?, nameContains?, templateId?} " +
-            "with a top-level templateId (select resolves the view set for you). A view that " +
+            "with a top-level templateId (select resolves the view set for you). templateId=0 " +
+            "(or null) detaches the current template from the views. A view that " +
             "already has a different template is skipped unless overwriteTemplate=true. The " +
             "template must belong to the same view family. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""}},""additionalProperties"":false},""templateId"":{""type"":""integer""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override PlanPreflightResult PreflightCore(
@@ -60,12 +61,15 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 return PlanPreflightResult.Fail(
                     "unresolved_id", "View " + item.ViewId + " does not exist.");
 
-            if (document.GetElement(ElementIdCompat.Create(item.TemplateId)) is not View template
+            if (item.TemplateId is null or <= 0)
+                continue;
+
+            if (document.GetElement(ElementIdCompat.Create(item.TemplateId.Value)) is not View template
                 || !template.IsTemplate)
             {
                 return PlanPreflightResult.Fail(
                     "invalid_template",
-                    "Element " + item.TemplateId + " is not a view template.");
+                    "Element " + item.TemplateId.Value + " is not a view template (0 detaches).");
             }
 
             if (!AgentViewWriteHelper.AreFamiliesCompatible(document, view, template))
@@ -127,11 +131,14 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             }
 
             report.Name = view.Name;
-            if (dryRun)
-                AddTemplateDelta(doc, view, item.TemplateId, outcome);
+            var detach = item.TemplateId is null or <= 0;
+            if (dryRun && !detach)
+                AddTemplateDelta(doc, view, item.TemplateId!.Value, outcome);
 
-            var change = AgentViewSettingsWriter.ApplyTemplate(
-                doc, view, item.TemplateId, item.OverwriteTemplate);
+            var change = detach
+                ? AgentViewSettingsWriter.DetachTemplate(view)
+                : AgentViewSettingsWriter.ApplyTemplate(
+                    doc, view, item.TemplateId!.Value, item.OverwriteTemplate);
 
             ApplyChange(outcome, view, report, change, "view_template", atomic);
             if (outcome.Aborted)
@@ -297,12 +304,14 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return null;
         }
 
-        if (!request.TemplateId.HasValue || request.TemplateId.Value <= 0)
+        if (!request.TemplateId.HasValue)
         {
             errorCode = "invalid_arguments";
-            message = "select requires a top-level templateId.";
+            message = "select requires a top-level templateId (0 detaches the current template).";
             return null;
         }
+
+        var detach = request.TemplateId.Value <= 0;
 
         var viewIds = AgentViewSelector.Resolve(
             doc, request.Select!.Value, out errorCode, out message);
@@ -313,7 +322,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             .Select(viewId => new ApplyTemplateItem
             {
                 ViewId = viewId,
-                TemplateId = request.TemplateId.Value,
+                TemplateId = detach ? (long?)null : request.TemplateId.Value,
                 OverwriteTemplate = request.OverwriteTemplate
             })
             .ToList();
@@ -335,7 +344,7 @@ internal sealed class ApplyTemplateItem
 {
     public long ViewId { get; set; }
 
-    public long TemplateId { get; set; }
+    public long? TemplateId { get; set; }
 
     public bool OverwriteTemplate { get; set; }
 }

@@ -26,6 +26,8 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
 
     public string? ToolCallId { get; }
 
+    public string? ToolName { get; init; }
+
     public IReadOnlyList<AgentAttachmentItemViewModel> Attachments { get; init; } =
         Array.Empty<AgentAttachmentItemViewModel>();
 

@@ -118,6 +118,43 @@ internal static class AgentViewSettingsWriter
         return change;
     }
 
+    /// <summary>
+    /// Detaches the view template: the view keeps its current effective settings
+    /// and becomes editable. Used by apply_view_template with templateId=0/null.
+    /// </summary>
+    internal static Change DetachTemplate(View view)
+    {
+        var currentId = view.ViewTemplateId;
+        if (currentId == ElementId.InvalidElementId)
+            return Change.Skip("The view has no template (no-op).");
+
+        var oldTemplate = view.Document.GetElement(currentId)?.Name;
+        try
+        {
+            view.ViewTemplateId = ElementId.InvalidElementId;
+        }
+        catch (Exception ex)
+        {
+            return Change.Error("template_detach_failed", ex.Message);
+        }
+
+        if (view.ViewTemplateId != ElementId.InvalidElementId)
+        {
+            return Change.Error(
+                "template_detach_failed",
+                "Revit did not detach the template from '" + view.Name + "'.");
+        }
+
+        return new Change
+        {
+            Changed = true,
+            OldValue = currentId.GetValue().ToString(),
+            NewValue = string.Empty,
+            Detail = "template detached" +
+                     (oldTemplate is null ? string.Empty : " (was '" + oldTemplate + "')")
+        };
+    }
+
     internal static Change ApplyViewRange(View view, ViewRangeSpec? spec)
     {
         if (spec is null || spec.IsEmpty)

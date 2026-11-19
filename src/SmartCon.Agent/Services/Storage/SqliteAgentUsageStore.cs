@@ -29,11 +29,11 @@ public sealed class SqliteAgentUsageStore : IAgentUsageStore
 INSERT INTO token_usage(id, session_id, provider, model, prompt_tokens, completion_tokens,
                         reasoning_tokens, cached_tokens, cache_write_tokens, cost_usd,
                         latency_ms, status, request_id, compaction_id,
-                        estimated_prompt_tokens, created_at)
+                        estimated_prompt_tokens, context_tokens, context_limit, created_at)
 VALUES(@id, @sessionId, @provider, @model, @promptTokens, @completionTokens,
        @reasoningTokens, @cachedTokens, @cacheWriteTokens, @costUsd,
        @latencyMs, @status, @requestId, @compactionId,
-       @estimatedPromptTokens, @createdAt);";
+       @estimatedPromptTokens, @contextTokens, @contextLimit, @createdAt);";
             command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
             command.Parameters.AddWithValue("@sessionId", record.SessionId);
             command.Parameters.AddWithValue("@provider", record.Provider);
@@ -59,6 +59,8 @@ VALUES(@id, @sessionId, @provider, @model, @promptTokens, @completionTokens,
                 "@compactionId",
                 string.IsNullOrEmpty(record.CompactionId) ? (object)DBNull.Value : record.CompactionId!);
             command.Parameters.AddWithValue("@estimatedPromptTokens", record.EstimatedPromptTokens);
+            command.Parameters.AddWithValue("@contextTokens", record.ContextTokens);
+            command.Parameters.AddWithValue("@contextLimit", record.ContextLimit);
             command.Parameters.AddWithValue(
                 "@createdAt",
                 DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
@@ -88,6 +90,35 @@ WHERE session_id = @sessionId;";
                 return Task.FromResult(0m);
 
             return Task.FromResult(Convert.ToDecimal(value, CultureInfo.InvariantCulture));
+        }
+    }
+
+    public Task<AgentContextSnapshot?> GetLastContextAsync(Guid sessionId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT context_tokens, context_limit
+FROM token_usage
+WHERE session_id = @sessionId AND context_tokens > 0
+ORDER BY created_at DESC
+LIMIT 1;";
+            command.Parameters.AddWithValue("@sessionId", sessionId.ToString("D"));
+
+            using var reader = command.ExecuteReader();
+            if (!reader.Read())
+                return Task.FromResult<AgentContextSnapshot?>(null);
+
+            return Task.FromResult<AgentContextSnapshot?>(new AgentContextSnapshot
+            {
+                Tokens = reader.GetInt32(0),
+                Limit = reader.GetInt32(1)
+            });
         }
     }
 }

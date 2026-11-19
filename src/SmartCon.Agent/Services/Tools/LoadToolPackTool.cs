@@ -16,6 +16,7 @@ public sealed class LoadToolPackTool : IAgentTool
     public const string ToolName = "load_tool_pack";
 
     private const int MaxSuggestions = 3;
+    private const int MaxSchemas = 8;
     private const string Hint =
         "The requested tools are callable from the next round; the current round keeps " +
         "its tools.";
@@ -34,7 +35,8 @@ public sealed class LoadToolPackTool : IAgentTool
         Name = ToolName,
         Description =
             "Enables a tool pack or explicit tools for the next round; the current round keeps " +
-            "its tool set. Use it after find_tools to make the discovered tools callable.",
+            "its tool set. Returns the input schemas of the tools it enabled. Use it after " +
+            "find_tools to make the discovered tools callable.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Category = "Meta",
@@ -82,7 +84,20 @@ public sealed class LoadToolPackTool : IAgentTool
                 return Task.FromResult(ToolResult.Fail(
                     "invalid_arguments",
                     "Unknown pack '" + name + "'. Known packs: " +
-                    string.Join(", ", AgentToolPacks.All.Select(candidate => candidate.Name)) + "."));
+                    string.Join(
+                        ", ",
+                        AgentToolPacks.Populated.Select(candidate => candidate.Name)) + "."));
+            }
+
+            if (pack.Tools.Count == 0)
+            {
+                return Task.FromResult(ToolResult.Fail(
+                    "pack_reserved_empty",
+                    "The pack '" + name + "' is reserved for a future version and contains no " +
+                    "tools yet. Use: " +
+                    string.Join(
+                        ", ",
+                        AgentToolPacks.Populated.Select(candidate => candidate.Name)) + "."));
             }
 
             wanted.AddRange(AgentToolPacks.ToolsInPack(name));
@@ -141,26 +156,75 @@ public sealed class LoadToolPackTool : IAgentTool
         }
 
         var appliedTo = loaded.Count > 0 ? "next_round" : "none";
-        var available = new HashSet<string>(_sessionContext.LoadedToolNames, StringComparer.Ordinal);
-        available.UnionWith(inRequest);
-        available.UnionWith(loaded);
-        var remainingByPack = registry.GetDefinitions()
-            .Where(definition => !AgentToolPacks.IsCore(definition.Name))
-            .Where(definition => !available.Contains(definition.Name))
+
+        // The counters must add up: catalogTotal = coreTools + loadedTools +
+        // remainingAvailable. The old payload reported totalTools (loaded) next to
+        // remainingAvailable (non-core only) and the model saw 14 + 26 = 40 in a
+        // 52-tool catalog (external run 6, P2).
+        var definitions = registry.GetDefinitions().ToList();
+        var alwaysAvailable = definitions
+            .Where(definition => AgentToolPacks.IsAlwaysAvailable(definition.Name))
+            .ToList();
+        var availableNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var definition in alwaysAvailable)
+            availableNames.Add(definition.Name);
+        availableNames.UnionWith(inRequest);
+        availableNames.UnionWith(_sessionContext.LoadedToolNames);
+
+        var availableNow = definitions.Count(definition => availableNames.Contains(definition.Name));
+        var loadedTools = definitions.Count(definition =>
+            _sessionContext.LoadedToolNames.Contains(definition.Name));
+        var coreTools = definitions.Count(definition =>
+            AgentToolPacks.IsAlwaysAvailable(definition.Name)
+            && !_sessionContext.LoadedToolNames.Contains(definition.Name));
+        var inRequestTools = definitions.Count(definition =>
+            inRequest.Contains(definition.Name)
+            && !AgentToolPacks.IsAlwaysAvailable(definition.Name)
+            && !_sessionContext.LoadedToolNames.Contains(definition.Name));
+        var remainingByPack = definitions
+            .Where(definition => !availableNames.Contains(definition.Name))
             .GroupBy(definition => !string.IsNullOrWhiteSpace(definition.Pack)
                 ? definition.Pack!
                 : AgentToolPacks.PackOfTool(definition.Name)?.Name ?? "(none)")
             .OrderBy(group => group.Key, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count());
-        var remainingAvailable = remainingByPack.Values.Sum();
+        var remainingAvailable = definitions.Count - availableNow;
+
+        // Schemas of the tools this call touched: after a session restart the model
+        // otherwise needs find_tools again just to learn the signatures (external
+        // run 6, P2). Bounded so a big pack cannot flood the context.
+        var schemaNames = new HashSet<string>(loaded, StringComparer.Ordinal);
+        schemaNames.UnionWith(alreadyLoaded);
+        var schemas = definitions
+            .Where(definition => schemaNames.Contains(definition.Name))
+            .Take(MaxSchemas)
+            .Select(definition => new
+            {
+                name = definition.Name,
+                description = definition.Description,
+                inputSchema = ParseSchema(definition.InputSchemaJson)
+            })
+            .ToList();
+
         var result = new
         {
             loaded,
             alreadyLoaded,
             pack = packNames.Count == 0 ? null : string.Join(",", packNames),
-            totalTools = _sessionContext.LoadedToolNames.Count,
+            catalogTotal = definitions.Count,
+            coreTools,
+            loadedTools,
+            inRequestTools,
+            availableNow,
             remainingAvailable,
             remainingByPack,
+            // Legacy field: tools enabled in this conversation, including pack names
+            // that the registry does not know (should not happen in production).
+            totalTools = _sessionContext.LoadedToolNames.Count,
+            counting = "catalogTotal = coreTools + loadedTools + inRequestTools + " +
+                       "remainingAvailable",
+            schemas,
+            schemasTruncated = schemaNames.Count > schemas.Count,
             appliedTo,
             hint = appliedTo == "none"
                 ? "All requested tools are already available in this request."
@@ -219,6 +283,20 @@ public sealed class LoadToolPackTool : IAgentTool
         }
 
         return previous[right.Length];
+    }
+
+    private static JsonElement ParseSchema(string schemaJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(schemaJson) ? "{}" : schemaJson);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return JsonSerializer.SerializeToElement(new { });
+        }
     }
 
     private static string? GetString(JsonElement args, string property)

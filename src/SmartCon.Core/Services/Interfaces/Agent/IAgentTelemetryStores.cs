@@ -18,6 +18,13 @@ public interface IAgentUsageStore
     /// cost of the last turn.
     /// </summary>
     Task<decimal> GetSessionCostAsync(Guid sessionId, CancellationToken ct);
+
+    /// <summary>
+    /// Last measured context fill of one conversation, so the panel can show the
+    /// donut immediately after a restart or a session switch. Null when the
+    /// conversation has no measured turn yet.
+    /// </summary>
+    Task<AgentContextSnapshot?> GetLastContextAsync(Guid sessionId, CancellationToken ct);
 }
 
 /// <summary>

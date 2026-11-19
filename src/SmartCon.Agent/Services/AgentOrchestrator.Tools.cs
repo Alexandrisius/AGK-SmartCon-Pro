@@ -207,21 +207,25 @@ public sealed partial class AgentOrchestrator
         if (all.Count == 0)
             return all;
 
-        return SelectCatalogV2ToolDefinitions(userText, all, guaranteed);
+        return await SelectCatalogV2ToolDefinitionsAsync(userText, all, guaranteed, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
     /// Catalog v2 turn set: the fixed core tools, the tools explicitly requested
-    /// through load_tool_pack (guaranteed), the best BM25 card matches for the
-    /// user text, and then every loaded tool. Loaded tools are never capped out:
-    /// a tool the model has already loaded or called must stay callable on the
-    /// next turn, otherwise the provider refuses the call and the model ends the
-    /// turn with a promise instead of a tool call (session d89546b8).
+    /// through load_tool_pack (guaranteed), the best dynamic matches for the
+    /// user text, and then every loaded tool. The dynamic slots come from the
+    /// decision model when it is enabled and fall back to deterministic card
+    /// BM25 otherwise. Loaded tools are never capped out: a tool the model has
+    /// already loaded or called must stay callable on the next turn, otherwise
+    /// the provider refuses the call and the model ends the turn with a promise
+    /// instead of a tool call (session d89546b8).
     /// </summary>
-    private IReadOnlyList<AgentToolDefinition> SelectCatalogV2ToolDefinitions(
+    private async Task<IReadOnlyList<AgentToolDefinition>> SelectCatalogV2ToolDefinitionsAsync(
         string userText,
         IReadOnlyList<AgentToolDefinition> all,
-        IReadOnlyCollection<string>? guaranteed)
+        IReadOnlyCollection<string>? guaranteed,
+        CancellationToken ct)
     {
         const int topCount = 5;
 
@@ -263,7 +267,15 @@ public sealed partial class AgentOrchestrator
         var rankable = all
             .Where(definition => !names.Contains(definition.Name))
             .ToList();
-        foreach (var definition in ToolCardRouter.Rank(userText, rankable, topCount))
+
+        var dynamicEnabled = _dynamicToolRanker is { IsEnabled: true };
+        var ranked = dynamicEnabled
+            ? await _dynamicToolRanker!
+                .RankAsync(userText, rankable, topCount, ct)
+                .ConfigureAwait(false)
+            : ToolCardRouter.Rank(userText, rankable, topCount);
+
+        foreach (var definition in ranked)
             Add(definition);
 
         // Every loaded tool stays available. The catalog is still small (tens of
@@ -282,7 +294,7 @@ public sealed partial class AgentOrchestrator
         SmartConLogger.Debug(
             "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
             _sessionContext.LoadedToolNames.Count + ", guaranteed=" +
-            (guaranteed?.Count ?? 0));
+            (guaranteed?.Count ?? 0) + ", dynamic=" + (dynamicEnabled ? "decision" : "bm25"));
 
         return selected;
     }

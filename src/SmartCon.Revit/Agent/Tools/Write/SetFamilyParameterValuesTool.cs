@@ -99,7 +99,7 @@ public sealed class SetFamilyParameterValuesTool : AgentFamilyWriteToolBase
                 }
 
                 report.Name = parameter.Definition.Name;
-                if (parameter.IsDeterminedByFormula)
+                if (AgentFamilyReader.IsFormulaDriven(parameter))
                 {
                     Failed(
                         outcome,

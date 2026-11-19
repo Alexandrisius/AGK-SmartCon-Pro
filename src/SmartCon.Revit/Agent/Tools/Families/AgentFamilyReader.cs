@@ -72,8 +72,8 @@ internal static class AgentFamilyReader
 
             errorCode = "family_not_found";
             message = "No family has uniqueId '" + familyUniqueId + "'. Pass the uniqueId " +
-                      "returned by list_families; it can change if the family was reloaded or " +
-                      "recreated since it was read.";
+                      "returned by list_families, or familyName: familyId and uniqueId both " +
+                      "change when the family is reloaded or recreated.";
             return null;
         }
 
@@ -101,8 +101,9 @@ internal static class AgentFamilyReader
 
             errorCode = "family_not_found";
             message = "Family element " + familyId.Value + " does not exist in the project. " +
-                      "A family write returns a new familyId after load-back (previousFamilyId " +
-                      "in the same response): use that id, familyUniqueId, or familyName.";
+                      "A family write recreates the family element on load-back, so both " +
+                      "familyId and familyUniqueId change: use familyName, or the ids returned " +
+                      "by that write (previousFamilyId/familyUniqueId in the same response).";
             return null;
         }
 
@@ -490,6 +491,44 @@ internal static class AgentFamilyReader
         }
     }
 
+    /// <summary>
+    /// True for a Revit built-in family parameter (Comments, Mark, …).
+    /// <see cref="InternalDefinition.BuiltInParameter"/> is
+    /// <see cref="BuiltInParameter.INVALID"/> for every custom family, shared or
+    /// global parameter, so it is the API's own discriminator.
+    /// </summary>
+    internal static bool IsBuiltIn(FamilyParameter parameter)
+    {
+        try
+        {
+            return parameter.Definition is InternalDefinition internalDefinition
+                   && internalDefinition.BuiltInParameter != BuiltInParameter.INVALID;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when the value is driven by a formula. <see cref="FamilyParameter.IsDeterminedByFormula"/>
+    /// is not reliable for every parameter kind (a parameter with formula text can
+    /// report false), so the formula text is checked as well — a wrong "false" makes
+    /// set_family_parameter_values plan a silent no-op write.
+    /// </summary>
+    internal static bool IsFormulaDriven(FamilyParameter parameter)
+    {
+        try
+        {
+            return parameter.IsDeterminedByFormula
+                   || !string.IsNullOrWhiteSpace(parameter.Formula);
+        }
+        catch (Exception)
+        {
+            return !string.IsNullOrWhiteSpace(parameter.Formula);
+        }
+    }
+
     internal static FamilyParameterReport BuildParameterReport(
         FamilyParameter parameter,
         IReadOnlyList<FamilyType> types,
@@ -497,20 +536,22 @@ internal static class AgentFamilyReader
         int maxValues,
         Document? doc = null)
     {
+        var formulaDriven = IsFormulaDriven(parameter);
         var report = new FamilyParameterReport
         {
             Name = parameter.Definition.Name,
             Scope = parameter.IsInstance ? "instance" : "type",
             IsInstance = parameter.IsInstance,
             IsShared = parameter.IsShared,
+            IsBuiltIn = IsBuiltIn(parameter),
             Guid = TryGetGuid(parameter),
             StorageType = AgentFamilySpecs.StorageTypeName(parameter.StorageType),
             Spec = AgentFamilySpecs.SpecName(parameter.Definition),
             Group = AgentFamilySpecs.GroupName(parameter.Definition),
             Formula = parameter.Formula,
-            IsDeterminedByFormula = parameter.IsDeterminedByFormula,
+            IsDeterminedByFormula = formulaDriven,
             LookupTables = LookupTables(parameter),
-            CanSetValue = !parameter.IsDeterminedByFormula && !parameter.IsReadOnly,
+            CanSetValue = !formulaDriven && !parameter.IsReadOnly,
             CanSetFormula = parameter.CanAssignFormula,
             IsReporting = parameter.IsReporting,
             IsReadOnly = parameter.IsReadOnly

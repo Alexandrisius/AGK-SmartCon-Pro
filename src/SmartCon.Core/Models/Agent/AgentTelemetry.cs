@@ -24,6 +24,20 @@ public sealed class AgentUsageRecord
     public string? CompactionId { get; init; }
 
     public int EstimatedPromptTokens { get; init; }
+
+    /// <summary>Last measured context fill of the turn (panel donut numerator).</summary>
+    public int ContextTokens { get; init; }
+
+    /// <summary>Compaction trigger shown to the operator (panel donut denominator).</summary>
+    public int ContextLimit { get; init; }
+}
+
+/// <summary>Last measured context fill of a conversation, restored on session switch.</summary>
+public sealed class AgentContextSnapshot
+{
+    public int Tokens { get; init; }
+
+    public int Limit { get; init; }
 }
 
 /// <summary>One executed tool call, persisted for friction analysis (Phase 3).</summary>

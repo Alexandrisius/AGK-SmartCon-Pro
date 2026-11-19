@@ -10,9 +10,10 @@ public enum AgentApprovalMode
     ConfirmWrites = 0,
 
     /// <summary>
-    /// Writes are applied without a per-action dialog. Hard guards (destructive
-    /// risk, workshared document, more than 200 affected items, document change)
-    /// still require confirmation. Every write creates a change set.
+    /// Bypass: writes are applied with no dialog and no risk gate at all — the
+    /// operator explicitly took the risk (for example, left the desk and wants
+    /// the agent to finish the job). Every write still creates a change set, so
+    /// undo_last can revert it.
     /// </summary>
     AutoApproveSession = 1,
 

@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Agent.ViewModels;
 
@@ -47,7 +48,7 @@ public sealed partial class AgentMainViewModel
     {
         var show = new Action(() =>
         {
-            ConfirmationOperation = request.ToolName;
+            ConfirmationOperation = AgentToolDisplayNames.Get(request.ToolName);
             ConfirmationAffected = request.AffectedCount > 0
                 ? S("Agent_Confirm_Affected", "Объектов:") + " " + request.AffectedCount
                 : string.Empty;

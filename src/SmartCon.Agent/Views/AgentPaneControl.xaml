@@ -19,6 +19,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <converters:InvertBoolToVisibilityConverter x:Key="InvertBoolToVis"/>
             <converters:InvertBoolConverter x:Key="InvertBool"/>
             <converters:MarkdownToFlowDocumentConverter x:Key="MarkdownToFlow"/>
 
@@ -140,6 +141,86 @@
                 <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
                 <Setter Property="Margin" Value="2,3,0,0"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
+            </Style>
+
+            <!-- Session row: title + inline two-step delete (grey X -> green check / red X). -->
+            <Style x:Key="SessionComboBoxItem" TargetType="ComboBoxItem">
+                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Padding" Value="8,4"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Border x:Name="ItemBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                                      VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center"
+                                                Margin="6,0,0,0">
+                                        <Button Width="18" Height="18"
+                                                Style="{DynamicResource FlatIconButton}"
+                                                ToolTip="{loc:Loc Agent_Session_Delete}"
+                                                Command="{Binding RequestDeleteCommand}"
+                                                Visibility="{Binding IsConfirmingDelete, Converter={StaticResource InvertBoolToVis}}">
+                                            <iconPacks:PackIconMaterial Kind="Close"
+                                                                        Width="10" Height="10"
+                                                                        Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        </Button>
+                                        <Button Width="18" Height="18"
+                                                Style="{DynamicResource FlatIconButton}"
+                                                ToolTip="{loc:Loc Agent_Session_Delete}"
+                                                Command="{Binding ConfirmDeleteCommand}"
+                                                Visibility="{Binding IsConfirmingDelete, Converter={StaticResource BoolToVis}}">
+                                            <iconPacks:PackIconMaterial Kind="Check"
+                                                                        Width="11" Height="11"
+                                                                        Foreground="{DynamicResource SuccessBrush}"/>
+                                        </Button>
+                                        <Button Width="18" Height="18"
+                                                Style="{DynamicResource FlatIconButton}"
+                                                ToolTip="{loc:Loc Agent_Settings_Cancel}"
+                                                Command="{Binding CancelDeleteCommand}"
+                                                Visibility="{Binding IsConfirmingDelete, Converter={StaticResource BoolToVis}}">
+                                            <iconPacks:PackIconMaterial Kind="Close"
+                                                                        Width="11" Height="11"
+                                                                        Foreground="{DynamicResource DangerBrush}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverSurfaceBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedSurfaceBrush}"/>
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsSelected" Value="True"/>
+                                        <Condition Property="IsMouseOver" Value="True"/>
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SelectedPressedSurfaceBrush}"/>
+                                </MultiTrigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource DisabledFgBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <DataTemplate x:Key="AgentChatItemTemplate">
@@ -524,6 +605,7 @@
                   ItemsSource="{Binding Sessions}"
                   SelectedItem="{Binding SelectedSession}"
                   DisplayMemberPath="Title"
+                  ItemContainerStyle="{StaticResource SessionComboBoxItem}"
                   VerticalContentAlignment="Center"
                   Height="26"
                   Margin="0,0,0,4"
@@ -1156,10 +1238,20 @@
                                  Style="{DynamicResource CompactTextBox}"/>
 
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKey}" Style="{StaticResource SettingsLabel}"/>
-                        <TextBox Text="{Binding SettingsApiKeyInput, UpdateSourceTrigger=PropertyChanged}"
-                                 Height="28"
-                                 Style="{DynamicResource CompactTextBox}"/>
+                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="28"
+                                     Style="{DynamicResource CompactPasswordBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
+
+                        <Border Height="1"
+                                Margin="0,12,0,8"
+                                Background="{DynamicResource BorderAltBrush}"/>
+
+                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionProvider}" Style="{StaticResource SettingsLabel}"/>
+                        <ComboBox ItemsSource="{Binding DecisionProviderOptions}"
+                                  SelectedItem="{Binding SettingsDecisionProvider}"
+                                  Height="28"
+                                  Style="{DynamicResource CompactComboBox}"/>
 
                         <TextBlock Text="{loc:Loc Agent_Settings_DecisionModel}" Style="{StaticResource SettingsLabel}"/>
                         <ComboBox ItemsSource="{Binding DecisionModelOptions}"
@@ -1167,6 +1259,11 @@
                                   DisplayMemberPath="Label"
                                   Height="28"
                                   Style="{DynamicResource CompactComboBox}"/>
+
+                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionApiKey}" Style="{StaticResource SettingsLabel}"/>
+                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsDecisionApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="28"
+                                     Style="{DynamicResource CompactPasswordBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
 
                         <Grid Margin="0,16,0,0">

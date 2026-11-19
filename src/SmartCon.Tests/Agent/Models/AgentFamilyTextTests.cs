@@ -77,12 +77,14 @@ public sealed class AgentFamilyPackTests
     private static readonly string[] ExpectedFamilyTools =
     {
         "list_families", "list_family_types", "get_family_parameters",
-        "find_families_with_parameter", "rename_family_parameter", "add_family_parameter",
-        "set_family_parameter_values", "set_family_formula", "map_family_parameters"
+        "find_families_with_parameter", "list_shared_parameters",
+        "rename_family_parameter", "add_family_parameter",
+        "set_family_parameter_values", "set_family_formula", "map_family_parameters",
+        "delete_family_types", "remove_family_parameter"
     };
 
     [Fact]
-    public void FamiliesPack_ContainsExactlyTheNineTools()
+    public void FamiliesPack_ContainsExactlyTheExpectedTools()
     {
         var tools = AgentToolPacks.ToolsInPack("families");
 

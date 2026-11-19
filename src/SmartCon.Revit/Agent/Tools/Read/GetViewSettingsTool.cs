@@ -87,7 +87,7 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
 
         var summary = AgentViewSettingsReader.CreateSummary(settings);
         return ToolResult.Ok(
-            Compact(summary),
+            Compact(doc, settings, summary),
             "Read a compact summary of view '" + view.Name + "'. " + CompactHint);
     }
 
@@ -126,10 +126,42 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
         return JsonSerializer.SerializeToElement(node);
     }
 
-    private static JsonElement Compact(ViewSettingsSummary summary)
+    private static JsonElement Compact(
+        Document doc,
+        ViewSettings settings,
+        ViewSettingsSummary summary)
     {
         var node = JsonNode.Parse(AgentJson.Serialize(summary).GetRawText()) as JsonObject
                    ?? new JsonObject();
+
+        // Why a view parameter is read-only: the template controls it. The compact
+        // summary used to hide that, which cost the model several diagnostic rounds
+        // (external benchmark, tasks 1 and 3).
+        if (settings.TemplateId is > 0
+            && doc.GetElement(ElementIdCompat.Create(settings.TemplateId.Value)) is View template)
+        {
+            var templateSettings = AgentViewSettingsReader.Read(doc, template);
+            var parameters = new JsonArray();
+            foreach (var name in templateSettings.ControlledParameters.Take(50))
+                parameters.Add(name);
+
+            node["templateControls"] = new JsonObject
+            {
+                ["templateId"] = settings.TemplateId.Value,
+                ["templateName"] = template.Name,
+                ["controlledParameterCount"] = templateSettings.ControlledParameters.Count,
+                ["controlledParameters"] = parameters,
+                ["viewRange"] = AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.PLAN_VIEW_RANGE),
+                ["crop"] = AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.VIEWER_CROP_REGION),
+                ["visibility"] = AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.VIS_GRAPHICS_MODEL),
+                ["filters"] = AgentViewSettingsReader.IsTemplateParameterControlled(
+                    template, BuiltInParameter.VIS_GRAPHICS_FILTERS)
+            };
+        }
+
         node["hint"] = CompactHint;
         return JsonSerializer.SerializeToElement(node);
     }

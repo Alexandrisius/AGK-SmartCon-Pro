@@ -1,4 +1,3 @@
-﻿using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
@@ -24,14 +23,18 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Description =
-            "Returns parameter details for up to 10 elements: name, category, family, type, " +
-            "level, room and parameters with their raw value, display value, storage type, " +
-            "read-only/shared flags and scope (instance or type). Type parameters are included " +
-            "only when includeTypeParameters=true. By default at most 50 parameters per element " +
-            "are returned (parametersTruncated=true then). Narrow the payload with parameterNames " +
-            "(exact names), parameterNameContains (substring), onlyNonEmpty=true or " +
-            "excludeDerived=true (read-only/formula-driven parameters are skipped).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
+            "Reads up to 10 elements with their definitions. Each element returns identity " +
+            "(category, family, type, typeId, familyId, familyKind, level, room), a compact " +
+            "essence of key built-in values, and its instance parameters. Each distinct type is " +
+            "returned once in types[] with its own essence and, when includeTypeParameters=true, " +
+            "its type parameters. Parameters are classified as system, shared or family: by " +
+            "default only system and shared are returned, and the number of omitted family-local " +
+            "geometry parameters is reported in familyParametersOmitted; pass " +
+            "parameterClasses=[\"family\"] to include them. instanceParametersTotal/Returned/" +
+            "Truncated and parametersTotal/Returned/Truncated describe the caps (the cap applies " +
+            "per scope). readOnlyReason is set for parameters the agent cannot write. Narrow the " +
+            "payload with parameterNames, parameterNameContains, onlyNonEmpty or excludeDerived.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""parameterClasses"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""system"",""shared"",""family""]}},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -48,6 +51,31 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 "too_many_elements",
                 "At most " + MaxElements + " element ids are allowed per call.");
 
+        var classes = new HashSet<string>(StringComparer.Ordinal);
+        var requestedClasses = AgentJson.GetStringArray(args, "parameterClasses");
+        if (requestedClasses.Count == 0)
+        {
+            classes.Add(AgentParameterClassifier.System);
+            classes.Add(AgentParameterClassifier.Shared);
+        }
+        else
+        {
+            foreach (var raw in requestedClasses)
+            {
+                var value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+                if (value != AgentParameterClassifier.System
+                    && value != AgentParameterClassifier.Shared
+                    && value != AgentParameterClassifier.Family)
+                {
+                    return ToolResult.Fail(
+                        "invalid_arguments",
+                        "parameterClasses supports only \"system\", \"shared\" and \"family\".");
+                }
+
+                classes.Add(value);
+            }
+        }
+
         var includeTypeParameters = AgentJson.GetBool(args, "includeTypeParameters", false);
         var onlyNonEmpty = AgentJson.GetBool(args, "onlyNonEmpty", false);
         var excludeDerived = AgentJson.GetBool(args, "excludeDerived", false);
@@ -60,7 +88,10 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         var parameterNames = new HashSet<string>(
             AgentJson.GetStringArray(args, "parameterNames"),
             StringComparer.OrdinalIgnoreCase);
-        var details = new List<ElementDetails>();
+
+        var elements = new List<ElementDetails>();
+        var types = new List<ElementTypeDetails>();
+        var typesById = new Dictionary<long, ElementTypeDetails>();
         var missing = new List<long>();
 
         foreach (var id in elementIds)
@@ -74,19 +105,37 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 continue;
             }
 
-            details.Add(CreateDetails(
-                doc,
-                element,
-                includeTypeParameters,
-                onlyNonEmpty,
-                excludeDerived,
-                parameterNameContains,
-                maxParameters,
-                parameterNames,
-                ct));
+            var type = element as ElementType ?? ResolveType(doc, element);
+            var filter = new AgentParameterFilter
+            {
+                Classes = classes,
+                Names = parameterNames,
+                NameContains = parameterNameContains,
+                OnlyNonEmpty = onlyNonEmpty,
+                ExcludeDerived = excludeDerived,
+                Max = maxParameters,
+                EssenceProfile = AgentElementEssence.ProfileFor(element.Category)
+            };
+
+            if (type is not null)
+            {
+                var typeId = type.Id.GetValue();
+                if (!typesById.TryGetValue(typeId, out var typeDetails))
+                {
+                    typeDetails = AgentElementDetailsBuilder.BuildType(
+                        doc,
+                        type,
+                        filter,
+                        includeTypeParameters);
+                    typesById[typeId] = typeDetails;
+                    types.Add(typeDetails);
+                }
+            }
+
+            elements.Add(AgentElementDetailsBuilder.BuildElement(doc, element, type, filter));
         }
 
-        if (details.Count == 0)
+        if (elements.Count == 0)
         {
             return ToolResult.Fail(
                 "element_not_found",
@@ -95,284 +144,26 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
 
         var payload = new
         {
-            total = details.Count,
+            total = elements.Count,
             missing,
-            elements = details
+            parameterClasses = classes.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            includeTypeParameters,
+            types,
+            elements
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Returned details for " + details.Count + " element(s).");
+            "Returned details for " + elements.Count + " element(s) and " + types.Count +
+            " type(s).");
     }
 
-    private static ElementDetails CreateDetails(
-        Document doc,
-        Element element,
-        bool includeTypeParameters,
-        bool onlyNonEmpty,
-        bool excludeDerived,
-        string? parameterNameContains,
-        int maxParameters,
-        HashSet<string> parameterNames,
-        CancellationToken ct)
+    private static ElementType? ResolveType(Document doc, Element element)
     {
-        var card = AgentElementCardFactory.Create(doc, element);
-        var parameters = new List<ParameterValueInfo>();
-        var truncated = false;
-
-        foreach (Parameter parameter in element.Parameters)
-        {
-            if (ct.IsCancellationRequested)
-                ct.ThrowIfCancellationRequested();
-
-            if (parameters.Count >= maxParameters)
-            {
-                truncated = true;
-                break;
-            }
-
-            if (ShouldInclude(
-                parameter, onlyNonEmpty, excludeDerived,
-                parameterNameContains, parameterNames))
-            {
-                parameters.Add(CreateParameterInfo(doc, parameter, "instance"));
-            }
-        }
-
-        if (includeTypeParameters && !truncated)
-        {
-            var typeId = element.GetTypeId();
-            if (typeId != ElementId.InvalidElementId
-                && doc.GetElement(typeId) is Element type)
-            {
-                foreach (Parameter parameter in type.Parameters)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    if (parameters.Count >= maxParameters)
-                    {
-                        truncated = true;
-                        break;
-                    }
-
-                    if (ShouldInclude(
-                        parameter, onlyNonEmpty, excludeDerived,
-                        parameterNameContains, parameterNames))
-                    {
-                        parameters.Add(CreateParameterInfo(doc, parameter, "type"));
-                    }
-                }
-            }
-        }
-
-        return new ElementDetails
-        {
-            UniqueId = element.UniqueId,
-            ElementId = element.Id.GetValue(),
-            Category = card.Category,
-            Family = card.Family,
-            Type = card.Type,
-            Name = card.Name,
-            LevelName = card.LevelName,
-            Room = card.Room,
-            ParametersTruncated = truncated,
-            Parameters = Deduplicate(parameters)
-        };
-    }
-
-    /// <summary>
-    /// Revit exposes several parameters under the same display name (for example
-    /// "Category" via ELEM_CATEGORY_PARAM and ELEM_CATEGORY_PARAM_MT). The model
-    /// reads such duplicates as a bug (dogfood finding #3), so identical
-    /// name+scope+value rows are collapsed.
-    /// </summary>
-    private static List<ParameterValueInfo> Deduplicate(List<ParameterValueInfo> parameters)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<ParameterValueInfo>(parameters.Count);
-        foreach (var parameter in parameters)
-        {
-            var key = parameter.Name + "|" + parameter.Scope + "|" +
-                      parameter.StorageType + "|" + parameter.Value;
-            if (seen.Add(key))
-                result.Add(parameter);
-        }
-
-        return result;
-    }
-
-    private static bool ShouldInclude(
-        Parameter parameter,
-        bool onlyNonEmpty,
-        bool excludeDerived,
-        string? parameterNameContains,
-        HashSet<string> parameterNames)
-    {
-        var name = parameter.Definition?.Name;
-        if (parameterNames.Count > 0
-            && (string.IsNullOrEmpty(name) || !parameterNames.Contains(name!)))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(parameterNameContains)
-            && (string.IsNullOrEmpty(name)
-                || name!.IndexOf(parameterNameContains!, StringComparison.OrdinalIgnoreCase) < 0))
-        {
-            return false;
-        }
-
-        // Derived here means computed/read-only: formula-driven values cannot be
-        // written by the agent anyway.
-        if (excludeDerived && parameter.IsReadOnly)
-            return false;
-
-        if (!onlyNonEmpty)
-            return true;
-
-        try
-        {
-            if (!parameter.HasValue)
-                return false;
-
-            return parameter.StorageType switch
-            {
-                StorageType.String => !string.IsNullOrWhiteSpace(parameter.AsString()),
-                StorageType.Integer => parameter.AsInteger() != 0,
-                StorageType.Double => Math.Abs(parameter.AsDouble()) > 1e-9,
-                StorageType.ElementId => parameter.AsElementId() != ElementId.InvalidElementId,
-                _ => true
-            };
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private static ParameterValueInfo CreateParameterInfo(
-        Document doc,
-        Parameter parameter,
-        string scope)
-    {
-        var isShared = false;
-        string? guid = null;
-        try
-        {
-            isShared = parameter.IsShared;
-            if (isShared)
-            {
-                var value = parameter.GUID;
-                if (value != Guid.Empty)
-                    guid = value.ToString("D");
-            }
-        }
-        catch (Exception)
-        {
-        }
-
-        return new ParameterValueInfo
-        {
-            Name = parameter.Definition?.Name ?? string.Empty,
-            Value = TryReadRawValue(parameter),
-            DisplayValue = TryReadDisplayValue(doc, parameter),
-            Unit = TryReadUnitLabel(doc, parameter),
-            StorageType = parameter.StorageType.ToString(),
-            IsReadOnly = parameter.IsReadOnly,
-            IsShared = isShared,
-            ParameterGuid = guid,
-            Scope = scope
-        };
-    }
-
-    private static string? TryReadRawValue(Parameter parameter)
-    {
-        if (!parameter.HasValue)
+        var typeId = element.GetTypeId();
+        if (typeId == ElementId.InvalidElementId)
             return null;
 
-        try
-        {
-            return parameter.StorageType switch
-            {
-                StorageType.String => parameter.AsString(),
-                StorageType.Integer => parameter.AsInteger().ToString(CultureInfo.InvariantCulture),
-                StorageType.Double => parameter.AsDouble().ToString("R", CultureInfo.InvariantCulture),
-                StorageType.ElementId => parameter.AsElementId().GetValue()
-                    .ToString(CultureInfo.InvariantCulture),
-                _ => null
-            };
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static string? TryReadDisplayValue(Document doc, Parameter parameter)
-    {
-        if (!parameter.HasValue)
-            return null;
-
-        try
-        {
-            var value = parameter.AsValueString();
-            if (parameter.StorageType != StorageType.Double)
-                return string.IsNullOrWhiteSpace(value) ? null : value;
-
-            if (!string.IsNullOrWhiteSpace(value) && !LooksNumeric(value!))
-                return value;
-
-            var label = TryReadUnitLabel(doc, parameter);
-            if (string.IsNullOrWhiteSpace(label))
-                return string.IsNullOrWhiteSpace(value) ? null : value;
-
-            var number = string.IsNullOrWhiteSpace(value)
-                ? parameter.AsDouble().ToString("0.###", CultureInfo.InvariantCulture)
-                : value;
-
-            return number + " " + label;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static bool LooksNumeric(string value)
-    {
-        foreach (var character in value)
-        {
-            if (char.IsDigit(character)
-                || character is '.' or ',' or '-' or '+' or ' '
-                || character == ' ')
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private static string? TryReadUnitLabel(Document doc, Parameter parameter)
-    {
-        try
-        {
-            var spec = parameter.Definition?.GetDataType();
-            if (spec is null)
-                return null;
-
-            var format = doc.GetUnits().GetFormatOptions(spec);
-            var unit = format?.GetUnitTypeId();
-            if (unit is null)
-                return null;
-
-            var label = LabelUtils.GetLabelForUnit(unit);
-            return string.IsNullOrWhiteSpace(label) ? null : label;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        return doc.GetElement(typeId) as ElementType;
     }
 }

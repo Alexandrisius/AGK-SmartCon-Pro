@@ -53,6 +53,45 @@ public sealed class ToolResultBudgetTests
     }
 
     [Fact]
+    public void Serialize_OverBudgetFamilies_KeepsTotalAndNeverEmptiesTheArray()
+    {
+        // Stress-test #3: families=[] next to familiesTotal=5 read as "nothing found".
+        var families = Enumerable.Range(0, 5)
+            .Select(index => new
+            {
+                familyId = index,
+                familyName = "F" + index,
+                matchedTypes = Enumerable.Range(0, 120)
+                    .Select(type => new { typeId = type, value = new string('x', 60) })
+                    .ToArray()
+            })
+            .ToArray();
+
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new
+            {
+                families,
+                familiesTotal = families.Length
+            }),
+            "found 5 families");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 4000);
+
+        Assert.True(json.Length <= 4000);
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        Assert.Equal(5, data.GetProperty("familiesTotal").GetInt32());
+
+        if (data.TryGetProperty("families", out var array))
+        {
+            Assert.True(
+                array.GetArrayLength() > 0,
+                "a truncated array must never be emptied while its total is still reported");
+        }
+    }
+
+    [Fact]
     public void Serialize_NoArrays_FallsBackToDigest()
     {
         var payload = new { total = 5, padding = new string('x', 20000) };

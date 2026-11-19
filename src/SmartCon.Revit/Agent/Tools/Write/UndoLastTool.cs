@@ -353,6 +353,31 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             };
         }
 
+        if (key == "filter_name")
+        {
+            if (element is not ParameterFilterElement filter)
+            {
+                return (false, "unsupported_element",
+                    "Element " + item.ElementId + " is not a view filter.");
+            }
+
+            if (string.Equals(filter.Name, item.OldValue, StringComparison.Ordinal))
+                return (false, null, "The filter already has the previous name (no-op).");
+
+            if (!force && !string.Equals(filter.Name, item.NewValue, StringComparison.Ordinal))
+            {
+                return (false, "undo_conflict",
+                    "The filter is named '" + filter.Name + "' instead of '" + item.NewValue +
+                    "' — it was renamed after the operation (conflict).");
+            }
+
+            if (string.IsNullOrWhiteSpace(item.OldValue))
+                return (false, "invalid_change_item", "The recorded previous name is empty.");
+
+            filter.Name = item.OldValue;
+            return (true, null, null);
+        }
+
         if (key.StartsWith("instance:", StringComparison.Ordinal)
             || key.StartsWith("type:", StringComparison.Ordinal))
         {

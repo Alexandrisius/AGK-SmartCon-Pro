@@ -28,7 +28,8 @@ public static class ToolResultBudget
     {
         "elements", "views", "levels", "groups", "parameters", "cards",
         "changed", "skipped", "failed", "items", "templates",
-        "families", "types", "matchedTypes"
+        "families", "types", "matchedTypes",
+        "filters", "schedules", "sheets", "appliedViews"
     };
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -105,6 +106,12 @@ public static class ToolResultBudget
             if (largest.Array is null)
                 return AddEnvelope(root, maxCharacters, resultHandle);
 
+            // Never shrink an array to zero: a payload with families=[] and
+            // familiesTotal=5 reads as "nothing found" (stress-test #3). At one
+            // element the digest envelope takes over instead.
+            if (largest.Array.Count <= 1)
+                return AddEnvelope(root, maxCharacters, resultHandle);
+
             var keep = largest.Array.Count / 2;
             while (largest.Array.Count > keep)
                 largest.Array.RemoveAt(largest.Array.Count - 1);
@@ -166,6 +173,17 @@ public static class ToolResultBudget
         {
             if (data[name] is { } value)
                 digest[name] = value.DeepClone();
+        }
+
+        // Keep every "<name>Total" counter the tools report, so the model still
+        // sees that matches exist after the payload was replaced by a digest.
+        foreach (var property in data)
+        {
+            if (property.Key.EndsWith("Total", StringComparison.Ordinal)
+                && property.Value is { } totalValue)
+            {
+                digest[property.Key] = totalValue.DeepClone();
+            }
         }
 
         if (data["affected"] is { } affected)

@@ -9,6 +9,7 @@ using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.UI;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.UI;
@@ -31,8 +32,11 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private readonly IActiveDocumentChangeNotifier? _documentChangeNotifier;
     private readonly IAgentUsageStore? _usageStore;
     private readonly IDispatcher _dispatcher;
+    private readonly DecisionCostTracker? _decisionCostTracker;
+    private readonly object _costGate = new();
     private bool _hasApiKey;
-    private decimal _sessionCostUsd;
+    private decimal _chatCostUsd;
+    private decimal _decisionCostUsd;
     private readonly Dictionary<string, AgentChatItemViewModel> _toolCards =
         new(StringComparer.Ordinal);
 
@@ -56,7 +60,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         IDispatcher dispatcher,
         Services.Tools.AgentSessionContext sessionContext,
         IActiveDocumentChangeNotifier? documentChangeNotifier = null,
-        IAgentUsageStore? usageStore = null)
+        IAgentUsageStore? usageStore = null,
+        DecisionCostTracker? decisionCostTracker = null)
     {
         _conversationStore = conversationStore ?? throw new ArgumentNullException(nameof(conversationStore));
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
@@ -73,7 +78,11 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _documentChangeNotifier = documentChangeNotifier;
         _usageStore = usageStore;
+        _decisionCostTracker = decisionCostTracker;
         _hasApiKey = settings.HasApiKey;
+
+        if (_decisionCostTracker is not null)
+            _decisionCostTracker.CostAdded += OnDecisionCostAdded;
 
         AttachConfirmationService(_confirmationService);
         AttachSessionContext(sessionContext);
@@ -188,6 +197,9 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         if (_documentChangeNotifier is not null)
             _documentChangeNotifier.ActiveDocumentChanged -= OnActiveDocumentChanged;
 
+        if (_decisionCostTracker is not null)
+            _decisionCostTracker.CostAdded -= OnDecisionCostAdded;
+
         DetachConfirmationService(_confirmationService);
         Messages.CollectionChanged -= OnMessagesChanged;
         Attachments.CollectionChanged -= OnAttachmentsChanged;
@@ -223,20 +235,53 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         IsContextPopupOpen = false;
     }
 
-    private void ResetSessionCost() => ApplySessionCost(0m);
+    private void ResetSessionCost()
+    {
+        lock (_costGate)
+        {
+            _chatCostUsd = 0m;
+            _decisionCostUsd = 0m;
+        }
+
+        UpdateTokenSummary();
+    }
 
     private void ApplySessionCost(decimal costUsd)
     {
-        _sessionCostUsd = costUsd;
-        TokenSummary = "$" + _sessionCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
+        lock (_costGate)
+            _chatCostUsd = costUsd;
+
+        UpdateTokenSummary();
     }
 
     private void AddTurnCost(AgentUsage usage)
     {
-        if (usage.CostUsd.HasValue)
-            _sessionCostUsd += usage.CostUsd.Value;
+        if (!usage.CostUsd.HasValue)
+            return;
 
-        TokenSummary = "$" + _sessionCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
+        lock (_costGate)
+            _chatCostUsd += usage.CostUsd.Value;
+
+        UpdateTokenSummary();
+    }
+
+    private void OnDecisionCostAdded(decimal delta)
+    {
+        lock (_costGate)
+            _decisionCostUsd += delta;
+
+        // Decision calls complete on the tool-execution thread; the counter is
+        // WPF-bound and must be updated on the UI thread.
+        FireAndForget(_dispatcher.InvokeAsync(UpdateTokenSummary), nameof(OnDecisionCostAdded));
+    }
+
+    private void UpdateTokenSummary()
+    {
+        decimal total;
+        lock (_costGate)
+            total = _chatCostUsd + _decisionCostUsd;
+
+        TokenSummary = "$" + total.ToString("0.0000", CultureInfo.InvariantCulture);
     }
 
     private async Task RefreshSessionCostAsync(Guid sessionId)
@@ -257,6 +302,37 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             // usage table could not be read.
             ApplySessionCost(0m);
         }
+    }
+
+    /// <summary>
+    /// Restores the context donut of a stored conversation. Tokens and the
+    /// compaction trigger are persisted with every turn, so switching sessions
+    /// or restarting Revit shows the same fill level immediately.
+    /// </summary>
+    private async Task RestoreContextUsageAsync(Guid sessionId)
+    {
+        if (_usageStore is null)
+            return;
+
+        try
+        {
+            var snapshot = await _usageStore
+                .GetLastContextAsync(sessionId, CancellationToken.None)
+                .ConfigureAwait(true);
+
+            if (snapshot is { Tokens: > 0, Limit: > 0 })
+            {
+                ContextLimit = snapshot.Limit;
+                ContextTokens = snapshot.Tokens;
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            // The donut is informational: never break session loading.
+        }
+
+        ResetContextUsage();
     }
 
     private void UpdateContextPresentation()
@@ -341,7 +417,10 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                 Sessions.Add(new AgentSessionItemViewModel(
                     session.Id,
                     session.Title,
-                    session.UpdatedAt));
+                    session.UpdatedAt,
+                    RequestDeleteSession,
+                    ConfirmDeleteSession,
+                    CancelDeleteSession));
             }
 
             var target = currentId.HasValue
@@ -392,6 +471,74 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         FireAndForget(RefreshDocumentAndSessionsAsync(), nameof(RefreshDocumentAndSessionsAsync));
     }
 
+    private void RequestDeleteSession(AgentSessionItemViewModel session)
+    {
+        if (IsBusy)
+            return;
+
+        foreach (var item in Sessions)
+            item.IsConfirmingDelete = ReferenceEquals(item, session);
+
+        StatusText = S("Agent_Session_DeleteConfirmHint",
+            "Нажмите галочку, чтобы удалить сессию");
+        HasError = false;
+    }
+
+    private void CancelDeleteSession(AgentSessionItemViewModel session)
+    {
+        session.IsConfirmingDelete = false;
+        StatusText = S("Agent_Status_Ready", "Готов");
+    }
+
+    private void ConfirmDeleteSession(AgentSessionItemViewModel session)
+    {
+        FireAndForget(DeleteSessionAsync(session), nameof(DeleteSessionAsync));
+    }
+
+    private async Task DeleteSessionAsync(AgentSessionItemViewModel session)
+    {
+        if (IsBusy || !Sessions.Contains(session))
+            return;
+
+        var wasSelected = ReferenceEquals(SelectedSession, session);
+        var index = Sessions.IndexOf(session);
+
+        try
+        {
+            await _conversationStore
+                .DeleteConversationAsync(session.Id, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            StatusText = S("Agent_Status_Error", "Ошибка") + ": " + ex.Message;
+            session.IsConfirmingDelete = false;
+            return;
+        }
+
+        session.IsConfirmingDelete = false;
+        Sessions.Remove(session);
+        HasError = false;
+        StatusText = S("Agent_Session_Deleted", "Сессия удалена");
+
+        if (!wasSelected)
+            return;
+
+        if (Sessions.Count > 0)
+        {
+            SelectedSession = Sessions[Math.Min(index, Sessions.Count - 1)];
+            return;
+        }
+
+        SelectedSession = null;
+        Messages.Clear();
+        _toolCards.Clear();
+        ResetContextUsage();
+        ResetSessionCost();
+        await CreateSessionAsync().ConfigureAwait(true);
+    }
+
     private async Task CreateSessionAsync()
     {
         if (_currentContext is not { HasDocument: true } context)
@@ -411,7 +558,13 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             .CreateConversationAsync(header, CancellationToken.None)
             .ConfigureAwait(true);
 
-        var item = new AgentSessionItemViewModel(id, header.Title, DateTime.UtcNow);
+        var item = new AgentSessionItemViewModel(
+            id,
+            header.Title,
+            DateTime.UtcNow,
+            RequestDeleteSession,
+            ConfirmDeleteSession,
+            CancelDeleteSession);
         Sessions.Insert(0, item);
         SelectedSession = item;
         Messages.Clear();
@@ -429,6 +582,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                 .ConfigureAwait(true);
 
             await RefreshSessionCostAsync(session.Id).ConfigureAwait(true);
+            await RestoreContextUsageAsync(session.Id).ConfigureAwait(true);
 
             Messages.Clear();
             _toolCards.Clear();
@@ -474,7 +628,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                     {
                         var card = new AgentChatItemViewModel(AgentChatItemKind.Tool, call.Id)
                         {
-                            Header = call.Name,
+                            Header = AgentToolDisplayNames.Get(call.Name),
+                            ToolName = call.Name,
                             Text = S("Agent_Tool_Done", "выполнено"),
                             StatusText = "✓"
                         };
@@ -488,13 +643,25 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                         && _toolCards.TryGetValue(message.ToolCallId, out var toolCard))
                     {
                         toolCard.Text = DescribeToolResult(message.Content);
-                        toolCard.Details = AgentToolResultFormatter.Pretty(message.Content);
+                        toolCard.Details = WithToolName(
+                            toolCard.ToolName,
+                            AgentToolResultFormatter.Pretty(message.Content));
                         toolCard.StatusText = "✓ " + S("Agent_Tool_Done", "выполнено");
                         toolCard.IsSuccess = true;
                     }
                     break;
             }
         }
+    }
+
+    private static string WithToolName(string? toolName, string details)
+    {
+        if (string.IsNullOrWhiteSpace(details))
+            return details;
+
+        return string.IsNullOrWhiteSpace(toolName)
+            ? details
+            : "tool: " + toolName + "\n\n" + details;
     }
 
     private static IReadOnlyList<AgentAttachmentItemViewModel> CreateAttachmentPreviews(
@@ -570,7 +737,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         ShowBanner = !HasDocument || !HasApiKey;
         BannerText = !HasDocument
             ? S("Agent_Banner_NoDocument", "Откройте проект Revit — агент получит контекст автоматически.")
-            : S("Agent_Banner_NoApiKey", "Ключ LLM не настроен. Задайте SMARTCON_OPENROUTER_API_KEY.");
+            : S("Agent_Banner_NoApiKey",
+                "Ключ LLM не настроен. Откройте настройки агента (⚙) и задайте ключ провайдера.");
     }
 
     private void OnActiveDocumentChanged(object? sender, ActiveDocumentChangedEventArgs e)

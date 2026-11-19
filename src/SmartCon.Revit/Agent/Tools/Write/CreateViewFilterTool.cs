@@ -6,6 +6,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -32,7 +33,12 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             "op: eq|neq|contains|notcontains|beginswith|endswith|gt|ge|lt|le|hasvalue|novalue, " +
             "value: \"Т1\"} combined with logic=and|or. categories accept OST_ names or localized " +
             "names. dryRun defaults to true; dryRun=false requires user confirmation. The answer " +
-            "contains per-section status, changed/skipped/failed items and read-back per view.",
+            "contains per-section status, changed/skipped/failed items and read-back per view. The " +
+            "filter is created only when at least one passed view can accept it: when every " +
+            "view fails validation (template-controlled, schedule, legend, sheet), nothing is " +
+            "created and failed[] names the reason per view. With atomic=false the filter is " +
+            "applied to the views that can take it and the rest are reported in failed[]; " +
+            "atomic=true makes the whole call all-or-nothing.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""name"":{""type"":""string""},""categories"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string"",""description"":""category|family|type|level|room|system|parameter""},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""visibility"":{""type"":""string"",""enum"":[""none"",""hide"",""show""],""default"":""none""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""viewIds"",""categories""],""additionalProperties"":false}"
@@ -48,7 +54,7 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
         var sections = new List<SectionReport>();
         var viewIds = AgentJson.GetLongArray(args, "viewIds");
         var categories = AgentJson.GetStringArray(args, "categories");
-        var conditions = ReadConditions(args, outcome);
+        var conditions = AgentFilterConditionReader.Read(args, outcome);
         var logic = (AgentJson.GetString(args, "logic") ?? "and").Trim().ToLowerInvariant();
         var visibility = (AgentJson.GetString(args, "visibility") ?? "none").Trim().ToLowerInvariant();
         var requestedName = AgentJson.GetString(args, "name");
@@ -153,6 +159,83 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             outcome.Data["nameSanitized"] = true;
         }
 
+        // Resolve and validate every view BEFORE touching the model: a view the
+        // template controls must land in failed[] with its own code, and when no
+        // view can take the filter nothing is created at all (external run 6, P1 —
+        // a tool_failed/InvalidObjectException used to hide the real cause).
+        var eligibleViewIds = new List<long>();
+        var seenViewIds = new HashSet<long>();
+        var validationFailed = 0;
+        foreach (var viewId in viewIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!seenViewIds.Add(viewId))
+                continue;
+
+            var report = new WriteItemReport { Id = viewId };
+            if (!AgentViewWriteHelper.TryGetView(
+                    doc, viewId, out var view, out var code, out var reason))
+            {
+                ApplyViewTemplateTool.Fail(outcome, report, code, reason);
+                validationFailed++;
+                continue;
+            }
+
+            report.Name = view.Name;
+            if (!AgentFilterWriteHelper.SupportsFilters(view))
+            {
+                ApplyViewTemplateTool.Fail(outcome, report, "unsupported_view_type",
+                    "View '" + view.Name + "' (" + view.ViewType +
+                    ") does not support view filters.");
+                validationFailed++;
+                continue;
+            }
+
+            if (AgentFilterWriteHelper.IsFilterControlLockedByTemplate(view, out var templateId))
+            {
+                ApplyViewTemplateTool.Fail(outcome, report, "view_controlled_by_template",
+                    "The view template " + templateId + " controls V/G overrides; change the " +
+                    "template instead of the view.");
+                validationFailed++;
+                continue;
+            }
+
+            eligibleViewIds.Add(viewId);
+        }
+
+        if (atomic && validationFailed > 0)
+        {
+            outcome.Aborted = true;
+            outcome.Success = false;
+            outcome.ErrorCode = "atomic_aborted";
+            outcome.Message = validationFailed + " view(s) failed validation and atomic=true, " +
+                              "so nothing was created or changed.";
+            Finish(outcome, sections);
+            return;
+        }
+
+        if (eligibleViewIds.Count == 0)
+        {
+            // Same shape as the dry run: every reason is in failed[], and the
+            // top-level errorCode names it when all views failed the same way.
+            outcome.Success = false;
+            outcome.ErrorCode ??= "no_eligible_views";
+            outcome.Message = "No view can accept the filter, so nothing was created (a filter is " +
+                              "created only when at least one view accepts it). " +
+                              "See failed[] for the per-view reason.";
+            outcome.Data["created"] = false;
+            outcome.Data["wouldCreate"] = false;
+            outcome.Data["viewCounters"] = new
+            {
+                total = seenViewIds.Count,
+                changed = 0,
+                skipped = 0,
+                failed = validationFailed
+            };
+            Finish(outcome, sections);
+            return;
+        }
+
         var filter = AgentFilterWriteHelper.FindByName(doc, name);
         var created = false;
         var reused = false;
@@ -189,14 +272,22 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                     : "created '" + filter.Name + "'"));
         }
 
+        // Cache the element data before the view loop: the rollback path deletes the
+        // filter, and reading Name/UniqueId after Delete throws InvalidObjectException
+        // (stress-test regression A).
+        var filterId = filter.Id;
+        var filterIdValue = filterId.GetValue();
+        var filterName = filter.Name;
+        var filterUniqueId = filter.UniqueId;
+
         if (created)
         {
             outcome.Items.Add(new ChangeItem
             {
-                ElementId = filter.Id.GetValue(),
-                UniqueId = filter.UniqueId,
+                ElementId = filterIdValue,
+                UniqueId = filterUniqueId,
                 ParameterName = "filter_created",
-                NewValue = filter.Name,
+                NewValue = filterName,
                 Status = ChangeStatus.Applied
             });
 
@@ -208,18 +299,20 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 outcome.AffectedCount++;
                 outcome.Batch.Changed.Add(new WriteItemReport
                 {
-                    Id = filter.Id.GetValue(),
-                    Name = filter.Name,
+                    Id = filterIdValue,
+                    Name = filterName,
                     Detail = "filter created"
                 });
             }
         }
 
-        var filterId = filter.Id;
         var readBack = new List<object>();
-        var anyFailure = false;
+        var anyFailure = validationFailed > 0;
+        var viewChanged = 0;
+        var viewSkipped = 0;
+        var viewFailed = 0;
 
-        foreach (var viewId in viewIds)
+        foreach (var viewId in eligibleViewIds)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -229,6 +322,7 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             {
                 ApplyViewTemplateTool.Fail(outcome, report, code, reason);
                 anyFailure = true;
+                viewFailed++;
                 if (ApplyViewTemplateTool.Abort(outcome, atomic))
                 {
                     Finish(outcome, sections, readBack);
@@ -239,36 +333,6 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             }
 
             report.Name = view.Name;
-
-            if (!AgentFilterWriteHelper.SupportsFilters(view))
-            {
-                ApplyViewTemplateTool.Fail(outcome, report, "unsupported_view_type",
-                    "View '" + view.Name + "' (" + view.ViewType +
-                    ") does not support view filters.");
-                anyFailure = true;
-                if (ApplyViewTemplateTool.Abort(outcome, atomic))
-                {
-                    Finish(outcome, sections, readBack);
-                    return;
-                }
-
-                continue;
-            }
-
-            if (AgentFilterWriteHelper.IsFilterControlLockedByTemplate(view, out var templateId))
-            {
-                ApplyViewTemplateTool.Fail(outcome, report, "view_controlled_by_template",
-                    "The view template " + templateId + " controls V/G overrides; change the " +
-                    "template instead of the view.");
-                anyFailure = true;
-                if (ApplyViewTemplateTool.Abort(outcome, atomic))
-                {
-                    Finish(outcome, sections, readBack);
-                    return;
-                }
-
-                continue;
-            }
 
             var before = AgentFilterWriteHelper.ReadState(view);
             var beforeJson = AgentFilterWriteHelper.SerializeState(before);
@@ -289,6 +353,7 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 ApplyViewTemplateTool.Fail(outcome, report, "filter_apply_failed",
                     "View '" + view.Name + "': " + ex.Message);
                 anyFailure = true;
+                viewFailed++;
                 if (ApplyViewTemplateTool.Abort(outcome, atomic))
                 {
                     Finish(outcome, sections, readBack);
@@ -305,8 +370,8 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             {
                 viewId = view.Id.GetValue(),
                 viewName = view.Name,
-                filterId = filterId.GetValue(),
-                filterName = filter.Name,
+                filterId = filterIdValue,
+                filterName = filterName,
                 applied = true,
                 visible = ReadVisibility(view, filterId),
                 overrides = DescribeEntry(after, filterId)
@@ -316,6 +381,7 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             {
                 report.Reason = "The filter is already applied with the same visibility (no-op).";
                 outcome.Batch.Skipped.Add(report);
+                viewSkipped++;
                 continue;
             }
 
@@ -328,19 +394,78 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 NewValue = afterJson,
                 Status = ChangeStatus.Applied
             });
-            report.NewValue = filter.Name;
+            report.NewValue = filterName;
             report.Detail = "visible=" + ReadVisibility(view, filterId);
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
+            viewChanged++;
         }
 
         sections.Add(Section("views", anyFailure ? "failed" : "ok",
-            outcome.Batch.Changed.Count + " changed, " + outcome.Batch.Skipped.Count +
-            " skipped, " + outcome.Batch.Failed.Count + " failed"));
+            "viewsChanged=" + viewChanged + ", viewsSkipped=" + viewSkipped +
+            ", viewsFailed=" + (validationFailed + viewFailed) +
+            " (the filter element itself is reported in the filter section, not here)"));
 
-        outcome.Data["filterId"] = filterId.GetValue();
-        outcome.Data["filterName"] = filter.Name;
-        outcome.Data["created"] = created && !dryRun;
+        var filterCountsAsChange = created && !dryRun;
+        var rolledBack = false;
+
+        if (anyFailure && filterCountsAsChange && viewChanged == 0)
+        {
+            // The filter was created but no view accepted it: roll the creation back so
+            // the answer is unambiguous ("nothing changed") instead of success=false
+            // with an orphan filter left in the model. Name/UniqueId were cached before
+            // the loop: reading them after Delete throws InvalidObjectException
+            // (stress-test regression A).
+            try
+            {
+                doc.Delete(filterId);
+                rolledBack = true;
+                outcome.Data["filterRolledBack"] = true;
+                outcome.Warnings.Add(
+                    "The filter '" + filterName + "' was created but could not be applied to " +
+                    "any view, so it was removed again. Nothing was changed.");
+            }
+            catch (Exception ex)
+            {
+                outcome.Warnings.Add(
+                    "The filter '" + filterName + "' was created but not applied to any view, " +
+                    "and Revit refused to remove it: " + ex.Message +
+                    ". Use undo_last to remove it.");
+            }
+
+            if (rolledBack)
+            {
+                outcome.Items.RemoveAll(item =>
+                    string.Equals(item.ParameterName, "filter_created", StringComparison.Ordinal)
+                    && item.ElementId == filterIdValue);
+                outcome.Batch.Changed.RemoveAll(report => report.Id == filterIdValue);
+                if (outcome.AffectedCount > 0)
+                    outcome.AffectedCount--;
+            }
+        }
+        else if (anyFailure && viewChanged > 0)
+        {
+            // The filter and at least one view already changed: keep the partial result
+            // as a success with failed[] instead of a misleading hard failure.
+            outcome.Success = true;
+            outcome.ErrorCode = null;
+            outcome.Message = "The filter was applied to " + viewChanged +
+                              " view(s); " + (validationFailed + viewFailed) +
+                              " view(s) failed. See failed[] for reasons.";
+        }
+
+        outcome.Data["viewCounters"] = new
+        {
+            total = seenViewIds.Count,
+            changed = viewChanged,
+            skipped = viewSkipped,
+            failed = validationFailed + viewFailed
+        };
+
+        outcome.Data["filterId"] = filterIdValue;
+        outcome.Data["filterName"] = filterName;
+        outcome.Data["atomic"] = atomic;
+        outcome.Data["created"] = created && !dryRun && !rolledBack;
         outcome.Data["wouldCreate"] = created && dryRun;
         outcome.Data["reused"] = reused;
         outcome.Data["visibility"] = visibility;
@@ -353,60 +478,6 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
         }
 
         Finish(outcome, sections, readBack);
-    }
-
-    private static List<FilterConditionSpec> ReadConditions(
-        JsonElement args,
-        WriteOutcome outcome)
-    {
-        var conditions = new List<FilterConditionSpec>();
-        if (args.ValueKind != JsonValueKind.Object
-            || !args.TryGetProperty("conditions", out var array)
-            || array.ValueKind != JsonValueKind.Array)
-        {
-            return conditions;
-        }
-
-        foreach (var item in array.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object)
-            {
-                outcome.Success = false;
-                outcome.ErrorCode = "invalid_arguments";
-                outcome.Message = "Each condition must be an object.";
-                return conditions;
-            }
-
-            var spec = new FilterConditionSpec
-            {
-                Field = AgentJson.GetString(item, "field"),
-                Parameter = AgentJson.GetString(item, "parameter"),
-                Op = AgentJson.GetString(item, "op") ?? "eq"
-            };
-
-            if (string.IsNullOrWhiteSpace(spec.Parameter)
-                && (string.IsNullOrWhiteSpace(spec.Field)
-                    || string.Equals(spec.Field, "parameter", StringComparison.OrdinalIgnoreCase)))
-            {
-                outcome.Success = false;
-                outcome.ErrorCode = "invalid_arguments";
-                outcome.Message =
-                    "conditions[].parameter is required when field is \"parameter\" " +
-                    "(Revit then reports the confusing 'Parameter parameter is not filterable').";
-                return conditions;
-            }
-
-            if (item.TryGetProperty("value", out var value)
-                && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
-            {
-                spec.Value = value.Clone();
-                spec.HasValue = true;
-            }
-
-            conditions.Add(spec);
-        }
-
-        return conditions;
     }
 
     private static bool IsAcceptable(
@@ -472,9 +543,9 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
 
     private static bool IsApplied(View view, ElementId filterId)
     {
-        foreach (var id in view.GetFilters())
+        foreach (var id in AgentFilterUsage.FiltersOf(view))
         {
-            if (id.GetValue() == filterId.GetValue())
+            if (id == filterId.GetValue())
                 return true;
         }
 

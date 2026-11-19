@@ -68,6 +68,7 @@
 | **H1 (закрыт)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 | архив |
 | **H1c (закрыт)** | View configuration: фильтры, overrides, visibility, crop | архив |
 | **H1d (закрыт 2026-11-19)** | Family editing pack: 9 тулов, EditFamily без UI, shared/формулы/lookup, map, undo, backup | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) |
+| **R — Reading profile** | P0 definition-first чтение элемента сделан; P1/P2 — `list_types`, `list_parameters`, essence в карточках, протокол, eval | [`00-strategy/element-reading-followups.md`](00-strategy/element-reading-followups.md) |
 | **A — Job engine (следующий)** | Массовые операции: job spec, батчи 10–50, прогресс/отмена/resume, preview digest, per-item rollback, UI не блокируется | [`00-strategy/autonomy-roadmap.md`](00-strategy/autonomy-roadmap.md) §5 |
 | **B — Reliability** | Единый read-back, идемпотентность, crash recovery, аудит, job-панель | roadmap §6 |
 | **C — Targeted search** | `search_catalog` по семействам/типам/параметрам/видам/листам; без индекса элементов; decision только при неоднозначности | roadmap §7 |

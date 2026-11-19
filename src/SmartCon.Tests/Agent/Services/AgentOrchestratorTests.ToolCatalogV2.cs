@@ -98,6 +98,7 @@ public sealed partial class AgentOrchestratorTests
         tools.Add(new CountingTool(name: "set_view_crop"));
         tools.Add(new CountingTool(name: "set_view_range"));
         tools.Add(new CountingTool(name: "set_view_visibility"));
+        tools.Add(new CountingTool(name: "set_view_parameters"));
         tools.Add(loadTool);
         var registry = new AgentToolRegistry(tools, null, loadTool);
         var executor = CreateExecutor(registry, session);
@@ -130,8 +131,9 @@ public sealed partial class AgentOrchestratorTests
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_crop");
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_range");
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_visibility");
+        Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_parameters");
         Assert.Empty(session.PendingToolNames);
-        Assert.Equal(4, session.LoadedToolNames.Count);
+        Assert.Equal(5, session.LoadedToolNames.Count);
     }
 
     [Fact]
