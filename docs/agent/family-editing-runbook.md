@@ -86,18 +86,24 @@
       `unknown_parameter` + 3 подсказки.
 - [ ] `list_schedules.rowCount` = `get_schedule_data.totalRows`.
 
-## 6. Live dogfooding и A/B (pending, нужен ключ)
+## 6. Live dogfooding и A/B (выполнено 2026-11-19)
 
-- [ ] Ключ OpenRouter/OpenCode Go в secrets; `SMARTCON_LIVE=1` (по инструкции
-      тестов `RoutingLiveBenchmarkTests`/`DecisionsLiveTests`).
-- [ ] 20–30 реальных family-задач на живой модели; транскрипты в `%TEMP%`;
-      метрика «успех с первой попытки ≥ 90 %», раундов до правильного вызова,
-      `find_tools` на задачу.
-- [ ] A/B: 100 family-фраз, rules vs decisions (`pplx`), top-1/top-5/p95;
-      вторая модель через OpenCode Go — проверить, что схемы/промпт не завязаны
-      на одну модель.
-- [ ] Провал → фикс → повторный прогон; результаты — в
-      `docs/agent/00-strategy/h1d-evidence.md` §6 и `eval.md`.
+Ключи берутся из `%APPDATA%\AGK\SmartCon\Agent\secrets.env`; тесты сами
+читают их и не печатают. Без флагов live-тесты — no-op.
+
+- [x] Decision live: `SMARTCON_DECIDER_LIVE=1 SMARTCON_DECIDER_ENABLED=1` →
+      `DecisionsLiveTests` 3/3, `RoutingDecisionsLiveTests` 1/1.
+- [x] Dogfood: `SMARTCON_AGENT_LIVE=1 dotnet run --project src/SmartCon.IntegrationTests
+      -c Debug.R25 --framework net8.0-windows --no-build --
+      --treenode-filter "/*/*/*AgentFamilyDogfoodTests*/*"` → **25/25, 100 % first-try**;
+      транскрипт `%TEMP%\smartcon-family-dogfood\<timestamp>.md`.
+- [x] A/B: `SMARTCON_DECIDER_LIVE=1 SMARTCON_DECIDER_ENABLED=1
+      SMARTCON_DECIDER_TIMEOUT_MS=15000 dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj
+      -c Debug.R25 --no-build --filter "FullyQualifiedName~FamilyRoutingAbLiveTests"`
+      → rules 64 %/92 %, pplx 100 %/100 %, chat-модель 43/100 ответов, 32 верных (57 запросов без tool call);
+      отчёт `%TEMP%\smartcon-family-ab\<timestamp>.md`.
+- [x] Результаты внесены в `docs/agent/00-strategy/h1d-evidence.md` §6.
+- [ ] Ручной UI-тест в интерактивном Revit — за владельцем после деплоя.
 
 ## 7. Триаж ошибок
 

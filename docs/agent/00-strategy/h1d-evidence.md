@@ -1,7 +1,8 @@
 # H1d — Family editing pack: матрица доказательств (2026-11-19)
 
-> **Статус:** реализовано, интеграционные гейты R25/R27 зелёные; ручной UI-прогон
-> и live-dogfooding — pending (см. runbook).
+> **Статус:** реализовано, интеграционные гейты R25/R27 зелёные; live-dogfooding
+> и A/B выполнены 2026-11-19 на реальных ключах (см. §6). Ручной UI-прогон в
+> интерактивном Revit остаётся за владельцем (runbook).
 > **Пакет:** `families` (9 тулов, каталог 33 → 42).
 > **Коммиты:** `910fdc7b` (пакет + тесты), `382786c0` (Release-анализаторы),
 > `2cba7294`-предшественник (дневные фиксы, база `846ebbe5`).
@@ -122,18 +123,53 @@ Type-major обход (одно переключение `CurrentType` на ти
 | In-place family | нельзя создать headless | M |
 | Workshared-проект | `workshared_not_supported` до EditFamily | существующий сьют |
 
-## 6. Routing / A/B
+## 6. Routing / A/B / live dogfood (2026-11-19, реальные ключи)
 
-- Rules/BM25 на 42 карточках, 188 реальных русских фраз (18 новых семейных):
-  **top-1 97.3 %, top-5 100 %, top-14 100 %, false tool 0 %, p95 1.93 мс**
-  (`RoutingEvalTests`, synthetic 1000 карточек — top-5 100 %).
-- Decision-reranker (pplx) и вторая модель (OpenCode Go) в этой сессии **не
-  запускались**: нет ключей/сети в окружении ночного прогона; тест
-  `DecisionsLiveTests` требует `SMARTCON_DECIDER_ENABLED=1` и ключ. Ручной
-  A/B — в runbook (pending).
-- Live-dogfooding 20–30 реальных задач через LLM — **не выполнялся** по той же
-  причине (нужен интерактивный Revit + ключ). All tool-layer scenarios покрыты
-  детерминированными интеграционными тестами; dogfooding — manual pending.
+Ключи берутся из `%APPDATA%\AGK\SmartCon\Agent\secrets.env`
+(`SMARTCON_OPENROUTER_API_KEY`, `SMARTCON_OPENCODE_GO_API_KEY`); тесты не печатают
+секреты. Live-тесты opt-in и без флага — no-op.
+
+### 6.1 Live decisions (pplx free через OpenRouter)
+
+- `DecisionsLiveTests`: **3/3** (Choice, router, risk gate), `RoutingDecisionsLiveTests`: **1/1**.
+- `RoutingLiveBenchmarkTests` (16 реальных view-фраз, правила vs decisions):
+  **rules 14/16, decisions 14/16**, одинаковый промах на двух write-парафразах
+  (модель не довела `create_view_filter`/`set_filter_overrides` из-за scripted
+  payload, не из-за роутинга); 7 м 57 с.
+
+### 6.2 Family routing A/B — 100 русских фраз, 9 семейных тулов
+
+`FamilyRoutingAbLiveTests` (opt-in `SMARTCON_DECIDER_LIVE=1`): BM25 `RankOnly`,
+decision-модель и вторая chat-модель на одном каталоге.
+
+| Роутер | top-1 | top-5 | Примечание |
+|---|---|---|---|
+| Rules/BM25 | **64/100 (64 %)** | **92/100 (92 %)** | на узком 9-тульном каталоге; в проде BM25 — shortlist |
+| pplx-decider (decisions) | **100/100 (100 %)** | **100/100 (100 %)** | 100/100 ответов, без ошибок |
+| deepseek-v4.1-flash (chat) | **32/100 (74 % от ответивших)** | — | 43/100 ответов; 57 запросов без tool call (reasoning-модель отвечает текстом) |
+
+Вывод: decision-слой даёт идеальный top-1 на семейном пакете; BM25 остаётся
+дешёвым fail-closed shortlist (top-5 92 %); вторая chat-модель как одноразовый
+роутер нестабильна (модельное ограничение, не дефект харнесса).
+
+### 6.3 Live dogfood — 25 задач, реальные тулы в Revit
+
+`AgentFamilyDogfoodTests` (opt-in `SMARTCON_AGENT_LIVE=1`): реальный LLM вызывает
+9 семейных тулов на сидированном семействе; read → dry-run → honest error →
+apply (add/rename/set/formula/map), семейство одноразовое.
+
+- **25/25 passed, 25/25 first-try (100 %)**, 24 финальных ответа, 74 LLM-запроса,
+  257 013 prompt + 12 433 completion токенов, 2 м 16 с.
+- Транскрипт: `%TEMP%\smartcon-family-dogfood\<timestamp>.md`.
+- Покрытые ошибки: `parameter_exists`, `invalid_formula`, `formula_not_allowed`,
+  `family_not_found`; apply-задачи вернули `changeSetId`, backup и read-back 2/2.
+
+Найденные в прогоне и исправленные вещи:
+1. Харнесс исполнял тулы после `await` HTTP вне API-потока Revit — `Document.IsReadOnly`
+   возвращал `true`, все EditFamily-тулы падали в `permission_denied`. Dogfood-цикл
+   переведён в синхронный (тулы на API-потоке). Это дефект тестового харнесса, не продукта.
+2. `add_family_parameter`: добавлен русский алиас группы `текстовыеданные` → `PG_TEXT`
+   и описания `storageType`/`group` в JSON-схеме (модель больше не угадывает группу).
 
 ## 7. Гейты
 

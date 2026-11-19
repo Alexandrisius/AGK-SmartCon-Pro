@@ -217,6 +217,7 @@ internal static class AgentFamilySpecs
             case "pg_text":
             case "text":
             case "текст":
+            case "текстовыеданные":
                 group = GroupTypeId.Text;
                 return true;
             case "pg_materials":

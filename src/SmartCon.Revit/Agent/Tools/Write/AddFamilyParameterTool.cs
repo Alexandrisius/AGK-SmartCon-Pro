@@ -36,7 +36,7 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""name"":{""type"":""string""},""storageType"":{""type"":""string""},""group"":{""type"":""string""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name"",""storageType""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyName"":{""type"":""string""},""name"":{""type"":""string""},""storageType"":{""type"":""string"",""description"":""length | area | volume | angle | number | integer | text | yesno | material""},""group"":{""type"":""string"",""description"":""Revit group id, e.g. PG_GENERAL, PG_IDENTITY_DATA, PG_TEXT, PG_CONSTRAINTS, PG_DATA; localized Russian names are accepted""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name"",""storageType""],""additionalProperties"":false}"
     };
 
     private protected override void ApplyInFamilyDocument(

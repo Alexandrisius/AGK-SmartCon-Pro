@@ -14,6 +14,14 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
 `382786c0` (Release-анализаторы/net48), `0fe6fcda` (execute_plan-шаги,
 частичный сбой, eval-ожидания, partial-разбивка).
 
+Live-валидация 2026-11-19 (реальные ключи из
+`%APPDATA%\AGK\SmartCon\Agent\secrets.env`, секреты не печатаются):
+`AgentFamilyDogfoodTests` — 25/25, 100 % first-try, транскрипт в
+`%TEMP%\smartcon-family-dogfood`; `FamilyRoutingAbLiveTests` — 100 фраз:
+rules 64 %/92 %, pplx **100 %/100 %**, вторая chat-модель 43/100 ответов, 32 верных
+(57 запросов без tool call — модельное ограничение). Подробности и грабли —
+[`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) §6.
+
 ### Гейты
 
 | Гейт | Результат |
@@ -27,7 +35,10 @@ changeSetId}}`, точный undo, шаги `execute_plan`. Доказатель
 | Release.R25 (NET/IDE-анализаторы) | **0 errors, 0 warnings** |
 | 7 конфигураций (R19/R21/R23/R24/R25/R26/R27) | **7/7 OK** |
 | Регрессия дня (артефакт J) | профиль 44/44; см. ниже |
-| Ручной UI-тест / dogfood / A/B | **manual pending** (нет ключей и UI-сессии в ночном прогоне) |
+| Live dogfood семейств (25 задач, реальный LLM) | **25/25 passed, 100 % first-try**, 74 запроса, 2m16s |
+| A/B 100 семейных фраз | rules top-1 64 % / top-5 92 %; **pplx top-1/top-5 100 %**; chat-модель 32/43 |
+| Live decisions (pplx через OpenRouter) | `DecisionsLiveTests` **3/3**, `RoutingDecisionsLiveTests` **1/1** |
+| Ручной UI-тест в интерактивном Revit | **manual pending** (нужна UI-сессия и деплой владельцем) |
 
 Без `SMARTCON_AGENT_EVAL_REPLAY=1` тест `AgentEvalTests` уходит в live-режим и
 падает без ключа — это ожидаемо; гейт full-R25 гонять с replay.
