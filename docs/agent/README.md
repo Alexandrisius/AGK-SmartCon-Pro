@@ -33,6 +33,9 @@
 | [`00-strategy/harness-development-approach.md`](00-strategy/harness-development-approach.md) | Единый процесс: жизненный цикл, гейты, роли, эпики |
 | [`00-strategy/initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) | Эпик **H1** — первый большой рывок, исполнимый runbook |
 | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) | **H1b–H1d**: model search, view configuration, family editing, кейсы и границы (cyclic → H8) |
+| [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) | **H1d**: матрица requirement→artifact, негативная матрица, масштаб, гейты |
+| [`family-tools-error-catalog.md`](family-tools-error-catalog.md) | Каталог ошибок и контракт ответа family-тулов |
+| [`family-editing-runbook.md`](family-editing-runbook.md) | Ручная приёмка family editing pack (чек-лист, pending UI) |
 | [`00-strategy/eval.md`](00-strategy/eval.md) | Журнал eval-прогонов и baseline |
 | [`00-strategy/decisions-benchmark.md`](00-strategy/decisions-benchmark.md) | Research note: decision-модели |
 | [`HANDOFF.md`](HANDOFF.md) | Текущее состояние, что сделано/осталось |
@@ -61,7 +64,7 @@
 | **H1 (закрыт)** | Tool catalog v2, store-and-reference, WorkingState, compaction v2 — готово | [`initial-improvement-runbook.md`](00-strategy/initial-improvement-runbook.md) |
 | **H1b (следующий)** | Живой поиск по модели без индекса: нормализация запроса (стеммер/синонимы/алиасы), `list_family_types`, `find_families_with_parameter`, `list_parameters`, `query_elements` с `parameterContainsAny`; 100k экземпляров — scoped-проход, one-shot cache (ADR-077) | [`../adr/077-model-entity-search.md`](../adr/077-model-entity-search.md), [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) |
 | **H1c** | View configuration: шаблон или текущий вид, visibility категорий/осей, фильтры по условиям, overrides (покрасить стены), crop/scope boxes | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §3 |
-| **H1d** | Family editing: EditFamily без UI, параметры instance/type, shared, формулы/lookup, перенос значений, save/load | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §4 |
+| **H1d (закрыт 2026-11-19)** | Family editing pack: 9 тулов, EditFamily без UI, shared/формулы/lookup, map, точный undo, бэкап; ручной UI-тест pending | [`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md), [`family-tools-error-catalog.md`](family-tools-error-catalog.md), [`family-editing-runbook.md`](family-editing-runbook.md) |
 | H8 (после H1d) | Bulk/cyclic job engine: select + action + батчи, прогресс/отмена/resume; альтернатива — sandbox-скрипт (H7), не runtime C#. Отдельный дизайн, не в H1 | [`00-strategy/h1b-tool-packs.md`](00-strategy/h1b-tool-packs.md) §5 |
 | H2 | Memory v1 + FTS5 + skills 100–200 | `harness-ideal-plan.md` P2 |
 | H3 | Policy engine, persisted approvals, atomic plan | `harness-ideal-plan.md` P3 |

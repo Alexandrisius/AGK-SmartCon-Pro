@@ -105,6 +105,15 @@ override стен; crop/scope box; integration-тест на 5 видах.
 
 ## 4. H1d — Family editing pack
 
+> **Реализовано 2026-11-19:** 9 тулов в паке `families` (каталог 42), точный
+> undo через обратные операции, бэкап в отдельном family-документе, read-back
+> после load-back. Матрица доказательств и негативные кейсы:
+> `docs/agent/00-strategy/h1d-evidence.md`; каталог ошибок:
+> `docs/agent/family-tools-error-catalog.md`; ручной runbook:
+> `docs/agent/family-editing-runbook.md`. Файловый поток (`.rfa` →
+> `OpenDocumentFile`) остаётся за рамками 9 тулов — backup рядом с исходным
+> `.rfa` делается, если путь известен.
+
 Редактирование **family document**, не параметров проекта.
 
 ### 4.1 Открытие/сохранение

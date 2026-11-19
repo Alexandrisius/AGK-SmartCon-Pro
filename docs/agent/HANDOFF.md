@@ -1,4 +1,77 @@
-# Handoff — Agent: текущее состояние (2026-11-18)
+# Handoff — Agent: текущее состояние (2026-11-19)
+
+## ⚡ H1d «Family editing pack» — ЗАКРЫТ (2026-11-19, ночная сессия)
+
+9 тулов в паке `families` (каталог 33 → 42), единый конверт
+`{success, errorCode, message, data:{changed, skipped, failed, sections,
+changeSetId}}`, точный undo, шаги `execute_plan`. Доказательная база:
+[`00-strategy/h1d-evidence.md`](00-strategy/h1d-evidence.md) (requirement→artifact,
+негативная матрица 33 кейса, failure injection, масштаб);
+[`family-tools-error-catalog.md`](family-tools-error-catalog.md);
+[`family-editing-runbook.md`](family-editing-runbook.md).
+
+Коммиты: `846ebbe5` (база дневных фиксов), `910fdc7b` (H1d, 9 тулов),
+`382786c0` (Release-анализаторы/net48), `0fe6fcda` (execute_plan-шаги,
+частичный сбой, eval-ожидания, partial-разбивка).
+
+### Гейты
+
+| Гейт | Результат |
+|---|---|
+| Unit `SmartCon.Tests -c Debug.R25` | **3812/3812** |
+| Integration R25 — family pack (47: read 12 / write 23 / map+undo 9 / scale 1 / plan 2) | **47/47** |
+| Integration R25 — полный сьют, `SMARTCON_AGENT_EVAL_REPLAY=1` | **414: 403 passed, 11 skipped, 0 failed, 9m33s** (eval replay 46/46 внутри) |
+| Integration R27 net10 (Revit 2027) — family pack | **47/47** |
+| Integration net48 (Revit 2023, полный сьют) | **246 passed, 12 skipped, 0 failed** (Agent-тесты исключены из net48 по дизайну) |
+| Eval replay (`SMARTCON_AGENT_EVAL_REPLAY=1`) | **46/46**, schema **149/149**, unauthorized **0**, threshold violations **0** |
+| Release.R25 (NET/IDE-анализаторы) | **0 errors, 0 warnings** |
+| 7 конфигураций (R19/R21/R23/R24/R25/R26/R27) | **7/7 OK** |
+| Регрессия дня (артефакт J) | профиль 43/43; см. ниже |
+| Ручной UI-тест / dogfood / A/B | **manual pending** (нет ключей и UI-сессии в ночном прогоне) |
+
+Без `SMARTCON_AGENT_EVAL_REPLAY=1` тест `AgentEvalTests` уходит в live-режим и
+падает без ключа — это ожидаемо; гейт full-R25 гонять с replay.
+
+### Что важно знать (найденные грабли)
+
+- **Backup нельзя делать SaveAs на редактирующем family-доке**: после этого
+  `LoadFamily` подтягивает stale-файл (изменения теряются). Бэкап создаётся
+  отдельным `EditFamily`-доком (SaveAs → Close), затем открывается свежий док
+  для правки; при известном `.rfa` дополнительно `.bak-<timestamp>` рядом.
+- **После `LoadFamily` объект `Family` инвалидируется** — id/UniqueId/имя
+  кэшируются до load-back; семейство в проекте может получить новый ElementId
+  (сообщение `family_not_found` теперь подсказывает `list_families`/`familyName`).
+- **Reload не удаляет параметры** → undo добавления параметра сделан точной
+  обратной операцией (JSON-план в change item), а не reload бэкапа. Backup —
+  fallback для legacy change set.
+- **Map 50×100**: type-major обход (CurrentType один раз на тип) — 5000 значений
+  за 38,5 с вместо 73 с; чтение 200×100 — 385 мс; heap +11,9 МБ.
+- `empty_family` недостижим (Revit оставляет ≥1 тип после save/load);
+  `family_open_conflict` — только при открытом UI-редакторе.
+
+### Исправлено из pre-existing (по указанию владельца)
+
+- `ApplyViewTemplateTool.Fail` не выставлял `success=false/errorCode` при
+  частичном сбое, а `ConfigureViewsTool` не добавлял применённые секции в
+  `changed[]` → конверт врал. Исправлено; eval-задачи
+  `dry_configure_view`/`dry_reference_view` допускают честный отказ
+  `view_controlled_by_template`.
+- Тесты `ApplyViewTemplate_IncompatibleFamily…` и
+  `CreateViewFilter_*` ожидали старый контракт (`template_not_applicable`,
+  `created` в dry-run, changed=1) — приведены к текущему
+  (`template_view_type_mismatch`, `wouldCreate`, changed включает созданный
+  фильтр).
+- Release-анализаторы: CA1510/CA1845/CA1846/CA1850/CA1865/CA2249 подавлены в
+  `src/Directory.Build.props` с обоснованием (replacement-API отсутствуют на
+  net48); CA1720 — enum `Integer` → `WholeNumber`; CA1725 — имя параметра
+  `PreflightCore`; CA2016 — `ReadAsStringAsync(ct)` на net8+.
+
+### Артефакты последней ночи
+
+- `%APPDATA%\AGK\SmartCon\Agent\eval\20261119-065747\report.json` — eval replay
+  46/46 (schema 149/149).
+- `%TEMP%\<session>\smartcon-family-scale.txt` — замеры scale-теста.
+- `docs/agent/00-strategy/h1d-evidence.md` — полная матрица и счётчики.
 
 ## ⚡ Итог сессии «новые инструменты»: гейты (2026-11-19)
 
