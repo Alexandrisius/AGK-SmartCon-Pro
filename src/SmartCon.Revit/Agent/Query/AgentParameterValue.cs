@@ -257,11 +257,8 @@ internal static class AgentParameterValue
             var any = false;
             foreach (var item in value.EnumerateArray())
             {
-                if (item.ValueKind == JsonValueKind.String
-                    && string.Equals(
-                        actual,
-                        item.GetString(),
-                        StringComparison.OrdinalIgnoreCase))
+                if (TryGetTextValue(item, out var candidate)
+                    && string.Equals(actual, candidate, StringComparison.OrdinalIgnoreCase))
                 {
                     any = true;
                     break;
@@ -271,10 +268,8 @@ internal static class AgentParameterValue
             return op == QueryOperator.In ? any : !any;
         }
 
-        if (value.ValueKind != JsonValueKind.String)
+        if (!TryGetTextValue(value, out var expected))
             return false;
-
-        var expected = value.GetString() ?? string.Empty;
         return op switch
         {
             QueryOperator.Eq => string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase),
@@ -292,6 +287,34 @@ internal static class AgentParameterValue
             QueryOperator.Lte => string.Compare(actual, expected, StringComparison.OrdinalIgnoreCase) <= 0,
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Text form of a condition value. Numeric/boolean scalars are coerced instead of
+    /// silently matching nothing: a text parameter (for example a numeric-looking
+    /// shared parameter) queried with `gte: 0` used to return an empty set with no
+    /// error (benchmark run 2, task 4).
+    /// </summary>
+    private static bool TryGetTextValue(JsonElement value, out string result)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                result = value.GetString() ?? string.Empty;
+                return true;
+            case JsonValueKind.Number:
+                result = value.GetRawText();
+                return true;
+            case JsonValueKind.True:
+                result = "True";
+                return true;
+            case JsonValueKind.False:
+                result = "False";
+                return true;
+            default:
+                result = string.Empty;
+                return false;
+        }
     }
 
     private static double ConvertToInternal(

@@ -71,6 +71,31 @@ public sealed class AgentQueryToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task QueryElements_NumericConditionOnTextParameter_DoesNotSilentlyReturnZero()
+    {
+        // Benchmark run 2, task 4: a numeric condition on a text parameter returned 0
+        // elements while the schedule showed values. Scalar values are coerced now.
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        _transactions!.RunInTransaction(Doc, "Set numeric-looking comment", doc =>
+        {
+            var wall = (Wall?)doc.GetElement(ElementIdCompat.Create(_wallId));
+            wall?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set("0");
+        });
+
+        var tool = new QueryElementsTool(new StubRevitContext(Doc));
+        var args = Parse(
+            """{"categories":["OST_Walls"],"conditions":[{"parameter":"ALL_MODEL_INSTANCE_COMMENTS","op":"gte","value":0}],"limit":10}""");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("total").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
     public async Task QueryElements_UnknownCategory_ReturnsStructuredFailure()
     {
         var tool = new QueryElementsTool(new StubRevitContext(Doc));

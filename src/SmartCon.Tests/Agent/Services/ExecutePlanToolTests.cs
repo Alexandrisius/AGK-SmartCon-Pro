@@ -122,7 +122,9 @@ public sealed class ExecutePlanToolTests
     {
         var writeTool = new ScriptedTool("write_tool");
         var tool = CreateTool(writeTool);
-        var otherPlan = PlanArgs.Replace("rename two views", "different plan");
+        // A different plan means different executable intent: the goal text is no
+        // longer part of the digest, so change a step argument instead.
+        var otherPlan = PlanArgs.Replace("\"viewId\":1", "\"viewId\":2");
 
         var preview = await tool.ExecuteAsync(
             Context(approved: false), Parse(otherPlan), CancellationToken.None);

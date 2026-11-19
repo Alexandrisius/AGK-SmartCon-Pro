@@ -34,6 +34,12 @@ public sealed class AgentPlanStepResult
 
     public int? FidelityExpected { get; set; }
 
+    /// <summary>
+    /// Explains a fidelity result that is acceptable but not a literal change count
+    /// (a no-op step whose targets already had the requested state).
+    /// </summary>
+    public string? FidelityNote { get; set; }
+
     public ToolResult? DryRunResult { get; set; }
 
     public ToolResult? ApplyResult { get; set; }

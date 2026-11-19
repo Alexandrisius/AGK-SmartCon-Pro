@@ -699,6 +699,69 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public async Task ExpectedChanges_AllNoOpStep_IsAcceptedWithNote()
+    {
+        // Benchmark run 2, task 1: values were already correct, the step was skipped,
+        // and the strict expectedChanges check forced the model to rewrite expectations.
+        var writeTool = new ScriptedTool(
+            "write_tool",
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    changed = Array.Empty<object>(),
+                    skipped = new[] { new { id = 1 } },
+                    failed = Array.Empty<object>(),
+                    total = 1,
+                    affected = 0
+                }),
+                "nothing to do"));
+        var executor = CreateExecutor(
+            writeTool,
+            ReadTool(),
+            new RecordingConfirmation(),
+            new RecordingAuditLog());
+
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = WriteArguments,
+            ExpectedChanges = 1
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(step), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.Steps[0].FidelityMatched);
+        Assert.NotNull(result.Steps[0].FidelityNote);
+        Assert.Contains("no-op", result.Steps[0].FidelityNote!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ComputeDigest_IgnoresGoalText()
+    {
+        // Benchmark run 2, task 5: rewording the goal between preview and apply
+        // produced plan_digest_mismatch although the executable steps were identical.
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = @"{""items"":[{""viewId"":1}]}"
+        };
+        var first = new AgentPlan { Goal = "Переименовать виды", Steps = new[] { step } };
+        var second = new AgentPlan
+        {
+            Goal = "Привести имена видов к схеме разделов",
+            Steps = new[] { step }
+        };
+
+        Assert.Equal(
+            AgentPlanExecutor.ComputeDigest(first, "doc-1"),
+            AgentPlanExecutor.ComputeDigest(second, "doc-1"));
+    }
+
+    [Fact]
     public void ConfirmationLedger_ConsumesNonceOnce()
     {
         var ledger = new AgentConfirmationLedger();

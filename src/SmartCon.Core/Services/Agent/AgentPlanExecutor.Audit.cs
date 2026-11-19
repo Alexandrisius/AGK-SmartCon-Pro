@@ -8,9 +8,11 @@ public sealed partial class AgentPlanExecutor
 {
     private static string ComputePlanDigest(AgentPlan plan, string? documentId)
     {
+        // The digest covers the executable intent only. plan.Goal is free-form prose:
+        // rewording it between preview and apply must not invalidate an approved plan
+        // (benchmark run 2, task 5: plan_digest_mismatch forced 50 single calls).
         var json = JsonSerializer.Serialize(new
         {
-            plan.Goal,
             plan.AllowDestructive,
             steps = plan.Steps.Select(step => new
             {

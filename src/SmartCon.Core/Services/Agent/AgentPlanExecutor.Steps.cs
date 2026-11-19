@@ -115,9 +115,22 @@ public sealed partial class AgentPlanExecutor
             {
                 result.FidelityChecked = true;
                 result.FidelityExpected = step.ExpectedChanges ?? step.ExpectedChangesAtLeast;
-                result.FidelityMatched = step.ExpectedChanges.HasValue
-                    ? result.Changed == step.ExpectedChanges.Value
-                    : result.Changed >= step.ExpectedChangesAtLeast!.Value;
+
+                // A step that changed nothing because every target already had the
+                // requested state (skipped, no failures) keeps the promise: treating
+                // it as a mismatch forced the model to rewrite expectations by hand
+                // (benchmark run 2, task 1).
+                var noOpClean = result.Changed == 0 && result.Skipped > 0 && result.Failed == 0;
+                result.FidelityMatched = noOpClean
+                    || (step.ExpectedChanges.HasValue
+                        ? result.Changed == step.ExpectedChanges.Value
+                        : result.Changed >= step.ExpectedChangesAtLeast!.Value);
+                if (noOpClean)
+                {
+                    result.FidelityNote = "no-op: every target already had the requested " +
+                                          "state (" + result.Skipped + " skipped)";
+                }
+
                 if (!result.FidelityMatched)
                 {
                     await WriteAuditAsync(
