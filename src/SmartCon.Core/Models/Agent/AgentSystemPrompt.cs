@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Core.Models.Agent;
 
@@ -60,15 +61,91 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - Never call a tool that is not in the current request; it will fail with unknown_tool.
 ";
 
+    public const string SessionContextHeader = "<session_context>";
+
+    public const string SessionContextFooter = "</session_context>";
+
+    /// <summary>
+    /// Prompt prefix that never changes inside a conversation: role, plan
+    /// validation, tool catalog policy and working rules. It carries no
+    /// document, view, mode or counter state, so its hash is the stable
+    /// prompt-cache key (runbook H1-13, plan P.3).
+    /// </summary>
+    public static string BuildStatic()
+    {
+        var builder = new StringBuilder(BasePrompt);
+        builder.AppendLine();
+        builder.Append(PlanSection);
+        builder.AppendLine();
+        builder.Append(ToolCatalogV2Section);
+        builder.AppendLine();
+        AppendWorkingRules(builder);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Per-conversation baseline: title, document id, Revit version, units and
+    /// worksharing. Persisted once per conversation and document; it must not
+    /// contain anything that changes between turns.
+    /// </summary>
+    public static string BuildSessionContext(AgentProjectContext context)
+    {
+        if (context is null) throw new ArgumentNullException(nameof(context));
+
+        var builder = new StringBuilder(256);
+        builder.AppendLine(SessionContextHeader);
+        if (!context.HasDocument)
+        {
+            builder.AppendLine("document: none");
+            builder.AppendLine(SessionContextFooter);
+            return builder.ToString();
+        }
+
+        builder.AppendLine("title: " + AgentTextSanitizer.Sanitize(context.Title));
+        builder.AppendLine("document_id: " + AgentTextSanitizer.Sanitize(context.DocumentId));
+        builder.AppendLine("revit_version: " + AgentTextSanitizer.Sanitize(context.RevitVersion));
+        if (!string.IsNullOrWhiteSpace(context.Units))
+            builder.AppendLine("units: " + AgentTextSanitizer.Sanitize(context.Units));
+        builder.AppendLine("workshared: " + (context.IsWorkshared ? "yes" : "no"));
+        builder.AppendLine(SessionContextFooter);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Everything that may change between turns — date, active view, selection,
+    /// mode, plan and counters. Appended as the tail of the request, never part
+    /// of the static prefix.
+    /// </summary>
+    public static string BuildTurnContext(
+        AgentProjectContext context,
+        AgentApprovalMode mode,
+        WorkingState? state = null,
+        DateTime? nowUtc = null)
+    {
+        if (context is null) throw new ArgumentNullException(nameof(context));
+
+        var builder = new StringBuilder(1024);
+        builder.Append(AgentTurnContextBuilder.Build(
+            state ?? new WorkingState(), context, mode, nowUtc));
+        builder.AppendLine();
+        builder.AppendLine(ModeSection(mode));
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Complete prompt for consumers without a turn lifecycle (eval harness):
+    /// static prefix + session baseline + approval mode.
+    /// </summary>
     public static string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
         string? extraRules = null)
     {
-        var builder = new StringBuilder(BuildPrefix(mode));
-        builder.Append(context.BuildPromptSection());
+        var builder = new StringBuilder(BuildStatic());
         builder.AppendLine();
-        AppendWorkingRules(builder);
+        builder.Append(BuildSessionContext(context));
+        builder.AppendLine();
+        builder.AppendLine(ModeSection(mode));
 
         if (!string.IsNullOrWhiteSpace(extraRules))
         {
@@ -77,33 +154,6 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
             builder.AppendLine(extraRules);
         }
 
-        return builder.ToString();
-    }
-
-    /// <summary>
-    /// Prompt prefix that does not depend on the open document (runbook H1-13):
-    /// role, approval mode, plan validation and working rules. Stable between
-    /// turns, so its hash is the prompt-cache key; the per-document context is
-    /// appended by <see cref="Build"/> and never enters this hash.
-    /// </summary>
-    public static string BuildStatic(
-        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites)
-    {
-        var builder = new StringBuilder(BuildPrefix(mode));
-        AppendWorkingRules(builder);
-        return builder.ToString();
-    }
-
-    private static string BuildPrefix(AgentApprovalMode mode)
-    {
-        var builder = new StringBuilder(BasePrompt);
-        builder.AppendLine();
-        builder.Append(ModeSection(mode));
-        builder.AppendLine();
-        builder.Append(PlanSection);
-        builder.AppendLine();
-        builder.Append(ToolCatalogV2Section);
-        builder.AppendLine();
         return builder.ToString();
     }
 

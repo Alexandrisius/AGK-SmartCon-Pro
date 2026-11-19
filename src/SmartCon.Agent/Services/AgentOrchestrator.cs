@@ -129,10 +129,14 @@ public sealed partial class AgentOrchestrator
             // the raw user message. It belongs to the append-only history, so
             // the prefix of the previous request stays cacheable; the per-round
             // status further down is ephemeral and is never persisted.
+            await EnsureSessionContextAsync(conversationId, projectContext, ct)
+                .ConfigureAwait(false);
+
             await _conversationStore
                 .AppendMessageAsync(
                     conversationId,
-                    AgentMessage.System(AgentTurnContextBuilder.Build(workingState, projectContext)),
+                    AgentMessage.System(AgentSystemPrompt.BuildTurnContext(
+                        projectContext, _sessionContext.ApprovalMode, workingState)),
                     ct)
                 .ConfigureAwait(false);
 
@@ -175,8 +179,7 @@ public sealed partial class AgentOrchestrator
                     " (" + checkpoint.ToRowId + " messages covered)");
             }
 
-            var systemMessage = AgentMessage.System(
-                _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
+            var systemMessage = AgentMessage.System(_promptBuilder.BuildStatic());
             var staticHash = AgentPromptHash.ComputeStatic(systemMessage.Content ?? string.Empty);
             var definitions = await SelectToolDefinitionsAsync(
                     userText,

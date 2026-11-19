@@ -56,4 +56,57 @@ public sealed partial class AgentOrchestrator
                 " [Action: check write access to agent.db; the turn itself is not affected]");
         }
     }
+
+    /// <summary>
+    /// Appends the per-conversation session baseline once, before the first turn
+    /// context of a conversation, and again when the active document changes.
+    /// The stored history is checked by document id, so a restart never creates
+    /// a duplicate baseline and a document switch never leaves the old one as
+    /// the only session context.
+    /// </summary>
+    private async Task EnsureSessionContextAsync(
+        Guid conversationId,
+        AgentProjectContext projectContext,
+        CancellationToken ct)
+    {
+        if (_sessionContext.SessionContextWritten
+            && _sessionContext.SessionContextConversationId == conversationId
+            && string.Equals(
+                _sessionContext.SessionContextDocumentId,
+                projectContext.DocumentId,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var documentMarker = "document_id: " +
+                             AgentTextSanitizer.Sanitize(projectContext.DocumentId);
+        var history = await _conversationStore
+            .GetMessagesAsync(conversationId, ct)
+            .ConfigureAwait(false);
+        var lastSessionContext = history.LastOrDefault(message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).StartsWith(
+                AgentSystemPrompt.SessionContextHeader, StringComparison.Ordinal));
+        var matchesDocument = lastSessionContext is not null
+            && (lastSessionContext.Content ?? string.Empty)
+                .Contains(documentMarker, StringComparison.Ordinal);
+
+        if (!matchesDocument)
+        {
+            await _conversationStore
+                .AppendMessageAsync(
+                    conversationId,
+                    AgentMessage.System(AgentSystemPrompt.BuildSessionContext(projectContext)),
+                    ct)
+                .ConfigureAwait(false);
+            SmartConLogger.Info(
+                "Agent prompt: session context written for document " +
+                AgentTextSanitizer.Sanitize(projectContext.DocumentId));
+        }
+
+        _sessionContext.SessionContextConversationId = conversationId;
+        _sessionContext.SessionContextDocumentId = projectContext.DocumentId;
+        _sessionContext.SessionContextWritten = true;
+    }
 }

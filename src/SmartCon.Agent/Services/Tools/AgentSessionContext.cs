@@ -50,6 +50,16 @@ public sealed class AgentSessionContext
     }
 
     /// <summary>
+    /// Conversation and document the persisted &lt;session_context&gt; baseline
+    /// belongs to. Empty until the first turn checks the history.
+    /// </summary>
+    public Guid SessionContextConversationId { get; set; }
+
+    public string? SessionContextDocumentId { get; set; }
+
+    public bool SessionContextWritten { get; set; }
+
+    /// <summary>
     /// Per-session prompt-token calibration, fed by provider usage after every
     /// completion and applied to local estimates before compaction.
     /// </summary>

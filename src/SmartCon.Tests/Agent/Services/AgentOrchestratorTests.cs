@@ -47,7 +47,7 @@ public sealed partial class AgentOrchestratorTests
         Assert.Equal("Готово", result.FinalText);
         Assert.Equal(1, result.ToolCallCount);
         Assert.Equal(1, tool.Calls);
-        Assert.Equal(5, store.Messages.Count);
+        Assert.Equal(6, store.Messages.Count);
         Assert.Equal(2, llm.Requests.Count);
 
         var secondRequest = llm.Requests[1].Messages;
