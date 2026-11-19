@@ -10,14 +10,14 @@ using Xunit.Abstractions;
 namespace SmartCon.Tests.Agent.Routing;
 
 /// <summary>
-/// H1-11 routing eval: real Russian BIM intents on the real 27-card catalog
+/// H1-11 routing eval: real Russian BIM intents on the real 42-card catalog
 /// (BM25 top-1/top-5/false-tool/p95) and 100 synthetic intents on a generated
 /// 1000-card catalog (top-5 recall). Decisions mode is exercised deterministically
 /// through the production <see cref="DecisionsToolRouter"/> plumbing.
 /// </summary>
 public sealed class RoutingEvalTests
 {
-    private const int RealQueryCount = 170;
+    private const int RealQueryCount = 188;
     private const int SyntheticQueryCount = 100;
     private const double Top1Gate = 0.80;
     private const double Top5Gate = 0.95;
@@ -38,7 +38,7 @@ public sealed class RoutingEvalTests
 
         Assert.Equal(RealQueryCount, real.Count);
         Assert.Equal(SyntheticQueryCount, synthetic.Count);
-        Assert.Equal(33, RealCatalog.Count);
+        Assert.Equal(42, RealCatalog.Count);
 
         var realNames = RealCatalog.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var query in real)

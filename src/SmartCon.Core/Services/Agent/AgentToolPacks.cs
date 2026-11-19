@@ -98,7 +98,14 @@ public static class AgentToolPacks
         new()
         {
             Name = "families",
-            Description = "Семейства и типы (задел следующих версий)."
+            Description = "Семейства: типы, параметры, значения, формулы, перенос значений.",
+            Tools = new[]
+            {
+                "list_families", "list_family_types", "get_family_parameters",
+                "find_families_with_parameter", "rename_family_parameter",
+                "add_family_parameter", "set_family_parameter_values", "set_family_formula",
+                "map_family_parameters"
+            }
         },
         new()
         {

@@ -37,6 +37,7 @@ using SmartCon.ProjectManagement.Views;
 #if REVIT2023_OR_GREATER
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Tools;
+using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 #endif
@@ -462,6 +463,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, GetSheetContentTool>();
         services.AddSingleton<IAgentTool, ListSchedulesTool>();
         services.AddSingleton<IAgentTool, GetScheduleDataTool>();
+        services.AddSingleton<IAgentTool, ListFamiliesTool>();
+        services.AddSingleton<IAgentTool, ListFamilyTypesTool>();
+        services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
+        services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();
@@ -476,6 +481,11 @@ public static class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
+        services.AddSingleton<IAgentTool, RenameFamilyParameterTool>();
+        services.AddSingleton<IAgentTool, AddFamilyParameterTool>();
+        services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();
+        services.AddSingleton<IAgentTool, SetFamilyFormulaTool>();
+        services.AddSingleton<IAgentTool, MapFamilyParametersTool>();
         services.AddSingleton<IAgentTool, DiscardChangeSetTool>();
         services.AddSingleton<IAgentTool, UndoLastTool>();
         services.AddSingleton<IAgentTool>(sp => new ExecutePlanTool(

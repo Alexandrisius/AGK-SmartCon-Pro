@@ -34,6 +34,15 @@ public sealed class AgentToolCardsTests
         "copy_view_settings",
         "create_view_filter",
         "set_filter_overrides",
+        "list_families",
+        "list_family_types",
+        "get_family_parameters",
+        "find_families_with_parameter",
+        "rename_family_parameter",
+        "add_family_parameter",
+        "set_family_parameter_values",
+        "set_family_formula",
+        "map_family_parameters",
         "set_parameters",
         "remap_parameter_values",
         "undo_last",
@@ -46,7 +55,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(33, AgentToolCards.Count);
+        Assert.Equal(42, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

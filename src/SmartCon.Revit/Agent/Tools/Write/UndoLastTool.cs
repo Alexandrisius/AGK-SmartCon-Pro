@@ -112,6 +112,15 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             var item = details.Items[index];
             var key = item.ParameterName ?? string.Empty;
 
+            // Family edits are reverted after the project transaction: restoring a
+            // family requires EditFamily/LoadFamily, which cannot run while the
+            // project document is modifiable (UndoLastTool.Families.cs).
+            if (key == "family")
+            {
+                RegisterFamilyRestore(outcome, item);
+                continue;
+            }
+
             // Name renames are reverted as one batch: an A↔B swap must be planned with
             // temporary names, otherwise the first restore collides with the second view.
             if (key is "filter" or "filter_created")
@@ -247,6 +256,11 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         }
 
         RevertRenames(doc, renames, outcome, force);
+
+        // Family restores run after the project transaction and decide the final
+        // success/affected state themselves (UndoLastTool.Families.cs).
+        if (HasPendingFamilyRestores(outcome))
+            return;
 
         // Only real failures keep the set applied. Skipped items are "already restored"
         // or unrestorable — they must not block closing the set forever.

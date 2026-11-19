@@ -151,6 +151,51 @@ public static class AgentToolCatalog
                 "покрасить", "цвет фильтра", "overrides", "заливка фильтра", "штриховка фильтра",
                 "прозрачность фильтра", "halftone", "графические замены"
             }),
+            ["list_families"] = new("Read", false, new[]
+            {
+                "семейства", "семейство", "families", "family", "загруженные семейства",
+                "список семейств", "типы семейств"
+            }),
+            ["list_family_types"] = new("Read", false, new[]
+            {
+                "типы", "типоразмеры", "типы семейства", "family types", "types",
+                "неразмещённые типы", "typeId"
+            }),
+            ["get_family_parameters"] = new("Read", false, new[]
+            {
+                "параметры семейства", "family parameters", "общие параметры", "shared parameters",
+                "GUID параметра", "формула параметра", "значения по типам"
+            }),
+            ["find_families_with_parameter"] = new("Read", false, new[]
+            {
+                "найти семейства с параметром", "find families with parameter",
+                "в каких семействах", "ТДСК_Наименование", "АДСК_Наименование", "matchedParameter"
+            }),
+            ["rename_family_parameter"] = new("Write", false, new[]
+            {
+                "переименовать параметр", "rename parameter", "имя параметра",
+                "переименование параметра семейства", "rename family parameter"
+            }),
+            ["add_family_parameter"] = new("Write", false, new[]
+            {
+                "добавить параметр", "создать параметр", "add parameter", "общий параметр",
+                "shared parameter", "параметр экземпляра", "параметр типа"
+            }),
+            ["set_family_parameter_values"] = new("Write", true, new[]
+            {
+                "значения по типам", "задать значение параметра", "set family parameter values",
+                "значение параметра типа", "единицы мм", "проставить значения"
+            }),
+            ["set_family_formula"] = new("Write", false, new[]
+            {
+                "формула", "formula", "назначить формулу", "снять формулу", "size_lookup",
+                "lookup table", "вычисляемый параметр"
+            }),
+            ["map_family_parameters"] = new("Write", true, new[]
+            {
+                "перенести значения", "map parameters", "map family parameters", "смапить",
+                "перенос параметров семейства", "скопировать формулу", "source target"
+            }),
             ["find_tools"] = new("Meta", false, new[]
             {
                 "найти инструмент", "какой инструмент", "find tool", "tool search"

@@ -34,6 +34,42 @@ public abstract class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
     protected IAgentChangeSetStore ChangeSets => _changeSets;
 
     /// <summary>
+    /// Tools that own the document lifecycle (family documents: EditFamily must run
+    /// outside any project transaction) return true and implement
+    /// <see cref="ExecuteOutsideTransaction"/>. Default false keeps the standard
+    /// dry-run/apply transaction pipeline for every existing tool.
+    /// </summary>
+    protected virtual bool ManagesOwnTransactions => false;
+
+    /// <summary>
+    /// Runs the whole operation on the Revit thread when
+    /// <see cref="ManagesOwnTransactions"/> is true. The implementation must set
+    /// <see cref="WriteOutcome.ModelChanged"/> itself.
+    /// </summary>
+    protected virtual void ExecuteOutsideTransaction(
+        Document document,
+        JsonElement args,
+        bool dryRun,
+        WriteOutcome outcome,
+        CancellationToken ct) =>
+        throw new InvalidOperationException(
+            "The tool declares its own transaction pipeline but does not implement it.");
+
+    /// <summary>
+    /// Post-transaction hook that runs outside the transaction, on the Revit thread.
+    /// Used by undo_last to restore family documents, which cannot be loaded back
+    /// while a project transaction is open. Default no-op.
+    /// </summary>
+    protected virtual void AfterTransaction(
+        Document document,
+        JsonElement args,
+        bool dryRun,
+        WriteOutcome outcome,
+        CancellationToken ct)
+    {
+    }
+
+    /// <summary>
     /// L1 preflight: cheap argument checks on the Revit thread, before any
     /// transaction and before the dry run.
     /// </summary>
@@ -367,7 +403,14 @@ public abstract class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
                 RevitVersion = document.Application.VersionNumber
             };
 
+            if (ManagesOwnTransactions)
+            {
+                ExecuteOutsideTransaction(document, args, dryRun, outcome, ct);
+                return outcome;
+            }
+
             ExecuteInTransaction(document, args, dryRun, outcome, ct);
+            AfterTransaction(document, args, dryRun, outcome, ct);
             return outcome;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

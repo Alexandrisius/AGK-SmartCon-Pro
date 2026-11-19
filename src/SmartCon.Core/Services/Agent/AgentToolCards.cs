@@ -20,6 +20,7 @@ public static partial class AgentToolCards
             .Concat(SheetCards())
             .Concat(ScheduleCards())
             .Concat(FilterCards())
+            .Concat(FamilyCards())
             .Concat(WriteCards())
             .ToArray();
 
