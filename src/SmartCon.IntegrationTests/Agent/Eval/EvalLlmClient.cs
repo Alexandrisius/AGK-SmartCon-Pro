@@ -159,11 +159,20 @@ internal sealed class EvalLlmClient : IDisposable
         if (IsEnabled("SMARTCON_AGENT_EVAL_REPLAY"))
             return new EvalLlmClient(EvalMode.Replay, fixtures, null);
 
+        var record = IsEnabled("SMARTCON_AGENT_EVAL_RECORD");
+        var live = IsEnabled("SMARTCON_AGENT_LIVE");
+
+        // Deterministic default: replay recorded fixtures unless live/record is
+        // explicitly requested. A leftover secrets.env must NOT silently switch the
+        // eval to live network calls — live providers (e.g. opencode-go) require a
+        // session header and otherwise fail the whole run 0/N (MissingSessionID).
+        if (!record && !live)
+            return new EvalLlmClient(EvalMode.Replay, fixtures, null);
+
         var config = DogfoodConfig.TryLoad(requireLiveFlag: false);
         if (config is null)
             return null;
 
-        var record = IsEnabled("SMARTCON_AGENT_EVAL_RECORD");
         return new EvalLlmClient(
             record ? EvalMode.LiveRecord : EvalMode.Live,
             fixtures,
