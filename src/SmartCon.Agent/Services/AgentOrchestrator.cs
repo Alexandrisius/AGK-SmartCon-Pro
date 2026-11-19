@@ -165,6 +165,7 @@ public sealed partial class AgentOrchestrator
 
             var systemMessage = AgentMessage.System(
                 _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
+            var staticHash = AgentPromptHash.ComputeStatic(systemMessage.Content ?? string.Empty);
             var definitions = await SelectToolDefinitionsAsync(
                     userText,
                     _sessionContext.PendingToolNames.Count == 0
@@ -173,10 +174,12 @@ public sealed partial class AgentOrchestrator
                     ct)
                 .ConfigureAwait(false);
             SetActiveToolNames(definitions);
+            var toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
 
             var lastActualPromptTokens = 0;
             var lastRequestedWorkingCount = 0;
             AgentCompactionResult? lastCompaction = null;
+            string? lastCompactionId = null;
 
             Func<IReadOnlyList<AgentMessage>, int> rawEstimator = messages =>
                 _sessionContext.TokenCalibration.Apply(
@@ -211,6 +214,8 @@ public sealed partial class AgentOrchestrator
             working = projected.Messages;
             if (projected.Changed)
                 lastCompaction = projected;
+            if (projected.Record is not null)
+                lastCompactionId = projected.Record.Id;
 
             var allowCheckpoint = true;
             var toolCallCount = 0;
@@ -229,6 +234,7 @@ public sealed partial class AgentOrchestrator
                     definitions = await ApplyPendingToolSetAsync(
                             userText, definitions.Count, ct)
                         .ConfigureAwait(false);
+                    toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
                 }
 
                 var turnContextBase = workingState is null
@@ -245,6 +251,8 @@ public sealed partial class AgentOrchestrator
                 if (compaction.Changed)
                 {
                     lastCompaction = compaction;
+                    if (compaction.Record is not null)
+                        lastCompactionId = compaction.Record.Id;
 
                     // The provider-reported prompt_tokens describes the prompt
                     // before this compaction. Keeping it as the floor for the
@@ -356,6 +364,8 @@ public sealed partial class AgentOrchestrator
 
                 usage = Add(usage, completion.Usage);
                 lastRequestId = completion.RequestId ?? lastRequestId;
+                SmartConLogger.Info(AgentCacheLog.Build(
+                    round, completion.RequestId, completion.Usage, staticHash, toolSetHash));
                 if (completion.Usage.PromptTokens > 0)
                 {
                     lastActualPromptTokens = completion.Usage.PromptTokens;
@@ -401,7 +411,8 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
+                        lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
@@ -521,7 +532,8 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
+                        lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
