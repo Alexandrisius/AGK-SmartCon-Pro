@@ -24,3 +24,4 @@ module: models-index
 | [`updates.md`](updates.md) | Автообновление через GitHub: PendingUpdate, SemVersion, UpdateInfo | `SmartCon.Core/Models/` (root) |
 | [`deployment.md`](deployment.md) | Изоляция зависимостей (ADR-051): SmartConAddinManifest, DependencyConflictAnalyzer | `SmartCon.Core/Deployment/` |
 | [`cross-cutting.md`](cross-cutting.md) | CtcGuesser, ElementIdEqualityComparer, FamilyMetadataFormat, JsonOptions, ILocalCatalogMigrator, TypeCatalogValueApplier, TypeCatalogValueApplyResult, TypeCatalogValueApplyStatus | `SmartCon.Core/Models/` + `Core/Services/` |
+| [`agent.md`](agent.md) | AI-agent harness (ADR-076/077, H1): AgentConversation/Message/Plan, ChangeSet, confirmation, компакция, tool cards/catalog, eval, telemetry, LoopGuard | `SmartCon.Core/Models/Agent/` + `Core/Services/Agent/` |
