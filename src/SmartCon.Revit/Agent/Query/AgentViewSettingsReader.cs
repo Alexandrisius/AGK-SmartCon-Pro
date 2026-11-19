@@ -100,6 +100,33 @@ internal static class AgentViewSettingsReader
         }
     }
 
+    /// <summary>
+    /// True when the view gets <paramref name="parameter"/> from its template, so
+    /// a local write would be silently ignored. Writes must fail with
+    /// <c>view_controlled_by_template</c> instead of reporting a no-op or a
+    /// success that read-back cannot confirm.
+    /// </summary>
+    internal static bool IsParameterLockedByTemplate(
+        View view,
+        BuiltInParameter parameter,
+        out long? templateId,
+        out string? templateName)
+    {
+        templateId = null;
+        templateName = null;
+
+        var id = view.ViewTemplateId;
+        if (id is null || id == ElementId.InvalidElementId)
+            return false;
+
+        templateId = id.GetValue();
+        if (view.Document.GetElement(id) is not View template)
+            return false;
+
+        templateName = template.Name;
+        return IsTemplateParameterControlled(template, parameter);
+    }
+
     private static ViewRangeInfo? ReadViewRange(Document doc, View view)
     {
         if (view is not ViewPlan plan)

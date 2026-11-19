@@ -164,15 +164,13 @@ public sealed partial class AgentOrchestrator
 
     private void SetActiveToolNames(IReadOnlyList<AgentToolDefinition> definitions)
     {
-        // Loaded and pending tools count as available for find_tools, even before
-        // the next round applies them to the request.
-        var names = new HashSet<string>(
-            definitions.Select(definition => definition.Name), StringComparer.Ordinal);
-        foreach (var name in _sessionContext.LoadedToolNames)
-            names.Add(name);
-        foreach (var name in _sessionContext.PendingToolNames)
-            names.Add(name);
-        _sessionContext.ActiveToolNames = names.ToList();
+        // Exactly the tools in the current request: find_tools reports them as
+        // alreadyAvailable and load_tool_pack uses the same set to decide what
+        // still has to be queued. Listing loaded-but-not-sent tools here is what
+        // made load_tool_pack answer "already loaded" for tools the model could
+        // not call at all.
+        _sessionContext.ActiveToolNames =
+            definitions.Select(definition => definition.Name).ToList();
     }
 
     private static int ElapsedMinutes(long startedAt) =>
@@ -183,12 +181,16 @@ public sealed partial class AgentOrchestrator
         int previousCount,
         CancellationToken ct)
     {
-        foreach (var name in _sessionContext.PendingToolNames)
-            _sessionContext.LoadedToolNames.Add(name);
+        // Keep the explicit request as a guarantee: those tools must be in the
+        // next request even when the loaded set is already larger than the cap.
+        var guaranteed = _sessionContext.PendingToolNames.ToList();
+        foreach (var name in guaranteed)
+            _sessionContext.TouchTool(name);
 
         _sessionContext.PendingToolNames.Clear();
 
-        var definitions = await SelectToolDefinitionsAsync(userText, ct).ConfigureAwait(false);
+        var definitions = await SelectToolDefinitionsAsync(userText, guaranteed, ct)
+            .ConfigureAwait(false);
         SetActiveToolNames(definitions);
         SmartConLogger.Info(
             "Agent tool catalog changed: " + previousCount + " -> " + definitions.Count +
@@ -198,40 +200,46 @@ public sealed partial class AgentOrchestrator
 
     private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
         string userText,
+        IReadOnlyCollection<string>? guaranteed,
         CancellationToken ct)
     {
         var all = _toolRegistry.GetDefinitions();
         if (all.Count == 0)
             return all;
 
-        return SelectCatalogV2ToolDefinitions(userText, all);
+        return SelectCatalogV2ToolDefinitions(userText, all, guaranteed);
     }
 
     /// <summary>
-    /// Catalog v2 turn set: the fixed core tools plus everything loaded through
-    /// load_tool_pack plus the best BM25 card matches for the user text. The full
-    /// catalog is never sent; no BM25 signal degrades to core + loaded.
+    /// Catalog v2 turn set: the fixed core tools, the tools explicitly requested
+    /// through load_tool_pack (guaranteed), the best BM25 card matches for the
+    /// user text, and then every loaded tool. Loaded tools are never capped out:
+    /// a tool the model has already loaded or called must stay callable on the
+    /// next turn, otherwise the provider refuses the call and the model ends the
+    /// turn with a promise instead of a tool call (session d89546b8).
     /// </summary>
     private IReadOnlyList<AgentToolDefinition> SelectCatalogV2ToolDefinitions(
         string userText,
-        IReadOnlyList<AgentToolDefinition> all)
+        IReadOnlyList<AgentToolDefinition> all,
+        IReadOnlyCollection<string>? guaranteed)
     {
-        const int maxTools = 16;
         const int topCount = 5;
 
-        // A tiny catalog needs no retrieval: hiding tools from it would only cost
+        // A small catalog needs no retrieval: hiding tools from it would only cost
         // the model extra discovery rounds.
         if (all.Count <= 8)
             return all;
 
-        var selected = new List<AgentToolDefinition>(maxTools);
+        var byName = new Dictionary<string, AgentToolDefinition>(StringComparer.Ordinal);
+        foreach (var definition in all)
+            byName[definition.Name] = definition;
+
+        var selected = new List<AgentToolDefinition>(all.Count);
         var names = new HashSet<string>(StringComparer.Ordinal);
         void Add(AgentToolDefinition definition)
         {
-            if (selected.Count >= maxTools || !names.Add(definition.Name))
-                return;
-
-            selected.Add(definition);
+            if (names.Add(definition.Name))
+                selected.Add(definition);
         }
 
         foreach (var definition in all)
@@ -240,27 +248,61 @@ public sealed partial class AgentOrchestrator
                 Add(definition);
         }
 
-        foreach (var definition in all)
+        if (guaranteed is not null)
         {
-            if (_sessionContext.LoadedToolNames.Contains(definition.Name))
-                Add(definition);
+            foreach (var name in guaranteed)
+            {
+                if (byName.TryGetValue(name, out var definition) && !names.Contains(name))
+                    Add(definition);
+            }
         }
 
+        // Retrieval for the current text. It runs before the loaded set so a
+        // continuation request can pull in the domain tools it names even when
+        // the loaded set is already large.
         var rankable = all
             .Where(definition => !names.Contains(definition.Name))
             .ToList();
         foreach (var definition in ToolCardRouter.Rank(userText, rankable, topCount))
             Add(definition);
 
+        // Every loaded tool stays available. The catalog is still small (tens of
+        // tools); when it grows, bound this list by recency and let
+        // load_tool_pack bring evicted tools back.
+        var loaded = _sessionContext.LoadedToolNames;
+        for (var index = loaded.Count - 1; index >= 0; index--)
+        {
+            if (byName.TryGetValue(loaded[index], out var definition)
+                && !names.Contains(definition.Name))
+            {
+                Add(definition);
+            }
+        }
+
         SmartConLogger.Debug(
             "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
-            _sessionContext.LoadedToolNames.Count);
+            _sessionContext.LoadedToolNames.Count + ", guaranteed=" +
+            (guaranteed?.Count ?? 0));
 
         return selected;
     }
 
+    private bool IsLoopGuardExempt(string toolName)
+    {
+        // undo_last/discard_change_set are called repeatedly with identical
+        // arguments to peel back successive change sets; read tools are re-read
+        // legitimately. Neither is a loop.
+        if (string.Equals(toolName, "undo_last", StringComparison.Ordinal)
+            || string.Equals(toolName, "discard_change_set", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return _toolRegistry.TryGet(toolName, out var tool)
+               && tool is not null
+               && tool.Definition.Risk == AgentToolRisk.Read;
+    }
+
     private static bool IsAlwaysAvailableV2(string name) =>
-        AgentToolPacks.IsCore(name)
-        || string.Equals(name, LoadToolPackTool.ToolName, StringComparison.Ordinal)
-        || string.Equals(name, ReadToolResultTool.ToolName, StringComparison.Ordinal);
+        AgentToolPacks.IsAlwaysAvailable(name);
 }

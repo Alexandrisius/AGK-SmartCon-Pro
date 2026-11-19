@@ -17,6 +17,14 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
 {
     private const int CircuitBreakerThreshold = 3;
 
+    /// <summary>
+    /// Turn-start projection only runs once the raw history reaches this share of
+    /// the compaction limit. Masking a conversation that still sits at 30-40 % of
+    /// the limit only hides results the model is using and makes the context
+    /// indicator shrink for no reason.
+    /// </summary>
+    private const double ProjectionPressureRatio = 0.75;
+
     private readonly IAgentSummarizer _summarizer;
     private readonly IAgentCompactionStore? _store;
     private readonly int _summaryMaxInputTokens;
@@ -44,6 +52,12 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
 
         var messages = request.Messages.ToList();
         var tokensBefore = Estimate(request, messages, afterCompaction: true);
+
+        // No pressure, no projection: the raw history is cheaper to keep than to
+        // hide, and an unmotivated shrink looks like lost context to the user.
+        if (tokensBefore <= ComputeLimit(request) * ProjectionPressureRatio)
+            return Task.FromResult(Unchanged(messages, tokensBefore));
+
         var masked = MaskOldToolResults(
             messages, request.KeepRecentToolResults, out var maskedCount);
         if (maskedCount == 0)

@@ -178,6 +178,42 @@ public sealed class FindToolsToolTests
     }
 
     [Fact]
+    public async Task FindToolsV2_Listing_ReturnsTheWholeCatalogAndPages()
+    {
+        // Regression: the listing used to stop at five tools with no total, so a
+        // model looking for undo_last concluded the catalog had five read tools.
+        var registry = new AgentToolRegistry(
+            Enumerable.Range(0, 12)
+                .Select(index => (IAgentTool)new ScriptedTool("tool_" + index))
+                .ToArray());
+        var tool = CreateTool(registry);
+
+        var first = await tool.ExecuteAsync(Context(), Parse("{}"), CancellationToken.None);
+        Assert.True(first.Success);
+        var data = first.Data!.Value;
+        Assert.Equal("listing", data.GetProperty("mode").GetString());
+        Assert.Equal(12, data.GetProperty("total").GetInt32());
+        Assert.Equal(12, data.GetProperty("returned").GetInt32());
+        Assert.False(data.GetProperty("truncated").GetBoolean());
+        Assert.Equal(12, data.GetProperty("tools").GetArrayLength());
+
+        var page = await tool.ExecuteAsync(
+            Context(), Parse("{\"limit\":5,\"offset\":10}"), CancellationToken.None);
+        var pageData = page.Data!.Value;
+        Assert.Equal(12, pageData.GetProperty("total").GetInt32());
+        Assert.Equal(2, pageData.GetProperty("returned").GetInt32());
+        Assert.Equal(10, pageData.GetProperty("offset").GetInt32());
+        Assert.Equal(2, pageData.GetProperty("tools").GetArrayLength());
+
+        var full = await tool.ExecuteAsync(
+            Context(), Parse("{\"limit\":5}"), CancellationToken.None);
+        var fullData = full.Data!.Value;
+        Assert.Equal(5, fullData.GetProperty("returned").GetInt32());
+        Assert.True(fullData.GetProperty("truncated").GetBoolean());
+        Assert.Equal(5, fullData.GetProperty("nextOffset").GetInt32());
+    }
+
+    [Fact]
     public async Task FindToolsV2_RegularPayload_ContainsCardFieldsAndHint()
     {
         var registry = new AgentToolRegistry(new IAgentTool[]

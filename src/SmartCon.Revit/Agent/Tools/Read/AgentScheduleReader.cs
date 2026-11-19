@@ -268,7 +268,15 @@ internal static class AgentScheduleReader
         {
             var body = schedule.GetTableData().GetSectionData(SectionType.Body);
             var count = body.NumberOfRows;
-            if (!skipHeader || count <= 0)
+
+            // A schedule without visible columns renders rows that cannot be read:
+            // report zero data rows so list_schedules.rowCount matches
+            // get_schedule_data.totalRows (a corrupted schedule used to report 106
+            // rows here and 0 rows there).
+            if (count <= 0 || body.NumberOfColumns <= 0)
+                return 0;
+
+            if (!skipHeader)
                 return Math.Max(0, count);
 
             var columns = ReadColumns(schedule.Document, schedule, out _);

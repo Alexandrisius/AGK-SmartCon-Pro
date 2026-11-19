@@ -1,6 +1,7 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -58,6 +59,17 @@ internal static class AgentViewSettingsWriter
             return Change.Error(code, reason);
         }
 
+        // Revit itself refuses cross-family templates (a Section template cannot be
+        // assigned to a FloorPlan). The dry run does not assign, so validate here:
+        // otherwise the preview promises a change that apply cannot deliver.
+        if (template.ViewType != view.ViewType)
+        {
+            return Change.Error(
+                "template_view_type_mismatch",
+                "Template '" + template.Name + "' is " + template.ViewType +
+                " and cannot be applied to " + view.ViewType + " view '" + view.Name + "'.");
+        }
+
         var currentId = view.ViewTemplateId;
         if (currentId != ElementId.InvalidElementId
             && currentId.GetValue() == templateId)
@@ -68,10 +80,9 @@ internal static class AgentViewSettingsWriter
         if (currentId != ElementId.InvalidElementId && !overwrite)
         {
             var current = doc.GetElement(currentId);
-            return Change.Error(
-                "template_already_assigned",
+            return Change.Skip(
                 "View '" + view.Name + "' already uses template '" + current?.Name +
-                "'. Pass overwriteTemplate=true to replace it.");
+                "'; pass overwriteTemplate=true to replace it.");
         }
 
         var oldTemplate = currentId == ElementId.InvalidElementId
@@ -120,6 +131,16 @@ internal static class AgentViewSettingsWriter
                 view.ViewType + ".");
         }
 
+        if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                view, BuiltInParameter.PLAN_VIEW_RANGE, out _, out var rangeTemplate))
+        {
+            return Change.Error(
+                "view_controlled_by_template",
+                "The view range of '" + view.Name + "' is controlled by template '" +
+                rangeTemplate + "'; writing it on the view has no effect. Change the template " +
+                "instead (or exclude the view range from its control).");
+        }
+
         ViewRangeSpec? before;
         try
         {
@@ -163,6 +184,16 @@ internal static class AgentViewSettingsWriter
     {
         if (spec is null || spec.IsEmpty)
             return Change.Skip("No crop settings specified.");
+
+        if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                view, BuiltInParameter.VIEWER_CROP_REGION, out _, out var cropTemplate))
+        {
+            return Change.Error(
+                "view_controlled_by_template",
+                "The crop region of '" + view.Name + "' is controlled by template '" +
+                cropTemplate + "'; writing it on the view has no effect. Change the template " +
+                "instead (or exclude the crop region from its control).");
+        }
 
         ViewCropState before;
         try
@@ -243,6 +274,16 @@ internal static class AgentViewSettingsWriter
         if (spec is null || spec.IsEmpty)
             return Change.Skip("No visibility settings specified.");
 
+        if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                view, BuiltInParameter.VIS_GRAPHICS_MODEL, out _, out var visibilityTemplate))
+        {
+            return Change.Error(
+                "view_controlled_by_template",
+                "Category visibility of '" + view.Name + "' is controlled by template '" +
+                visibilityTemplate + "'; writing it on the view has no effect. Change the " +
+                "template instead (or exclude V/G overrides from its control).");
+        }
+
         var before = AgentViewWriteHelper.ReadVisibility(doc, view);
 
         try
@@ -273,6 +314,16 @@ internal static class AgentViewSettingsWriter
 
     internal static Change MirrorVisibility(Document doc, View source, View target, List<string> warnings)
     {
+        if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                target, BuiltInParameter.VIS_GRAPHICS_MODEL, out _, out var targetTemplate))
+        {
+            return Change.Error(
+                "view_controlled_by_template",
+                "Category visibility of '" + target.Name + "' is controlled by template '" +
+                targetTemplate + "'; copying visibility onto it has no effect. Change the " +
+                "template instead (or exclude V/G overrides from its control).");
+        }
+
         var before = AgentViewWriteHelper.ReadVisibility(doc, target);
 
         try

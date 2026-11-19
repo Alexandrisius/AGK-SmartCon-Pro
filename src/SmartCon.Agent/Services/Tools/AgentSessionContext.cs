@@ -21,16 +21,33 @@ public sealed class AgentSessionContext
     public IReadOnlyCollection<string> ActiveToolNames { get; set; } = Array.Empty<string>();
 
     /// <summary>
-    /// Tools enabled through load_tool_pack in this conversation. The set is
-    /// merged into the catalog sent to the model from the next round on.
+    /// Tools enabled through load_tool_pack in this conversation, ordered from the
+    /// least to the most recently requested or used tool. A request carries only
+    /// a bounded slice of the catalog, so the tail of this list decides which
+    /// loaded tools the model can actually call.
     /// </summary>
-    public HashSet<string> LoadedToolNames { get; } = new(StringComparer.Ordinal);
+    public List<string> LoadedToolNames { get; } = new();
 
     /// <summary>
     /// Tools queued by load_tool_pack during the current round. The orchestrator
     /// moves them into <see cref="LoadedToolNames"/> at the next round boundary.
     /// </summary>
     public HashSet<string> PendingToolNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Marks a tool as loaded and moves it to the most-recent position, so an
+    /// explicit load or an actual call survives the request cap even when the
+    /// conversation has already loaded more tools than one request can carry.
+    /// </summary>
+    public void TouchTool(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        LoadedToolNames.RemoveAll(
+            candidate => string.Equals(candidate, name, StringComparison.Ordinal));
+        LoadedToolNames.Add(name);
+    }
 
     /// <summary>
     /// Per-session prompt-token calibration, fed by provider usage after every

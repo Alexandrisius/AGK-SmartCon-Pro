@@ -159,6 +159,14 @@ public sealed class LoadToolPackToolTests
 
         await tool.ExecuteAsync(
             Context(), Parse("{\"pack\":\"views\"}"), CancellationToken.None);
+
+        // The next request actually carries the loaded tools: only then are they
+        // "already loaded" from the model's point of view.
+        session.ActiveToolNames = new[]
+        {
+            "list_views", "get_current_view_info", "rename_views"
+        };
+
         var second = await tool.ExecuteAsync(
             Context(), Parse("{\"pack\":\"views\"}"), CancellationToken.None);
 
@@ -168,6 +176,31 @@ public sealed class LoadToolPackToolTests
         Assert.Equal(3, data.GetProperty("alreadyLoaded").GetArrayLength());
         Assert.Equal("none", data.GetProperty("appliedTo").GetString());
         Assert.Equal(3, session.PendingToolNames.Count);
+    }
+
+    [Fact]
+    public async Task Execute_LoadedButNotInTheCurrentRequest_IsQueuedAgain()
+    {
+        // Regression: the tool was loaded earlier, but the request cap pushed it
+        // out of the request. Reporting "already loaded" here left the model
+        // unable to ever call it again.
+        var session = new AgentSessionContext();
+        session.TouchTool("undo_last");
+        session.ActiveToolNames = new[] { "list_views" };
+        var tool = CreateTool(session, new FakeToolRegistry(new ScriptedTool("undo_last")));
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"tools\":[\"undo_last\"]}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        var loaded = data.GetProperty("loaded").EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToList();
+        Assert.Equal(new[] { "undo_last" }, loaded);
+        Assert.Equal("next_round", data.GetProperty("appliedTo").GetString());
+        Assert.Contains("undo_last", session.PendingToolNames);
+        Assert.Equal("undo_last", session.LoadedToolNames[session.LoadedToolNames.Count - 1]);
     }
 
     [Fact]

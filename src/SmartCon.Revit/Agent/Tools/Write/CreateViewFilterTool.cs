@@ -184,7 +184,9 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 return;
             }
 
-            sections.Add(Section("filter", "ok", "created '" + filter.Name + "'"));
+            sections.Add(Section("filter", "ok", dryRun
+                    ? "would create '" + filter.Name + "' (dry run, rolled back)"
+                    : "created '" + filter.Name + "'"));
         }
 
         if (created)
@@ -197,6 +199,20 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 NewValue = filter.Name,
                 Status = ChangeStatus.Applied
             });
+
+            if (!dryRun)
+            {
+                // The filter element is a real change even when applying it to a view
+                // later fails: count it so a change set is persisted and undo_last can
+                // remove it (feedback: partial failure lost the created filter).
+                outcome.AffectedCount++;
+                outcome.Batch.Changed.Add(new WriteItemReport
+                {
+                    Id = filter.Id.GetValue(),
+                    Name = filter.Name,
+                    Detail = "filter created"
+                });
+            }
         }
 
         var filterId = filter.Id;
@@ -324,9 +340,18 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
 
         outcome.Data["filterId"] = filterId.GetValue();
         outcome.Data["filterName"] = filter.Name;
-        outcome.Data["created"] = created;
+        outcome.Data["created"] = created && !dryRun;
+        outcome.Data["wouldCreate"] = created && dryRun;
         outcome.Data["reused"] = reused;
         outcome.Data["visibility"] = visibility;
+        if (created && dryRun)
+        {
+            outcome.Warnings.Add(
+                "Dry run: the filter was created inside the rolled-back transaction and " +
+                "nothing was saved; filterId refers to the discarded element. Run with " +
+                "dryRun=false to apply it.");
+        }
+
         Finish(outcome, sections, readBack);
     }
 
@@ -358,6 +383,18 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 Parameter = AgentJson.GetString(item, "parameter"),
                 Op = AgentJson.GetString(item, "op") ?? "eq"
             };
+
+            if (string.IsNullOrWhiteSpace(spec.Parameter)
+                && (string.IsNullOrWhiteSpace(spec.Field)
+                    || string.Equals(spec.Field, "parameter", StringComparison.OrdinalIgnoreCase)))
+            {
+                outcome.Success = false;
+                outcome.ErrorCode = "invalid_arguments";
+                outcome.Message =
+                    "conditions[].parameter is required when field is \"parameter\" " +
+                    "(Revit then reports the confusing 'Parameter parameter is not filterable').";
+                return conditions;
+            }
 
             if (item.TryGetProperty("value", out var value)
                 && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))

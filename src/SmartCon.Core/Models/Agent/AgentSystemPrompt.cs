@@ -54,9 +54,9 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 ";
 
     private const string ToolCatalogV2Section = @"## Tool catalog
-- Only the core tools and the few most relevant tools are available in each request.
-- If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools(fields=[""name"",""description""]) lists a pack without schemas.
-- find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). The new tools become available on the next round.
+- Only the core tools plus a bounded set of recent and relevant tools are available in each request.
+- If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools with an empty query lists the whole catalog (name, description, pack) without schemas, paged with offset/nextOffset.
+- find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). The requested tools are callable from the next round; load_tool_pack always reports which tools are already available in the current request.
 - Never call a tool that is not in the current request; it will fail with unknown_tool.
 ";
 

@@ -13,7 +13,7 @@ public sealed partial class AgentOrchestratorTests
     public async Task RunTurn_ThirdIdenticalCall_IsBlockedWithoutExecution()
     {
         var store = new InMemoryConversationStore();
-        var tool = new CountingTool();
+        var tool = new CountingTool(risk: AgentToolRisk.Write);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
@@ -50,7 +50,7 @@ public sealed partial class AgentOrchestratorTests
     public async Task RunTurn_FiveIdenticalCalls_AbortsTheTurn()
     {
         var store = new InMemoryConversationStore();
-        var tool = new CountingTool();
+        var tool = new CountingTool(risk: AgentToolRisk.Write);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var usageStore = new CapturingUsageStore();
@@ -97,7 +97,7 @@ public sealed partial class AgentOrchestratorTests
     public async Task RunTurn_TwoIdenticalSuccessfulCalls_AreNotBlocked()
     {
         var store = new InMemoryConversationStore();
-        var tool = new CountingTool();
+        var tool = new CountingTool(risk: AgentToolRisk.Write);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
@@ -130,7 +130,7 @@ public sealed partial class AgentOrchestratorTests
     public async Task RunTurn_DifferentArguments_AreNotTreatedAsALoop()
     {
         var store = new InMemoryConversationStore();
-        var tool = new CountingTool();
+        var tool = new CountingTool(risk: AgentToolRisk.Write);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();
@@ -157,10 +157,79 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
+    public async Task RunTurn_RepeatedReadCalls_AreNotBlockedByTheLoopGuard()
+    {
+        // Re-reading state is legitimate; the guard must not consume the turn.
+        var store = new InMemoryConversationStore();
+        var tool = new CountingTool();
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var executor = CreateExecutor(registry);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            Enumerable.Range(0, 5)
+                .Select(index => new AgentToolCall
+                {
+                    Id = "call_" + index,
+                    Name = "get_test",
+                    ArgumentsJson = "{}"
+                })
+                .ToArray());
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(llm, executor, registry, store);
+
+        var result = await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "перечитываю",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(5, tool.Calls);
+        Assert.Equal(5, result.ToolCallCount);
+        Assert.Equal("done", result.FinalText);
+    }
+
+    [Fact]
+    public async Task RunTurn_RepeatedUndoLast_IsNotBlocked()
+    {
+        // Each unnamed undo_last peels back the next change set; identical
+        // arguments are intentional, not a loop.
+        var store = new InMemoryConversationStore();
+        var tool = new CountingTool(name: "undo_last", risk: AgentToolRisk.Write);
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var executor = CreateExecutor(registry);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            Enumerable.Range(0, 4)
+                .Select(index => new AgentToolCall
+                {
+                    Id = "call_" + index,
+                    Name = "undo_last",
+                    ArgumentsJson = "{}"
+                })
+                .ToArray());
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(llm, executor, registry, store);
+
+        var result = await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "откати всё",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(4, tool.Calls);
+        Assert.Equal(4, result.ToolCallCount);
+    }
+
+    [Fact]
     public async Task RunTurn_TwoFailuresOfTheSameCall_AddAWarningToTheResult()
     {
         var store = new InMemoryConversationStore();
-        var tool = new CountingTool(ToolResult.Fail("boom", "Tool exploded"));
+        var tool = new CountingTool(
+            ToolResult.Fail("boom", "Tool exploded"), risk: AgentToolRisk.Write);
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
         var executor = CreateExecutor(registry);
         var llm = new FakeAgentLlmClient();

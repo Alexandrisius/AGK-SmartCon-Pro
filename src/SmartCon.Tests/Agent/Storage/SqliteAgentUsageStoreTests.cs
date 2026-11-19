@@ -100,6 +100,39 @@ FROM token_usage;";
         Assert.Equal(0, reader.GetInt32(5));
     }
 
+    [Fact]
+    public async Task GetSessionCostAsync_SumsEveryTurnOfThatSession()
+    {
+        using var fixture = new DatabaseFixture();
+        fixture.Database.Initialize();
+        var store = new SqliteAgentUsageStore(fixture.Database);
+        var sessionId = Guid.NewGuid();
+        var otherSessionId = Guid.NewGuid();
+
+        foreach (var (session, cost) in new[]
+                 {
+                     (sessionId, 0.0012m),
+                     (sessionId, 0.5m),
+                     (otherSessionId, 9m)
+                 })
+        {
+            await store.RecordAsync(
+                new AgentUsageRecord
+                {
+                    SessionId = session.ToString("D"),
+                    Provider = "openrouter",
+                    Model = "model-x",
+                    Usage = new AgentUsage { CostUsd = cost },
+                    Status = "ok"
+                },
+                CancellationToken.None);
+        }
+
+        var total = await store.GetSessionCostAsync(sessionId, CancellationToken.None);
+
+        Assert.Equal(0.5012m, Math.Round(total, 6));
+    }
+
     private sealed class DatabaseFixture : IDisposable
     {
         private readonly string _directory;

@@ -229,10 +229,23 @@
                                     CornerRadius="12,3,12,12"
                                     Padding="11,8">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding Text}"
-                                               TextWrapping="Wrap"
-                                               Foreground="White"
-                                               LineHeight="18"/>
+                                    <!-- Read-only TextBox instead of TextBlock: the user's own
+                                         message must be selectable and copyable like the
+                                         assistant's FlowDocument bubble. -->
+                                    <TextBox Text="{Binding Text, Mode=OneWay}"
+                                             TextWrapping="Wrap"
+                                             Foreground="White"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Padding="0"
+                                             FontSize="12"
+                                             TextAlignment="Left"
+                                             VerticalContentAlignment="Top"
+                                             AcceptsReturn="True"
+                                             IsReadOnly="True"
+                                             IsReadOnlyCaretVisible="False"
+                                             IsTabStop="False"
+                                             Cursor="IBeam"/>
                                     <ItemsControl ItemsSource="{Binding Attachments}"
                                                   Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}"
                                                   Margin="0,4,0,0">
@@ -906,12 +919,6 @@
                                                    WarningBrush="{DynamicResource WarningBrush}"
                                                    DangerBrush="{DynamicResource DangerBrush}"
                                                    StrokeThickness="3"/>
-                            <TextBlock Text="{Binding ContextPercent}"
-                                       FontSize="7"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
                         </Grid>
                     </Button>
 
@@ -929,8 +936,9 @@
                                 Padding="10,8"
                                 MaxWidth="300">
                             <StackPanel>
-                                <TextBlock Text="{Binding ContextTooltip}"
-                                           FontSize="11"
+                                <TextBlock Text="{Binding ContextNumbers}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextPrimaryBrush}"
                                            TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding ContextDetails}"

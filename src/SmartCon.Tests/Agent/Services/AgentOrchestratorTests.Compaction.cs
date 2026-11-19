@@ -140,7 +140,10 @@ public sealed partial class AgentOrchestratorTests
         var settings = new AgentLlmSettings
         {
             Model = "test-model",
-            ContextWindowTokens = 500_000,
+            // The projection gate runs at 75 % of the compaction limit: with a
+            // 500k window this ~57k history stays verbatim (by design). A small
+            // window puts it above the gate and exercises the projection path.
+            ContextWindowTokens = 80_000,
             ContextThreshold = 0.7
         };
         var orchestrator = CreateOrchestrator(

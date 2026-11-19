@@ -64,7 +64,7 @@ public sealed partial class AgentMainViewModel
             if (_currentAssistant is not null)
                 _currentAssistant.IsStreaming = false;
 
-            UpdateUsage(result.Usage);
+            AddTurnCost(result.Usage);
             StatusText = result.MaxRoundsReached
                 ? S("Agent_Status_StepLimit", "Достигнут лимит шагов")
                 : S("Agent_Status_Ready", "Готов");
@@ -217,8 +217,6 @@ public sealed partial class AgentMainViewModel
             case AgentProgressKind.TurnCompleted:
                 if (_currentAssistant is not null)
                     _currentAssistant.IsStreaming = false;
-                if (progress.Usage is not null)
-                    UpdateUsage(progress.Usage);
                 break;
 
             case AgentProgressKind.ContextUsage:
@@ -263,21 +261,6 @@ public sealed partial class AgentMainViewModel
         }
     }
 
-    private void UpdateUsage(AgentUsage usage)
-    {
-        if (ReferenceEquals(usage, AgentUsage.Empty))
-            return;
-
-        var parts = new List<string>(3);
-        if (usage.CompletionTokens > 0)
-            parts.Add("out " + FormatTokens(usage.CompletionTokens));
-        if (usage.CostUsd.HasValue)
-            parts.Add("$" + usage.CostUsd.Value.ToString("0.0000", CultureInfo.InvariantCulture));
-
-        if (parts.Count > 0)
-            TokenSummary = string.Join(" · ", parts);
-    }
-
     private void UpdateContextDetails(AgentProgress progress)
     {
         if (string.IsNullOrEmpty(progress.CompactionKind))
@@ -302,11 +285,6 @@ public sealed partial class AgentMainViewModel
 
         ContextDetails = string.Join(" · ", parts);
     }
-
-    private static string FormatTokens(int value) =>
-        value >= 1000
-            ? (value / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "K"
-            : value.ToString(CultureInfo.InvariantCulture);
 
     private void AddError(string message)
     {

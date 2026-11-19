@@ -182,7 +182,11 @@ public sealed class GetSheetContentTool : AgentReadToolBase
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             "Sheet " + sheetCard.Number + " '" + sheetCard.Name + "' holds " + views.Count +
-            " view(s) and " + schedules.Count + " schedule(s); returned " + page.Count + " view(s)." +
+            " view(s) and " + sheetCard.ScheduleCount + " schedule(s)" +
+            (includeSchedules
+                ? string.Empty
+                : " (schedule details not requested; pass includeSchedules=true)") +
+            "; returned " + page.Count + " view(s)." +
             (hasMore ? " The view list is truncated — pass nextOffset as offset." : string.Empty));
     }
 }

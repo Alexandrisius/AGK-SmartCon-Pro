@@ -113,7 +113,8 @@ public sealed class ReadToolResultTool : IAgentTool
                 "Reads the full stored result of an earlier tool call by resultHandle. Tool " +
                 "results that exceed the context budget are trimmed and carry resultHandle; use " +
                 "this tool with offset/limit (and an optional path inside the JSON) instead of " +
-                "re-running the original tool.",
+                "re-running the original tool. offset/limit are measured in characters " +
+                "(default 8000 ≈ 2–3k tokens), not tokens.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",

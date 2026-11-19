@@ -160,7 +160,13 @@ public sealed partial class AgentOrchestrator
 
             var systemMessage = AgentMessage.System(
                 _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
-            var definitions = await SelectToolDefinitionsAsync(userText, ct);
+            var definitions = await SelectToolDefinitionsAsync(
+                    userText,
+                    _sessionContext.PendingToolNames.Count == 0
+                        ? null
+                        : _sessionContext.PendingToolNames.ToList(),
+                    ct)
+                .ConfigureAwait(false);
             SetActiveToolNames(definitions);
 
             var lastActualPromptTokens = 0;
@@ -413,7 +419,8 @@ public sealed partial class AgentOrchestrator
                     else
                     {
                         var argumentsJson = toolCall.ArgumentsJson ?? "{}";
-                        var guard = loopGuard.BeforeCall(toolCall.Name, argumentsJson);
+                        var exempt = IsLoopGuardExempt(toolCall.Name);
+                        var guard = loopGuard.BeforeCall(toolCall.Name, argumentsJson, exempt);
                         if (guard.Action == LoopGuardAction.Abort)
                         {
                             loopAborted = true;
@@ -439,7 +446,7 @@ public sealed partial class AgentOrchestrator
                         {
                             result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
                             var observed = loopGuard.ObserveResult(
-                                toolCall.Name, argumentsJson, result.Success);
+                                toolCall.Name, argumentsJson, result.Success, exempt);
                             if (observed.WarnOnly && !result.Success)
                             {
                                 SmartConLogger.Info(

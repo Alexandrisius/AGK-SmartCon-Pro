@@ -135,6 +135,80 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
+    public async Task RunTurn_ToolCatalogV2_LoadedToolsNeverFallOutOfTheRequest()
+    {
+        // Regression for the 2026-11-19 sessions: 21 tools were "loaded", the
+        // request carried only the first six of them, and the model could not
+        // call undo_last / list_sheets at all. A tool that was loaded or used
+        // must stay callable on every following turn.
+        var store = new InMemoryConversationStore();
+        var session = new AgentSessionContext();
+        var tools = CoreTools();
+        for (var index = 0; index < 10; index++)
+            tools.Add(new CountingTool(name: "filler_" + index));
+        tools.Add(new CountingTool(name: "undo_last"));
+        var registry = new AgentToolRegistry(tools);
+        var executor = CreateExecutor(registry, session);
+
+        session.TouchTool("undo_last");
+        for (var index = 0; index < 10; index++)
+            session.TouchTool("filler_" + index);
+
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "привет",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        var sent = Assert.Single(llm.Requests).Tools;
+        Assert.Contains(sent, tool => tool.Name == "undo_last");
+        Assert.Contains(sent, tool => tool.Name == "filler_9");
+    }
+
+    [Fact]
+    public async Task RunTurn_ToolCatalogV2_UserTextPullsDomainToolsIntoTheRequest()
+    {
+        // "продолжай про листы и спецификации" must put the sheet/schedule tools
+        // into the request even when the loaded set is already large.
+        var store = new InMemoryConversationStore();
+        var session = new AgentSessionContext();
+        var tools = CoreTools();
+        for (var index = 0; index < 10; index++)
+            tools.Add(new CountingTool(name: "filler_" + index));
+        tools.Add(new CountingTool(
+            name: "list_sheets", description: "Список листов проекта: номер, имя, комплект"));
+        tools.Add(new CountingTool(
+            name: "list_schedules", description: "Список спецификаций и ведомостей"));
+        var registry = new AgentToolRegistry(tools);
+        var executor = CreateExecutor(registry, session);
+
+        for (var index = 0; index < 10; index++)
+            session.TouchTool("filler_" + index);
+
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(
+            llm, executor, registry, store, session, settings: V2Settings());
+
+        await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "продолжай и проверь все листы и спецификации",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        var sent = Assert.Single(llm.Requests).Tools;
+        Assert.Contains(sent, tool => tool.Name == "list_sheets");
+        Assert.Contains(sent, tool => tool.Name == "list_schedules");
+    }
+
+    [Fact]
     public async Task RunTurn_ToolCatalogV2_KeepsDefinitionsFixedWithinRound()
     {
         var store = new InMemoryConversationStore();

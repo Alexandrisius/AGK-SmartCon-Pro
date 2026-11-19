@@ -87,12 +87,20 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
 
         var groups = new Dictionary<string, GroupAccumulator>(StringComparer.OrdinalIgnoreCase);
         string? sumUnit = null;
+        var groupParameterResolved = false;
 
         foreach (var element in result.Elements)
         {
             ct.ThrowIfCancellationRequested();
 
-            var key = ReadGroupKey(doc, element, groupBy, groupParameter, spec.IncludeTypeParameters);
+            var key = ReadGroupKey(
+                doc,
+                element,
+                groupBy,
+                groupParameter,
+                spec.IncludeTypeParameters,
+                out var parameterFound);
+            groupParameterResolved |= parameterFound;
             if (!groups.TryGetValue(key, out var accumulator))
             {
                 accumulator = new GroupAccumulator();
@@ -116,6 +124,25 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                     sumUnit ??= value.Unit;
                 }
             }
+        }
+
+        if (groupBy == "parameter" && !groupParameterResolved && result.Elements.Count > 0)
+        {
+            var suggestions = ParameterNameSuggestions(doc, result.Elements[0], groupParameter!);
+            var message = "Parameter '" + groupParameter + "' was not found on the scanned " +
+                          result.Elements.Count + " element(s)." +
+                          (suggestions.Count > 0
+                              ? " Did you mean " + string.Join(
+                                  " or ", suggestions.Select(name => "'" + name + "'")) + "?"
+                              : string.Empty) +
+                          " Use get_element_details(parameterNameContains=...) to find the exact name.";
+            var data = JsonSerializer.SerializeToElement(new
+            {
+                unknownParameter = groupParameter,
+                suggestions,
+                scanned = result.Elements.Count
+            });
+            return ToolResult.Fail("unknown_parameter", message, data: data);
         }
 
         var grouped = groups
@@ -154,7 +181,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Summarized " + result.Total + " element(s) into " + grouped.Count + " group(s).");
+            "Summarized " + result.Total + " element(s) into " + grouped.Count + " group(s)." +
+            (grouped.Count > topN
+                ? " Showing top " + topN + " of " + grouped.Count + " groups."
+                : string.Empty));
     }
 
     private static string ReadGroupKey(
@@ -162,8 +192,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         Element element,
         string groupBy,
         string? groupParameter,
-        bool includeTypeParameters)
+        bool includeTypeParameters,
+        out bool parameterFound)
     {
+        parameterFound = false;
         switch (groupBy)
         {
             case "level":
@@ -193,6 +225,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                     groupParameter!,
                     includeTypeParameters);
 
+                parameterFound = parameter is not null;
                 if (parameter is null || !parameter.HasValue)
                     return "(empty)";
 
@@ -212,6 +245,70 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
     private static bool IsInternalGroupKey(string key) =>
         string.IsNullOrWhiteSpace(key)
         || string.Equals(key, "(no category)", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Closest parameter names on the element (instance and type) for an unknown
+    /// <c>groupBy=parameter</c> name, so a typo does not look like empty data.
+    /// </summary>
+    private static List<string> ParameterNameSuggestions(
+        Document doc,
+        Element element,
+        string requested)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Collect(element);
+        var typeId = element.GetTypeId();
+        if (typeId != ElementId.InvalidElementId && doc.GetElement(typeId) is Element type)
+            Collect(type);
+
+        var limit = Math.Max(2, (requested.Length + 1) / 2);
+        return names
+            .Select(name => (
+                Name: name,
+                Distance: Distance(requested.ToLowerInvariant(), name.ToLowerInvariant())))
+            .Where(pair => pair.Distance <= limit)
+            .OrderBy(pair => pair.Distance)
+            .ThenBy(pair => pair.Name, StringComparer.Ordinal)
+            .Take(3)
+            .Select(pair => pair.Name)
+            .ToList();
+
+        void Collect(Element source)
+        {
+            foreach (Parameter parameter in source.Parameters)
+            {
+                var name = parameter.Definition?.Name;
+                if (!string.IsNullOrWhiteSpace(name))
+                    names.Add(name!);
+            }
+        }
+    }
+
+    private static int Distance(string left, string right)
+    {
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+        for (var index = 0; index <= right.Length; index++)
+            previous[index] = index;
+
+        for (var row = 1; row <= left.Length; row++)
+        {
+            current[0] = row;
+            for (var column = 1; column <= right.Length; column++)
+            {
+                var cost = left[row - 1] == right[column - 1] ? 0 : 1;
+                current[column] = Math.Min(
+                    Math.Min(current[column - 1] + 1, previous[column] + 1),
+                    previous[column - 1] + cost);
+            }
+
+            var swap = previous;
+            previous = current;
+            current = swap;
+        }
+
+        return previous[right.Length];
+    }
 
     private sealed class GroupAccumulator
     {

@@ -21,7 +21,8 @@ public sealed class FindToolsTool : IAgentTool
         "find_tools does not change the tool set";
 
     private const string ListingHint =
-        "request the schema of the chosen tool via find_tools(query=...) or load_tool_pack";
+        "request the schema of the chosen tool via find_tools(query=...) or load_tool_pack; " +
+        "page with offset/nextOffset when truncated=true";
 
     private readonly IToolRouter _router;
 
@@ -43,11 +44,11 @@ public sealed class FindToolsTool : IAgentTool
         CancellationToken ct)
     {
         var query = GetString(args, "query");
-        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 5), 10));
 
         if (string.IsNullOrWhiteSpace(query))
-            return ExecuteListing(args, limit);
+            return ExecuteListing(args);
 
+        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 5), 10));
         return await ExecuteSearchAsync(
                 context, query!, GetString(args, "context"), GetString(args, "pack"), limit, ct)
             .ConfigureAwait(false);
@@ -161,7 +162,7 @@ public sealed class FindToolsTool : IAgentTool
         }
     }
 
-    private ToolResult ExecuteListing(JsonElement args, int limit)
+    private ToolResult ExecuteListing(JsonElement args)
     {
         var registry = _registry;
         if (registry is null)
@@ -190,14 +191,24 @@ public sealed class FindToolsTool : IAgentTool
             all = all.Where(definition => packTools.Contains(definition.Name)).ToList();
         }
 
-        var returned = all.Take(limit).ToList();
+        var total = all.Count;
+        var offset = System.Math.Max(0, GetInt(args, "offset", 0));
+        var limit = System.Math.Max(1, System.Math.Min(GetInt(args, "limit", 50), 100));
+        var page = all.Skip(offset).Take(limit).ToList();
+        int? nextOffset = offset + page.Count < total ? offset + page.Count : null;
         var payload = new
         {
             mode = "listing",
-            total = returned.Count,
-            packs = PacksOf(returned),
+            total,
+            returned = page.Count,
+            offset,
+            limit,
+            nextOffset,
+            truncated = nextOffset is not null,
+            packs = AgentToolPacks.All.Select(pack => pack.Name).ToList(),
+            toolsPacks = PacksOf(page),
             hint = ListingHint,
-            tools = returned.Select(definition => new
+            tools = page.Select(definition => new
             {
                 name = definition.Name,
                 description = definition.Description,
@@ -210,7 +221,7 @@ public sealed class FindToolsTool : IAgentTool
         {
             return ToolResult.Ok(
                 JsonSerializer.SerializeToElement(payload),
-                "Listed " + returned.Count + " tool(s) without schemas.");
+                "Listed " + page.Count + " of " + total + " tool(s) without schemas.");
         }
         catch (Exception ex)
         {
@@ -232,10 +243,13 @@ public sealed class FindToolsTool : IAgentTool
     private static AgentToolDefinition BuildDefinition()
     {
         const string schema = @"{""type"":""object"",""properties"":{" +
-            @"""query"":{""type"":""string"",""description"":""Empty lists the catalog or one pack without schemas""}," +
+            @"""query"":{""type"":""string"",""description"":""Empty lists the whole catalog or one pack without schemas""}," +
             @"""pack"":{""type"":""string""}," +
             @"""context"":{""type"":""string""}," +
-            @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":5}," +
+            @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":100,""default"":50," +
+            @"""description"":""Query mode returns at most 10 cards; listing mode pages the catalog""}," +
+            @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0," +
+            @"""description"":""Listing mode offset; use nextOffset from the previous page""}," +
             @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
             @"""enum"":[""name"",""description""]}}}," +
             @"""additionalProperties"":false}";
@@ -248,8 +262,9 @@ public sealed class FindToolsTool : IAgentTool
                 "cards with argument schemas. Use it when the tool you need is not in the " +
                 "current request. Discovery only: it does not change the tool set. After it, " +
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                "chosen tools for the next round. An empty query returns a compact listing " +
-                "(name, description, pack, risk) without schemas; add pack to browse one pack.",
+                "chosen tools for the next round. An empty query returns the whole catalog " +
+                "(name, description, pack, risk) without schemas, paged with offset/nextOffset; " +
+                "add pack to browse one pack.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",

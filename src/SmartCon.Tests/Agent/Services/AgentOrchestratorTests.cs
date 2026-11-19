@@ -244,14 +244,15 @@ public sealed partial class AgentOrchestratorTests
         public CountingTool(
             ToolResult? result = null,
             string name = "get_test",
-            string? description = null)
+            string? description = null,
+            AgentToolRisk risk = AgentToolRisk.Read)
         {
             _result = result ?? ToolResult.Ok(null, "ok");
             Definition = new AgentToolDefinition
             {
                 Name = name,
                 Description = description ?? name + " test tool",
-                Risk = AgentToolRisk.Read,
+                Risk = risk,
                 InputSchemaJson = "{\"type\":\"object\",\"properties\":{}}"
             };
         }
@@ -332,6 +333,12 @@ public sealed partial class AgentOrchestratorTests
             Records.Add(record);
             return Task.CompletedTask;
         }
+
+        public Task<decimal> GetSessionCostAsync(Guid sessionId, CancellationToken ct) =>
+            Task.FromResult(Records
+                .Where(record => string.Equals(
+                    record.SessionId, sessionId.ToString("D"), StringComparison.Ordinal))
+                .Sum(record => record.Usage?.CostUsd ?? 0m));
     }
 
     private sealed class InMemoryWorkingStateStore : IAgentWorkingStateStore

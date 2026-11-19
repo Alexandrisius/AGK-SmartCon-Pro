@@ -78,6 +78,15 @@ public sealed class QueryElementsTool : AgentReadToolBase
                 "viewId " + viewId + " does not identify a view in this document.");
         }
 
+        if (spec.RoomId is { } roomId
+            && doc.GetElement(ElementIdCompat.Create(roomId)) is not Autodesk.Revit.DB.Architecture.Room)
+        {
+            return ToolResult.Fail(
+                "invalid_room",
+                "roomId " + roomId + " does not identify a room in this document. " +
+                "Use query_elements(categories=[\"OST_Rooms\"]) to list rooms.");
+        }
+
         var query = new AgentElementQuery(doc);
         var result = query.Execute(spec, spec.Offset + spec.Limit, ct);
 

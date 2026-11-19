@@ -125,6 +125,26 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
                 var change = ApplySection(doc, source, target, section, overwriteTemplate, outcome);
                 if (change.ErrorCode is not null)
                 {
+                    // A section locked by the target's template (or a template from
+                    // another view type) cannot be copied. With sections=["all"] the
+                    // remaining sections must still be applied instead of failing the
+                    // whole copy.
+                    if (string.Equals(change.ErrorCode, "view_controlled_by_template",
+                            StringComparison.Ordinal)
+                        || string.Equals(change.ErrorCode, "template_view_type_mismatch",
+                            StringComparison.Ordinal))
+                    {
+                        var lockedReason = section + ": " + (change.Reason ?? change.ErrorCode);
+                        skipReasons.Add(lockedReason);
+                        sectionReports.Add(new SectionReport
+                        {
+                            Section = section,
+                            Status = "skipped",
+                            Reason = lockedReason
+                        });
+                        continue;
+                    }
+
                     sectionReports.Add(new SectionReport
                     {
                         Section = section,

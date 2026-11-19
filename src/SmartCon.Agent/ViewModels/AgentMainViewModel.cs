@@ -29,8 +29,10 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private readonly IAgentClipboardService _clipboardService;
     private readonly AgentConfirmationService _confirmationService;
     private readonly IActiveDocumentChangeNotifier? _documentChangeNotifier;
+    private readonly IAgentUsageStore? _usageStore;
     private readonly IDispatcher _dispatcher;
     private bool _hasApiKey;
+    private decimal _sessionCostUsd;
     private readonly Dictionary<string, AgentChatItemViewModel> _toolCards =
         new(StringComparer.Ordinal);
 
@@ -53,7 +55,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         AgentConfirmationService confirmationService,
         IDispatcher dispatcher,
         Services.Tools.AgentSessionContext sessionContext,
-        IActiveDocumentChangeNotifier? documentChangeNotifier = null)
+        IActiveDocumentChangeNotifier? documentChangeNotifier = null,
+        IAgentUsageStore? usageStore = null)
     {
         _conversationStore = conversationStore ?? throw new ArgumentNullException(nameof(conversationStore));
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
@@ -69,6 +72,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             ?? throw new ArgumentNullException(nameof(confirmationService));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _documentChangeNotifier = documentChangeNotifier;
+        _usageStore = usageStore;
         _hasApiKey = settings.HasApiKey;
 
         AttachConfirmationService(_confirmationService);
@@ -142,7 +146,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private string _documentTitle = string.Empty;
 
     [ObservableProperty]
-    private string _tokenSummary = "—";
+    private string _tokenSummary = "$0.0000";
 
     [ObservableProperty]
     private int _contextTokens;
@@ -151,7 +155,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private int _contextLimit;
 
     [ObservableProperty]
-    private string _contextPercent = "—";
+    private string _contextNumbers = string.Empty;
 
     [ObservableProperty]
     private string _contextTooltip = string.Empty;
@@ -197,6 +201,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         SendCommand.NotifyCanExecuteChanged();
         PrimaryActionCommand.NotifyCanExecuteChanged();
         ResetContextUsage();
+        ResetSessionCost();
         if (value is null || IsBusy)
             return;
 
@@ -214,26 +219,72 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         ContextTokens = 0;
         ContextLimit = 0;
         ContextDetails = string.Empty;
+        ContextNumbers = string.Empty;
         IsContextPopupOpen = false;
+    }
+
+    private void ResetSessionCost() => ApplySessionCost(0m);
+
+    private void ApplySessionCost(decimal costUsd)
+    {
+        _sessionCostUsd = costUsd;
+        TokenSummary = "$" + _sessionCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
+    }
+
+    private void AddTurnCost(AgentUsage usage)
+    {
+        if (usage.CostUsd.HasValue)
+            _sessionCostUsd += usage.CostUsd.Value;
+
+        TokenSummary = "$" + _sessionCostUsd.ToString("0.0000", CultureInfo.InvariantCulture);
+    }
+
+    private async Task RefreshSessionCostAsync(Guid sessionId)
+    {
+        if (_usageStore is null)
+            return;
+
+        try
+        {
+            var cost = await _usageStore
+                .GetSessionCostAsync(sessionId, CancellationToken.None)
+                .ConfigureAwait(true);
+            ApplySessionCost(cost);
+        }
+        catch (Exception)
+        {
+            // The cost line is informational: never break the chat because the
+            // usage table could not be read.
+            ApplySessionCost(0m);
+        }
     }
 
     private void UpdateContextPresentation()
     {
         if (ContextLimit <= 0)
         {
-            ContextPercent = "—";
+            ContextNumbers = string.Empty;
             ContextTooltip = S("Agent_Context_Unknown", "Контекст ещё не измерен");
             OnPropertyChanged(nameof(HasContextUsage));
             return;
         }
 
         var ratio = Math.Max(0, (double)ContextTokens / ContextLimit);
-        ContextPercent = (ratio * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
+        ContextNumbers = FormatCompactSize(ContextTokens) + " / " +
+                         FormatCompactSize(ContextLimit) + " (" +
+                         (ratio * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%)";
         ContextTooltip = S("Agent_Context", "Контекст") + ": ≈ " +
                          FormatNumber(ContextTokens) + " / " + FormatNumber(ContextLimit) +
                          " (" + (ratio * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%)";
         OnPropertyChanged(nameof(HasContextUsage));
     }
+
+    private static string FormatCompactSize(int value) =>
+        value >= 1_000_000
+            ? (value / 1_000_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "M"
+            : value >= 1_000
+                ? (value / 1_000.0).ToString("0.#", CultureInfo.InvariantCulture) + "K"
+                : value.ToString(CultureInfo.InvariantCulture);
 
     private static string FormatNumber(int value) =>
         value.ToString("N0", CultureInfo.CurrentCulture);
@@ -273,7 +324,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                 Sessions.Clear();
                 Messages.Clear();
                 SelectedSession = null;
-                TokenSummary = "—";
+                TokenSummary = "$0.0000";
                 if (!HasError)
                     StatusText = S("Agent_Status_NoDocument", "Откройте проект");
                 return;
@@ -376,6 +427,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             var messages = await _conversationStore
                 .GetMessagesAsync(session.Id, CancellationToken.None)
                 .ConfigureAwait(true);
+
+            await RefreshSessionCostAsync(session.Id).ConfigureAwait(true);
 
             Messages.Clear();
             _toolCards.Clear();

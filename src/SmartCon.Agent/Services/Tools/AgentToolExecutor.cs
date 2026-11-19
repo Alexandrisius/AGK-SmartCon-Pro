@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 
 namespace SmartCon.Agent.Services.Tools;
@@ -41,6 +42,12 @@ public sealed partial class AgentToolExecutor : IToolExecutor
         {
             return BuildUnknownToolResult(name);
         }
+
+        // The tools the model actually works with stay at the front of the
+        // request-cap recency order. Always-available tools never compete for a
+        // slot, so touching them would only pollute the list.
+        if (!AgentToolPacks.IsAlwaysAvailable(name))
+            _sessionContext.TouchTool(name);
 
         if (_sessionContext.ApprovalMode == AgentApprovalMode.ReadOnly
             && tool.Definition.Risk != AgentToolRisk.Read)

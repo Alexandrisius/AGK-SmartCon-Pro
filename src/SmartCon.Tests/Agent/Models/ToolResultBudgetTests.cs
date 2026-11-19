@@ -77,7 +77,12 @@ public sealed class ToolResultBudgetTests
 
         using var document = JsonDocument.Parse(json);
         Assert.True(document.RootElement.GetProperty("success").GetBoolean());
-        Assert.Equal("Processed 500 items", document.RootElement.GetProperty("message").GetString());
+        var message = document.RootElement.GetProperty("message").GetString();
+        Assert.StartsWith("Processed 500 items", message);
+        Assert.Contains("[truncated:", message);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        Assert.True(data.GetProperty("elementsReturned").GetInt32() < 500);
     }
 
     [Fact]

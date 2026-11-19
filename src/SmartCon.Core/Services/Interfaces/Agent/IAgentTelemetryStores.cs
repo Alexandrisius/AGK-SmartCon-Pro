@@ -11,6 +11,13 @@ public interface IAgentToolCallStore
 public interface IAgentUsageStore
 {
     Task RecordAsync(AgentUsageRecord record, CancellationToken ct);
+
+    /// <summary>
+    /// Accumulated provider-reported cost of every recorded turn of one
+    /// conversation, so the panel can show the session total instead of the
+    /// cost of the last turn.
+    /// </summary>
+    Task<decimal> GetSessionCostAsync(Guid sessionId, CancellationToken ct);
 }
 
 /// <summary>

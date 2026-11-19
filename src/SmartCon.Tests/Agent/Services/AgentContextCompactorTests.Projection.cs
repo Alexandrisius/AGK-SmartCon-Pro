@@ -37,6 +37,33 @@ public sealed partial class AgentContextCompactorTests
     }
 
     [Fact]
+    public async Task ProjectAsync_BelowPressure_DoesNotShrinkTheWorkingSet()
+    {
+        // Budget 10 000 × threshold 0.3 = a 3 000-token limit; the projection gate
+        // sits at 75 % of it. A history around 1 700 tokens must stay verbatim:
+        // masking it only makes the context indicator drop for no reason.
+        var summarizer = new FakeSummarizer();
+        var compactor = new AgentContextCompactor(summarizer);
+        var messages = new List<AgentMessage>
+        {
+            AssistantCall("call_0", "get_test"),
+            AgentMessage.ToolResult("call_0", LargeToolPayload(3_000)),
+            AssistantCall("call_1", "get_test"),
+            AgentMessage.ToolResult("call_1", LargeToolPayload(3_000))
+        };
+
+        var result = await compactor.ProjectAsync(
+            Request(messages, keepRecentToolResults: 0, minMaskSavings: 1),
+            CancellationToken.None);
+
+        Assert.False(result.Changed);
+        Assert.Equal(0, result.MaskedCount);
+        Assert.DoesNotContain(
+            result.Messages,
+            message => message.Content?.Contains("\"compacted\":true", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task ProjectAsync_BelowMinSavings_DoesNothing()
     {
         var summarizer = new FakeSummarizer();

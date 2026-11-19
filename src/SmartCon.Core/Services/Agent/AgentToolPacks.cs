@@ -178,6 +178,21 @@ public static class AgentToolPacks
 
     public static bool IsCore(string name) => CoreNameSet.Contains(name);
 
+    public const string LoadToolPackName = "load_tool_pack";
+
+    public const string ReadToolResultName = "read_tool_result";
+
+    /// <summary>
+    /// Tools that every request carries regardless of routing and the loaded
+    /// set: the core tools, <c>load_tool_pack</c> and <c>read_tool_result</c>.
+    /// They never compete for a request slot and never enter the working
+    /// recency list.
+    /// </summary>
+    public static bool IsAlwaysAvailable(string name) =>
+        CoreNameSet.Contains(name)
+        || string.Equals(name, LoadToolPackName, StringComparison.Ordinal)
+        || string.Equals(name, ReadToolResultName, StringComparison.Ordinal);
+
     private static Dictionary<string, AgentToolPack> BuildPackIndex()
     {
         var index = new Dictionary<string, AgentToolPack>(Packs.Length, StringComparer.Ordinal);

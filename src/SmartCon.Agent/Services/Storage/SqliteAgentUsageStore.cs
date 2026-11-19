@@ -67,4 +67,27 @@ VALUES(@id, @sessionId, @provider, @model, @promptTokens, @completionTokens,
 
         return Task.CompletedTask;
     }
+
+    public Task<decimal> GetSessionCostAsync(Guid sessionId, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT COALESCE(SUM(CAST(cost_usd AS REAL)), 0)
+FROM token_usage
+WHERE session_id = @sessionId;";
+            command.Parameters.AddWithValue("@sessionId", sessionId.ToString("D"));
+
+            var value = command.ExecuteScalar();
+            if (value is null or DBNull)
+                return Task.FromResult(0m);
+
+            return Task.FromResult(Convert.ToDecimal(value, CultureInfo.InvariantCulture));
+        }
+    }
 }

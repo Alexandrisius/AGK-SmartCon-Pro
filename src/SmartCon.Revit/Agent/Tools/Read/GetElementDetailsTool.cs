@@ -11,7 +11,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
 {
     private const int MaxElements = 10;
     private const int DefaultMaxParametersPerElement = 50;
-    private const int HardMaxParametersPerElement = 500;
+    private const int HardMaxParametersPerElement = 200;
 
     public GetElementDetailsTool(IRevitContext revitContext)
         : base(revitContext)
@@ -31,7 +31,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             "are returned (parametersTruncated=true then). Narrow the payload with parameterNames " +
             "(exact names), parameterNameContains (substring), onlyNonEmpty=true or " +
             "excludeDerived=true (read-only/formula-driven parameters are skipped).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

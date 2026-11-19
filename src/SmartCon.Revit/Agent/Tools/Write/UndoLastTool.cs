@@ -256,13 +256,17 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         {
             if (notReverted == 0)
             {
-                // The model already matches the recorded previous state: close the set so
-                // the next unnamed undo_last can reach earlier change sets.
-                outcome.RollBackChangeSetId = details.Header.Id;
+                // A dry run must never change state: do not close the set. Only a
+                // real undo that found nothing to revert closes it so the next
+                // unnamed undo_last can reach earlier change sets.
+                outcome.RollBackChangeSetId = dryRun ? null : details.Header.Id;
                 outcome.Success = false;
                 outcome.ErrorCode = "nothing_to_undo";
-                outcome.Message = "Nothing was reverted; the model already matches the " +
-                                  "recorded previous state. The change set was closed.";
+                outcome.Message = dryRun
+                    ? "Nothing would be reverted; the model already matches the recorded " +
+                      "previous state. The change set stays applied (dry run)."
+                    : "Nothing was reverted; the model already matches the " +
+                      "recorded previous state. The change set was closed.";
                 return;
             }
 

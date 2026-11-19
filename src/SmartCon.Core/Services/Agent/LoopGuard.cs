@@ -46,8 +46,14 @@ public sealed class LoopGuard
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private readonly LinkedList<string> _insertionOrder = new();
 
-    public LoopGuardDecision BeforeCall(string toolName, string? argumentsJson)
+    public LoopGuardDecision BeforeCall(string toolName, string? argumentsJson, bool exempt = false)
     {
+        // Read-only tools are naturally repeatable (the model re-reads state) and
+        // undo_last/discard_change_set intentionally call with identical arguments
+        // to peel back successive change sets. Guarding them only stalls the turn.
+        if (exempt)
+            return new LoopGuardDecision { Action = LoopGuardAction.Allow };
+
         lock (_gate)
         {
             var key = Hash(toolName, argumentsJson);
@@ -91,8 +97,12 @@ public sealed class LoopGuard
     public LoopGuardDecision ObserveResult(
         string toolName,
         string? argumentsJson,
-        bool success)
+        bool success,
+        bool exempt = false)
     {
+        if (exempt)
+            return new LoopGuardDecision { Action = LoopGuardAction.Allow };
+
         lock (_gate)
         {
             var key = Hash(toolName, argumentsJson);

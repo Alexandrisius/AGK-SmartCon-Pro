@@ -114,7 +114,35 @@ public static class ToolResultBudget
             data["hint"] = resultHandle is null ? TruncationHint : BlobHint;
             if (resultHandle is not null)
                 data["resultHandle"] = resultHandle;
+            AppendTruncationNote(
+                root, largest.Name, largest.Array.Count, largest.OriginalCount, resultHandle);
         }
+    }
+
+    /// <summary>
+    /// Keeps the top-level message truthful after trimming: a message like
+    /// "Returned details for 10 element(s)" must not be sent together with a
+    /// one-element payload.
+    /// </summary>
+    private static void AppendTruncationNote(
+        JsonObject root,
+        string arrayName,
+        int returned,
+        int total,
+        string? resultHandle)
+    {
+        if (root["message"] is not JsonValue messageValue
+            || !messageValue.TryGetValue<string>(out var message)
+            || message!.IndexOf("[truncated:", StringComparison.Ordinal) >= 0)
+        {
+            return;
+        }
+
+        root["message"] = message + " [truncated: " + returned + " of " + total + " " +
+                          arrayName + " returned" +
+                          (resultHandle is null
+                              ? "; narrow the request"
+                              : "; full result under resultHandle for read_tool_result") + "]";
     }
 
     private static string AddEnvelope(
@@ -146,6 +174,16 @@ public static class ToolResultBudget
             digest["resultHandle"] = resultHandle;
 
         root["data"] = digest;
+        if (root["message"] is JsonValue messageValue
+            && messageValue.TryGetValue<string>(out var message)
+            && message!.IndexOf("[truncated:", StringComparison.Ordinal) < 0)
+        {
+            root["message"] = message + " [truncated: payload replaced by a digest" +
+                              (resultHandle is null
+                                  ? "; narrow the request"
+                                  : "; full result under resultHandle") + "]";
+        }
+
         var json = root.ToJsonString(SerializerOptions);
         if (json.Length <= maxCharacters)
             return json;

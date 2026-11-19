@@ -17,7 +17,8 @@ public sealed class LoadToolPackTool : IAgentTool
 
     private const int MaxSuggestions = 3;
     private const string Hint =
-        "The tool set changes at the start of the next round; the current round keeps its tools.";
+        "The requested tools are callable from the next round; the current round keeps " +
+        "its tools.";
 
     private readonly AgentSessionContext _sessionContext;
 
@@ -115,18 +116,26 @@ public sealed class LoadToolPackTool : IAgentTool
                 data: payload));
         }
 
+        // "Loaded" must mean "callable right now", not "remembered for this
+        // session": a request carries only a bounded slice of the catalog, so a
+        // tool that was loaded earlier can still be absent from the current
+        // request. Only the tools actually present there are reported as
+        // alreadyLoaded; the rest are queued and moved to the front of the
+        // recency order so they survive the next selection.
+        var inRequest = new HashSet<string>(
+            _sessionContext.ActiveToolNames, StringComparer.Ordinal);
+
         var loaded = new List<string>();
         var alreadyLoaded = new List<string>();
         foreach (var name in wanted.Distinct(StringComparer.Ordinal))
         {
-            if (_sessionContext.LoadedToolNames.Contains(name)
-                || _sessionContext.PendingToolNames.Contains(name))
+            if (inRequest.Contains(name))
             {
                 alreadyLoaded.Add(name);
                 continue;
             }
 
-            _sessionContext.LoadedToolNames.Add(name);
+            _sessionContext.TouchTool(name);
             _sessionContext.PendingToolNames.Add(name);
             loaded.Add(name);
         }
@@ -140,7 +149,7 @@ public sealed class LoadToolPackTool : IAgentTool
             totalTools = _sessionContext.LoadedToolNames.Count,
             appliedTo,
             hint = appliedTo == "none"
-                ? "All requested tools are already loaded. " + Hint
+                ? "All requested tools are already available in this request."
                 : Hint
         };
 
@@ -155,7 +164,7 @@ public sealed class LoadToolPackTool : IAgentTool
             JsonSerializer.SerializeToElement(result),
             loaded.Count > 0
                 ? "Loaded " + loaded.Count + " tool(s) for the next round."
-                : "All requested tools are already loaded."));
+                : "All requested tools are already available in this request."));
     }
 
     private static List<string> Suggest(string name, IReadOnlyList<string> knownNames)
