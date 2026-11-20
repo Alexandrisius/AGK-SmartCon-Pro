@@ -40,11 +40,37 @@ public sealed class JobReport
     /// <summary>False when the report's read-back found mismatches the job did not record.</summary>
     public bool Truthful { get; init; } = true;
 
+    /// <summary>True when this report performed an independent read-back.</summary>
+    public bool ReadBack { get; init; }
+
+    /// <summary>The run was stopped by the user (cancel + optional rollback).</summary>
+    public bool Cancelled { get; init; }
+
+    /// <summary>Units that were not applied because the run was cancelled.</summary>
+    public int InterruptedUnits { get; init; }
+
     public int MismatchCount { get; init; }
+
+    /// <summary>Failures grouped by error code, so 500 units are not a manual scan.</summary>
+    public IReadOnlyList<JobErrorGroup> Errors { get; init; } = Array.Empty<JobErrorGroup>();
 
     public bool HasMore { get; init; }
 
     public int NextOffset { get; init; }
+}
+
+public sealed class JobErrorGroup
+{
+    public required string ErrorCode { get; init; }
+
+    public int Count { get; init; }
+
+    /// <summary>First non-empty detail, enough to understand the cause without paging.</summary>
+    public string? ExampleDetail { get; init; }
+
+    public int FirstSeq { get; init; }
+
+    public int LastSeq { get; init; }
 }
 
 public sealed class JobReportItem
@@ -99,13 +125,23 @@ public sealed class JobRetryResult
 {
     public Guid JobId { get; init; }
 
+    /// <summary>Units re-previewed successfully and queued for apply.</summary>
     public int Reset { get; init; }
 
     public int TotalFailed { get; init; }
 
+    /// <summary>Units that failed the fresh preview again and were not queued.</summary>
+    public int StillFailed { get; init; }
+
+    /// <summary>Every failed unit that was re-evaluated by this call.</summary>
+    public int Attempted { get; init; }
+
+    /// <summary>Cause that still blocks the retry (first still-failing unit).</summary>
     public string? ErrorCode { get; init; }
 
     public string? ErrorDetail { get; init; }
+
+    public JobTotals Totals { get; init; } = new();
 
     public JobState State { get; init; }
 }

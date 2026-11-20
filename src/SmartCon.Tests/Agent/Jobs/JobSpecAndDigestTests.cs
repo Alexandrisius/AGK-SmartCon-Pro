@@ -314,6 +314,29 @@ public sealed class JobPreviewDigestTests
     }
 
     [Fact]
+    public void Totals_track_stale_and_applied_before_rollback()
+    {
+        var items = new[]
+        {
+            new JobItem
+            {
+                Seq = 1,
+                UnitKey = "stale",
+                State = JobItemState.Failed,
+                ErrorCode = JobErrorCodes.PreviewStale
+            },
+            new JobItem { Seq = 2, UnitKey = "undone", State = JobItemState.Undone },
+            new JobItem { Seq = 3, UnitKey = "undo-failed", State = JobItemState.UndoFailed }
+        };
+
+        var totals = JobTotals.FromItems(items);
+
+        Assert.Equal(1, totals.Stale);
+        Assert.Equal(2, totals.AppliedBefore);
+        Assert.Equal(1, totals.Failed);
+    }
+
+    [Fact]
     public void Save_policy_decisions_follow_the_policy()
     {
         Assert.True(JobSavePolicyDecider.ShouldSaveAfterBatch(JobSavePolicy.AfterEachBatch, true));
@@ -338,4 +361,145 @@ public sealed class JobPreviewDigestTests
         UnitKey = "unit",
         State = state
     };
+}
+
+public sealed class JobSpecKeyValidatorTests
+{
+    private static readonly JobSpecObjectRule[] Rules =
+    {
+        new() { Path = string.Empty, AllowedKeys = new[] { "select", "rename" } },
+        new() { Path = "select", AllowedKeys = new[] { "type", "levelIds" } },
+        new() { Path = "mappings[]", AllowedKeys = new[] { "source", "mode" } },
+        new() { Path = "mappings[].source", AllowedKeys = new[] { "name", "guid" } }
+    };
+
+    [Fact]
+    public void Accepts_known_keys_and_aliases_case_insensitively()
+    {
+        Assert.Null(JobSpecKeyValidator.Validate(
+            @"{""Select"":{""TYPE"":""Legend"",""levelIds"":[1]},""rename"":{}}",
+            Rules));
+    }
+
+    [Fact]
+    public void Rejects_unknown_select_key_with_allowed_list()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{""viewTypes"":[""Legend""]}}",
+            Rules);
+
+        Assert.NotNull(error);
+        Assert.Contains("select.viewTypes", error);
+        Assert.Contains("type", error);
+        Assert.Contains("Allowed keys", error);
+    }
+
+    [Fact]
+    public void Rejects_unknown_nested_mapping_key()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{},""mappings"":[{""source"":{""nam"":""A""},""mode"":""values""}]}",
+            Rules);
+
+        Assert.NotNull(error);
+        Assert.Contains("mappings[].source.nam", error);
+    }
+
+    [Fact]
+    public void Ignores_malformed_json_for_the_deserializer()
+    {
+        Assert.Null(JobSpecKeyValidator.Validate("{not json", Rules));
+    }
+
+    [Fact]
+    public void Rejects_unknown_root_key()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{},""mode"":""preview""}",
+            Rules);
+
+        Assert.NotNull(error);
+        Assert.Contains("mode", error);
+    }
+
+    [Fact]
+    public void Rejects_unknown_numbering_key()
+    {
+        var rules = new[]
+        {
+            new JobSpecObjectRule { Path = "rename.numbering", AllowedKeys = new[] { "start" } }
+        };
+
+        var error = JobSpecKeyValidator.Validate(
+            @"{""rename"":{""numbering"":{""step"":1}}}",
+            rules);
+
+        Assert.NotNull(error);
+        Assert.Contains("rename.numbering.step", error);
+    }
+}
+
+public sealed class JobOptionsMergerTests
+{
+    [Fact]
+    public void Merge_keeps_stored_values_for_unspecified_overrides()
+    {
+        var stored = new JobOptions
+        {
+            OnError = JobOnError.Abort,
+            RollbackOnError = true,
+            SavePolicy = JobSavePolicy.Never,
+            BatchSize = 25,
+            MaxItems = 321
+        };
+
+        var merged = JobOptionsMerger.Merge(stored, new JobOptionsOverride
+        {
+            BatchSize = 10
+        });
+
+        Assert.Equal(JobOnError.Abort, merged.OnError);
+        Assert.True(merged.RollbackOnError);
+        Assert.Equal(JobSavePolicy.Never, merged.SavePolicy);
+        Assert.Equal(10, merged.BatchSize);
+        Assert.Equal(321, merged.MaxItems);
+    }
+
+    [Fact]
+    public void Merge_applies_every_explicit_policy()
+    {
+        var stored = new JobOptions();
+        var merged = JobOptionsMerger.Merge(stored, new JobOptionsOverride
+        {
+            OnError = JobOnError.Abort,
+            RollbackOnError = true,
+            SavePolicy = JobSavePolicy.EveryNMinutes,
+            BatchSize = 7,
+            MaxItems = 9,
+            AllowLargeJob = true
+        });
+
+        Assert.Equal(JobOnError.Abort, merged.OnError);
+        Assert.True(merged.RollbackOnError);
+        Assert.Equal(JobSavePolicy.EveryNMinutes, merged.SavePolicy);
+        Assert.Equal(7, merged.BatchSize);
+        Assert.Equal(9, merged.MaxItems);
+        Assert.True(merged.AllowLargeJob);
+    }
+
+    [Fact]
+    public void Validator_rejects_out_of_range_override()
+    {
+        var spec = new JobSpec
+        {
+            DocumentId = "doc",
+            Action = "rename_views",
+            OptionsOverride = new JobOptionsOverride { BatchSize = 999 }
+        };
+
+        var error = JobSpecValidator.Validate(spec);
+
+        Assert.NotNull(error);
+        Assert.Contains("batchSize", error!.Message);
+    }
 }

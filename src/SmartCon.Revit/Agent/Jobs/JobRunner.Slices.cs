@@ -215,6 +215,11 @@ public sealed partial class JobRunner
 
             if (result.Error is not null)
             {
+                if (job.Spec.Options.RollbackOnError)
+                {
+                    return RollbackAfterError(job, document, result.Error, processed);
+                }
+
                 _wantsPump = false;
                 TryFail(job, result.Error.Code, result.Error.ToMessage());
                 return new JobSliceResult
@@ -416,9 +421,15 @@ public sealed partial class JobRunner
             willChange,
             expiresAt);
 
-        var sample = items
-            .Where(item => item.State != JobItemState.Skipped)
+        // Failed units come first: the operator must see the cause before deciding to
+// apply, not only after get_job_report.
+        var sampleItems = items
+            .Where(item => item.State == JobItemState.Failed)
+            .Concat(items.Where(item => item.State is JobItemState.Previewed or JobItemState.Applying))
             .Take(5)
+            .ToList();
+
+        var sample = sampleItems
             .Select(item =>
             {
                 var preview = JobJson.Deserialize<JobUnitPreview>(item.PreviewJson);
@@ -428,7 +439,10 @@ public sealed partial class JobRunner
                     Label = item.Label,
                     OldValue = Describe(preview?.ActualJson),
                     NewValue = Describe(preview?.ExpectedJson),
-                    WillChange = item.State == JobItemState.Previewed
+                    WillChange = item.State == JobItemState.Previewed,
+                    Status = item.State.ToString(),
+                    ErrorCode = item.State == JobItemState.Failed ? item.ErrorCode : null,
+                    ErrorDetail = item.State == JobItemState.Failed ? item.ErrorDetail : null
                 };
             })
             .ToList();
@@ -461,6 +475,13 @@ public sealed partial class JobRunner
             {
                 break;
             }
+        }
+
+        if (items.Count > JobOptions.LargeJobThreshold)
+        {
+            warnings.Add(
+                "Large job: " + items.Count + " units exceed the " + JobOptions.LargeJobThreshold +
+                "-unit safety threshold; apply requires allowLargeJobs=true");
         }
 
         if (items.Count > 500)

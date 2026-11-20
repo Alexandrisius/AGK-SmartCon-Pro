@@ -242,6 +242,35 @@ WHERE id = @id AND state = @from;";
         return Task.FromResult<JobError?>(null);
     }
 
+    public Task UpdateSpecAsync(Guid jobId, JobSpec spec, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (spec is null) throw new ArgumentNullException(nameof(spec));
+
+        var specJson = JsonSerializer.Serialize(spec, SerializerOptions);
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+UPDATE jobs SET
+    spec_json = @specJson,
+    mode = @mode,
+    goal = @goal,
+    updated_at = @updatedAt
+WHERE id = @id;";
+            command.Parameters.AddWithValue("@specJson", specJson);
+            command.Parameters.AddWithValue("@mode", (int)spec.Mode);
+            command.Parameters.AddWithValue("@goal", (object?)spec.Goal ?? DBNull.Value);
+            command.Parameters.AddWithValue("@updatedAt", FormatTime(DateTime.UtcNow));
+            command.Parameters.AddWithValue("@id", jobId.ToString("D"));
+            command.ExecuteNonQuery();
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task UpdatePreviewAsync(Guid jobId, string previewJson, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();

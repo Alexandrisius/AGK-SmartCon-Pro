@@ -340,6 +340,7 @@ public sealed partial class JobRunner
             };
         }
 
+        var items = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
         var documentId = AgentDocumentIdentity.GetDocumentId(document);
         if (!string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal))
         {
@@ -348,7 +349,8 @@ public sealed partial class JobRunner
                 JobId = jobId,
                 ErrorCode = JobErrorCodes.DocumentMismatch,
                 ErrorDetail = JobErrors.DocumentMismatch(job.Spec.DocumentId, documentId).ToMessage(),
-                State = job.State
+                State = job.State,
+                Totals = JobTotals.FromItems(items)
             };
         }
 
@@ -361,12 +363,24 @@ public sealed partial class JobRunner
                 ErrorDetail = JobErrors.InvalidState(
                     "retry requires a job in CompletedWithFailures or Failed, but it is '" + job.State + "'",
                     "call get_job_status; only jobs with failed units can be retried").ToMessage(),
-                State = job.State
+                State = job.State,
+                Totals = JobTotals.FromItems(items)
             };
         }
 
-        var items = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
-        var failed = items.Where(item => item.State == JobItemState.Failed).Select(item => item.Seq).ToList();
+        if (!_actions.TryGetValue(job.Spec.Action, out var action))
+        {
+            return new JobRetryResult
+            {
+                JobId = jobId,
+                ErrorCode = JobErrorCodes.ActionUnknown,
+                ErrorDetail = JobErrors.ActionUnknown(job.Spec.Action).ToMessage(),
+                State = job.State,
+                Totals = JobTotals.FromItems(items)
+            };
+        }
+
+        var failed = items.Where(item => item.State == JobItemState.Failed).ToList();
 
         if (failed.Count == 0)
         {
@@ -375,8 +389,139 @@ public sealed partial class JobRunner
                 JobId = jobId,
                 TotalFailed = 0,
                 State = job.State,
+                Totals = JobTotals.FromItems(items),
                 ErrorCode = JobErrorCodes.ItemFailed,
                 ErrorDetail = "There are no failed units to retry [Action: run get_job_report to inspect the result]"
+            };
+        }
+
+        var saveError = PreflightSaveable(document, job.Spec.Options);
+        if (saveError is not null)
+        {
+            return new JobRetryResult
+            {
+                JobId = jobId,
+                TotalFailed = failed.Count,
+                Attempted = 0,
+                State = job.State,
+                Totals = JobTotals.FromItems(items),
+                ErrorCode = saveError.Code,
+                ErrorDetail = saveError.ToMessage()
+            };
+        }
+
+        var largeGuard = ValidateLargeJob(failed.Count, job.Spec.Options);
+        if (largeGuard is not null)
+        {
+            return new JobRetryResult
+            {
+                JobId = jobId,
+                TotalFailed = failed.Count,
+                Attempted = 0,
+                State = job.State,
+                Totals = JobTotals.FromItems(items),
+                ErrorCode = largeGuard.Code,
+                ErrorDetail = largeGuard.ToMessage()
+            };
+        }
+
+        // A failed unit may have failed in the dry run (readonly parameter, missing
+        // element) or in apply (preview stale). Retrying means re-evaluating the
+        // frozen unit against the current model, never reusing a failed preview.
+        var context = CreateContext(document, job.Spec.DocumentId, jobId, job.Spec, dryRun: true);
+        var updates = new List<JobItemUpdate>(failed.Count);
+        var reset = 0;
+        var stillFailed = 0;
+
+        foreach (var item in failed)
+        {
+            JobUnitPreview preview;
+            try
+            {
+                preview = action.Preview(context, ToUnit(item)) ?? new JobUnitPreview
+                {
+                    ErrorCode = item.ErrorCode ?? JobErrorCodes.ItemFailed,
+                    ErrorDetail = item.ErrorDetail ?? "The action returned no preview"
+                };
+            }
+            catch (Exception ex)
+            {
+                preview = new JobUnitPreview
+                {
+                    ErrorCode = item.ErrorCode ?? JobErrorCodes.ItemFailed,
+                    ErrorDetail = (item.ErrorDetail ?? "Preview failed") +
+                                  " (" + ex.GetType().Name + ": " + ex.Message + ")"
+                };
+            }
+
+            var state = !preview.Success
+                ? JobItemState.Failed
+                : preview.Skipped
+                    ? JobItemState.Skipped
+                    : JobItemState.Previewed;
+            if (state == JobItemState.Previewed)
+            {
+                reset++;
+            }
+            else if (state == JobItemState.Failed)
+            {
+                stillFailed++;
+            }
+
+            updates.Add(new JobItemUpdate
+            {
+                Seq = item.Seq,
+                State = state,
+                PreviewJson = JobJson.Serialize(preview),
+                ExpectedJson = preview.ExpectedJson,
+                ActualJson = preview.ActualJson,
+                UndoJson = preview.UndoJson,
+                ErrorCode = preview.ErrorCode,
+                ErrorDetail = preview.ErrorDetail,
+                IncrementAttempts = true
+            });
+        }
+
+        Sync(_store.UpdateItemsAsync(jobId, updates, CancellationToken.None));
+        var refreshed = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
+        var totals = JobTotals.FromItems(refreshed);
+        Sync(_store.UpdateTotalsAsync(jobId, JobJson.Serialize(totals), CancellationToken.None));
+        JobLog.Info("RetryFailed",
+            "Job " + jobId.ToString("D") + ": attempted=" + failed.Count +
+            ", reset=" + reset + ", stillFailed=" + stillFailed);
+
+        var firstFailure = refreshed.FirstOrDefault(item => item.State == JobItemState.Failed);
+        if (reset == 0 && stillFailed == 0)
+        {
+            // Every failed unit already holds its target value: nothing to apply.
+            return new JobRetryResult
+            {
+                JobId = jobId,
+                Reset = 0,
+                TotalFailed = failed.Count,
+                StillFailed = 0,
+                Attempted = failed.Count,
+                State = job.State,
+                Totals = totals
+            };
+        }
+
+        if (reset == 0)
+        {
+            // Nothing can be applied: stay in the terminal state, but return the
+            // real cause instead of a generic "no usable preview data".
+            return new JobRetryResult
+            {
+                JobId = jobId,
+                Reset = 0,
+                TotalFailed = failed.Count,
+                StillFailed = stillFailed,
+                Attempted = failed.Count,
+                State = job.State,
+                Totals = totals,
+                ErrorCode = firstFailure?.ErrorCode ?? JobErrorCodes.ItemFailed,
+                ErrorDetail = firstFailure?.ErrorDetail ??
+                              "All failed units failed the fresh preview again"
             };
         }
 
@@ -395,19 +540,20 @@ public sealed partial class JobRunner
                 JobId = jobId,
                 Reset = 0,
                 TotalFailed = failed.Count,
+                StillFailed = stillFailed,
+                Attempted = failed.Count,
                 State = job.State,
+                Totals = totals,
                 ErrorCode = transition.Code,
                 ErrorDetail = transition.ToMessage()
             };
         }
 
-        Sync(_store.ResetItemsAsync(jobId, failed, JobItemState.Previewed, CancellationToken.None));
-
         Sync(_store.SetCancelRequestedAsync(jobId, false, CancellationToken.None));
         Sync(_store.AppendEventAsync(
             jobId,
             JobEventTypes.Resumed,
-            "{\"retryFailed\":" + failed.Count + "}",
+            "{\"retryFailed\":" + failed.Count + ",\"requeued\":" + reset + "}",
             CancellationToken.None));
         Sync(_store.MarkStartedAsync(jobId, DateTime.UtcNow, CancellationToken.None));
 
@@ -417,13 +563,17 @@ public sealed partial class JobRunner
 
         var updated = Sync(_store.GetAsync(jobId, CancellationToken.None));
         _wantsPump = updated is not null && JobStateMachine.NeedsPump(updated.State);
+        var finalItems = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
 
         return new JobRetryResult
         {
             JobId = jobId,
-            Reset = failed.Count,
+            Reset = reset,
             TotalFailed = failed.Count,
-            State = updated?.State ?? JobState.Running
+            StillFailed = stillFailed,
+            Attempted = failed.Count,
+            State = updated?.State ?? JobState.Running,
+            Totals = JobTotals.FromItems(finalItems)
         };
     }
 

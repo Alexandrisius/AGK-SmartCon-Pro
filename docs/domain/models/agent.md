@@ -295,32 +295,208 @@ JSON-схемы тулов/параметров (источник для `AgentT
 
 Ключи локализации Agent-модуля (вложенный класс `LocalizationService.Keys`).
 
-## Jobs (batch engine, ADR-079)
+## JobModels
 
-Каталог: `SmartCon.Core/Models/Agent/Jobs/`.
+Каталог моделей job engine (ADR-079): `src/SmartCon.Core/Models/Agent/Jobs/JobModels.cs`.
+Файл группирует enum'ы и DTO одного контракта; ниже — ключевые типы и изменения
+раунда приёмки массовых операций.
 
-| Тип | Назначение |
-|---|---|
-| `JobSpec` | Сериализуемое описание задания: `schemaVersion`, `documentId`, `action`, `mode` (Preview/Apply/Resume), `specJson`, `options`, `previewDigest`, `resumeJobId`, `conversationId` |
-| `JobOptions` | `batchSize`, `sliceBudgetMs`, `onError` (Continue/Abort), `rollbackOnError`, `savePolicy` (AfterEachBatch/EveryNMinutes/Never), `saveEveryMinutes`, `maxItems` |
-| `JobUnit` | Замороженный юнит: `seq`, `unitKey` (idempotency key), `argsJson`, `label` |
-| `JobExpansion` | Результат `Expand`: юниты + warnings + typed error |
-| `JobUnitPreview` | Dry-run юнита: `skipped`, `expectedJson`, `actualJson`, `undoJson`, `warnings` |
-| `JobUnitApply` | Факт применения: `success`, `skipped`, `expectedJson`, `undoJson`, typed error |
-| `JobUnitVerification` | Независимый read-back: `verified`, `actualJson`, `mismatchReason` |
-| `JobUnitUndo` | Откат юнита: `success`, `skipped`, `actualJson`, typed error |
-| `JobPreview` / `JobPreviewSample` | Frozen preview: `count`, `willChangeCount`, `skipCount`, `failedCount`, `sample`, `selectorHash`, `specHash`, `digest`, `expiresAtUtc` |
-| `JobState` | `PreviewRunning → PreviewReady → Running → Completed/CompletedWithFailures/Failed/Cancelled/Interrupted/RolledBack/RollbackPartial` (+ `Cancelling`, `AwaitingApproval`) |
-| `JobItemState` | `Pending → Previewed → Applying → Done/Skipped/Failed/Mismatch`, откат: `Undoing → Undone/UndoFailed` |
-| `JobRecord` | Строка `jobs`: spec, state, cancelRequested, previewJson, cursor, totals, lease, timestamps |
-| `JobItem` / `JobItemUpdate` | Строка `job_items` и её мутабельная проекция |
-| `JobTotals` / `JobTotals.Incomplete` | Счётчики; `Incomplete` = Pending+Applying+Undoing+Undone — запрещает `Completed` |
-| `JobReport` / `JobReportItem` | Операторский отчёт (строится read-back'ом), `truthful`, `mismatchCount`, пагинация |
-| `JobRollbackResult`, `JobRetryResult` | Результаты `rollback_job` / `retry_failed_items` |
-| `JobError` / `JobErrorCodes` | Typed error + actionable hint (`[Action: …]`) |
-| `JobStateMachine` | Таблица переходов + `Validate` (CAS в store сверяет `from`) |
-| `JobSpecValidator` | Валидация spec и apply-envelope (digest, документ, action, expiry) |
-| `JobPreviewDigest` | Канонический SHA256 превью (selector hash + spec hash + expiry) |
-| `JobSavePolicyDecider` | Чистые решения по save-политике |
-| `JobJson` | Единые JSON-опции (camelCase, case-insensitive) |
-| `JobStartResult`, `JobEvent`/`JobEventTypes` | Результат старта; append-only события job'а |
+**Файл:** `Models/Agent/Jobs/JobModels.cs`
+
+**JobMode / JobState / JobItemState.**
+
+`JobMode` — `Preview`/`Apply`/`Resume`. `JobState` — жизненный цикл задания:
+`PreviewRunning → PreviewReady → Running → Completed/CompletedWithFailures/Failed/Cancelled/Interrupted/RolledBack/RollbackPartial`
+(+ `Cancelling`, `AwaitingApproval`). `JobItemState` — судьба юнита:
+`Pending → Previewed → Applying → Done/Skipped/Failed/Mismatch`, откат:
+`Undoing → Undone/UndoFailed`.
+
+**JobOptions / JobOptionsOverride / JobOptionsMerger.**
+
+`JobOptions` — лимиты и политики задания. В раунде приёмки добавлены:
+
+- `LargeJobThreshold = 200` — порог, выше которого apply/resume требует
+  явного `AllowLargeJob`;
+- `AllowLargeJob` — подтверждение владельца, что большое задание действительно
+  нужно применить. Preview это значение **не сохраняет**, чтобы его нельзя было
+  пронести в apply без отдельного подтверждения.
+
+`JobOptionsOverride` — nullable-политики, переданные только в apply/resume.
+`JobOptionsMerger.Merge(stored, overrides)` накладывает их поверх preview-опций,
+не сбрасывая остальные значения на дефолты.
+
+```csharp
+public sealed class JobOptions
+{
+    public const int LargeJobThreshold = 200;
+    public int BatchSize { get; init; } = 50;
+    public int SliceBudgetMs { get; init; } = 1500;
+    public JobOnError OnError { get; init; } = JobOnError.Continue;
+    public bool RollbackOnError { get; init; }
+    public JobSavePolicy SavePolicy { get; init; } = JobSavePolicy.AfterEachBatch;
+    public int SaveEveryMinutes { get; init; } = 5;
+    public int MaxItems { get; init; } = 1000;
+    public bool AllowLargeJob { get; init; }
+}
+
+public sealed class JobOptionsOverride
+{
+    public JobOnError? OnError { get; init; }
+    public bool? RollbackOnError { get; init; }
+    public JobSavePolicy? SavePolicy { get; init; }
+    public int? BatchSize { get; init; }
+    public int? MaxItems { get; init; }
+    public bool? AllowLargeJob { get; init; }
+}
+```
+
+**JobSpec.**
+
+Сериализуемое описание задания: `schemaVersion`, `documentId`, `action`, `mode`,
+`specJson`, `options`, `optionsOverride`, `previewDigest`, `resumeJobId`,
+`conversationId`. `OptionsOverride` появился, чтобы apply/resume могли включить
+`onError=abort` или `rollbackOnError`, не теряя остальные preview-политики.
+
+**JobUnit / JobExpansion.**
+
+`JobUnit` — замороженный юнит (`seq`, `unitKey` — idempotency key, `argsJson`,
+`label`). `JobExpansion` — результат `Expand`: юниты + warnings + typed error.
+
+**JobUnitPreview / JobUnitApply / JobUnitVerification / JobUnitUndo.**
+
+Dry-run, факт применения, независимый read-back и откат одного юнита. `JobUnitApply`
+несёт `success/skipped/expectedJson/undoJson` и typed error; `JobUnitVerification`
+— единственный источник «done».
+
+**JobActionContext.**
+
+Контекст вызова action на Revit-потоке: `Document`, `DocumentId`, `JobId`,
+`DryRun`, `SpecJson`, `CancellationToken`.
+
+## JobSpecKeyValidator
+
+Строгая проверка ключей action-spec **до** любой Revit-работы. System.Text.Json
+молча игнорирует неизвестные поля, поэтому action объявляет allow-list путей
+(`select`, `rename`, `rename.numbering`, `mappings[]`, `mappings[].source`,
+`select.conditions[]`). Неизвестный ключ возвращает `job_spec_invalid` со списком
+допустимых ключей.
+
+**Файл:** `Models/Agent/Jobs/JobSpecKeyValidator.cs`
+
+```csharp
+public static class JobSpecKeyValidator
+{
+    public static string? Validate(string? specJson, params JobSpecObjectRule[] rules);
+}
+
+public sealed class JobSpecObjectRule
+{
+    public required string Path { get; init; }
+    public required IReadOnlyList<string> AllowedKeys { get; init; }
+}
+```
+
+## JobSpecValidator
+
+Валидация `JobSpec` (schemaVersion, documentId, action, режим, обязательный digest
+для apply, resumeJobId для resume, диапазоны options и options-override) и
+apply-envelope: digest, документ, action, expiry. Не заменяет action-specific
+`JobSpecKeyValidator`.
+
+**Файл:** `Models/Agent/Jobs/JobSpecValidator.cs`
+
+## JobPreviewDigest
+
+Канонический SHA256 превью: action + documentId + selector hash + spec hash +
+count + willChangeCount + expiry. `JobSavePolicyDecider` (тот же файл) содержит
+чистые решения `after_each_batch`/`every_n_minutes`/`never`.
+
+**Файл:** `Models/Agent/Jobs/JobPreviewDigest.cs`
+
+## JobPreview
+
+Frozen preview: `count`, `willChangeCount`, `skipCount`, `failedCount`, `sample`,
+`selectorHash`, `specHash`, `digest`, `expiresAtUtc`. `JobPreviewSample` теперь
+несёт `status`, `errorCode`, `errorDetail`: причина падения видна уже в preview,
+а не только в отчёте.
+
+**Файл:** `Models/Agent/Jobs/JobPreview.cs`
+
+```csharp
+public sealed class JobPreviewSample
+{
+    public string? UnitKey { get; init; }
+    public string? Label { get; init; }
+    public string? OldValue { get; init; }
+    public string? NewValue { get; init; }
+    public bool WillChange { get; init; }
+    public string? Status { get; init; }
+    public string? ErrorCode { get; init; }
+    public string? ErrorDetail { get; init; }
+}
+```
+
+## JobRecord
+
+Строка `jobs`: spec, state, `cancelRequested`, `previewJson`, durable cursor,
+totals, lease, timestamps. В том же файле — `JobItem`/`JobItemUpdate` (строки
+`job_items` и мутабельная проекция), `JobTotals` (`Incomplete` =
+Pending+Applying+Undoing+Undone запрещает `Completed`; `Stale` считает
+`job_preview_stale`, `AppliedBefore` — применённые до отката юниты), `JobEvent`
+и `JobEventTypes` (append-only события, включая `preview_superseded`).
+
+**Файл:** `Models/Agent/Jobs/JobRecord.cs`
+
+## JobReport
+
+Операторский отчёт, построенный независимым read-back'ом. Помимо
+`truthful/mismatchCount/пагинации` содержит:
+
+- `ReadBack` — выполнялся ли read-back реально (а не был запрошен и пропущен);
+- `Cancelled`/`InterruptedUnits` — отмена видна отдельно от обычного отката;
+- `Errors` — агрегация `JobErrorGroup` по `errorCode` (`count`, `exampleDetail`,
+  `firstSeq/lastSeq`), чтобы 500 ошибок не разбирать вручную.
+
+`JobRollbackResult` и `JobRetryResult` описывают результаты `rollback_job` и
+`retry_failed_items`; у retry появились `Attempted`, `StillFailed` и `Totals`.
+`JobReportItem` — строка отчёта (`expected/actual/undo/verified/attempts`).
+
+**Файл:** `Models/Agent/Jobs/JobReport.cs`
+
+## JobErrors
+
+`JobError` — typed error + actionable hint (`[Action: …]`). `JobErrorCodes` —
+единый набор кодов; в раунде приёмки добавлены `job_preview_superseded`,
+`job_confirmation_required`, `job_aborted_by_policy`.
+
+**Файл:** `Models/Agent/Jobs/JobErrors.cs`
+
+## JobStateMachine
+
+Таблица допустимых переходов + `Validate` (CAS в store сверяет `from`).
+`NeedsPump` определяет, нужен ли ещё slice; `IsTerminal` — финальные состояния.
+
+**Файл:** `Models/Agent/Jobs/JobStateMachine.cs`
+
+## JobJson
+
+Единые JSON-опции job-контракта: camelCase, case-insensitive, без отступов.
+Один serializer для Core, SQLite-store и Revit-runner.
+
+**Файл:** `Models/Agent/Jobs/JobJson.cs`
+
+## JobStartResult
+
+Результат `IJobScheduler.Start`: либо `Job`, либо typed `Error`; `Success`
+требует оба условия.
+
+**Файл:** `Models/Agent/Jobs/JobStartResult.cs`
+
+## AgentToolCards.Jobs
+
+Карточки job-инструментов (`start_job`, `get_job_status`, `cancel_job`,
+`get_job_report`, `rollback_job`, `retry_failed_items`) для routing-каталога:
+назначение, когда использовать, примеры, синонимы. `cancel_job` помечен
+идемпотентным; `retry_failed_items` описывает пере-проверку failed-юнитов.
+
+**Файл:** `Services/Agent/AgentToolCards.Jobs.cs` (partial `AgentToolCards`).

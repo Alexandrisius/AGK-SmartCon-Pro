@@ -76,7 +76,7 @@ public static class JobStateMachine
         {
             return JobErrors.InvalidState(
                 "job is already in state '" + from + "'",
-                "read the current job status and call start_job with mode=apply or mode=resume");
+                "read the current job status and call start_job with dryRun=false (apply) or resumeJobId");
         }
 
         if (!CanTransition(from, to))

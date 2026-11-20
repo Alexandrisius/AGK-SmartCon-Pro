@@ -19,7 +19,10 @@ internal static class JobToolPayloads
 
     internal static JsonElement Serialize(object payload) => AgentJson.Serialize(payload);
 
-    internal static object Describe(JobRecord job)
+    internal static object Describe(
+        JobRecord job,
+        bool includeSample = false,
+        object? recentJobs = null)
     {
         var preview = Preview(job);
         var totals = Totals(job);
@@ -29,7 +32,7 @@ internal static class JobToolPayloads
             jobId = job.JobId.ToString("D"),
             action = job.Spec.Action,
             state = job.State.ToString(),
-            mode = job.Spec.Mode.ToString(),
+            mode = ModeOf(job),
             saved = job.LastSavedCursor > 0 && job.LastSavedAt is not null,
             volatileJob = job.Spec.Options.SavePolicy == JobSavePolicy.Never,
             lastSavedCursor = job.LastSavedCursor,
@@ -42,25 +45,81 @@ internal static class JobToolPayloads
             count = preview?.Count ?? totals.Total,
             willChange = preview?.WillChangeCount,
             skipped = preview?.SkipCount,
-            failed = preview?.FailedCount,
+            failed = job.StartedAt is null ? preview?.FailedCount : totals.Failed,
+            stale = totals.Stale,
             done = totals.Done,
             mismatch = totals.Mismatch,
             undone = totals.Undone,
             undoFailed = totals.UndoFailed,
+            appliedBefore = totals.AppliedBefore,
+            cancelled = job.CancelRequested,
+            interruptedUnits = job.CancelRequested ? totals.Pending + totals.Previewed : 0,
             previewDigest = preview?.Digest,
             previewExpiresAtUtc = preview?.ExpiresAtUtc,
-            sample = preview?.Sample,
+            sample = includeSample ? preview?.Sample : null,
             warnings = preview?.Warnings,
+            recentJobs,
             next = NextHint(job)
         };
     }
 
-    internal static string NextHint(JobRecord job) => job.State switch
+    internal static object[] History(IReadOnlyList<JobRecord> jobs) =>
+        jobs.Select(job => new
+        {
+            jobId = job.JobId.ToString("D"),
+            action = job.Spec.Action,
+            state = job.State.ToString(),
+            cancelled = job.CancelRequested,
+            createdAt = job.CreatedAt,
+            finishedAt = job.FinishedAt
+        }).ToArray();
+
+    /// <summary>
+    /// Truthful phase: a preview job that was applied stores Mode=Preview, so the
+    /// raw enum contradicts the lifecycle. Derive the phase from state + StartedAt.
+    /// </summary>
+    internal static string ModeOf(JobRecord job)
     {
-        JobState.PreviewRunning => "wait: call get_job_status (waitSeconds=10) until state=PreviewReady",
+        if (job.State is JobState.PreviewRunning or JobState.PreviewReady or JobState.AwaitingApproval)
+        {
+            return JobMode.Preview.ToString();
+        }
+
+        if (job.Spec.Mode == JobMode.Preview && job.StartedAt is null)
+        {
+            return JobMode.Preview.ToString();
+        }
+
+        return job.Spec.Mode == JobMode.Resume
+            ? JobMode.Resume.ToString()
+            : JobMode.Apply.ToString();
+    }
+
+    internal static string NextHint(JobRecord job)
+    {
+        if (job.ErrorCode == JobErrorCodes.PreviewSuperseded)
+        {
+            return "preview superseded: nothing was applied; run start_job with dryRun=true again " +
+                   "using the new previewDigest";
+        }
+
+        if (Totals(job).Stale > 0 &&
+            job.State is JobState.CompletedWithFailures or JobState.Failed)
+        {
+            return "stale preview: " + Totals(job).Stale +
+                   " unit(s) changed after the preview; run start_job with dryRun=true again " +
+                   "and apply the fresh previewDigest";
+        }
+
+        return job.State switch
+        {
+            JobState.PreviewRunning => "wait: call get_job_status (waitSeconds=10) until state=PreviewReady",
         JobState.PreviewReady =>
-            "apply: call start_job with dryRun=false, same action/spec and previewDigest=" +
-            (Preview(job)?.Digest ?? "<digest>"),
+            "apply: call start_job with dryRun=false and previewDigest=" +
+            (Preview(job)?.Digest ?? "<digest>") +
+            ((Preview(job)?.Count ?? 0) > JobOptions.LargeJobThreshold
+                ? " plus allowLargeJobs=true (job above " + JobOptions.LargeJobThreshold + " units)"
+                : string.Empty),
         JobState.Running => "wait: call get_job_status (waitSeconds=10) until a terminal state",
         JobState.Cancelling => "wait: the runner is stopping between units",
         JobState.Interrupted =>
@@ -73,8 +132,9 @@ internal static class JobToolPayloads
         JobState.RollbackPartial =>
             "inspect: call get_job_report; run rollback_job again for the failed units",
         JobState.Failed => "inspect: call get_job_report and fix the cause before retrying",
-        _ => "call get_job_status"
-    };
+            _ => "call get_job_status"
+        };
+    }
 
     /// <summary>
     /// Strict jobId reader: an absent/empty id means "use the most recent job",
@@ -92,7 +152,10 @@ internal static class JobToolPayloads
         }
 
         var text = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(text) ||
+            string.Equals(text, "last", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text, "latest", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(text, "recent", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

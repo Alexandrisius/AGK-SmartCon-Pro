@@ -51,4 +51,12 @@ public sealed class JobPreviewSample
     public string? NewValue { get; init; }
 
     public bool WillChange { get; init; }
+
+    /// <summary>Item outcome at preview time: previewed, skipped or failed.</summary>
+    public string? Status { get; init; }
+
+    /// <summary>Why this unit cannot be applied (failed samples only).</summary>
+    public string? ErrorCode { get; init; }
+
+    public string? ErrorDetail { get; init; }
 }

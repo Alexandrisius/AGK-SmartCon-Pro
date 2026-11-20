@@ -1,9 +1,9 @@
-﻿using System.Globalization;
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Jobs.Actions;
@@ -25,6 +25,12 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
 
     public override JobExpansion Expand(JobActionContext context, string specJson)
     {
+        var keyError = JobSpecKeyValidator.Validate(specJson, SpecRules);
+        if (keyError is not null)
+        {
+            return ExpansionFail(JobErrorCodes.InvalidSpec, keyError);
+        }
+
         var spec = Parse<RenameSpec>(specJson);
         if (spec?.Select is null || spec.Rename is null)
         {
@@ -46,9 +52,21 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
                 "rename must define at least one of: setName, find/replace, prefix, suffix, numbering");
         }
 
-        var excludeTemplates = select.ExcludeTemplates ?? true;
         var excludeSheets = select.ExcludeSheets ?? true;
         var limit = select.Limit ?? int.MaxValue;
+        var includeTemplates = select.IncludeTemplates ?? (select.IsTemplate is true);
+        var excludeTemplates = !includeTemplates && (select.ExcludeTemplates ?? true);
+
+        BrowserOrganization? browserOrganization = null;
+        try
+        {
+            browserOrganization = BrowserOrganization.GetCurrentBrowserOrganizationForViews(context.Document);
+        }
+        catch (Exception)
+        {
+            // Folder filtering is optional; a project without an organization still
+            // supports every other selector key.
+        }
 
         var views = new List<View>();
         foreach (var view in new FilteredElementCollector(context.Document)
@@ -56,6 +74,11 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
                      .Cast<View>())
         {
             if (view.IsTemplate && excludeTemplates)
+            {
+                continue;
+            }
+
+            if (select.IsTemplate is { } templateOnly && view.IsTemplate != templateOnly)
             {
                 continue;
             }
@@ -75,12 +98,35 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
                 continue;
             }
 
-            if (!MatchesSelect(view, select))
+            if (!MatchesSelect(view, select, context.Document))
             {
                 continue;
             }
 
             views.Add(view);
+        }
+
+        if (select.Folders is { Count: > 0 } || !string.IsNullOrWhiteSpace(select.Folder))
+        {
+            var requested = new List<string>(select.Folders ?? new List<string>());
+            if (!string.IsNullOrWhiteSpace(select.Folder))
+            {
+                requested.Add(select.Folder!);
+            }
+
+            if (browserOrganization is null)
+            {
+                return ExpansionFail(
+                    JobErrorCodes.InvalidSpec,
+                    "select.folder was requested, but this project has no browser organization " +
+                    "[Action: remove the folder filter or select views by type/name]");
+            }
+
+            views = views
+                .Where(view => ListViewsTool.MatchesFolder(
+                    ListViewsTool.CreateCard(context.Document, view, browserOrganization),
+                    requested))
+                .ToList();
         }
 
         views.Sort((left, right) =>
@@ -358,179 +404,5 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
                               ex.GetType().Name + ": " + ex.Message
             };
         }
-    }
-
-    private static bool MatchesSelect(View view, ViewsSelectSpec select)
-    {
-        if (select.ViewIds is { Count: > 0 } &&
-            !select.ViewIds.Contains(view.Id.GetValue()))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(select.NameContains) &&
-            view.Name.IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0)
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(select.NameStartsWith) &&
-            !view.Name.StartsWith(select.NameStartsWith!, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(select.NameEndsWith) &&
-            !view.Name.EndsWith(select.NameEndsWith!, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (select.ViewTypes is { Count: > 0 })
-        {
-            var matched = false;
-            foreach (var typeText in select.ViewTypes)
-            {
-                if (Enum.TryParse<ViewType>(typeText, true, out var type) && view.ViewType == type)
-                {
-                    matched = true;
-                    break;
-                }
-            }
-
-            if (!matched)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static string ComputeName(ViewsRenameSpec rename, string oldName, int index)
-    {
-        var name = rename.SetName ?? oldName;
-
-        if (string.IsNullOrWhiteSpace(rename.SetName))
-        {
-            if (!string.IsNullOrEmpty(rename.Find))
-            {
-                name = name.Replace(rename.Find!, rename.Replace ?? string.Empty);
-            }
-
-            if (!string.IsNullOrEmpty(rename.Prefix))
-            {
-                name = rename.Prefix + name;
-            }
-
-            if (!string.IsNullOrEmpty(rename.Suffix))
-            {
-                name = name + rename.Suffix;
-            }
-        }
-
-        if (rename.Numbering is { } numbering)
-        {
-            var number = numbering.Start + index * (numbering.Step == 0 ? 1 : numbering.Step);
-            var text = number.ToString(CultureInfo.InvariantCulture);
-            if (numbering.Padding > 0)
-            {
-                text = text.PadLeft(numbering.Padding, '0');
-            }
-
-            var format = string.IsNullOrWhiteSpace(numbering.Format) ? "{base}_{n}" : numbering.Format!;
-            name = format.Replace("{base}", name).Replace("{n}", text);
-        }
-
-        return name.Trim();
-    }
-
-    private static Dictionary<string, long> CollectViewNames(Document document)
-    {
-        var map = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        foreach (var view in new FilteredElementCollector(document).OfClass(typeof(View)).Cast<View>())
-        {
-            map[view.Name] = view.Id.GetValue();
-        }
-
-        return map;
-    }
-
-    private sealed class RenameCandidate
-    {
-        public required View View { get; init; }
-
-        public required string OldName { get; init; }
-
-        public required string NewName { get; init; }
-
-        public string? TempName { get; set; }
-
-        public string? Error { get; set; }
-    }
-
-    public sealed class RenameSpec
-    {
-        public ViewsSelectSpec? Select { get; set; }
-
-        public ViewsRenameSpec? Rename { get; set; }
-    }
-
-    public sealed class ViewsSelectSpec
-    {
-        public List<long>? ViewIds { get; set; }
-
-        public string? NameContains { get; set; }
-
-        public string? NameStartsWith { get; set; }
-
-        public string? NameEndsWith { get; set; }
-
-        public List<string>? ViewTypes { get; set; }
-
-        public bool? ExcludeTemplates { get; set; }
-
-        public bool? ExcludeSheets { get; set; }
-
-        public int? Limit { get; set; }
-    }
-
-    public sealed class ViewsRenameSpec
-    {
-        public string? Find { get; set; }
-
-        public string? Replace { get; set; }
-
-        public string? Prefix { get; set; }
-
-        public string? Suffix { get; set; }
-
-        public string? SetName { get; set; }
-
-        public NumberingSpec? Numbering { get; set; }
-    }
-
-    public sealed class NumberingSpec
-    {
-        public int Start { get; set; } = 1;
-
-        public int Step { get; set; } = 1;
-
-        public int Padding { get; set; }
-
-        public string? Format { get; set; }
-    }
-
-    public sealed class RenameUnitArgs
-    {
-        public long ViewId { get; set; }
-
-        public string? OldName { get; set; }
-
-        public string NewName { get; set; } = string.Empty;
-
-        public string? TempName { get; set; }
-
-        public string? Error { get; set; }
     }
 }

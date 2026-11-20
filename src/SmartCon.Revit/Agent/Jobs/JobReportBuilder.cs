@@ -58,7 +58,9 @@ public sealed class JobReportBuilder
         var items = _store.LoadAllItemsAsync(jobId, CancellationToken.None).GetAwaiter().GetResult();
 
         var mismatches = 0;
-        if (readBack && _actions.TryGetValue(job.Spec.Action, out var action))
+        IJobAction? action = null;
+        var actionFound = readBack && _actions.TryGetValue(job.Spec.Action, out action);
+        if (actionFound && action is not null)
         {
             mismatches = VerifyItems(document, job, action, items);
             if (mismatches > 0)
@@ -74,7 +76,20 @@ public sealed class JobReportBuilder
         var saved = !isVolatile && unsaved <= 0 &&
                     (job.LastSavedCursor > 0 || job.LastSavedAt is not null || totals.Done == 0);
 
+        var cancelled = job.CancelRequested;
+        var interruptedUnits = cancelled
+            ? items.Count(item => item.State is JobItemState.Pending
+                or JobItemState.Previewed or JobItemState.Applying)
+            : 0;
+
         var warnings = new List<string>();
+        if (cancelled)
+        {
+            warnings.Add(
+                "Job was cancelled; " + interruptedUnits + " unit(s) were not applied" +
+                (totals.Undone > 0 ? ", " + totals.Undone + " applied unit(s) were rolled back" : string.Empty));
+        }
+
         if (isVolatile)
         {
             warnings.Add("savePolicy=never: applied changes are in memory only");
@@ -92,6 +107,15 @@ public sealed class JobReportBuilder
         if (job.ErrorCode is not null)
         {
             warnings.Add(job.ErrorCode + ": " + job.ErrorDetail);
+        }
+
+        var errors = GroupErrors(items);
+        if (errors.Count > 0)
+        {
+            warnings.Add(
+                "Failures by code: " +
+                string.Join(", ", errors.OrderByDescending(group => group.Count)
+                    .Select(group => group.ErrorCode + " ×" + group.Count)));
         }
 
         var page = items
@@ -118,7 +142,11 @@ public sealed class JobReportBuilder
             ErrorCode = job.ErrorCode,
             ErrorDetail = job.ErrorDetail,
             Truthful = mismatches == 0,
+            ReadBack = actionFound,
+            Cancelled = cancelled,
+            InterruptedUnits = interruptedUnits,
             MismatchCount = mismatches,
+            Errors = errors,
             HasMore = offset + page.Count < items.Count,
             NextOffset = offset + page.Count
         };
@@ -223,6 +251,30 @@ public sealed class JobReportBuilder
         }
 
         return mismatches;
+    }
+
+    private static IReadOnlyList<JobErrorGroup> GroupErrors(IReadOnlyList<JobItem> items)
+    {
+        var groups = new List<JobErrorGroup>();
+        foreach (var group in items
+                     .Where(item => item.State is JobItemState.Failed or JobItemState.Mismatch
+                         or JobItemState.UndoFailed)
+                     .GroupBy(item => item.ErrorCode ?? JobErrorCodes.ItemFailed)
+                     .OrderByDescending(group => group.Count()))
+        {
+            var ordered = group.OrderBy(item => item.Seq).ToList();
+            groups.Add(new JobErrorGroup
+            {
+                ErrorCode = group.Key,
+                Count = ordered.Count,
+                ExampleDetail = ordered.FirstOrDefault(item =>
+                    !string.IsNullOrWhiteSpace(item.ErrorDetail))?.ErrorDetail,
+                FirstSeq = ordered[0].Seq,
+                LastSeq = ordered[ordered.Count - 1].Seq
+            });
+        }
+
+        return groups;
     }
 
     private static JobReportItem ToReportItem(JobItem item)

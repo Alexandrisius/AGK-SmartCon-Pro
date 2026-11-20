@@ -26,16 +26,17 @@ public sealed class GetJobStatusTool : IAgentTool
     {
         Name = "get_job_status",
         Description =
-            "Returns progress of a bulk job: state, counters, saved cursor, preview digest and " +
-            "the next step. waitSeconds long-polls without blocking Revit (max 25). " +
-            "Omit jobId for the most recent job of the active document.",
+            "Returns progress of a bulk job: state, counters, saved cursor, preview digest, " +
+            "recent job history and the next step. waitSeconds long-polls without blocking Revit " +
+            "(max 25). Omit jobId for the most recent job of the active document. " +
+            "includeSample=true adds the 5-item preview sample (default false).",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = true,
         SupportsBulk = true,
         Category = "jobs",
-        Tags = new[] { "job", "status", "progress", "poll", "wait" },
+        Tags = new[] { "job", "status", "progress", "poll", "wait", "history" },
         TimeoutMs = 40000,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":25}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":25},""includeSample"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -90,21 +91,47 @@ public sealed class GetJobStatusTool : IAgentTool
             await Task.Delay(500, ct).ConfigureAwait(false);
         }
 
+        var recent = await _store.ListRecentAsync(context.DocumentId, 5, ct).ConfigureAwait(false);
         if (job is null)
         {
-            var recent = await _store.ListRecentAsync(context.DocumentId, 5, ct).ConfigureAwait(false);
-            return ToolResult.Fail(
-                JobErrorCodes.JobNotFound,
-                "No job is active for this document. [Action: call start_job to create one; " +
-                "recent jobs: " + string.Join(", ", recent.Select(item => item.JobId.ToString("D"))) + "]",
-                data: JobToolPayloads.Serialize(new
+            var recentJobs = JobToolPayloads.History(recent);
+            if (hasExplicitId)
+            {
+                return ToolResult.Fail(
+                    JobErrorCodes.JobNotFound,
+                    "Job '" + explicitId.ToString("D") + "' was not found. " +
+                    "[Action: use a jobId from recentJobs or omit jobId for the latest job]",
+                    data: JobToolPayloads.Serialize(new
+                    {
+                        state = "not_found",
+                        recentJobs
+                    }));
+            }
+
+            // "No active job" is a valid state, not an error: return the history so
+            // the agent can pick a jobId without replaying stale tool output.
+            return ToolResult.Ok(
+                JobToolPayloads.Serialize(new
                 {
-                    state = hasExplicitId ? "not_found" : "idle",
-                    recentJobIds = recent.Select(item => item.JobId.ToString("D")).ToArray()
-                }));
+                    state = "idle",
+                    recentJobs
+                }),
+                recent.Count == 0
+                    ? "No job has run in this document. [Action: call start_job to create one]"
+                    : "No job is active. Recent jobs: " + string.Join(
+                        ", ", recent.Select(item => item.JobId.ToString("D") + " (" + item.State + ")")));
         }
 
-        var payload = JobToolPayloads.Describe(job);
-        return ToolResult.Ok(JobToolPayloads.Serialize(payload), job.State + " — " + JobToolPayloads.NextHint(job));
+        var includeSample = AgentJson.GetBool(args, "includeSample", false);
+        var payload = JobToolPayloads.Describe(
+            job,
+            includeSample,
+            JobToolPayloads.History(recent));
+        var totals = JobToolPayloads.Totals(job);
+        var summary = totals.Done + " done, " + totals.Skipped + " skipped, " +
+                      totals.Failed + " failed, " + totals.Mismatch + " mismatch";
+        return ToolResult.Ok(
+            JobToolPayloads.Serialize(payload),
+            job.State + " — " + summary + ". " + JobToolPayloads.NextHint(job));
     }
 }

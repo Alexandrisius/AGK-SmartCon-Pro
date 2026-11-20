@@ -34,7 +34,7 @@ public sealed partial class JobRunner
                     Error = new JobError(
                         JobErrorCodes.PreviewRequired,
                         "Unit '" + item.UnitKey + "' has no usable preview data",
-                        "run start_job with mode=preview again")
+                        "run start_job with dryRun=true again")
                 });
                 continue;
             }
@@ -207,22 +207,49 @@ public sealed partial class JobRunner
 
         if (abort)
         {
-            MarkApplyingAsFailed(job, plans);
+            var aborted = BuildAbortUpdates(
+                action, context, plans, applied, batchIndex, transactionScope: scope is not null);
+            if (aborted.Count > 0)
+            {
+                Sync(_store.UpdateItemsAsync(job.JobId, aborted, CancellationToken.None));
+            }
+
+            Sync(_store.UpdateTotalsAsync(
+                job.JobId,
+                JobJson.Serialize(JobTotals.FromItems(
+                    Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None)))),
+                CancellationToken.None));
             Sync(_store.CompleteBatchAsync(
-                job.JobId, batchIndex, 0, plans.Count, false, null, CancellationToken.None));
+                job.JobId,
+                batchIndex,
+                aborted.Count(update => update.State == JobItemState.Skipped),
+                aborted.Count(update => update.State is JobItemState.Failed or JobItemState.Mismatch),
+                false,
+                null,
+                CancellationToken.None));
             Sync(_store.AppendEventAsync(
                 job.JobId,
                 JobEventTypes.BatchFailed,
                 "{\"batch\":" + batchIndex + ",\"reason\":\"onError=abort\"}",
                 CancellationToken.None));
+
+            var failedPlan = plans.FirstOrDefault(plan =>
+                plan.Error is not null ||
+                (applied.TryGetValue(plan.Item.Seq, out var failedResult) && !failedResult.Success));
+            var detail = failedPlan?.Error?.Message
+                         ?? (failedPlan is not null &&
+                             applied.TryGetValue(failedPlan.Item.Seq, out var unitFailure)
+                                 ? unitFailure.ErrorDetail
+                                 : null);
             return new ApplyBatchOutcome
             {
                 Changed = false,
                 Saved = false,
-                Error = new JobError(
-                    "job_aborted_by_policy",
-                    "A unit failed and onError=abort is set",
-                    "run get_job_report to inspect the failure; the batch was rolled back")
+                Error = JobErrors.AbortedByPolicy(
+                    (detail ?? "a unit failed") +
+                    (scope is null
+                        ? "; units applied before the failure stay applied"
+                        : "; the current batch was rolled back"))
             };
         }
 
@@ -493,7 +520,6 @@ public sealed partial class JobRunner
             ProcessedThisSlice = processed
         };
     }
-
     private JobError? SaveNow(JobRecord job, Document document, int cursor)
     {
         using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "SaveNow"));

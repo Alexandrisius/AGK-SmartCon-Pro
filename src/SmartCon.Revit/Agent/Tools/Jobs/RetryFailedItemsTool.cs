@@ -25,8 +25,9 @@ public sealed class RetryFailedItemsTool : IAgentTool
     {
         Name = "retry_failed_items",
         Description =
-            "Retries only the failed units of a job (new attempt, same frozen units). " +
-            "Mismatched units are not retried: roll them back first if the model was changed. " +
+            "Re-evaluates and retries only the failed units of a job (fresh preview + apply, same " +
+            "frozen units). Returns attempted/reset/stillFailed plus the real cause when a unit " +
+            "still cannot be retried. Mismatched units are not retried: roll them back first. " +
             "Omit jobId for the most recent job of the active document.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = false,
@@ -75,9 +76,12 @@ public sealed class RetryFailedItemsTool : IAgentTool
         var payload = new
         {
             jobId = result.JobId.ToString("D"),
+            attempted = result.Attempted,
             reset = result.Reset,
             totalFailed = result.TotalFailed,
+            stillFailed = result.StillFailed,
             state = result.State.ToString(),
+            totals = result.Totals,
             errorCode = result.ErrorCode,
             errorDetail = result.ErrorDetail
         };
@@ -86,13 +90,16 @@ public sealed class RetryFailedItemsTool : IAgentTool
         {
             return ToolResult.Fail(
                 result.ErrorCode,
-                result.ErrorDetail ?? "Retry failed",
+                (result.ErrorDetail ?? "Retry failed") +
+                " [" + result.StillFailed + " of " + result.Attempted +
+                " failed unit(s) still cannot be retried]",
                 data: JobToolPayloads.Serialize(payload));
         }
 
         return ToolResult.Ok(
             JobToolPayloads.Serialize(payload),
-            "Retrying " + result.Reset + " failed unit(s); state " + result.State +
+            "Retried " + result.Attempted + " failed unit(s): " + result.Reset +
+            " queued, " + result.StillFailed + " still failing; state " + result.State +
             ". Call get_job_status to follow progress.",
             affectedCount: result.Reset);
     }

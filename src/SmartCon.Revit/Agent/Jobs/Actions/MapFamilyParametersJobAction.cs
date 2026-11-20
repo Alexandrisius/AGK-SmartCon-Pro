@@ -21,6 +21,35 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
     private const int MaxMappings = 100;
 
+    private static readonly JobSpecObjectRule[] SpecRules =
+    {
+        new()
+        {
+            Path = string.Empty,
+            AllowedKeys = new[] { "select", "mappings" }
+        },
+        new()
+        {
+            Path = "select",
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "nameContains", "categoryIds", "limit" }
+        },
+        new()
+        {
+            Path = "mappings[]",
+            AllowedKeys = new[] { "source", "target", "mode", "typeNames" }
+        },
+        new()
+        {
+            Path = "mappings[].source",
+            AllowedKeys = new[] { "name", "scope", "guid" }
+        },
+        new()
+        {
+            Path = "mappings[].target",
+            AllowedKeys = new[] { "name", "scope", "guid" }
+        }
+    };
+
     public override string Name => "map_family_parameters";
 
     public override JobActionScope Scope => JobActionScope.FamilyDefinition;
@@ -29,6 +58,12 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
     public override JobExpansion Expand(JobActionContext context, string specJson)
     {
+        var keyError = JobSpecKeyValidator.Validate(specJson, SpecRules);
+        if (keyError is not null)
+        {
+            return ExpansionFail(JobErrorCodes.InvalidSpec, keyError);
+        }
+
         var spec = Parse<MapFamilyParametersSpec>(specJson);
         if (spec is null || spec.Select is null || spec.Mappings is null || spec.Mappings.Count == 0)
         {

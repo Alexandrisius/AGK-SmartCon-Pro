@@ -32,6 +32,13 @@ public interface IJobStore
         string? errorDetail,
         CancellationToken ct);
 
+    /// <summary>
+    /// Rewrites the stored spec (mode + merged options) without touching the
+    /// frozen preview or the unit rows. Used by apply/resume to persist their
+    /// policy overrides so the runner and a later resume see the same contract.
+    /// </summary>
+    Task UpdateSpecAsync(Guid jobId, JobSpec spec, CancellationToken ct);
+
     Task UpdatePreviewAsync(Guid jobId, string previewJson, CancellationToken ct);
 
     Task UpdateTotalsAsync(Guid jobId, string totalsJson, CancellationToken ct);

@@ -79,6 +79,12 @@ public sealed class JobTotals
 
     public int UndoFailed { get; init; }
 
+    /// <summary>Units that were applied before a rollback/undo pass.</summary>
+    public int AppliedBefore { get; init; }
+
+    /// <summary>Failed units whose cause is a stale preview (rerun the preview).</summary>
+    public int Stale { get; init; }
+
     public int Pending { get; init; }
 
     /// <summary>Units still in flight (Pending/Applying/Undoing): a job with these is not finished.</summary>
@@ -95,6 +101,8 @@ public sealed class JobTotals
         var mismatch = 0;
         var undone = 0;
         var undoFailed = 0;
+        var appliedBefore = 0;
+        var stale = 0;
         var pending = 0;
         var incomplete = 0;
 
@@ -129,6 +137,11 @@ public sealed class JobTotals
                     break;
                 case JobItemState.Failed:
                     failed++;
+                    if (string.Equals(item.ErrorCode, JobErrorCodes.PreviewStale, StringComparison.Ordinal))
+                    {
+                        stale++;
+                    }
+
                     break;
                 case JobItemState.Mismatch:
                     mismatch++;
@@ -138,10 +151,12 @@ public sealed class JobTotals
                     break;
                 case JobItemState.Undone:
                     undone++;
+                    appliedBefore++;
                     incomplete++;
                     break;
                 case JobItemState.UndoFailed:
                     undoFailed++;
+                    appliedBefore++;
                     break;
             }
         }
@@ -157,6 +172,8 @@ public sealed class JobTotals
             Mismatch = mismatch,
             Undone = undone,
             UndoFailed = undoFailed,
+            AppliedBefore = appliedBefore,
+            Stale = stale,
             Pending = pending,
             Incomplete = incomplete
         };
@@ -219,6 +236,7 @@ public static class JobEventTypes
     public const string ExpansionFailed = "expansion_failed";
     public const string PreviewStarted = "preview_started";
     public const string PreviewCompleted = "preview_completed";
+    public const string PreviewSuperseded = "preview_superseded";
     public const string ApplyStarted = "apply_started";
     public const string BatchStarted = "batch_started";
     public const string BatchApplied = "batch_applied";

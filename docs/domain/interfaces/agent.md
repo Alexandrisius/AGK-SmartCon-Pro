@@ -76,12 +76,91 @@ Blob-store крупных результатов тулов (store-and-reference
 
 Поставщик контекста проекта Revit (`AgentProjectContext`).
 
-## Job engine (ADR-079)
+## IJobAction
 
-| Интерфейс | Назначение | Реализация |
-|---|---|---|
-| `IJobAction` | Одно массовое действие: `Expand` (заморозка юнитов), `Preview` (dry-run), `Apply` (в транзакции раннера), `Verify` (независимый read-back), `Undo` (per-item undo). `Scope` = ProjectInstance/ProjectType/FamilyDefinition/RfaFile | `RevitJobActionBase` + `RenameViewsJobAction`, `SetParametersJobAction`, `MapFamilyParametersJobAction` (SmartCon.Revit) |
-| `IJobStore` | Durable-хранилище: CAS-переходы, юниты/батчи/события, курсор после `Document.Save()`, lease | `SqliteAgentJobStore` (SmartCon.Agent, SQLite v5) |
-| `IJobScheduler` | `Start` (preview/apply/resume), `Cancel`, `EnsurePump` | `JobRunner` (SmartCon.Revit) |
-| `IJobRecovery` | `Reconcile` осиротевших job'ов, `Rollback`, `RetryFailed` | `JobRunner` |
-| `ITransactionScope` | Явный commit/rollback на батч (J-03), создаётся только `ITransactionService.BeginTransaction` | `RevitTransactionService` |
+Одно массовое действие job engine: `Expand` замораживает юниты, `Preview`
+делает dry-run без изменения модели, `Apply` выполняется в транзакции раннера,
+`Verify` — независимый read-back (единственный источник «done»), `Undo`
+восстанавливает один юнит по persisted undo payload. Реализации —
+`RevitJobActionBase` + `RenameViewsJobAction`, `SetParametersJobAction`,
+`MapFamilyParametersJobAction` (SmartCon.Revit).
+
+**Файл:** `Services/Interfaces/Agent/IJobAction.cs`
+
+```csharp
+public interface IJobAction
+{
+    string Name { get; }
+    JobActionScope Scope { get; }
+    int MaxUnits { get; }
+    JobExpansion Expand(JobActionContext context, string specJson);
+    JobUnitPreview Preview(JobActionContext context, JobUnit unit);
+    JobUnitApply Apply(JobActionContext context, JobUnit unit, JobUnitPreview preview,
+        int attempt, Action<string>? persistUndo);
+    JobUnitVerification Verify(JobActionContext context, JobUnit unit, JobUnitPreview preview);
+    JobUnitUndo Undo(JobActionContext context, JobUnit unit, string? undoJson, bool dryRun);
+}
+```
+
+**IJobScheduler.**
+
+`Start` (preview/apply/resume, первый slice может выполниться inline), `Cancel`
+(останавливает между юнитами) и `EnsurePump` (поднять pump после рестарта).
+Реализация — `JobRunner` (SmartCon.Revit).
+
+**IJobRecovery.**
+
+`Reconcile` осиротевших job'ов, `Rollback` (per-item undo, dry-run первым) и
+`RetryFailed` (свежий preview только для failed-юнитов). Реализация — `JobRunner`.
+
+## IJobStore
+
+Durable-хранилище job'ов: CAS-переходы состояний, frozen preview, юниты, батчи,
+append-only события, durable cursor после успешного `Document.Save()`, lease.
+Реализация — `SqliteAgentJobStore` (SmartCon.Agent, SQLite v5; single writer,
+DELETE journal, без WAL — I-14).
+
+В раунде приёмки добавлен `UpdateSpecAsync`: apply/resume сохраняют
+`Mode` и слитые `JobOptions` **после** успешного перехода состояния, не трогая
+frozen preview и строки юнитов.
+
+**Файл:** `Services/Interfaces/Agent/IJobStore.cs`
+
+```csharp
+public interface IJobStore
+{
+    Task<JobRecord> CreateAsync(JobSpec spec, CancellationToken ct);
+    Task<JobRecord?> GetAsync(Guid jobId, CancellationToken ct);
+    Task<JobRecord?> GetActiveAsync(string documentId, CancellationToken ct);
+    Task<JobRecord?> GetByPreviewDigestAsync(string documentId, string digest, CancellationToken ct);
+    Task<IReadOnlyList<JobRecord>> ListRecentAsync(string documentId, int limit, CancellationToken ct);
+    Task<JobError?> TransitionAsync(Guid jobId, JobState expectedFrom, JobState to,
+        string? errorCode, string? errorDetail, CancellationToken ct);
+    Task UpdateSpecAsync(Guid jobId, JobSpec spec, CancellationToken ct);
+    Task UpdatePreviewAsync(Guid jobId, string previewJson, CancellationToken ct);
+    Task UpdateTotalsAsync(Guid jobId, string totalsJson, CancellationToken ct);
+    Task UpdateCursorAsync(Guid jobId, int lastSavedCursor, DateTime savedAtUtc, CancellationToken ct);
+    Task SetCancelRequestedAsync(Guid jobId, bool requested, CancellationToken ct);
+    Task RenewLeaseAsync(Guid jobId, DateTime leaseUntilUtc, CancellationToken ct);
+    Task MarkStartedAsync(Guid jobId, DateTime startedAtUtc, CancellationToken ct);
+    Task MarkFinishedAsync(Guid jobId, JobState finalState, string? errorCode,
+        string? errorDetail, CancellationToken ct);
+    Task AddUnitsAsync(Guid jobId, IReadOnlyList<JobUnit> units, CancellationToken ct);
+    Task<IReadOnlyList<JobItem>> LoadItemsAsync(Guid jobId, IReadOnlyList<JobItemState> states,
+        int afterSeq, int limit, CancellationToken ct);
+    Task<IReadOnlyList<JobItem>> LoadAllItemsAsync(Guid jobId, CancellationToken ct);
+    Task<int> CountItemsAsync(Guid jobId, CancellationToken ct);
+    Task UpdateItemsAsync(Guid jobId, IReadOnlyList<JobItemUpdate> updates, CancellationToken ct);
+    Task ResetItemsAsync(Guid jobId, IReadOnlyList<int> seqs, JobItemState to, CancellationToken ct);
+    Task<int> BeginBatchAsync(Guid jobId, int fromSeq, int toSeq, CancellationToken ct);
+    Task CompleteBatchAsync(Guid jobId, int batchIndex, int applied, int failed,
+        bool saved, DateTime? savedAtUtc, CancellationToken ct);
+    Task AppendEventAsync(Guid jobId, string type, string? payloadJson, CancellationToken ct);
+    Task<IReadOnlyList<JobEvent>> LoadEventsAsync(Guid jobId, int limit, CancellationToken ct);
+}
+```
+
+**ITransactionScope.**
+
+Явный commit/rollback на батч (J-03); создаётся только
+`ITransactionService.BeginTransaction`, не напрямую.

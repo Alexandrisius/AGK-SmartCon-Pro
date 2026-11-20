@@ -1,9 +1,10 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Text.Json.Serialization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Jobs.Actions;
@@ -15,12 +16,17 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
     private const string InvalidValue = "invalid_value";
     private const string ResolutionHint = "[Action: check the parameter name/GUID and the scope, then run the preview again]";
 
+
     public override string Name => "set_parameters";
     public override JobActionScope Scope => JobActionScope.ProjectInstance;
     public override int MaxUnits => 5000;
 
     public override JobExpansion Expand(JobActionContext context, string specJson)
     {
+        var keyError = JobSpecKeyValidator.Validate(specJson, SpecRules);
+        if (keyError is not null)
+            return ExpansionFail(JobErrorCodes.InvalidSpec, keyError);
+
         var spec = Parse<SetParametersSpec>(specJson);
         var specError = ValidateSpec(spec);
         if (specError is not null)
@@ -331,6 +337,13 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             return false;
         if (levelIds.Count > 0 && !MatchesLevel(element, levelIds))
             return false;
+        if (select.TypeIds is { Count: > 0 })
+        {
+            var typeId = element.GetTypeId();
+            if (typeId == ElementId.InvalidElementId || !select.TypeIds.Contains(typeId.GetValue()))
+                return false;
+        }
+
         var (familyName, typeName) = ReadFamilyAndType(document, element);
         if (!string.IsNullOrWhiteSpace(select.FamilyName) &&
             !string.Equals(familyName, select.FamilyName, StringComparison.OrdinalIgnoreCase))
@@ -338,9 +351,39 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         if (!string.IsNullOrWhiteSpace(select.TypeName) &&
             !string.Equals(typeName, select.TypeName, StringComparison.OrdinalIgnoreCase))
             return false;
-        return string.IsNullOrWhiteSpace(select.NameContains) ||
-               (element.Name ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) >= 0 ||
-               (typeName ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) >= 0;
+        if (!string.IsNullOrWhiteSpace(select.NameContains) &&
+            (element.Name ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0 &&
+            (typeName ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0)
+            return false;
+        return MatchesConditions(document, element, select);
+    }
+
+    private static bool MatchesConditions(
+        Document document,
+        Element element,
+        ParametersSelectSpec select)
+    {
+        if (select.Conditions is not { Count: > 0 })
+            return true;
+
+        var requireAll = select.Logic != QueryLogic.Or;
+        foreach (var condition in select.Conditions)
+        {
+            var parameter = AgentParameterResolver.Find(
+                document,
+                element,
+                condition.Parameter,
+                select.IncludeTypeParameters ?? false);
+            var matches = parameter is not null &&
+                          AgentParameterValue.Matches(document, parameter, condition);
+
+            if (requireAll && !matches)
+                return false;
+            if (!requireAll && matches)
+                return true;
+        }
+
+        return requireAll;
     }
 
     private static bool MatchesLevel(Element element, HashSet<long> levelIds)
@@ -415,96 +458,4 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         return false;
     }
 
-    private static string? ValidateSpec(SetParametersSpec? spec)
-    {
-        if (spec?.Select is null)
-            return "set_parameters requires {\"select\": {...}, \"value\": \"...\"}";
-        var select = spec.Select;
-        if (select.ElementIds is not { Count: > 0 } && select.CategoryIds is not { Count: > 0 } &&
-            select.CategoryNames is not { Count: > 0 } && select.LevelIds is not { Count: > 0 } &&
-            string.IsNullOrWhiteSpace(select.FamilyName) && string.IsNullOrWhiteSpace(select.TypeName) &&
-            string.IsNullOrWhiteSpace(select.NameContains))
-        {
-            return "select must contain at least one of elementIds, categoryIds, categoryNames, levelIds, " +
-                   "familyName, typeName or nameContains; an empty selector is refused";
-        }
-        if (select.Limit is < 1)
-            return "select.limit must be a positive number";
-        if (spec.Value is null)
-            return "set_parameters requires a string 'value'; pass \"\" to clear a text parameter";
-        if (string.IsNullOrWhiteSpace(spec.Parameter) && string.IsNullOrWhiteSpace(spec.SharedParameterGuid) &&
-            string.IsNullOrWhiteSpace(spec.BuiltInParameter))
-            return "set_parameters requires 'parameter', 'guid' or 'builtInParameter'";
-        if (!string.IsNullOrWhiteSpace(spec.SharedParameterGuid) && !Guid.TryParse(spec.SharedParameterGuid, out _))
-            return "'" + spec.SharedParameterGuid + "' is not a valid shared-parameter GUID";
-        if (!string.IsNullOrWhiteSpace(spec.Scope) &&
-            !string.Equals(spec.Scope, "instance", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(spec.Scope, "type", StringComparison.OrdinalIgnoreCase))
-            return "scope must be \"instance\" or \"type\", not '" + spec.Scope + "'";
-        return null;
-    }
-
-    private static string ParameterKey(SetParametersSpec spec)
-    {
-        if (!string.IsNullOrWhiteSpace(spec.SharedParameterGuid) && Guid.TryParse(spec.SharedParameterGuid, out var guid))
-            return guid.ToString("D");
-        if (!string.IsNullOrWhiteSpace(spec.BuiltInParameter))
-            return spec.BuiltInParameter!.Trim();
-        return (spec.Parameter ?? string.Empty).Trim();
-    }
-
-    private static string NameOf(Parameter parameter, SetParameterUnitArgs args) =>
-        parameter.Definition?.Name ?? args.Parameter ?? args.BuiltInParameter ?? args.SharedParameterGuid ?? "?";
-    private static string TargetText(string? value, string? unit) =>
-        string.IsNullOrWhiteSpace(unit) ? value ?? string.Empty : (value ?? string.Empty) + " " + unit;
-    private static string Hint(string action) => "[Action: " + action + "]";
-
-    private static JobUnitApply ApplyFail(string code, string detail) =>
-        new() { ErrorCode = code, ErrorDetail = detail };
-    private static JobUnitVerification VerifyFail(string code, string detail, string reason) =>
-        new() { Verified = false, ErrorCode = code, ErrorDetail = detail, MismatchReason = reason };
-    private static JobUnitUndo UndoFail(string code, string detail) =>
-        new() { ErrorCode = code, ErrorDetail = detail };
-
-    public sealed class SetParametersSpec
-    {
-        public ParametersSelectSpec? Select { get; set; }
-        public string? Parameter { get; set; }
-        [JsonPropertyName("guid")]
-        public string? SharedParameterGuid { get; set; }
-
-        public string? BuiltInParameter { get; set; }
-        public string? Scope { get; set; }
-        public string? Value { get; set; }
-        public string? Unit { get; set; }
-    }
-
-    public sealed class ParametersSelectSpec
-    {
-        public List<long>? ElementIds { get; set; }
-        public List<long>? CategoryIds { get; set; }
-        public List<string>? CategoryNames { get; set; }
-        public List<long>? LevelIds { get; set; }
-        public string? FamilyName { get; set; }
-        public string? TypeName { get; set; }
-        public string? NameContains { get; set; }
-        public int? Limit { get; set; }
-    }
-
-    public sealed class SetParameterUnitArgs
-    {
-        public long ElementId { get; set; }
-        public string? UniqueId { get; set; }
-        public string? OwnerUniqueId { get; set; }
-        public string? Parameter { get; set; }
-        [JsonPropertyName("guid")]
-        public string? SharedParameterGuid { get; set; }
-
-        public string? BuiltInParameter { get; set; }
-        public string? Scope { get; set; }
-        public string? Value { get; set; }
-        public string? Unit { get; set; }
-        public string? ErrorCode { get; set; }
-        public string? Error { get; set; }
-    }
 }

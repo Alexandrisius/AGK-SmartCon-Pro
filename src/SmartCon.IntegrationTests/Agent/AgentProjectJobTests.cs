@@ -168,7 +168,9 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
             RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 20)),
             Doc);
         await Assert.That(preview.Success).IsTrue();
-        var digest = JobJson.Deserialize<JobPreview>(preview.Job!.PreviewJson)!.Digest;
+        cancelRunner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+        var previewRecord = await Store.GetAsync(preview.Job!.JobId, CancellationToken.None);
+        var digest = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!.Digest;
 
         cancelRunner.Start(
             RenameViewSpec(JobMode.Apply, digest, Options(JobSavePolicy.Never, 20)),
@@ -180,6 +182,11 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
         var items = await Store.LoadAllItemsAsync(preview.Job.JobId, CancellationToken.None);
         var done = items.Count(item => item.State == JobItemState.Done);
         var pending = items.Count(item => item.State == JobItemState.Previewed);
+
+        var report = new JobReportBuilder(Store, _actions!)
+            .Build(Doc, preview.Job.JobId, 0, 10, readBack: false, out _);
+        await Assert.That(report!.Cancelled).IsTrue();
+        await Assert.That(report.InterruptedUnits).IsGreaterThan(0);
 
         await Assert.That(done).IsGreaterThan(0);
         await Assert.That(done).IsLessThan(ViewCount);
@@ -363,20 +370,56 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
     }
 
     [Test]
-    public async Task Job_SecondJobOnSameDocument_IsRejected()
+    public async Task Job_NewPreview_SupersedesReadyPreviewWithoutCancel()
     {
         var first = Runner.Start(
             RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
             Doc);
         await Assert.That(first.Success).IsTrue();
-        await Assert.That(first.Job!.State).IsEqualTo(JobState.PreviewReady);
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+        var firstRecord = await Store.GetAsync(first.Job!.JobId, CancellationToken.None);
+        await Assert.That(firstRecord!.State).IsEqualTo(JobState.PreviewReady);
 
         var second = Runner.Start(
             RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
             Doc);
+        await Assert.That(second.Success).IsTrue();
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+        var secondRecord = await Store.GetAsync(second.Job!.JobId, CancellationToken.None);
+        await Assert.That(secondRecord!.State).IsEqualTo(JobState.PreviewReady);
+        await Assert.That(second.Job.JobId).IsNotEqualTo(first.Job.JobId);
 
+        var old = await Store.GetAsync(first.Job.JobId, CancellationToken.None);
+        await Assert.That(old!.State).IsEqualTo(JobState.Cancelled);
+        await Assert.That(old.ErrorCode).IsEqualTo(JobErrorCodes.PreviewSuperseded);
+    }
+
+    [Test]
+    public async Task Job_SecondJobWhileRunning_IsRejected()
+    {
+        var slowRunner = CreateRunner(new SlowAction(new RenameViewsJobAction(), 1));
+        var preview = slowRunner.Start(
+            RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
+            Doc);
+        await Assert.That(preview.Success).IsTrue();
+        slowRunner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+
+        var previewRecord = await Store.GetAsync(preview.Job!.JobId, CancellationToken.None);
+        var digest = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!.Digest;
+        var apply = slowRunner.Start(
+            RenameViewSpec(JobMode.Apply, digest, Options(JobSavePolicy.Never, 50)),
+            Doc);
+        await Assert.That(apply.Success).IsTrue();
+        await Assert.That(apply.Job!.State).IsEqualTo(JobState.Running);
+
+        var second = slowRunner.Start(
+            RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.Never, 50)),
+            Doc);
         await Assert.That(second.Success).IsFalse();
         await Assert.That(second.Error!.Code).IsEqualTo(JobErrorCodes.JobAlreadyActive);
+
+        slowRunner.Cancel(preview.Job.JobId, DocumentId);
+        slowRunner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
     }
 
     [Test]
@@ -460,7 +503,10 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
             throw new InvalidOperationException("Preview failed: " + preview.Error);
         }
 
-        var digest = JobJson.Deserialize<JobPreview>(preview.Job!.PreviewJson)!.Digest;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+        var previewRecord = Store.GetAsync(preview.Job!.JobId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        var digest = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!.Digest;
         var apply = Runner.Start(RenameViewSpec(JobMode.Apply, digest, options), Doc);
         if (!apply.Success)
         {
@@ -478,7 +524,9 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
         SavePolicy = policy,
         BatchSize = batchSize,
         SliceBudgetMs = 200,
-        MaxItems = 1000
+        MaxItems = 1000,
+        // The seeded 500-unit suites intentionally cross the 200-unit guard.
+        AllowLargeJob = true
     };
 
     private JobSpec RenameViewSpec(JobMode mode, string? digest = null, JobOptions? options = null) =>

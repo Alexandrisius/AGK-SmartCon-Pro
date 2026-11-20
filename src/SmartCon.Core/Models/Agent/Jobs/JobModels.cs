@@ -72,6 +72,12 @@ public enum JobActionScope
 /// <summary>Limits and policies of one job. Every limit is fail-closed.</summary>
 public sealed class JobOptions
 {
+    /// <summary>
+    /// Soft safety threshold: a job above this size needs an explicit
+    /// <see cref="AllowLargeJob"/> acknowledgement at apply time.
+    /// </summary>
+    public const int LargeJobThreshold = 200;
+
     /// <summary>Units applied inside one Revit transaction / one save window.</summary>
     public int BatchSize { get; init; } = 50;
 
@@ -89,6 +95,56 @@ public sealed class JobOptions
 
     /// <summary>Hard cap on units; the action's own <c>MaxUnits</c> is the second gate.</summary>
     public int MaxItems { get; init; } = 1000;
+
+    /// <summary>
+    /// Explicit acknowledgement that a job above <see cref="LargeJobThreshold"/>
+    /// units is intended. Without it the apply/resume call is refused.
+    /// </summary>
+    public bool AllowLargeJob { get; init; }
+}
+
+/// <summary>
+/// Apply-time policy overrides. Null means "keep the value stored by the
+/// preview"; this is what lets an apply call switch on <c>onError=abort</c>
+/// without silently resetting every other policy to its default.
+/// </summary>
+public sealed class JobOptionsOverride
+{
+    public JobOnError? OnError { get; init; }
+
+    public bool? RollbackOnError { get; init; }
+
+    public JobSavePolicy? SavePolicy { get; init; }
+
+    public int? BatchSize { get; init; }
+
+    public int? MaxItems { get; init; }
+
+    public bool? AllowLargeJob { get; init; }
+}
+
+public static class JobOptionsMerger
+{
+    /// <summary>Applies only the explicitly supplied policies over the stored preview options.</summary>
+    public static JobOptions Merge(JobOptions stored, JobOptionsOverride? overrides)
+    {
+        if (overrides is null)
+        {
+            return stored;
+        }
+
+        return new JobOptions
+        {
+            BatchSize = overrides.BatchSize ?? stored.BatchSize,
+            SliceBudgetMs = stored.SliceBudgetMs,
+            OnError = overrides.OnError ?? stored.OnError,
+            RollbackOnError = overrides.RollbackOnError ?? stored.RollbackOnError,
+            SavePolicy = overrides.SavePolicy ?? stored.SavePolicy,
+            SaveEveryMinutes = stored.SaveEveryMinutes,
+            MaxItems = overrides.MaxItems ?? stored.MaxItems,
+            AllowLargeJob = overrides.AllowLargeJob ?? stored.AllowLargeJob
+        };
+    }
 }
 
 /// <summary>
@@ -114,6 +170,12 @@ public sealed class JobSpec
     public string SpecJson { get; init; } = "{}";
 
     public JobOptions Options { get; init; } = new();
+
+    /// <summary>
+    /// Policies supplied only on this call. Apply/resume merge them over the
+    /// options stored by the preview instead of replacing the whole block.
+    /// </summary>
+    public JobOptionsOverride? OptionsOverride { get; init; }
 
     /// <summary>Required for <see cref="JobMode.Apply"/>: digest of the frozen preview.</summary>
     public string? PreviewDigest { get; init; }

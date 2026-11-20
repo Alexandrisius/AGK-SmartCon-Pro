@@ -31,7 +31,8 @@ public sealed class GetJobReportTool : IAgentTool
         Name = "get_job_report",
         Description =
             "Returns the per-item report of a job: expected/actual/verified per unit, saved state, " +
-            "failures and mismatches. format=csv writes a CSV file and returns its path. " +
+            "failures grouped by errorCode and mismatches. includeItems=false returns totals + " +
+            "errors only. format=csv writes a CSV file and returns its path. " +
             "Omit jobId for the most recent job of the active document.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = true,
@@ -39,7 +40,7 @@ public sealed class GetJobReportTool : IAgentTool
         Category = "jobs",
         Tags = new[] { "job", "report", "diff", "csv", "verified", "mismatch" },
         TimeoutMs = 120000,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""format"":{""type"":""string"",""enum"":[""json"",""csv""]},""offset"":{""type"":""integer"",""minimum"":0},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":5000},""readBack"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""format"":{""type"":""string"",""enum"":[""json"",""csv""]},""offset"":{""type"":""integer"",""minimum"":0},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":5000},""readBack"":{""type"":""boolean"",""default"":true},""includeItems"":{""type"":""boolean"",""default"":true,""description"":""Set false for totals + errors only (no per-item page).""}},""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -66,6 +67,7 @@ public sealed class GetJobReportTool : IAgentTool
         var offset = AgentJson.GetInt(args, "offset", 0);
         var limit = Math.Min(Math.Max(AgentJson.GetInt(args, "limit", 100), 1), 5000);
         var readBack = AgentJson.GetBool(args, "readBack", true);
+        var includeItems = AgentJson.GetBool(args, "includeItems", true);
 
         JobReport? report;
         JobError? buildError = null;
@@ -122,8 +124,14 @@ public sealed class GetJobReportTool : IAgentTool
             lastSavedCursor = report.LastSavedCursor,
             lastSavedAt = report.LastSavedAt,
             totals = report.Totals,
+            readBack = report.ReadBack,
             truthful = report.Truthful,
             mismatchCount = report.MismatchCount,
+            stale = report.Totals.Stale,
+            appliedBefore = report.Totals.AppliedBefore,
+            cancelled = report.Cancelled,
+            interruptedUnits = report.InterruptedUnits,
+            errors = report.Errors,
             warnings = report.Warnings,
             errorCode = report.ErrorCode,
             errorDetail = report.ErrorDetail,
@@ -131,13 +139,24 @@ public sealed class GetJobReportTool : IAgentTool
             limit,
             hasMore = report.HasMore,
             nextOffset = report.NextOffset,
-            items = report.Items
+            items = includeItems ? report.Items : null
         };
 
+        var errorSummary = report.Errors.Count == 0
+            ? string.Empty
+            : " [" + string.Join(
+                ", ", report.Errors.Select(group => group.ErrorCode + " ×" + group.Count)) + "]";
         var message = "Report: " + report.Totals.Done + " done, " + report.Totals.Skipped +
                       " skipped, " + report.Totals.Failed + " failed, " + report.Totals.Mismatch +
                       " mismatch" + (report.Saved ? ", saved" : ", NOT saved") +
-                      (report.Truthful ? ", read-back verified" : ", READ-BACK MISMATCH");
+                      (report.Cancelled ? ", CANCELLED (" + report.InterruptedUnits + " not applied)" : string.Empty) +
+                      (report.Totals.Stale > 0 ? ", stale=" + report.Totals.Stale + " (rerun preview)" : string.Empty) +
+                      (!report.ReadBack
+                          ? ", read-back skipped"
+                          : report.Truthful
+                              ? ", read-back verified"
+                              : ", READ-BACK MISMATCH") +
+                      errorSummary;
 
         return ToolResult.Ok(
             JobToolPayloads.Serialize(payload),

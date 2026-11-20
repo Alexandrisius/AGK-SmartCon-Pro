@@ -50,11 +50,19 @@ public sealed class CancelJobTool : IAgentTool
             jobId = active?.JobId;
         }
 
+        if (jobId is null && !hasExplicitId)
+        {
+            // Idempotent cancel without jobId: after the first call the job is no
+            // longer active, so fall back to the most recent one.
+            var recent = await _store.ListRecentAsync(context.DocumentId, 1, ct).ConfigureAwait(false);
+            jobId = recent.Count == 0 ? null : recent[0].JobId;
+        }
+
         if (jobId is null)
         {
             return ToolResult.Fail(
                 JobErrorCodes.JobNotFound,
-                "No job is active for this document. [Action: nothing to cancel; call get_job_status to list jobs]");
+                "No job found for this document. [Action: nothing to cancel; call get_job_status to list jobs]");
         }
 
         var cancelled = _scheduler.Cancel(jobId.Value, context.DocumentId);
@@ -62,10 +70,22 @@ public sealed class CancelJobTool : IAgentTool
 
         if (!cancelled)
         {
+            if (job is not null &&
+                (job.State == JobState.Cancelling || JobStateMachine.IsTerminal(job.State)))
+            {
+                return ToolResult.Ok(
+                    JobToolPayloads.Serialize(JobToolPayloads.Describe(job)),
+                    job.State == JobState.Cancelling
+                        ? "Cancellation is already in progress (idempotent)."
+                        : job.State is JobState.RolledBack or JobState.RollbackPartial
+                            ? "The job is already stopped and rolled back (idempotent)."
+                            : "The job is already terminal; nothing to cancel (idempotent).");
+            }
+
             return ToolResult.Fail(
                 JobErrorCodes.InvalidState,
                 "The job cannot be cancelled in state '" + (job?.State.ToString() ?? "unknown") + "'. " +
-                "[Action: call get_job_status; only running, previewing or interrupted jobs can be cancelled]",
+                "[Action: call get_job_status; only running, previewing, ready or interrupted jobs can be cancelled]",
                 data: job is null ? null : JobToolPayloads.Serialize(JobToolPayloads.Describe(job)));
         }
 

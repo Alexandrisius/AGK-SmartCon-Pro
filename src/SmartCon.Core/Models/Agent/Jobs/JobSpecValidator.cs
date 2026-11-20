@@ -50,6 +50,19 @@ public static class JobSpecValidator
             return JobErrors.Spec("options.saveEveryMinutes must be positive");
         }
 
+        if (spec.OptionsOverride is { } overrides)
+        {
+            if (overrides.BatchSize is { } batchSize && (batchSize <= 0 || batchSize > 500))
+            {
+                return JobErrors.Spec("options override batchSize must be 1..500");
+            }
+
+            if (overrides.MaxItems is { } maxItems && (maxItems <= 0 || maxItems > 10000))
+            {
+                return JobErrors.Spec("options override maxItems must be 1..10000");
+            }
+        }
+
         switch (spec.Mode)
         {
             case JobMode.Preview:

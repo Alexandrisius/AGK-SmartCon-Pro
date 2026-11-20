@@ -77,6 +77,13 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             return JobStartResult.Fail(specError);
         }
 
+        if (spec.Mode == JobMode.Preview)
+        {
+            // Preview never stores the large-job acknowledgement; it belongs to
+            // the apply/resume call only.
+            spec = WithEffectiveOptions(spec, spec.OptionsOverride, JobMode.Preview);
+        }
+
         var documentId = AgentDocumentIdentity.GetDocumentId(document);
         if (!string.Equals(documentId, spec.DocumentId, StringComparison.Ordinal))
         {
@@ -126,6 +133,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         if (job.State is JobState.PreviewRunning or JobState.PreviewReady
             or JobState.Interrupted or JobState.AwaitingApproval)
         {
+            Sync(_store.SetCancelRequestedAsync(jobId, true, CancellationToken.None));
             var cancelled = Sync(_store.TransitionAsync(
                 jobId,
                 job.State,
@@ -376,7 +384,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
                 SmartConLogger.Warn(
                     "Job " + active.JobId.ToString("D") + " (" + active.Spec.Action +
                     ") was interrupted; " + active.LastSavedCursor + " units are durable " +
-                    "[Action: call start_job with mode=resume and the jobId to continue]");
+                    "[Action: call start_job with resumeJobId to continue]");
                 return new[] { active.JobId };
             }
         }

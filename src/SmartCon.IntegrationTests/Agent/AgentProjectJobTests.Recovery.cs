@@ -164,8 +164,11 @@ public sealed partial class AgentProjectJobTests
         await Assert.That(retry.State).IsNotEqualTo(JobState.Failed);
 
         var after = await Store.GetAsync(jobId, CancellationToken.None);
-        await Assert.That(after!.State).IsNotEqualTo(JobState.Failed);
-        await Assert.That(after.State).IsNotEqualTo(JobState.Running);
+        await Assert.That(after!.State).IsEqualTo(JobState.Completed);
+
+        var items = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(items.Count(item => item.State == JobItemState.Done)).IsEqualTo(ViewCount);
+        await Assert.That(items.Count(item => item.State == JobItemState.Failed)).IsEqualTo(0);
     }
 
 

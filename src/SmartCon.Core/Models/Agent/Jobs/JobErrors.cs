@@ -41,8 +41,11 @@ public static class JobErrorCodes
     public const string PreviewMismatch = "job_preview_mismatch";
     public const string PreviewExpired = "job_preview_expired";
     public const string PreviewStale = "job_preview_stale";
+    public const string PreviewSuperseded = "job_preview_superseded";
     public const string SelectorEmpty = "job_selector_empty";
     public const string LimitExceeded = "job_limit_exceeded";
+    public const string ConfirmationRequired = "job_confirmation_required";
+    public const string AbortedByPolicy = "job_aborted_by_policy";
     public const string SaveFailed = "job_save_failed";
     public const string CancelledByUser = "job_cancelled";
     public const string Interrupted = "job_interrupted";
@@ -61,7 +64,7 @@ public static class JobErrors
 
     public static JobError Spec(string detail) =>
         new(JobErrorCodes.InvalidSpec, "Invalid job spec: " + detail,
-            "fix the arguments (action, mode, spec) and call start_job again");
+            "fix the arguments and call start_job again; action-specific specs list their allowed keys in the error");
 
     public static JobError ActionUnknown(string action) =>
         new(JobErrorCodes.ActionUnknown, "Unknown job action '" + action + "'",
@@ -83,12 +86,12 @@ public static class JobErrors
     public static JobError PreviewMismatch() =>
         new(JobErrorCodes.PreviewMismatch,
             "The preview digest does not match the frozen preview of this job",
-            "run start_job with mode=preview again and apply using the returned previewDigest");
+            "run start_job with dryRun=true again and apply using the returned previewDigest");
 
     public static JobError PreviewExpired(DateTime expiresAtUtc) =>
         new(JobErrorCodes.PreviewExpired,
             "The preview expired at " + expiresAtUtc.ToString("u", System.Globalization.CultureInfo.InvariantCulture),
-            "run start_job with mode=preview again; the model may have changed since the preview");
+            "run start_job with dryRun=true again; the model may have changed since the preview");
 
     public static JobError PreviewStale(string unitKey) =>
         new(JobErrorCodes.PreviewStale,
@@ -104,6 +107,18 @@ public static class JobErrors
         new(JobErrorCodes.LimitExceeded,
             "Job would touch " + count + " units, which exceeds the limit of " + limit,
             "narrow the selector or raise the limit in smaller batches; no changes were made");
+
+    public static JobError LargeJobConfirmation(int count, int threshold) =>
+        new(JobErrorCodes.ConfirmationRequired,
+            "This job touches " + count + " units, above the " + threshold +
+            "-unit safety threshold, and was not acknowledged",
+            "review the preview, then call start_job with dryRun=false, the same previewDigest " +
+            "and allowLargeJobs=true to apply it");
+
+    public static JobError AbortedByPolicy(string detail) =>
+        new(JobErrorCodes.AbortedByPolicy,
+            "The job was stopped by onError=abort: " + detail,
+            "inspect get_job_report; fix the failing units and run a fresh preview");
 
     public static JobError SaveFailed(string detail) =>
         new(JobErrorCodes.SaveFailed,
