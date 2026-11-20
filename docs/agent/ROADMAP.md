@@ -73,7 +73,7 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 **Сделано в ночном прогоне 4 (2026-11-20):** job engine целиком — контракт A0/A.1,
 Core-модели A.2, SQLite v5 A.3, pump A.4, save/resume A.5, действия A.6/A.7,
 tool surface A.8 (без eval-кейсов), отчёт/откат/retry/reconciliation B.1–B.3.
-Evidence: unit 3914/3914, `AgentProjectJobTests` 15/15, `AgentFamilyJobTests` 2/2
+Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFamilyJobTests` 2/2
 (100 семейств), storage 7/7; два прохода валидатора `general` — все блокеры закрыты.
 
 **Следующий шаг:** eval-кейсы job (нужна запись с ключом), ручная UI-приёмка Q.1,
