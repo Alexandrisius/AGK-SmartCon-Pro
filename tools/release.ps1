@@ -180,7 +180,21 @@ else {
     Write-Ok "Version.txt updated"
 }
 
-# --- 2. Build All Versions ---
+# --- 2. Build test project (Release.R25) ---
+# Тестовая сборка не входит в buildConfigs (это App-конфигурации), поэтому до этого
+# шага она ни разу не компилировалась в Release — а анализаторы (CA*) включены только
+# в Release.* (Directory.Build.props). Из-за TreatWarningsAsErrors первое же нарушение
+# CA (например CA2201 от new Exception(...)) валило релиз уже после 7-конфигурационной
+# сборки, на шаге тестов. Здесь оно всплывает за ~1.5 мин и до тяжёлой сборки.
+# Тесты при этом не запускаются — только компиляция.
+if (-not $SkipTests) {
+    Write-Step "Building test project (Release.R25, analyzers gate)"
+    dotnet build $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 @dotnetVersionArgs --nologo -v q
+    if ($LASTEXITCODE -ne 0) { Write-Err "Test project build failed!"; throw "Test project build failed!" }
+    Write-Ok "Test project built (Release analyzers clean)"
+}
+
+# --- 3. Build All Versions ---
 # Shipping artifacts:
 # R19  = Revit 2019-2020 (net48, RevitAPI 2020)
 # R21  = Revit 2021-2022 (net48, RevitAPI 2021 baseline, shared binary)
@@ -213,15 +227,15 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "All $($releaseConfigs.Count) configurations built"
 
-# --- 3. Run tests ---
+# --- 4. Run tests ---
 if (-not $SkipTests) {
     Write-Step "Running tests"
-    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 @dotnetVersionArgs --nologo -v q
+    dotnet test $SrcDir\SmartCon.Tests\SmartCon.Tests.csproj -c Release.R25 @dotnetVersionArgs --no-build --nologo -v q
     if ($LASTEXITCODE -ne 0) { Write-Err "Tests failed!"; throw "Tests failed!" }
     Write-Ok "All tests passed"
 }
 
-# --- 4. Publish SmartCon.Updater (once, net8.0) ---
+# --- 5. Publish SmartCon.Updater (once, net8.0) ---
 Write-Step "Publishing SmartCon.Updater (net8.0)"
 $updaterProject = Join-Path $SrcDir "SmartCon.Updater\SmartCon.Updater.csproj"
 $updaterPublishDir = Join-Path $ArtifactsDir "publish\SmartCon.Updater"
@@ -231,7 +245,7 @@ dotnet publish $updaterProject -c Release -f net8.0 @dotnetVersionArgs --nologo 
 if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
 Write-Ok "SmartCon.Updater published"
 
-# --- 5. Publish All SmartCon Versions (parallel per configuration) ---
+# --- 6. Publish All SmartCon Versions (parallel per configuration) ---
 $zipPaths = @()
 $logDir = Join-Path $env:TEMP "smartcon-build"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -325,7 +339,7 @@ foreach ($zp in $zipPaths) {
     Write-Ok "  $(Split-Path $zp -Leaf)"
 }
 
-# --- 6. Build Inno Setup installer ---
+# --- 7. Build Inno Setup installer ---
 $installerName = "SmartCon-$newVersion-setup.exe"
 $installerBuilt = $false
 if (-not $SkipInstaller) {

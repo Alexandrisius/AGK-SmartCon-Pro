@@ -243,7 +243,7 @@ public sealed partial class AgentContextCompactorTests
     [Fact]
     public async Task SummaryPath_SkipsSummarizerAfterThreeFailures()
     {
-        var summarizer = new FakeSummarizer { Failure = new Exception("down") };
+        var summarizer = new FakeSummarizer { Failure = new InvalidOperationException("down") };
         var compactor = new AgentContextCompactor(summarizer);
         var messages = BuildLargeHistory();
 
