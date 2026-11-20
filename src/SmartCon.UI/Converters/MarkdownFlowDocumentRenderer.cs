@@ -203,7 +203,7 @@ public static class MarkdownFlowDocumentRenderer
         var table = new WpfTable
         {
             CellSpacing = 0,
-            Margin = new Thickness(0, 2, 0, 8)
+            Margin = new Thickness(1, 2, 0, 8)
         };
 
         var rows = new List<MdTableRow>();
@@ -223,18 +223,28 @@ public static class MarkdownFlowDocumentRenderer
         var group = new TableRowGroup();
         table.RowGroups.Add(group);
 
-        foreach (var sourceRow in rows)
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
         {
+            var sourceRow = rows[rowIndex];
             var row = new WpfTableRow();
+            var columnIndex = 0;
+
             foreach (var cell in sourceRow)
             {
                 if (cell is not MdTableCell sourceCell)
                     continue;
 
+                var isFirstColumn = columnIndex == 0;
+                var isFirstRow = rowIndex == 0;
+
                 var tableCell = new WpfTableCell
                 {
                     BorderBrush = LineBrush,
-                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    BorderThickness = new Thickness(
+                        isFirstColumn ? 1 : 0,
+                        isFirstRow ? 1 : 0,
+                        1,
+                        1),
                     Padding = new Thickness(5, 3, 5, 3)
                 };
 
@@ -246,6 +256,7 @@ public static class MarkdownFlowDocumentRenderer
                 }
 
                 row.Cells.Add(tableCell);
+                columnIndex++;
             }
 
             group.Rows.Add(row);
