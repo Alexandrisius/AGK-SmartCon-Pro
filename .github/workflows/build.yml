@@ -30,23 +30,41 @@ jobs:
               - '.editorconfig'
               - '*.sln'
 
+  # Единственный переключатель версий — SmartConEnableRevit2027 в src/Directory.Build.props.
+  # Матрица сборки строится из него: R27 появляется/исчезает автоматически.
+  configs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.configs.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: configs
+        shell: pwsh
+        run: |
+          $props = Get-Content src/Directory.Build.props -Raw
+          $r27 = $props -match '<SmartConEnableRevit2027(?:\s[^>]*)?>\s*true\s*</SmartConEnableRevit2027>'
+          $list = @('Release.R19','Release.R21','Release.R23','Release.R24','Release.R25','Release.R26')
+          if ($r27) { $list += 'Release.R27' }
+          "matrix=$($list | ConvertTo-Json -Compress)" >> $env:GITHUB_OUTPUT
+          Write-Host "configurations: $($list -join ', ')"
+
   build:
-    needs: changes
+    needs: [changes, configs]
     if: needs.changes.outputs.src == 'true'
     runs-on: windows-latest
     strategy:
       matrix:
-        configuration: [Release.R19, Release.R21, Release.R23, Release.R24, Release.R25, Release.R26, Release.R27]
+        configuration: ${{ fromJson(needs.configs.outputs.matrix) }}
       fail-fast: false
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
         with:
-          # global.json: бэнд 10.0.1xx, rollForward latestPatch (Revit 2027 = net10); SDK 10 собирает
-          # все TFM (net48/net8/net10), 8.0.x оставлен как страховка runtime
+          # global.json: SDK 8.0.4xx (Revit 2027/net10 временно выключен — SmartConEnableRevit2027=false)
           dotnet-version: |
             8.0.x
-            10.0.x
 
       - uses: actions/cache@v5
         with:
@@ -102,16 +120,15 @@ jobs:
       # Compile-only: интеграционные тесты выполняются внутри реального Revit
       # (Nice3point.TUnit.Revit), на GitHub-hosted runner его нет — только
       # проверяем компиляцию, прогон локальный (см. smartcon-testing skill).
-      # R25 (net8) + R27 (net10) + R21 (net48): polyfill/STJ-риски на net48,
-      # TUnit-overload-риски (CS0121, #5765) — на net10.
+      # R25 (net8) + R21 (net48): polyfill/STJ-риски на net48.
+      # net10 (R27) покрытие возвращается вместе с флагом SmartConEnableRevit2027.
       - name: Build Integration Tests R25 (compile-only, no Revit on runner)
         run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R25
 
-      - name: Build Integration Tests R27 (compile-only, no Revit on runner)
-        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R27
-
+      # net48-легия: суть прогона — платформа net48, а не конкретный год Revit,
+      # поэтому API берём 2023 (GroupTypeId/ForgeTypeId есть; API 2021 их не имеет).
       - name: Build Integration Tests R21 (compile-only, no Revit on runner)
-        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R21
+        run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R21 -p:RevitVersion=2023
 
       - name: Build Integration Tests R23 (compile-only, no Revit on runner)
         run: dotnet build src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csproj -c Release.R23

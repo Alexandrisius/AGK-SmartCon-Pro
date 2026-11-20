@@ -9,6 +9,19 @@
   </PropertyGroup>
 
   <!-- ============================================================ -->
+  <!-- Revit 2027 (net10) — ЕДИНСТВЕННЫЙ переключатель версии       -->
+  <!-- ============================================================ -->
+  <!-- Revit 2027 требует net10.0-windows, а значит SDK 10. На этой машине любая сборка
+       SDK 10 идёт в 10-20 раз медленнее SDK 8 (dotnet/roslyn#81704: в компиляторе SDK 10
+       выключен tiered compilation; фикс есть в 10.0.300+, но и на 10.0.404 холодная
+       сборка графа = 98-115 с против 6-19 с у SDK 8). Поэтому R27 временно выключен,
+       а global.json закреплён на SDK 8.0.4xx.
+       ВЕРНУТЬ R27: true здесь + вернуть в global.json полосу 10.0.4xx. Больше ничего. -->
+  <PropertyGroup>
+    <SmartConEnableRevit2027 Condition="'$(SmartConEnableRevit2027)' == ''">false</SmartConEnableRevit2027>
+  </PropertyGroup>
+
+  <!-- ============================================================ -->
   <!-- ШАГ 1: Парсим RevitVersion из имени конфигурации (.R21 → 2021) -->
   <!-- ДОЛЖНО идти ПЕРЕД TargetFrameworks, иначе $(RevitVersion) пуст -->
   <!-- ============================================================ -->
@@ -33,7 +46,7 @@
   <PropertyGroup Condition="$(Configuration.EndsWith('.R26'))">
     <RevitVersion>2026</RevitVersion>
   </PropertyGroup>
-  <PropertyGroup Condition="$(Configuration.EndsWith('.R27'))">
+  <PropertyGroup Condition="$(Configuration.EndsWith('.R27')) And '$(SmartConEnableRevit2027)' == 'true'">
     <RevitVersion>2027</RevitVersion>
   </PropertyGroup>
 
@@ -74,8 +87,9 @@
 
     <!-- Именованные Build Configurations (паттерн Nice3point) -->
     <Configurations>Debug;Release</Configurations>
-    <Configurations>$(Configurations);Debug.R19;Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25;Debug.R26;Debug.R27</Configurations>
-    <Configurations>$(Configurations);Release.R19;Release.R21;Release.R22;Release.R23;Release.R24;Release.R25;Release.R26;Release.R27</Configurations>
+    <Configurations>$(Configurations);Debug.R19;Debug.R21;Debug.R22;Debug.R23;Debug.R24;Debug.R25;Debug.R26</Configurations>
+    <Configurations>$(Configurations);Release.R19;Release.R21;Release.R22;Release.R23;Release.R24;Release.R25;Release.R26</Configurations>
+    <Configurations Condition="'$(SmartConEnableRevit2027)' == 'true'">$(Configurations);Debug.R27;Release.R27</Configurations>
 
     <Company>AGK</Company>
     <Product>SmartCon</Product>

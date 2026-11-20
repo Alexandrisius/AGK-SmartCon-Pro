@@ -1,4 +1,12 @@
 <Project>
+  <!-- Fail fast: -c Debug.R27 при выключенном Revit 2027 (см. SmartConEnableRevit2027
+       в Directory.Build.props). Без этого конфигурация молча собралась бы как
+       net48;net8.0-windows с чужим RevitAPI вместо net10. -->
+  <Target Name="_SmartConRevit2027Guard" BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' != '' And $(Configuration.EndsWith('.R27')) And '$(SmartConEnableRevit2027)' != 'true'">
+    <Error Text="Конфигурация $(Configuration) недоступна: Revit 2027 (net10) временно выключен — SmartConEnableRevit2027=false в src/Directory.Build.props. Чтобы вернуть: флаг в true + global.json на полосу SDK 10.0.4xx." />
+  </Target>
+
   <!-- ============================================================ -->
   <!-- Символы условной компиляции                                   -->
   <!-- ============================================================ -->

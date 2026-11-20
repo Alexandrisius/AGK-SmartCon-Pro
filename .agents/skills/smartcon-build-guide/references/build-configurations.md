@@ -67,10 +67,7 @@ build-and-deploy.bat
 **Правильный способ — restore + build в ОДНОЙ команде (без `--no-restore`):**
 
 ```bash
-# 1. Сначала net10.0-windows (Revit 2027)
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
-
-# 2. Затем net8.0-windows (Revit 2026)
+# 1. net8.0-windows (Revit 2026)
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 
 # 3. Затем net8.0-windows (Revit 2025)
@@ -103,10 +100,11 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
    одну и ту же — нельзя
 3. **При переходе между разными TFM (net8 ↔ net48 ↔ net10) — ВСЕГДА используй `dotnet build`
    без `--no-restore`** (implicit restore в per-config `obj\<Configuration>\project.assets.json`)
-4. **`global.json` — пол 10.0.100, rollForward latestPatch (ТОЛЬКО бэнд 10.0.1xx; 2xx не поддерживается —
-   консервативная политика из-за отдельных подтверждённых регрессий 2xx: dotnet/wpf#11678, dotnet/sdk#53508)**
-   — ВСЕ конфигурации (включая net48) собираются под SDK 10. SDK 8 для сборки больше не нужен, но .NET 8
-   RUNTIME требуется для запуска юнит-тестов (`SmartCon.Tests` = net8.0-windows).
+4. **`global.json` пинит .NET SDK 8.0.4xx (`rollForward: latestFeature`)** — причина: любая сборка
+   SDK 10 этого решения в 10–20 раз медленнее (dotnet/roslyn#81704: в компиляторе SDK 10 выключен
+   tiered compilation; фикс 10.0.300+ скорость не возвращает — 148 с против 5–19 с холодной R25).
+   Revit 2027 / net10 выключен флагом `SmartConEnableRevit2027=false` (`src/Directory.Build.props`):
+   `-c Debug.R27` падает с явной ошибкой. Вернуть: флаг в true + global.json на полосу 10.0.4xx.
    BG1002 (*.baml not found) — гонка CLI-сборки с фоновыми design-time сборками VS Code
    (Roslyn LanguageServer) за общий obj/ (dotnet/wpf#4299), НЕ связана с бэндом SDK:
    повторить сборку; при залипании — закрыть VS Code, `git clean -xfd src`, пересобрать (#281).

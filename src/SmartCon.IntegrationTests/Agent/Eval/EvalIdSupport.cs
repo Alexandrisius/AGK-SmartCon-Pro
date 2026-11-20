@@ -222,5 +222,5 @@ internal static class EvalIdSupport
     }
 
     private static Element? At(IReadOnlyList<Element> elements, int index) =>
-        index >= 0 && index < elements.Count ? elements[index] : elements.FirstOrDefault();
+        index >= 0 && index < elements.Count ? elements[index] : (elements.Count > 0 ? elements[0] : null);
 }

@@ -70,7 +70,8 @@ internal static partial class AgentFilterRuleBuilder
         error = null;
 
         var rawUnit = string.Equals(unit?.Trim(), "raw", StringComparison.OrdinalIgnoreCase);
-        if (!rawUnit && !TryParseNumber(valueText, out _))
+        var parsedNumber = 0.0;
+        if (!rawUnit && !TryParseNumber(valueText, out parsedNumber))
         {
             error = "Parameter is numeric; '" + valueText + "' is not a number.";
             return false;
@@ -109,8 +110,7 @@ internal static partial class AgentFilterRuleBuilder
                 return false;
             }
 
-            TryParseNumber(valueText, out var explicitNumber);
-            internalValue = UnitUtils.ConvertToInternalUnits(explicitNumber, explicitUnit);
+            internalValue = UnitUtils.ConvertToInternalUnits(parsedNumber, explicitUnit);
             return true;
         }
 
@@ -132,7 +132,7 @@ internal static partial class AgentFilterRuleBuilder
             }
         }
 
-        TryParseNumber(valueText, out var number);
+        var number = parsedNumber;
         if (measurable)
         {
             var projectUnit = doc.GetUnits().GetFormatOptions(dataType!).GetUnitTypeId();

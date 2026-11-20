@@ -72,6 +72,7 @@ if exist "%ADDIN_R26%" (
 
 set "ADDIN_R27=%APPDATA%\Autodesk\Revit\Addins\2027"
 set "DLL_R27=%APPDATA%\SmartCon\2027"
+if exist "src\SmartCon.App\bin\Debug.R27\net10.0-windows\win-x64\SmartCon.App.dll" (
 if exist "%ADDIN_R27%\SmartCon\SmartCon.App.dll" ( rd /s /q "%ADDIN_R27%\SmartCon" 2>nul )
 if not exist "%DLL_R27%" mkdir "%DLL_R27%"
 copy /Y "src\SmartCon.App\bin\Debug.R27\net10.0-windows\win-x64\*.dll" "%DLL_R27%\" >nul
@@ -81,6 +82,9 @@ if exist "%ADDIN_R27%" (
     echo [OK] Revit 2027
 ) else (
     echo [SKIP] Revit 2027 not installed
+)
+) else (
+    echo [SKIP] Revit 2027 disabled ^(SmartConEnableRevit2027=false^)
 )
 
 echo.

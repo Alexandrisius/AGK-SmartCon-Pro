@@ -22,10 +22,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          # global.json: бэнд 10.0.1xx, rollForward latestPatch (Revit 2027 = net10)
+          # global.json: SDK 8.0.4xx (Revit 2027/net10 временно выключен)
           dotnet-version: |
             8.0.x
-            10.0.x
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.37.7

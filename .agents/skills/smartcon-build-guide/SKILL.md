@@ -15,7 +15,7 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 
 | Config | Revit | TFM | Command |
 |---|---|---|---|
-| `Debug.R27` | 2027 | net10.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27` |
+| `Debug.R27` | 2027 | net10.0-windows | **ВЫКЛЮЧЕН** (`SmartConEnableRevit2027=false`) — `-c Debug.R27` падает с ошибкой |
 | `Debug.R26` | 2026 | net8.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26` |
 | `Debug.R25` | 2025 | net8.0-windows | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25` |
 | `Debug.R24` | 2024 | net48 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24` |
@@ -34,10 +34,11 @@ src/SmartCon.<Module>/SmartCon.<Module>.csproj -c Debug.R25 -f net8.0-windows` �
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`
 (used by `build-and-deploy.bat`; per-config logs in `%TEMP%\smartcon-build`)
 
-**SDK:** `global.json` — floor 10.0.100, rollForward latestPatch (**10.0.1xx band ONLY**;
-the 10.0.2xx band has WPF build regressions — see errorMessage in global.json) — ALL
-configurations (including net48) build under SDK 10.
-The .NET 8 RUNTIME is still required to run unit tests.
+**SDK:** `global.json` pins **.NET SDK 8.0.4xx** (`rollForward: latestFeature`). Reason: every
+SDK 10 build of this solution is 10-20x slower (dotnet/roslyn#81704 — tiered compilation is
+disabled in the SDK 10 compiler; the 10.0.300+ fix does not restore the speed: 148 s vs 5-19 s
+cold). Revit 2027 / net10 is disabled by `SmartConEnableRevit2027=false` in
+`src/Directory.Build.props`; restoring it requires SDK 10.0.4xx + that flag = true.
 
 ## Build vs Deploy
 
@@ -46,7 +47,6 @@ Build individual configurations for quick testing during development. Does NOT d
 Fastest full check — all 6 in parallel, no deploy:
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`
 ```bash
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
@@ -67,7 +67,6 @@ build-and-deploy.bat
 When making changes that affect compilation (new APIs, #if directives, project files):
 ```bash
 # Build ALL 6 shipping configurations (for verification, NOT deploy)
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24
@@ -115,7 +114,6 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R21 --no-restore
 #                            ^^^^^^^^^^^^^^^^^^^^^^ NEVER do this
 
 # CORRECT — restore is part of every build; per-config assets stay isolated
-dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R27
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R26
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R25
 dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24

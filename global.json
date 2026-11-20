@@ -1,8 +1,8 @@
 {
   "sdk": {
-    "version": "10.0.100",
-    "rollForward": "latestPatch",
+    "version": "8.0.400",
+    "rollForward": "latestFeature",
     "allowPrerelease": false,
-    "errorMessage": "SmartCon requires a .NET 10 SDK from the 10.0.1xx feature band (10.0.100 or a later 1xx patch). The 10.0.2xx band has confirmed WPF build regressions (dotnet/wpf#11678, dotnet/sdk#53508) and is not supported. Install the latest 10.0.1xx SDK from https://dotnet.microsoft.com/download/dotnet/10.0 — newer bands may remain installed side-by-side."
+    "errorMessage": "SmartCon is pinned to the .NET 8 SDK (8.0.4xx). Reason: every .NET 10 SDK build of this solution is 10-20x slower (dotnet/roslyn#81704 — tiered compilation is disabled in the SDK 10 compiler, and the 10.0.300+ fix does not restore the speed: 98-115 s cold vs 6-19 s on SDK 8). Revit 2027 (net10) is disabled via SmartConEnableRevit2027=false in src/Directory.Build.props. To bring Revit 2027 back: install the 10.0.4xx SDK, flip that flag to true and pin this file back to the 10.0.4xx band. Install .NET 8 SDK from https://dotnet.microsoft.com/download/dotnet/8.0"
   }
 }

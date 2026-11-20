@@ -203,16 +203,25 @@ if (-not $SkipTests) {
 # R25  = Revit 2025      (net8.0-windows, RevitAPI 2025)
 # R26  = Revit 2026      (net8.0-windows, RevitAPI 2026 — Conductor* wire model, #233;
 #                         R25-бинарник на 2026 НЕ работает: wire-свойства WireType сменили типы)
-# R27  = Revit 2027      (net10.0-windows — Revit 2027 перешёл на .NET 10, SDK 10 из global.json)
-$buildConfigs = @(
-    @{ Config = "Release.R19"; Tfm = "net48";            Label = "Revit 2019-2020" }
-    @{ Config = "Release.R21"; Tfm = "net48";            Label = "Revit 2021-2022" }
-    @{ Config = "Release.R23"; Tfm = "net48";            Label = "Revit 2023" }
-    @{ Config = "Release.R24"; Tfm = "net48";            Label = "Revit 2024" }
-    @{ Config = "Release.R25"; Tfm = "net8.0-windows";   Label = "Revit 2025" }
-    @{ Config = "Release.R26"; Tfm = "net8.0-windows";   Label = "Revit 2026" }
-    @{ Config = "Release.R27"; Tfm = "net10.0-windows";  Label = "Revit 2027" }
-)
+# R27  = Revit 2027      — включается ЕДИНСТВЕННЫМ флагом SmartConEnableRevit2027
+#                         (src\Directory.Build.props). Требует установленный SDK 10.0.4xx:
+#                         R27-сборка запускается из tools\sdk10, остальные — на пиннутом SDK 8.
+. (Join-Path $PSScriptRoot 'configs.ps1')
+$configTable = [ordered]@{
+    'R19' = @{ Tfm = 'net48';           Label = 'Revit 2019-2020' }
+    'R21' = @{ Tfm = 'net48';           Label = 'Revit 2021-2022' }
+    'R23' = @{ Tfm = 'net48';           Label = 'Revit 2023' }
+    'R24' = @{ Tfm = 'net48';           Label = 'Revit 2024' }
+    'R25' = @{ Tfm = 'net8.0-windows';  Label = 'Revit 2025' }
+    'R26' = @{ Tfm = 'net8.0-windows';  Label = 'Revit 2026' }
+    'R27' = @{ Tfm = 'net10.0-windows'; Label = 'Revit 2027' }
+}
+$buildConfigs = @()
+foreach ($cfg in Get-SmartConConfigs -Kind Release) {
+    $row = $configTable[$cfg.Split('.')[-1]]
+    $buildConfigs += @{ Config = $cfg; Tfm = $row.Tfm; Label = $row.Label }
+}
+Write-Verbose ("Release configurations: {0}" -f (($buildConfigs | ForEach-Object { $_.Config }) -join ', '))
 
 # Параллельная сборка (тот же движок, что у build-and-deploy.bat). Последовательный
 # прогон 7 x cold Release занимал ~30 минут; параллельный делает ту же работу за 6-8.
@@ -308,6 +317,8 @@ foreach ($bc in $buildConfigs) {
     $log = Join-Path $logDir ("publish.{0}.log" -f $tag)
     Remove-Item $log -ErrorAction SilentlyContinue
     $isNet48 = $tag -in @("R19", "R21", "R23", "R24")
+    # R27 (net10) publishes from tools\sdk10 (SDK 10); all others from the repo root (SDK 8).
+    $workDir = Get-SmartConBuildWorkingDir -Config $bc.Config -Root $RootDir
 
     $publishJobs += [pscustomobject]@{
         Tag = $tag
@@ -315,7 +326,7 @@ foreach ($bc in $buildConfigs) {
         Log = $log
         Job = Start-Job -ScriptBlock $publishScript -ArgumentList `
             $dotnetExe, $appProject, $bc.Config, $bc.Tfm, $publishDir, $zipPath, $dotnetVersionArgs, `
-            $updaterPublishDir, $isNet48, $mergedListPath, $RootDir, $log
+            $updaterPublishDir, $isNet48, $mergedListPath, $workDir, $log
     }
     Write-Host ("[PUBLISH] {0} started (log: {1})" -f $tag, $log) -ForegroundColor Cyan
 }

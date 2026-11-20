@@ -1,21 +1,23 @@
 #Requires -Version 5.1
 <#
-    SmartCon - parallel build of all 7 shipping configurations.
+    SmartCon - parallel build of all shipping configurations.
 
     Safe because every configuration now has isolated obj/bin and its own
     obj\<Configuration>\project.assets.json (per-config NuGet graph, see
     src\Directory.Build.props). Switching -c no longer rewrites another
-    configuration's project.assets.json, so the six builds cannot invalidate
+    configuration's project.assets.json, so the builds cannot invalidate
     each other.
 
     Usage:
         powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1
         powershell ... -ThrottleLimit 3       # limit concurrency
-        powershell ... -Configurations Debug.R25,Debug.R27
+        powershell ... -Configurations Debug.R25,Debug.R26
 #>
 [CmdletBinding()]
 param(
-    [string[]]$Configurations = @('Debug.R25', 'Debug.R26', 'Debug.R27', 'Debug.R24', 'Debug.R23', 'Debug.R21', 'Debug.R19'),
+    # Default: every enabled configuration (tools\configs.ps1). R27 appears only when
+    # SmartConEnableRevit2027=true in src\Directory.Build.props — that flag is the single switch.
+    [string[]]$Configurations,
     [int]$ThrottleLimit = 6,
     # Extra dotnet build args (e.g. -p:Version=... passed by release.ps1).
     [string[]]$AdditionalArgs = @(),
@@ -24,12 +26,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'configs.ps1')
+
 # `powershell -File script.ps1 -Configurations A,B,C` arrives as ONE string, not an array.
 if ($Configurations.Count -eq 1 -and $Configurations[0] -like '*,*') {
     $Configurations = @($Configurations[0] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 $root = Split-Path -Parent $PSScriptRoot
+if (-not $Configurations -or $Configurations.Count -eq 0) {
+    $Configurations = @(Get-SmartConConfigs -Kind Debug -Root $root)
+    Write-Host ("[INFO] Configurations from SmartConEnableRevit2027: {0}" -f ($Configurations -join ', ')) -ForegroundColor DarkGray
+}
 $project = if ($Project) { $Project } else { Join-Path $root 'src\SmartCon.App\SmartCon.App.csproj' }
 if (-not (Test-Path $project)) {
     Write-Host "[ERROR] Project not found: $project" -ForegroundColor Red
@@ -52,10 +60,13 @@ function Start-ConfigBuild([string]$config) {
     $log = Join-Path $logDir ("{0}.log" -f $config)
     Remove-Item $log -ErrorAction SilentlyContinue
 
-    $job = Start-Job -ScriptBlock {
-        param($dotnet, $project, $config, $log, $root, $extraArgs)
+    # R27 (net10) builds from tools\sdk10 so it resolves SDK 10; everything else from the repo root.
+    $workDir = Get-SmartConBuildWorkingDir -Config $config -Root $root
 
-        Set-Location $root
+    $job = Start-Job -ScriptBlock {
+        param($dotnet, $project, $config, $log, $workDir, $extraArgs)
+
+        Set-Location $workDir
         $OutputEncoding = [System.Text.Encoding]::UTF8
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -68,7 +79,7 @@ function Start-ConfigBuild([string]$config) {
             ExitCode = $code
             Seconds  = [math]::Round($watch.Elapsed.TotalSeconds)
         }
-    } -ArgumentList $dotnet, $project, $config, $log, $root, $AdditionalArgs
+    } -ArgumentList $dotnet, $project, $config, $log, $workDir, $AdditionalArgs
 
     Write-Host ("[BUILD] {0} started (log: {1})" -f $config, $log) -ForegroundColor Cyan
     [pscustomobject]@{

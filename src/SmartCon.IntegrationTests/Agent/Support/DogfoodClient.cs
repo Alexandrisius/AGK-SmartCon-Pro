@@ -82,7 +82,7 @@ internal static class DogfoodClient
 
         using (response)
         {
-            var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return new DogfoodResponse

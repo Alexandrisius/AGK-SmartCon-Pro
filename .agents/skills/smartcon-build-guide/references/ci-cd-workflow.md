@@ -4,8 +4,8 @@
 
 | Файл | Триггер | Что делает |
 |---|---|---|
-| `build.yml` | push в main, PR, tags `v*` | Smart CI: если `src/**` не менялся — skip за 30 сек, иначе полная сборка матрицы `Release.R19..Release.R27` (6 конфигураций) + тесты (юнит `Release.R25` + compile-only `SmartCon.IntegrationTests` R25/R27/R21). `setup-dotnet`: 8.0.x + 10.0.x (SDK 10 из `global.json`, runtime 8 для юнит-тестов) |
-| `codeql.yml` | push в main, еженедельно | Security scanning (C#). НЕ запускается на PR — информационный, не блокирует merge. `setup-dotnet`: 8 + 10 |
+| `build.yml` | push в main, PR, tags `v*` | Smart CI: если `src/**` не менялся — skip за 30 сек, иначе полная сборка матрицы `Release.R19..Release.R26` (6 конфигураций, R27 выключен) + тесты (юнит `Release.R25` + compile-only `SmartCon.IntegrationTests` R25/R21). `setup-dotnet`: 8.0.x (`global.json` пинит SDK 8.0.4xx) |
+| `codeql.yml` | push в main, еженедельно | Security scanning (C#). НЕ запускается на PR — информационный, не блокирует merge. `setup-dotnet`: 8.0.x |
 | `stale.yml` | ежедневно | Закрывает issues/PR без активности 30+ дней |
 
 ## Branch Protection на main
