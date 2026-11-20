@@ -22,7 +22,8 @@ public sealed class ListViewsTool : AgentReadToolBase
         Description =
             "Lists project views (not sheets and not view templates by default). totalAll/totalTemplates are always reported next to total, so includeTemplates does not change the inventory silently. " +
             "Filters: view types (FloorPlan, CeilingPlan, Section, ThreeD, Elevation, " +
-            "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring, " +
+            "DraftingView, Legend, AreaPlan, StructuralPlan, Detail, Schedule — " +
+            "specifications; any ViewType name is accepted), level ids, name substring, " +
             "browser folder path substring. Returns view id, name, type, level, template, " +
             "sheet number, browserFolder (path), browserFolderPath (segments), " +
             "browserFolderParameters (grouping parameter per segment: name/shared/built-in) " +

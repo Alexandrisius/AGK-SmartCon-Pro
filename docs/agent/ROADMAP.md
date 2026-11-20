@@ -95,7 +95,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций; G.5 поднят до P0 — без него не собрать альбом. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
-| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; ES-only отклонён, принят гибрид ES + SQLite/FTS. |
+| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 6 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 5 | P.1 (cache-лог) желателен; H4.5 (метрики хода/сессии в чате) в работе. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
@@ -256,13 +256,13 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `E.2` | Persisted grants по scope | P2 | `backlog` | #328 |
 | `E.3` | Job-рецепты и eval | P2 | `backlog` | #329 |
 
-### H2 — Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES
+### H2 — Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db
 
 Эпик: #300 · приоритет `P1` · статус `backlog`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `H2.6` | Project memory в ES + SQLite/FTS-кэш | P1 | `ready` | #411 |
+| `H2.6` | Project memory в agent.db (SQLite/FTS5), без записи в модель | P1 | `backlog` | #411 |
 | `H2.1` | Memory v1: файлы и MEMORY.md | P2 | `backlog` | #365 |
 | `H2.2` | FTS5-поиск по памяти | P2 | `backlog` | #366 |
 | `H2.3` | Skills v1: 10–20 навыков и routing | P2 | `backlog` | #367 |
