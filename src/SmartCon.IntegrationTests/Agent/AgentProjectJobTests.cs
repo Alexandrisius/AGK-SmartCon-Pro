@@ -421,6 +421,35 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
         await Assert.That(report!.Saved).IsTrue();
     }
 
+    [Test]
+    public async Task Job_SliceLatency_StaysUnderTwoSeconds()
+    {
+        var job = PrepareApplyJob(JobSavePolicy.Never, batchSize: 50);
+        var durations = new List<double>();
+
+        for (var index = 0; index < 60; index++)
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var slice = Runner.RunSlice(Doc, TimeSpan.FromMilliseconds(200));
+            durations.Add(
+                (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 /
+                System.Diagnostics.Stopwatch.Frequency);
+
+            if (!slice.HasMoreWork)
+            {
+                break;
+            }
+        }
+
+        durations.Sort();
+        var p95 = durations[Math.Max(0, (int)Math.Ceiling(durations.Count * 0.95) - 1)];
+
+        var record = await Store.GetAsync(job.JobId, CancellationToken.None);
+        await Assert.That(record!.State).IsEqualTo(JobState.Completed);
+        await Assert.That(durations.Count).IsGreaterThan(0);
+        await Assert.That(p95).IsLessThan(2000.0);
+    }
+
     private JobRecord PrepareApplyJob(JobSavePolicy policy, int batchSize)
     {
         var options = Options(policy, batchSize);
