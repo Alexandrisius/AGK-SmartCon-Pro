@@ -17,8 +17,6 @@ public sealed partial class JobRunner
         JobActionContext context,
         IReadOnlyList<JobItem> items)
     {
-        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "ApplyBatch"));
-
         var fromSeq = items[0].Seq;
         var toSeq = items[items.Count - 1].Seq;
         var batchIndex = Sync(_store.BeginBatchAsync(job.JobId, fromSeq, toSeq, CancellationToken.None));
@@ -165,10 +163,11 @@ public sealed partial class JobRunner
                     var status = scope.Commit();
                     if (status != TransactionStatus.Committed)
                     {
-                        SmartConLogger.Warn(
+                        JobLog.Warn("ApplyBatch",
                             "Batch " + batchIndex + " of job " + job.JobId.ToString("D") +
                             " was rolled back by Revit (status " + status + ") " +
                             "[Action: none of the units in the batch were applied; inspect the failures and retry]");
+                        MarkApplyingAsFailed(job, plans);
                         return new ApplyBatchOutcome
                         {
                             Changed = false,
@@ -185,7 +184,7 @@ public sealed partial class JobRunner
         catch (Exception ex)
         {
             scope?.RollBack();
-            SmartConLogger.Error(
+            JobLog.Error("ApplyBatch",
                 "Batch " + batchIndex + " apply failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: none of the units in the batch were applied; run get_job_report]");
             MarkApplyingAsFailed(job, plans);

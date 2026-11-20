@@ -15,40 +15,9 @@ public sealed partial class JobRunner
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: true);
         var batchSize = EffectiveBatchSize(job, action);
+        var singleBatchPerSlice = action.Scope is JobActionScope.FamilyDefinition or JobActionScope.RfaFile;
         var processed = 0;
         var cursor = 0;
-
-        if (job.CancelRequested)
-        {
-            var cancelled = Sync(_store.TransitionAsync(
-                job.JobId,
-                JobState.PreviewRunning,
-                JobState.Cancelled,
-                JobErrorCodes.CancelledByUser,
-                JobErrors.Cancelled().ToMessage(),
-                CancellationToken.None));
-
-            if (cancelled is null)
-            {
-                Sync(_store.MarkFinishedAsync(
-                    job.JobId,
-                    JobState.Cancelled,
-                    JobErrorCodes.CancelledByUser,
-                    JobErrors.Cancelled().ToMessage(),
-                    CancellationToken.None));
-                Sync(_store.AppendEventAsync(
-                    job.JobId, JobEventTypes.Cancelled, null, CancellationToken.None));
-            }
-
-            _wantsPump = false;
-            return new JobSliceResult
-            {
-                JobId = job.JobId,
-                State = JobState.Cancelled,
-                HasMoreWork = false,
-                ProcessedThisSlice = processed
-            };
-        }
 
         while (true)
         {
@@ -120,7 +89,7 @@ public sealed partial class JobRunner
                 Sync(_store.UpdateItemsAsync(job.JobId, updates, CancellationToken.None));
             }
 
-            if (IsOverBudget(started, budget))
+            if (IsOverBudget(started, budget) || singleBatchPerSlice)
             {
                 break;
             }
@@ -188,6 +157,7 @@ public sealed partial class JobRunner
         var action = _actions[job.Spec.Action];
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
         var batchSize = EffectiveBatchSize(job, action);
+        var singleBatchPerSlice = action.Scope is JobActionScope.FamilyDefinition or JobActionScope.RfaFile;
         var processed = 0;
         var lastSeq = 0;
         var changedAny = false;
@@ -256,7 +226,7 @@ public sealed partial class JobRunner
                 };
             }
 
-            if (IsOverBudget(started, budget))
+            if (IsOverBudget(started, budget) || singleBatchPerSlice)
             {
                 break;
             }
@@ -335,7 +305,7 @@ public sealed partial class JobRunner
             return new JobSliceResult { JobId = job.JobId, State = JobState.Cancelled, HasMoreWork = false };
         }
 
-        var outcome = RunUndoBatches(job, document, budget, started, onlyUndoing: false);
+        var outcome = RunUndoBatches(job, document, budget, started, singleBatchPerSlice: true);
         if (outcome.HasMoreWork)
         {
             return new JobSliceResult
@@ -347,7 +317,9 @@ public sealed partial class JobRunner
             };
         }
 
-        var target = outcome.UndoFailed > 0 ? JobState.RollbackPartial : JobState.RolledBack;
+        var target = outcome.UndoFailed > 0 || outcome.SaveError is not null
+            ? JobState.RollbackPartial
+            : JobState.RolledBack;
         var transition = Sync(_store.TransitionAsync(
             job.JobId,
             JobState.Cancelling,

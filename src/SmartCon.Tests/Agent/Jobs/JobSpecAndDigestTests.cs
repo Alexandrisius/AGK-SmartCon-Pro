@@ -295,13 +295,18 @@ public sealed class JobPreviewDigestTests
             Item(JobItemState.Mismatch),
             Item(JobItemState.Pending),
             Item(JobItemState.Undone),
-            Item(JobItemState.UndoFailed)
+            Item(JobItemState.UndoFailed),
+            Item(JobItemState.Undoing),
+            Item(JobItemState.Applying)
         };
 
         var totals = JobTotals.FromItems(items);
 
-        Assert.Equal(8, totals.Total);
+        Assert.Equal(10, totals.Total);
         Assert.Equal(2, totals.Done);
+        // Pending/Applying/Undoing/Undone are all "not finished": a job with any of
+        // them must never be reported as Completed.
+        Assert.Equal(4, totals.Incomplete);
         Assert.Equal(1, totals.Skipped);
         Assert.Equal(1, totals.Failed);
         Assert.Equal(1, totals.Mismatch);

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using SmartCon.Core.Logging;
@@ -189,12 +189,9 @@ LIMIT @limit;";
     {
         ct.ThrowIfCancellationRequested();
 
-        if (expectedFrom != to)
-        {
-            var validation = JobStateMachine.Validate(expectedFrom, to);
-            if (validation is not null)
-                return Task.FromResult<JobError?>(validation);
-        }
+        var validation = JobStateMachine.Validate(expectedFrom, to);
+        if (validation is not null)
+            return Task.FromResult<JobError?>(validation);
 
         var now = DateTime.UtcNow;
         lock (_database.WriteLock)
@@ -421,6 +418,9 @@ WHERE id = @id;";
             using var connection = _database.CreateConnection();
             connection.Open();
             using var command = connection.CreateCommand();
+            // Terminal states are final: the write is allowed when the row already
+            // holds the target state (finalizing a transition) or when the row is
+            // still non-terminal; a racing slice can never rewrite another terminal.
             command.CommandText = @"
 UPDATE jobs SET
     state = @state,
@@ -428,7 +428,7 @@ UPDATE jobs SET
     error_detail = @errorDetail,
     finished_at = @finishedAt,
     updated_at = @finishedAt
-WHERE id = @id;";
+WHERE id = @id AND (state = @state OR state NOT IN (4, 5, 6, 8, 10, 11));";
             command.Parameters.AddWithValue("@state", (int)finalState);
             command.Parameters.AddWithValue("@errorCode", (object?)errorCode ?? DBNull.Value);
             command.Parameters.AddWithValue("@errorDetail", (object?)errorDetail ?? DBNull.Value);

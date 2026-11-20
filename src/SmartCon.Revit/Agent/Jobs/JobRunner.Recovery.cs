@@ -97,7 +97,7 @@ public sealed partial class JobRunner
             "{\"kept\":" + kept + ",\"redone\":" + redone + "}",
             CancellationToken.None));
 
-        SmartConLogger.Info(
+        JobLog.Info("ReconcilePendingItems",
             "Reconciled job " + job.JobId.ToString("D") + ": kept=" + kept + ", redo=" + redone +
             ", durableCursor=" + job.LastSavedCursor);
 
@@ -107,8 +107,6 @@ public sealed partial class JobRunner
     /// <summary>Explicit rollback of an applied job (B.2).</summary>
     public JobRollbackResult Rollback(Document document, Guid jobId, bool dryRun)
     {
-        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "Rollback"));
-
         var job = Sync(_store.GetAsync(jobId, CancellationToken.None));
         if (job is null)
         {
@@ -199,7 +197,7 @@ public sealed partial class JobRunner
                 }
                 catch (Exception ex)
                 {
-                    SmartConLogger.Warn(
+                    JobLog.Warn("Rollback",
                         "Undo dry run failed for unit " + item.UnitKey + ": " +
                         ex.GetType().Name + ": " + ex.Message +
                         " [Action: fix the cause, then run rollback_job without dryRun]");
@@ -226,7 +224,7 @@ public sealed partial class JobRunner
             document,
             TimeSpan.FromSeconds(45),
             Stopwatch.GetTimestamp(),
-            onlyUndoing: false);
+            singleBatchPerSlice: false);
 
         if (outcome.HasMoreWork)
         {
@@ -420,227 +418,10 @@ public sealed partial class JobRunner
         };
     }
 
-    /// <summary>
-    /// Undo loop shared by cancel-with-rollback and explicit rollback. Processes
-    /// units in slices; each batch is one transaction for project actions.
-    /// </summary>
-    private UndoOutcome RunUndoBatches(
-        JobRecord job,
-        Document document,
-        TimeSpan budget,
-        long started,
-        bool onlyUndoing)
-    {
-        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "RunUndoBatches"));
-
-        var action = _actions[job.Spec.Action];
-        var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
-        var batchSize = Math.Max(1, job.Spec.Options.BatchSize);
-
-        if (!onlyUndoing)
-        {
-            var applied = Sync(_store.LoadItemsAsync(
-                job.JobId,
-                new[]
-                {
-                    JobItemState.Done, JobItemState.Mismatch,
-                    JobItemState.Applying, JobItemState.UndoFailed
-                },
-                0,
-                int.MaxValue,
-                CancellationToken.None));
-
-            if (applied.Count > 0)
-            {
-                Sync(_store.ResetItemsAsync(
-                    job.JobId,
-                    applied.Select(item => item.Seq).ToList(),
-                    JobItemState.Undoing,
-                    CancellationToken.None));
-            }
-        }
-
-        var restored = 0;
-        var undoFailed = 0;
-        var skipped = 0;
-
-        while (true)
-        {
-            var items = Sync(_store.LoadItemsAsync(
-                job.JobId,
-                new[] { JobItemState.Undoing },
-                0,
-                batchSize,
-                CancellationToken.None));
-
-            if (items.Count == 0)
-            {
-                break;
-            }
-
-            if (IsOverBudget(started, budget) && restored + undoFailed > 0)
-            {
-                break;
-            }
-
-            var updates = new List<JobItemUpdate>(items.Count);
-            ITransactionScope? scope = null;
-
-            try
-            {
-                if (action.Scope is JobActionScope.ProjectInstance or JobActionScope.ProjectType)
-                {
-                    scope = _transactions.BeginTransaction(document, "SmartCon job rollback: " + action.Name);
-                }
-
-                foreach (var item in items)
-                {
-                    JobUnitUndo undo;
-                    try
-                    {
-                        undo = action.Undo(context, ToUnit(item), item.UndoJson, dryRun: false) ??
-                               new JobUnitUndo
-                               {
-                                   ErrorCode = JobErrorCodes.RollbackFailed,
-                                   ErrorDetail = "Action returned no undo result"
-                               };
-                    }
-                    catch (Exception ex)
-                    {
-                        undo = new JobUnitUndo
-                        {
-                            ErrorCode = JobErrorCodes.RollbackFailed,
-                            ErrorDetail = ex.GetType().Name + ": " + ex.Message
-                        };
-                    }
-
-                    if (undo.Success && undo.Skipped)
-                    {
-                        skipped++;
-                        updates.Add(new JobItemUpdate
-                        {
-                            Seq = item.Seq,
-                            State = JobItemState.Undone,
-                            ActualJson = undo.ActualJson
-                        });
-                    }
-                    else if (undo.Success)
-                    {
-                        restored++;
-                        updates.Add(new JobItemUpdate
-                        {
-                            Seq = item.Seq,
-                            State = JobItemState.Undone,
-                            ActualJson = undo.ActualJson
-                        });
-                    }
-                    else
-                    {
-                        undoFailed++;
-                        updates.Add(new JobItemUpdate
-                        {
-                            Seq = item.Seq,
-                            State = JobItemState.UndoFailed,
-                            ErrorCode = undo.ErrorCode ?? JobErrorCodes.RollbackFailed,
-                            ErrorDetail = undo.ErrorDetail
-                        });
-                    }
-                }
-
-                if (scope is not null)
-                {
-                    var status = scope.Commit();
-                    if (status != TransactionStatus.Committed)
-                    {
-                        undoFailed += items.Count;
-                        updates.Clear();
-                        foreach (var item in items)
-                        {
-                            updates.Add(new JobItemUpdate
-                            {
-                                Seq = item.Seq,
-                                State = JobItemState.UndoFailed,
-                                ErrorCode = JobErrorCodes.RollbackFailed,
-                                ErrorDetail = "Revit rolled back the undo batch (status " + status + ")"
-                            });
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                scope?.RollBack();
-                undoFailed += items.Count;
-                updates.Clear();
-                foreach (var item in items)
-                {
-                    updates.Add(new JobItemUpdate
-                    {
-                        Seq = item.Seq,
-                        State = JobItemState.UndoFailed,
-                        ErrorCode = JobErrorCodes.RollbackFailed,
-                        ErrorDetail = ex.GetType().Name + ": " + ex.Message
-                    });
-                }
-
-                SmartConLogger.Error(
-                    "Rollback batch failed: " + ex.GetType().Name + ": " + ex.Message +
-                    " [Action: run rollback_job again or restore the model from the backup file]");
-            }
-            finally
-            {
-                scope?.Dispose();
-            }
-
-            if (updates.Count > 0)
-            {
-                Sync(_store.UpdateItemsAsync(job.JobId, updates, CancellationToken.None));
-            }
-        }
-
-        var remaining = Sync(_store.LoadItemsAsync(
-            job.JobId,
-            new[] { JobItemState.Undoing },
-            0,
-            1,
-            CancellationToken.None)).Count;
-
-        JobError? saveError = null;
-        if (restored > 0)
-        {
-            saveError = SaveNow(job, document, job.LastSavedCursor);
-        }
-
-        return new UndoOutcome
-        {
-            Restored = restored,
-            UndoFailed = undoFailed,
-            Skipped = skipped,
-            Processed = restored + undoFailed + skipped,
-            HasMoreWork = remaining > 0,
-            SaveError = saveError
-        };
-    }
-
     private sealed class ReconcileOutcome
     {
         public int Kept { get; init; }
 
         public int Redone { get; init; }
-    }
-
-    private sealed class UndoOutcome
-    {
-        public int Restored { get; init; }
-
-        public int UndoFailed { get; init; }
-
-        public int Skipped { get; init; }
-
-        public int Processed { get; init; }
-
-        public bool HasMoreWork { get; init; }
-
-        public JobError? SaveError { get; init; }
     }
 }

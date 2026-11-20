@@ -211,14 +211,9 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             var job = LoadActiveJob(documentId);
             if (job is null)
             {
-                _wantsPump = false;
+                // A cached job in another document keeps the pump alive.
+                _wantsPump = _activeJobId is not null;
                 return JobSliceResult.Idle();
-            }
-
-            if (!string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal))
-            {
-                _wantsPump = false;
-                return JobSliceResult.Failed(JobErrors.DocumentMismatch(job.Spec.DocumentId, documentId));
             }
 
             if (job.State == JobState.Interrupted)
@@ -385,11 +380,13 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         if (_activeJobId is { } id)
         {
             var job = Sync(_store.GetAsync(id, CancellationToken.None));
-            if (job is not null
-                && !JobStateMachine.IsTerminal(job.State)
-                && string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal))
+            if (job is not null && !JobStateMachine.IsTerminal(job.State))
             {
-                return job;
+                // Another document is active: the job is alive but cannot run here.
+                // Keep it cached so the pump resumes when the document comes back.
+                return string.Equals(job.Spec.DocumentId, documentId, StringComparison.Ordinal)
+                    ? job
+                    : null;
             }
 
             _activeJobId = null;
@@ -503,6 +500,11 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             if (latest is not null && JobStateMachine.IsTerminal(latest.State))
             {
                 return;
+            }
+
+            lock (_gate)
+            {
+                _previewWarnings.Remove(job.JobId);
             }
 
             Sync(_store.MarkFinishedAsync(job.JobId, JobState.Failed, code, detail, CancellationToken.None));

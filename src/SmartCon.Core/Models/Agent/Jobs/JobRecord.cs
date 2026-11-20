@@ -133,8 +133,12 @@ public sealed class JobTotals
                 case JobItemState.Mismatch:
                     mismatch++;
                     break;
+                case JobItemState.Undoing:
+                    incomplete++;
+                    break;
                 case JobItemState.Undone:
                     undone++;
+                    incomplete++;
                     break;
                 case JobItemState.UndoFailed:
                     undoFailed++;

@@ -169,9 +169,7 @@ public sealed partial class JobRunner
         RunSlice(document, TimeSpan.FromMilliseconds(job.Spec.Options.SliceBudgetMs));
 
         var updated = Sync(_store.GetAsync(job.JobId, CancellationToken.None)) ?? job;
-        _wantsPump = JobStateMachine.NeedsPump(updated.State) && updated.State != JobState.Cancelling
-            ? updated.State == JobState.Running
-            : false;
+        _wantsPump = JobStateMachine.NeedsPump(updated.State);
         return JobStartResult.Ok(updated);
     }
 
@@ -222,19 +220,7 @@ public sealed partial class JobRunner
         var from = job.State;
         if (from == JobState.Failed)
         {
-            var restart = Sync(_store.TransitionAsync(
-                job.JobId,
-                JobState.Failed,
-                JobState.Running,
-                null,
-                null,
-                CancellationToken.None));
-            if (restart is not null)
-            {
-                return JobStartResult.Fail(restart);
-            }
-
-            from = JobState.Running;
+            return ResumeByRetry(document, job);
         }
 
         if (from == JobState.Interrupted)
@@ -259,18 +245,7 @@ public sealed partial class JobRunner
         }
         else if (from == JobState.CompletedWithFailures)
         {
-            var retry = RetryFailed(document, job.JobId);
-            if (retry.ErrorCode is not null)
-            {
-                return JobStartResult.Fail(new JobError(
-                    retry.ErrorCode,
-                    retry.ErrorDetail ?? "Retry failed",
-                    "run get_job_status and get_job_report to inspect the job"));
-            }
-
-            var retried = Sync(_store.GetAsync(job.JobId, CancellationToken.None)) ?? job;
-            _wantsPump = JobStateMachine.NeedsPump(retried.State);
-            return JobStartResult.Ok(retried);
+            return ResumeByRetry(document, job);
         }
         else if (from is not (JobState.Running or JobState.Failed))
         {
@@ -290,5 +265,21 @@ public sealed partial class JobRunner
         var updated = Sync(_store.GetAsync(job.JobId, CancellationToken.None)) ?? job;
         _wantsPump = updated.State is JobState.Running or JobState.PreviewRunning or JobState.Cancelling;
         return JobStartResult.Ok(updated);
+    }
+
+    private JobStartResult ResumeByRetry(Document document, JobRecord job)
+    {
+        var retry = RetryFailed(document, job.JobId);
+        if (retry.ErrorCode is not null)
+        {
+            return JobStartResult.Fail(new JobError(
+                retry.ErrorCode,
+                retry.ErrorDetail ?? "Retry failed",
+                "run get_job_status and get_job_report to inspect the job"));
+        }
+
+        var retried = Sync(_store.GetAsync(job.JobId, CancellationToken.None)) ?? job;
+        _wantsPump = JobStateMachine.NeedsPump(retried.State);
+        return JobStartResult.Ok(retried);
     }
 }

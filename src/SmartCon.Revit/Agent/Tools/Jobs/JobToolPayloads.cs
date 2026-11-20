@@ -109,8 +109,4 @@ internal static class JobToolPayloads
         return false;
     }
 
-    internal static string FormatPercent(int done, int total) =>
-        total <= 0
-            ? "0%"
-            : (done * 100.0 / total).ToString("F0", CultureInfo.InvariantCulture) + "%";
 }
