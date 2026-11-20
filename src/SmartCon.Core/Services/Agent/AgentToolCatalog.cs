@@ -255,6 +255,11 @@ public static class AgentToolCatalog
                 "удалить параметр семейства", "remove family parameter", "убрать параметр",
                 "почистить параметры"
             }),
+            ["replace_family_parameter"] = new("Write", false, new[]
+            {
+                "заменить общий параметр", "replace family parameter", "перепривязать параметр",
+                "rebind shared parameter", "сменить общий параметр", "подставить другой общий"
+            }),
             ["set_view_parameters"] = new("Write", true, new[]
             {
                 "параметры вида", "set view parameters", "назначение вида", "раздел",

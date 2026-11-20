@@ -173,6 +173,61 @@ public sealed class AgentLlmSettingsTests : IDisposable
             });
     }
 
+    [Fact]
+    public void Apply_ProviderSwitchToZai_UsesCodingEndpointAndDefaultModel()
+    {
+        AgentLlmSettings.StoredKeyProvider = _ => "sk-zai-stored";
+        var settings = new AgentLlmSettings
+        {
+            Provider = "openrouter",
+            ApiKey = "sk-or-previous",
+            Model = "deepseek/deepseek-v4.1-flash-1017"
+        };
+
+        settings.Apply("zai-glm", string.Empty, string.Empty);
+
+        Assert.Equal("zai-glm", settings.Provider);
+        Assert.Equal(AgentLlmSettings.DefaultZaiBaseUrl, settings.BaseUrl);
+        Assert.Equal(AgentLlmSettings.DefaultZaiModel, settings.Model);
+        Assert.Equal("sk-zai-stored", settings.ApiKey);
+    }
+
+    [Fact]
+    public void GetStoredKeyFor_ZaiProvider_ReadsZaiEnvKey()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_ZAI_API_KEY"] = null,
+                ["SMARTCON_OPENROUTER_API_KEY"] = null
+            },
+            () =>
+            {
+                var key = AgentLlmSettings.GetStoredKeyFor("zai-glm");
+
+                Assert.Equal("sk-zai-from-file", key);
+            },
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_ZAI_API_KEY"] = "sk-zai-from-file",
+                ["SMARTCON_OPENROUTER_API_KEY"] = "sk-or-foreign"
+            });
+    }
+
+    [Fact]
+    public void CachePolicy_ZaiProvider_IsImplicitCaching()
+    {
+        var plan = AgentProviderCachePolicy.Resolve(
+            "zai-glm",
+            "glm-5.3",
+            0.2,
+            Guid.NewGuid());
+
+        Assert.Equal(AgentCacheKind.Implicit, plan.Kind);
+        Assert.Null(plan.PromptCacheKey);
+        Assert.False(plan.UseAnthropicBreakpoints);
+    }
+
     private static void WithEnvironment(
         IReadOnlyDictionary<string, string?> values,
         Action action,

@@ -28,7 +28,8 @@ public sealed partial class AgentMainViewModel
     private readonly Dictionary<string, string> _decisionKeyDrafts =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public IReadOnlyList<string> ProviderOptions { get; } = new[] { "openrouter", "opencode-go" };
+    public IReadOnlyList<string> ProviderOptions { get; } =
+        new[] { "openrouter", "opencode-go", "zai-glm" };
 
     public IReadOnlyList<string> DecisionProviderOptions { get; } =
         AgentDecisionsSettings.Providers;

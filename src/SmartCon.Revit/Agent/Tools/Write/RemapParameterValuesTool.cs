@@ -319,6 +319,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         {
             errorCode = "unknown_category";
             reason = "Unknown category name(s): " + string.Join(", ", unknown) +
+                     AgentCategoryResolver.SuggestSuffix(doc, unknown[0]) +
                      ". Pass a BuiltInCategory token (OST_Pipes) or the exact category name " +
                      "shown in the project.";
             return false;

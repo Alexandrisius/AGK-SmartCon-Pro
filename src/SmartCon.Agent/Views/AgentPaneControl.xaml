@@ -311,70 +311,72 @@
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TextMutedBrush}"
                                        Margin="2,0,0,3"/>
-                            <Border Background="{DynamicResource SurfaceBrush}"
+                            <!-- Standalone chain-of-thought line (owner feedback): never
+                                 nested inside the answer bubble and never framed like a
+                                 tool card — brain icon first, chevron on the right. -->
+                            <StackPanel Visibility="{Binding ShowReasoningBlock, Converter={StaticResource BoolToVis}}"
+                                        Margin="2,0,0,6">
+                                <Button Command="{Binding ToggleReasoningCommand}"
+                                        Cursor="Hand"
+                                        HorizontalAlignment="Left"
+                                        Focusable="False">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <!-- No chrome: nothing highlights on hover. -->
+                                            <ContentPresenter RecognizesAccessKey="False"/>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <iconPacks:PackIconMaterial Kind="Brain"
+                                                                    Width="14" Height="14"
+                                                                    VerticalAlignment="Center"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding ReasoningCaption}"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   Margin="6,0,6,0"
+                                                   VerticalAlignment="Center"/>
+                                        <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
+                                                                    Grid.Column="2"
+                                                                    Kind="ChevronRight"
+                                                                    Width="12" Height="12"
+                                                                    VerticalAlignment="Center"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </Grid>
+                                </Button>
+                                <!-- Expanded reasoning: quote-style left rule, no box; stretched
+                                     width stays stable while the model streams. -->
+                                <Border x:Name="ReasoningBody"
+                                        Visibility="Collapsed"
+                                        Margin="20,4,0,6"
+                                        Padding="8,0,0,0"
+                                        BorderBrush="{DynamicResource BorderAltBrush}"
+                                        BorderThickness="2,0,0,0">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled"
+                                                  MaxHeight="180">
+                                        <TextBlock Text="{Binding ReasoningText}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="11"
+                                                   FontStyle="Italic"
+                                                   Foreground="{DynamicResource TextMutedBrush}"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                            <Border x:Name="AssistantBubble"
+                                    Background="{DynamicResource SurfaceBrush}"
                                     BorderBrush="{DynamicResource BorderAltBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3,12,12,12"
                                     Padding="11,8">
                                 <StackPanel>
-                                    <!-- Streamed chain-of-thought: open while it streams,
-                                         collapses as soon as the answer/tool call starts. -->
-                                    <Border Visibility="{Binding HasReasoning, Converter={StaticResource BoolToVis}}"
-                                            Background="#11000000"
-                                            BorderBrush="{DynamicResource BorderAltBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="6"
-                                            Padding="7,5"
-                                            Margin="0,0,0,6">
-                                        <StackPanel>
-                                            <Button Command="{Binding ToggleReasoningCommand}"
-                                                    Background="Transparent"
-                                                    BorderThickness="0"
-                                                    Padding="0"
-                                                    HorizontalContentAlignment="Stretch"
-                                                    Cursor="Hand">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
-                                                                                Kind="ChevronRight"
-                                                                                Width="12" Height="12"
-                                                                                VerticalAlignment="Center"
-                                                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                                    <TextBlock Grid.Column="1"
-                                                               Text="{Binding ReasoningHeader}"
-                                                               FontSize="10"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{DynamicResource TextMutedBrush}"
-                                                               Margin="5,0,0,0"
-                                                               VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="2"
-                                                               Text="{Binding ReasoningStatus}"
-                                                               FontSize="10"
-                                                               Foreground="{DynamicResource TextMutedBrush}"
-                                                               Margin="6,0,0,0"
-                                                               VerticalAlignment="Center"
-                                                               Visibility="{Binding HasReasoningStatus, Converter={StaticResource BoolToVis}}"/>
-                                                </Grid>
-                                            </Button>
-                                            <Border x:Name="ReasoningBody"
-                                                    Visibility="Collapsed"
-                                                    Margin="0,5,0,0"
-                                                    MaxHeight="180">
-                                                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                                              HorizontalScrollBarVisibility="Disabled">
-                                                    <TextBlock Text="{Binding ReasoningText}"
-                                                               TextWrapping="Wrap"
-                                                               FontSize="11"
-                                                               FontStyle="Italic"
-                                                               Foreground="{DynamicResource TextMutedBrush}"/>
-                                                </ScrollViewer>
-                                            </Border>
-                                        </StackPanel>
-                                    </Border>
                                     <TextBlock x:Name="AssistantPlain"
                                                Text="{Binding Text}"
                                                TextWrapping="Wrap"
@@ -600,8 +602,9 @@
                         </Border>
                     </Grid>
 
-                    <!-- Collapsed work of one turn: tool calls and intermediate
-                         narration. Expanding it shows the items in place. -->
+                    <!-- Collapsed work of one turn, ZCode-style disclosure row: always
+                         the first row of the turn, click toggles the hidden items in
+                         place. Shows elapsed time and tool-call count up front. -->
                     <Grid x:Name="WorkRow"
                           Visibility="Collapsed"
                           Margin="34,2,0,2"
@@ -610,62 +613,34 @@
                         <Button Command="{Binding ToggleWorkCommand}"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                Padding="0"
-                                HorizontalContentAlignment="Stretch"
+                                Padding="2,1"
+                                HorizontalContentAlignment="Left"
                                 Cursor="Hand"
                                 ToolTip="{Binding Details}">
-                            <Border Background="{DynamicResource StatusBarSurfaceBrush}"
-                                    BorderBrush="{DynamicResource BorderAltBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="8,4">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <iconPacks:PackIconMaterial x:Name="WorkChevron"
-                                                                Kind="ChevronRight"
-                                                                Width="12" Height="12"
-                                                                VerticalAlignment="Center"
-                                                                Foreground="{DynamicResource TextMutedBrush}"/>
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding Header}"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                               Margin="5,0,0,0"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="2"
-                                               Text="{Binding Text}"
-                                               FontSize="10"
-                                               Foreground="{DynamicResource TextMutedBrush}"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </Grid>
-                            </Border>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial x:Name="WorkChevron"
+                                                            Kind="ChevronRight"
+                                                            Width="12" Height="12"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{DynamicResource TextMutedBrush}"/>
+                                <TextBlock Text="{Binding Text}"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           Margin="5,0,0,0"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                     </Grid>
 
-                    <!-- Per-turn metrics under the answer (H4.5). -->
-                    <Grid x:Name="MetricsRow"
-                          Visibility="Collapsed"
-                          Margin="34,0,0,2"
-                          HorizontalAlignment="Left"
-                          MaxWidth="520">
-                        <TextBlock Text="{Binding Text}"
-                                   FontSize="10"
-                                   Foreground="{DynamicResource TextMutedBrush}"
-                                   TextWrapping="Wrap"
-                                   ToolTip="{Binding Details}"/>
-                    </Grid>
                 </Grid>
 
                 <DataTemplate.Triggers>
                     <DataTrigger Binding="{Binding KindName}" Value="Assistant">
                         <Setter TargetName="AssistantRow" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding HasAnswerText}" Value="False">
+                        <!-- Reasoning-only turns must not render an empty bubble. -->
+                        <Setter TargetName="AssistantBubble" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="User">
                         <Setter TargetName="UserRow" Property="Visibility" Value="Visible"/>
@@ -675,9 +650,6 @@
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="WorkSummary">
                         <Setter TargetName="WorkRow" Property="Visibility" Value="Visible"/>
-                    </DataTrigger>
-                    <DataTrigger Binding="{Binding KindName}" Value="Metrics">
-                        <Setter TargetName="MetricsRow" Property="Visibility" Value="Visible"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="Error">
                         <Setter TargetName="SystemRow" Property="Visibility" Value="Visible"/>
@@ -1215,6 +1187,7 @@
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <TextBlock Text="{Binding SessionMetricsText}"
+                           ToolTip="{Binding SessionMetricsDetails}"
                            FontSize="10"
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource TextMutedBrush}"

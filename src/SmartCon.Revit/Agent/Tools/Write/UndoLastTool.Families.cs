@@ -204,16 +204,7 @@ public sealed partial class UndoLastTool
         finally
         {
             if (familyDoc is not null && familyDoc.IsValidObject)
-            {
-                try
-                {
-                    familyDoc.Close(false);
-                }
-                catch (Exception)
-                {
-                    // The family document is already closed.
-                }
-            }
+                AgentFamilyDocCloser.Close(familyDoc);
         }
 
         if (applied > 0)
@@ -361,7 +352,7 @@ public sealed partial class UndoLastTool
         }
     }
 
-    private static void RestoreFromBackup(
+    private void RestoreFromBackup(
         Document document,
         FamilyRestore restore,
         WriteOutcome outcome,
@@ -419,11 +410,15 @@ public sealed partial class UndoLastTool
                         restore.FamilyName + "'.");
                 }
 
+                // #209: a freshly opened document has no edits, so Revit can decide
+                // "the family has not changed" from the dirty stamp and silently
+                // no-op the reload. The net-zero poke flips the stamp first.
+                AgentFamilyReloadPoke.TryPoke(backupDoc, Transactions, restore.FamilyName ?? "family");
                 loaded = backupDoc.LoadFamily(document, new FamilyRestoreLoadOptions());
             }
             finally
             {
-                backupDoc.Close(false);
+                AgentFamilyDocCloser.Close(backupDoc);
             }
 
             if (loaded is null)

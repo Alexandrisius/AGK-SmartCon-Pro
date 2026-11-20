@@ -65,6 +65,104 @@ internal static class AgentCategoryResolver
         }
     }
 
+    /// <summary>
+    /// Closest category names for an unknown_category error: the model often
+    /// guesses a plural OST_ name (OST_PipeFittings vs OST_PipeFitting), and a
+    /// suggestion closes the loop in one retry (external harness feedback).
+    /// </summary>
+    internal static string SuggestSuffix(Document doc, string name)
+    {
+        var suggestions = SuggestClosest(doc, name);
+        return suggestions.Count == 0
+            ? string.Empty
+            : "; closest: " + string.Join(", ", suggestions);
+    }
+
+    internal static IReadOnlyList<string> SuggestClosest(Document doc, string name, int max = 3)
+    {
+        var target = name.Trim();
+        if (target.Length == 0)
+            return Array.Empty<string>();
+
+        var candidates = new List<string>();
+        foreach (Category category in doc.Settings.Categories)
+        {
+            if (!string.IsNullOrEmpty(category.Name))
+                candidates.Add(category.Name!);
+        }
+
+        foreach (BuiltInCategory value in Enum.GetValues(typeof(BuiltInCategory)))
+        {
+            var text = value.ToString();
+            if (!candidates.Contains(text, StringComparer.OrdinalIgnoreCase))
+                candidates.Add(text);
+        }
+
+        var scored = new List<KeyValuePair<string, int>>();
+        foreach (var candidate in candidates)
+        {
+            var score = SimilarityScore(target, candidate);
+            if (score <= 2)
+                scored.Add(new KeyValuePair<string, int>(candidate, score));
+        }
+
+        return scored
+            .OrderBy(pair => pair.Value)
+            .ThenBy(pair => pair.Key.Length)
+            .Take(max)
+            .Select(pair => pair.Key)
+            .ToList();
+    }
+
+    private static int SimilarityScore(string target, string candidate)
+    {
+        var left = target.ToLowerInvariant();
+        var right = candidate.ToLowerInvariant();
+        if (left == right)
+            return 0;
+        if (right.StartsWith(left, StringComparison.Ordinal)
+            || left.StartsWith(right, StringComparison.Ordinal))
+        {
+            return 1;
+        }
+
+        if (right.IndexOf(left, StringComparison.Ordinal) >= 0
+            || left.IndexOf(right, StringComparison.Ordinal) >= 0)
+        {
+            return 2;
+        }
+
+        var distance = EditDistance(left, right);
+        return distance <= 1 ? distance : int.MaxValue;
+    }
+
+    private static int EditDistance(string left, string right)
+    {
+        if (Math.Abs(left.Length - right.Length) > 1)
+            return int.MaxValue;
+
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+        for (var j = 0; j <= right.Length; j++)
+            previous[j] = j;
+
+        for (var i = 1; i <= left.Length; i++)
+        {
+            current[0] = i;
+            for (var j = 1; j <= right.Length; j++)
+            {
+                var cost = left[i - 1] == right[j - 1] ? 0 : 1;
+                current[j] = Math.Min(
+                    Math.Min(current[j - 1] + 1, previous[j] + 1),
+                    previous[j - 1] + cost);
+            }
+
+            (previous, current) = (current, previous);
+        }
+
+        return previous[right.Length];
+    }
+
     private static void AddOnce(ICollection<ElementId> ids, ElementId id)
     {
         foreach (var existing in ids)

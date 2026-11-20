@@ -80,6 +80,8 @@ public static partial class AgentToolPackSkills
   удаляет и экземпляры из модели — это необратимо.
 - Shared-параметр добавляется по `guid` из файла общих параметров; если определения нет,
   `createDefinition=true` создаёт его, иначе `definition_not_found`.
+- `replace_family_parameter` заменяет параметр другим существующим общим (значения/
+  формулы переезжают сами); цепочка add → перенос → remove необратима.
 
 ### Инварианты
 - Все write-тулы: `dryRun=true` по умолчанию, затем apply. Ошибка чтения/записи в документе
@@ -93,9 +95,8 @@ public static partial class AgentToolPackSkills
   `typeName` — имя типа в документе семейства.
 - Встроенный read-back проверяет только **типовые** параметры: instance-значения и ссылки на
   элементы он не подтверждает (`readBack.notVerifiableReasons`). Их проверяйте отдельно.
-- `delete_family_types` и `remove_family_parameter` **не откатываются** `undo_last`
-  (`undoSupported=false`): предупредите до apply. У удаления параметра в ответе есть
-  `backupPath` — pre-edit `.rfa` для ручного восстановления.
+- `delete_family_types`, `remove_family_parameter` и `replace_family_parameter` не
+  откатываются `undo_last` (`undoSupported=false`); у них есть `backupPath`.
 - Перед `delete_family_types` прочитайте `list_family_types(includePlaced=true)`: число
   размещённых экземпляров — это радиус поражения (`type_in_use` без `force=true`).
 - Перед `remove_family_parameter` прочитайте `get_family_parameters`: тул покажет формулы,

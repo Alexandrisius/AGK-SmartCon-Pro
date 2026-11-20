@@ -55,10 +55,12 @@ public sealed class ListSchedulesTool : AgentReadToolBase
         // "schedules of walls".
         if (categories.Count > 0 && categoryIdSet.Count == 0)
         {
+            var missed = unknownCategories.Count > 0 ? unknownCategories : categories;
             return ToolResult.Fail(
                 "unknown_category",
                 "None of the requested categories matched: " +
-                string.Join(", ", unknownCategories.Count > 0 ? unknownCategories : categories) +
+                string.Join(", ", missed) +
+                AgentCategoryResolver.SuggestSuffix(doc, missed.First()) +
                 ". [Action: use a category name from list_categories or an OST_* built-in name]");
         }
 

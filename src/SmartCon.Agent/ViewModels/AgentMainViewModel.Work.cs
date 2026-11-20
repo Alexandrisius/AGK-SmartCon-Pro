@@ -47,56 +47,15 @@ public sealed partial class AgentMainViewModel
     private void FinishTurn(AgentTurnResult? result, Guid sessionId, bool stopped = false)
     {
         var elapsed = DateTime.UtcNow - _turnStartedUtc;
-        var usage = result?.Usage ?? AgentUsage.Empty;
         var tools = result?.ToolCallCount ?? _turnToolCalls;
-        var rounds = result?.Rounds ?? 0;
 
-        AddTurnMetrics(elapsed, tools, rounds, usage, stopped);
-        CollapseTurnWork(elapsed, tools);
+        CollapseTurnWork(elapsed, tools, stopped);
         FireAndForget(
             RefreshSessionMetricsAsync(sessionId),
             nameof(RefreshSessionMetricsAsync));
     }
 
-    private void AddTurnMetrics(
-        TimeSpan elapsed,
-        int toolCalls,
-        int rounds,
-        AgentUsage usage,
-        bool stopped)
-    {
-        var text = FormatMany(
-            "Agent_Metrics_Turn",
-            "⏱ {0} · {1} тулов · {2} раундов · {3} → {4} токенов · {5}",
-            FormatElapsed(elapsed),
-            toolCalls,
-            rounds,
-            FormatCompactSize(usage.PromptTokens),
-            FormatCompactSize(usage.CompletionTokens),
-            FormatCost(usage.CostUsd));
-        if (stopped)
-            text = S("Agent_Status_Stopped", "Остановлено") + " · " + text;
-
-        var totalTokens = usage.TotalTokens > 0
-            ? usage.TotalTokens
-            : usage.PromptTokens + usage.CompletionTokens;
-        var details = FormatMany(
-            "Agent_Metrics_Details",
-            "prompt {0} · completion {1} · reasoning {2} · cached {3} · total {4}",
-            usage.PromptTokens,
-            usage.CompletionTokens,
-            usage.ReasoningTokens,
-            usage.CachedTokens,
-            totalTokens);
-
-        Messages.Add(new AgentChatItemViewModel(AgentChatItemKind.Metrics)
-        {
-            Text = text,
-            Details = details
-        });
-    }
-
-    private void CollapseTurnWork(TimeSpan elapsed, int toolCalls)
+    private void CollapseTurnWork(TimeSpan elapsed, int toolCalls, bool stopped = false)
     {
         var work = _turnWorkItems.Distinct().ToList();
         if (work.Count == 0)
@@ -121,8 +80,21 @@ public sealed partial class AgentMainViewModel
         foreach (var item in hidden)
             item.IsVisible = false;
 
-        var summary = CreateWorkSummary(hidden, toolCalls, elapsed, history: false);
-        var index = final is not null ? Messages.IndexOf(final) : -1;
+        // The final answer's reasoning line folds into the work row too, so the
+        // collapsed transcript reads "question + answer" only (owner feedback).
+        if (final is not null && final.HasReasoning)
+            final.IsReasoningVisible = false;
+
+        var summary = CreateWorkSummary(
+            hidden,
+            toolCalls,
+            elapsed,
+            stopped,
+            reasoningOwner: final is not null && final.HasReasoning ? final : null,
+            history: false);
+        // ZCode-style: the disclosure row leads the turn, above the hidden steps,
+        // so an expanded transcript can be collapsed back by the same row.
+        var index = Messages.IndexOf(hidden[0]);
         if (index >= 0)
             Messages.Insert(index, summary);
         else
@@ -133,19 +105,42 @@ public sealed partial class AgentMainViewModel
         IReadOnlyList<AgentChatItemViewModel> hidden,
         int toolCalls,
         TimeSpan elapsed,
+        bool stopped,
+        AgentChatItemViewModel? reasoningOwner,
         bool history)
     {
-        var actions = toolCalls > 0 ? toolCalls : hidden.Count;
-        var text = history
-            ? FormatMany("Agent_Work_Summary_History", "{0} действий", actions)
-            : FormatMany(
+        // Elapsed time and tool calls live ONLY here (owner feedback): never a
+        // second metrics line under the answer.
+        string text;
+        if (history)
+        {
+            text = FormatMany(
+                "Agent_Work_Summary_History",
+                "Вызвано инструментов: {0}",
+                toolCalls > 0 ? toolCalls : hidden.Count);
+        }
+        else if (toolCalls > 0)
+        {
+            text = FormatMany(
                 "Agent_Work_Summary",
-                "{0} действий · {1}",
-                actions,
-                FormatElapsed(elapsed));
+                "Время работы: {0}, вызвано инструментов: {1}",
+                FormatWorkDuration(elapsed),
+                toolCalls);
+        }
+        else
+        {
+            text = FormatMany(
+                "Agent_Work_Summary_TimeOnly",
+                "Время работы: {0}",
+                FormatWorkDuration(elapsed));
+        }
+
+        if (stopped)
+            text = S("Agent_Status_Stopped", "Остановлено") + " · " + text;
+
         var details = FormatMany(
             "Agent_Work_Details",
-            "Скрыто шагов: {0}, из них тулов: {1}",
+            "Шагов скрыто: {0}, из них вызовов инструментов: {1}",
             hidden.Count,
             toolCalls);
 
@@ -154,8 +149,41 @@ public sealed partial class AgentMainViewModel
             Header = S("Agent_Work", "Работа агента"),
             Text = text,
             Details = details,
-            WorkItems = hidden
+            WorkItems = hidden,
+            ReasoningOwner = reasoningOwner
         };
+    }
+
+    /// <summary>
+    /// "23 мин 39 с" / "1 ч 5 мин" — wall-clock words instead of the mm:ss clock
+    /// format used by the session line.
+    /// </summary>
+    private string FormatWorkDuration(TimeSpan elapsed)
+    {
+        var seconds = Math.Max(0, (long)elapsed.TotalSeconds);
+        var secondsSuffix = S("Agent_Duration_S", " с");
+        var minutesSuffix = S("Agent_Duration_M", " мин");
+        var hoursSuffix = S("Agent_Duration_H", " ч");
+
+        if (seconds < 60)
+            return seconds.ToString(CultureInfo.InvariantCulture) + secondsSuffix;
+
+        var minutes = seconds / 60;
+        var restSeconds = seconds % 60;
+        if (minutes < 60)
+        {
+            return minutes.ToString(CultureInfo.InvariantCulture) + minutesSuffix +
+                   (restSeconds > 0
+                       ? " " + restSeconds.ToString(CultureInfo.InvariantCulture) + secondsSuffix
+                       : string.Empty);
+        }
+
+        var hours = minutes / 60;
+        var restMinutes = minutes % 60;
+        return hours.ToString(CultureInfo.InvariantCulture) + hoursSuffix +
+               (restMinutes > 0
+                   ? " " + restMinutes.ToString(CultureInfo.InvariantCulture) + minutesSuffix
+                   : string.Empty);
     }
 
     private async Task RefreshSessionMetricsAsync(Guid sessionId)
@@ -163,6 +191,7 @@ public sealed partial class AgentMainViewModel
         if (_usageStore is null)
         {
             SessionMetricsText = string.Empty;
+            SessionMetricsDetails = string.Empty;
             return;
         }
 
@@ -174,30 +203,38 @@ public sealed partial class AgentMainViewModel
             if (SelectedSession?.Id != sessionId)
                 return;
 
-            SessionMetricsText = FormatSessionMetrics(metrics);
+            var (text, details) = FormatSessionMetrics(metrics);
+            SessionMetricsText = text;
+            SessionMetricsDetails = details;
         }
         catch (Exception)
         {
             // The analytics line is informational: never break the chat.
             SessionMetricsText = string.Empty;
+            SessionMetricsDetails = string.Empty;
         }
     }
 
-    private static string FormatSessionMetrics(AgentSessionMetrics? metrics)
+    private static (string Text, string Details) FormatSessionMetrics(AgentSessionMetrics? metrics)
     {
         if (metrics is null || metrics.IsEmpty)
-            return string.Empty;
+            return (string.Empty, string.Empty);
 
-        return FormatMany(
+        var text = FormatMany(
             "Agent_Metrics_Session",
-            "Сессия: {0} ходов · {1} тулов · LLM {2} · тулы {3} · {4} → {5} токенов · {6}",
+            "⏱ {0} · {1} инструментов",
+            FormatElapsed(TimeSpan.FromMilliseconds(metrics.LlmLatencyMs + metrics.ToolDurationMs)),
+            metrics.ToolCalls);
+        var details = FormatMany(
+            "Agent_Metrics_Session_Details",
+            "ходов {0} · LLM {1} · инструменты {2} · {3} → {4} токенов · {5}",
             metrics.Turns,
-            metrics.ToolCalls,
             FormatElapsed(TimeSpan.FromMilliseconds(metrics.LlmLatencyMs)),
             FormatElapsed(TimeSpan.FromMilliseconds(metrics.ToolDurationMs)),
             FormatCompactSize(metrics.PromptTokens),
             FormatCompactSize(metrics.CompletionTokens),
             FormatCost(metrics.CostUsd));
+        return (text, details);
     }
 
     private static string FormatCost(decimal? cost) =>

@@ -283,16 +283,7 @@ public sealed partial class MapFamilyParametersJobAction
         finally
         {
             if (familyDoc is not null && familyDoc.IsValidObject)
-            {
-                try
-                {
-                    familyDoc.Close(false);
-                }
-                catch (Exception)
-                {
-                    // The family document is already closed.
-                }
-            }
+                AgentFamilyDocCloser.Close(familyDoc);
         }
 
         if (problems.Count > 0)
@@ -439,11 +430,17 @@ public sealed partial class MapFamilyParametersJobAction
                         "The backup contains family '" + backupFamilyName + "', not '" + plan.FamilyName + "'.");
                 }
 
+                // #209: a freshly opened document has no edits, so Revit can decide
+                // "the family has not changed" from the dirty stamp and silently
+                // no-op the reload. The net-zero poke flips the stamp first.
+                AgentFamilyReloadPoke.TryPokeLocal(
+                    backupDoc,
+                    plan.FamilyName ?? backupFamilyName ?? "family");
                 loaded = backupDoc.LoadFamily(context.Document, new FamilyMapLoadOptions());
             }
             finally
             {
-                backupDoc.Close(false);
+                AgentFamilyDocCloser.Close(backupDoc);
             }
 
             if (loaded is null)

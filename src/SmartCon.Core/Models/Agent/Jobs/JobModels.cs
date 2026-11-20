@@ -89,7 +89,13 @@ public sealed class JobOptions
     /// <summary>Undo already applied units when the job aborts or is cancelled.</summary>
     public bool RollbackOnError { get; init; }
 
-    public JobSavePolicy SavePolicy { get; init; } = JobSavePolicy.AfterEachBatch;
+    /// <summary>
+    /// Never by default: the job engine must not rewrite the user's .rvt on disk
+    /// (owner decision 2026-11-21). The document keeps the changes in memory; the
+    /// user saves the file with Ctrl+S when the digest looks right. An explicit
+    /// savePolicy can still opt in.
+    /// </summary>
+    public JobSavePolicy SavePolicy { get; init; } = JobSavePolicy.Never;
 
     public int SaveEveryMinutes { get; init; } = 5;
 

@@ -4,8 +4,10 @@ public sealed class AgentLlmSettings
 {
     public const string DefaultOpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     public const string DefaultOpenCodeGoBaseUrl = "https://opencode.ai/inference/go/openai/v1";
+    public const string DefaultZaiBaseUrl = "https://api.z.ai/api/coding/paas/v4";
     public const string DefaultModel = "deepseek/deepseek-v4.1-flash-1017";
     public const string DefaultOpenCodeGoModel = "deepseek-v4.1-flash";
+    public const string DefaultZaiModel = "glm-5.3";
 
     public string Provider { get; set; } = "openrouter";
 
@@ -60,8 +62,30 @@ public sealed class AgentLlmSettings
         string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, "opencode", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Z.ai GLM Coding Plan: OpenAI-compatible coding endpoint.</summary>
+    public static bool IsZaiProvider(string? provider) =>
+        string.Equals(provider, "zai-glm", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(provider, "zai", StringComparison.OrdinalIgnoreCase);
+
     public static string DefaultModelFor(string? provider) =>
-        IsOpenCodeGoProvider(provider) ? DefaultOpenCodeGoModel : DefaultModel;
+        IsOpenCodeGoProvider(provider) ? DefaultOpenCodeGoModel
+        : IsZaiProvider(provider) ? DefaultZaiModel
+        : DefaultModel;
+
+    public static string DefaultBaseUrlFor(string? provider) =>
+        IsOpenCodeGoProvider(provider) ? DefaultOpenCodeGoBaseUrl
+        : IsZaiProvider(provider) ? DefaultZaiBaseUrl
+        : DefaultOpenRouterBaseUrl;
+
+    private static string BaseUrlEnvKey(string? provider) =>
+        IsOpenCodeGoProvider(provider) ? "SMARTCON_OPENCODE_GO_BASE_URL"
+        : IsZaiProvider(provider) ? "SMARTCON_ZAI_BASE_URL"
+        : "SMARTCON_OPENROUTER_BASE_URL";
+
+    private static string ApiKeyEnvKey(string? provider) =>
+        IsOpenCodeGoProvider(provider) ? "SMARTCON_OPENCODE_GO_API_KEY"
+        : IsZaiProvider(provider) ? "SMARTCON_ZAI_API_KEY"
+        : "SMARTCON_OPENROUTER_API_KEY";
 
     public bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey);
 
@@ -70,16 +94,9 @@ public sealed class AgentLlmSettings
         var values = LoadEnvValues();
 
         var provider = Get(values, "SMARTCON_LLM_PROVIDER") ?? "openrouter";
-        var openCodeGo = string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(provider, "opencode", StringComparison.OrdinalIgnoreCase);
 
-        var baseUrl = openCodeGo
-            ? Get(values, "SMARTCON_OPENCODE_GO_BASE_URL") ?? DefaultOpenCodeGoBaseUrl
-            : Get(values, "SMARTCON_OPENROUTER_BASE_URL") ?? DefaultOpenRouterBaseUrl;
-
-        var apiKey = openCodeGo
-            ? Get(values, "SMARTCON_OPENCODE_GO_API_KEY") ?? string.Empty
-            : Get(values, "SMARTCON_OPENROUTER_API_KEY") ?? string.Empty;
+        var baseUrl = Get(values, BaseUrlEnvKey(provider)) ?? DefaultBaseUrlFor(provider);
+        var apiKey = Get(values, ApiKeyEnvKey(provider)) ?? string.Empty;
 
         return new AgentLlmSettings
         {
@@ -123,7 +140,7 @@ public sealed class AgentLlmSettings
         Model = string.IsNullOrWhiteSpace(model) ? DefaultModelFor(targetProvider) : model.Trim();
 
         if (providerChanged || string.IsNullOrWhiteSpace(BaseUrl))
-            BaseUrl = IsOpenCodeGo ? DefaultOpenCodeGoBaseUrl : DefaultOpenRouterBaseUrl;
+            BaseUrl = DefaultBaseUrlFor(targetProvider);
 
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
@@ -160,9 +177,7 @@ public sealed class AgentLlmSettings
         if (StoredKeyProvider is not null)
             return StoredKeyProvider(provider) ?? string.Empty;
 
-        var keyName = IsOpenCodeGoProvider(provider)
-            ? "SMARTCON_OPENCODE_GO_API_KEY"
-            : "SMARTCON_OPENROUTER_API_KEY";
+        var keyName = ApiKeyEnvKey(provider);
 
         var fromEnvironment = Environment.GetEnvironmentVariable(keyName);
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
@@ -180,16 +195,8 @@ public sealed class AgentLlmSettings
             ["SMARTCON_LLM_MODEL"] = Model
         };
 
-        if (IsOpenCodeGo)
-        {
-            values["SMARTCON_OPENCODE_GO_API_KEY"] = ApiKey;
-            values["SMARTCON_OPENCODE_GO_BASE_URL"] = BaseUrl;
-        }
-        else
-        {
-            values["SMARTCON_OPENROUTER_API_KEY"] = ApiKey;
-            values["SMARTCON_OPENROUTER_BASE_URL"] = BaseUrl;
-        }
+        values[ApiKeyEnvKey(Provider)] = ApiKey;
+        values[BaseUrlEnvKey(Provider)] = BaseUrl;
 
         return AgentEnvFile.Save(values);
     }

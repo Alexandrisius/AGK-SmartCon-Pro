@@ -141,19 +141,7 @@ internal sealed partial class AgentFamilySession
         finally
         {
             if (backupDoc is not null && backupDoc.IsValidObject)
-            {
-                try
-                {
-                    backupDoc.Close(false);
-                }
-                catch (Exception ex)
-                {
-                    SmartConLogger.Warn(
-                        "Agent backup family document '" + family.Name + "' could not be " +
-                        "closed: " + ex.GetType().Name + ": " + ex.Message +
-                        " [Action: close the family document in Revit so it is not left open]");
-                }
-            }
+                AgentFamilyDocCloser.Close(backupDoc);
         }
     }
 

@@ -1847,6 +1847,22 @@
         "retry_failed_items"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r232",
+      "query": "Замени общий параметр АДСК_Наименование на ТДСК_Наименование в семействе",
+      "expectedTools": [
+        "replace_family_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r231",
+      "query": "Перепривяжи параметр семейства на другой общий параметр из ЕИР",
+      "expectedTools": [
+        "replace_family_parameter"
+      ],
+      "kind": "write"
     }
   ]
 }

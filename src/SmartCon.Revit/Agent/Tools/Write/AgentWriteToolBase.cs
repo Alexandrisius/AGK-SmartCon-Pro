@@ -33,6 +33,8 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
 
     protected IAgentChangeSetStore ChangeSets => _changeSets;
 
+    protected ITransactionService Transactions => _transactions;
+
     /// </summary>
 
     public async Task<ToolResult> ExecuteAsync(

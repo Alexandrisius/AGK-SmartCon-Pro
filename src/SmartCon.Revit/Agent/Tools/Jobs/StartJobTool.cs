@@ -142,7 +142,7 @@ public sealed class StartJobTool : IAgentTool
     "previewDigest": { "type": "string" },
     "resumeJobId": { "type": "string" },
     "goal": { "type": "string" },
-    "savePolicy": { "type": "string", "enum": ["after_each_batch", "every_n_minutes", "never"] },
+    "savePolicy": { "type": "string", "enum": ["after_each_batch", "every_n_minutes", "never"], "default": "never" },
     "batchSize": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 },
     "onError": { "type": "string", "enum": ["continue", "abort"] },
     "rollbackOnError": { "type": "boolean", "default": false },
@@ -367,7 +367,9 @@ public sealed class StartJobTool : IAgentTool
         JsonElement args)
     {
         var hasSavePolicy = Has(args, "savePolicy");
-        var savePolicy = JobSavePolicy.AfterEachBatch;
+        // Never by default: the job engine must not rewrite the user's .rvt on
+        // disk (owner decision 2026-11-21); an explicit savePolicy opts in.
+        var savePolicy = JobSavePolicy.Never;
         var policyText = AgentJson.GetString(args, "savePolicy");
         if (!string.IsNullOrWhiteSpace(policyText) &&
             !TryParseSavePolicy(policyText!, out savePolicy))

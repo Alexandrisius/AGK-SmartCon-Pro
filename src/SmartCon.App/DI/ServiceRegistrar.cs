@@ -496,6 +496,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, DeleteSheetsTool>();
         services.AddSingleton<IAgentTool, DeleteFamilyTypesTool>();
         services.AddSingleton<IAgentTool, RemoveFamilyParameterTool>();
+        services.AddSingleton<IAgentTool, ReplaceFamilyParameterTool>();
         services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();

@@ -112,6 +112,7 @@ public sealed class QueryElementsTool : AgentReadToolBase
             return ToolResult.Fail(
                 "unknown_category",
                 "Unknown categories: " + string.Join(", ", result.UnknownCategories) +
+                AgentCategoryResolver.SuggestSuffix(doc, result.UnknownCategories[0]) +
                 ". Use list_categories to see available names.");
         }
 

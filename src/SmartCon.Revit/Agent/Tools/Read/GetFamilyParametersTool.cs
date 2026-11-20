@@ -30,8 +30,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "Lists family parameters with their scope (instance/type), id (FamilyParameter.Id), " +
             "shared GUID, isBuiltIn (built-in parameters cannot be removed), storage type, " +
             "formula, lookup tables, canSetValue/canSetFormula and the value of each family type. " +
-            "parameters[] is flat: address a row with parameters.byId[id] or " +
-            "parameters.byName[name], a type value with valuesByType.byName[typeName]. " +
+            "parametersTotalInFamily is the count BEFORE nameContains/scope filters; total is " +
+            "the paging total of the filtered set. parameters[] is flat: address a row with " +
+            "parameters.byId[id] or parameters.byName[name], a type value with " +
+            "valuesByType.byName[typeName]. " +
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
@@ -135,7 +137,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["familyId"] = family.Id.GetValue(),
                 ["familyName"] = family.Name,
                 ["category"] = family.FamilyCategory?.Name,
-                ["parameterCount"] = manager.GetParameters().Count,
+                // Total in the family BEFORE nameContains/scope filters: "total" below
+                // is the paging total of the filtered set and used to read as "the
+                // family only has this many parameters" (external harness feedback).
+                ["parametersTotalInFamily"] = manager.GetParameters().Count,
                 ["typeCount"] = types.Count,
                 ["types"] = typeNames,
                 ["typesTruncated"] = types.Count > typeNames.Count,
@@ -152,7 +157,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             return ToolResult.Ok(
                 AgentJson.Serialize(payload),
                 "Family '" + family.Name + "': " + reports.Count + " of " + filtered.Count +
-                " parameter(s), " + types.Count + " type(s)" +
+                " matched parameter(s) of " + manager.GetParameters().Count +
+                " in the family, " + types.Count + " type(s)" +
                 (nextOffset < filtered.Count ? ", next offset " + nextOffset : string.Empty) +
                 (types.Count == 0 ? ". The family has no types (empty family)." : "."));
         }
@@ -164,20 +170,9 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
 
     private static void CloseQuietly(Document? familyDoc)
     {
-        if (familyDoc is null)
-            return;
-
-        try
-        {
-            familyDoc.Close(false);
-        }
-        catch (Exception ex)
-        {
-            SmartCon.Core.Logging.SmartConLogger.Warn(
-                "Agent family document could not be closed after reading: " +
-                ex.GetType().Name + ": " + ex.Message +
-                " [Action: close the family document in Revit so it is not left open]");
-        }
+        // FamilyManager batch pattern (#96 / REVIT-237190): close + COM release +
+        // render-thread nudge.
+        AgentFamilyDocCloser.Close(familyDoc);
     }
 
     private static long? TryGetLong(JsonElement args, string property)

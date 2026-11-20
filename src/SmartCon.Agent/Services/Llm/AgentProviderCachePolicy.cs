@@ -57,7 +57,7 @@ public sealed class AgentCachePlan
 /// <item>OpenAI: top-level <c>prompt_cache_key</c> for cache routing on models before GPT-5.6.</item>
 /// <item>Anthropic: explicit <c>cache_control</c> breakpoints on the stable system blocks
 /// (tools render before system, so the first system block covers both), at most 4.</item>
-/// <item>DeepSeek and Gemini: implicit caching, no request fields at all.</item>
+/// <item>DeepSeek, Gemini and Z.ai GLM: implicit caching, no request fields at all.</item>
 /// <item>OpenRouter: <c>session_id</c> for sticky routing; Anthropic markers pass through.</item>
 /// <item>OpenCode Go: per-conversation <c>x-opencode-session</c> header.</item>
 /// </list>
@@ -162,6 +162,7 @@ public static class AgentProviderCachePolicy
 
             case ProviderFamily.DeepSeek:
             case ProviderFamily.Gemini:
+            case ProviderFamily.Zai:
                 return AgentCacheKind.Implicit;
 
             default:
@@ -178,6 +179,7 @@ public static class AgentProviderCachePolicy
             "anthropic" => ProviderFamily.Anthropic,
             "deepseek" => ProviderFamily.DeepSeek,
             "gemini" or "google" => ProviderFamily.Gemini,
+            "zai-glm" or "zai" => ProviderFamily.Zai,
             _ => ProviderFamily.Unknown
         };
 
@@ -215,7 +217,8 @@ public static class AgentProviderCachePolicy
         OpenAi = 3,
         Anthropic = 4,
         DeepSeek = 5,
-        Gemini = 6
+        Gemini = 6,
+        Zai = 7
     }
 
     private enum AgentModelFamily

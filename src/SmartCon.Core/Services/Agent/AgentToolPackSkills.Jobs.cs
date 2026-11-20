@@ -33,7 +33,7 @@ public static partial class AgentToolPackSkills
 - `spec.rename` — `find/replace/prefix/suffix/setName` (`{n}`, `{name}`, `{index}`) и `numbering{start,step,padding,format}`; для переименования видов `excludeSheets` по умолчанию true.
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (не более 100).
 - `spec.parameter/guid/builtInParameter/scope/value/unit` — запись параметра (`value` — строка, `""` очищает).
-- `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never`.
+- `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never` (**по умолчанию never**: джоба не перезаписывает .rvt на диске — изменения живут в документе, файл сохраняет пользователь; не включайте автосейв без явной просьбы).
 - Потолок единиц: `rename_views` и `set_parameters` — 5000, `map_family_parameters` — 200
   family units **жёстко**: `allowLargeJobs` его не поднимает, большие миграции дробятся на
   несколько джоб.

@@ -80,7 +80,7 @@ public sealed class AgentFamilyPackTests
         "find_families_with_parameter", "list_shared_parameters",
         "rename_family_parameter", "add_family_parameter",
         "set_family_parameter_values", "set_family_formula", "map_family_parameters",
-        "delete_family_types", "remove_family_parameter"
+        "delete_family_types", "remove_family_parameter", "replace_family_parameter"
     };
 
     [Fact]

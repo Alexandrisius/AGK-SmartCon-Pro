@@ -592,8 +592,130 @@ public async Task AddParameter_SharedWithoutDefinition_IsRefusedByDefault()
     await Assert.That(result.Message!.Contains("createDefinition=true")).IsTrue();
 }
 
+[Test]
+public async Task ReplaceParameter_DryRun_VerifiesWithoutChangingFamily()
+{
+    using var scope = CreateSharedFileScope();
+    Run(CreateAddTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"СтарыйКод\"," +
+        "\"storageType\":\"text\",\"isShared\":true,\"createDefinition\":true," +
+        "\"dryRun\":false}");
+    var targetGuid = CreateSharedDefinition("НовыйКод");
+
+    var result = Run(
+        CreateReplaceTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"СтарыйКод\"," +
+        "\"newSharedParameterGuid\":\"" + targetGuid.ToString("D") + "\",\"dryRun\":true}");
+
+    await Assert.That(result.Success).IsTrue();
+    var data = Data(result);
+    await Assert.That(data.GetProperty("replacementVerified").GetBoolean()).IsTrue();
+    await Assert.That(data.GetProperty("wouldReplace").GetBoolean()).IsTrue();
+    await Assert.That(
+        data.GetProperty("newParameter").GetProperty("guid").GetString())
+        .IsEqualTo(targetGuid.ToString("D"));
+    await Assert.That(FindParameterOrNull(await ReadParameters(), "СтарыйКод")).IsNotNull();
+    await Assert.That(FindParameterOrNull(await ReadParameters(), "НовыйКод")).IsNull();
+}
+
+[Test]
+public async Task ReplaceParameter_Apply_RebindsToSharedAndKeepsTypeValues()
+{
+    using var scope = CreateSharedFileScope();
+    Run(CreateAddTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"СтарыйКод\"," +
+        "\"storageType\":\"text\",\"isShared\":true,\"createDefinition\":true," +
+        "\"dryRun\":false}");
+    Run(CreateSetValuesTool(),
+        Items("\"parameter\":\"СтарыйКод\",\"typeName\":\"Тип1\",\"value\":\"ABC\"", false));
+    var targetGuid = CreateSharedDefinition("НовыйКод");
+    var changeSetsBefore = _changeSets!.All.Count;
+
+    var result = Run(
+        CreateReplaceTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"СтарыйКод\"," +
+        "\"newSharedParameterGuid\":\"" + targetGuid.ToString("D") + "\",\"dryRun\":false}");
+
+    await Assert.That(result.Success).IsTrue();
+    var data = Data(result);
+    await Assert.That(data.GetProperty("undoSupported").GetBoolean()).IsFalse();
+    await Assert.That(_changeSets!.All.Count).IsEqualTo(changeSetsBefore);
+
+    var read = await ReadParameters(includeValues: true);
+    var parameter = FindParameterOrNull(read, "НовыйКод");
+    await Assert.That(parameter).IsNotNull();
+    await Assert.That(parameter!.Value.GetProperty("isShared").GetBoolean()).IsTrue();
+    await Assert.That(parameter.Value.GetProperty("guid").GetString())
+        .IsEqualTo(targetGuid.ToString("D"));
+    await Assert.That(FindParameterOrNull(read, "СтарыйКод")).IsNull();
+
+    var keptValue = false;
+    foreach (var row in parameter.Value.GetProperty("valuesByType").EnumerateArray())
+    {
+        if (row.GetProperty("typeName").GetString() == "Тип1"
+            && row.GetProperty("value").GetString() == "ABC")
+        {
+            keptValue = true;
+        }
+    }
+
+    await Assert.That(keptValue).IsTrue();
+}
+
+[Test]
+public async Task ReplaceParameter_UnknownDefinition_ReturnsDefinitionNotFound()
+{
+    using var scope = CreateSharedFileScope();
+    Run(CreateAddTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"СтарыйКод\"," +
+        "\"storageType\":\"text\",\"isShared\":true,\"createDefinition\":true," +
+        "\"dryRun\":false}");
+
+    var result = Run(
+        CreateReplaceTool(),
+        "{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"СтарыйКод\"," +
+        "\"newSharedParameterName\":\"НетТакогоОбщегоПараметра\",\"dryRun\":true}");
+
+    await Assert.That(result.Success).IsFalse();
+    await Assert.That(result.ErrorCode).IsEqualTo("definition_not_found");
+    await Assert.That(result.Message!.Contains("list_shared_parameters")).IsTrue();
+}
+
 private AddFamilyParameterTool CreateAddTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private ReplaceFamilyParameterTool CreateReplaceTool() =>
+        new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    /// <summary>
+    /// Creates a shared parameter definition in the active shared parameter file
+    /// WITHOUT loading it into the family (add_family_parameter with dryRun=true
+    /// does not create definitions, and applying it would collide with replace).
+    /// </summary>
+    private Guid CreateSharedDefinition(string name)
+    {
+        var file = Application.OpenSharedParameterFile();
+        DefinitionGroup? group = null;
+        foreach (DefinitionGroup candidate in file.Groups)
+        {
+            if (string.Equals(candidate.Name, "SC_Тест", StringComparison.Ordinal))
+            {
+                group = candidate;
+                break;
+            }
+        }
+
+        group ??= file.Groups.Create("SC_Тест");
+        var guid = Guid.NewGuid();
+        var created = group.Definitions.Create(
+            new ExternalDefinitionCreationOptions(name, SpecTypeId.String.Text)
+            {
+                GUID = guid
+            }) as ExternalDefinition;
+        if (created is null)
+            throw new InvalidOperationException("Shared definition was not created: " + name);
+        return guid;
+    }
 
     private RenameFamilyParameterTool CreateRenameTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
@@ -619,12 +741,13 @@ private AddFamilyParameterTool CreateAddTool() =>
             approved: true,
             CancellationToken.None);
 
-    private async Task<JsonElement> ReadParameters()
+    private async Task<JsonElement> ReadParameters(bool includeValues = false)
     {
         var tool = new GetFamilyParametersTool(new StubRevitContext(Doc));
         var result = tool.ExecuteForTests(
             Doc,
-            Parse("{\"familyId\":" + Seed.FamilyId + ",\"includeValues\":false}"),
+            Parse("{\"familyId\":" + Seed.FamilyId + ",\"includeValues\":" +
+                  (includeValues ? "true" : "false") + "}"),
             CancellationToken.None);
         await Assert.That(result.Success).IsTrue();
         return Data(result);

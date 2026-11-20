@@ -116,6 +116,27 @@ public sealed class RemoveFamilyParameterTool : AgentFamilyWriteToolBase
 
         if (dryRun)
         {
+            // Risk diff (external harness feedback): affected formulas alone are not
+            // enough to judge the removal — list the per-type values it would drop.
+            var valuesByType = new List<Dictionary<string, object?>>();
+            var types = AgentFamilyReader.GetTypes(manager);
+            foreach (var type in types)
+            {
+                if (valuesByType.Count >= 50)
+                {
+                    outcome.Data["wouldRemoveValuesByTypeTruncated"] = true;
+                    break;
+                }
+
+                valuesByType.Add(new Dictionary<string, object?>
+                {
+                    ["type"] = type.Name,
+                    ["value"] = AgentFamilyReader.DisplayValue(type, parameter)
+                });
+            }
+
+            outcome.Data["wouldRemoveValuesByType"] = valuesByType;
+
             // Prove removability inside the rolled-back transaction: on some family
             // documents a built-in parameter is not flagged by
             // Definition.BuiltInParameter, and Revit itself rejects the removal
@@ -152,7 +173,9 @@ public sealed class RemoveFamilyParameterTool : AgentFamilyWriteToolBase
                             "rolled back)." +
                             (dependents.Count == 0
                                 ? string.Empty
-                                : " Formulas removed: " + string.Join(", ", dependents) + ".");
+                                : " Formulas removed: " + string.Join(", ", dependents) + ".") +
+                            " See wouldRemoveValuesByType for the per-type values that would " +
+                            "be lost.";
             outcome.Batch.Changed.Add(report);
             outcome.Data["wouldRemove"] = true;
             return;

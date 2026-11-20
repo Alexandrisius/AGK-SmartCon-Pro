@@ -175,6 +175,10 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(HasSessionMetrics))]
     private string _sessionMetricsText = string.Empty;
 
+    /// <summary>Full session numbers (turns, LLM/tool time, tokens, cost) for the tooltip.</summary>
+    [ObservableProperty]
+    private string _sessionMetricsDetails = string.Empty;
+
     public bool HasSessionMetrics => !string.IsNullOrEmpty(SessionMetricsText);
 
     [ObservableProperty]
@@ -617,7 +621,6 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             Messages.Clear();
             _toolCards.Clear();
             RenderStoredMessages(messages);
-            AppendSessionMetrics(messages.Count > 0);
             StatusText = messages.Count == 0
                 ? S("Agent_Status_NewChat", "Новый чат")
                 : S("Agent_Status_HistoryLoaded", "История загружена");

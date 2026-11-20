@@ -35,7 +35,13 @@ public sealed partial class AgentMainViewModel
                 item.IsVisible = false;
 
             var toolCalls = hidden.Count(item => item.IsTool);
-            var summary = CreateWorkSummary(hidden, toolCalls, TimeSpan.Zero, history: true);
+            var summary = CreateWorkSummary(
+                hidden,
+                toolCalls,
+                TimeSpan.Zero,
+                stopped: false,
+                reasoningOwner: null,
+                history: true);
             var inserted = false;
             foreach (var item in segment)
             {
@@ -72,18 +78,5 @@ public sealed partial class AgentMainViewModel
         Messages.Clear();
         foreach (var item in rebuilt)
             Messages.Add(item);
-    }
-
-    private void AppendSessionMetrics(bool hasMessages)
-    {
-        if (!hasMessages || string.IsNullOrEmpty(SessionMetricsText))
-            return;
-
-        Messages.Add(new AgentChatItemViewModel(AgentChatItemKind.Metrics)
-        {
-            Text = SessionMetricsText,
-            Details = S("Agent_Metrics_Session_Details",
-                "Итоги сессии по token_usage и tool_calls")
-        });
     }
 }

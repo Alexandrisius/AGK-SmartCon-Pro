@@ -10,8 +10,7 @@ public enum AgentChatItemKind
     Tool = 2,
     Error = 3,
     Info = 4,
-    WorkSummary = 5,
-    Metrics = 6
+    WorkSummary = 5
 }
 
 public sealed partial class AgentChatItemViewModel : ObservableObject
@@ -41,6 +40,7 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MarkdownText))]
+    [NotifyPropertyChangedFor(nameof(HasAnswerText))]
     private string _text = string.Empty;
 
     [ObservableProperty]
@@ -62,18 +62,28 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
 
     /// <summary>
     /// Streamed chain-of-thought of one assistant message. Shown in its own
-    /// collapsible block above the answer and auto-collapsed when the answer or a
+    /// collapsible line above the answer and auto-collapsed when the answer or a
     /// tool call starts (H5.5).
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasReasoning))]
+    [NotifyPropertyChangedFor(nameof(ShowReasoningBlock))]
     private string _reasoningText = string.Empty;
 
+    /// <summary>
+    /// The turn's work summary folds the final answer's reasoning into the hidden
+    /// work items: false keeps "question + answer" as the visible transcript.
+    /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowReasoningBlock))]
+    private bool _isReasoningVisible = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ReasoningCaption))]
     private string _reasoningHeader = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasReasoningStatus))]
+    [NotifyPropertyChangedFor(nameof(ReasoningCaption))]
     private string _reasoningStatus = string.Empty;
 
     [ObservableProperty]
@@ -103,13 +113,32 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
     public IReadOnlyList<AgentChatItemViewModel> WorkItems { get; init; } =
         Array.Empty<AgentChatItemViewModel>();
 
+    /// <summary>
+    /// Final answer whose reasoning line folds into this work row together with
+    /// the hidden steps, so the collapsed transcript is "question + answer" only.
+    /// </summary>
+    public AgentChatItemViewModel? ReasoningOwner { get; init; }
+
     public bool HasDetails => !string.IsNullOrEmpty(Details);
 
     public bool HasReasoning => !string.IsNullOrEmpty(ReasoningText);
 
-    public bool HasReasoningStatus => !string.IsNullOrEmpty(ReasoningStatus);
+    public bool ShowReasoningBlock => HasReasoning && IsReasoningVisible;
+
+    /// <summary>
+    /// One label, never "Размышления · Размышляю…" side by side: the streaming
+    /// status wins while the model thinks, the header settles afterwards.
+    /// </summary>
+    public string ReasoningCaption =>
+        !string.IsNullOrEmpty(ReasoningStatus) ? ReasoningStatus : ReasoningHeader;
 
     public string MarkdownText => IsStreaming ? string.Empty : Text;
+
+    /// <summary>
+    /// False while the model only streams reasoning: the answer bubble stays
+    /// hidden until real answer text arrives.
+    /// </summary>
+    public bool HasAnswerText => !string.IsNullOrEmpty(Text);
 
     partial void OnIsStreamingChanged(bool value) => OnPropertyChanged(nameof(MarkdownText));
 
@@ -129,8 +158,6 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
 
     public bool IsWorkSummary => Kind == AgentChatItemKind.WorkSummary;
 
-    public bool IsMetrics => Kind == AgentChatItemKind.Metrics;
-
     public string Alignment => IsUser ? "Right" : "Left";
 
     [RelayCommand]
@@ -145,5 +172,7 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
         IsWorkExpanded = !IsWorkExpanded;
         foreach (var item in WorkItems)
             item.IsVisible = IsWorkExpanded;
+        if (ReasoningOwner is not null)
+            ReasoningOwner.IsReasoningVisible = IsWorkExpanded;
     }
 }

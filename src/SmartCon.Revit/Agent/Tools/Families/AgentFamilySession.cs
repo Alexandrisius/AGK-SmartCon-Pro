@@ -385,9 +385,11 @@ internal sealed partial class AgentFamilySession : IDisposable
             return;
 
         _disposed = true;
+        // FamilyManager batch pattern (#96 / REVIT-237190): close + synchronous
+        // COM release + render-thread nudge after every family document cycle.
         try
         {
-            FamilyDoc.Close(false);
+            AgentFamilyDocCloser.Close(FamilyDoc);
             AddSection("close", "ok", "family document closed without saving");
         }
         catch (Exception ex)

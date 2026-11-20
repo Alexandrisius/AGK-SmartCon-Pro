@@ -42,8 +42,9 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             "call — no index; unplaced types are included. By default only type parameters are " +
             "searched. With includeInstanceParameters=true placed family instances are also " +
             "scanned, so instance-scope shared parameters (ADSK_Наименование and similar) are " +
-            "found; families with no placed instances can only be checked by opening the family " +
-            "document via get_family_parameters. matchedTypes and matchedInstanceParameters are " +
+            "found; families with no placed instances are flagged instanceParametersUnknown=true " +
+            "(their instance parameters can only be checked by opening the family document via " +
+            "get_family_parameters). matchedTypes and matchedInstanceParameters are " +
             "capped per family by maxMatchedTypes (default 10, max 50); the totals and *Truncated " +
             "flags show how many matches exist in full. compact=true returns *Names instead of " +
             "full rows.",
@@ -89,7 +90,8 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             {
                 return ToolResult.Fail(
                     "unknown_category",
-                    "Category '" + categoryFilter + "' was not found. " +
+                    "Category '" + categoryFilter + "' was not found" +
+                    AgentCategoryResolver.SuggestSuffix(doc, categoryFilter!) + ". " +
                     "[Action: pass a category name from list_categories or an OST_* built-in name]");
             }
 
@@ -200,6 +202,8 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                     : null,
                 ["matchedTypes"] = compact ? null : item.TypeMatches,
                 ["placedInstanceCount"] = item.PlacedInstanceCount,
+                ["instanceParametersUnknown"] =
+                    includeInstanceParameters && item.PlacedInstanceCount == 0,
                 ["matchedInstanceParameterCount"] = item.MatchedInstanceParametersTotal,
                 ["matchedInstanceParametersReturned"] = item.InstanceMatches.Count,
                 ["matchedInstanceParametersTruncated"] =
