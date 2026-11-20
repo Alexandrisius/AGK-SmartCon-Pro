@@ -9,10 +9,10 @@
 | `Release.R24` | 2024 | net48 | 2024.* | `SmartCon-X.X.X-R24.zip` |
 | `Release.R25` | 2025 | net8.0-windows | 2025.* | `SmartCon-X.X.X-R25.zip` |
 | `Release.R26` | 2026 | net8.0-windows | 2026.* | `SmartCon-X.X.X-R26.zip` |
-| `Release.R27` | 2027 | net10.0-windows | 2027.* | `SmartCon-X.X.X-R27.zip` |
+| `Release.R27` | 2027 | net10.0-windows | 2027.* | **ВЫКЛЮЧЕН** (`SmartConEnableRevit2027=false`) — ZIP не выпускается |
 
 **Правило (per-version бинарники, с #233):** каждая версия Revit в цепочке 2025+ получает
-СВОЮ shipping-конфигурацию и СВОЙ бинарник (R25→2025, R26→2026, R27→2027). Прежняя схема
+СВОЮ shipping-конфигурацию и СВОЙ бинарник (R25→2025, R26→2026; R27→2027 — при включённом флаге). Прежняя схема
 «один R25-бинарник для 2025+2026» сломала бы #233: в API 2026 у `WireType.WireMaterial` /
 `TemperatureRating` / `Insulation` сменились типы на `ElementId`, у `MaxSize` — на `string`;
 старый бинарник на Revit 2026 = `MissingMethodException`. Revit 2027 — .NET 10
@@ -33,13 +33,14 @@ Revit 2026.5+ тоже на .NET 10 — net8-бинарник R26 работае
 build-and-deploy.bat
 ```
 
-Скрипт собирает 6 shipping-конфигураций (R27/R26/R25/R24/R21/R19) + updater и деплоит в Revit.
+Скрипт собирает 6 shipping-конфигураций (R26/R25/R24/R23/R21/R19) + updater и деплоит в Revit.
 Шесть конфигураций собираются **параллельно** через `tools\build-all-configs.ps1`
 (безопасно: у каждой свой `obj\` и свой `obj\<Configuration>\project.assets.json`).
 Без деплоя та же параллельная сборка запускается так:
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools\build-all-configs.ps1`.
 Запускать `build-and-deploy.bat` только перед ручным тестом/сдачей.
-Каждая версия 2025+ получает СВОЙ бинарник: R25→2025, R26→2026, R27→2027 (per-version, #233).
+Каждая версия 2025+ получает СВОЙ бинарник: R25→2025, R26→2026 (per-version, #233).
+R27→2027 — когда включён флаг `SmartConEnableRevit2027` (net10, собирается из `tools\sdk10`).
 
 ## Почему НЕЛЬЗЯ использовать `-p:RevitVersion=...`
 
@@ -61,7 +62,7 @@ build-and-deploy.bat
 **КРИТИЧЕСКИ ВАЖНО:** `dotnet restore` без указания конфигурации пишет assets в `obj/`
 (Debug-fallback), а не в `obj\<Configuration>\`, и не парсит `RevitVersion` из имени
 конфигурации — это даёт fallback на RevitAPI 2021.* и ложные ошибки компиляции
-(CS0618 и др.) для R24/R25/R26/R27. Всегда собирай через `dotnet build -c Debug.RXX`
+(CS0618 и др.) для R24/R25/R26. Всегда собирай через `dotnet build -c Debug.RXX`
 (implicit restore в правильный per-config путь).
 
 **Правильный способ — restore + build в ОДНОЙ команде (без `--no-restore`):**
@@ -104,7 +105,8 @@ dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R24 --no-restore
    SDK 10 этого решения в 10–20 раз медленнее (dotnet/roslyn#81704: в компиляторе SDK 10 выключен
    tiered compilation; фикс 10.0.300+ скорость не возвращает — 148 с против 5–19 с холодной R25).
    Revit 2027 / net10 выключен флагом `SmartConEnableRevit2027=false` (`src/Directory.Build.props`):
-   `-c Debug.R27` падает с явной ошибкой. Вернуть: флаг в true + global.json на полосу 10.0.4xx.
+   `-c Debug.R27` падает с явной ошибкой. Вернуть: флаг в true + установить SDK 10.0.4xx
+   (R27-сборки идут из `tools\sdk10`, корневой `global.json` менять не нужно).
    BG1002 (*.baml not found) — гонка CLI-сборки с фоновыми design-time сборками VS Code
    (Roslyn LanguageServer) за общий obj/ (dotnet/wpf#4299), НЕ связана с бэндом SDK:
    повторить сборку; при залипании — закрыть VS Code, `git clean -xfd src`, пересобрать (#281).

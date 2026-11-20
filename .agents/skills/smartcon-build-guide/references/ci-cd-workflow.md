@@ -76,6 +76,6 @@
 
 ## Release — как работает
 
-1. **Локально:** `tools\release.bat` → `release.ps1` (инкремент версии, сборка `SmartCon.Tests -c Release.R25` как гейт Release-анализаторов (CA*), билд 7 конфигураций, тесты `--no-build`, publish, ZIP, Inno Setup, git tag, push, GitHub Release)
+1. **Локально:** `tools\release.bat` → `release.ps1` (инкремент версии, сборка `SmartCon.Tests -c Release.R25` как гейт Release-анализаторов (CA*), билд 6 конфигураций (R27 — при включённом SmartConEnableRevit2027), тесты `--no-build`, publish, ZIP, Inno Setup, git tag, push, GitHub Release)
 2. **CI:** `build.yml` срабатывает на tag `v*` → валидирует сборку + тесты (не создаёт релиз)
 3. **Единственный создатель релизов:** `release.ps1` — он же формирует changelog и загружает архивы

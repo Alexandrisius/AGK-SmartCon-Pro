@@ -1,10 +1,10 @@
 ---
 name: smartcon-build-guide
-description: "SmartCon Revit plugin build guide. Multi-version build configurations (R19/R21/R24/R25/R26/R27), correct restore/build commands, CI/CD workflow, branch protection. Triggers on: build, deploy, release, compile, dotnet build, configuration. Keywords: SmartCon, Revit, build, deploy, release, R19, R21, R24, R25, R26, R27, net48, net8, net10, restore, CI/CD."
+description: "SmartCon Revit plugin build guide. Multi-version build configurations (R19/R21/R23/R24/R25/R26; Revit 2027/net10 disabled behind SmartConEnableRevit2027), correct restore/build commands, CI/CD workflow, branch protection. Triggers on: build, deploy, release, compile, dotnet build, configuration. Keywords: SmartCon, Revit, build, deploy, release, R19, R21, R23, R24, R25, R26, R27, net48, net8, net10, SDK 8, global.json, restore, CI/CD."
 license: MIT
 metadata:
   author: AGK Engineering
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # SmartCon Build & Deploy Guide
@@ -23,8 +23,8 @@ Multi-version Revit plugin build configurations and CI/CD workflow.
 | `Debug.R19` | 2019-2020 | net48 | `dotnet build src/SmartCon.App/SmartCon.App.csproj -c Debug.R19` |
 
 **Tests:** `dotnet test src/SmartCon.Tests/SmartCon.Tests.csproj -c Debug.R25`
-(the Tests project is pinned to net8.0-windows — do NOT build it under R27: NU1201/NU1202;
-in the sln its R27 configurations are mapped to R25, honored only in VS)
+(the Tests project is pinned to net8.0-windows; its R27 configurations are mapped to R25
+in the sln, honored only in VS)
 
 **Важно:** таблица выше — деплой-сборки `SmartCon.App` (весь граф + WPF + ILRepack).
 Для итерации по модулю App не собирать: `dotnet build
@@ -36,9 +36,11 @@ src/SmartCon.<Module>/SmartCon.<Module>.csproj -c Debug.R25 -f net8.0-windows` �
 
 **SDK:** `global.json` pins **.NET SDK 8.0.4xx** (`rollForward: latestFeature`). Reason: every
 SDK 10 build of this solution is 10-20x slower (dotnet/roslyn#81704 — tiered compilation is
-disabled in the SDK 10 compiler; the 10.0.300+ fix does not restore the speed: 148 s vs 5-19 s
+disabled in the SDK 10 compiler; even 10.0.404 does not restore the speed: 98-115 s vs 5-19 s
 cold). Revit 2027 / net10 is disabled by `SmartConEnableRevit2027=false` in
-`src/Directory.Build.props`; restoring it requires SDK 10.0.4xx + that flag = true.
+`src/Directory.Build.props` — the single switch: set it to `true` and every script plus the CI
+matrix picks R27 up automatically (R27 builds run from `tools\sdk10`, which has its own
+`global.json` on SDK 10.0.4xx; the root `global.json` never changes).
 
 ## Build vs Deploy
 
@@ -150,18 +152,27 @@ local `.vscode/settings.json`.
 
 ### 6. Incremental Build / Fast Loop (главное правило)
 
-**Замерено 2026-11-19 (Debug.R25, `--no-restore`):**
+**Замерено 2026-11-20 на SDK 8.0.428 (Ryzen 9 7950X, obj вычищен перед «с нуля»):**
 
 | Сценарий | Время |
 |---|---|
-| no-op сборка `SmartCon.Revit` (модуль агента) | **1 с** |
-| повторная сборка `SmartCon.App` (steady state) | **2 с** |
-| первая сборка App после паузы | **27 с** |
-| холодная сборка одной конфигурации с нуля | **3–5 мин** |
-| 7 конфигураций подряд (sweep) | **20–30 мин** |
+| no-op свип всех 6 конфигураций (`tools\build-all-configs.ps1`) | **3.5 с** |
+| no-op сборка одного модуля (`--no-restore`) | **1 с** |
+| правка `.cs` в модуле → сборка этого модуля | 1–8 с |
+| правка `.cs` → инкрементальная сборка `SmartCon.App` (R25) | 5–13 с |
+| один конфигурация с нуля (obj удалён) | **5–9 с** |
+| все 6 конфигураций с нуля, параллельно | **23–30 с** |
 
-Инкрементальный билд исправен. «10 минут на сборку» — это холодная сборка
-конфигурации/App и/или sweep, а не обычная итерация по модулю.
+**Правило про build-файлы (частая «загадка»):** правка `src\Directory.Build.props`,
+`src\Directory.Build.targets`, `Directory.Packages.props` или `Version.txt` инвалидирует
+`CoreCompile` во **всех** проектах и **всех** конфигурациях — MSBuild хеширует
+`$(MSBuildAllProjects)` в `_GenerateCompileDependencyCache`. Следующий свип тогда =
+полная пересборка (~25–30 с вместо 3.5 с). Это ожидаемо и разово: обычная правка `.cs`
+так не делает.
+
+**Про разброс:** одинаковые прогоны на этой машине могут отличаться в 2–4 раза
+(единичные провалы 20–70 с при полной пересборке) — это окружение, не проект.
+Ориентир: холодная пересборка всех 6 конфигураций укладывается в 23–30 с, а не минуты.
 
 **WPF double-compile устранён (ADR-078, 2026-11-19).** Ранее правка `.cs` в
 `SmartCon.FamilyManager` занимала ~169 с из-за WPF local-type XAML: каждая итерация
@@ -179,10 +190,9 @@ local `.vscode/settings.json`.
 
 **Правила (для любого модуля и любого агента):**
 
-1. **Один конфиг на итерацию.** Разработка — `Debug.R25`. `Debug.R23` (net48) и
-   `Debug.R27` (net10) — только если правка реально условно-компилируемая, по
-   одному прогону. Полный sweep R19–R27 — только релизный гейт/CI, не после
-   каждой правки.
+1. **Один конфиг на итерацию.** Разработка — `Debug.R25`. `Debug.R23` (net48) — если правка
+   реально условно-компилируемая, по одному прогону. Полный свип 6 конфигураций — только
+   релизный гейт/CI, не после каждой правки. `Debug.R27` выключен (net10 → SDK 10).
 2. **Собирать только затронутый модуль:**
    `dotnet build src/SmartCon.<Module>/SmartCon.<Module>.csproj -c Debug.R25 -f net8.0-windows --no-restore`
    (`--no-restore` — только когда per-config assets уже созданы). `SmartCon.App`
@@ -207,9 +217,9 @@ local `.vscode/settings.json`.
 8. `Debug.*` пропускает NET-анализаторы и IDE code style
    (`EnableNETAnalyzers=false`, `EnforceCodeStyleInBuild=false`); генераторы и
    пакетные анализаторы остаются. `Release.*` (CI, `release.ps1`) — полный набор.
-9. Первая сборка после checkout / `dotnet clean` / `git clean` — полная (~3–5 мин
-   на конфигурацию); повторная без изменений — 1–2 с.
-10. Кросс-конфигурационная проверка (R23/R27) — в конце задачи или в CI, не в
+9. Первая сборка после checkout / `dotnet clean` / `git clean` — полная (5–9 с на
+   конфигурацию, 23–30 с на весь свип); повторная без изменений — 1–3 с.
+10. Кросс-конфигурационная проверка (R23; R27 — только когда включён) — в конце задачи или в CI, не в
     каждой итерации. Разные конфигурации можно собирать параллельно
     (`tools\build-all-configs.ps1`), одну и ту же — никогда.
 11. Antivirus: исключить репозиторий, `%USERPROFILE%\.nuget\packages`,
