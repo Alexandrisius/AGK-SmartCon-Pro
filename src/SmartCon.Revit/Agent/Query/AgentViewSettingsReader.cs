@@ -15,7 +15,7 @@ internal static class AgentViewSettingsReader
         var hasTemplate = templateId != ElementId.InvalidElementId;
         var template = hasTemplate ? doc.GetElement(templateId) : null;
 
-        var hiddenCategories = ReadHiddenCategories(doc, view);
+        var hiddenCategories = ReadHiddenCategories(doc, view, out var hiddenCategoryCount);
         return new ViewSettings
         {
             ViewId = view.Id.GetValue(),
@@ -31,7 +31,8 @@ internal static class AgentViewSettingsReader
             ViewRange = ReadViewRange(doc, view),
             Crop = ReadCrop(view),
             HiddenCategories = hiddenCategories,
-            HiddenCategoryCount = hiddenCategories.Count,
+            HiddenCategoryCount = hiddenCategoryCount,
+            HiddenCategoryListCapped = hiddenCategoryCount > hiddenCategories.Count,
             HiddenCategoryEditableCount = CountEditableHiddenCategories(view, hiddenCategories),
             HiddenWorksets = ReadHiddenWorksets(doc, view),
             ControlledParameters = ReadTemplateParameters(doc, view, controlled: true),
@@ -75,7 +76,8 @@ internal static class AgentViewSettingsReader
             CropActive = settings.Crop?.Active,
             CropVisible = settings.Crop?.Visible,
             CropShapeSet = settings.Crop?.ShapeValid,
-            HiddenCategoryCount = settings.HiddenCategories.Count,
+            HiddenCategoryCount = settings.HiddenCategoryCount,
+            HiddenCategoryListCapped = settings.HiddenCategoryListCapped,
             HiddenCategoryEditableCount = settings.HiddenCategoryEditableCount,
             HiddenWorksetCount = settings.HiddenWorksets.Count,
             ControlledParameterCount = settings.ControlledParameters.Count,
@@ -224,14 +226,13 @@ internal static class AgentViewSettingsReader
 
     private static IReadOnlyList<CategoryVisibilityInfo> ReadHiddenCategories(
         Document doc,
-        View view)
+        View view,
+        out int total)
     {
+        total = 0;
         var hidden = new List<CategoryVisibilityInfo>();
         foreach (Category category in doc.Settings.Categories)
         {
-            if (hidden.Count >= MaxHiddenCategories)
-                break;
-
             try
             {
                 if (!view.GetCategoryHidden(category.Id))
@@ -241,6 +242,12 @@ internal static class AgentViewSettingsReader
             {
                 continue;
             }
+
+            // Keep counting past the cap: the count claims to be the total, and a
+            // 300-category "hide everything" view reported exactly 300.
+            total++;
+            if (hidden.Count >= MaxHiddenCategories)
+                continue;
 
             hidden.Add(new CategoryVisibilityInfo
             {

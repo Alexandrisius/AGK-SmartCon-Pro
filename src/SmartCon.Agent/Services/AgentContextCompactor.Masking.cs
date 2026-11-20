@@ -87,10 +87,16 @@ public sealed partial class AgentContextCompactor
     /// </summary>
     private static string BuildDigest(string? content)
     {
-        var success = true;
+        var success = false;
+        var parsed = false;
         var affected = 0;
         string? message = null;
         string? resultHandle = null;
+        string? errorCode = null;
+        string? documentVersion = null;
+        var warnings = new List<string>();
+        var skills = new List<string>();
+        var skillsDropped = false;
 
         if (!string.IsNullOrWhiteSpace(content))
         {
@@ -100,6 +106,7 @@ public sealed partial class AgentContextCompactor
                 var root = document.RootElement;
                 if (root.ValueKind == JsonValueKind.Object)
                 {
+                    parsed = true;
                     if (root.TryGetProperty("success", out var successValue)
                         && successValue.ValueKind is JsonValueKind.True or JsonValueKind.False)
                     {
@@ -118,9 +125,42 @@ public sealed partial class AgentContextCompactor
 
                     if (root.TryGetProperty("affectedCount", out var affectedValue)
                         && affectedValue.ValueKind == JsonValueKind.Number
-                        && affectedValue.TryGetInt32(out var parsed))
+                        && affectedValue.TryGetInt32(out var parsedAffected))
                     {
-                        affected = parsed;
+                        affected = parsedAffected;
+                    }
+
+                    if (root.TryGetProperty("errorCode", out var errorValue)
+                        && errorValue.ValueKind == JsonValueKind.String)
+                        errorCode = errorValue.GetString();
+
+                    if (root.TryGetProperty("documentVersion", out var versionValue)
+                        && versionValue.ValueKind == JsonValueKind.String)
+                        documentVersion = versionValue.GetString();
+
+                    if (root.TryGetProperty("warnings", out var warningsValue)
+                        && warningsValue.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var warning in warningsValue.EnumerateArray().Take(5))
+                        {
+                            if (warning.ValueKind == JsonValueKind.String)
+                                warnings.Add(warning.GetString() ?? string.Empty);
+                        }
+                    }
+
+                    if (root.TryGetProperty("skills", out var skillsValue)
+                        && skillsValue.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var skill in skillsValue.EnumerateArray())
+                        {
+                            if (skill.ValueKind == JsonValueKind.Object
+                                && skill.TryGetProperty("pack", out var packValue)
+                                && packValue.ValueKind == JsonValueKind.String)
+                            {
+                                skills.Add(packValue.GetString() ?? string.Empty);
+                                skillsDropped = true;
+                            }
+                        }
                     }
 
                     resultHandle = FindHandle(root);
@@ -128,7 +168,7 @@ public sealed partial class AgentContextCompactor
             }
             catch (JsonException)
             {
-                // Not JSON: the digest stays generic.
+                // Not JSON: the digest stays generic and success stays false.
             }
         }
 
@@ -140,8 +180,14 @@ public sealed partial class AgentContextCompactor
         {
             compacted = true,
             success,
+            unreadable = !parsed,
             message = message ?? "Tool result compacted to fit the context budget.",
+            errorCode,
             affectedCount = affected,
+            documentVersion,
+            warnings,
+            skills,
+            skillsDropped,
             truncated = true,
             resultHandle,
             hint = handleHint

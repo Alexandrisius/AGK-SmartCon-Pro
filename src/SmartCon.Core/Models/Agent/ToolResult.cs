@@ -75,7 +75,8 @@ public sealed class ToolResult
         string message,
         IReadOnlyList<string>? warnings = null,
         JsonElement? data = null,
-        IReadOnlyList<string>? repairs = null)
+        IReadOnlyList<string>? repairs = null,
+        int affectedCount = 0)
     {
         return new ToolResult
         {
@@ -84,7 +85,8 @@ public sealed class ToolResult
             Message = message,
             Warnings = warnings ?? Array.Empty<string>(),
             Data = data,
-            Repairs = repairs ?? Array.Empty<string>()
+            Repairs = repairs ?? Array.Empty<string>(),
+            AffectedCount = affectedCount
         };
     }
 

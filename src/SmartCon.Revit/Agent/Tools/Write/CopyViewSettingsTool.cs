@@ -138,6 +138,22 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
                         || string.Equals(change.ErrorCode, "template_view_type_mismatch",
                             StringComparison.Ordinal))
                     {
+                        // A template/visibility section is legitimately skipped: the
+                        // copy continues. A locked crop/view range is a refusal, exactly
+                        // like set_view_crop/set_view_range, so success would be a lie.
+                        var skippable = section is "template" or "visibility";
+                        if (!skippable)
+                        {
+                            sectionReports.Add(new SectionReport
+                            {
+                                Section = section,
+                                Status = "failed",
+                                Reason = change.Reason
+                            });
+                            failure = change;
+                            break;
+                        }
+
                         var lockedReason = section + ": " + (change.Reason ?? change.ErrorCode);
                         skipReasons.Add(lockedReason);
                         sectionReports.Add(new SectionReport

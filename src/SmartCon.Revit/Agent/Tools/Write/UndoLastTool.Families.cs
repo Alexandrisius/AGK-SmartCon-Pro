@@ -127,7 +127,7 @@ public sealed partial class UndoLastTool
                 throw new InvalidOperationException("Revit did not return a family document.");
             }
 
-            var transaction = new Transaction(familyDoc, "SmartCon undo family");
+            using var transaction = new Transaction(familyDoc, "SmartCon undo family");
             var started = false;
             try
             {
@@ -162,8 +162,14 @@ public sealed partial class UndoLastTool
                     }
                 }
 
-                transaction.Commit();
+                var commitStatus = transaction.Commit();
                 started = false;
+                if (commitStatus != TransactionStatus.Committed)
+                {
+                    throw new InvalidOperationException(
+                        "Revit did not commit the undo transaction (" + commitStatus +
+                        "); the family was not restored.");
+                }
             }
             catch (Exception)
             {
@@ -172,10 +178,18 @@ public sealed partial class UndoLastTool
                 throw;
             }
 
-            var loaded = familyDoc.LoadFamily(projectDoc, new FamilyRestoreLoadOptions());
-            if (loaded is null)
-                throw new InvalidOperationException(
-                    "Revit did not load the reverted family back into the project.");
+            // Reload only when something actually changed: an undo with zero applied
+// operations must not delete and recreate the family element (a new id and
+// a project modification outside any change set).
+            if (applied > 0)
+            {
+                var loaded = familyDoc.LoadFamily(projectDoc, new FamilyRestoreLoadOptions());
+                if (loaded is null)
+                {
+                    throw new InvalidOperationException(
+                        "Revit did not load the reverted family back into the project.");
+                }
+            }
         }
         catch (Exception ex)
         {

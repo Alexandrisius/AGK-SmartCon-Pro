@@ -51,7 +51,8 @@ public static class AgentToolInputRepair
         {
             var schema = schemaDocument.RootElement;
             if (schema.ValueKind != JsonValueKind.Object
-                || !string.Equals(SchemaType(schema), "object", StringComparison.Ordinal))
+                || !string.Equals(
+                    AgentJsonSchema.PrimaryType(schema), "object", StringComparison.Ordinal))
             {
                 return Unchanged(args, repairs);
             }
@@ -70,7 +71,7 @@ public static class AgentToolInputRepair
                 return Unchanged(args, repairs);
 
             var changed = false;
-            RepairObject(schema, root, string.Empty, repairs, ref changed, 0);
+            RepairObject(schema, schema, root, string.Empty, repairs, ref changed, 0);
             if (!changed)
                 return Unchanged(args, repairs);
 
@@ -107,6 +108,7 @@ public static class AgentToolInputRepair
     };
 
     private static void RepairObject(
+        JsonElement root,
         JsonElement schema,
         JsonObject value,
         string path,
@@ -117,6 +119,7 @@ public static class AgentToolInputRepair
         if (depth > MaxDepth)
             return;
 
+        schema = AgentJsonSchema.Dereference(root, schema);
         var hasProperties = schema.TryGetProperty("properties", out var properties)
                             && properties.ValueKind == JsonValueKind.Object;
 
@@ -156,7 +159,7 @@ public static class AgentToolInputRepair
                 var childPath = JoinPath(path, property.Name);
                 value.Remove(property.Name);
                 var repaired = RepairValue(
-                    property.Value, current, childPath, repairs, ref changed, depth + 1);
+                    root, property.Value, current, childPath, repairs, ref changed, depth + 1);
                 if (repaired is not null)
                 {
                     value[property.Name] = repaired;
@@ -191,6 +194,7 @@ public static class AgentToolInputRepair
     }
 
     private static JsonNode? RepairValue(
+        JsonElement root,
         JsonElement schema,
         JsonNode? value,
         string path,
@@ -201,13 +205,16 @@ public static class AgentToolInputRepair
         if (value is null || depth > MaxDepth)
             return value;
 
-        var type = SchemaType(schema);
+        schema = AgentJsonSchema.Dereference(root, schema);
+        value = NormalizeEnum(schema, value, path, repairs, ref changed, depth);
+
+        var type = RepairType(root, schema, value);
         switch (type)
         {
             case "object":
-                return RepairObjectValue(schema, value, path, repairs, ref changed, depth);
+                return RepairObjectValue(root, schema, value, path, repairs, ref changed, depth);
             case "array":
-                return RepairArrayValue(schema, value, path, repairs, ref changed, depth);
+                return RepairArrayValue(root, schema, value, path, repairs, ref changed, depth);
             case "string":
             case "integer":
             case "number":
@@ -218,7 +225,96 @@ public static class AgentToolInputRepair
         }
     }
 
+    private static string? RepairType(JsonElement root, JsonElement schema, JsonNode? value)
+    {
+        schema = AgentJsonSchema.Dereference(root, schema);
+        var types = AgentJsonSchema.Types(schema);
+        if (types.Length == 0)
+            return null;
+        if (types.Length == 1)
+            return types[0];
+
+        foreach (var type in types)
+        {
+            if (TypeMatches(type, value))
+                return type;
+        }
+
+        foreach (var type in types)
+        {
+            if (!string.Equals(type, "null", StringComparison.Ordinal))
+                return type;
+        }
+
+        return null;
+    }
+
+    private static bool TypeMatches(string type, JsonNode? value)
+    {
+        switch (type)
+        {
+            case "object":
+                return value is JsonObject;
+            case "array":
+                return value is JsonArray;
+            case "null":
+                return value is null;
+            case "string":
+                return value is JsonValue text && text.GetValueKind() == JsonValueKind.String;
+            case "number":
+                return value is JsonValue number && number.GetValueKind() == JsonValueKind.Number;
+            case "integer":
+                return value is JsonValue integer
+                       && integer.GetValueKind() == JsonValueKind.Number
+                       && TryParseInteger(integer.ToJsonString(), out _);
+            case "boolean":
+                return value is JsonValue flag
+                       && flag.GetValueKind() is JsonValueKind.True or JsonValueKind.False;
+            default:
+                return false;
+        }
+    }
+
+    private static JsonNode NormalizeEnum(
+        JsonElement schema,
+        JsonNode value,
+        string path,
+        List<string> repairs,
+        ref bool changed,
+        int depth)
+    {
+        if (value is not JsonValue jsonValue
+            || jsonValue.GetValueKind() != JsonValueKind.String
+            || !schema.TryGetProperty("enum", out var allowed)
+            || allowed.ValueKind != JsonValueKind.Array)
+        {
+            return value;
+        }
+
+        var text = jsonValue.GetValue<string>();
+        foreach (var option in allowed.EnumerateArray())
+        {
+            if (option.ValueKind != JsonValueKind.String)
+                continue;
+
+            var canonical = option.GetString()!;
+            if (!string.Equals(canonical, text, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (string.Equals(canonical, text, StringComparison.Ordinal))
+                return value;
+
+            repairs.Add(Describe(
+                path, depth, "normalized enum \"" + text + "\" -> \"" + canonical + "\""));
+            changed = true;
+            return JsonValue.Create(canonical)!;
+        }
+
+        return value;
+    }
+
     private static JsonNode? RepairObjectValue(
+        JsonElement root,
         JsonElement schema,
         JsonNode value,
         string path,
@@ -239,12 +335,13 @@ public static class AgentToolInputRepair
         }
 
         if (value is JsonObject jsonObject)
-            RepairObject(schema, jsonObject, path, repairs, ref changed, depth);
+            RepairObject(root, schema, jsonObject, path, repairs, ref changed, depth);
 
         return value;
     }
 
     private static JsonNode? RepairArrayValue(
+        JsonElement root,
         JsonElement schema,
         JsonNode value,
         string path,
@@ -254,7 +351,8 @@ public static class AgentToolInputRepair
     {
         if (value is JsonValue scalar
             && scalar.GetValueKind() == JsonValueKind.String
-            && SchemaType(GetItemsSchema(schema)) == "string"
+            && schema.TryGetProperty("items", out var declaredItems)
+            && SchemaType(AgentJsonSchema.Dereference(root, declaredItems)) == "string"
             && scalar.GetValue<string>().IndexOf(',') >= 0)
         {
             var parts = scalar.GetValue<string>().Split(',');
@@ -299,7 +397,7 @@ public static class AgentToolInputRepair
 
             array.RemoveAt(index);
             var repaired = RepairValue(
-                items, item, path + "[" + index + "]", repairs, ref changed, depth + 1);
+                root, items, item, path + "[" + index + "]", repairs, ref changed, depth + 1);
             array.Insert(index, repaired);
         }
 
@@ -435,12 +533,6 @@ public static class AgentToolInputRepair
         && type.ValueKind == JsonValueKind.String
             ? type.GetString()
             : null;
-
-    private static JsonElement GetItemsSchema(JsonElement schema) =>
-        schema.ValueKind == JsonValueKind.Object
-        && schema.TryGetProperty("items", out var items)
-            ? items
-            : default;
 
     private static bool TryParseInteger(string text, out long value)
     {

@@ -26,14 +26,15 @@ public sealed class ListViewsTool : AgentReadToolBase
             "browser folder path substring. Returns view id, name, type, level, template, " +
             "sheet number, browserFolder (path), browserFolderPath (segments), " +
             "browserFolderParameters (grouping parameter per segment: name/shared/built-in) " +
-            "and inBrowser. Default limit 200, max 500. " +
+            "and inBrowser. Default limit 200, max 500; offset/nextOffset page through a larger " +
+            "inventory. " +
             "summaryOnly=true returns counts by view type, level and browser folder instead of cards. " +
             "fields=[\"viewId\",\"name\",\"type\",\"level\",\"folder\"] projects each card onto the " +
             "listed properties; aliases and unknown names are reported in substitutedFields / " +
             "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -49,6 +50,7 @@ public sealed class ListViewsTool : AgentReadToolBase
         var summaryOnly = AgentJson.GetBool(args, "summaryOnly", false);
         var fields = AgentJson.GetStringArray(args, "fields");
         var limit = Math.Max(1, Math.Min(AgentJson.GetInt(args, "limit", DefaultLimit), MaxLimit));
+        var offset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
 
         BrowserOrganization? browserOrganization = null;
         try
@@ -116,7 +118,9 @@ public sealed class ListViewsTool : AgentReadToolBase
                 "Matched " + total + " view(s); summary by type and level.");
         }
 
-        var views = matched.Take(limit).ToList();
+        var views = matched.Skip(offset).Take(limit).ToList();
+        var hasMore = offset + views.Count < total;
+        var nextOffset = hasMore ? offset + views.Count : (int?)null;
 
         if (fields.Count > 0)
         {
@@ -139,7 +143,9 @@ public sealed class ListViewsTool : AgentReadToolBase
                 totalAll,
                 totalTemplates,
                 returned = projected.Count,
-                truncated = total > projected.Count,
+                offset,
+                nextOffset,
+                truncated = hasMore,
                 browserOrganization = browserOrganization?.Name,
                 ignoredFields = ignored.Count > 0 ? ignored : null,
                 substitutedFields = substituted.Count > 0 ? substituted : null,
@@ -161,7 +167,9 @@ public sealed class ListViewsTool : AgentReadToolBase
             totalAll,
             totalTemplates,
             returned = views.Count,
-            truncated = total > views.Count,
+            offset,
+            nextOffset,
+            truncated = hasMore,
             browserOrganization = browserOrganization?.Name,
             views
         };

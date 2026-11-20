@@ -79,11 +79,24 @@ public sealed partial class AgentPlanExecutor
             if (!IsWrite(step.ToolName))
                 continue;
 
-            var tool = GetTool(step.ToolName);
-            if (tool is null || !tool.Definition.SupportsDryRun)
-                continue;
-
             var result = results.First(item => item.StepId == step.StepId);
+            var tool = GetTool(step.ToolName);
+            if (tool is null)
+            {
+                result.PreviewSkipped = true;
+                result.PreviewSkipReason = "unknown_tool";
+                continue;
+            }
+
+            if (!tool.Definition.SupportsDryRun)
+            {
+                // The step will work for real during apply. Claiming a complete
+                // preview while it was never dry-run is exactly what made a
+                // destructive retry look safe on approval.
+                result.PreviewSkipped = true;
+                result.PreviewSkipReason = "tool_has_no_dry_run";
+                continue;
+            }
 
             // Every dry run is rolled back, so a step that consumes the output of
             // an earlier write step cannot be previewed honestly. It is reported

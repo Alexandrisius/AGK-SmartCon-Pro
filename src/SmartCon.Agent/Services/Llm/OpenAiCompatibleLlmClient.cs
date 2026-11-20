@@ -75,16 +75,68 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
 #endif
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
+            // Net48 has no ReadLineAsync(ct): Stop would not interrupt a stream
+            // that is waiting for the next line. Disposing the response from the
+            // registration unblocks the pending read.
+            using var cancelRegistration = ct.CanBeCanceled
+                ? ct.Register(
+                    static state =>
+                    {
+                        try
+                        {
+                            ((HttpResponseMessage)state!).Dispose();
+                        }
+                        catch
+                        {
+                            // Best effort: the read loop turns the failure into cancellation.
+                        }
+                    },
+                    response)
+                : default;
+
             var buffer = new List<LlmStreamEvent>();
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
 
-                #if NET8_0_OR_GREATER
-                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                string? line;
+                try
+                {
+#if NET8_0_OR_GREATER
+                    line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
 #else
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                    line = await reader.ReadLineAsync().ConfigureAwait(false);
 #endif
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    throw new AgentLlmException(
+                        "LLM stream timed out while waiting for data. " +
+                        "[Action: retry; if it repeats, raise the timeout in the agent settings]",
+                        null,
+                        ex);
+                }
+                catch (ObjectDisposedException) when (ct.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(ct);
+                }
+                catch (IOException) when (ct.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(ct);
+                }
+                catch (IOException ex)
+                {
+                    throw new AgentLlmException(
+                        "LLM stream was interrupted: " + ex.Message +
+                        " [Action: retry the turn; the partial answer is kept in the chat]",
+                        null,
+                        ex);
+                }
+
                 if (line is null)
                     break;
 
@@ -219,8 +271,8 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
                 {
                     throw new AgentLlmException(
                         "LLM transport error: " + ex.Message +
-                        ". Проверьте, что Revit разрешён в брандмауэре, или укажите прокси " +
-                        "в настройках агента (шестерёнка → Прокси).",
+                        ". Проверьте, что Revit разрешён в брандмауэре; при необходимости " +
+                        "настройте системный прокси (переменная HTTP_PROXY).",
                         null,
                         ex);
                 }

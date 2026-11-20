@@ -15,7 +15,9 @@ public sealed partial class RenameViewsJobAction
         JobUnit unit,
         JobUnitPreview preview)
     {
-        if (!TryFindByUniqueId<View>(context.Document, unit.UnitKey, out var view, out var error))
+        var args = Parse<RenameUnitArgs>(unit.ArgsJson);
+        if (!TryFindByUniqueId<View>(
+                context.Document, UniqueIdOf(unit, args), out var view, out var error))
         {
             return new JobUnitVerification
             {
@@ -28,11 +30,16 @@ public sealed partial class RenameViewsJobAction
 
         var expected = ReadValue(preview.ExpectedJson);
         var actual = view!.Name;
+        // A temp-only unit is verified right after its own apply (name == temp)
+        // and again at job finalize, when the final unit has already renamed it.
+        var verified = string.Equals(actual, expected, StringComparison.Ordinal)
+                       || (args is { TempOnly: true }
+                           && string.Equals(actual, args.NewName, StringComparison.Ordinal));
         return new JobUnitVerification
         {
-            Verified = string.Equals(actual, expected, StringComparison.Ordinal),
+            Verified = verified,
             ActualJson = Value(actual),
-            MismatchReason = string.Equals(actual, expected, StringComparison.Ordinal)
+            MismatchReason = verified
                 ? null
                 : "Expected name '" + expected + "', the view is named '" + actual + "'"
         };
@@ -54,7 +61,11 @@ public sealed partial class RenameViewsJobAction
             };
         }
 
-        if (!TryFindByUniqueId<View>(context.Document, unit.UnitKey, out var view, out var error))
+        if (!TryFindByUniqueId<View>(
+                context.Document,
+                UniqueIdOf(unit, Parse<RenameUnitArgs>(unit.ArgsJson)),
+                out var view,
+                out var error))
         {
             return new JobUnitUndo
             {
@@ -67,6 +78,23 @@ public sealed partial class RenameViewsJobAction
         if (string.Equals(current, target, StringComparison.Ordinal))
         {
             return new JobUnitUndo { Success = true, Skipped = true, ActualJson = Value(current) };
+        }
+
+        // Conflict guard: the job applied NewName; if the view now has a third
+        // name, someone renamed it after the job and a silent overwrite would
+        // lose that edit. Temp-only units are identified by their args.
+        var args = Parse<RenameUnitArgs>(unit.ArgsJson);
+        if (args is { TempOnly: false }
+            && !string.IsNullOrWhiteSpace(args.NewName)
+            && !string.Equals(current, args.NewName, StringComparison.Ordinal))
+        {
+            return new JobUnitUndo
+            {
+                ErrorCode = "undo_conflict",
+                ErrorDetail = "The view is named '" + current + "' instead of the applied '" +
+                              args.NewName + "'; it was renamed after the job. Restore it " +
+                              "manually or rename it back before rolling back."
+            };
         }
 
         if (dryRun)

@@ -123,6 +123,7 @@ public sealed class SetFilterOverridesTool : AgentWriteToolBase
         var readBack = new List<object>();
         var anyFailure = false;
         var filterElementId = filter.Id;
+        var warnedDisabledFilter = false;
 
         foreach (var viewId in viewIds)
         {
@@ -201,6 +202,29 @@ public sealed class SetFilterOverridesTool : AgentWriteToolBase
 
             var after = AgentFilterWriteHelper.ReadState(view);
             var afterJson = AgentFilterWriteHelper.SerializeState(after);
+
+            // Overrides on a disabled filter are stored but invisible: the user
+            // would see "applied" and no change on screen.
+            if (!warnedDisabledFilter)
+            {
+                try
+                {
+                    if (!view.GetIsFilterEnabled(filterElementId))
+                    {
+                        warnedDisabledFilter = true;
+                        outcome.Warnings.Add(
+                            "The filter '" + filter.Name + "' is assigned to view '" + view.Name +
+                            "' but disabled there: the overrides have no visible effect. " +
+                            "[Action: enable the filter (create_view_filter visibility=show/hide " +
+                            "or the V/G dialog) and retry]");
+                    }
+                }
+                catch (Exception)
+                {
+                    // The enabled flag is not readable for this view; skip the hint.
+                }
+            }
+
             var entry = FindEntry(after, filterElementId);
 
             readBack.Add(new
@@ -383,15 +407,41 @@ public sealed class SetFilterOverridesTool : AgentWriteToolBase
         }
 
         current.ProjectionLineColor = target.ProjectionLineColor ?? current.ProjectionLineColor;
+        current.ProjectionLinePatternId =
+            target.ProjectionLinePatternId ?? current.ProjectionLinePatternId;
+        current.ProjectionLineWeight =
+            target.ProjectionLineWeight ?? current.ProjectionLineWeight;
         current.CutLineColor = target.CutLineColor ?? current.CutLineColor;
+        current.CutLinePatternId = target.CutLinePatternId ?? current.CutLinePatternId;
+        current.CutLineWeight = target.CutLineWeight ?? current.CutLineWeight;
+        current.CutForegroundColor =
+            target.CutForegroundColor ?? current.CutForegroundColor;
+        current.CutForegroundPatternId =
+            target.CutForegroundPatternId ?? current.CutForegroundPatternId;
+        current.CutForegroundPatternVisible =
+            target.CutForegroundPatternVisible ?? current.CutForegroundPatternVisible;
+        current.CutBackgroundColor =
+            target.CutBackgroundColor ?? current.CutBackgroundColor;
+        current.CutBackgroundPatternId =
+            target.CutBackgroundPatternId ?? current.CutBackgroundPatternId;
+        current.CutBackgroundPatternVisible =
+            target.CutBackgroundPatternVisible ?? current.CutBackgroundPatternVisible;
         current.SurfaceForegroundColor =
             target.SurfaceForegroundColor ?? current.SurfaceForegroundColor;
         current.SurfaceBackgroundColor =
             target.SurfaceBackgroundColor ?? current.SurfaceBackgroundColor;
         current.SurfaceForegroundPatternId =
             target.SurfaceForegroundPatternId ?? current.SurfaceForegroundPatternId;
-        current.Transparency = target.Transparency;
-        current.Halftone = target.Halftone;
+        current.SurfaceForegroundPatternVisible =
+            target.SurfaceForegroundPatternVisible ?? current.SurfaceForegroundPatternVisible;
+        current.SurfaceBackgroundPatternId =
+            target.SurfaceBackgroundPatternId ?? current.SurfaceBackgroundPatternId;
+        current.SurfaceBackgroundPatternVisible =
+            target.SurfaceBackgroundPatternVisible ?? current.SurfaceBackgroundPatternVisible;
+        // Only what the caller specified: a color-only request must not reset
+        // transparency/halftone that a person set earlier.
+        current.Transparency = target.Transparency ?? current.Transparency;
+        current.Halftone = target.Halftone ?? current.Halftone;
         return AgentFilterWriteHelper.ToSettings(current);
     }
 
@@ -419,9 +469,10 @@ public sealed class SetFilterOverridesTool : AgentWriteToolBase
             parts.Add("cut " + state.CutLineColor);
         if (state.SurfaceForegroundPatternId is not null)
             parts.Add("pattern " + state.SurfaceForegroundPatternId);
-        if (state.Transparency > 0)
-            parts.Add("transparency " + state.Transparency.ToString(CultureInfo.InvariantCulture));
-        if (state.Halftone)
+        if (state.Transparency is > 0)
+            parts.Add("transparency " + state.Transparency.Value.ToString(
+                CultureInfo.InvariantCulture));
+        if (state.Halftone is true)
             parts.Add("halftone");
 
         return parts.Count == 0 ? "empty overrides" : string.Join(", ", parts);

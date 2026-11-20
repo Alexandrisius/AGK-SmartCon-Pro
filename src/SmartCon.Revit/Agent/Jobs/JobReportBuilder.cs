@@ -59,13 +59,26 @@ public sealed class JobReportBuilder
 
         var mismatches = 0;
         IJobAction? action = null;
-        var actionFound = readBack && _actions.TryGetValue(job.Spec.Action, out action);
+        // Read-back verifies what was applied. Running it on a preview rewrote
+        // Skipped units to Mismatch, and apply never touches Mismatch — a job
+        // that was never started could end up CompletedWithFailures forever.
+        var actionFound = readBack
+                          && job.StartedAt is not null
+                          && _actions.TryGetValue(job.Spec.Action, out action);
         if (actionFound && action is not null)
         {
             mismatches = VerifyItems(document, job, action, items);
             if (mismatches > 0)
             {
                 items = _store.LoadAllItemsAsync(jobId, CancellationToken.None).GetAwaiter().GetResult();
+                // Keep jobs.totals_json in step with the items it summarizes;
+                // otherwise get_job_status reports numbers the report contradicts.
+                _store.UpdateTotalsAsync(
+                        jobId,
+                        JobJson.Serialize(JobTotals.FromItems(items)),
+                        CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
             }
         }
 
@@ -193,7 +206,7 @@ public sealed class JobReportBuilder
         var updates = new List<JobItemUpdate>();
         var mismatches = 0;
 
-        foreach (var item in items.Where(item => item.State is JobItemState.Done or JobItemState.Skipped))
+        foreach (var item in items.Where(item => item.State is JobItemState.Done))
         {
             var preview = JobJson.Deserialize<JobUnitPreview>(item.PreviewJson);
             if (preview is null)
@@ -303,7 +316,16 @@ public sealed class JobReportBuilder
             return string.Empty;
         }
 
-        var text = value!.Replace("\"", "\"\"");
+        var text = value!;
+
+        // CSV formula injection (CWE-1236): a view name like =HYPERLINK(...)
+        // would execute when the report is opened in Excel. Prefix with a quote
+        // so the cell stays text.
+        var first = text[0];
+        if (first is '=' or '+' or '-' or '@' or '\t' or '\r')
+            text = "'" + text;
+
+        text = text.Replace("\"", "\"\"");
         return text.IndexOf(',') >= 0 || text.IndexOf('"') >= 0 || text.IndexOf('\n') >= 0
             ? "\"" + text + "\""
             : text;

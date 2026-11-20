@@ -16,11 +16,24 @@ public sealed partial class AgentMainViewModel
     private void AttachConfirmationService(AgentConfirmationService service)
     {
         service.Requested += OnConfirmationRequested;
+        service.Finished += OnConfirmationFinished;
     }
 
     private void DetachConfirmationService(AgentConfirmationService service)
     {
         service.Requested -= OnConfirmationRequested;
+        service.Finished -= OnConfirmationFinished;
+    }
+
+    private void OnConfirmationFinished()
+    {
+        // A request can expire (5-minute timeout) or be cancelled by the turn:
+        // the overlay must not stay clickable after the tool already gave up.
+        var hide = new Action(() => IsConfirmationVisible = false);
+        if (_dispatcher.CheckAccess())
+            hide();
+        else
+            _ = _dispatcher.InvokeAsync(hide);
     }
 
     [ObservableProperty]

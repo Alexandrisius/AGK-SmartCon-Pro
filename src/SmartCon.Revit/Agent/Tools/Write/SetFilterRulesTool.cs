@@ -37,7 +37,8 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
             "Replaces the rules of an existing view filter by filterId or filterName. Conditions " +
             "use the same DSL as create_view_filter ({field: family|type|level|room|" +
             "system|parameter, parameter, op, value, unit} with logic=and|or); an empty conditions " +
-            "array clears all rules. Numeric values are converted with the Revit unit API: pass " +
+            "array clears all rules, while omitting conditions changes only the categories and " +
+            "leaves the rules untouched. Numeric values are converted with the Revit unit API: pass " +
             "unit=\"mm\" (or cm|m|ft|in|m2|m3|raw) or omit it to use the parameter's project " +
             "display unit; a unit of the wrong dimension is rejected with invalid_condition. " +
             "categories (names) optionally replaces the filter's " +
@@ -79,6 +80,11 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
         var conditions = AgentFilterConditionReader.Read(args, outcome);
         if (!outcome.Success)
             return;
+
+        // "conditions omitted" (change categories only) and "conditions: []"
+        // (clear every rule) must not be the same request: the first one used to
+        // wipe all rules, and undo_last cannot restore them.
+        var conditionsSpecified = HasProperty(args, "conditions");
 
         if (conditions.Count > AgentFilterRuleBuilder.MaxConditions)
         {
@@ -155,14 +161,14 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
         // Pre-flight (#400): parameter × category pair, checked before the model
         // is touched at all. ElementFilterIsAcceptableForParameterFilterElement
         // alone accepted an incompatible set in the field.
-        var unsupported = AgentFilterPreflight.FindUnsupported(doc, categoryIds, elementFilter);
+        var previous = DescribePreviousState(doc, filter);
+        var filterForPreflight = conditionsSpecified ? elementFilter : previous.ElementFilter;
+        var unsupported = AgentFilterPreflight.FindUnsupported(doc, categoryIds, filterForPreflight);
         if (unsupported.Count > 0)
         {
             FailUnsupported(outcome, unsupported);
             return;
         }
-
-        var previous = DescribePreviousState(doc, filter);
 
         // The rules are not restorable by undo_last, so the answer itself must carry
         // the old tree: parameterId + parameterName, operator and value per rule
@@ -181,7 +187,7 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
             .Select(id => id.GetValue())
             .ToList();
 
-        var newDigest = AgentFilterRuleDescriber.Digest(elementFilter, categoryIds);
+        var newDigest = AgentFilterRuleDescriber.Digest(filterForPreflight, categoryIds);
         var currentDigest = AgentFilterRuleDescriber.Digest(previous.ElementFilter, categoryIds);
         if (string.Equals(newDigest, currentDigest, StringComparison.Ordinal)
             && SameCategories(previous.CategoryIds, categoryIds))
@@ -217,13 +223,16 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
             if (requestedCategories.Count > 0)
                 filter.SetCategories(new List<ElementId>(categoryIds));
 
-            if (elementFilter is null)
+            if (conditionsSpecified)
             {
-                filter.ClearRules();
-            }
-            else if (!filter.SetElementFilter(elementFilter))
-            {
-                rejection = "Revit отклонил набор правил для фильтра '" + filter.Name + "'.";
+                if (elementFilter is null)
+                {
+                    filter.ClearRules();
+                }
+                else if (!filter.SetElementFilter(elementFilter))
+                {
+                    rejection = "Revit отклонил набор правил для фильтра '" + filter.Name + "'.";
+                }
             }
         }
         catch (Exception ex)
@@ -435,6 +444,23 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
         }
 
         return true;
+    }
+
+    private static bool HasProperty(JsonElement args, string name)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (args.TryGetProperty(name, out _))
+            return true;
+
+        foreach (var property in args.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static ElementFilter? SafeElementFilter(ParameterFilterElement filter)

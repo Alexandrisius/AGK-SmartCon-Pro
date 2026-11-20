@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -272,6 +273,75 @@ internal static partial class AgentViewWriteHelper
                 // caller reports the overall result.
             }
         }
+    }
+
+    /// <summary>
+    /// True when a requested category's V/G group is controlled by the view
+    /// template. Revit models categories in three separate V/G parameters; the
+    /// old check looked only at VIS_GRAPHICS_MODEL, so annotation categories
+    /// silently ignored SetCategoryHidden when the template controlled them.
+    /// </summary>
+    internal static bool TryGetVisibilityTemplateLock(
+        Document doc,
+        View view,
+        ViewVisibilitySpec spec,
+        out long? templateId,
+        out string? templateName,
+        out string parameterLabel)
+    {
+        templateId = null;
+        templateName = null;
+        parameterLabel = string.Empty;
+        if (spec.Categories is null)
+            return false;
+
+        foreach (var entry in spec.Categories)
+        {
+            if (!TryResolveCategory(doc, entry, out var categoryId))
+                continue;
+
+            Category? category;
+            try
+            {
+                category = Category.GetCategory(doc, categoryId);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            if (category is null)
+                continue;
+
+            BuiltInParameter parameter;
+            string label;
+            switch (category.CategoryType)
+            {
+                case CategoryType.Annotation:
+                    parameter = BuiltInParameter.VIS_GRAPHICS_ANNOTATION;
+                    label = "annotation (VIS_GRAPHICS_ANNOTATION)";
+                    break;
+                case CategoryType.AnalyticalModel:
+                    parameter = BuiltInParameter.VIS_GRAPHICS_ANALYTICAL_MODEL;
+                    label = "analytical model (VIS_GRAPHICS_ANALYTICAL_MODEL)";
+                    break;
+                default:
+                    parameter = BuiltInParameter.VIS_GRAPHICS_MODEL;
+                    label = "model (VIS_GRAPHICS_MODEL)";
+                    break;
+            }
+
+            if (AgentViewSettingsReader.IsParameterLockedByTemplate(
+                    view, parameter, out var lockedTemplateId, out var lockedTemplateName))
+            {
+                templateId = lockedTemplateId;
+                templateName = lockedTemplateName;
+                parameterLabel = label;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static void ApplyVisibility(

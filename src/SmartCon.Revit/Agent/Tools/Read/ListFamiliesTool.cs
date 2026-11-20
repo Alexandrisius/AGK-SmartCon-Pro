@@ -111,7 +111,10 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             return true;
         }
 
-        var builtIn = "OST_" + category.Trim().Replace("OST_", string.Empty);
+        var trimmed = category.Trim();
+        var builtIn = trimmed.StartsWith("OST_", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : "OST_" + trimmed;
         var categoryId = family.FamilyCategory?.Id;
         if (categoryId is null)
             return false;

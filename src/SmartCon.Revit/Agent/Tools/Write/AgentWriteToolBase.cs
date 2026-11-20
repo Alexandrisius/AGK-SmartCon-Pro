@@ -380,32 +380,30 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             // Every requested item failed — report the batch as failed so the
             // model does not treat an empty result as a success.
             outcome.Success = false;
-            outcome.ErrorCode ??= "all_items_failed";
-            if (string.Equals(outcome.ErrorCode, "all_items_failed", StringComparison.Ordinal))
+            var codes = outcome.Batch.Failed
+                .Select(item => item.ErrorCode)
+                .Where(code => !string.IsNullOrEmpty(code))
+                .ToList();
+            if (codes.Count > 0)
             {
                 // A batch where every item failed for the same actionable reason should
                 // surface that code at the top level, not hide it in failed[] (rename_views
                 // returned all_items_failed while the real cause was duplicate_name). A
                 // dominant cause (≥60 % of failures) is promoted too, so a stray second
                 // code cannot bury the useful one.
-                var codes = outcome.Batch.Failed
-                    .Select(item => item.ErrorCode)
-                    .Where(code => !string.IsNullOrEmpty(code))
+                var groups = codes
+                    .GroupBy(code => code!, StringComparer.Ordinal)
+                    .OrderByDescending(group => group.Count())
+                    .ThenBy(group => group.Key, StringComparer.Ordinal)
                     .ToList();
-                if (codes.Count > 0)
-                {
-                    var groups = codes
-                        .GroupBy(code => code!, StringComparer.Ordinal)
-                        .OrderByDescending(group => group.Count())
-                        .ThenBy(group => group.Key, StringComparer.Ordinal)
-                        .ToList();
-                    if (groups.Count == 1 || groups[0].Count() * 100 >= codes.Count * 60)
-                        outcome.ErrorCode = groups[0].Key;
-                    outcome.Data["errorCodes"] = groups
-                        .Select(group => new { code = group.Key, count = group.Count() })
-                        .ToList();
-                }
+                if (groups.Count == 1 || groups[0].Count() * 100 >= codes.Count * 60)
+                    outcome.ErrorCode = groups[0].Key;
+                outcome.Data["errorCodes"] = groups
+                    .Select(group => new { code = group.Key, count = group.Count() })
+                    .ToList();
             }
+
+            outcome.ErrorCode ??= "all_items_failed";
             if (string.IsNullOrWhiteSpace(outcome.Message))
             {
                 var first = outcome.Batch.Failed[0];
@@ -420,6 +418,14 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
         }
 
         outcome.Data["dryRun"] = dryRun;
+        // Partial batches are a success with a per-item failed[]: do not leak an
+        // item error code as the top-level code (it read as "the whole call failed").
+        if (outcome.Success && outcome.Batch.Failed.Count > 0)
+        {
+            outcome.ErrorCode = null;
+            outcome.Data["partialFailure"] = true;
+        }
+
         // "Nothing to do" is a success, but an empty changed[] alone reads like a
         // failure to the model (A8). One top-level flag removes the ambiguity.
         if (outcome.Success
@@ -461,7 +467,8 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
                 outcome.ErrorCode ?? "write_failed",
                 summary,
                 outcome.Warnings,
-                data);
+                data,
+                affectedCount: outcome.AffectedCount);
         if (!outcome.Success
             && outcome.ErrorCode is not null
             && outcome.ErrorCode.EndsWith("_not_found", StringComparison.Ordinal))

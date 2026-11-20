@@ -95,7 +95,7 @@ public sealed class ListSheetsTool : AgentReadToolBase
                 offset,
                 returned = projected.Count,
                 nextOffset = hasMore ? offset + projected.Count : (int?)null,
-                truncated = hasMore || offset > 0,
+                truncated = hasMore,
                 ignoredFields = ignored.Count > 0 ? ignored : null,
                 substitutedFields = substituted.Count > 0 ? substituted : null,
                 availableFields = ignored.Count > 0 ? available : null,
@@ -115,7 +115,7 @@ public sealed class ListSheetsTool : AgentReadToolBase
             offset,
             returned = page.Count,
             nextOffset = hasMore ? offset + page.Count : (int?)null,
-            truncated = hasMore || offset > 0,
+            truncated = hasMore,
             visualDuplicates = duplicates,
             sheets = page
         };

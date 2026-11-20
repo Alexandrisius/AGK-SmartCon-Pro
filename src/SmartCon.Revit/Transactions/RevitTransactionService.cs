@@ -107,7 +107,18 @@ public sealed class RevitTransactionService : ITransactionService
         {
             transaction.Start();
             var result = action(doc);
-            transaction.RollBack();
+            var rollbackStatus = transaction.RollBack();
+            if (rollbackStatus != TransactionStatus.RolledBack)
+            {
+                // Revit documents that callers must check the status: failure
+                // handling can defer or refuse the rollback, and a dry run that
+                // silently keeps changes violates "nothing was modified".
+                SmartConLogger.Warn(
+                    "Dry-run transaction '" + name + "' did not roll back (" + rollbackStatus +
+                    ") [Action: re-open the document before applying; a change may have leaked]");
+                return default;
+            }
+
             return result;
         }
         catch

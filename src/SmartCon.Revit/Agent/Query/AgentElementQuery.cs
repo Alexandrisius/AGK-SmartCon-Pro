@@ -4,6 +4,14 @@ using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Revit.Agent.Query;
 
+internal sealed class AgentQueryViewException : Exception
+{
+    internal AgentQueryViewException(string message, Exception inner)
+        : base(message, inner)
+    {
+    }
+}
+
 internal sealed class AgentElementQuery
 {
     private readonly Document _doc;
@@ -23,9 +31,20 @@ internal sealed class AgentElementQuery
         if (unknownCategories.Count > 0)
             return new AgentQueryResult(Array.Empty<Element>(), 0, unknownCategories);
 
-        var collector = spec.ViewId is { } viewId
-            ? new FilteredElementCollector(_doc, ElementIdCompat.Create(viewId))
-            : new FilteredElementCollector(_doc);
+        FilteredElementCollector collector;
+        try
+        {
+            collector = spec.ViewId is { } viewId
+                ? new FilteredElementCollector(_doc, ElementIdCompat.Create(viewId))
+                : new FilteredElementCollector(_doc);
+        }
+        catch (ArgumentException ex)
+        {
+            // Sheets, templates and other non-graphical views cannot be iterated.
+            throw new AgentQueryViewException(
+                "viewId " + spec.ViewId + " cannot be used for element iteration: " + ex.Message, ex);
+        }
+
         collector = collector.WhereElementIsNotElementType();
 
         if (categoryIds.Count > 0)
@@ -107,9 +126,29 @@ internal sealed class AgentElementQuery
         if (!roomId.HasValue)
             return true;
 
-        return element is FamilyInstance instance
-               && instance.Room is { } room
-               && room.Id.GetValue() == roomId.Value;
+        if (element is not FamilyInstance instance)
+            return false;
+
+        // FamilyInstance.Room must not be used for doors and windows: they sit on
+        // the boundary, so it is null for most of them (Autodesk docs). FromRoom
+        // and ToRoom are the documented properties for openings.
+        var categoryValue = instance.Category?.Id.GetValue();
+        var isOpening = categoryValue == (long)(int)BuiltInCategory.OST_Doors
+                        || categoryValue == (long)(int)BuiltInCategory.OST_Windows;
+        if (isOpening)
+        {
+            try
+            {
+                return instance.FromRoom is { } from && from.Id.GetValue() == roomId.Value
+                       || instance.ToRoom is { } to && to.Id.GetValue() == roomId.Value;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        return instance.Room is { } room && room.Id.GetValue() == roomId.Value;
     }
 
     private bool MatchesConditions(Element element, QuerySpec spec)

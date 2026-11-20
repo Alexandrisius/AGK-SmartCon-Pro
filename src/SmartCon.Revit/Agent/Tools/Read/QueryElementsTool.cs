@@ -93,6 +93,14 @@ public sealed class QueryElementsTool : AgentReadToolBase
         {
             result = query.Execute(spec, spec.Offset + spec.Limit, ct);
         }
+        catch (AgentQueryViewException ex)
+        {
+            return ToolResult.Fail(
+                "invalid_view",
+                ex.Message +
+                " [Action: pass a graphical view (plan, section, 3D); sheets and templates " +
+                "cannot be searched]");
+        }
         catch (ArgumentException ex)
         {
             // Wrong-dimension or unknown unit in a numeric condition.
@@ -136,6 +144,13 @@ public sealed class QueryElementsTool : AgentReadToolBase
             returned = cards.Count,
             truncated,
             nextOffset,
+            // A view-scoped collector sees only elements visible in that view:
+            // hidden categories, filters, worksets and crop are excluded from total.
+            scope = spec.ViewId is null ? "document" : "viewVisible",
+            scopeNote = spec.ViewId is null
+                ? null
+                : "Only elements visible in the view are counted: categories, filters " +
+                  "and worksets hidden in it, and elements outside its crop, are excluded.",
             ignoredFields = ignored.Count > 0 ? ignored : null,
             availableFields = ignored.Count > 0 ? available : null,
             hint = truncated

@@ -102,7 +102,7 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
 
             session.SetBackup(backupPath, sourceBackupPath);
 
-            var transaction = new Transaction(
+            using var transaction = new Transaction(
                 session.FamilyDoc,
                 OperationName(Definition.Name, dryRun));
             var started = false;
@@ -117,11 +117,45 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 // failed initialValue) that the tool could not report as changed.
                 if (dryRun || outcome.AffectedCount == 0)
                 {
-                    transaction.RollBack();
+                    var rollbackStatus = transaction.RollBack();
+                    started = false;
+                    if (dryRun && rollbackStatus != TransactionStatus.RolledBack)
+                    {
+                        outcome.Success = false;
+                        outcome.ErrorCode = "dry_run_rollback_failed";
+                        outcome.Message =
+                            "Revit did not roll back the dry-run transaction (" + rollbackStatus +
+                            "). Re-read the family before applying; a change may have leaked.";
+                        MoveChangedToSkipped(outcome);
+                        outcome.AffectedCount = 0;
+                        outcome.ModelChanged = false;
+                        AddExternalFileWarning(outcome);
+                        session.MarkEditSection(Definition.Name, dryRun, 0);
+                        return;
+                    }
                 }
                 else
                 {
-                    transaction.Commit();
+                    // Revit may refuse the commit through failure handling and
+                    // return RolledBack. Reporting success then would announce
+                    // changes that never reached the family, and LoadFamily with
+                    // overwriteParameterValues would rewrite project values.
+                    var commitStatus = transaction.Commit();
+                    started = false;
+                    if (commitStatus != TransactionStatus.Committed)
+                    {
+                        outcome.Success = false;
+                        outcome.ErrorCode = "transaction_rolled_back";
+                        outcome.Message =
+                            "Revit did not commit the family transaction (" + commitStatus +
+                            "). Nothing was changed; see the warnings for details.";
+                        MoveChangedToSkipped(outcome);
+                        outcome.AffectedCount = 0;
+                        outcome.ModelChanged = false;
+                        AddExternalFileWarning(outcome);
+                        session.MarkEditSection(Definition.Name, dryRun, 0);
+                        return;
+                    }
                 }
 
                 started = false;
@@ -146,6 +180,7 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 MoveChangedToSkipped(outcome);
                 outcome.AffectedCount = 0;
                 outcome.ModelChanged = false;
+                AddExternalFileWarning(outcome);
                 session.MarkEditSection(Definition.Name, dryRun, 0);
                 return;
             }
@@ -336,5 +371,16 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
         }
 
         outcome.Batch.Changed.Clear();
+    }
+
+    private static void AddExternalFileWarning(WriteOutcome outcome)
+    {
+        if (outcome.Data.ContainsKey("sharedDefinitionCreatedInFile"))
+        {
+            outcome.Warnings.Add(
+                "The shared parameter definition was already created in the shared " +
+                "parameter file before the rollback and remains there; remove it manually " +
+                "if the family should not use it.");
+        }
     }
 }

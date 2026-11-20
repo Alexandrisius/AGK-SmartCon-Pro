@@ -12,9 +12,16 @@ namespace SmartCon.Agent.Services;
 /// </summary>
 public sealed class AgentConfirmationService : IAgentConfirmationService
 {
+    private readonly object _gate = new();
     private TaskCompletionSource<AgentConfirmationResult>? _pending;
 
     public event Action<AgentConfirmationRequest>? Requested;
+
+    /// <summary>
+    /// Raised when a request is settled — resolved, cancelled or timed out — so
+    /// the panel can hide an overlay that is still visible after a timeout.
+    /// </summary>
+    public event Action? Finished;
 
     public AgentConfirmationRequest? Pending { get; private set; }
 
@@ -37,8 +44,21 @@ public sealed class AgentConfirmationService : IAgentConfirmationService
         var completion = new TaskCompletionSource<AgentConfirmationResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
-        _pending = completion;
-        Pending = request;
+        lock (_gate)
+        {
+            if (_pending is not null)
+            {
+                SmartConLogger.Warn(
+                    "Agent confirmation for '" + request.ToolName + "' was rejected: another " +
+                    "confirmation is already pending [" + Pending?.ToolName +
+                    "] [Action: wait for the open dialog; only one write is confirmed at a time]");
+                return AgentConfirmationResult.Rejected;
+            }
+
+            _pending = completion;
+            Pending = request;
+        }
+
         try
         {
             handler(request);
@@ -57,14 +77,26 @@ public sealed class AgentConfirmationService : IAgentConfirmationService
         }
         finally
         {
-            _pending = null;
-            Pending = null;
+            lock (_gate)
+            {
+                if (ReferenceEquals(_pending, completion))
+                {
+                    _pending = null;
+                    Pending = null;
+                }
+            }
+
+            Finished?.Invoke();
         }
     }
 
     public void Resolve(AgentConfirmationResult result)
     {
-        _pending?.TrySetResult(result);
+        TaskCompletionSource<AgentConfirmationResult>? pending;
+        lock (_gate)
+            pending = _pending;
+
+        pending?.TrySetResult(result);
     }
 
     private static string Digest(string digest) =>

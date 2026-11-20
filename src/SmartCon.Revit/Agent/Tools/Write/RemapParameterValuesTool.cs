@@ -112,6 +112,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
                               " element(s) (limit " + limit + ")";
 
         var failedElements = 0;
+        var resolutionFailedElements = 0;
         foreach (var element in elements)
         {
             ct.ThrowIfCancellationRequested();
@@ -123,9 +124,13 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             };
 
             var anyApplied = false;
+            string? resolutionFailure = null;
             foreach (var pair in mapping)
             {
-                var change = ApplyPair(doc, element, pair, outcome, out var parameterName, out var owner);
+                var change = ApplyPair(
+                    doc, element, pair, outcome,
+                    out var parameterName, out var owner, out var pairFailure);
+                resolutionFailure ??= pairFailure;
                 if (change is null)
                     continue; // skipped with a reason recorded by ApplyPair
 
@@ -151,6 +156,18 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
 
             if (anyApplied)
                 outcome.Batch.Changed.Add(report);
+            else if (resolutionFailure is not null)
+            {
+                // A typo in a parameter name/scope is not "nothing to copy": every
+                // element was skipped for a broken mapping, and reporting success
+                // with noChanges let the model announce a migration that never ran.
+                failedElements++;
+                resolutionFailedElements++;
+                report.ErrorCode = resolutionFailure;
+                report.Reason = "No mapping pair could be applied: the source or target " +
+                                "parameter did not resolve for this element.";
+                outcome.Batch.Failed.Add(report);
+            }
             else
             {
                 failedElements++;
@@ -167,6 +184,17 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             outcome.Message = failedElements + " element(s) could not be remapped and " +
                               "atomic=true, so the whole operation was rolled back. " +
                               "Nothing was changed.";
+            return;
+        }
+
+        if (resolutionFailedElements > 0 && outcome.AffectedCount == 0)
+        {
+            outcome.Success = false;
+            outcome.ErrorCode ??= "parameter_not_found";
+            outcome.Message =
+                "None of the " + resolutionFailedElements + " element(s) could be remapped: " +
+                "the source or target parameter did not resolve (see failed[]). " +
+                "[Action: check the parameter name and scope; a type parameter needs scope=type]";
         }
     }
 
@@ -176,10 +204,12 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         RemapMapping pair,
         WriteOutcome outcome,
         out string parameterName,
-        out Element owner)
+        out Element owner,
+        out string? resolutionFailure)
     {
         parameterName = string.Empty;
         owner = element;
+        resolutionFailure = null;
 
         if (pair.Target is null)
             return null;
@@ -190,6 +220,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         {
             outcome.Warnings.Add(
                 "Element " + element.Id.GetValue() + ": " + targetResolution.Reason);
+            resolutionFailure = targetResolution.ErrorCode ?? "parameter_not_found";
             return null;
         }
 
@@ -209,7 +240,12 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         var sourceResolution = AgentParameterWriteHelper.Resolve(
             doc, element, pair.Source.Name, pair.Source.Guid, pair.Source.Scope);
         if (!sourceResolution.Ok)
+        {
+            outcome.Warnings.Add(
+                "Element " + element.Id.GetValue() + ": " + sourceResolution.Reason);
+            resolutionFailure = sourceResolution.ErrorCode ?? "parameter_not_found";
             return null;
+        }
 
         var source = sourceResolution.Parameter!;
         var sourceValue = AgentParameterWriteHelper.Describe(source);

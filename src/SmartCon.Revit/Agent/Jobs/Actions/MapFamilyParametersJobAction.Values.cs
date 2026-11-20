@@ -187,7 +187,7 @@ public sealed partial class MapFamilyParametersJobAction
             // J-04: the crash anchor (backup path + old values) must be durable before the first write.
             persistUndo?.Invoke(Json(undo));
 
-            var transaction = new Transaction(session.FamilyDoc, "SmartCon job: map_family_parameters");
+            using var transaction = new Transaction(session.FamilyDoc, "SmartCon job: map_family_parameters");
             var started = false;
             try
             {

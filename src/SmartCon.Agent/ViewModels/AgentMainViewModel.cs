@@ -32,6 +32,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private readonly AgentConfirmationService _confirmationService;
     private readonly IActiveDocumentChangeNotifier? _documentChangeNotifier;
     private readonly IAgentUsageStore? _usageStore;
+    private readonly IJobScheduler? _jobScheduler;
+    private readonly IJobStore? _jobStore;
     private readonly IDispatcher _dispatcher;
     private readonly DecisionCostTracker? _decisionCostTracker;
     private readonly object _costGate = new();
@@ -62,7 +64,9 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         Services.Tools.AgentSessionContext sessionContext,
         IActiveDocumentChangeNotifier? documentChangeNotifier = null,
         IAgentUsageStore? usageStore = null,
-        DecisionCostTracker? decisionCostTracker = null)
+        DecisionCostTracker? decisionCostTracker = null,
+        IJobScheduler? jobScheduler = null,
+        IJobStore? jobStore = null)
     {
         _conversationStore = conversationStore ?? throw new ArgumentNullException(nameof(conversationStore));
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
@@ -80,6 +84,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         _documentChangeNotifier = documentChangeNotifier;
         _usageStore = usageStore;
         _decisionCostTracker = decisionCostTracker;
+        _jobScheduler = jobScheduler;
+        _jobStore = jobStore;
         _hasApiKey = settings.HasApiKey;
 
         if (_decisionCostTracker is not null)
@@ -206,9 +212,9 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         Messages.CollectionChanged -= OnMessagesChanged;
         Attachments.CollectionChanged -= OnAttachmentsChanged;
         LocalizationService.LanguageChanged -= OnLanguageChanged;
-        _turnCancellation?.Cancel();
-        _turnCancellation?.Dispose();
-        _turnCancellation = null;
+        CancelTurn();
+        var cancellation = Interlocked.Exchange(ref _turnCancellation, null);
+        cancellation?.Dispose();
     }
 
     partial void OnSelectedSessionChanged(AgentSessionItemViewModel? value)
@@ -584,8 +590,16 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                 .GetMessagesAsync(session.Id, CancellationToken.None)
                 .ConfigureAwait(true);
 
+            // Switching A→B quickly: a slower load of A must not paint its
+            // history over the selected B.
+            if (!ReferenceEquals(SelectedSession, session))
+                return;
+
             await RefreshSessionCostAsync(session.Id).ConfigureAwait(true);
             await RestoreContextUsageAsync(session.Id).ConfigureAwait(true);
+
+            if (!ReferenceEquals(SelectedSession, session))
+                return;
 
             Messages.Clear();
             _toolCards.Clear();
@@ -748,7 +762,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     {
         // A turn started in the previous document must not keep writing into
         // the new one; cancel it and refresh sessions after it unwinds.
-        _turnCancellation?.Cancel();
+        CancelTurn();
 
         FireAndForget(
             _dispatcher.InvokeAsync(() =>

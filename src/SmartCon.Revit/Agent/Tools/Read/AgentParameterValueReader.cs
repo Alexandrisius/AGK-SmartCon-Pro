@@ -9,7 +9,6 @@ internal static class AgentParameterValueReader
 {
     internal static ParameterValueInfo Create(
         Document doc,
-        Element owner,
         Parameter parameter,
         string scope)
     {
@@ -38,7 +37,7 @@ internal static class AgentParameterValueReader
             StorageType = parameter.StorageType.ToString(),
             ParameterClass = AgentParameterClassifier.Classify(parameter),
             IsReadOnly = parameter.IsReadOnly,
-            ReadOnlyReason = AgentParameterClassifier.ReadOnlyReason(parameter, owner),
+            ReadOnlyReason = AgentParameterClassifier.ReadOnlyReason(parameter),
             IsShared = isShared,
             ParameterGuid = guid,
             Scope = scope
@@ -86,11 +85,22 @@ internal static class AgentParameterValueReader
             if (string.IsNullOrWhiteSpace(label))
                 return string.IsNullOrWhiteSpace(value) ? null : value;
 
-            var number = string.IsNullOrWhiteSpace(value)
-                ? parameter.AsDouble().ToString("0.###", CultureInfo.InvariantCulture)
-                : value;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                // AsValueString is normally the only correct display value. When it
+                // is empty, formatting AsDouble() (internal feet) with the project
+                // unit label produced a number 304.8× too small. Format through
+                // Revit instead, and return null when even that fails.
+                var dataType = parameter.Definition?.GetDataType();
+                if (dataType is null)
+                    return null;
 
-            return number + " " + label;
+                var formatted = UnitFormatUtils.Format(
+                    doc.GetUnits(), dataType, parameter.AsDouble(), false);
+                return string.IsNullOrWhiteSpace(formatted) ? null : formatted;
+            }
+
+            return value + " " + label;
         }
         catch (Exception)
         {

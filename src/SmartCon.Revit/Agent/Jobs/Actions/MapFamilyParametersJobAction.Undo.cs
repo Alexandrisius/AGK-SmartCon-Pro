@@ -187,7 +187,7 @@ public sealed partial class MapFamilyParametersJobAction
 
             if (familyDoc is not null)
             {
-                var transaction = new Transaction(familyDoc, "SmartCon job undo: map_family_parameters");
+                using var transaction = new Transaction(familyDoc, "SmartCon job undo: map_family_parameters");
                 var started = false;
                 try
                 {

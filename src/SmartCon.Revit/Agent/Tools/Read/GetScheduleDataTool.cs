@@ -134,7 +134,7 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             offset,
             returned = rows.Count,
             nextOffset = hasMore ? offset + rows.Count : (int?)null,
-            truncated = hasMore || offset > 0,
+            truncated = hasMore,
             headerRowSkipped = headerSkipped,
             rows
         };

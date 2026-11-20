@@ -209,24 +209,16 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
             ordered.Add(candidate);
         }
 
-        foreach (var entry in plan.TempFirst)
-        {
-            var candidate = changing.First(item => item.View.Id.GetValue() == entry.Id);
-            candidate.TempName = tempFirst[entry.Id];
-            ordered.Add(candidate);
-        }
+        // Temp-first entries stay in Order; they must not be added twice (their
+    // final unit would duplicate the (job_id, unit_key) index).
+    foreach (var entry in plan.TempFirst)
+    {
+        changing.First(item => item.View.Id.GetValue() == entry.Id).TempName =
+            tempFirst[entry.Id];
+    }
 
-        var tempFirstIds = new HashSet<long>(tempFirst.Keys);
-        foreach (var entry in plan.Order)
+    foreach (var entry in plan.Order)
         {
-            if (tempFirstIds.Contains(entry.Id))
-            {
-                // The planner keeps temp-first entries in Order as well; the unit
-                // already carries the temp name, so emitting it twice would break
-                // the (job_id, unit_key) idempotency index.
-                continue;
-            }
-
             ordered.Add(changing.First(item => item.View.Id.GetValue() == entry.Id));
         }
 
@@ -251,22 +243,54 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
                 "names changed may produce a different mapping, so every apply needs a fresh preview");
         }
 
-        return new JobExpansion
+        var units = new List<JobUnit>(ordered.Count + plan.TempFirst.Count);
+        var seq = 0;
+
+        // Phase 1: release the names held by cycle members. Each temp unit only
+        // assigns the temporary name; the final rename stays in Order below.
+        foreach (var entry in plan.TempFirst)
         {
-            Units = ordered.Select(candidate => new JobUnit
+            var candidate = changing.First(item => item.View.Id.GetValue() == entry.Id);
+            units.Add(new JobUnit
             {
-                Seq = 0,
+                Seq = seq++,
+                UnitKey = candidate.View.UniqueId + "#temp",
+                Label = candidate.OldName + " → " + candidate.TempName + " (temporary)",
+                ArgsJson = Json(new RenameUnitArgs
+                {
+                    ViewId = candidate.View.Id.GetValue(),
+                    ViewUniqueId = candidate.View.UniqueId,
+                    OldName = candidate.OldName,
+                    NewName = candidate.NewName,
+                    TempName = candidate.TempName,
+                    TempOnly = true
+                })
+            });
+        }
+
+        // Phase 2: final renames in the planner order.
+        foreach (var candidate in ordered)
+        {
+            units.Add(new JobUnit
+            {
+                Seq = seq++,
                 UnitKey = candidate.View.UniqueId,
                 Label = candidate.OldName + " → " + candidate.NewName,
                 ArgsJson = Json(new RenameUnitArgs
                 {
                     ViewId = candidate.View.Id.GetValue(),
+                    ViewUniqueId = candidate.View.UniqueId,
                     OldName = candidate.OldName,
                     NewName = candidate.NewName,
                     TempName = candidate.TempName,
                     Error = candidate.Error
                 })
-            }).ToList(),
+            });
+        }
+
+        return new JobExpansion
+        {
+            Units = units,
             Warnings = warnings
         };
     }
@@ -284,12 +308,25 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
             return Fail(JobErrorCodes.InvalidSpec, args.Error);
         }
 
-        if (!TryFindByUniqueId<View>(context.Document, unit.UnitKey, out var view, out var error))
+        if (!TryFindByUniqueId<View>(context.Document, UniqueIdOf(unit, args), out var view, out var error))
         {
             return Fail(error!.Code, error.Message);
         }
 
         var current = view!.Name;
+        if (args.TempOnly)
+        {
+            var temp = args.TempName ?? args.NewName;
+            return new JobUnitPreview
+            {
+                Skipped = string.Equals(current, temp, StringComparison.Ordinal),
+                ExpectedJson = Value(temp),
+                ActualJson = Value(current),
+                UndoJson = Value(current),
+                Label = current + " → " + temp + " (temporary)"
+            };
+        }
+
         var skipped = string.Equals(current, args.NewName, StringComparison.Ordinal);
 
         return new JobUnitPreview
@@ -297,7 +334,10 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
             Skipped = skipped,
             ExpectedJson = Value(args.NewName),
             ActualJson = Value(current),
-            UndoJson = Value(current),
+            // A cycle entry is moved to its temp name first; undoing the final
+            // unit must return it to that temp name, and the temp unit then
+            // restores the original name (reverse order).
+            UndoJson = Value(args.TempName ?? current),
             Label = current + " → " + args.NewName
         };
     }
@@ -319,7 +359,7 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
             };
         }
 
-        if (!TryFindByUniqueId<View>(context.Document, unit.UnitKey, out var view, out var error))
+        if (!TryFindByUniqueId<View>(context.Document, UniqueIdOf(unit, args), out var view, out var error))
         {
             return new JobUnitApply
             {
@@ -329,6 +369,41 @@ public sealed partial class RenameViewsJobAction : RevitJobActionBase
         }
 
         var current = view!.Name;
+        if (args.TempOnly)
+        {
+            var temp = args.TempName ?? args.NewName;
+            if (string.Equals(current, temp, StringComparison.Ordinal))
+            {
+                return new JobUnitApply
+                {
+                    Success = true,
+                    Skipped = true,
+                    ExpectedJson = Value(temp),
+                    UndoJson = preview.UndoJson
+                };
+            }
+
+            try
+            {
+                view.Name = temp;
+                return new JobUnitApply
+                {
+                    Success = true,
+                    ExpectedJson = Value(temp),
+                    UndoJson = preview.UndoJson
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JobUnitApply
+                {
+                    ErrorCode = JobErrorCodes.ItemFailed,
+                    ErrorDetail = "Moving '" + current + "' to the temporary name failed: " +
+                                  ex.GetType().Name + ": " + ex.Message
+                };
+            }
+        }
+
         if (string.Equals(current, args.NewName, StringComparison.Ordinal))
         {
             return new JobUnitApply

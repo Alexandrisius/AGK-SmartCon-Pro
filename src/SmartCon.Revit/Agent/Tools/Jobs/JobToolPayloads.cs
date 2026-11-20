@@ -153,12 +153,43 @@ internal static class JobToolPayloads
         jobId = Guid.Empty;
         error = null;
 
-        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("jobId", out var value))
+        if (args.ValueKind != JsonValueKind.Object)
+            return false;
+
+        JsonElement value;
+        if (!args.TryGetProperty("jobId", out value))
         {
+            var found = false;
+            foreach (var property in args.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "jobId", StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                return false;
+        }
+
+        if (value.ValueKind == JsonValueKind.Null)
+            return false;
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            // A numeric or object jobId used to be treated as "absent", and the
+            // tool silently fell back to the most recent job — a rollback could
+            // hit a different job than the one the user named.
+            error = ToolResult.Fail(
+                "invalid_arguments",
+                "jobId must be a GUID string, got " + value.ValueKind +
+                ". [Action: pass the jobId returned by start_job, or omit it to use the most recent job]");
             return false;
         }
 
-        var text = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        var text = value.GetString();
         if (string.IsNullOrWhiteSpace(text) ||
             string.Equals(text, "last", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(text, "latest", StringComparison.OrdinalIgnoreCase) ||

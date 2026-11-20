@@ -18,6 +18,10 @@ public static partial class LocalizationService
         en["Agent_Session_Deleted"] = "Session deleted";
         ru["Agent_Attach"] = "Прикрепить изображение";
         en["Agent_Attach"] = "Attach image";
+        ru["Agent_ImagePicker_Title"] = "Прикрепить изображение";
+        en["Agent_ImagePicker_Title"] = "Attach image";
+        ru["Agent_ImagePicker_Filter"] = "Изображения (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp";
+        en["Agent_ImagePicker_Filter"] = "Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp";
         ru["Agent_Send"] = "Отправить";
         en["Agent_Send"] = "Send";
         ru["Agent_Stop"] = "Стоп";

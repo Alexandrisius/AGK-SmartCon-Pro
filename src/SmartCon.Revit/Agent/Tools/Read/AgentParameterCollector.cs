@@ -74,7 +74,7 @@ internal static class AgentParameterCollector
             if (result.Count >= filter.Max)
                 break;
 
-            var info = AgentParameterValueReader.Create(doc, owner, parameter, scope);
+            var info = AgentParameterValueReader.Create(doc, parameter, scope);
             var key = info.Name + "|" + info.Scope + "|" + info.StorageType + "|" + info.Value;
             if (seen.Add(key))
                 result.Add(info);

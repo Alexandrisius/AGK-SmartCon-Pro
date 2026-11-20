@@ -68,9 +68,22 @@ public sealed class LlmResponseAccumulatorTests
             """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"list_views","arguments":"{}"}}]}}]}""",
             output);
 
+        var started = Assert.Single(
+            output,
+            item => item.Kind == LlmStreamEventKind.ToolCallStarted);
         var response = accumulator.Build("openrouter", "test-model");
+        var id = response.Message.ToolCalls[0].Id;
 
-        Assert.Equal("call_0", response.Message.ToolCalls[0].Id);
+        // The suffix makes the id unique per response: a plain "call_0" collided
+        // across conversations and overwrote stored tool-result blobs.
+        Assert.StartsWith("call_0_", id, StringComparison.Ordinal);
+        Assert.Equal(id, started.ToolCallId);
+
+        var other = new LlmResponseAccumulator();
+        other.Append(
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"list_views","arguments":"{}"}}]}}]}""",
+            new List<LlmStreamEvent>());
+        Assert.NotEqual(id, other.Build("openrouter", "test-model").Message.ToolCalls[0].Id);
     }
 
     [Fact]

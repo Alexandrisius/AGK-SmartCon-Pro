@@ -50,11 +50,53 @@ internal static class AgentElementCardFactory
             Name = element.Name,
             LevelId = level is null ? null : level.Id.GetValue(),
             LevelName = level?.Name,
-            Room = element.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString(),
+            Room = ReadRoomName(element),
             // Omit the field when nothing was collected: an empty "{}" reads as
             // "the query found no parameter values" (stress test #2).
             Parameters = parameters.Count == 0 ? null : parameters
         };
+    }
+
+    /// <summary>
+    /// Room name of an element. Doors and windows own no ROOM_NAME parameter and
+    /// FamilyInstance.Room is null on a boundary — their rooms come from
+    /// FromRoom/ToRoom (Autodesk docs), so show both when they differ.
+    /// </summary>
+    private static string? ReadRoomName(Element element)
+    {
+        var parameter = element.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString();
+        if (!string.IsNullOrWhiteSpace(parameter))
+            return parameter;
+
+        if (element is not FamilyInstance instance)
+            return null;
+
+        var categoryValue = instance.Category?.Id.GetValue();
+        var isOpening = categoryValue == (long)(int)BuiltInCategory.OST_Doors
+                        || categoryValue == (long)(int)BuiltInCategory.OST_Windows;
+        if (!isOpening)
+            return null;
+
+        try
+        {
+            var from = instance.FromRoom;
+            var to = instance.ToRoom;
+            var names = new List<string>(2);
+            if (from is not null && !string.IsNullOrWhiteSpace(from.Name))
+                names.Add(from.Name);
+            if (to is not null
+                && !string.IsNullOrWhiteSpace(to.Name)
+                && !string.Equals(to.Name, from?.Name, StringComparison.Ordinal))
+            {
+                names.Add(to.Name);
+            }
+
+            return names.Count == 0 ? null : string.Join(" / ", names);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     internal static string? GetCategoryName(Category? category)

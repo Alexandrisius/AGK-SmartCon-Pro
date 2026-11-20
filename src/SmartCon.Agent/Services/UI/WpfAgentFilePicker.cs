@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using SmartCon.UI;
 
 namespace SmartCon.Agent.Services.UI;
 
@@ -8,8 +9,9 @@ public sealed class WpfAgentFilePicker : IAgentFilePicker
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Прикрепить изображение",
-            Filter = "Изображения (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
+            Title = LanguageManager.GetString("Agent_ImagePicker_Title") ?? "Attach image",
+            Filter = LanguageManager.GetString("Agent_ImagePicker_Filter")
+                     ?? "Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
             Multiselect = true,
             CheckFileExists = true
         };

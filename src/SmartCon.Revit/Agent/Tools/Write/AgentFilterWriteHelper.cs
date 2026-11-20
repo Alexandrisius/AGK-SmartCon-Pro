@@ -173,11 +173,25 @@ internal static class AgentFilterWriteHelper
         new()
         {
             ProjectionLineColor = FormatColor(settings.ProjectionLineColor),
+            ProjectionLinePatternId = ValidId(settings.ProjectionLinePatternId),
+            ProjectionLineWeight = settings.ProjectionLineWeight >= 0
+                ? settings.ProjectionLineWeight
+                : null,
             CutLineColor = FormatColor(settings.CutLineColor),
+            CutLinePatternId = ValidId(settings.CutLinePatternId),
+            CutLineWeight = settings.CutLineWeight >= 0 ? settings.CutLineWeight : null,
+            CutForegroundColor = FormatColor(settings.CutForegroundPatternColor),
+            CutForegroundPatternId = ValidId(settings.CutForegroundPatternId),
+            CutForegroundPatternVisible = settings.IsCutForegroundPatternVisible,
+            CutBackgroundColor = FormatColor(settings.CutBackgroundPatternColor),
+            CutBackgroundPatternId = ValidId(settings.CutBackgroundPatternId),
+            CutBackgroundPatternVisible = settings.IsCutBackgroundPatternVisible,
             SurfaceForegroundColor = FormatColor(settings.SurfaceForegroundPatternColor),
             SurfaceForegroundPatternId = ValidId(settings.SurfaceForegroundPatternId),
+            SurfaceForegroundPatternVisible = settings.IsSurfaceForegroundPatternVisible,
             SurfaceBackgroundColor = FormatColor(settings.SurfaceBackgroundPatternColor),
             SurfaceBackgroundPatternId = ValidId(settings.SurfaceBackgroundPatternId),
+            SurfaceBackgroundPatternVisible = settings.IsSurfaceBackgroundPatternVisible,
             Transparency = settings.Transparency,
             Halftone = settings.Halftone
         };
@@ -189,9 +203,57 @@ internal static class AgentFilterWriteHelper
         if (projection is not null)
             settings.SetProjectionLineColor(projection);
 
+        if (state.ProjectionLinePatternId is > 0)
+        {
+            settings.SetProjectionLinePatternId(
+                ElementIdCompat.Create(state.ProjectionLinePatternId.Value));
+        }
+
+        if (state.ProjectionLineWeight is > 0)
+            settings.SetProjectionLineWeight(state.ProjectionLineWeight.Value);
+
         var cut = ParseStoredColor(state.CutLineColor);
         if (cut is not null)
             settings.SetCutLineColor(cut);
+
+        if (state.CutLinePatternId is > 0)
+        {
+            settings.SetCutLinePatternId(
+                ElementIdCompat.Create(state.CutLinePatternId.Value));
+        }
+
+        if (state.CutLineWeight is > 0)
+            settings.SetCutLineWeight(state.CutLineWeight.Value);
+
+        var cutForeground = ParseStoredColor(state.CutForegroundColor);
+        if (cutForeground is not null)
+            settings.SetCutForegroundPatternColor(cutForeground);
+
+        if (state.CutForegroundPatternId is > 0)
+        {
+            settings.SetCutForegroundPatternId(
+                ElementIdCompat.Create(state.CutForegroundPatternId.Value));
+            if (state.CutForegroundPatternVisible is null)
+                settings.SetCutForegroundPatternVisible(true);
+        }
+
+        if (state.CutForegroundPatternVisible is bool cutForegroundVisible)
+            settings.SetCutForegroundPatternVisible(cutForegroundVisible);
+
+        var cutBackground = ParseStoredColor(state.CutBackgroundColor);
+        if (cutBackground is not null)
+            settings.SetCutBackgroundPatternColor(cutBackground);
+
+        if (state.CutBackgroundPatternId is > 0)
+        {
+            settings.SetCutBackgroundPatternId(
+                ElementIdCompat.Create(state.CutBackgroundPatternId.Value));
+            if (state.CutBackgroundPatternVisible is null)
+                settings.SetCutBackgroundPatternVisible(true);
+        }
+
+        if (state.CutBackgroundPatternVisible is bool cutBackgroundVisible)
+            settings.SetCutBackgroundPatternVisible(cutBackgroundVisible);
 
         var surface = ParseStoredColor(state.SurfaceForegroundColor);
         if (surface is not null)
@@ -201,8 +263,12 @@ internal static class AgentFilterWriteHelper
         {
             settings.SetSurfaceForegroundPatternId(
                 ElementIdCompat.Create(state.SurfaceForegroundPatternId.Value));
-            settings.SetSurfaceForegroundPatternVisible(true);
+            if (state.SurfaceForegroundPatternVisible is null)
+                settings.SetSurfaceForegroundPatternVisible(true);
         }
+
+        if (state.SurfaceForegroundPatternVisible is bool surfaceForegroundVisible)
+            settings.SetSurfaceForegroundPatternVisible(surfaceForegroundVisible);
 
         var background = ParseStoredColor(state.SurfaceBackgroundColor);
         if (background is not null)
@@ -212,11 +278,17 @@ internal static class AgentFilterWriteHelper
         {
             settings.SetSurfaceBackgroundPatternId(
                 ElementIdCompat.Create(state.SurfaceBackgroundPatternId.Value));
-            settings.SetSurfaceBackgroundPatternVisible(true);
+            if (state.SurfaceBackgroundPatternVisible is null)
+                settings.SetSurfaceBackgroundPatternVisible(true);
         }
 
-        settings.SetSurfaceTransparency(Math.Max(0, Math.Min(100, state.Transparency)));
-        settings.SetHalftone(state.Halftone);
+        if (state.SurfaceBackgroundPatternVisible is bool surfaceBackgroundVisible)
+            settings.SetSurfaceBackgroundPatternVisible(surfaceBackgroundVisible);
+
+        if (state.Transparency is int transparency)
+            settings.SetSurfaceTransparency(Math.Max(0, Math.Min(100, transparency)));
+        if (state.Halftone is bool halftone)
+            settings.SetHalftone(halftone);
         return settings;
     }
 

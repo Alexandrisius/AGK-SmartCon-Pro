@@ -98,6 +98,13 @@ public sealed class ExecutePlanTool : IAgentTool
             return ToolResult.Fail("plan_invalid", ex.Message);
         }
 
+        // A direct tool call repairs unambiguous argument mistakes (number ->
+        // string, aliases, unknown properties). Plan steps must behave the same,
+        // otherwise the same arguments fail only when wrapped in a plan. Repair
+        // happens before the digest, so preview and apply see identical steps.
+        var registry = _registryFactory();
+        plan = RepairPlanSteps(plan, registry);
+
         var digest = AgentPlanExecutor.ComputeDigest(plan, context.DocumentId);
         if (!dryRun)
         {
@@ -119,7 +126,6 @@ public sealed class ExecutePlanTool : IAgentTool
             }
         }
 
-        var registry = _registryFactory();
         var executor = new AgentPlanExecutor(
             registry,
             _revit,
@@ -334,6 +340,57 @@ public sealed class ExecutePlanTool : IAgentTool
         }
 
         return data;
+    }
+
+    private AgentPlan RepairPlanSteps(AgentPlan plan, IToolRegistry registry)
+    {
+        var steps = new List<AgentPlanStep>(plan.Steps.Count);
+        foreach (var step in plan.Steps)
+        {
+            if (!registry.TryGet(step.ToolName, out var tool) || tool is null)
+            {
+                steps.Add(step);
+                continue;
+            }
+
+            try
+            {
+                using var arguments = JsonDocument.Parse(step.ArgumentsJson);
+                var repair = AgentToolInputRepair.Repair(
+                    tool.Definition.InputSchemaJson, arguments.RootElement);
+                if (!repair.Changed || repair.Arguments.ValueKind != JsonValueKind.Object)
+                {
+                    steps.Add(step);
+                    continue;
+                }
+
+                steps.Add(new AgentPlanStep
+                {
+                    StepId = step.StepId,
+                    ToolName = step.ToolName,
+                    ArgumentsJson = repair.Arguments.GetRawText(),
+                    DependsOn = step.DependsOn,
+                    DryRun = step.DryRun,
+                    Rationale = step.Rationale,
+                    ExpectedChanges = step.ExpectedChanges,
+                    ExpectedChangesAtLeast = step.ExpectedChangesAtLeast,
+                    ReadBackTool = step.ReadBackTool,
+                    ArgumentsReadBackJson = step.ArgumentsReadBackJson,
+                    ReadBackExpectations = step.ReadBackExpectations
+                });
+            }
+            catch (JsonException)
+            {
+                steps.Add(step);
+            }
+        }
+
+        return new AgentPlan
+        {
+            Goal = plan.Goal,
+            Steps = steps,
+            AllowDestructive = plan.AllowDestructive
+        };
     }
 
     private static AgentPlan ParsePlan(JsonElement args)

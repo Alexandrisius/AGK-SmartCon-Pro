@@ -42,7 +42,7 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - query_elements: default 50, max 200. When truncated=true use offset/nextOffset; when a tool returns query_too_broad, add filters instead of retrying.
 - get_view_settings and get_view_template_details return a compact summary by default; pass fields=[""scale"",""viewRange"",...] for selected settings or compact=false only when the full payload is really needed.
 - Use fields[] to request only the properties you need, and get_element_details with parameterNames/onlyNonEmpty for parameter work.
-- A result with compacted=true was replaced by a digest to save context; re-run a narrower tool call if you still need the data. Never repeat an identical tool call.
+- A result marked truncated=true (or compacted=true) was trimmed to a digest to save context; re-run a narrower tool call if you still need the data. Never repeat an identical tool call.
 
 ";
 
@@ -216,8 +216,8 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         {
             case AgentApprovalMode.AutoApproveSession:
                 return @"## Approval mode: AutoApproveSession
-- Writes are applied without a per-action confirmation dialog, but every write still creates a change set and undo_last can revert it.
-- Hard guards still require confirmation or refusal: destructive operations, workshared documents, more than 200 affected items, and a document switch.
+- Writes are applied without a per-action confirmation dialog, including destructive operations and change-set discards. Every write still creates a change set and undo_last can revert it.
+- This mode is for an operator who explicitly left the desk: do not widen its scope on your own, and stop if the document changes unexpectedly.
 - Announce each applied change briefly (what changed, how many items) and mention undo_last.";
 
             case AgentApprovalMode.ReadOnly:

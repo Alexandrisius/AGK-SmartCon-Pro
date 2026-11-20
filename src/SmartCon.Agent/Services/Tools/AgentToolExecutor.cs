@@ -168,18 +168,78 @@ public sealed partial class AgentToolExecutor : IToolExecutor
         if (!definition.SupportsDryRun)
             return true;
 
+        if (HasEffectiveWriteIntent(definition, args))
+            return true;
+
         return !GetDryRun(args);
+    }
+
+    /// <summary>
+    /// Some write tools express the write intent through aliases that do not
+    /// look like dryRun=false. start_job is the critical one: mode="apply" or
+    /// resumeJobId starts a mass write while dryRun still defaults to true, so
+    /// the confirmation gate must read the effective mode, not the flag.
+    /// </summary>
+    private static bool HasEffectiveWriteIntent(
+        AgentToolDefinition definition,
+        JsonElement args)
+    {
+        if (!string.Equals(definition.Name, "start_job", StringComparison.Ordinal))
+            return false;
+
+        var mode = GetStringIgnoreCase(args, "mode");
+        if (string.Equals(mode, "apply", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "resume", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var resumeJobId = GetStringIgnoreCase(args, "resumeJobId");
+        return !string.IsNullOrWhiteSpace(resumeJobId);
+    }
+
+    private static string? GetStringIgnoreCase(JsonElement args, string name)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (args.TryGetProperty(name, out var exact) && exact.ValueKind == JsonValueKind.String)
+            return exact.GetString();
+
+        foreach (var property in args.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+                && property.Value.ValueKind == JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+
+        return null;
     }
 
     private static bool GetDryRun(JsonElement args)
     {
-        if (args.ValueKind == JsonValueKind.Object
-            && args.TryGetProperty("dryRun", out var value))
+        if (args.ValueKind == JsonValueKind.Object)
         {
-            if (value.ValueKind == JsonValueKind.False)
-                return false;
-            if (value.ValueKind == JsonValueKind.True)
-                return true;
+            if (args.TryGetProperty("dryRun", out var value))
+            {
+                if (value.ValueKind == JsonValueKind.False)
+                    return false;
+                if (value.ValueKind == JsonValueKind.True)
+                    return true;
+            }
+
+            foreach (var property in args.EnumerateObject())
+            {
+                if (!string.Equals(property.Name, "dryRun", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (property.Value.ValueKind == JsonValueKind.False)
+                    return false;
+                if (property.Value.ValueKind == JsonValueKind.True)
+                    return true;
+            }
         }
 
         return true;

@@ -468,6 +468,17 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                     "Revit did not create the shared parameter definition.",
                     "[Action: check the shared parameter file and retry]");
             }
+            else
+            {
+                // The external file is not part of the family transaction: state the
+                // side effect up front so a rolled-back family never hides it.
+                outcome.Data["sharedDefinitionCreatedInFile"] = true;
+                outcome.Warnings.Add(
+                    "The shared parameter definition '" + name + "' was written to the " +
+                    "shared parameter file (" + System.IO.Path.GetFileName(file.Filename) +
+                    ") before the family transaction committed; undo_last cannot revert " +
+                    "this external file change.");
+            }
 
             return created;
         }

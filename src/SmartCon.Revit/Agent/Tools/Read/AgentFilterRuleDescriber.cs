@@ -180,7 +180,9 @@ internal static class AgentFilterRuleDescriber
                     break;
                 case FilterDoubleRule doubleRule:
                     builder.Append(':').Append(
-                        doubleRule.RuleValue.ToString("R", CultureInfo.InvariantCulture));
+                            doubleRule.RuleValue.ToString("R", CultureInfo.InvariantCulture))
+                        .Append(":eps=")
+                        .Append(doubleRule.Epsilon.ToString("R", CultureInfo.InvariantCulture));
                     break;
                 case FilterIntegerRule integerRule:
                     builder.Append(':').Append(integerRule.RuleValue);

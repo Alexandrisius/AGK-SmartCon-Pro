@@ -200,8 +200,36 @@ public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
             template.GetNonControlledTemplateParameterIds().Select(id => id.GetValue()));
         if (!actual.SetEquals(desired))
         {
-            Fail(outcome, "read_back_mismatch",
-                "The template inclusion did not match after the write; the change was reverted.");
+            // The message used to promise a revert that never happened: the write
+            // was already in the model but no change item existed, so undo_last
+            // could not see it either. Restore the previous set for real.
+            try
+            {
+                var original = template.GetTemplateParameterIds()
+                    .Where(id => Array.IndexOf(oldIds, id.GetValue()) >= 0)
+                    .ToList();
+                template.SetNonControlledTemplateParameterIds(original);
+                var restored = new HashSet<long>(
+                    template.GetNonControlledTemplateParameterIds()
+                        .Select(id => id.GetValue()));
+                Fail(
+                    outcome,
+                    "read_back_mismatch",
+                    restored.SetEquals(oldIds)
+                        ? "The template inclusion did not match after the write; the previous " +
+                          "state was restored."
+                        : "The template inclusion did not match after the write, and restoring " +
+                          "the previous state also failed. Re-read the template before retrying.");
+            }
+            catch (Exception ex)
+            {
+                Fail(
+                    outcome,
+                    "read_back_mismatch",
+                    "The template inclusion did not match after the write, and restoring the " +
+                    "previous state failed: " + ex.Message);
+            }
+
             return;
         }
 

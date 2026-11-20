@@ -54,14 +54,14 @@ internal static class AgentParameterClassifier
         }
     }
 
-    internal static string? ReadOnlyReason(Parameter parameter, Element? owner)
+    /// <summary>
+/// Why a parameter cannot be written. Read tools never run inside a
+/// transaction, so Element.IsModifiable is always false there — reporting it
+/// as "element_not_modifiable" told the model the wrong reason for every
+/// read-only parameter. The parameter's own state is the honest answer.
+/// </summary>
+    internal static string? ReadOnlyReason(Parameter parameter)
     {
-        if (!parameter.IsReadOnly)
-            return null;
-
-        if (owner is not null && !owner.IsModifiable)
-            return "element_not_modifiable";
-
-        return "not_writable";
+        return parameter.IsReadOnly ? "not_writable" : null;
     }
 }

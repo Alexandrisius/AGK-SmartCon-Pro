@@ -50,6 +50,18 @@ public sealed class ListSchedulesTool : AgentReadToolBase
         foreach (var id in categoryIds)
             categoryIdSet.Add(id.GetValue());
 
+        // A requested filter that resolves to nothing must fail loudly. Silently
+        // returning every schedule made the model report the full list as the
+        // "schedules of walls".
+        if (categories.Count > 0 && categoryIdSet.Count == 0)
+        {
+            return ToolResult.Fail(
+                "unknown_category",
+                "None of the requested categories matched: " +
+                string.Join(", ", unknownCategories.Count > 0 ? unknownCategories : categories) +
+                ". [Action: use a category name from list_categories or an OST_* built-in name]");
+        }
+
         var sheetNumbers = AgentScheduleReader.MapSheetNumbers(doc);
         var matched = new List<ScheduleCard>();
         foreach (var schedule in AgentScheduleReader.Collect(doc))
@@ -98,7 +110,7 @@ public sealed class ListSchedulesTool : AgentReadToolBase
                 offset,
                 returned = projected.Count,
                 nextOffset = hasMore ? offset + projected.Count : (int?)null,
-                truncated = hasMore || offset > 0,
+                truncated = hasMore,
                 unknownCategories = unknownCategories.Count > 0 ? unknownCategories : null,
                 ignoredFields = ignored.Count > 0 ? ignored : null,
                 substitutedFields = substituted.Count > 0 ? substituted : null,
@@ -117,7 +129,7 @@ public sealed class ListSchedulesTool : AgentReadToolBase
             offset,
             returned = page.Count,
             nextOffset = hasMore ? offset + page.Count : (int?)null,
-            truncated = hasMore || offset > 0,
+            truncated = hasMore,
             unknownCategories = unknownCategories.Count > 0 ? unknownCategories : null,
             schedules = page
         };

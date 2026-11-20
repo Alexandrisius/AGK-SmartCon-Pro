@@ -37,7 +37,7 @@ public static class JobStateMachine
             [JobState.Interrupted] = new[]
             {
                 JobState.Running, JobState.PreviewRunning, JobState.Cancelled, JobState.Failed,
-                JobState.RolledBack, JobState.RollbackPartial
+                JobState.RolledBack, JobState.RollbackPartial, JobState.Cancelling
             },
             [JobState.Completed] = new[] { JobState.RolledBack, JobState.RollbackPartial },
             [JobState.CompletedWithFailures] = new[]

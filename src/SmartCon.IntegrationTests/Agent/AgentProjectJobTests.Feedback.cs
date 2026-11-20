@@ -58,6 +58,72 @@ public sealed partial class AgentProjectJobTests
     }
 
     [Test]
+    public async Task Job_RenameViews_SwapsTwoNamesThroughTempUnit()
+    {
+        long firstId = 0;
+        long secondId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed swap views", doc =>
+        {
+            var level = ElementIdCompat.Create(_levelId);
+            var first = ModelSeed.CreateViewPlanChecked(doc, level, "1");
+            var second = ModelSeed.CreateViewPlanChecked(doc, level, "2");
+            firstId = first.Id.GetValue();
+            secondId = second.Id.GetValue();
+        });
+
+        // numbering start=2 step=-1 renames the two sorted views 1→2 and 2→1: a
+        // true cycle that only a temporary name can break.
+        var specJson =
+            "{\"select\":{\"viewIds\":[" + firstId + "," + secondId +
+            "]},\"rename\":{\"setName\":\"{n}\",\"numbering\":{" +
+            "\"start\":2,\"step\":-1,\"format\":\"{n}\"}}}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "rename_views",
+                Mode = JobMode.Preview,
+                SpecJson = specJson,
+                Options = Options(JobSavePolicy.Never, 50)
+            },
+            Doc);
+        await Assert.That(preview.Success).IsTrue();
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+
+        var previewRecord = await Store.GetAsync(preview.Job!.JobId, CancellationToken.None);
+        var data = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!;
+        await Assert.That(data.Count).IsEqualTo(3);
+
+        var apply = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "rename_views",
+                Mode = JobMode.Apply,
+                SpecJson = specJson,
+                PreviewDigest = data.Digest,
+                Options = Options(JobSavePolicy.Never, 50)
+            },
+            Doc);
+        await Assert.That(apply.Success).IsTrue();
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+        var firstView = (View)Doc.GetElement(ElementIdCompat.Create(firstId))!;
+        var secondView = (View)Doc.GetElement(ElementIdCompat.Create(secondId))!;
+        await Assert.That(firstView.Name).IsEqualTo("2");
+        await Assert.That(secondView.Name).IsEqualTo("1");
+
+        // Undo runs in reverse order through the temp name: 2→temp, 1→2, temp→1.
+        var rollback = Runner.Rollback(Doc, apply.Job!.JobId, dryRun: false);
+        await Assert.That(rollback.State).IsEqualTo(JobState.RolledBack);
+        await Assert.That(rollback.RestoreFailed).IsEqualTo(0);
+        await Assert.That(firstView.Name).IsEqualTo("1");
+        await Assert.That(secondView.Name).IsEqualTo("2");
+    }
+
+    [Test]
     public async Task Job_RenameSelect_UnknownKey_IsRejectedWithAllowedKeys()
     {
         var preview = Runner.Start(

@@ -55,24 +55,26 @@ public sealed partial class JobRunner
         var undoFailed = 0;
         var skipped = 0;
 
-        while (true)
-        {
-            var items = Sync(_store.LoadItemsAsync(
+        // Undo must replay in reverse apply order: a rename chain/swapped pair is
+        // only restorable when the last applied unit is undone first. Ascending
+        // order made A→B, B→C undo B to a name that A still held.
+        var pending = Sync(_store.LoadItemsAsync(
                 job.JobId,
                 new[] { JobItemState.Undoing },
                 0,
-                batchSize,
-                CancellationToken.None));
+                int.MaxValue,
+                CancellationToken.None))
+            .OrderByDescending(item => item.Seq)
+            .ToList();
 
-            if (items.Count == 0)
-            {
-                break;
-            }
-
+        for (var offset = 0; offset < pending.Count; offset += batchSize)
+        {
             if (IsOverBudget(started, budget) && restored + undoFailed > 0)
             {
                 break;
             }
+
+            var items = pending.GetRange(offset, Math.Min(batchSize, pending.Count - offset));
 
             var updates = new List<JobItemUpdate>(items.Count);
             var batchRestored = 0;

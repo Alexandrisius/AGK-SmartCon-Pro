@@ -96,11 +96,27 @@ public sealed class AgentDecisionsSettings
         IReadOnlyDictionary<string, string> values,
         string provider)
     {
+        var target = NormalizeProvider(provider);
+
+        // A dedicated key belongs to the provider it was entered for. Before
+        // this split a single SMARTCON_DECIDER_API_KEY was reused for whichever
+        // provider was selected next, leaking the OpenRouter token to
+        // Perplexity/TypeSafe and breaking every decision call with 401.
+        var perProvider = Get(values, PerProviderKeyName(target));
+        if (!string.IsNullOrWhiteSpace(perProvider))
+            return perProvider!.Trim();
+
         var dedicated = Get(values, "SMARTCON_DECIDER_API_KEY");
         if (!string.IsNullOrWhiteSpace(dedicated))
-            return dedicated!.Trim();
+        {
+            var owner = NormalizeProvider(
+                Get(values, "SMARTCON_DECIDER_API_KEY_PROVIDER")
+                ?? Get(values, "SMARTCON_DECIDER_PROVIDER"));
+            if (string.Equals(owner, target, StringComparison.Ordinal))
+                return dedicated!.Trim();
+        }
 
-        switch (NormalizeProvider(provider))
+        switch (target)
         {
             case "typesafe":
                 return (Get(values, "SMARTCON_JEV_API_KEY")
@@ -114,6 +130,9 @@ public sealed class AgentDecisionsSettings
                 return Get(values, "SMARTCON_OPENROUTER_API_KEY")?.Trim() ?? string.Empty;
         }
     }
+
+    private static string PerProviderKeyName(string provider) =>
+        "SMARTCON_DECIDER_API_KEY_" + NormalizeProvider(provider).ToUpperInvariant();
 
     /// <summary>
     /// Applies the decision provider, model and key chosen in the settings UI
@@ -149,7 +168,13 @@ public sealed class AgentDecisionsSettings
         };
 
         if (!string.IsNullOrWhiteSpace(ApiKey))
+        {
+            // Keep the legacy single key for older builds, but record which
+            // provider it belongs to so a provider switch never reuses it.
             values["SMARTCON_DECIDER_API_KEY"] = ApiKey;
+            values["SMARTCON_DECIDER_API_KEY_PROVIDER"] = Provider;
+            values[PerProviderKeyName(Provider)] = ApiKey;
+        }
 
         if (!AgentEnvFile.Save(values))
         {

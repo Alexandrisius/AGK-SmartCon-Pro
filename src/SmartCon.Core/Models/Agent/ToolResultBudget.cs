@@ -44,6 +44,9 @@ public static class ToolResultBudget
         "changed", "skipped", "failed", "items", "templates",
         "families", "types", "matchedTypes",
         "filters", "schedules", "sheets", "appliedViews",
+        // execute_plan: the per-step diff is what the user approves; the digest
+        // envelope must not swallow it without leaving planDigest to apply.
+        "steps", "mismatches", "verified", "notPreviewed",
         // Tool signatures are recoverable (find_tools / a later load_tool_pack);
         // they yield before the pack skills, which are sent once per conversation
         // and cannot be requested again (#400).
@@ -58,7 +61,10 @@ public static class ToolResultBudget
     /// </summary>
     private static readonly string[] DigestProtectedProperties =
     {
-        "skills", "skillAlreadySent", "loaded", "appliedTo"
+        "skills", "skillAlreadySent", "loaded", "appliedTo",
+        // Without the digest the model cannot apply the plan it just previewed;
+        // previewIncomplete is the honesty flag the apply decision relies on.
+        "planDigest", "planDigestAlgorithm", "previewIncomplete", "phase", "goal"
     };
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

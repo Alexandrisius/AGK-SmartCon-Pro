@@ -425,12 +425,22 @@ public sealed partial class AgentProjectJobTests : RevitApiTest
     [Test]
     public async Task Job_UnsavedDocumentWithSavePolicy_FailsClosed()
     {
-        var result = Runner.Start(
+        // Preview only rolls a dry run back and never saves, so it works on an
+        // unsaved document; the save policy gate belongs to apply.
+        var preview = Runner.Start(
             RenameViewSpec(JobMode.Preview, options: Options(JobSavePolicy.AfterEachBatch, 50)),
             Doc);
+        await Assert.That(preview.Success).IsTrue();
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
 
-        await Assert.That(result.Success).IsFalse();
-        await Assert.That(result.Error!.Code).IsEqualTo(JobErrorCodes.DocumentNotSaved);
+        var previewRecord = await Store.GetAsync(preview.Job!.JobId, CancellationToken.None);
+        var digest = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!.Digest;
+        var apply = Runner.Start(
+            RenameViewSpec(JobMode.Apply, digest, Options(JobSavePolicy.AfterEachBatch, 50)),
+            Doc);
+
+        await Assert.That(apply.Success).IsFalse();
+        await Assert.That(apply.Error!.Code).IsEqualTo(JobErrorCodes.DocumentNotSaved);
     }
 
     [Test]

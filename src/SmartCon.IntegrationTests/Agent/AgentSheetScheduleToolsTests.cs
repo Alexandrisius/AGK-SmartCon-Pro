@@ -250,7 +250,7 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
     }
 
     [Test]
-    public async Task ListSheets_OffsetBeyondTotal_ReturnsEmptyPageWithNextOffset()
+    public async Task ListSheets_OffsetBeyondTotal_ReturnsEmptyPageWithoutMorePages()
     {
         if (!_sheetCreated)
             Skip.Test("В шаблоне проекта нет Title Block — лист не создать");
@@ -263,7 +263,11 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
 
         await Assert.That(result.Success).IsTrue();
         await Assert.That(result.Data!.Value.GetProperty("returned").GetInt32()).IsEqualTo(0);
-        await Assert.That(result.Data.Value.GetProperty("truncated").GetBoolean()).IsTrue();
+        // truncated means "there is another page"; an empty page past the end is not.
+        await Assert.That(result.Data.Value.GetProperty("truncated").GetBoolean()).IsFalse();
+        var hasNextOffset = result.Data.Value.TryGetProperty("nextOffset", out var nextOffset)
+                            && nextOffset.ValueKind != JsonValueKind.Null;
+        await Assert.That(hasNextOffset).IsFalse();
     }
 
     [Test]
@@ -358,7 +362,7 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
     }
 
     [Test]
-    public async Task ListSchedules_UnknownCategory_IsReportedNotDropped()
+    public async Task ListSchedules_UnknownCategory_FailsInsteadOfReturningEverything()
     {
         var tool = new ListSchedulesTool(new StubRevitContext(Doc));
         var result = tool.ExecuteForTests(
@@ -366,10 +370,11 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
             Parse("{\"categories\":[\"OST_NoSuchCategory\"]}"),
             CancellationToken.None);
 
-        await Assert.That(result.Success).IsTrue();
-        var unknown = result.Data!.Value.GetProperty("unknownCategories");
-        await Assert.That(unknown.ValueKind).IsEqualTo(JsonValueKind.Array);
-        await Assert.That(unknown.GetArrayLength()).IsEqualTo(1);
+        // An unresolved category filter used to return every schedule with success:
+        // the model then reported the full list as the filtered answer.
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("unknown_category");
+        await Assert.That(result.Message!.Contains("OST_NoSuchCategory")).IsTrue();
     }
 
     [Test]

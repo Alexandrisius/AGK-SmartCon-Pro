@@ -50,6 +50,23 @@ public sealed partial class UndoLastTool
 
         var warnings = new List<string>();
         AgentViewWriteHelper.ApplyCropState(view, state, warnings);
+
+        // The helper reports rejected extents/shape through warnings; without this
+        // check undo returned true while the crop still differed from the record.
+        // Compare semantics, not serialized text: a restored sketch may be
+        // re-read with equivalent but differently ordered/rounded coordinates.
+        var restored = AgentViewWriteHelper.ReadCropState(view);
+        var restoredOk = restored.Active == state.Active
+                         && restored.Visible == state.Visible
+                         && restored.ShapeSet == state.ShapeSet
+                         && (state.ShapeSet || SameExtents(restored, state));
+        if (!restoredOk)
+        {
+            var detail = warnings.Count == 0 ? string.Empty : " " + string.Join("; ", warnings);
+            return (false, "undo_crop_failed",
+                "The crop region did not match the recorded state after the restore." + detail);
+        }
+
         return (true, null, null);
     }
 
@@ -88,7 +105,38 @@ public sealed partial class UndoLastTool
         }
 
         AgentViewWriteHelper.ApplyVisibilityState(doc, view, state);
+        var restored = Filter(
+            AgentViewWriteHelper.ReadVisibility(doc, view).HiddenCategoryIds, toggleable);
+        if (!SameSequence(restored, previousFiltered))
+        {
+            return (false, "undo_visibility_failed",
+                "The category visibility did not match the recorded state after the restore " +
+                "(some categories reject SetCategoryHidden in this view).");
+        }
+
         return (true, null, null);
+    }
+
+    private static bool SameExtents(ViewCropState left, ViewCropState right)
+    {
+        return SamePoint(left.MinMm, right.MinMm) && SamePoint(left.MaxMm, right.MaxMm);
+    }
+
+    private static bool SamePoint(double[]? left, double[]? right)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+
+        if (left.Length != right.Length)
+            return false;
+
+        for (var index = 0; index < left.Length; index++)
+        {
+            if (Math.Abs(left[index] - right[index]) > 0.5)
+                return false;
+        }
+
+        return true;
     }
 
     private static HashSet<long> CollectToggleableCategories(Document doc, View view)

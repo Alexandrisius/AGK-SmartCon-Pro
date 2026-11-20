@@ -33,6 +33,7 @@ public static class AgentToolDisplayNames
             ["find_families_with_parameter"] = "Найти семейства с параметром",
             ["list_shared_parameters"] = "Список общих параметров",
             ["list_filters"] = "Список фильтров",
+            ["list_filterable_parameters"] = "Список фильтруемых параметров",
             ["get_filter_details"] = "Получить правила фильтра",
             ["rename_views"] = "Переименовать виды",
             ["rename_levels"] = "Переименовать уровни",
@@ -65,7 +66,13 @@ public static class AgentToolDisplayNames
             ["find_tools"] = "Найти инструменты",
             ["load_tool_pack"] = "Загрузить пакет инструментов",
             ["read_tool_result"] = "Прочитать результат инструмента",
-            ["execute_plan"] = "Выполнить план"
+            ["execute_plan"] = "Выполнить план",
+            ["start_job"] = "Запустить задание",
+            ["get_job_status"] = "Статус задания",
+            ["cancel_job"] = "Отменить задание",
+            ["get_job_report"] = "Отчёт задания",
+            ["rollback_job"] = "Откатить задание",
+            ["retry_failed_items"] = "Повторить неудачные элементы"
         };
 
     private static readonly Dictionary<string, string> En =
@@ -94,6 +101,7 @@ public static class AgentToolDisplayNames
             ["find_families_with_parameter"] = "Find families with parameter",
             ["list_shared_parameters"] = "List shared parameters",
             ["list_filters"] = "List filters",
+            ["list_filterable_parameters"] = "List filterable parameters",
             ["get_filter_details"] = "Get filter rules",
             ["rename_views"] = "Rename views",
             ["rename_levels"] = "Rename levels",
@@ -126,7 +134,13 @@ public static class AgentToolDisplayNames
             ["find_tools"] = "Find tools",
             ["load_tool_pack"] = "Load tool pack",
             ["read_tool_result"] = "Read tool result",
-            ["execute_plan"] = "Execute plan"
+            ["execute_plan"] = "Execute plan",
+            ["start_job"] = "Start job",
+            ["get_job_status"] = "Get job status",
+            ["cancel_job"] = "Cancel job",
+            ["get_job_report"] = "Get job report",
+            ["rollback_job"] = "Rollback job",
+            ["retry_failed_items"] = "Retry failed items"
         };
 
     public static string Get(string? toolName)

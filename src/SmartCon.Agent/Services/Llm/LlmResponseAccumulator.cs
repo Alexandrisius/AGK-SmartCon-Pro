@@ -15,6 +15,7 @@ internal sealed class LlmResponseAccumulator
     private int _lastIndex = -1;
     private string? _finishReason;
     private string? _requestId;
+    private string? _streamError;
     private AgentUsage _usage = AgentUsage.Empty;
 
     public void Append(string json, List<LlmStreamEvent> output)
@@ -27,6 +28,16 @@ internal sealed class LlmResponseAccumulator
             var value = requestId.GetString();
             if (!string.IsNullOrEmpty(value))
                 _requestId = value;
+        }
+
+        // Some providers (OpenRouter among them) report a mid-stream failure as
+        // HTTP 200 with a top-level "error" object and finish_reason "error".
+        // Ignoring it turned a broken answer into an empty successful turn.
+        if (root.TryGetProperty("error", out var errorElement))
+        {
+            var message = ReadErrorMessage(errorElement);
+            if (!string.IsNullOrWhiteSpace(message))
+                _streamError ??= message;
         }
 
         if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
@@ -44,24 +55,65 @@ internal sealed class LlmResponseAccumulator
                 && finishReason.ValueKind == JsonValueKind.String)
             {
                 _finishReason = finishReason.GetString();
+                if (string.Equals(_finishReason, "error", StringComparison.OrdinalIgnoreCase))
+                    _streamError ??= "provider reported finish_reason=error";
             }
         }
     }
 
     public AgentChatResponse Build(string provider, string model)
     {
-        var calls = _toolCalls
+        if (!string.IsNullOrWhiteSpace(_streamError))
+        {
+            throw new AgentLlmException(
+                "LLM provider reported an error mid-stream: " + _streamError +
+                " [Action: retry the turn; if it repeats, switch the model or check the provider status]");
+        }
+
+        var named = _toolCalls
             .OrderBy(pair => pair.Key)
             .Select(pair => pair.Value.Build(pair.Key))
             .Where(call => !string.IsNullOrWhiteSpace(call.Name))
             .ToList();
+
+        if (_toolCalls.Count > 0 && named.Count == 0
+            && _content.Length == 0 && _reasoning.Length == 0)
+        {
+            throw new AgentLlmException(
+                "LLM returned a tool call without a name and no text. The provider " +
+                "response is unusable; retry the turn or switch the model.");
+        }
+
+        var finishReason = _finishReason;
+        if (finishReason is { Length: > 0 }
+            && !string.Equals(finishReason, "stop", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(finishReason, "tool_calls", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(finishReason, "function_call", StringComparison.OrdinalIgnoreCase))
+        {
+            if (finishReason.StartsWith("content_filter", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new AgentLlmException(
+                    "The provider blocked the response with a content filter. " +
+                    "[Action: rephrase the request or choose another model]");
+            }
+
+            if (string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new AgentLlmException(
+                    "The response was cut off by the output token limit" +
+                    (named.Count > 0
+                        ? " before the tool call arguments were complete; executing them could write partial data."
+                        : ".") +
+                    " [Action: raise the output limit in the agent settings, or ask for a smaller step]");
+            }
+        }
 
         var message = new AgentMessage
         {
             Role = AgentRole.Assistant,
             Content = _content.Length == 0 ? null : _content.ToString(),
             ReasoningContent = _reasoning.Length == 0 ? null : _reasoning.ToString(),
-            ToolCalls = calls
+            ToolCalls = named
         };
 
         return new AgentChatResponse
@@ -74,6 +126,39 @@ internal sealed class LlmResponseAccumulator
             RequestId = _requestId
         };
     }
+
+    private static string? ReadErrorMessage(JsonElement errorElement)
+    {
+        switch (errorElement.ValueKind)
+        {
+            case JsonValueKind.String:
+                return errorElement.GetString();
+
+            case JsonValueKind.Object:
+                foreach (var property in new[] { "message", "error", "detail", "type", "code" })
+                {
+                    if (errorElement.TryGetProperty(property, out var nested))
+                    {
+                        var text = ReadErrorMessage(nested);
+                        if (!string.IsNullOrWhiteSpace(text))
+                            return text;
+                    }
+                }
+
+                return Truncate(errorElement.GetRawText(), 400);
+
+            case JsonValueKind.Number:
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                return errorElement.GetRawText();
+
+            default:
+                return null;
+        }
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value.Substring(0, maxLength) + "…";
 
     private void AppendDelta(JsonElement delta, List<LlmStreamEvent> output)
     {
@@ -175,7 +260,7 @@ internal sealed class LlmResponseAccumulator
                 if (!builder.EmittedStart)
                 {
                     builder.EmittedStart = true;
-                    output.Add(LlmStreamEvent.ToolCallStarted(builder.Id ?? "call_" + index, name));
+                    output.Add(LlmStreamEvent.ToolCallStarted(builder.EnsureId(index), name));
                 }
             }
 
@@ -293,12 +378,32 @@ internal sealed class LlmResponseAccumulator
     private sealed class ToolCallBuilder
     {
         private readonly StringBuilder _arguments = new();
+        private string? _syntheticId;
 
         public string? Id { get; set; }
 
         public string? Name { get; set; }
 
         public bool EmittedStart { get; set; }
+
+        /// <summary>
+        /// Id for providers that never send one. A plain "call_0" collided across
+        /// conversations (tool_result_blobs keys on tool_call_id), so the first
+        /// stored result was silently overwritten by the next chat's call_0.
+        /// </summary>
+        public string EnsureId(int index)
+        {
+            // A synthetic id that was already announced to the UI must stay the
+            // call id: the tool result and the stored blob use it too.
+            if (!string.IsNullOrEmpty(_syntheticId))
+                return _syntheticId!;
+
+            if (!string.IsNullOrEmpty(Id))
+                return Id!;
+
+            return _syntheticId = "call_" + index.ToString(CultureInfo.InvariantCulture) +
+                                  "_" + Guid.NewGuid().ToString("N");
+        }
 
         public void AppendArguments(string delta)
         {
@@ -318,7 +423,7 @@ internal sealed class LlmResponseAccumulator
         {
             return new AgentToolCall
             {
-                Id = string.IsNullOrEmpty(Id) ? "call_" + index.ToString(CultureInfo.InvariantCulture) : Id!,
+                Id = EnsureId(index),
                 Name = Name ?? string.Empty,
                 ArgumentsJson = _arguments.Length == 0 ? "{}" : _arguments.ToString()
             };

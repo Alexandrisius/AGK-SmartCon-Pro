@@ -170,6 +170,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         }
 
         var includeZeroCount = AgentJson.GetBool(args, "includeZeroCount", false);
+        var zeroCountUnknown = new List<string>();
         if (includeZeroCount
             && groupBy == "category"
             && spec.Categories.Count > 0)
@@ -180,10 +181,20 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             var unknownForZero = new List<string>();
             var requestedIds = AgentCategoryResolver.Resolve(
                 doc, spec.Categories, unknownForZero);
+            zeroCountUnknown.AddRange(unknownForZero);
             foreach (var categoryId in requestedIds)
             {
                 var category = Category.GetCategory(doc, categoryId);
                 var name = category?.Name;
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    // Some obsolete built-in category ids have no Category object;
+                    // without the fallback the promised count:0 row silently vanished.
+                    var raw = categoryId.GetValue();
+                    if (raw >= int.MinValue && raw <= int.MaxValue)
+                        name = ((BuiltInCategory)(int)raw).ToString();
+                }
+
                 if (string.IsNullOrWhiteSpace(name) || groups.ContainsKey(name!))
                     continue;
 
@@ -222,6 +233,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             groupsTotal = grouped.Count,
             groupsSkippedInternal = skippedInternal,
             zeroCountIncluded = includeZeroCount,
+            zeroCountUnknown = zeroCountUnknown.Count > 0 ? zeroCountUnknown : null,
             groupsTruncated = grouped.Count > topN,
             groups = grouped.Take(topN).ToList()
         };

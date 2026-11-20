@@ -163,6 +163,9 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
         // honestly instead of returning an undoable-looking change set.
         if (changed > 0)
         {
+            // No change set: its items cannot be replayed, and a set that undo_last
+            // closes with "nothing_to_undo" also hides the previous set from it.
+            outcome.SuppressChangeSet = true;
             outcome.Data["undoSupported"] = false;
             outcome.Warnings.Add(
                 "undo_last does not revert view parameter changes (undoSupported=false); " +

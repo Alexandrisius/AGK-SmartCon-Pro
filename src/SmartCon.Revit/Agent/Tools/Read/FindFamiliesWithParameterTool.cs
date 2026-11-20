@@ -71,6 +71,23 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                 MaxMatchedTypes));
         var compact = AgentJson.GetBool(args, "compact", false);
 
+        HashSet<long>? categoryIds = null;
+        if (!string.IsNullOrWhiteSpace(categoryFilter))
+        {
+            var unknown = new List<string>();
+            var resolved = AgentCategoryResolver.Resolve(
+                doc, new[] { categoryFilter! }, unknown);
+            if (resolved.Count == 0)
+            {
+                return ToolResult.Fail(
+                    "unknown_category",
+                    "Category '" + categoryFilter + "' was not found. " +
+                    "[Action: pass a category name from list_categories or an OST_* built-in name]");
+            }
+
+            categoryIds = new HashSet<long>(resolved.Select(id => id.GetValue()));
+        }
+
         var families = new Dictionary<long, FamilyMatch>();
         var familiesSeen = new HashSet<long>();
         var typesScanned = 0;
@@ -88,9 +105,9 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                 continue;
 
             familiesSeen.Add(family.Id.GetValue());
-            if (!string.IsNullOrWhiteSpace(categoryFilter)
-                && !string.Equals(family.FamilyCategory?.Name, categoryFilter!.Trim(),
-                    StringComparison.OrdinalIgnoreCase))
+            if (categoryIds is not null
+                && (family.FamilyCategory is null
+                    || !categoryIds.Contains(family.FamilyCategory.Id.GetValue())))
             {
                 continue;
             }

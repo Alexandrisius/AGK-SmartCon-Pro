@@ -15,13 +15,18 @@ internal static class AgentCardProjection
     private static readonly Dictionary<string, string[]> Aliases =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["id"] = new[] { "viewId", "elementId" },
+            ["id"] = new[]
+            {
+                "viewId", "elementId", "sheetId", "scheduleId", "levelId", "typeId",
+                "familyId", "filterId", "templateId"
+            },
             ["type"] = new[] { "viewType", "typeName", "type" },
             ["level"] = new[] { "levelName", "level" },
             ["levelid"] = new[] { "levelId" },
             ["template"] = new[] { "templateName", "template" },
             ["templateid"] = new[] { "templateId" },
-            ["sheet"] = new[] { "sheetNumber" },
+            ["sheet"] = new[] { "sheetNumber", "number" },
+            ["sheetnumber"] = new[] { "number", "sheetNumber" },
             ["elevation"] = new[] { "elevationMm" },
             ["family"] = new[] { "family" },
             ["category"] = new[] { "category" },
@@ -67,7 +72,8 @@ internal static class AgentCardProjection
 
             if (!TryResolve(source, field, out var property, out var value))
             {
-                ignoredFields?.Add(field);
+                if (ignoredFields is not null && !ignoredFields.Contains(field))
+                    ignoredFields.Add(field);
                 continue;
             }
 

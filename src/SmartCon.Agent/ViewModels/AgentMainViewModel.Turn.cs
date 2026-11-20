@@ -1,8 +1,12 @@
 ﻿using System.Globalization;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Agent;
+using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Core.Threading;
 using SmartCon.UI;
 
 namespace SmartCon.Agent.ViewModels;
@@ -98,8 +102,11 @@ public sealed partial class AgentMainViewModel
             IsBusy = false;
             IsTyping = false;
             IsStopping = false;
-            _turnCancellation?.Dispose();
-            _turnCancellation = null;
+
+            // Exchange-then-dispose: a concurrent Stop/OnActiveDocumentChanged
+            // may hold the reference, so Cancel must never hit a disposed source.
+            var cancellation = Interlocked.Exchange(ref _turnCancellation, null);
+            cancellation?.Dispose();
             _currentAssistant = null;
             SendCommand.NotifyCanExecuteChanged();
             StopCommand.NotifyCanExecuteChanged();
@@ -122,7 +129,58 @@ public sealed partial class AgentMainViewModel
 
         IsStopping = true;
         StatusText = S("Agent_Status_Stopping", "Останавливаю…");
-        _turnCancellation.Cancel();
+        CancelTurn();
+        CancelActiveJob("Stop");
+    }
+
+    private void CancelTurn()
+    {
+        var cancellation = _turnCancellation;
+        if (cancellation is null)
+            return;
+
+        try
+        {
+            cancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The turn finished and disposed its source between the read and Cancel.
+        }
+    }
+
+    /// <summary>
+    /// A bulk job runs on its own ExternalEvent and is not tied to the turn
+    /// token: pressing Stop (or switching to read-only) stopped the LLM, while
+    /// the pump kept writing to the model. Cancel the active job explicitly.
+    /// </summary>
+    private void CancelActiveJob(string reason)
+    {
+        if (_jobScheduler is null || _jobStore is null)
+            return;
+
+        var documentId = _currentContext?.DocumentId ?? _sessionContext?.DocumentId;
+        if (string.IsNullOrEmpty(documentId))
+            return;
+
+        try
+        {
+            var active = AsyncBridge.RunSync(
+                () => _jobStore.GetActiveAsync(documentId!, CancellationToken.None));
+            if (active is null || JobStateMachine.IsTerminal(active.State))
+                return;
+
+            _jobScheduler.Cancel(active.JobId, documentId!);
+            SmartConLogger.Info(
+                "Agent: " + reason + " cancelled the active job " + active.JobId.ToString("D"));
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "Agent: could not cancel the active job on " + reason + ": " +
+                ex.GetType().Name + ": " + ex.Message +
+                " [Action: the job may still be running; call cancel_job]");
+        }
     }
 
     private bool CanPrimaryAction() => IsBusy || CanSend();
@@ -200,8 +258,8 @@ public sealed partial class AgentMainViewModel
                 break;
 
             case AgentProgressKind.ToolCompleted:
-                if (progress.ToolCallId is not null
-                    && _toolCards.TryGetValue(progress.ToolCallId, out var completedCard))
+                var completedCard = FindToolCard(progress);
+                if (completedCard is not null)
                 {
                     completedCard.IsStreaming = false;
                     completedCard.IsSuccess = progress.Success;
@@ -226,6 +284,26 @@ public sealed partial class AgentMainViewModel
             case AgentProgressKind.TurnCompleted:
                 if (_currentAssistant is not null)
                     _currentAssistant.IsStreaming = false;
+                // The final text normally arrives as deltas. A turn that was
+                // aborted by the loop guard (or a provider that returns text
+                // only in the completion) has no delta at all — without this
+                // the user saw a silent stop with "Ready".
+                if (!string.IsNullOrWhiteSpace(progress.Text)
+                    && (_currentAssistant is null
+                        || string.IsNullOrWhiteSpace(_currentAssistant.Text)))
+                {
+                    if (_currentAssistant is null)
+                    {
+                        _currentAssistant = new AgentChatItemViewModel(AgentChatItemKind.Assistant)
+                        {
+                            Header = S("Agent_Assistant", "BIM Agent")
+                        };
+                        Messages.Add(_currentAssistant);
+                    }
+
+                    _currentAssistant.Text = progress.Text!;
+                }
+
                 break;
 
             case AgentProgressKind.ContextUsage:
@@ -291,6 +369,32 @@ public sealed partial class AgentMainViewModel
         }
 
         ContextDetails = string.Join(" · ", parts);
+    }
+
+    private AgentChatItemViewModel? FindToolCard(AgentProgress progress)
+    {
+        if (progress.ToolCallId is not null
+            && _toolCards.TryGetValue(progress.ToolCallId, out var exact))
+        {
+            return exact;
+        }
+
+        // Some providers emit the tool name before the id: the start event then
+        // carries a synthetic id while the completion carries the real one.
+        if (!string.IsNullOrEmpty(progress.ToolName))
+        {
+            foreach (var item in Messages)
+            {
+                if (item.IsTool
+                    && item.IsStreaming
+                    && string.Equals(item.ToolName, progress.ToolName, StringComparison.Ordinal))
+                {
+                    return item;
+                }
+            }
+        }
+
+        return null;
     }
 
     private void AddError(string message)

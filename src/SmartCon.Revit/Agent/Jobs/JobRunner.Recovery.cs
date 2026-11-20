@@ -166,11 +166,19 @@ public sealed partial class JobRunner
 
         if (undoable.Count == 0)
         {
+            // A repeated rollback (after a timeout, or after an earlier rollback
+            // that already finished) is a no-op success, not a failure: reporting
+            // "rollback unavailable" made the model think the undo never happened.
+            var alreadyRolledBack = job.State is JobState.RolledBack
+                || items.All(item => item.State is JobItemState.Undone);
             return new JobRollbackResult
             {
                 JobId = jobId,
-                ErrorCode = JobErrorCodes.RollbackUnavailable,
-                ErrorDetail = JobErrors.RollbackUnavailable("no applied units with undo data").ToMessage(),
+                Success = alreadyRolledBack,
+                ErrorCode = alreadyRolledBack ? null : JobErrorCodes.RollbackUnavailable,
+                ErrorDetail = alreadyRolledBack
+                    ? null
+                    : JobErrors.RollbackUnavailable("no applied units with undo data").ToMessage(),
                 State = job.State
             };
         }

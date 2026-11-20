@@ -247,6 +247,18 @@ public sealed class StartJobTool : IAgentTool
             : explicitMode ?? (dryRun ? JobMode.Preview : JobMode.Apply);
         var includeSample = includeSampleArg ?? mode == JobMode.Preview;
 
+        // mode/resumeJobId are aliases that bypass the dryRun flag. The executor
+        // now asks for confirmation for them, and this guard makes an unapproved
+        // mass write impossible even if another caller skips that gate.
+        if (mode is JobMode.Apply or JobMode.Resume && !context.WriteApproved)
+        {
+            return ToolResult.Fail(
+                "confirmation_required",
+                "start_job with mode=" + mode.ToString().ToLowerInvariant() +
+                " applies changes but this call was not confirmed by the user. " +
+                "[Action: do not retry silently; the write needs an explicit confirmation]");
+        }
+
         if (mode == JobMode.Apply && string.IsNullOrWhiteSpace(digest))
         {
             return ToolResult.Fail(

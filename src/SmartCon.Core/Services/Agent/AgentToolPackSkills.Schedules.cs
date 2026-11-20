@@ -101,11 +101,11 @@ overrides хранятся **в каждом виде отдельно**.
 - `create_view_filter` при совпадении имени **и** категорий переиспользует фильтр (`reused=true`)
   и **не применяет переданные `conditions`**: правила остаются прежними. Если имя совпало,
   а категории другие — создаётся новый фильтр с суффиксом `(2)`.
-- `set_filter_overrides` сам фильтр на вид **не добавляет**: если фильтр не назначен виду,
-  запись overrides упадёт (`override_apply_failed`). Сначала `create_view_filter`.
-- `set_filter_overrides` — delta только для цветов и pattern; `transparency` и `halftone`
-  **всегда** берутся из аргументов (по умолчанию 0/false). Вызов только с `color` сбросит
-  прозрачность и halftone.
+- `set_filter_overrides` сам добавляет фильтр на вид, если он ещё не назначен (Revit:
+  «If the filter is not currently applied to the view, this will add the filter with the
+  assigned overrides»). Проверяйте `view_controlled_by_template`: шаблон может управлять V/G.
+- `set_filter_overrides` — delta для всех ключей, включая `transparency` и `halftone`:
+  незаданные поля сохраняют текущие значения. `clear=true` сбрасывает весь набор.
 - Много фильтров замедляет вид: Autodesk описывает ускорение с 160 до 2 с после сокращения
   сотен фильтров. Не плодите фильтры там, где хватает V/G категории.
 

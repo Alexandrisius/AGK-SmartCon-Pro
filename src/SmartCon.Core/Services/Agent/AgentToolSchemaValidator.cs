@@ -46,6 +46,7 @@ public static class AgentToolSchemaValidator
                 var errors = new List<string>();
                 ValidateValue(
                     schemaDocument.RootElement,
+                    schemaDocument.RootElement,
                     argumentsDocument.RootElement,
                     "$",
                     0,
@@ -56,6 +57,7 @@ public static class AgentToolSchemaValidator
     }
 
     private static void ValidateValue(
+        JsonElement root,
         JsonElement schema,
         JsonElement value,
         string path,
@@ -68,6 +70,7 @@ public static class AgentToolSchemaValidator
             return;
         }
 
+        schema = AgentJsonSchema.Dereference(root, schema);
         if (schema.ValueKind != JsonValueKind.Object)
             return;
 
@@ -100,18 +103,52 @@ public static class AgentToolSchemaValidator
             }
         }
 
-        if (!schema.TryGetProperty("type", out var typeElement)
-            || typeElement.ValueKind != JsonValueKind.String)
+        var types = AgentJsonSchema.Types(schema);
+        if (types.Length == 0)
             return;
 
-        var type = typeElement.GetString();
+        if (types.Length > 1)
+        {
+            if (value.ValueKind == JsonValueKind.Null
+                && Array.IndexOf(types, "null") >= 0)
+            {
+                return;
+            }
+
+            foreach (var candidate in types)
+            {
+                if (string.Equals(candidate, "null", StringComparison.Ordinal))
+                    continue;
+
+                var attempt = new List<string>();
+                ValidateTyped(root, schema, candidate, value, path, depth, attempt);
+                if (attempt.Count == 0)
+                    return;
+            }
+
+            errors.Add(path + ": expected " + string.Join(" or ", types));
+            return;
+        }
+
+        ValidateTyped(root, schema, types[0], value, path, depth, errors);
+    }
+
+    private static void ValidateTyped(
+        JsonElement root,
+        JsonElement schema,
+        string type,
+        JsonElement value,
+        string path,
+        int depth,
+        List<string> errors)
+    {
         switch (type)
         {
             case "object":
-                ValidateObject(schema, value, path, depth, errors);
+                ValidateObject(root, schema, value, path, depth, errors);
                 break;
             case "array":
-                ValidateArray(schema, value, path, depth, errors);
+                ValidateArray(root, schema, value, path, depth, errors);
                 break;
             case "string":
                 if (value.ValueKind != JsonValueKind.String)
@@ -120,10 +157,14 @@ public static class AgentToolSchemaValidator
             case "integer":
                 if (!IsInteger(value))
                     errors.Add(path + ": expected an integer");
+                else
+                    ValidateRange(schema, value, path, errors);
                 break;
             case "number":
                 if (!IsNumber(value))
                     errors.Add(path + ": expected a number");
+                else
+                    ValidateRange(schema, value, path, errors);
                 break;
             case "boolean":
                 if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
@@ -136,7 +177,51 @@ public static class AgentToolSchemaValidator
         }
     }
 
+    private static void ValidateRange(
+        JsonElement schema,
+        JsonElement value,
+        string path,
+        List<string> errors)
+    {
+        if (value.ValueKind != JsonValueKind.Number)
+            return;
+
+        var number = value.GetDouble();
+        if (schema.TryGetProperty("minimum", out var minimum)
+            && minimum.ValueKind == JsonValueKind.Number
+            && number < minimum.GetDouble())
+        {
+            errors.Add(path + ": must be >= " + minimum.GetDouble().ToString(
+                CultureInfo.InvariantCulture));
+        }
+
+        if (schema.TryGetProperty("maximum", out var maximum)
+            && maximum.ValueKind == JsonValueKind.Number
+            && number > maximum.GetDouble())
+        {
+            errors.Add(path + ": must be <= " + maximum.GetDouble().ToString(
+                CultureInfo.InvariantCulture));
+        }
+
+        if (schema.TryGetProperty("exclusiveMinimum", out var exclusiveMinimum)
+            && exclusiveMinimum.ValueKind == JsonValueKind.Number
+            && number <= exclusiveMinimum.GetDouble())
+        {
+            errors.Add(path + ": must be > " + exclusiveMinimum.GetDouble().ToString(
+                CultureInfo.InvariantCulture));
+        }
+
+        if (schema.TryGetProperty("exclusiveMaximum", out var exclusiveMaximum)
+            && exclusiveMaximum.ValueKind == JsonValueKind.Number
+            && number >= exclusiveMaximum.GetDouble())
+        {
+            errors.Add(path + ": must be < " + exclusiveMaximum.GetDouble().ToString(
+                CultureInfo.InvariantCulture));
+        }
+    }
+
     private static void ValidateObject(
+        JsonElement root,
         JsonElement schema,
         JsonElement value,
         string path,
@@ -173,6 +258,7 @@ public static class AgentToolSchemaValidator
             if (hasProperties && properties.TryGetProperty(member.Name, out var propertySchema))
             {
                 ValidateValue(
+                    root,
                     propertySchema,
                     member.Value,
                     path + "." + member.Name,
@@ -187,6 +273,7 @@ public static class AgentToolSchemaValidator
     }
 
     private static void ValidateArray(
+        JsonElement root,
         JsonElement schema,
         JsonElement value,
         string path,
@@ -222,7 +309,7 @@ public static class AgentToolSchemaValidator
         var index = 0;
         foreach (var item in value.EnumerateArray())
         {
-            ValidateValue(items, item, path + "[" + index + "]", depth + 1, errors);
+            ValidateValue(root, items, item, path + "[" + index + "]", depth + 1, errors);
             index++;
         }
     }

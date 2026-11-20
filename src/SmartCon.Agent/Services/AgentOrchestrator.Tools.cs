@@ -88,7 +88,7 @@ public sealed partial class AgentOrchestrator
         if (string.IsNullOrEmpty(pack)
             || !AgentToolPackSkills.TryGet(pack!, out var skill)
             || skill is null
-            || !_sessionContext.SentPackSkills.Add(pack!))
+            || _sessionContext.SentPackSkills.Contains(pack!))
         {
             return result;
         }
@@ -99,6 +99,21 @@ public sealed partial class AgentOrchestrator
         {
             new ToolResultSkill { Pack = pack!, Markdown = skill }
         });
+    }
+
+    /// <summary>
+    /// A skill is marked as sent only after its tool result was persisted: the
+    /// model must not lose the manual because a write to the store failed.
+    /// Tool calls of one assistant message are executed sequentially, so the
+    /// first result marks the pack before the next one is built.
+    /// </summary>
+    private void MarkPackSkillsSent(ToolResult result)
+    {
+        foreach (var skill in result.Skills)
+        {
+            if (!string.IsNullOrEmpty(skill.Pack))
+                _sessionContext.SentPackSkills.Add(skill.Pack!);
+        }
     }
 
     /// <summary>
@@ -212,7 +227,7 @@ public sealed partial class AgentOrchestrator
     }
 
     private static int ElapsedMinutes(long startedAt) =>
-        (int)((Stopwatch.GetTimestamp() - startedAt) * 60.0 / Stopwatch.Frequency / 60.0);
+        (int)((Stopwatch.GetTimestamp() - startedAt) / (double)Stopwatch.Frequency / 60.0);
 
     /// <summary>
     /// Applies the tools queued by load_tool_pack at the round boundary: they

@@ -91,6 +91,10 @@ public sealed partial class AgentMainViewModel
         _sessionContext.ApprovalMode = value.Mode;
         OnPropertyChanged(nameof(IsApprovalWarningVisible));
         OnPropertyChanged(nameof(ApprovalWarningText));
+
+        // Read-only must also stop a mass write that is already running.
+        if (value.Mode == AgentApprovalMode.ReadOnly)
+            CancelActiveJob("read-only mode");
     }
 }
 

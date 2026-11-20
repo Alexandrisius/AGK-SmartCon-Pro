@@ -42,6 +42,9 @@ public sealed partial class RenameViewsJobAction
         }
     };
 
+    private static string UniqueIdOf(JobUnit unit, RenameUnitArgs? args) =>
+        !string.IsNullOrWhiteSpace(args?.ViewUniqueId) ? args!.ViewUniqueId! : unit.UnitKey;
+
     private static bool MatchesSelect(
         View view,
         ViewsSelectSpec select,
@@ -329,11 +332,20 @@ public sealed partial class RenameViewsJobAction
     {
         public long ViewId { get; set; }
 
+        /// <summary>
+        /// UniqueId of the view. The cycle-breaking unit carries "uid#temp" as its
+        /// unit key, so the element is resolved by this field instead of the key.
+        /// </summary>
+        public string? ViewUniqueId { get; set; }
+
         public string? OldName { get; set; }
 
         public string NewName { get; set; } = string.Empty;
 
         public string? TempName { get; set; }
+
+        /// <summary>This unit only moves the view to the temporary name.</summary>
+        public bool TempOnly { get; set; }
 
         public string? Error { get; set; }
     }

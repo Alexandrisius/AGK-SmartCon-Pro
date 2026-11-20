@@ -482,8 +482,13 @@ public sealed partial class AgentOrchestrator
                     var durationMs = (long)((Stopwatch.GetTimestamp() - startedAt)
                         * 1000.0 / Stopwatch.Frequency);
 
+                    // The tool has already run: its result must be persisted even
+                    // if the user pressed Stop meanwhile. Otherwise the history
+                    // keeps an assistant tool_call with no result, the next turn
+                    // synthesizes "not executed", and the model may repeat a write.
                     var serializedResult =
-                        await SerializeToolResultAsync(toolCall, result, ct).ConfigureAwait(false);
+                        await SerializeToolResultAsync(toolCall, result, CancellationToken.None)
+                            .ConfigureAwait(false);
                     var toolMessage = AgentMessage
                         .ToolResult(toolCall.Id, serializedResult)
                         .WithSessionIndex(persistedMessageCount + 1);
@@ -491,14 +496,16 @@ public sealed partial class AgentOrchestrator
                     working.Add(toolMessage);
                     rawHistory.Add(toolMessage);
                     await _conversationStore
-                        .AppendMessageAsync(conversationId, toolMessage, ct)
+                        .AppendMessageAsync(conversationId, toolMessage, CancellationToken.None)
                         .ConfigureAwait(false);
+                    MarkPackSkillsSent(result);
 
-                    await WriteAuditAsync(toolCall, result, projectContext, durationMs, ct)
+                    await WriteAuditAsync(toolCall, result, projectContext, durationMs, CancellationToken.None)
                         .ConfigureAwait(false);
 
                     await WriteToolCallAsync(
-                            toolCall, result, serializedResult, conversationId, durationMs, ct)
+                            toolCall, result, serializedResult, conversationId, durationMs,
+                            CancellationToken.None)
                         .ConfigureAwait(false);
 
                     progress?.Report(new AgentProgress
@@ -531,7 +538,7 @@ public sealed partial class AgentOrchestrator
                     });
 
                     await WriteUsageAsync(
-                        conversationId, usage, "ok", turnStartedAt,
+                        conversationId, usage, "loop_aborted", turnStartedAt,
                         lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
                         lastCompactionId).ConfigureAwait(false);
 

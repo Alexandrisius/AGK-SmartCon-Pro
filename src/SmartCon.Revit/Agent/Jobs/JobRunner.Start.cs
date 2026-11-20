@@ -22,11 +22,8 @@ public sealed partial class JobRunner
             return JobStartResult.Fail(JobErrors.AlreadyActive(active.JobId.ToString("D")));
         }
 
-        var saveError = PreflightSaveable(document, spec.Options);
-        if (saveError is not null)
-        {
-            return JobStartResult.Fail(saveError);
-        }
+        // A preview only rolls back a dry run and never saves, so an unsaved
+        // document is fine here. Apply/resume still require a saveable file.
 
         // Expand before superseding the old preview: a typo in the new spec must
         // not destroy a valid preview that the agent can still apply.

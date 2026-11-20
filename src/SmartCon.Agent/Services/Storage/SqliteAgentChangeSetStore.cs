@@ -191,7 +191,7 @@ FROM change_items WHERE change_set_id = @id ORDER BY rowid;";
             command.CommandText = @"
 SELECT id FROM change_sets
 WHERE document_id = @documentId AND applied_at IS NOT NULL
-ORDER BY applied_at DESC
+ORDER BY applied_at DESC, rowid DESC
 LIMIT 1;";
             command.Parameters.AddWithValue("@documentId", documentId);
             var scalar = command.ExecuteScalar();

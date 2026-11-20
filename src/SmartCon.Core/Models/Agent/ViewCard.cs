@@ -198,6 +198,12 @@ public sealed class ViewSettings
     public int HiddenCategoryCount { get; init; }
 
     /// <summary>
+    /// True when the HiddenCategories list was cut at the reader cap; the count
+    /// above still reports the full number of hidden categories.
+    /// </summary>
+    public bool HiddenCategoryListCapped { get; init; }
+
+    /// <summary>
     /// How many of the hidden categories Revit still allows to toggle on this view
     /// (CanCategoryBeHidden). The remainder are hidden but cannot be changed here:
     /// the V/G parameter may be controlled by the view template, or the category
@@ -248,6 +254,9 @@ public sealed class ViewSettingsSummary
     public bool? CropShapeSet { get; init; }
 
     public int HiddenCategoryCount { get; init; }
+
+    /// <summary>True when only part of the hidden categories are listed.</summary>
+    public bool HiddenCategoryListCapped { get; init; }
 
     /// <summary>
     /// Hidden categories Revit still allows to toggle on this view. The rest are

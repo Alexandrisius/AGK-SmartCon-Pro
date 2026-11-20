@@ -90,7 +90,7 @@ public sealed partial class AgentOrchestratorTests
             message => Assert.Contains("loop_aborted", message.Content, StringComparison.Ordinal));
 
         var usage = Assert.Single(usageStore.Records);
-        Assert.Equal("ok", usage.Status);
+        Assert.Equal("loop_aborted", usage.Status);
     }
 
     [Fact]

@@ -37,18 +37,44 @@ internal static class AgentParameterWriteHelper
         if (!string.IsNullOrWhiteSpace(guid)
             && Guid.TryParse(guid, out var parsedGuid))
         {
-            var byGuid = FindByGuid(doc, element, parsedGuid, typeScope);
+            // Search both the instance and its type: a shared parameter GUID says
+            // nothing about the scope, so restricting the search to the instance
+            // made a type-scope GUID return parameter_not_found without the scope hint.
+            var byGuid = FindByGuid(doc, element, parsedGuid, includeTypeParameters: true);
             if (byGuid is null)
             {
                 return new Resolution
                 {
                     ErrorCode = "parameter_not_found",
                     Reason = "No parameter with GUID " + guid + " found on element " + element.Id.GetValue() +
-                             (typeScope ? " or its type." : ".")
+                             " or its type."
                 };
             }
 
-            return new Resolution { Parameter = byGuid, IsTypeScope = typeScope };
+            var guidOnType = element is ElementType
+                             || (byGuid.Element is not null
+                                 && byGuid.Element.Id.GetValue() != element.Id.GetValue());
+            if (guidOnType && !typeScope)
+            {
+                return new Resolution
+                {
+                    ErrorCode = "scope_mismatch",
+                    Reason = "The parameter with GUID " + guid + " belongs to the element type. " +
+                             "Pass scope=\"type\" to change it (it affects every instance of the type)."
+                };
+            }
+
+            if (!guidOnType && typeScope)
+            {
+                return new Resolution
+                {
+                    ErrorCode = "scope_mismatch",
+                    Reason = "The parameter with GUID " + guid + " is an instance parameter; " +
+                             "drop scope=\"type\" or omit it."
+                };
+            }
+
+            return new Resolution { Parameter = byGuid, IsTypeScope = guidOnType };
         }
 
         if (string.IsNullOrWhiteSpace(name))

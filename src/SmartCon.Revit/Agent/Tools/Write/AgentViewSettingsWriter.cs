@@ -113,9 +113,28 @@ internal static class AgentViewSettingsWriter
 
         if (applied != templateId)
         {
+            // Revit may normalize/refuse the assignment. The write already touched
+            // the view, so restore the previous template: otherwise the caller gets
+            // an error with no change item, and undo_last cannot see the change.
+            var restored = true;
+            try
+            {
+                view.ViewTemplateId = currentId;
+                restored = view.ViewTemplateId.GetValue() == currentId.GetValue();
+            }
+            catch (Exception)
+            {
+                restored = false;
+            }
+
             return Change.Error(
                 "template_not_applicable",
-                "Revit did not apply the template '" + template.Name + "' to '" + view.Name + "'.");
+                restored
+                    ? "Revit did not apply the template '" + template.Name + "' to '" +
+                      view.Name + "'; the previous template was restored."
+                    : "Revit did not apply the template '" + template.Name + "' to '" +
+                      view.Name + "', and restoring the previous template also failed. " +
+                      "Re-read the view before retrying.");
         }
 
         return change;
@@ -320,12 +339,14 @@ internal static class AgentViewSettingsWriter
         if (spec is null || spec.IsEmpty)
             return Change.Skip("No visibility settings specified.");
 
-        if (AgentViewSettingsReader.IsParameterLockedByTemplate(
-                view, BuiltInParameter.VIS_GRAPHICS_MODEL, out var visibilityTemplateId, out var visibilityTemplate))
+        if (AgentViewWriteHelper.TryGetVisibilityTemplateLock(
+                doc, view, spec,
+                out var visibilityTemplateId, out var visibilityTemplate, out var lockedParameter))
         {
             var visibilityError = Change.Error(
                 "view_controlled_by_template",
-                "Category visibility of '" + view.Name + "' is controlled by template '" +
+                "Category visibility (" + lockedParameter + ") of '" + view.Name +
+                "' is controlled by template '" +
                 visibilityTemplate + "'; writing it on the view has no effect. Detach it with " +
                 "set_view_template_inclusion(templateId=" + visibilityTemplateId +
                 ", parameters=[\"visibility\"], included=false), then retry.");

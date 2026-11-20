@@ -89,33 +89,70 @@ internal sealed class ViewFilterState
     public List<ViewFilterEntry> Filters { get; set; } = new();
 }
 
-/// <summary>Serializable subset of OverrideGraphicSettings.</summary>
+/// <summary>
+/// Serializable subset of OverrideGraphicSettings. Nullable value types mean
+/// "not specified": a partial request (for example only the projection colour)
+/// must keep the current line pattern/weight, cut overrides, pattern visibility,
+/// transparency and halftone instead of resetting them to defaults.
+/// </summary>
 internal sealed class ViewOverrideState
 {
     public string? ProjectionLineColor { get; set; }
 
+    public long? ProjectionLinePatternId { get; set; }
+
+    public int? ProjectionLineWeight { get; set; }
+
     public string? CutLineColor { get; set; }
+
+    public long? CutLinePatternId { get; set; }
+
+    public int? CutLineWeight { get; set; }
+
+    public string? CutForegroundColor { get; set; }
+
+    public long? CutForegroundPatternId { get; set; }
+
+    public bool? CutForegroundPatternVisible { get; set; }
+
+    public string? CutBackgroundColor { get; set; }
+
+    public long? CutBackgroundPatternId { get; set; }
+
+    public bool? CutBackgroundPatternVisible { get; set; }
 
     public string? SurfaceForegroundColor { get; set; }
 
     public long? SurfaceForegroundPatternId { get; set; }
 
+    public bool? SurfaceForegroundPatternVisible { get; set; }
+
     public string? SurfaceBackgroundColor { get; set; }
 
     public long? SurfaceBackgroundPatternId { get; set; }
 
-    public int Transparency { get; set; }
+    public bool? SurfaceBackgroundPatternVisible { get; set; }
 
-    public bool Halftone { get; set; }
+    public int? Transparency { get; set; }
+
+    public bool? Halftone { get; set; }
 
     /// <summary>True for an empty override set (no colours, no patterns, no halftone).</summary>
     public bool IsEmpty =>
         ProjectionLineColor is null
+        && ProjectionLinePatternId is null
+        && ProjectionLineWeight is null
         && CutLineColor is null
+        && CutLinePatternId is null
+        && CutLineWeight is null
+        && CutForegroundColor is null
+        && CutForegroundPatternId is null
+        && CutBackgroundColor is null
+        && CutBackgroundPatternId is null
         && SurfaceForegroundColor is null
         && SurfaceForegroundPatternId is null
         && SurfaceBackgroundColor is null
         && SurfaceBackgroundPatternId is null
-        && Transparency == 0
-        && !Halftone;
+        && Transparency is null or 0
+        && Halftone is not true;
 }

@@ -108,7 +108,7 @@ internal static class AgentElementEssence
             if (!AgentParameterClassifier.IsMeaningful(parameter))
                 continue;
 
-            var info = AgentParameterValueReader.Create(doc, owner, parameter!, scope);
+            var info = AgentParameterValueReader.Create(doc, parameter!, scope);
             var key = info.Name + "|" + info.Scope + "|" + info.Value;
             if (!seenValues.Add(key))
                 continue;

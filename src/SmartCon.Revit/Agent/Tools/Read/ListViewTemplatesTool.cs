@@ -50,18 +50,25 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
         var substituted = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var collected = new List<(string Name, JsonElement Row)>();
+        var totalMatched = 0;
         foreach (var view in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
         {
             ct.ThrowIfCancellationRequested();
             if (!view.IsTemplate)
                 continue;
-            if (collected.Count >= MaxTemplates)
-                break;
+
+            // The cap applies to the output, not to the filter: stopping the scan
+            // before nameContains made "template named X" return zero when the
+            // library is larger than the cap and the match is later in id order.
             if (!string.IsNullOrWhiteSpace(nameContains)
                 && view.Name.IndexOf(nameContains!, StringComparison.OrdinalIgnoreCase) < 0)
             {
                 continue;
             }
+
+            totalMatched++;
+            if (collected.Count >= MaxTemplates)
+                continue;
 
             var card = AgentViewSettingsReader.CreateTemplateCard(doc, view);
             object rowPayload = card;
@@ -98,7 +105,9 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
 
         var payload = new
         {
-            total = rows.Count,
+            total = totalMatched,
+            returned = rows.Count,
+            truncated = totalMatched > rows.Count,
             ignoredFields = ignored.Count > 0 ? ignored : null,
             substitutedFields = substituted.Count > 0 ? substituted : null,
             availableFields = ignored.Count > 0
@@ -124,6 +133,6 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Found " + rows.Count + " view template(s).");
+            "Found " + totalMatched + " view template(s); returned " + rows.Count + ".");
     }
 }

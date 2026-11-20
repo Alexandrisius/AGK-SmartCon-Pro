@@ -132,8 +132,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
 
             report.Name = view.Name;
             var detach = item.TemplateId is null or <= 0;
-            if (dryRun && !detach)
+            if (dryRun && !detach
+                && WillApplyTemplate(view, item.TemplateId!.Value, item.OverwriteTemplate))
+            {
                 AddTemplateDelta(doc, view, item.TemplateId!.Value, outcome);
+            }
 
             var change = detach
                 ? AgentViewSettingsWriter.DetachTemplate(view)
@@ -144,6 +147,21 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             if (outcome.Aborted)
                 return;
         }
+    }
+
+    /// <summary>
+    /// True when ApplyTemplate will really assign the template. A view that
+    /// already owns the same template, or owns another one without
+    /// overwriteTemplate, is returned as a skip — its delta must not create a
+    /// plan lock, or a valid crop/range step is rejected as a conflict.
+    /// </summary>
+    private static bool WillApplyTemplate(View view, long templateId, bool overwrite)
+    {
+        var currentId = view.ViewTemplateId;
+        if (currentId != ElementId.InvalidElementId && currentId.GetValue() == templateId)
+            return false;
+
+        return currentId == ElementId.InvalidElementId || overwrite;
     }
 
     /// <summary>
@@ -252,7 +270,10 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         report.ErrorCode = errorCode;
         report.Reason = reason;
         outcome.Batch.Failed.Add(report);
-        outcome.Success = false;
+        // Per-item failure only. The batch result is decided by the base class:
+        // all items failed -> failure, some applied -> success with failed[], so a
+        // batch of 100 views with one bad id no longer reports "operation failed"
+        // after changing 99 views.
         outcome.ErrorCode ??= errorCode;
     }
 

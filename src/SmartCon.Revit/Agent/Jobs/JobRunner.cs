@@ -105,6 +105,24 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             return JobStartResult.Fail(JobErrors.ActionUnknown(spec.Action));
         }
 
+        // A job left Running by a crashed/restarted session would otherwise block
+        // the new start with "already active" until the pump happens to run.
+        // Only reconcile when this runner does not own a job: an in-process job
+        // between slices must not be marked interrupted.
+        if (_activeJobId is null)
+        {
+            try
+            {
+                Reconcile(document);
+            }
+            catch (Exception ex)
+            {
+                SmartConLogger.Warn(
+                    "Agent job reconcile before start failed: " + ex.GetType().Name + ": " +
+                    ex.Message + " [Action: call get_job_status; a crashed job may still block]");
+            }
+        }
+
         return spec.Mode switch
         {
             JobMode.Preview => StartPreview(spec, document, action, documentId),
@@ -125,6 +143,28 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
         if (JobStateMachine.IsTerminal(job.State))
         {
             return false;
+        }
+
+        // An interrupted job may already have applied units. With
+        // rollbackOnError the cancellation must undo them, so it goes through
+        // Cancelling (the pump runs the undo slice) instead of settling at once.
+        if (job.State == JobState.Interrupted && job.Spec.Options.RollbackOnError)
+        {
+            Sync(_store.SetCancelRequestedAsync(jobId, true, CancellationToken.None));
+            var rollbackError = Sync(_store.TransitionAsync(
+                jobId,
+                JobState.Interrupted,
+                JobState.Cancelling,
+                JobErrorCodes.CancelledByUser,
+                JobErrors.Cancelled().ToMessage(),
+                CancellationToken.None));
+            if (rollbackError is not null)
+            {
+                return false;
+            }
+
+            _wantsPump = true;
+            return true;
         }
 
         // Preview or an interrupted job: nothing is being applied, so the runner
