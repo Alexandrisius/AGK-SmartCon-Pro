@@ -158,6 +158,18 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
         }
 
         outcome.AffectedCount = changed;
+        // The change items are recorded under the view parameter's own name, which the
+        // change-set replayer does not know: undo_last cannot revert them. Report that
+        // honestly instead of returning an undoable-looking change set.
+        if (changed > 0)
+        {
+            outcome.Data["undoSupported"] = false;
+            outcome.Warnings.Add(
+                "undo_last does not revert view parameter changes (undoSupported=false); " +
+                "to revert, call set_view_parameters again with the previous values from " +
+                "changed[].oldValue.");
+        }
+
         if (failed > 0)
         {
             outcome.Success = false;

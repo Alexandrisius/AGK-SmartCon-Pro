@@ -15,6 +15,20 @@ public static class ToolResultBudget
 {
     public const int DefaultMaxCharacters = 40000;
 
+    /// <summary>
+    /// Budget of the pack loader (<c>load_tool_pack</c>). It returns one markdown
+    /// skill per requested pack, and a skill is sent once per conversation — it
+    /// cannot be requested again, so trimming it away loses the manual for the
+    /// rest of the chat (#400).
+    /// </summary>
+    public const int MetaMaxCharacters = 90000;
+
+    /// <summary>Character budget for a tool result of the given tool.</summary>
+    public static int MaxCharactersFor(string? toolName) =>
+        string.Equals(toolName, "load_tool_pack", StringComparison.Ordinal)
+            ? MetaMaxCharacters
+            : DefaultMaxCharacters;
+
     public const string TruncationHint =
         "The result was trimmed to fit the context budget. Narrow the request " +
         "(filters, smaller limit) or continue with offset/nextOffset instead of " +
@@ -29,7 +43,22 @@ public static class ToolResultBudget
         "elements", "views", "levels", "groups", "parameters", "cards",
         "changed", "skipped", "failed", "items", "templates",
         "families", "types", "matchedTypes",
-        "filters", "schedules", "sheets", "appliedViews"
+        "filters", "schedules", "sheets", "appliedViews",
+        // Tool signatures are recoverable (find_tools / a later load_tool_pack);
+        // they yield before the pack skills, which are sent once per conversation
+        // and cannot be requested again (#400).
+        "schemas"
+    };
+
+    /// <summary>
+    /// Properties kept verbatim when the payload is replaced by a digest. Pack
+    /// skills belong here: load_tool_pack marks a skill as sent before the
+    /// budget runs, so dropping the text would lose the manual for the whole
+    /// conversation.
+    /// </summary>
+    private static readonly string[] DigestProtectedProperties =
+    {
+        "skills", "skillAlreadySent", "loaded", "appliedTo"
     };
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -184,6 +213,12 @@ public static class ToolResultBudget
             {
                 digest[property.Key] = totalValue.DeepClone();
             }
+        }
+
+        foreach (var name in DigestProtectedProperties)
+        {
+            if (data[name] is { } protectedValue)
+                digest[name] = protectedValue.DeepClone();
         }
 
         if (data["affected"] is { } affected)

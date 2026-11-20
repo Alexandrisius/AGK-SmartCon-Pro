@@ -37,20 +37,6 @@ public interface IToolRouter
 /// </summary>
 public sealed class RuleToolRouter : IToolRouter
 {
-    private static readonly HashSet<string> CoreTools = new(StringComparer.Ordinal)
-    {
-        "get_project_overview",
-        "list_views",
-        "list_levels",
-        "query_elements",
-        "get_element_details",
-        "summarize_elements",
-        "find_tools",
-        "execute_plan",
-        "rename_views",
-        "apply_view_template"
-    };
-
     private static readonly string[] RussianSuffixes =
     {
         "ения", "ении", "ение", "овать", "евать", "ация", "ации", "ацию",
@@ -66,8 +52,13 @@ public sealed class RuleToolRouter : IToolRouter
     private const double B = 0.75;
     private const int NameBoost = 3;
 
-    /// <summary>Tools that every routed request keeps (read-around + catalog search).</summary>
-    public static IReadOnlyCollection<string> CoreToolNames => CoreTools;
+    /// <summary>
+    /// Tools that every routed request keeps (research core + system plumbing).
+    /// Single source of truth: <see cref="AgentToolPacks"/>, so the router cannot
+    /// drift from the catalog again.
+    /// </summary>
+    public static IReadOnlyCollection<string> CoreToolNames =>
+        AgentToolPacks.CoreToolNames.Concat(AgentToolPacks.SystemToolNames).ToArray();
 
     public Task<ToolRoutingDecision> RouteAsync(
         string query,
@@ -141,7 +132,7 @@ public sealed class RuleToolRouter : IToolRouter
 
         foreach (var tool in tools)
         {
-            if (!includeCore || !CoreTools.Contains(tool.Name) || !selectedNames.Add(tool.Name))
+            if (!includeCore || !AgentToolPacks.IsAlwaysAvailable(tool.Name) || !selectedNames.Add(tool.Name))
                 continue;
 
             selected.Add(tool);

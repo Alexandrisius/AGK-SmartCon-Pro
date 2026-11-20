@@ -19,13 +19,12 @@ public sealed partial class AgentOrchestratorTests
             .ToList();
 
     [Fact]
-    public async Task RunTurn_ToolCatalogV2_StartsWithCoreAndTopFive()
+    public async Task RunTurn_ToolCatalogV2_StartsWithCoreAndSystemOnly()
     {
         var store = new InMemoryConversationStore();
         var tools = CoreTools();
         tools.Add(new CountingTool(name: "set_view_crop"));
         tools.Add(new CountingTool(name: "set_view_visibility"));
-        tools.Add(new CountingTool(name: "get_current_view_info"));
         tools.Add(new CountingTool(name: "list_view_templates"));
         var registry = new AgentToolRegistry(tools);
         var session = new AgentSessionContext();
@@ -46,8 +45,12 @@ public sealed partial class AgentOrchestratorTests
         foreach (var core in AgentToolPacks.CoreToolNames)
             Assert.Contains(sent, tool => tool.Name == core);
 
-        Assert.Contains(sent, tool => tool.Name == "set_view_crop");
-        Assert.InRange(sent.Count, 9, 16);
+        // No retrieval runs on the first message: the model must find pack tools
+        // itself, so a crop query does not preload set_view_crop.
+        Assert.DoesNotContain(sent, tool => tool.Name == "set_view_crop");
+        Assert.DoesNotContain(sent, tool => tool.Name == "set_view_visibility");
+        Assert.DoesNotContain(sent, tool => tool.Name == "list_view_templates");
+        Assert.Equal(AgentToolPacks.CoreToolNames.Count, sent.Count);
     }
 
     [Fact]
@@ -94,7 +97,6 @@ public sealed partial class AgentOrchestratorTests
         var session = new AgentSessionContext();
         var loadTool = new LoadToolPackTool(session);
         var tools = CoreTools();
-        tools.Add(new CountingTool(name: "get_view_settings"));
         tools.Add(new CountingTool(name: "set_view_crop"));
         tools.Add(new CountingTool(name: "set_view_range"));
         tools.Add(new CountingTool(name: "set_view_visibility"));
@@ -133,7 +135,9 @@ public sealed partial class AgentOrchestratorTests
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_visibility");
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_parameters");
         Assert.Empty(session.PendingToolNames);
-        Assert.Equal(5, session.LoadedToolNames.Count);
+        // get_view_settings is part of the research core now, so it is reported as
+        // alreadyLoaded; only the four write setters enter the loaded set.
+        Assert.Equal(4, session.LoadedToolNames.Count);
     }
 
     [Fact]
@@ -174,10 +178,10 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_ToolCatalogV2_UserTextPullsDomainToolsIntoTheRequest()
+    public async Task RunTurn_ToolCatalogV2_UserTextDoesNotPullDomainTools()
     {
-        // "продолжай про листы и спецификации" must put the sheet/schedule tools
-        // into the request even when the loaded set is already large.
+        // The turn text is not a routing query any more: a request mentions sheets and
+        // schedules, but their tools stay out until load_tool_pack enables them.
         var store = new InMemoryConversationStore();
         var session = new AgentSessionContext();
         var tools = CoreTools();
@@ -206,8 +210,9 @@ public sealed partial class AgentOrchestratorTests
             CancellationToken.None);
 
         var sent = Assert.Single(llm.Requests).Tools;
-        Assert.Contains(sent, tool => tool.Name == "list_sheets");
-        Assert.Contains(sent, tool => tool.Name == "list_schedules");
+        Assert.Contains(sent, tool => tool.Name == "filler_0");
+        Assert.DoesNotContain(sent, tool => tool.Name == "list_sheets");
+        Assert.DoesNotContain(sent, tool => tool.Name == "list_schedules");
     }
 
     [Fact]

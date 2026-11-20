@@ -17,12 +17,18 @@ public sealed class AgentToolPacksTests
         "worksets", "links", "mep", "annotations", "audit"
     };
 
-    // ADR-075 §2 pins the core set; report_tooling_feedback was removed on request.
+    // ADR-075 §2 pins the research core; the write primitives stay in their packs so
+    // they are always loaded together with the pack skill.
     private static readonly string[] ExpectedCoreToolNames =
     {
-        "get_project_overview", "list_views", "list_levels", "query_elements",
-        "get_element_details", "find_tools", "execute_plan", "rename_views",
-        "apply_view_template"
+        "get_project_overview", "list_categories", "list_levels", "list_views",
+        "get_current_view_info", "get_view_settings", "query_elements",
+        "summarize_elements", "get_element_details", "get_selected_elements", "find_tools"
+    };
+
+    private static readonly string[] ExpectedSystemToolNames =
+    {
+        "load_tool_pack", "read_tool_result", "execute_plan"
     };
 
     private static readonly IReadOnlyDictionary<string, string[]> ExpectedToolsByPack =
@@ -152,9 +158,9 @@ public sealed class AgentToolPacksTests
     }
 
     [Fact]
-    public void CoreToolNames_AreExactlyTheSpecifiedNine()
+    public void CoreToolNames_AreExactlyTheResearchEleven()
     {
-        Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(11, AgentToolPacks.CoreToolNames.Count);
         Assert.Equal(
             ExpectedCoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
             AgentToolPacks.CoreToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray());
@@ -167,6 +173,24 @@ public sealed class AgentToolPacksTests
 
         Assert.False(AgentToolPacks.IsCore("set_view_crop"));
         Assert.False(AgentToolPacks.IsCore("set_view_visibility"));
+        // Write primitives are pack tools now: they arrive with the pack skill.
+        Assert.False(AgentToolPacks.IsCore("rename_views"));
+        Assert.False(AgentToolPacks.IsCore("apply_view_template"));
+    }
+
+    [Fact]
+    public void SystemToolNames_AreTheHarnessPlumbing()
+    {
+        Assert.Equal(
+            ExpectedSystemToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
+            AgentToolPacks.SystemToolNames.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+        Assert.All(AgentToolPacks.SystemToolNames, name =>
+            Assert.True(AgentToolPacks.IsAlwaysAvailable(name), name));
+        Assert.All(AgentToolPacks.CoreToolNames, name =>
+            Assert.True(AgentToolPacks.IsAlwaysAvailable(name), name));
+        Assert.DoesNotContain(
+            AgentToolPacks.SystemToolNames,
+            name => AgentToolPacks.IsCore(name));
     }
 
     [Fact]

@@ -90,7 +90,10 @@ public sealed class AgentStaticPromptTests
         Assert.DoesNotContain("<turn_context>", staticPrompt, StringComparison.Ordinal);
         Assert.DoesNotContain("## Approval mode", staticPrompt, StringComparison.Ordinal);
         Assert.DoesNotContain("modified:", staticPrompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("workshared", staticPrompt, StringComparison.OrdinalIgnoreCase);
+        // The word itself may appear in a rule (write tools refuse workshared
+        // documents); what must not leak is the per-document state line.
+        Assert.DoesNotContain("workshared:", staticPrompt, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("workshared: yes", staticPrompt, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Active view", staticPrompt, StringComparison.Ordinal);
     }
 

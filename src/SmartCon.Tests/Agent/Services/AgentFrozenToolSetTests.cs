@@ -91,8 +91,12 @@ public sealed class AgentFrozenToolSetTests
     }
 
     [Fact]
-    public async Task FirstUserText_SelectsTheInitialShortlistOnce()
+    public async Task FirstUserText_DoesNotPreloadPackTools()
     {
+        // The first message is a routing query only when it is short and precise; a
+        // long task prompt ("приведи проект в порядок") tells the router nothing.
+        // The agent therefore starts with the always-available set and finds tools
+        // itself with find_tools + load_tool_pack.
         var registry = BuildRegistry();
         var store = new InMemoryConversationStore();
         var llm = new FakeAgentLlmClient();
@@ -107,10 +111,11 @@ public sealed class AgentFrozenToolSetTests
             CancellationToken.None);
 
         var sent = llm.Requests[0].Tools;
-        Assert.Contains(sent, tool => tool.Name == "list_sheets");
-        Assert.Contains(sent, tool => tool.Name == "list_schedules");
         foreach (var core in AgentToolPacks.CoreToolNames)
             Assert.Contains(sent, tool => tool.Name == core);
+        Assert.DoesNotContain(sent, tool => tool.Name == "list_sheets");
+        Assert.DoesNotContain(sent, tool => tool.Name == "list_schedules");
+        Assert.DoesNotContain(sent, tool => tool.Name == "add_family_parameter");
     }
 
     [Fact]
@@ -119,7 +124,6 @@ public sealed class AgentFrozenToolSetTests
         var session = new AgentSessionContext();
         var loadTool = new LoadToolPackTool(session);
         var tools = CoreTools();
-        tools.Add(new ScriptedTool("get_view_settings", AgentToolRisk.Read));
         tools.Add(new ScriptedTool("set_view_crop", AgentToolRisk.Write));
         tools.Add(new ScriptedTool("set_view_range", AgentToolRisk.Write));
         tools.Add(loadTool);

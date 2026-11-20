@@ -27,7 +27,6 @@ public sealed partial class AgentOrchestrator
     private readonly IAgentToolResultBlobStore? _toolResultBlobStore;
     private readonly IAgentContextCompactor? _contextCompactor;
     private readonly IAgentCompactionStore? _compactionStore;
-    private readonly IDynamicToolRanker? _dynamicToolRanker;
 
     public AgentOrchestrator(
         IAgentLlmClient llm,
@@ -44,8 +43,7 @@ public sealed partial class AgentOrchestrator
         IAgentWorkingStateStore? workingStateStore = null,
         IAgentToolResultBlobStore? toolResultBlobStore = null,
         IAgentContextCompactor? contextCompactor = null,
-        IAgentCompactionStore? compactionStore = null,
-        IDynamicToolRanker? dynamicToolRanker = null)
+        IAgentCompactionStore? compactionStore = null)
     {
         _llm = llm ?? throw new ArgumentNullException(nameof(llm));
         _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
@@ -63,7 +61,6 @@ public sealed partial class AgentOrchestrator
         _toolResultBlobStore = toolResultBlobStore;
         _contextCompactor = contextCompactor;
         _compactionStore = compactionStore;
-        _dynamicToolRanker = dynamicToolRanker;
     }
 
     public async Task<AgentTurnResult> RunTurnAsync(
@@ -181,8 +178,7 @@ public sealed partial class AgentOrchestrator
 
             var systemMessage = AgentMessage.System(_promptBuilder.BuildStatic());
             var staticHash = AgentPromptHash.ComputeStatic(systemMessage.Content ?? string.Empty);
-            var definitions = await ResolveToolDefinitionsAsync(userText, ct)
-                .ConfigureAwait(false);
+            var definitions = ResolveToolDefinitions(userText, ct);
             SetActiveToolNames(definitions);
             var toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
 

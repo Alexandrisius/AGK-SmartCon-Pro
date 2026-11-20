@@ -15,6 +15,15 @@ public static class AgentTextSanitizer
 {
     public const int DefaultMaxStringLength = 400;
 
+    /// <summary>
+    /// JSON properties whose string values are harness-paged text: pack skill
+    /// manuals and <c>read_tool_result</c> pages. They are sanitized but never
+    /// capped — capping a manual at 400 characters made the model read only its
+    /// first paragraph, and capping a page broke paging (#400).
+    /// </summary>
+    private static readonly HashSet<string> TrustedStringKeys =
+        new(StringComparer.Ordinal) { "markdown", "content" };
+
     public static string Sanitize(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -92,7 +101,14 @@ public static class AgentTextSanitizer
                 {
                     if (pair.Value is JsonValue value && value.TryGetValue<string>(out var text))
                     {
-                        obj[pair.Key] = JsonValue.Create(Cap(Sanitize(text), maxStringLength));
+                        // Harness-authored manuals (skills[].markdown) are sanitized but
+                        // not capped: 400 characters would cut the manual to its first
+                        // paragraph (#400). Everything else keeps the injection cap.
+                        var sanitized = Sanitize(text);
+                        obj[pair.Key] = JsonValue.Create(
+                            TrustedStringKeys.Contains(pair.Key)
+                                ? sanitized
+                                : Cap(sanitized, maxStringLength));
                         continue;
                     }
 

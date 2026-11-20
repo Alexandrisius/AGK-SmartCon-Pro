@@ -92,7 +92,7 @@ public sealed class FindToolsTool : IAgentTool
         }
 
         var rankable = candidates
-            .Where(definition => !AgentToolPacks.IsCore(definition.Name))
+            .Where(definition => !AgentToolPacks.IsAlwaysAvailable(definition.Name))
             .ToList();
         var state = ComposeState(query, contextText);
 
@@ -106,7 +106,7 @@ public sealed class FindToolsTool : IAgentTool
                 .ConfigureAwait(false);
             foreach (var definition in decision.Tools)
             {
-                if (!AgentToolPacks.IsCore(definition.Name))
+                if (!AgentToolPacks.IsAlwaysAvailable(definition.Name))
                     chosen.Add(definition);
             }
         }
@@ -235,7 +235,7 @@ public sealed class FindToolsTool : IAgentTool
             @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0," +
             @"""description"":""Listing mode offset; use nextOffset from the previous page""}," +
             @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
-            @"""enum"":[""name"",""description"",""pack"",""risk"",""purpose"",""whenToUse""," +
+            @"""enum"":[""name"",""description"",""pack"",""packHasSkill"",""risk"",""purpose"",""whenToUse""," +
             @"""whenNotToUse"",""examples"",""synonyms"",""supportsDryRun"",""timeoutMs""," +
             @"""alreadyAvailable"",""inputSchema""]}}}," +
             @"""additionalProperties"":false}";
@@ -248,12 +248,14 @@ public sealed class FindToolsTool : IAgentTool
                 "cards with argument schemas. Use it when the tool you need is not in the " +
                 "current request. Discovery only: it does not change the tool set. After it, " +
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                "chosen tools for the next round. A search returns compact cards (name, pack, risk, " +
-                "purpose, alreadyAvailable, inputSchema); pass fields to add whenToUse, examples, " +
-                "synonyms or timeoutMs. An empty query returns the whole catalog " +
-                "(name, description, pack, risk) without schemas, paged with offset/nextOffset; " +
-                "add pack to browse one pack. fields=[...] projects each card onto the listed " +
-                "properties (for example fields=[\"name\",\"pack\"]).",
+                "chosen tools for the next round; the pack also brings its skill (markdown " +
+                "operating manual). A card with packHasSkill=true means its pack has such a " +
+                "manual — load the pack to read it. A search returns compact cards (name, pack, " +
+                "packHasSkill, risk, purpose, alreadyAvailable, inputSchema); pass fields to add " +
+                "whenToUse, examples, synonyms or timeoutMs. An empty query returns the whole " +
+                "catalog (name, description, pack, risk) without schemas, paged with " +
+                "offset/nextOffset; add pack to browse one pack. fields=[...] projects each card " +
+                "onto the listed properties (for example fields=[\"name\",\"pack\"]).",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",
@@ -288,18 +290,28 @@ public sealed class FindToolsTool : IAgentTool
             ? fields
             : listing
                 ? new[] { "name", "description", "pack", "risk" }
-                : new[] { "name", "pack", "risk", "purpose", "alreadyAvailable", "inputSchema" };
+                : new[]
+                {
+                    "name", "pack", "packHasSkill", "risk", "purpose", "alreadyAvailable",
+                    "inputSchema"
+                };
         var result = new List<Dictionary<string, object?>>();
 
         foreach (var definition in definitions)
         {
+            var packName = !string.IsNullOrWhiteSpace(definition.Pack)
+                           ? definition.Pack
+                           : AgentToolPacks.PackOfTool(definition.Name)?.Name;
+            var hasSkill = !string.IsNullOrEmpty(packName)
+                           && AgentToolPackSkills.TryGet(packName!, out _);
             var card = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             {
                 ["name"] = definition.Name,
                 ["description"] = definition.Description,
                 ["risk"] = definition.Risk.ToString(),
                 ["supportsDryRun"] = definition.SupportsDryRun,
-                ["pack"] = definition.Pack,
+                ["pack"] = packName,
+                ["packHasSkill"] = hasSkill,
                 ["purpose"] = definition.Purpose,
                 ["whenToUse"] = definition.WhenToUse,
                 ["whenNotToUse"] = definition.WhenNotToUse,

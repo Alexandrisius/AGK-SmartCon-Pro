@@ -204,6 +204,14 @@ public sealed partial class AgentOrchestratorTests
             Task.FromResult(AgentConfirmationResult.Approved);
     }
 
+    private static AgentSessionContext LoadedSession(params string[] toolNames)
+    {
+        var session = new AgentSessionContext();
+        foreach (var name in toolNames)
+            session.TouchTool(name);
+        return session;
+    }
+
     private static AgentOrchestrator CreateOrchestrator(
         FakeAgentLlmClient llm,
         IToolExecutor executor,
@@ -217,8 +225,7 @@ public sealed partial class AgentOrchestratorTests
         IAgentWorkingStateStore? workingStateStore = null,
         IAgentToolResultBlobStore? toolResultBlobStore = null,
         IAgentContextCompactor? contextCompactor = null,
-        IAgentCompactionStore? compactionStore = null,
-        IDynamicToolRanker? dynamicRanker = null)
+        IAgentCompactionStore? compactionStore = null)
     {
         return new AgentOrchestrator(
             llm,
@@ -235,8 +242,7 @@ public sealed partial class AgentOrchestratorTests
             workingStateStore,
             toolResultBlobStore,
             contextCompactor,
-            compactionStore,
-            dynamicRanker);
+            compactionStore);
     }
 
     private sealed class CountingTool : IAgentTool

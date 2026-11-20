@@ -540,10 +540,6 @@ public static partial class ServiceRegistrar
                 new RuleToolRouter(), sp.GetRequiredService<IAgentDecisionClient>());
         });
         services.AddSingleton<IToolRouter>(sp => sp.GetRequiredService<DecisionsToolRouter>());
-        // Turn-start dynamic slots: the decision model ranks the non-core catalog
-        // per user prompt; the always-available hot set stays untouched.
-        services.AddSingleton<IDynamicToolRanker>(sp =>
-            sp.GetRequiredService<DecisionsToolRouter>());
 
         services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
             sp.GetServices<IAgentTool>(),

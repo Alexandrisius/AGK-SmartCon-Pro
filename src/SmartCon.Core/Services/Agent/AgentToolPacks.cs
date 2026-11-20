@@ -181,22 +181,39 @@ public static class AgentToolPacks
     };
 
     // ADR-075 §2: core tools are pinned and never displaced by retrieval.
+    // The core is the RESEARCH set: context-gathering tools that must be callable
+    // in the first round, before the model knows which packs it needs. Write
+    // primitives live in their packs so they arrive together with the pack skill.
     private static readonly string[] CoreNames =
     {
         "get_project_overview",
-        "list_views",
+        "list_categories",
         "list_levels",
+        "list_views",
+        "get_current_view_info",
+        "get_view_settings",
         "query_elements",
+        "summarize_elements",
         "get_element_details",
-        "find_tools",
-        "execute_plan",
-        "rename_views",
-        "apply_view_template"
+        "get_selected_elements",
+        "find_tools"
+    };
+
+    // Harness plumbing, not research: always sent, never ranked, never counted as
+    // the core. execute_plan orchestrates other tools and is referenced by the
+    // static prompt, so it must be callable without a discovery round; its
+    // detailed contract still ships in the plans pack skill.
+    private static readonly string[] SystemNames =
+    {
+        "load_tool_pack",
+        "read_tool_result",
+        "execute_plan"
     };
 
     private static readonly Dictionary<string, AgentToolPack> PacksByName = BuildPackIndex();
     private static readonly Dictionary<string, string> PackNameByTool = BuildToolIndex();
     private static readonly HashSet<string> CoreNameSet = new(CoreNames, StringComparer.Ordinal);
+    private static readonly HashSet<string> SystemNameSet = new(SystemNames, StringComparer.Ordinal);
     private static readonly AgentToolPack[] PopulatedPacks =
         Packs.Where(pack => pack.Tools.Count > 0).ToArray();
 
@@ -210,8 +227,14 @@ public static class AgentToolPacks
     /// </summary>
     public static IReadOnlyList<AgentToolPack> Populated => PopulatedPacks;
 
-    /// <summary>Tools that are always available regardless of the loaded pack.</summary>
+    /// <summary>Research core: context-gathering tools always available regardless of the loaded pack.</summary>
     public static IReadOnlyCollection<string> CoreToolNames => CoreNames;
+
+    /// <summary>
+    /// Harness plumbing that is always sent but is not part of the research core:
+    /// the pack loader, the stored-result reader and the plan orchestrator.
+    /// </summary>
+    public static IReadOnlyCollection<string> SystemToolNames => SystemNames;
 
     public static bool TryGet(string name, out AgentToolPack? pack) =>
         PacksByName.TryGetValue(name, out pack);
@@ -251,14 +274,12 @@ public static class AgentToolPacks
 
     /// <summary>
     /// Tools that every request carries regardless of routing and the loaded
-    /// set: the core tools, <c>load_tool_pack</c> and <c>read_tool_result</c>.
-    /// They never compete for a request slot and never enter the working
-    /// recency list.
+    /// set: the research core plus the system plumbing (load_tool_pack,
+    /// read_tool_result, execute_plan). They never compete for a request slot
+    /// and never enter the working recency list.
     /// </summary>
     public static bool IsAlwaysAvailable(string name) =>
-        CoreNameSet.Contains(name)
-        || string.Equals(name, LoadToolPackName, StringComparison.Ordinal)
-        || string.Equals(name, ReadToolResultName, StringComparison.Ordinal);
+        CoreNameSet.Contains(name) || SystemNameSet.Contains(name);
 
     private static Dictionary<string, AgentToolPack> BuildPackIndex()
     {

@@ -13,6 +13,20 @@ public sealed class ToolResult
 
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// Pack manuals attached to this result (#400). A write tool that runs before
+    /// its pack was loaded carries the manual here, so the model reads it before
+    /// the apply call without an extra round trip.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<ToolResultSkill> Skills { get; init; } = Array.Empty<ToolResultSkill>();
+
+    /// <summary>Exposes <see cref="Skills"/> as <c>skills</c> only when non-empty.</summary>
+    [JsonPropertyName("skills")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ToolResultSkill>? SkillsPayload =>
+        Skills.Count == 0 ? null : Skills;
+
     public string? ErrorCode { get; init; }
 
     public int AffectedCount { get; init; }
@@ -93,6 +107,7 @@ public sealed class ToolResult
             Data = Data,
             Message = Message,
             Warnings = Warnings,
+            Skills = Skills,
             ErrorCode = ErrorCode,
             AffectedCount = AffectedCount,
             DocumentVersion = version,
@@ -111,6 +126,7 @@ public sealed class ToolResult
             Data = Data,
             Message = (Message ?? string.Empty) + suffix,
             Warnings = Warnings,
+            Skills = Skills,
             ErrorCode = ErrorCode,
             AffectedCount = AffectedCount,
             DocumentVersion = DocumentVersion,
@@ -128,6 +144,25 @@ public sealed class ToolResult
             Warnings.Concat(warnings).ToList());
     }
 
+    public ToolResult WithSkills(IReadOnlyList<ToolResultSkill>? skills)
+    {
+        if (skills is null || skills.Count == 0 || Skills.Count > 0)
+            return this;
+
+        return new ToolResult
+        {
+            Success = Success,
+            Data = Data,
+            Message = Message,
+            Warnings = Warnings,
+            Skills = skills,
+            ErrorCode = ErrorCode,
+            AffectedCount = AffectedCount,
+            DocumentVersion = DocumentVersion,
+            Repairs = Repairs
+        };
+    }
+
     private ToolResult Copy(
         IReadOnlyList<string>? repairs = null,
         IReadOnlyList<string>? warnings = null) => new()
@@ -136,6 +171,7 @@ public sealed class ToolResult
         Data = Data,
         Message = Message,
         Warnings = warnings ?? Warnings,
+        Skills = Skills,
         ErrorCode = ErrorCode,
         AffectedCount = AffectedCount,
         DocumentVersion = DocumentVersion,

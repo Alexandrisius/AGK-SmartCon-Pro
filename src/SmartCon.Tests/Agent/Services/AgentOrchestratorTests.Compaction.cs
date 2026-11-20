@@ -58,7 +58,8 @@ public sealed partial class AgentOrchestratorTests
             ContextThreshold = 0.7
         };
         var orchestrator = CreateOrchestrator(
-            llm, executor, registry, store, settings: settings);
+            llm, executor, registry, store, session: LoadedSession("get_test"),
+            settings: settings);
 
         await orchestrator.RunTurnAsync(
             Guid.NewGuid(),

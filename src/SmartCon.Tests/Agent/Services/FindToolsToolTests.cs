@@ -59,6 +59,36 @@ public sealed class FindToolsToolTests
     }
 
     [Fact]
+    public async Task FindTools_CardMarksPacksWithSkill()
+    {
+        // A card must tell the model that its pack ships a manual: otherwise the tool
+        // is loaded without ever asking for the operating instructions (#400).
+        var families = new ScriptedTool("list_families");
+        var plain = new ScriptedTool("plain_unknown_tool");
+        var router = new RecordingToolRouter
+        {
+            Result = new ToolRoutingDecision
+            {
+                Tools = new[] { families.Definition, plain.Definition }
+            }
+        };
+        var tool = new FindToolsTool(router);
+        tool.Attach(new FakeToolRegistry(families, plain));
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"query\":\"семейства\"}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var cards = result.Data!.Value.GetProperty("tools").EnumerateArray().ToList();
+        var familyCard = cards.Single(card => card.GetProperty("name").GetString() == "list_families");
+        var plainCard = cards.Single(card => card.GetProperty("name").GetString() == "plain_unknown_tool");
+
+        Assert.True(familyCard.GetProperty("packHasSkill").GetBoolean());
+        Assert.False(plainCard.GetProperty("packHasSkill").GetBoolean());
+        Assert.Equal("families", familyCard.GetProperty("pack").GetString());
+    }
+
+    [Fact]
     public async Task FindTools_CapsContextLength()
     {
         var write = new ScriptedTool("write_tool");

@@ -65,18 +65,20 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 ";
 
     private const string ToolCatalogV2Section = @"## Tool catalog
-- Only the core tools plus a bounded set of recent and relevant tools are available in each request.
+- Only the research core and the system tools (load_tool_pack, read_tool_result, execute_plan) are available at the start of a conversation. Every other tool must be found with find_tools and enabled with load_tool_pack — the agent decides what the task needs, not a shortlist guessed from the first message.
 - If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools with an empty query lists the whole catalog (name, description, pack) without schemas, paged with offset/nextOffset.
 - find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). Pass load_tool_pack(packs=[...]) to enable several packs at once — a release/audit scenario usually needs views + view_settings + filters + sheets in one round, not four calls. The requested tools are callable from the next round; load_tool_pack always reports which tools are already available in the current request.
 - Never call a tool that is not in the current request; it will fail with unknown_tool.
 - Do not call load_tool_pack when find_tools or a previous load_tool_pack already reported the tool as alreadyAvailable/alreadyLoaded: it is callable now, loading it again only repeats the round trip.
-- load_tool_pack may return a pack skill (markdown operating manual). It is sent once per conversation; do not ask for it again.
+- load_tool_pack returns 'skills': one markdown operating manual per loaded pack that has one ({pack, markdown}). Prefer load_tool_pack(pack=...) over a list of single tools: the pack brings its skill and the sibling tools that the manual refers to. Loading one tool by name still delivers the skill of its pack. The FIRST result of a write tool whose pack skill was not sent yet also carries it in the same 'skills' field — read it before repeating the call with dryRun=false. Each skill is sent once per conversation; do not ask for it again.
+- The research core (get_project_overview, list_categories, list_levels, list_views, get_current_view_info, get_view_settings, query_elements, summarize_elements, get_element_details, get_selected_elements, find_tools) and the system tools (load_tool_pack, read_tool_result, execute_plan) are always callable, but a pack skill only arrives with load_tool_pack. Read-only work therefore needs no extra round; before the first write, load the write pack — it brings those tools together with their manual. For a multi-step plan load pack plans once to read the full plan contract (the Plan validation section covers the essentials).
 ";
 
     private const string ChangeVerificationSection = @"## Reporting failed changes
 - A tool that returns success=false may still have changed the model; never claim ""nothing changed"" from the error text alone. Re-read the object (get_filter_details / get_view_settings / get_element_details / list_views) and compare it with the state you saw before the call.
 - When the result carries undoSupported=false, say plainly that undo_last will not revert it and name the call that reverts it instead (the result carries previousRules/previousCategories for that).
 - A result with errorCode=no_changes is a success: the requested state was already in place. Do not retry it.
+- Every write tool refuses a workshared document with errorCode=workshared_not_supported: say plainly that SmartCon does not write to workshared models yet and do not retry with other arguments.
 - undo_last reverts change sets recorded by write tools (rename_views, set_parameters, set_view_visibility, …). Changes applied by start_job are NOT a change set: revert them with rollback_job(jobId), and name that call in the report. Never promise ""undo_last reverts everything"" after a job.
 
 ## View filters
@@ -90,6 +92,13 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     public const string SessionContextHeader = "<session_context>";
 
     public const string SessionContextFooter = "</session_context>";
+
+    private const string BetaFeedbackSection = @"## Beta harness feedback (mandatory)
+- This product is in beta. The tool catalog, the pack skills returned by load_tool_pack, the tool descriptions and these system instructions are part of the harness and can be incomplete, misleading or wrong.
+- At the end of EVERY completed task, add a short ""Harness feedback"" block to the answer: what was convenient, what was inconvenient, and what was impossible with the current tools.
+- Order it by value: the most critical defect first, then cheap high-impact fixes. Name the exact tool, argument, skill pack or instruction line and state the correct behaviour — a wrong pack skill, a misleading tool description, a missing tool or argument, or a system-instruction contradiction is the most valuable report you can give.
+- Keep it to a few lines; when the task went smoothly, say ""no friction"" and stop. Never omit this block.
+";
 
     /// <summary>
     /// Prompt prefix that never changes inside a conversation: role, plan
@@ -108,6 +117,8 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
         builder.Append(JobsSection);
         builder.AppendLine();
         builder.Append(ChangeVerificationSection);
+        builder.AppendLine();
+        builder.Append(BetaFeedbackSection);
         builder.AppendLine();
         AppendWorkingRules(builder);
         return builder.ToString();

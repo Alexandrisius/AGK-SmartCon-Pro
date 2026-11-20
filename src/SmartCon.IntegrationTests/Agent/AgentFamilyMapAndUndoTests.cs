@@ -394,7 +394,34 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
         await Assert.That(result.Success).IsTrue();
     }
 
+    [Test]
+    public async Task RemoveFamilyParameter_IsNotUndoableAndRecordsNoChangeSet()
+    {
+        // A removed parameter cannot be re-created from a name, and a family reload from
+        // the backup does not re-add it in every Revit version. The tool therefore keeps
+        // the change out of the audit trail and reports undoSupported=false instead of
+        // promising an undo that silently does nothing.
+        await AddParameter("Удаляемый", "text");
+        await Assert.That(FindParameterOrNull(await ReadParameters(), "Удаляемый")).IsNotNull();
+        var setsBefore = _changeSets!.All.Count;
+
+        var remove = Run(
+            CreateRemoveTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"Удаляемый\",\"dryRun\":false}");
+
+        await Assert.That(remove.Success).IsTrue();
+        var data = Data(remove);
+        await Assert.That(data.GetProperty("undoSupported").GetBoolean()).IsFalse();
+        await Assert.That(data.TryGetProperty("changeSetId", out _)).IsFalse();
+        await Assert.That(data.TryGetProperty("backupPath", out _)).IsTrue();
+        await Assert.That(_changeSets.All.Count).IsEqualTo(setsBefore);
+        await Assert.That(FindParameterOrNull(await ReadParameters(), "Удаляемый")).IsNull();
+    }
+
     private AddFamilyParameterTool CreateAddTool() =>
+        new(new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+    private RemoveFamilyParameterTool CreateRemoveTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private MapFamilyParametersTool CreateMapTool() =>

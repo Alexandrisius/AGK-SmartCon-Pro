@@ -242,7 +242,7 @@ public sealed class LoadToolPackToolTests
                 new ScriptedTool("list_views"),
                 new ScriptedTool("get_current_view_info"),
                 new ScriptedTool("rename_views"),
-                new ScriptedTool("get_view_settings")));
+                new ScriptedTool("list_filters")));
 
         var result = await tool.ExecuteAsync(
             Context(), Parse("{\"pack\":\"views\"}"), CancellationToken.None);
@@ -252,7 +252,7 @@ public sealed class LoadToolPackToolTests
         Assert.Equal(1, data.GetProperty("remainingAvailable").GetInt32());
         Assert.Equal(
             1,
-            data.GetProperty("remainingByPack").GetProperty("view_settings").GetInt32());
+            data.GetProperty("remainingByPack").GetProperty("filters").GetInt32());
     }
 
     [Fact]
@@ -265,6 +265,7 @@ public sealed class LoadToolPackToolTests
         var tools = AgentToolPacks.CoreToolNames
             .Select(name => (IAgentTool)new ScriptedTool(name))
             .ToList();
+        tools.Add(new ScriptedTool("apply_view_template"));
         tools.Add(new ScriptedTool("list_view_templates"));
         tools.Add(new ScriptedTool("get_view_template_details"));
         tools.Add(new ScriptedTool("set_view_template_inclusion"));
@@ -283,10 +284,10 @@ public sealed class LoadToolPackToolTests
         var remaining = data.GetProperty("remainingAvailable").GetInt32();
 
         Assert.Equal(catalogTotal, core + loaded + inRequest + remaining);
-        // apply_view_template is core and belongs to the templates pack, so it is
-        // counted as loaded; coreTools counts the always-available tools not loaded.
+        // apply_view_template is a pack tool now: enabling the templates pack queues it
+        // together with its three siblings, so all four count as loaded.
         Assert.Equal(4, loaded);
-        Assert.Equal(8, core);
+        Assert.Equal(AgentToolPacks.CoreToolNames.Count, core);
         Assert.Equal(0, remaining);
         Assert.Equal(
             "catalogTotal = coreTools + loadedTools + inRequestTools + remainingAvailable",
@@ -336,8 +337,10 @@ public sealed class LoadToolPackToolTests
 
         Assert.True(result.Success);
         var data = result.Data!.Value;
-        Assert.Equal("filters", data.GetProperty("skillPack").GetString());
-        var skill = data.GetProperty("skill").GetString();
+        var skills = data.GetProperty("skills").EnumerateArray().ToList();
+        Assert.Single(skills);
+        Assert.Equal("filters", skills[0].GetProperty("pack").GetString());
+        var skill = skills[0].GetProperty("markdown").GetString();
         Assert.False(string.IsNullOrWhiteSpace(skill));
         Assert.Contains("SetIsFilterEnabled", skill);
         Assert.Contains("SetFilterVisibility", skill);
@@ -349,6 +352,52 @@ public sealed class LoadToolPackToolTests
         Assert.Contains("list_filterable_parameters", loaded);
         Assert.Contains("get_view_settings", loaded);
         Assert.Contains("get_view_settings", session.PendingToolNames);
+    }
+
+    [Fact]
+    public async Task Execute_TwoPacksWithSkills_ReturnsBothSkills()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(
+            session,
+            new FakeToolRegistry(
+                new ScriptedTool("get_view_settings"),
+                new ScriptedTool("list_filters"),
+                new ScriptedTool("list_families"),
+                new ScriptedTool("list_family_types")));
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"packs\":[\"filters\",\"families\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var skills = result.Data!.Value.GetProperty("skills").EnumerateArray()
+            .Select(item => item.GetProperty("pack").GetString()!)
+            .ToList();
+        Assert.Equal(2, skills.Count);
+        Assert.Contains("filters", skills);
+        Assert.Contains("families", skills);
+        Assert.Equal(2, session.SentPackSkills.Count);
+    }
+
+    [Fact]
+    public async Task Execute_ExplicitTool_DeliversTheSkillOfItsPack()
+    {
+        // The model may enable one tool by name instead of the whole pack: the manual
+        // of the owning pack must still arrive, otherwise it writes without the rules.
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, new FakeToolRegistry(new ScriptedTool("list_families")));
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"tools\":[\"list_families\"]}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var skills = result.Data!.Value.GetProperty("skills").EnumerateArray().ToList();
+        Assert.Single(skills);
+        Assert.Equal("families", skills[0].GetProperty("pack").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(
+            skills[0].GetProperty("markdown").GetString()));
     }
 
     [Fact]
@@ -364,10 +413,23 @@ public sealed class LoadToolPackToolTests
 
         Assert.True(second.Success);
         var data = second.Data!.Value;
-        Assert.Null(data.GetProperty("skill").GetString());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("skills").ValueKind);
         var alreadySent = data.GetProperty("skillAlreadySent").EnumerateArray()
             .Select(item => item.GetString()!)
             .ToList();
         Assert.Contains("filters", alreadySent);
+    }
+
+    [Fact]
+    public async Task Execute_PackWithoutSkill_ReturnsNoSkillsEntry()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, ViewsRegistry());
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"worksets\"}"), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("pack_reserved_empty", result.ErrorCode);
     }
 }

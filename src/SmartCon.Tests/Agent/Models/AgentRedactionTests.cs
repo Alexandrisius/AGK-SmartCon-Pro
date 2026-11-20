@@ -121,6 +121,25 @@ public sealed class AgentRedactionTests
     }
 
     [Fact]
+    public void SanitizeJson_DoesNotCapPackSkillMarkdown()
+    {
+        // A pack manual is harness-authored text: capping it at 400 characters cut it
+        // to the first paragraph, so the model never read the rules it was sent (#400).
+        var longText = new string('a', 2000);
+        var json = "{\"pack\":\"views\",\"markdown\":\"" + longText +
+                   "\",\"message\":\"" + longText + "\"}";
+
+        var sanitized = AgentTextSanitizer.SanitizeJson(json);
+        using var document = JsonDocument.Parse(sanitized);
+
+        Assert.Equal(
+            2000,
+            document.RootElement.GetProperty("markdown").GetString()!.Length);
+        Assert.True(
+            document.RootElement.GetProperty("message").GetString()!.Length <= 401);
+    }
+
+    [Fact]
     public void SanitizeJson_MasksPromptInjectionTextOnlyAsData()
     {
         var json =

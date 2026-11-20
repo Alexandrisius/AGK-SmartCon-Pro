@@ -1,4 +1,4 @@
-using SmartCon.Core.Models.Agent;
+﻿using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Agent.Services.Decisions;
@@ -8,7 +8,7 @@ namespace SmartCon.Agent.Services.Decisions;
 /// catalog and keeps the rule-based BM25 shortlist as the fail-closed fallback.
 /// Only tool names and descriptions are sent (no model data, no element names).
 /// </summary>
-public sealed class DecisionsToolRouter : IToolRouter, IDynamicToolRanker
+public sealed class DecisionsToolRouter : IToolRouter
 {
     private const int MaxChoiceOptions = 255;
     private const int MaxChosenTools = 3;
@@ -91,69 +91,6 @@ public sealed class DecisionsToolRouter : IToolRouter, IDynamicToolRanker
         catch (Exception)
         {
             return rule;
-        }
-    }
-
-    /// <summary>
-    /// Ranks the non-core catalog for the turn-start dynamic slots. The
-    /// always-available hot set is the caller's responsibility: this method
-    /// never injects core tools. Disabled or failed decision calls fall back to
-    /// the deterministic card BM25 ranking.
-    /// </summary>
-    public async Task<IReadOnlyList<AgentToolDefinition>> RankAsync(
-        string query,
-        IReadOnlyList<AgentToolDefinition> tools,
-        int max,
-        CancellationToken ct = default)
-    {
-        if (max <= 0 || tools.Count == 0)
-            return Array.Empty<AgentToolDefinition>();
-
-        var lexical = ToolCardRouter.Rank(query, tools, max);
-        if (!IsEnabled)
-            return lexical;
-
-        try
-        {
-            var answers = await AskToolQuestionsAsync(query, tools, ct).ConfigureAwait(false);
-            var chosen = ChosenToolNames(answers);
-            if (chosen.Count == 0)
-                return lexical;
-
-            var byName = new Dictionary<string, AgentToolDefinition>(StringComparer.Ordinal);
-            foreach (var tool in tools)
-                byName[tool.Name] = tool;
-
-            var selected = new List<AgentToolDefinition>(max);
-            var names = new HashSet<string>(StringComparer.Ordinal);
-
-            foreach (var name in chosen)
-            {
-                if (selected.Count >= max)
-                    return selected;
-
-                if (byName.TryGetValue(name, out var tool) && names.Add(tool.Name))
-                    selected.Add(tool);
-            }
-
-            foreach (var tool in lexical)
-            {
-                if (selected.Count >= max)
-                    break;
-
-                if (names.Add(tool.Name))
-                    selected.Add(tool);
-            }
-
-            return selected;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return lexical;
         }
     }
 

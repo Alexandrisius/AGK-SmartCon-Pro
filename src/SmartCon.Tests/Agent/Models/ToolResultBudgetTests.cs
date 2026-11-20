@@ -210,4 +210,72 @@ public sealed class ToolResultBudgetTests
         Assert.True(data.GetProperty("familiesTotal").GetInt32() >= 1000);
         Assert.True(data.GetProperty("familiesReturned").GetInt32() < 1000);
     }
+
+    [Fact]
+    public void MaxCharactersFor_LoadToolPackGetsTheExpandedBudget()
+    {
+        // Pack skills are sent once per conversation: trimming them away would lose
+        // the manual for the whole chat, so the pack loader gets a larger budget.
+        Assert.Equal(
+            ToolResultBudget.MetaMaxCharacters,
+            ToolResultBudget.MaxCharactersFor("load_tool_pack"));
+        Assert.Equal(
+            ToolResultBudget.DefaultMaxCharacters,
+            ToolResultBudget.MaxCharactersFor("list_views"));
+        Assert.Equal(
+            ToolResultBudget.DefaultMaxCharacters,
+            ToolResultBudget.MaxCharactersFor(null));
+    }
+
+    [Fact]
+    public void Serialize_OverBudget_DigestKeepsPackSkills()
+    {
+        // A pack skill is sent once per conversation: losing the text to the budget
+        // while SentPackSkills already marked it sent would drop the manual forever.
+        var cards = Enumerable.Range(0, 200)
+            .Select(index => new { name = "tool_" + index, purpose = new string('x', 40) })
+            .ToArray();
+        var markdown = "## Пак filters\n" + new string('y', 200);
+        var skills = new[] { new { pack = "filters", markdown } };
+
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { cards, skills }),
+            "big");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 2000);
+
+        Assert.True(json.Length <= 2000, "trimmed json must fit the budget, was " + json.Length);
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        var returned = data.GetProperty("skills").EnumerateArray().Single();
+        Assert.Equal("filters", returned.GetProperty("pack").GetString());
+        Assert.Equal(markdown, returned.GetProperty("markdown").GetString());
+    }
+
+    [Fact]
+    public void Serialize_OverBudget_SchemasYieldBeforeSkills()
+    {
+        var schemas = Enumerable.Range(0, 8)
+            .Select(index => new { name = "tool_" + index, inputSchema = new string('s', 500) })
+            .ToArray();
+        var markdown = "## Пак filters\n" + new string('y', 600);
+        var skills = new[] { new { pack = "filters", markdown } };
+
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { schemas, skills }),
+            "big");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 3000);
+
+        Assert.True(json.Length <= 3000, "trimmed json must fit the budget, was " + json.Length);
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        Assert.Equal(8, data.GetProperty("schemasTotal").GetInt32());
+        Assert.True(data.GetProperty("schemasReturned").GetInt32() < 8);
+        Assert.Equal(markdown, data.GetProperty("skills")[0].GetProperty("markdown").GetString());
+    }
 }

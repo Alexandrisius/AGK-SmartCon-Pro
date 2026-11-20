@@ -28,8 +28,9 @@ public sealed class RemoveFamilyParameterTool : AgentFamilyWriteToolBase
         Description =
             "Removes a family or shared parameter from a family by name (or GUID). Built-in " +
             "parameters are refused. Formulas that reference the parameter are removed by Revit " +
-            "and listed in the answer. The change is reversible with undo_last (the family backup " +
-            "is restored). Dry run by default.",
+            "and listed in the answer. Not reversible by undo_last (undoSupported=false): the " +
+            "pre-edit backup .rfa is returned in backupPath for a manual restore. Dry run by " +
+            "default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = false,
@@ -184,12 +185,17 @@ public sealed class RemoveFamilyParameterTool : AgentFamilyWriteToolBase
             return;
         }
 
-        session.AddUndoOperation(new FamilyUndoOperation
-        {
-            Kind = "remove_parameter",
-            Parameter = name,
-            Scope = scope
-        });
+        // Not reversible by undo_last: a removed parameter cannot be re-created from a
+        // name alone, and a family reload from the backup does not re-add it in every
+        // Revit version. Keep the change out of the audit trail and say so explicitly
+        // instead of offering an undo that silently does nothing.
+        outcome.SuppressChangeSet = true;
+        outcome.Data["undoSupported"] = false;
+        outcome.Warnings.Add(
+            "undo_last does not revert a removed family parameter; use the Revit Undo " +
+            "command or the pre-edit backup .rfa from backupPath.");
+        if (session.BackupPath is not null)
+            outcome.Data["backupPath"] = session.BackupPath;
 
         report.NewValue = "removed";
         outcome.Batch.Changed.Add(report);

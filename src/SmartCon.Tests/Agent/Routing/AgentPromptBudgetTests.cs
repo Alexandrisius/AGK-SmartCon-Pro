@@ -25,29 +25,45 @@ public sealed class AgentPromptBudgetTests
     [Fact]
     public void PromptWithPacks_StaysUnderEightThousandTokens()
     {
-        var catalog = RoutingCatalogFactory.RealCatalog();
-
         var packs = new StringBuilder();
         foreach (var pack in AgentToolPacks.All)
             packs.Append("- ").Append(pack.Name).Append(": ").AppendLine(pack.Description);
 
         var core = new StringBuilder();
-        foreach (var name in AgentToolPacks.CoreToolNames)
+        // The request always carries the research core and the system plumbing:
+        // count both, otherwise the gate under-measures the real prompt.
+        foreach (var name in AgentToolPacks.CoreToolNames
+                     .Concat(AgentToolPacks.SystemToolNames))
         {
-            Assert.True(AgentToolCards.TryGet(name, out var card));
+            if (!AgentToolCards.TryGet(name, out var card))
+            {
+                // The pack loader is always available and described by the prompt
+                // section instead of a routing card.
+                Assert.Equal(AgentToolPacks.LoadToolPackName, name);
+                continue;
+            }
+
             core.Append(name).Append(": ").Append(card!.Purpose).AppendLine();
             core.Append("Когда: ").AppendLine(card.WhenToUse);
         }
 
-        var top = ToolCardRouter.Rank(
-            "переименуй виды и примени шаблон", catalog, 5);
-        Assert.Equal(5, top.Count);
+        // The runtime no longer retrieves a shortlist on turn start: the request carries
+        // exactly the always-available tools (research core + system plumbing) with
+        // their real schemas. Estimate those, not a routing sample.
+        var alwaysAvailable = AgentToolPacks.CoreToolNames
+            .Concat(AgentToolPacks.SystemToolNames)
+            .ToList();
+
+        var catalog = RoutingCatalogFactory.RealCatalog();
+        var byName = catalog.ToDictionary(tool => tool.Name, StringComparer.Ordinal);
 
         var schemas = new StringBuilder();
-        foreach (var tool in top)
+        foreach (var name in alwaysAvailable)
         {
-            schemas.Append(tool.Name).Append('\n');
-            schemas.AppendLine(RoutingCatalogFactory.RepresentativeSchema());
+            schemas.Append(name).Append('\n');
+            schemas.AppendLine(byName.TryGetValue(name, out var definition)
+                ? definition.InputSchemaJson
+                : RoutingCatalogFactory.RepresentativeSchema());
         }
 
         var packTokens = AgentTokenEstimator.EstimateText(packs.ToString());
@@ -58,15 +74,16 @@ public sealed class AgentPromptBudgetTests
         var parts = packTokens + coreTokens + schemaTokens;
 
         _output.WriteLine(
-            "packs=" + packTokens + " core9=" + coreTokens + " top5Schemas=" + schemaTokens +
+            "packs=" + packTokens + " core=" + coreTokens + " alwaysSchemas=" + schemaTokens +
             " partsTotal=" + parts + " staticPrompt=" + staticTokens +
             " full=" + (parts + staticTokens));
         _output.WriteLine(
             "packs=" + AgentToolPacks.All.Count + " core=" +
-            AgentToolPacks.CoreToolNames.Count + " schemas=" + top.Count);
+            AgentToolPacks.CoreToolNames.Count + " schemas=" + alwaysAvailable.Count);
 
         Assert.Equal(21, AgentToolPacks.All.Count);
-        Assert.Equal(9, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(11, AgentToolPacks.CoreToolNames.Count);
+        Assert.Equal(3, AgentToolPacks.SystemToolNames.Count);
         Assert.True(
             parts <= PromptTokenGate,
             "packs+core+schemas " + parts.ToString(CultureInfo.InvariantCulture) +

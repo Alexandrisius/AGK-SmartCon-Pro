@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Logging;
@@ -39,9 +39,10 @@ public sealed partial class AgentOrchestrator
         {
             try
             {
-                return await _toolExecutor
+                var result = await _toolExecutor
                     .ExecuteAsync(toolCall.Name, document.RootElement, ct)
                     .ConfigureAwait(false);
+                return AttachPackSkillOnFirstWrite(toolCall.Name, result);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -60,10 +61,44 @@ public sealed partial class AgentOrchestrator
         }
     }
 
-    private static string SerializeToolResult(ToolResult result)
+    private static string SerializeToolResult(string toolName, ToolResult result)
     {
-        var json = ToolResultBudget.Serialize(result);
+        var json = ToolResultBudget.Serialize(result, ToolResultBudget.MaxCharactersFor(toolName));
         return AgentTextSanitizer.SanitizeJson(json);
+    }
+
+    /// <summary>
+    /// A write tool can be callable before its pack was loaded: the initial shortlist
+    /// ranks individual tools and carries no skill. Deliver the pack manual with the
+    /// FIRST result of such a tool, so the model reads it before the apply call
+    /// instead of relying on a prompt reminder (#400). The skill is marked as sent,
+    /// so load_tool_pack will not repeat it.
+    /// </summary>
+    private ToolResult AttachPackSkillOnFirstWrite(string toolName, ToolResult result)
+    {
+        if (result.Skills.Count > 0
+            || !_toolRegistry.TryGet(toolName, out var tool)
+            || tool is null
+            || tool.Definition.Risk == AgentToolRisk.Read)
+        {
+            return result;
+        }
+
+        var pack = AgentToolPacks.PackOfTool(toolName)?.Name;
+        if (string.IsNullOrEmpty(pack)
+            || !AgentToolPackSkills.TryGet(pack!, out var skill)
+            || skill is null
+            || !_sessionContext.SentPackSkills.Add(pack!))
+        {
+            return result;
+        }
+
+        SmartConLogger.Debug(
+            "Agent pack skill attached to the first write result: pack=" + pack);
+        return result.WithSkills(new[]
+        {
+            new ToolResultSkill { Pack = pack!, Markdown = skill }
+        });
     }
 
     /// <summary>
@@ -77,9 +112,10 @@ public sealed partial class AgentOrchestrator
         CancellationToken ct)
     {
         var fullJson = AgentTextSanitizer.SanitizeJson(ToolResultBudget.SerializeFull(result));
+        var maxCharacters = ToolResultBudget.MaxCharactersFor(toolCall.Name);
         string? handle = null;
 
-        if (fullJson.Length > ToolResultBudget.DefaultMaxCharacters
+        if (fullJson.Length > maxCharacters
             && _toolResultBlobStore is not null
             && !string.IsNullOrWhiteSpace(toolCall.Id))
         {
@@ -106,9 +142,9 @@ public sealed partial class AgentOrchestrator
 
         // Sanitize first, trim second: the sanitizer reserializes with the default
         // encoder and can inflate Cyrillic payloads past the budget.
-        return fullJson.Length <= ToolResultBudget.DefaultMaxCharacters
+        return fullJson.Length <= maxCharacters
             ? fullJson
-            : ToolResultBudget.Trim(fullJson, ToolResultBudget.DefaultMaxCharacters, handle);
+            : ToolResultBudget.Trim(fullJson, maxCharacters, handle);
     }
 
     /// <summary>
@@ -156,9 +192,11 @@ public sealed partial class AgentOrchestrator
         {
             target.Add(AgentMessage.ToolResult(
                 id,
-                SerializeToolResult(ToolResult.Fail(
-                    "cancelled",
-                    "The tool call was not executed because the previous turn was interrupted."))));
+                SerializeToolResult(
+                    string.Empty,
+                    ToolResult.Fail(
+                        "cancelled",
+                        "The tool call was not executed because the previous turn was interrupted."))));
         }
     }
 
@@ -198,23 +236,24 @@ public sealed partial class AgentOrchestrator
 
     /// <summary>
     /// Definitions of the current request: the frozen conversation set in
-    /// ordinal name order. The set is chosen once, on the first turn, from the
-    /// always-available tools, the initial shortlist for the first user text and
-    /// everything already loaded.
+    /// ordinal name order. The set starts with the always-available tools and is
+    /// extended only by <c>load_tool_pack</c>: no retrieval runs on the user text.
+    /// A huge first prompt cannot tell the router which tools the task needs — the
+    /// model discovers them itself with short, targeted find_tools queries.
     /// </summary>
-    private async Task<IReadOnlyList<AgentToolDefinition>> ResolveToolDefinitionsAsync(
+    private IReadOnlyList<AgentToolDefinition> ResolveToolDefinitions(
         string userText,
         CancellationToken ct)
     {
+        _ = userText;
+        _ = ct;
         var all = _toolRegistry.GetDefinitions();
         if (all.Count == 0)
             return all;
 
         if (!_sessionContext.ToolSetFrozen)
         {
-            var initial = await SelectInitialToolNamesAsync(userText, all, ct)
-                .ConfigureAwait(false);
-            foreach (var name in initial)
+            foreach (var name in SelectInitialToolNames())
                 _sessionContext.FreezeTool(name);
             _sessionContext.ToolSetFrozen = true;
 
@@ -226,67 +265,29 @@ public sealed partial class AgentOrchestrator
         var definitions = BuildFrozenDefinitions(all);
         SmartConLogger.Debug(
             "Agent v2 tool catalog: " + definitions.Count + "/" + all.Count +
-            " frozen tools, loaded=" + _sessionContext.LoadedToolNames.Count +
-            ", dynamic=" + (_dynamicToolRanker is { IsEnabled: true } ? "decision" : "bm25"));
+            " frozen tools, loaded=" + _sessionContext.LoadedToolNames.Count);
         return definitions;
     }
 
     /// <summary>
-    /// Initial tool set of a conversation: pinned core + load_tool_pack /
-    /// read_tool_result, the best matches for the first user text and every tool
-    /// the session had already loaded. Later turns never re-rank: changing the
-    /// list mid-conversation invalidates the provider cache (P.4).
+    /// Initial tool set of a conversation: the always-available research core and
+    /// system tools plus everything the session had already loaded. Pack tools are
+    /// NEVER pre-selected from the first message: a long task prompt is a poor
+    /// routing query, and a short one is not worth an agent run. The model calls
+    /// find_tools with targeted queries and enables what it picked.
     /// </summary>
-    private async Task<IReadOnlyList<string>> SelectInitialToolNamesAsync(
-        string userText,
-        IReadOnlyList<AgentToolDefinition> all,
-        CancellationToken ct)
+    private IEnumerable<string> SelectInitialToolNames()
     {
-        const int topCount = 5;
-
-        var selected = new List<string>(all.Count);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        void Add(string name)
-        {
-            if (!string.IsNullOrEmpty(name) && names.Add(name))
-                selected.Add(name);
-        }
-
-        foreach (var definition in all)
+        foreach (var definition in _toolRegistry.GetDefinitions())
         {
             if (IsAlwaysAvailableV2(definition.Name))
-                Add(definition.Name);
-        }
-
-        // A small catalog needs no retrieval: hiding tools from it would only cost
-        // the model extra discovery rounds.
-        if (all.Count <= 8)
-        {
-            foreach (var definition in all)
-                Add(definition.Name);
-        }
-        else
-        {
-            var rankable = all
-                .Where(definition => !names.Contains(definition.Name))
-                .ToList();
-            var dynamicEnabled = _dynamicToolRanker is { IsEnabled: true };
-            var ranked = dynamicEnabled
-                ? await _dynamicToolRanker!
-                    .RankAsync(userText, rankable, topCount, ct)
-                    .ConfigureAwait(false)
-                : ToolCardRouter.Rank(userText, rankable, topCount);
-
-            foreach (var definition in ranked)
-                Add(definition.Name);
+                yield return definition.Name;
         }
 
         foreach (var name in _sessionContext.LoadedToolNames)
-            Add(name);
+            yield return name;
         foreach (var name in _sessionContext.PendingToolNames)
-            Add(name);
-
-        return selected;
+            yield return name;
     }
 
     /// <summary>

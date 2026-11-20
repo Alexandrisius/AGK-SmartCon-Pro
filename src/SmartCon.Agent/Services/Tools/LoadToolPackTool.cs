@@ -36,9 +36,10 @@ public sealed class LoadToolPackTool : IAgentTool
         Description =
             "Enables a tool pack or explicit tools for the next round; the current round keeps " +
             "its tool set. Returns the input schemas of the tools it enabled and, for packs " +
-            "that have one, the pack skill (markdown operating manual) — the skill is sent " +
-            "once per conversation. Use it after find_tools to make the discovered tools " +
-            "callable.",
+            "that have one, the pack skill (markdown operating manual) — one entry per pack in " +
+            "'skills', each sent once per conversation. Loading a single tool also delivers " +
+            "the skill of its pack; prefer pack= to get the sibling tools too. Use it after " +
+            "find_tools to make the discovered tools callable.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Category = "Meta",
@@ -133,6 +134,20 @@ public sealed class LoadToolPackTool : IAgentTool
                 data: payload));
         }
 
+        // A skill belongs to a pack, but the model may load a single tool by name.
+        // Deliver the manual of every pack the loaded tools belong to: loading one
+        // tool must not skip the knowledge of its pack (#400).
+        var skillPacks = new List<string>(packNames);
+        foreach (var name in requested)
+        {
+            var owner = AgentToolPacks.PackOfTool(name);
+            if (owner is not null
+                && !skillPacks.Contains(owner.Name, StringComparer.Ordinal))
+            {
+                skillPacks.Add(owner.Name);
+            }
+        }
+
         // "Loaded" must mean "callable right now", not "remembered for this
         // session": a request carries only a bounded slice of the catalog, so a
         // tool that was loaded earlier can still be absent from the current
@@ -208,13 +223,15 @@ public sealed class LoadToolPackTool : IAgentTool
             })
             .ToList();
 
-        // Pack skill (#400): the operating manual of the pack, in markdown. Sent once
-// per conversation — a repeated load_tool_pack reports it as already sent
-// instead of duplicating the text in the prompt.
-        string? skill = null;
-        string? skillPack = null;
+        // Pack skills (#400): the operating manual of every requested pack, in
+        // markdown. Each skill is sent once per conversation — a repeated
+        // load_tool_pack reports it as already sent instead of duplicating the
+        // text in the prompt. Every pack gets its own entry: dropping the second
+        // markdown of a multi-pack call while marking it sent would lose it for
+        // the whole conversation.
+        var skills = new List<object>();
         var skillAlreadySent = new List<string>();
-        foreach (var name in packNames.Distinct(StringComparer.Ordinal))
+        foreach (var name in skillPacks.Distinct(StringComparer.Ordinal))
         {
             if (!AgentToolPackSkills.TryGet(name, out var markdown) || markdown is null)
                 continue;
@@ -226,11 +243,7 @@ public sealed class LoadToolPackTool : IAgentTool
             }
 
             _sessionContext.SentPackSkills.Add(name);
-            if (skill is null)
-            {
-                skill = markdown;
-                skillPack = name;
-            }
+            skills.Add(new { pack = name, markdown });
         }
 
         var result = new
@@ -245,8 +258,7 @@ public sealed class LoadToolPackTool : IAgentTool
             availableNow,
             remainingAvailable,
             remainingByPack,
-            skill,
-            skillPack,
+            skills = skills.Count == 0 ? null : skills,
             skillAlreadySent = skillAlreadySent.Count == 0 ? null : skillAlreadySent,
             // Legacy field: tools enabled in this conversation, including pack names
             // that the registry does not know (should not happen in production).
