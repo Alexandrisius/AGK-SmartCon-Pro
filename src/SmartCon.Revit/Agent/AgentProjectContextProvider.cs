@@ -34,7 +34,7 @@ public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
         var uiApplication = app as UIApplication;
         var doc = uiApplication?.ActiveUIDocument?.Document;
         if (doc is null)
-            return BuildDocument(null, ct, null, out _);
+            return BuildDocument(null, null, out _, ct);
 
         var key = AgentDocumentIdentity.GetDocumentId(doc) + "|" +
                   AgentDocumentState.Capture(doc);
@@ -49,7 +49,7 @@ public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
             }
         }
 
-        var context = BuildDocument(doc, ct, cachedCategories, out var topCategories);
+        var context = BuildDocument(doc, cachedCategories, out var topCategories, ct);
         if (cachedCategories is null)
         {
             lock (_categoryCacheLock)
@@ -64,13 +64,13 @@ public sealed class AgentProjectContextProvider : IAgentProjectContextProvider
     }
 
     internal static AgentProjectContext BuildDocument(Document? doc, CancellationToken ct) =>
-        BuildDocument(doc, ct, null, out _);
+        BuildDocument(doc, null, out _, ct);
 
     private static AgentProjectContext BuildDocument(
         Document? doc,
-        CancellationToken ct,
         IReadOnlyList<string>? cachedTopCategories,
-        out IReadOnlyList<string> topCategories)
+        out IReadOnlyList<string> topCategories,
+        CancellationToken ct)
     {
         topCategories = Array.Empty<string>();
         if (doc is null)

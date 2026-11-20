@@ -16,13 +16,21 @@
 [CmdletBinding()]
 param(
     [string[]]$Configurations = @('Debug.R25', 'Debug.R26', 'Debug.R27', 'Debug.R24', 'Debug.R23', 'Debug.R21', 'Debug.R19'),
-    [int]$ThrottleLimit = 6
+    [int]$ThrottleLimit = 6,
+    # Extra dotnet build args (e.g. -p:Version=... passed by release.ps1).
+    [string[]]$AdditionalArgs = @(),
+    [string]$Project
 )
 
 $ErrorActionPreference = 'Stop'
 
+# `powershell -File script.ps1 -Configurations A,B,C` arrives as ONE string, not an array.
+if ($Configurations.Count -eq 1 -and $Configurations[0] -like '*,*') {
+    $Configurations = @($Configurations[0] -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
 $root = Split-Path -Parent $PSScriptRoot
-$project = Join-Path $root 'src\SmartCon.App\SmartCon.App.csproj'
+$project = if ($Project) { $Project } else { Join-Path $root 'src\SmartCon.App\SmartCon.App.csproj' }
 if (-not (Test-Path $project)) {
     Write-Host "[ERROR] Project not found: $project" -ForegroundColor Red
     exit 1
@@ -45,13 +53,13 @@ function Start-ConfigBuild([string]$config) {
     Remove-Item $log -ErrorAction SilentlyContinue
 
     $job = Start-Job -ScriptBlock {
-        param($dotnet, $project, $config, $log, $root)
+        param($dotnet, $project, $config, $log, $root, $extraArgs)
 
         Set-Location $root
         $OutputEncoding = [System.Text.Encoding]::UTF8
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
-        & $dotnet build $project -c $config --verbosity quiet 2>&1 |
+        & $dotnet build $project -c $config @extraArgs --verbosity quiet 2>&1 |
             Out-File -FilePath $log -Encoding utf8
         $code = $LASTEXITCODE
         $watch.Stop()
@@ -60,7 +68,7 @@ function Start-ConfigBuild([string]$config) {
             ExitCode = $code
             Seconds  = [math]::Round($watch.Elapsed.TotalSeconds)
         }
-    } -ArgumentList $dotnet, $project, $config, $log, $root
+    } -ArgumentList $dotnet, $project, $config, $log, $root, $AdditionalArgs
 
     Write-Host ("[BUILD] {0} started (log: {1})" -f $config, $log) -ForegroundColor Cyan
     [pscustomobject]@{

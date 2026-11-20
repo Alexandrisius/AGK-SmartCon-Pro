@@ -157,6 +157,32 @@ public sealed record FittingMappingRule
 
 ---
 
+## MappingDefaults
+
+Виртуальный маппинг «из коробки»: единственный тип коннектора «Стандартный» (код 1) и правило прямого соединения 1↔1 без семейств фитингов/переходов.
+
+- `StandardTypeCode = 1`, `StandardTypeName = "Стандартный"` — имя языково-стабильно, потому что попадает в параметр «Описание» типа трубы (`1.Стандартный`) при явном назначении пользователем.
+- `IsUnconfigured(types, rules)` — true, когда в маппинге нет пользовательской настройки (≤1 стандартный тип, ни одного семейства фитингов в правилах). В этом состоянии PipeConnect соединяет напрямую и ничего не пишет в документ (ни CTC в типы труб, ни в семейства).
+- Дефолты не сохраняются: `RevitFittingMappingRepository` отдаёт их, пока у проекта нет сохранённого маппинга; запись в `.rvt` — только по «Сохранить».
+
+**Файл:** `SmartCon.Core/Services/Storage/MappingDefaults.cs`
+
+```csharp
+public static class MappingDefaults
+{
+    public const int StandardTypeCode = 1;
+    public const string StandardTypeName = "Стандартный";
+    public static readonly ConnectorTypeDefinition StandardConnectorType;
+    public static readonly FittingMappingRule StandardDirectRule;
+    public static MappingPayload CreatePayload();
+    public static bool IsUnconfigured(
+        IReadOnlyList<ConnectorTypeDefinition> types,
+        IReadOnlyList<FittingMappingRule> rules);
+}
+```
+
+---
+
 ## ConnectionGraph
 
 Направленный граф соединённых MEP-элементов. Строится перед трансформацией. Неизменяем после создания.

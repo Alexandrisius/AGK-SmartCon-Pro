@@ -200,12 +200,18 @@ $buildConfigs = @(
     @{ Config = "Release.R27"; Tfm = "net10.0-windows";  Label = "Revit 2027" }
 )
 
-foreach ($bc in $buildConfigs) {
-    Write-Step "Building [$($bc.Label)] $($bc.Config) / $($bc.Tfm)"
-    dotnet build $SrcDir\SmartCon.App\SmartCon.App.csproj -c $bc.Config -f $bc.Tfm @dotnetVersionArgs --nologo -v q
-    if ($LASTEXITCODE -ne 0) { Write-Err "Build $($bc.Config) failed!"; throw "Build $($bc.Config) failed!" }
-    Write-Ok "$($bc.Config) build succeeded"
+# Параллельная сборка (тот же движок, что у build-and-deploy.bat). Последовательный
+# прогон 7 x cold Release занимал ~30 минут; параллельный делает ту же работу за 6-8.
+# Per-config логи: %TEMP%\smartcon-build\Release.RXX.log
+$buildScript = Join-Path $PSScriptRoot "build-all-configs.ps1"
+$releaseConfigs = @($buildConfigs | ForEach-Object { $_.Config })
+Write-Step "Building all $($releaseConfigs.Count) configurations in parallel"
+& $buildScript -Configurations $releaseConfigs -AdditionalArgs $dotnetVersionArgs -ThrottleLimit $releaseConfigs.Count
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "One or more configurations failed - see per-config logs in %TEMP%\smartcon-build"
+    throw "Release build failed"
 }
+Write-Ok "All $($releaseConfigs.Count) configurations built"
 
 # --- 3. Run tests ---
 if (-not $SkipTests) {
@@ -225,50 +231,93 @@ dotnet publish $updaterProject -c Release -f net8.0 @dotnetVersionArgs --nologo 
 if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon.Updater failed!" }
 Write-Ok "SmartCon.Updater published"
 
-# --- 5. Publish All SmartCon Versions ---
+# --- 5. Publish All SmartCon Versions (parallel per configuration) ---
 $zipPaths = @()
+$logDir = Join-Path $env:TEMP "smartcon-build"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$dotnetExe = (Get-Command dotnet -ErrorAction Stop).Source
+$appProject = Join-Path $SrcDir "SmartCon.App\SmartCon.App.csproj"
+$mergedListPath = Join-Path $SrcDir "SmartCon.App\Resources\merged-dependencies.txt"
 
-foreach ($bc in $buildConfigs) {
-    $tag = $bc.Config.Split('.')[1]
-    Write-Step "Publishing SmartCon [$tag] ($($bc.Label))"
+$publishScript = {
+    param($dotnet, $project, $config, $tfm, $publishDir, $zipPath, $versionArgs, $updaterDir,
+          $isNet48, $mergedListPath, $root, $log)
 
-    $publishDir = Join-Path $ArtifactsDir "publish\SmartCon-$tag"
+    Set-Location $root
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+
     if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 
-    dotnet publish $SrcDir\SmartCon.App\SmartCon.App.csproj `
-        -c $bc.Config -f $bc.Tfm @dotnetVersionArgs --nologo -v q -o $publishDir
-    if ($LASTEXITCODE -ne 0) { throw "Publish SmartCon [$tag] failed!" }
+    & $dotnet publish $project -c $config -f $tfm @versionArgs --nologo -v q -o $publishDir 2>&1 |
+        Out-File -FilePath $log -Encoding utf8
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        $watch.Stop()
+        return [pscustomobject]@{ ExitCode = $code; Seconds = [math]::Round($watch.Elapsed.TotalSeconds); SizeMB = 0; Log = $log }
+    }
 
     # Copy Updater into each ZIP artifact (for backwards compat and standalone ZIP usage)
-    Copy-Item "$updaterPublishDir\SmartCon.Updater.exe" "$publishDir\" -Force
-    Copy-Item "$updaterPublishDir\SmartCon.Updater.dll" "$publishDir\" -Force
-    $depsJson = "$updaterPublishDir\SmartCon.Updater.deps.json"
-    $runtimeJson = "$updaterPublishDir\SmartCon.Updater.runtimeconfig.json"
-    if (Test-Path $depsJson) { Copy-Item $depsJson "$publishDir\" -Force }
-    if (Test-Path $runtimeJson) { Copy-Item $runtimeJson "$publishDir\" -Force }
-
-    # Remove RevitAPI/AdWindows from output (ExcludeAssets=runtime should handle this, but verify)
-    Remove-Item "$publishDir\RevitAPI*.dll" -ErrorAction SilentlyContinue
-    Remove-Item "$publishDir\AdWindows*.dll" -ErrorAction SilentlyContinue
-    Remove-Item "$publishDir\UIAutomation*.dll" -ErrorAction SilentlyContinue
+    Copy-Item (Join-Path $updaterDir "SmartCon.Updater.exe") $publishDir -Force
+    Copy-Item (Join-Path $updaterDir "SmartCon.Updater.dll") $publishDir -Force
+    foreach ($updaterFile in @("SmartCon.Updater.deps.json", "SmartCon.Updater.runtimeconfig.json")) {
+        $candidate = Join-Path $updaterDir $updaterFile
+        if (Test-Path $candidate) { Copy-Item $candidate $publishDir -Force }
+    }
 
     # ADR-051 (Issue #134): obsolete-files.txt — список dll, сшитых ILRepack в SmartCon.Dependencies.
     # Updater и installer удаляют эти файлы при обновлении/установке поверх старых версий.
     # ТОЛЬКО net48-архивы: на net8 те же имена нужны как loose-файлы и удалять их нельзя.
-    if ($tag -in @("R19", "R21", "R23", "R24")) {
-        Copy-Item "$SrcDir\SmartCon.App\Resources\merged-dependencies.txt" "$publishDir\obsolete-files.txt" -Force
+    if ($isNet48) { Copy-Item $mergedListPath (Join-Path $publishDir "obsolete-files.txt") -Force }
+
+    # Remove RevitAPI/AdWindows from output (ExcludeAssets=runtime should handle this, but verify)
+    foreach ($pattern in @("RevitAPI*.dll", "AdWindows*.dll", "UIAutomation*.dll")) {
+        Get-ChildItem -Path $publishDir -Filter $pattern -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Ok "SmartCon [$tag] published to $publishDir"
-
-    $zipName = "SmartCon-$newVersion-$tag.zip"
-    $zipPath = Join-Path $ArtifactsDir $zipName
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-
-    Compress-Archive -Path "$publishDir\*" -DestinationPath $zipPath -Force
+    Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -Force
     $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
-    Write-Ok "Created $zipName ($sizeMB MB)"
-    $zipPaths += $zipPath
+
+    $watch.Stop()
+    [pscustomobject]@{ ExitCode = 0; Seconds = [math]::Round($watch.Elapsed.TotalSeconds); SizeMB = $sizeMB; Log = $log }
+}
+
+Write-Step "Publishing $($buildConfigs.Count) artifacts in parallel"
+$publishJobs = @()
+foreach ($bc in $buildConfigs) {
+    $tag = $bc.Config.Split('.')[1]
+    $publishDir = Join-Path $ArtifactsDir "publish\SmartCon-$tag"
+    $zipPath = Join-Path $ArtifactsDir "SmartCon-$newVersion-$tag.zip"
+    $log = Join-Path $logDir ("publish.{0}.log" -f $tag)
+    Remove-Item $log -ErrorAction SilentlyContinue
+    $isNet48 = $tag -in @("R19", "R21", "R23", "R24")
+
+    $publishJobs += [pscustomobject]@{
+        Tag = $tag
+        Zip = $zipPath
+        Log = $log
+        Job = Start-Job -ScriptBlock $publishScript -ArgumentList `
+            $dotnetExe, $appProject, $bc.Config, $bc.Tfm, $publishDir, $zipPath, $dotnetVersionArgs, `
+            $updaterPublishDir, $isNet48, $mergedListPath, $RootDir, $log
+    }
+    Write-Host ("[PUBLISH] {0} started (log: {1})" -f $tag, $log) -ForegroundColor Cyan
+}
+
+foreach ($pj in $publishJobs) {
+    Wait-Job $pj.Job | Out-Null
+    $data = Receive-Job $pj.Job
+    Remove-Job $pj.Job -Force
+    $item = @($data)[0]
+    if ($null -eq $item -or $item.ExitCode -ne 0) {
+        Write-Err "Publish SmartCon [$($pj.Tag)] failed!"
+        if (Test-Path $pj.Log) { Get-Content $pj.Log -Tail 20 -Encoding UTF8 | ForEach-Object { Write-Host "  $_" } }
+        throw "Publish SmartCon [$($pj.Tag)] failed!"
+    }
+    Write-Ok ("SmartCon [{0}] published + zipped ({1} MB, {2} s)" -f $pj.Tag, $item.SizeMB, $item.Seconds)
+    $zipPaths += $pj.Zip
 }
 
 Write-Step "All ZIP archives created"
