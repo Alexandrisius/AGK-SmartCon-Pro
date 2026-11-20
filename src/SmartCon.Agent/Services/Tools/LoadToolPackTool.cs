@@ -35,8 +35,10 @@ public sealed class LoadToolPackTool : IAgentTool
         Name = ToolName,
         Description =
             "Enables a tool pack or explicit tools for the next round; the current round keeps " +
-            "its tool set. Returns the input schemas of the tools it enabled. Use it after " +
-            "find_tools to make the discovered tools callable.",
+            "its tool set. Returns the input schemas of the tools it enabled and, for packs " +
+            "that have one, the pack skill (markdown operating manual) — the skill is sent " +
+            "once per conversation. Use it after find_tools to make the discovered tools " +
+            "callable.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Category = "Meta",
@@ -206,6 +208,31 @@ public sealed class LoadToolPackTool : IAgentTool
             })
             .ToList();
 
+        // Pack skill (#400): the operating manual of the pack, in markdown. Sent once
+// per conversation — a repeated load_tool_pack reports it as already sent
+// instead of duplicating the text in the prompt.
+        string? skill = null;
+        string? skillPack = null;
+        var skillAlreadySent = new List<string>();
+        foreach (var name in packNames.Distinct(StringComparer.Ordinal))
+        {
+            if (!AgentToolPackSkills.TryGet(name, out var markdown) || markdown is null)
+                continue;
+
+            if (_sessionContext.SentPackSkills.Contains(name))
+            {
+                skillAlreadySent.Add(name);
+                continue;
+            }
+
+            _sessionContext.SentPackSkills.Add(name);
+            if (skill is null)
+            {
+                skill = markdown;
+                skillPack = name;
+            }
+        }
+
         var result = new
         {
             loaded,
@@ -218,6 +245,9 @@ public sealed class LoadToolPackTool : IAgentTool
             availableNow,
             remainingAvailable,
             remainingByPack,
+            skill,
+            skillPack,
+            skillAlreadySent = skillAlreadySent.Count == 0 ? null : skillAlreadySent,
             // Legacy field: tools enabled in this conversation, including pack names
             // that the registry does not know (should not happen in production).
             totalTools = _sessionContext.LoadedToolNames.Count,

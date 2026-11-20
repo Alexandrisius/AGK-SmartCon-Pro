@@ -9,6 +9,12 @@ namespace SmartCon.Agent.Services;
 /// </summary>
 public sealed class AgentPromptBuilder
 {
+    /// <summary>
+    /// Stable prefix of every request: no document, mode or counter state, so
+    /// the provider cache keeps it across turns (P.3).
+    /// </summary>
+    public string BuildStatic() => AgentSystemPrompt.BuildStatic();
+
     public string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,

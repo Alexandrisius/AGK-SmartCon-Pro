@@ -75,7 +75,7 @@ public sealed class AgentTurnContextBuilderTests
     }
 
     [Fact]
-    public void Build_EmptyState_RendersOnlyWrapper()
+    public void Build_EmptyState_RendersOnlyDateModeAndWrapper()
     {
         var context = new AgentProjectContext
         {
@@ -85,9 +85,15 @@ public sealed class AgentTurnContextBuilderTests
             RevitVersion = "2025"
         };
 
-        var text = AgentTurnContextBuilder.Build(new WorkingState(), context);
+        var text = AgentTurnContextBuilder.Build(
+            new WorkingState(),
+            context,
+            AgentApprovalMode.ReadOnly,
+            new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc));
 
-        Assert.Equal("<turn_context>\n</turn_context>", text);
+        Assert.Equal(
+            "<turn_context>\ndate: 2026-11-20\nmode: ReadOnly\n</turn_context>",
+            text);
     }
 
     [Fact]

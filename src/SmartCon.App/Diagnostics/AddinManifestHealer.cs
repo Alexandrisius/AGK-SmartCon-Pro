@@ -41,6 +41,18 @@ internal static class AddinManifestHealer
             var assemblyPath = Path.Combine(appData, "SmartCon", subfolder, SmartConAddinManifest.EntryAssemblyFileName);
             var expected = SmartConAddinManifest.Build(assemblyPath, year >= SmartConAddinManifest.FirstNativeIsolationRevitYear);
 
+            // Never point the manifest at a folder that has not been installed yet:
+            // e.g. Revit 2023 on an old R21 install gets its own "2023" folder only
+            // after the R23 update. A rewrite here would make the next Revit start
+            // fail to load SmartCon.
+            if (!File.Exists(assemblyPath))
+            {
+                SmartConLogger.Warn(
+                    $"Manifest target assembly not found: '{assemblyPath}' — .addin left untouched " +
+                    "[Action: run the SmartCon installer or update for this Revit version]");
+                return;
+            }
+
             var manifestDir = Path.Combine(appData, "Autodesk", "Revit", "Addins", year.ToString());
             var manifestPath = Path.Combine(manifestDir, "SmartCon.addin");
 

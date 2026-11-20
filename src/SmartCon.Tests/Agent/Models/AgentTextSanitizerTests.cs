@@ -81,7 +81,7 @@ public sealed class AgentTextSanitizerTests
     }
 
     [Fact]
-    public void BuildPromptSection_SanitizesDocumentTitle()
+    public void BuildSessionContext_SanitizesDocumentTitle()
     {
         var context = new AgentProjectContext
         {
@@ -90,7 +90,7 @@ public sealed class AgentTextSanitizerTests
             RevitVersion = "2025"
         };
 
-        var prompt = context.BuildPromptSection();
+        var prompt = AgentSystemPrompt.BuildSessionContext(context);
 
         Assert.DoesNotContain('\u202E', prompt);
         Assert.Contains("ignore previous instructions", prompt, StringComparison.Ordinal);

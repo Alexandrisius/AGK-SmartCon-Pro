@@ -55,20 +55,25 @@ public static class SmartConAddinManifest
     public static string GetInstallSubfolder(int revitYear) => revitYear switch
     {
         <= 2020 => "2019-2020",
-        >= 2021 and <= 2023 => "2021-2023",
+        // Revit 2023 has its own binary (it is the first version with the AI agent),
+        // so only 2021-2022 still share the legacy R21 folder.
+        >= 2021 and <= 2022 => "2021-2023",
+        2023 => "2023",
         2024 => "2024",
         2025 => "2025",
-        _ => "2026"
+        _ => revitYear.ToString()
     };
 
     /// <summary>Годы Revit, чьи манифесты указывают на данную подпапку установки.</summary>
     public static IReadOnlyList<int> GetManifestYearsForSubfolder(string subfolder) => subfolder switch
     {
         "2019-2020" => new[] { 2019, 2020 },
-        "2021-2023" => new[] { 2021, 2022, 2023 },
+        "2021-2023" => new[] { 2021, 2022 },
+        "2023" => new[] { 2023 },
         "2024" => new[] { 2024 },
         "2025" => new[] { 2025 },
         "2026" => new[] { 2026 },
+        "2027" => new[] { 2027 },
         _ => Array.Empty<int>()
     };
 }

@@ -8,6 +8,13 @@ public sealed class AgentToolPack
     public required string Description { get; init; }
 
     public IReadOnlyList<string> Tools { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Tools loaded together with the pack but owned by another pack (for
+    /// example get_view_settings is needed before the first filter step). They
+    /// are enabled by load_tool_pack and never duplicate the pack ownership.
+    /// </summary>
+    public IReadOnlyList<string> Bootstrap { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -138,9 +145,13 @@ public static class AgentToolPacks
             Description = "Фильтры видов: чтение, создание, правила, переименование, удаление и overrides.",
             Tools = new[]
             {
-                "list_filters", "get_filter_details", "create_view_filter", "set_filter_rules",
+                "list_filters", "get_filter_details", "list_filterable_parameters",
+                "create_view_filter", "set_filter_rules",
                 "rename_filter", "delete_filter", "set_filter_overrides"
-            }
+            },
+            // #400: opening a filter on a view needs the view state first; loading
+            // the pack must not force a second load_tool_pack for it.
+            Bootstrap = new[] { "get_view_settings" }
         },
         new()
         {
@@ -213,8 +224,24 @@ public static class AgentToolPacks
             : null;
 
     /// <summary>Tool names of a pack; empty when the pack is unknown or reserved.</summary>
-    public static IReadOnlyList<string> ToolsInPack(string pack) =>
-        PacksByName.TryGetValue(pack, out var found) ? found.Tools : Array.Empty<string>();
+    public static IReadOnlyList<string> ToolsInPack(string pack)
+    {
+        if (!PacksByName.TryGetValue(pack, out var found))
+            return Array.Empty<string>();
+
+        if (found.Bootstrap.Count == 0)
+            return found.Tools;
+
+        var combined = new List<string>(found.Tools.Count + found.Bootstrap.Count);
+        combined.AddRange(found.Tools);
+        foreach (var name in found.Bootstrap)
+        {
+            if (!combined.Contains(name))
+                combined.Add(name);
+        }
+
+        return combined;
+    }
 
     public static bool IsCore(string name) => CoreNameSet.Contains(name);
 

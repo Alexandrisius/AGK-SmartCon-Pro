@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
+using SmartCon.UI;
 
 namespace SmartCon.Agent.ViewModels;
 
@@ -18,13 +19,16 @@ public sealed partial class AgentMainViewModel
     {
         new AgentApprovalModeOption(
             AgentApprovalMode.ConfirmWrites,
-            S("Agent_Approval_Confirm", "Подтверждение")),
+            "Agent_Approval_Confirm",
+            "Подтверждение"),
         new AgentApprovalModeOption(
             AgentApprovalMode.AutoApproveSession,
-            S("Agent_Approval_Auto", "Без подтверждений")),
+            "Agent_Approval_Auto",
+            "Всё разрешено"),
         new AgentApprovalModeOption(
             AgentApprovalMode.ReadOnly,
-            S("Agent_Approval_ReadOnly", "Только чтение"))
+            "Agent_Approval_ReadOnly",
+            "Только чтение")
     };
 
     [ObservableProperty]
@@ -41,7 +45,7 @@ public sealed partial class AgentMainViewModel
                 "Режим «Только чтение»: агент не может изменять модель.")
             : S(
                 "Agent_Approval_AutoBanner",
-                "Режим «Без подтверждений»: все изменения применяются сразу, включая " +
+                "Режим «Всё разрешено»: изменения применяются сразу, включая " +
                 "разрушительные операции. Откат — через undo_last / change set.");
 
     public string ApprovalModeTooltip => S(
@@ -90,4 +94,21 @@ public sealed partial class AgentMainViewModel
     }
 }
 
-public sealed record AgentApprovalModeOption(AgentApprovalMode Mode, string Label);
+public sealed class AgentApprovalModeOption : ObservableObject
+{
+    private readonly string _labelKey;
+    private readonly string _labelFallback;
+
+    public AgentApprovalModeOption(AgentApprovalMode mode, string labelKey, string labelFallback)
+    {
+        Mode = mode;
+        _labelKey = labelKey;
+        _labelFallback = labelFallback;
+    }
+
+    public AgentApprovalMode Mode { get; }
+
+    public string Label => LanguageManager.GetString(_labelKey) ?? _labelFallback;
+
+    internal void RefreshLabel() => OnPropertyChanged(nameof(Label));
+}

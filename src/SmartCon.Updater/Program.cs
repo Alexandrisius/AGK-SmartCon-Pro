@@ -304,7 +304,7 @@ void WaitForRevitExit()
 bool IsNet48InstallFolder(string targetPath)
 {
     var folderName = new DirectoryInfo(targetPath.TrimEnd(Path.DirectorySeparatorChar)).Name;
-    return folderName is "2019-2020" or "2021-2023" or "2024";
+    return folderName is "2019-2020" or "2021-2023" or "2023" or "2024";
 }
 
 // Guard against malformed update-pending.json: staging/target paths must live

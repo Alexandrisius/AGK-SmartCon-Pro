@@ -32,11 +32,11 @@ public class SmartConAddinManifestTests
     [InlineData(2020, "2019-2020")]
     [InlineData(2021, "2021-2023")]
     [InlineData(2022, "2021-2023")]
-    [InlineData(2023, "2021-2023")]
+    [InlineData(2023, "2023")]
     [InlineData(2024, "2024")]
     [InlineData(2025, "2025")]
     [InlineData(2026, "2026")]
-    [InlineData(2027, "2026")]
+    [InlineData(2027, "2027")]
     public void GetInstallSubfolder_MapsYears(int year, string expected)
     {
         Assert.Equal(expected, SmartConAddinManifest.GetInstallSubfolder(year));
@@ -44,10 +44,12 @@ public class SmartConAddinManifestTests
 
     [Theory]
     [InlineData("2019-2020", new[] { 2019, 2020 })]
-    [InlineData("2021-2023", new[] { 2021, 2022, 2023 })]
+    [InlineData("2021-2023", new[] { 2021, 2022 })]
+    [InlineData("2023", new[] { 2023 })]
     [InlineData("2024", new[] { 2024 })]
     [InlineData("2025", new[] { 2025 })]
     [InlineData("2026", new[] { 2026 })]
+    [InlineData("2027", new[] { 2027 })]
     public void GetManifestYearsForSubfolder_MapsBack(string subfolder, int[] expected)
     {
         Assert.Equal(expected, SmartConAddinManifest.GetManifestYearsForSubfolder(subfolder));

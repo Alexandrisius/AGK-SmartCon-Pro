@@ -1,6 +1,6 @@
 ﻿# ROADMAP — AI-агент SmartCon
 
-> **Статус:** active · 2026-11-19 · владелец: продукт
+> **Статус:** active · 2026-11-20 · владелец: продукт
 > **Единственный рабочий документ по AI-агенту.** Здесь: north star, принципы, приоритеты,
 > карта эпиков и задач, правила нумерации и обновления. Конкретная работа и её статус —
 > в GitHub Issues (метка `agent`).
@@ -77,7 +77,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 (100 семейств), storage 7/7; два прохода валидатора `general` — все блокеры закрыты.
 
 **Следующий шаг:** eval-кейсы job (нужна запись с ключом), ручная UI-приёмка Q.1,
-полный гейт Q.2, деплой Q.3. **P (prompt cache) — отдельная сессия.**
+полный гейт Q.2, деплой Q.3. **P.1–P.5 закрыты 2026-11-20; P.6–P.9 (P2) — отдельной сессией.**
 
 ## 5. Эпики
 
@@ -85,7 +85,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 |---|---|---|---|---|---|---|
 | **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 8 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой. |
 | **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 4 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) — backlog. |
-| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `ready` | #298 | 9 | Независим от A; можно делать параллельно. |
+| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 9 | P.1–P.5 закрыты 2026-11-20; остались P.6–P.9 (P2). |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
@@ -97,6 +97,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills | P2 | `backlog` | #300 | 5 | Эпики A–E по метрике (selective memory помогает на трудных и вредит на лёгких). |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 3 | B, E. |
 | **H4** | Observability & eval v2 | P2 | `backlog` | #302 | 4 | P.1 (cache-лог) желателен. |
+| **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
 | **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `backlog` | #303 | 4 | A–E стабильны. |
 | **H6** | Vector retrieval — только по метрике | P3 | `backlog` | #304 | 2 | H1/H1b; каталог должен вырасти. |
 | **H7** | Typed facade IRevitOps и sandbox | P3 | `backlog` | #305 | 2 | ADR-076; после A–E. |
@@ -135,11 +136,11 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `P.1` | Cache-лог и baseline | P0 | `ready` | #353 |
-| `P.2` | Turn-context отдельным сообщением | P0 | `ready` | #354 |
-| `P.3` | Статический system + session context | P0 | `ready` | #355 |
-| `P.4` | Заморозка tools на диалог | P0 | `ready` | #356 |
-| `P.5` | Session cache key и provider policy | P0 | `ready` | #357 |
+| `P.1` | Cache-лог и baseline | P0 | `done` | #353 |
+| `P.2` | Turn-context отдельным сообщением | P0 | `done` | #354 |
+| `P.3` | Статический system + session context | P0 | `done` | #355 |
+| `P.4` | Заморозка tools на диалог | P0 | `done` | #356 |
+| `P.5` | Session cache key и provider policy | P0 | `done` | #357 |
 | `P.6` | Persist FrozenToolNames per conversation | P2 | `backlog` | #358 |
 | `P.7` | Summary-запрос с тем же префиксом и cache-aware компакция | P2 | `backlog` | #359 |
 | `P.8` | UI cache-метрики и ADR-078 | P2 | `backlog` | #360 |
@@ -301,6 +302,15 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 |---|---|---|---|---|
 | `H7.1` | Typed facade IRevitOps | P3 | `backlog` | #378 |
 | `H7.2` | Sandbox и промоция скриптов | P3 | `backlog` | #379 |
+
+### V — Agent на Revit 2019–2022: совместимость параметров
+
+Эпик: #397 · приоритет `P2` · статус `backlog`
+
+| ID | Задача | Prio | Статус | Issue |
+|---|---|---|---|---|
+| `V.1` | Агент на Revit 2021–2022 (R21) | P2 | `backlog` | #398 |
+| `V.2` | Агент на Revit 2019–2020 (R19) | P3 | `backlog` | #399 |
 
 ## 7. Закрытые эпики (историческая запись)
 

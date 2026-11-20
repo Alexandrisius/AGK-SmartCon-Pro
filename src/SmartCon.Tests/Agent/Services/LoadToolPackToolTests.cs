@@ -312,4 +312,62 @@ public sealed class LoadToolPackToolTests
         Assert.False(result.Success);
         Assert.Equal("tool_failed", result.ErrorCode);
     }
+
+    private static FakeToolRegistry FiltersRegistry() =>
+        new(
+            new ScriptedTool("get_view_settings"),
+            new ScriptedTool("list_filters"),
+            new ScriptedTool("get_filter_details"),
+            new ScriptedTool("list_filterable_parameters"),
+            new ScriptedTool("create_view_filter"),
+            new ScriptedTool("set_filter_rules"),
+            new ScriptedTool("rename_filter"),
+            new ScriptedTool("delete_filter"),
+            new ScriptedTool("set_filter_overrides"));
+
+    [Fact]
+    public async Task Execute_FiltersPack_ReturnsSkillAndBootstrapViewSettings()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, FiltersRegistry());
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"filters\"}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        Assert.Equal("filters", data.GetProperty("skillPack").GetString());
+        var skill = data.GetProperty("skill").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(skill));
+        Assert.Contains("SetIsFilterEnabled", skill);
+        Assert.Contains("SetFilterVisibility", skill);
+        Assert.Contains("visibility", skill);
+
+        var loaded = data.GetProperty("loaded").EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToList();
+        Assert.Contains("list_filterable_parameters", loaded);
+        Assert.Contains("get_view_settings", loaded);
+        Assert.Contains("get_view_settings", session.PendingToolNames);
+    }
+
+    [Fact]
+    public async Task Execute_FiltersPackTwice_SendsTheSkillOnlyOnce()
+    {
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, FiltersRegistry());
+
+        await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"filters\"}"), CancellationToken.None);
+        var second = await tool.ExecuteAsync(
+            Context(), Parse("{\"pack\":\"filters\"}"), CancellationToken.None);
+
+        Assert.True(second.Success);
+        var data = second.Data!.Value;
+        Assert.Null(data.GetProperty("skill").GetString());
+        var alreadySent = data.GetProperty("skillAlreadySent").EnumerateArray()
+            .Select(item => item.GetString()!)
+            .ToList();
+        Assert.Contains("filters", alreadySent);
+    }
 }

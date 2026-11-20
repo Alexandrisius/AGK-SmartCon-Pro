@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Autodesk.Revit.DB;
@@ -10,7 +10,7 @@ using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
-public sealed class CreateViewFilterTool : AgentWriteToolBase
+public sealed partial class CreateViewFilterTool : AgentWriteToolBase
 {
     private const int MaxViews = 50;
     private const int MaxCategories = 10;
@@ -63,6 +63,15 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
         if (outcome.Success == false)
         {
             Finish(outcome, sections);
+            return;
+        }
+
+        if (!AgentFilterViewState.TryParse(visibility, out var mode))
+        {
+            Fail(outcome, "invalid_arguments",
+                "visibility must be 'none', 'hide' or 'show'. 'hide' enables the filter and " +
+                "hides matching elements; 'show' enables it and keeps them visible; 'none' " +
+                "adds the filter but leaves it disabled, so elements are visible.", sections);
             return;
         }
 
@@ -134,10 +143,31 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
             return;
         }
 
+        // Pre-flight (#400): a rule is accepted only when EVERY target category
+        // can be filtered by the parameter. ElementFilterIsAcceptableForParameterFilterElement
+        // alone returned true for an incompatible set, so the pair is checked
+        // explicitly before anything is created.
+        var unsupported =
+            AgentFilterPreflight.FindUnsupported(doc, categoryIds, build.Filter);
+        if (unsupported.Count > 0)
+        {
+            var first = unsupported[0];
+            var reason = "Параметр «" + (first.ParameterName ?? first.ParameterId.ToString()) +
+                         "» нельзя использовать в фильтре для этих категорий: " +
+                         DescribeUnsupported(first) +
+                         ". Сузьте набор категорий или выберите другой параметр " +
+                         "(list_filterable_parameters показывает совместимые).";
+            sections.Add(Section("rules", "failed", reason));
+            outcome.Data["details"] = FilterDetails(unsupported);
+            outcome.Data["unsupportedCategories"] = UnsupportedCategoryRows(unsupported);
+            Fail(outcome, "parameter_not_supported_for_categories", reason, sections);
+            return;
+        }
+
         if (build.Filter is not null && !IsAcceptable(doc, categoryIds, build.Filter, out var why))
         {
             sections.Add(Section("rules", "failed", why));
-            Fail(outcome, "filter_not_acceptable", why ?? "Revit rejected the filter rules.",
+            Fail(outcome, "filter_rules_rejected", why ?? "Revit rejected the filter rules.",
                 sections);
             return;
         }
@@ -343,10 +373,9 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 if (!applied)
                     view.AddFilter(filterId);
 
-                if (visibility == "hide")
-                    view.SetFilterVisibility(filterId, false);
-                else if (visibility == "show")
-                    view.SetFilterVisibility(filterId, true);
+                // Two independent flags (#400): visibility="none" must disable the
+                // filter itself, otherwise it keeps hiding the matching elements.
+                AgentFilterViewState.Apply(view, filterId, mode);
             }
             catch (Exception ex)
             {
@@ -373,7 +402,11 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 filterId = filterIdValue,
                 filterName = filterName,
                 applied = true,
-                visible = ReadVisibility(view, filterId),
+                filterEnabled = AgentFilterViewState.ReadEnabled(view, filterId),
+                visible = AgentFilterViewState.ReadVisible(view, filterId),
+                mode = AgentFilterViewState.ModeName(
+                    AgentFilterViewState.ReadEnabled(view, filterId),
+                    AgentFilterViewState.ReadVisible(view, filterId)),
                 overrides = DescribeEntry(after, filterId)
             });
 
@@ -395,7 +428,7 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
                 Status = ChangeStatus.Applied
             });
             report.NewValue = filterName;
-            report.Detail = "visible=" + ReadVisibility(view, filterId);
+            report.Detail = AgentFilterViewState.Describe(view, filterId);
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
             viewChanged++;
@@ -468,7 +501,10 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
         outcome.Data["created"] = created && !dryRun && !rolledBack;
         outcome.Data["wouldCreate"] = created && dryRun;
         outcome.Data["reused"] = reused;
-        outcome.Data["visibility"] = visibility;
+        outcome.Data["visibility"] = AgentFilterViewState.ToWireName(mode);
+        outcome.Data["visibilitySemantics"] =
+            "hide = filter enabled + matching elements hidden; show = filter enabled + " +
+            "elements visible; none = filter added but disabled (elements visible).";
         if (created && dryRun)
         {
             outcome.Warnings.Add(
@@ -539,118 +575,5 @@ public sealed class CreateViewFilterTool : AgentWriteToolBase
         {
             return false;
         }
-    }
-
-    private static bool IsApplied(View view, ElementId filterId)
-    {
-        foreach (var id in AgentFilterUsage.FiltersOf(view))
-        {
-            if (id == filterId.GetValue())
-                return true;
-        }
-
-        return false;
-    }
-
-    private static bool ReadVisibility(View view, ElementId filterId)
-    {
-        try
-        {
-            return view.GetFilterVisibility(filterId);
-        }
-        catch (Exception)
-        {
-            return true;
-        }
-    }
-
-    private static ViewOverrideState DescribeEntry(ViewFilterState state, ElementId filterId)
-    {
-        foreach (var entry in state.Filters)
-        {
-            if (entry.FilterId == filterId.GetValue())
-                return entry.Overrides;
-        }
-
-        return new ViewOverrideState();
-    }
-
-    private static readonly char[] ForbiddenNameChars =
-    {
-        '\\', '/', ':', '{', '}', '[', ']', '|', ';', '<', '>', '?', '\'', '~', '"'
-    };
-
-    private static string SanitizeName(string name)
-    {
-        var builder = new StringBuilder(name.Length);
-        foreach (var symbol in name)
-        {
-            builder.Append(Array.IndexOf(ForbiddenNameChars, symbol) >= 0 ? '-' : symbol);
-        }
-
-        var result = builder.ToString().Trim();
-        return result.Length == 0 ? "SmartCon filter" : result;
-    }
-
-    private static string BuildDefaultName(
-        Document doc,
-        IReadOnlyList<ElementId> categoryIds,
-        IReadOnlyList<FilterConditionSpec> conditions)
-    {
-        var builder = new StringBuilder("Фильтр ");
-        var first = true;
-        foreach (var id in categoryIds)
-        {
-            var category = Category.GetCategory(doc, id);
-            var label = category?.Name ?? id.GetValue().ToString(CultureInfo.InvariantCulture);
-            if (!first)
-                builder.Append(", ");
-            builder.Append(label);
-            first = false;
-
-            if (builder.Length > 60)
-                break;
-        }
-
-        if (conditions.Count > 0)
-        {
-            var condition = conditions[0];
-            builder.Append(" — ");
-            builder.Append(condition.Field ?? condition.Parameter ?? "parameter");
-            builder.Append(' ');
-            builder.Append(condition.Op);
-            if (condition.HasValue && condition.Value.ValueKind == JsonValueKind.String)
-                builder.Append(' ').Append(condition.Value.GetString());
-        }
-
-        if (builder.Length > 90)
-            return builder.ToString(0, 87) + "...";
-
-        return builder.ToString();
-    }
-
-    private static SectionReport Section(string section, string status, string? reason) =>
-        new() { Section = section, Status = status, Reason = reason };
-
-    private static void Fail(
-        WriteOutcome outcome,
-        string errorCode,
-        string message,
-        List<SectionReport> sections)
-    {
-        outcome.Success = false;
-        outcome.ErrorCode = errorCode;
-        outcome.Message = message;
-        Finish(outcome, sections);
-    }
-
-    private static void Finish(
-        WriteOutcome outcome,
-        List<SectionReport> sections,
-        IReadOnlyList<object>? readBack = null)
-    {
-        outcome.Data["sections"] = sections.Count > 0 ? sections : null;
-        if (readBack is not null)
-            outcome.Data["readBack"] = readBack;
     }
 }

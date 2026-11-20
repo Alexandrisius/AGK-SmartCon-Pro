@@ -176,127 +176,142 @@ public sealed partial class AgentOrchestrator
     private static int ElapsedMinutes(long startedAt) =>
         (int)((Stopwatch.GetTimestamp() - startedAt) * 60.0 / Stopwatch.Frequency / 60.0);
 
-    private async Task<IReadOnlyList<AgentToolDefinition>> ApplyPendingToolSetAsync(
-        string userText,
-        int previousCount,
-        CancellationToken ct)
+    /// <summary>
+    /// Applies the tools queued by load_tool_pack at the round boundary: they
+    /// join the frozen set and every following request carries them until the
+    /// conversation ends. Returns the rebuilt, name-sorted definitions.
+    /// </summary>
+    private IReadOnlyList<AgentToolDefinition> ApplyPendingToolSet()
     {
-        // Keep the explicit request as a guarantee: those tools must be in the
-        // next request even when the loaded set is already larger than the cap.
-        var guaranteed = _sessionContext.PendingToolNames.ToList();
-        foreach (var name in guaranteed)
+        foreach (var name in _sessionContext.PendingToolNames)
+        {
             _sessionContext.TouchTool(name);
+            _sessionContext.FreezeTool(name);
+        }
 
         _sessionContext.PendingToolNames.Clear();
 
-        var definitions = await SelectToolDefinitionsAsync(userText, guaranteed, ct)
-            .ConfigureAwait(false);
+        var definitions = BuildFrozenDefinitions(_toolRegistry.GetDefinitions());
         SetActiveToolNames(definitions);
-        SmartConLogger.Info(
-            "Agent tool catalog changed: " + previousCount + " -> " + definitions.Count +
-            " tools, cache invalidated");
         return definitions;
     }
 
-    private async Task<IReadOnlyList<AgentToolDefinition>> SelectToolDefinitionsAsync(
+    /// <summary>
+    /// Definitions of the current request: the frozen conversation set in
+    /// ordinal name order. The set is chosen once, on the first turn, from the
+    /// always-available tools, the initial shortlist for the first user text and
+    /// everything already loaded.
+    /// </summary>
+    private async Task<IReadOnlyList<AgentToolDefinition>> ResolveToolDefinitionsAsync(
         string userText,
-        IReadOnlyCollection<string>? guaranteed,
         CancellationToken ct)
     {
         var all = _toolRegistry.GetDefinitions();
         if (all.Count == 0)
             return all;
 
-        return await SelectCatalogV2ToolDefinitionsAsync(userText, all, guaranteed, ct)
-            .ConfigureAwait(false);
+        if (!_sessionContext.ToolSetFrozen)
+        {
+            var initial = await SelectInitialToolNamesAsync(userText, all, ct)
+                .ConfigureAwait(false);
+            foreach (var name in initial)
+                _sessionContext.FreezeTool(name);
+            _sessionContext.ToolSetFrozen = true;
+
+            SmartConLogger.Info(
+                "Agent tool set frozen for the conversation: " +
+                _sessionContext.FrozenToolNames.Count + "/" + all.Count + " tools");
+        }
+
+        var definitions = BuildFrozenDefinitions(all);
+        SmartConLogger.Debug(
+            "Agent v2 tool catalog: " + definitions.Count + "/" + all.Count +
+            " frozen tools, loaded=" + _sessionContext.LoadedToolNames.Count +
+            ", dynamic=" + (_dynamicToolRanker is { IsEnabled: true } ? "decision" : "bm25"));
+        return definitions;
     }
 
     /// <summary>
-    /// Catalog v2 turn set: the fixed core tools, the tools explicitly requested
-    /// through load_tool_pack (guaranteed), the best dynamic matches for the
-    /// user text, and then every loaded tool. The dynamic slots come from the
-    /// decision model when it is enabled and fall back to deterministic card
-    /// BM25 otherwise. Loaded tools are never capped out: a tool the model has
-    /// already loaded or called must stay callable on the next turn, otherwise
-    /// the provider refuses the call and the model ends the turn with a promise
-    /// instead of a tool call (session d89546b8).
+    /// Initial tool set of a conversation: pinned core + load_tool_pack /
+    /// read_tool_result, the best matches for the first user text and every tool
+    /// the session had already loaded. Later turns never re-rank: changing the
+    /// list mid-conversation invalidates the provider cache (P.4).
     /// </summary>
-    private async Task<IReadOnlyList<AgentToolDefinition>> SelectCatalogV2ToolDefinitionsAsync(
+    private async Task<IReadOnlyList<string>> SelectInitialToolNamesAsync(
         string userText,
         IReadOnlyList<AgentToolDefinition> all,
-        IReadOnlyCollection<string>? guaranteed,
         CancellationToken ct)
     {
         const int topCount = 5;
 
+        var selected = new List<string>(all.Count);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        void Add(string name)
+        {
+            if (!string.IsNullOrEmpty(name) && names.Add(name))
+                selected.Add(name);
+        }
+
+        foreach (var definition in all)
+        {
+            if (IsAlwaysAvailableV2(definition.Name))
+                Add(definition.Name);
+        }
+
         // A small catalog needs no retrieval: hiding tools from it would only cost
         // the model extra discovery rounds.
         if (all.Count <= 8)
+        {
+            foreach (var definition in all)
+                Add(definition.Name);
+        }
+        else
+        {
+            var rankable = all
+                .Where(definition => !names.Contains(definition.Name))
+                .ToList();
+            var dynamicEnabled = _dynamicToolRanker is { IsEnabled: true };
+            var ranked = dynamicEnabled
+                ? await _dynamicToolRanker!
+                    .RankAsync(userText, rankable, topCount, ct)
+                    .ConfigureAwait(false)
+                : ToolCardRouter.Rank(userText, rankable, topCount);
+
+            foreach (var definition in ranked)
+                Add(definition.Name);
+        }
+
+        foreach (var name in _sessionContext.LoadedToolNames)
+            Add(name);
+        foreach (var name in _sessionContext.PendingToolNames)
+            Add(name);
+
+        return selected;
+    }
+
+    /// <summary>
+    /// Frozen names resolved against the current registry and sorted by name, so
+    /// two requests with the same set serialize to the same tool block.
+    /// </summary>
+    private IReadOnlyList<AgentToolDefinition> BuildFrozenDefinitions(
+        IReadOnlyList<AgentToolDefinition> all)
+    {
+        if (!_sessionContext.ToolSetFrozen)
             return all;
 
         var byName = new Dictionary<string, AgentToolDefinition>(StringComparer.Ordinal);
         foreach (var definition in all)
             byName[definition.Name] = definition;
 
-        var selected = new List<AgentToolDefinition>(all.Count);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        void Add(AgentToolDefinition definition)
+        var definitions = new List<AgentToolDefinition>(_sessionContext.FrozenToolNames.Count);
+        foreach (var name in _sessionContext.FrozenToolNames
+                     .OrderBy(candidate => candidate, StringComparer.Ordinal))
         {
-            if (names.Add(definition.Name))
-                selected.Add(definition);
+            if (byName.TryGetValue(name, out var definition))
+                definitions.Add(definition);
         }
 
-        foreach (var definition in all)
-        {
-            if (IsAlwaysAvailableV2(definition.Name))
-                Add(definition);
-        }
-
-        if (guaranteed is not null)
-        {
-            foreach (var name in guaranteed)
-            {
-                if (byName.TryGetValue(name, out var definition) && !names.Contains(name))
-                    Add(definition);
-            }
-        }
-
-        // Retrieval for the current text. It runs before the loaded set so a
-        // continuation request can pull in the domain tools it names even when
-        // the loaded set is already large.
-        var rankable = all
-            .Where(definition => !names.Contains(definition.Name))
-            .ToList();
-
-        var dynamicEnabled = _dynamicToolRanker is { IsEnabled: true };
-        var ranked = dynamicEnabled
-            ? await _dynamicToolRanker!
-                .RankAsync(userText, rankable, topCount, ct)
-                .ConfigureAwait(false)
-            : ToolCardRouter.Rank(userText, rankable, topCount);
-
-        foreach (var definition in ranked)
-            Add(definition);
-
-        // Every loaded tool stays available. The catalog is still small (tens of
-        // tools); when it grows, bound this list by recency and let
-        // load_tool_pack bring evicted tools back.
-        var loaded = _sessionContext.LoadedToolNames;
-        for (var index = loaded.Count - 1; index >= 0; index--)
-        {
-            if (byName.TryGetValue(loaded[index], out var definition)
-                && !names.Contains(definition.Name))
-            {
-                Add(definition);
-            }
-        }
-
-        SmartConLogger.Debug(
-            "Agent v2 tool catalog: " + selected.Count + "/" + all.Count + " tools, loaded=" +
-            _sessionContext.LoadedToolNames.Count + ", guaranteed=" +
-            (guaranteed?.Count ?? 0) + ", dynamic=" + (dynamicEnabled ? "decision" : "bm25"));
-
-        return selected;
+        return definitions;
     }
 
     private bool IsLoopGuardExempt(string toolName)

@@ -19,6 +19,7 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
     private readonly string _openCodeSession;
     private readonly string _userAgent;
     private readonly HttpClient _http;
+    private string? _cacheNamespace;
 
     public OpenAiCompatibleLlmClient(AgentLlmSettings settings, HttpMessageHandler? handler = null)
     {
@@ -45,13 +46,21 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
                 "as an environment variable or in %APPDATA%\\AGK\\SmartCon\\Agent\\secrets.env.");
         }
 
-        var payloadJson = JsonSerializer.Serialize(LlmPayloadBuilder.Build(request));
+        var cachePlan = AgentProviderCachePolicy.Resolve(
+            _settings.Provider,
+            request.Model,
+            request.Temperature,
+            request.ConversationId,
+            request.CacheKey);
+        LogCachePlan(cachePlan);
+
+        var payloadJson = JsonSerializer.Serialize(LlmPayloadBuilder.Build(request, cachePlan));
         using var _scope = SmartConLogger.BeginScope("Agent",
             ("Method", nameof(StreamAsync)),
             ("Provider", _settings.Provider),
             ("Model", request.Model));
 
-        var response = await SendWithRetryAsync(payloadJson, ct).ConfigureAwait(false);
+        var response = await SendWithRetryAsync(payloadJson, cachePlan, ct).ConfigureAwait(false);
         using (response)
         {
             var accumulator = new LlmResponseAccumulator();
@@ -121,10 +130,41 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
 
     public void Dispose() => _http?.Dispose();
 
+    private void LogCachePlan(AgentCachePlan plan)
+    {
+        if (plan.Kind == AgentCacheKind.None)
+        {
+            SmartConLogger.Warn(
+                "Agent cache policy: provider '" + _settings.Provider + "' has no cache policy " +
+                "[Action: the request is sent without cache hints; add the provider to " +
+                "AgentProviderCachePolicy or accept implicit caching]");
+        }
+
+        var namespaceChange = AgentProviderCachePolicy.DescribeNamespaceChange(
+            _cacheNamespace, plan.Namespace);
+        if (namespaceChange is not null)
+            SmartConLogger.Info(namespaceChange);
+
+        _cacheNamespace = plan.Namespace;
+        var sessionId = plan.ProviderOptions.TryGetValue("session_id", out var session)
+            ? session
+            : "(none)";
+        SmartConLogger.Info(
+            "Agent cache plan: namespace=" + plan.Namespace +
+            ", kind=" + plan.KindName +
+            ", prompt_cache_key=" + (plan.PromptCacheKey ?? "(none)") +
+            ", session_id=" + sessionId +
+            ", opencode_session=" + (plan.OpenCodeSession ?? "(none)") +
+            ", breakpoints=" + (plan.UseAnthropicBreakpoints ? "2" : "0"));
+    }
+
     private string BuildEndpoint() =>
         _settings.BaseUrl.TrimEnd('/') + "/chat/completions";
 
-    private async Task<HttpResponseMessage> SendWithRetryAsync(string payloadJson, CancellationToken ct)
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        string payloadJson,
+        AgentCachePlan cachePlan,
+        CancellationToken ct)
     {
         Exception? lastError = null;
         var endpoint = BuildEndpoint();
@@ -139,7 +179,11 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
             httpRequest.Headers.TryAddWithoutValidation("X-Title", "SmartCon");
             httpRequest.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
             if (_settings.IsOpenCodeGo)
-                httpRequest.Headers.TryAddWithoutValidation("x-opencode-session", _openCodeSession);
+            {
+                httpRequest.Headers.TryAddWithoutValidation(
+                    "x-opencode-session",
+                    cachePlan.OpenCodeSession ?? _openCodeSession);
+            }
             httpRequest.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
             try

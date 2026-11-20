@@ -589,6 +589,10 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
         }
 
         outcome.Data["dryRun"] = dryRun;
+        // A successful outcome can still carry a diagnostic code (no_changes): the
+        // model needs it to stop retrying an idempotent call (#400).
+        if (outcome.Success && !string.IsNullOrEmpty(outcome.ErrorCode))
+            outcome.Data["errorCode"] = outcome.ErrorCode;
         outcome.Data["changed"] = outcome.Batch.Changed;
         outcome.Data["skipped"] = outcome.Batch.Skipped;
         outcome.Data["failed"] = outcome.Batch.Failed;

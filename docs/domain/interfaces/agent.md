@@ -19,6 +19,11 @@ module: agent-interfaces
 
 Предполётная проверка тула (валидация входа, risk, confirmation requirement).
 
+## IDynamicToolRanker
+
+Ранжирование не-core каталога под конкретный запрос для turn-start набора тулов
+(decision-модель); при отключении/сбое вызывающий откатывается на BM25 по карточкам.
+
 ## IAgentLlmClient
 
 Клиент LLM (провайдер/модель, streaming, tool-calls). OpenRouter/OpenCode Go и др.

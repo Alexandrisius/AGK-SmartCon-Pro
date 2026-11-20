@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services;
 using SmartCon.Core.Models.Agent;
@@ -163,7 +163,7 @@ public sealed partial class AgentMainViewModel
                 {
                     _currentAssistant = new AgentChatItemViewModel(AgentChatItemKind.Assistant)
                     {
-                        Header = S("Agent_Assistant", "SmartCon Agent"),
+                        Header = S("Agent_Assistant", "BIM Agent"),
                         IsStreaming = true
                     };
                     Messages.Add(_currentAssistant);
@@ -250,9 +250,7 @@ public sealed partial class AgentMainViewModel
         if (!string.Equals(session.Title, NewChatTitle, StringComparison.Ordinal))
             return;
 
-        var title = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        if (title.Length > 60)
-            title = title.Remove(60) + "…";
+        var title = AgentConversationTitle.FromFirstMessage(text);
 
         try
         {

@@ -53,7 +53,7 @@ public sealed class AgentPromptBudgetTests
         var packTokens = AgentTokenEstimator.EstimateText(packs.ToString());
         var coreTokens = AgentTokenEstimator.EstimateText(core.ToString());
         var schemaTokens = AgentTokenEstimator.EstimateText(schemas.ToString());
-        var staticPrompt = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
+        var staticPrompt = AgentSystemPrompt.BuildStatic();
         var staticTokens = AgentTokenEstimator.EstimateText(staticPrompt);
         var parts = packTokens + coreTokens + schemaTokens;
 

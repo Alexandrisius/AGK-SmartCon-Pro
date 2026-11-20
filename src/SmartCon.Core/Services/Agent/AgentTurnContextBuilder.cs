@@ -5,7 +5,8 @@ namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
 /// Renders <see cref="WorkingState"/> as the bounded &lt;turn_context&gt; block that
-/// is prepended to the outgoing user message. Pure: no Revit API, no WPF.
+/// is persisted once per turn as its own message before the raw user message.
+/// Pure: no Revit API, no WPF.
 /// </summary>
 public static class AgentTurnContextBuilder
 {
@@ -21,12 +22,21 @@ public static class AgentTurnContextBuilder
     private const string Header = "<turn_context>";
     private const string Footer = "</turn_context>";
 
-    public static string Build(WorkingState state, AgentProjectContext context)
+    public static string Build(
+        WorkingState state,
+        AgentProjectContext context,
+        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
+        DateTime? nowUtc = null)
     {
         if (state is null) throw new ArgumentNullException(nameof(state));
         if (context is null) throw new ArgumentNullException(nameof(context));
 
         var lines = BuildLines(state, context);
+        lines.Insert(
+            0,
+            "date: " + (nowUtc ?? DateTime.UtcNow)
+                .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        lines.Insert(1, "mode: " + mode);
         return Render(lines);
     }
 

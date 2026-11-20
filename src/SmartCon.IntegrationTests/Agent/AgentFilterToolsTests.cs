@@ -619,7 +619,155 @@ public async Task RenameFilter_DuplicateName_IsRefused()
     await Assert.That(filter.Name).IsEqualTo("SC_Filter_Free");
 }
 
-private CreateViewFilterTool CreateTool() =>
+[Test]
+    public async Task CreateViewFilter_VisibilityNone_DisablesTheFilter()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"visibility\":\"none\",\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var filterId = ElementIdCompat.Create(
+            result.Data!.Value.GetProperty("filterId").GetInt64());
+        var view = (View)Doc.GetElement(ElementIdCompat.Create(_viewId));
+
+        // The filter stays on the view but is disabled: elements are visible again.
+        await Assert.That(view.GetFilters().Count).IsEqualTo(1);
+        await Assert.That(view.GetIsFilterEnabled(filterId)).IsFalse();
+        var readBack = result.Data!.Value.GetProperty("readBack");
+        await Assert.That(readBack[0].GetProperty("filterEnabled").GetBoolean()).IsFalse();
+        await Assert.That(readBack[0].GetProperty("mode").GetString()).IsEqualTo("none");
+    }
+
+    [Test]
+    public async Task CreateViewFilter_VisibilityShow_KeepsTheFilterEnabled()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"visibility\":\"show\",\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var filterId = ElementIdCompat.Create(
+            result.Data!.Value.GetProperty("filterId").GetInt64());
+        var view = (View)Doc.GetElement(ElementIdCompat.Create(_viewId));
+        await Assert.That(view.GetIsFilterEnabled(filterId)).IsTrue();
+        await Assert.That(view.GetFilterVisibility(filterId)).IsTrue();
+        var readBack = result.Data!.Value.GetProperty("readBack");
+        await Assert.That(readBack[0].GetProperty("mode").GetString()).IsEqualTo("show");
+    }
+
+    [Test]
+    public async Task SetFilterRules_DryRun_AppliesAndRollsBack()
+    {
+        var filterId = CreateFilterWithRule("SC_Filter_DryRollback");
+
+        var tool = new SetFilterRulesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"filterId\":" + filterId + ",\"conditions\":[{\"parameter\":" +
+                  "\"ALL_MODEL_INSTANCE_COMMENTS\",\"op\":\"eq\",\"value\":\"y\"}]," +
+                  "\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("validated").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("wouldUpdate").GetBoolean()).IsTrue();
+        await Assert.That(
+                result.Warnings.Any(warning => warning.Contains("undo_last"))).IsTrue();
+
+        // The dry run applied the new rule inside the transaction: the model must
+        // still hold the previous rule value after the rollback.
+        var details = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var readBack = details.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+        await Assert.That(readBack.Success).IsTrue();
+        var rules = readBack.Data!.Value.GetProperty("rules").GetProperty("rules");
+        await Assert.That(rules.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(rules[0].GetProperty("value").GetString()).IsEqualTo("x");
+    }
+
+    [Test]
+    public async Task SetFilterRules_IdenticalRules_ReturnsNoChanges()
+    {
+        var filterId = CreateFilterElement("SC_Filter_NoRules");
+
+        var tool = new SetFilterRulesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"filterId\":" + filterId + ",\"conditions\":[],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("errorCode").GetString()).IsEqualTo("no_changes");
+        await Assert.That(data.GetProperty("wouldUpdate").GetBoolean()).IsFalse();
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ListFilterableParameters_ForWalls_ReturnsCommonParameters()
+    {
+        var walls = Category.GetCategory(Doc, BuiltInCategory.OST_Walls);
+        if (walls is null)
+            Skip.Test("Категория стен недоступна в документе");
+
+        var tool = new ListFilterableParametersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"categoryIds\":[" + walls!.Id.GetValue() + "]}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("parameters").GetArrayLength())
+            .IsGreaterThan(0);
+        var first = data.GetProperty("parameters")[0];
+        await Assert.That(first.GetProperty("supportedByAllCategories").GetBoolean())
+            .IsTrue();
+        await Assert.That(first.GetProperty("missingFromCategories").GetArrayLength())
+            .IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ListFilterableParameters_UnsupportedParameter_ReportsMissingCategories()
+    {
+        var walls = Category.GetCategory(Doc, BuiltInCategory.OST_Walls);
+        var grids = Category.GetCategory(Doc, BuiltInCategory.OST_Grids);
+        if (walls is null || grids is null)
+            Skip.Test("Категории стен или сеток недоступны в документе");
+
+        var tool = new ListFilterableParametersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"categoryIds\":[" + walls!.Id.GetValue() + "," +
+                  grids!.Id.GetValue() + "],\"parameterName\":\"RBS_SYSTEM_NAME_PARAM\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var parameters = result.Data!.Value.GetProperty("parameters");
+        await Assert.That(parameters.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(parameters[0].GetProperty("supportedByAllCategories")
+            .GetBoolean()).IsFalse();
+        await Assert.That(parameters[0].GetProperty("missingFromCategories")
+            .GetArrayLength()).IsGreaterThanOrEqualTo(1);
+    }
+
+    private CreateViewFilterTool CreateTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
     private SetFilterOverridesTool CreateOverridesTool() =>

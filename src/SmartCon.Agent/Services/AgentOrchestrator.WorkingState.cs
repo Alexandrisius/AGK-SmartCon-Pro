@@ -58,35 +58,55 @@ public sealed partial class AgentOrchestrator
     }
 
     /// <summary>
-    /// Prepends the rendered turn context to the last user message of the
-    /// outgoing payload only. The message stored in the conversation history
-    /// stays exactly as the user sent it. The current token count and any
-    /// compaction event are appended separately as
-    /// <see cref="AgentContextStatus"/> so the model sees them at the end of the
-    /// request, not only at the start of a turn.
+    /// Appends the per-conversation session baseline once, before the first turn
+    /// context of a conversation, and again when the active document changes.
+    /// The stored history is checked by document id, so a restart never creates
+    /// a duplicate baseline and a document switch never leaves the old one as
+    /// the only session context.
     /// </summary>
-    private static void ApplyTurnContext(
-        List<AgentMessage> messages,
-        string turnContextBase,
-        int round,
-        int elapsedMinutes,
-        int contextTokens,
-        int contextLimit)
+    private async Task EnsureSessionContextAsync(
+        Guid conversationId,
+        AgentProjectContext projectContext,
+        CancellationToken ct)
     {
-        for (var index = messages.Count - 1; index >= 0; index--)
+        if (_sessionContext.SessionContextWritten
+            && _sessionContext.SessionContextConversationId == conversationId
+            && string.Equals(
+                _sessionContext.SessionContextDocumentId,
+                projectContext.DocumentId,
+                StringComparison.Ordinal))
         {
-            var message = messages[index];
-            if (message.Role != AgentRole.User)
-                continue;
-
-            var turnContext = turnContextBase +
-                              "\n<progress round=\"" + round + "\" elapsed_minutes=\"" +
-                              elapsedMinutes + "\" context_tokens=\"" + contextTokens +
-                              "\" context_limit=\"" + contextLimit + "\" />";
-            messages[index] = AgentMessage.User(
-                turnContext + "\n\n" + (message.Content ?? string.Empty),
-                message.Attachments);
             return;
         }
+
+        var documentMarker = "document_id: " +
+                             AgentTextSanitizer.Sanitize(projectContext.DocumentId);
+        var history = await _conversationStore
+            .GetMessagesAsync(conversationId, ct)
+            .ConfigureAwait(false);
+        var lastSessionContext = history.LastOrDefault(message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).StartsWith(
+                AgentSystemPrompt.SessionContextHeader, StringComparison.Ordinal));
+        var matchesDocument = lastSessionContext is not null
+            && (lastSessionContext.Content ?? string.Empty)
+                .Contains(documentMarker, StringComparison.Ordinal);
+
+        if (!matchesDocument)
+        {
+            await _conversationStore
+                .AppendMessageAsync(
+                    conversationId,
+                    AgentMessage.System(AgentSystemPrompt.BuildSessionContext(projectContext)),
+                    ct)
+                .ConfigureAwait(false);
+            SmartConLogger.Info(
+                "Agent prompt: session context written for document " +
+                AgentTextSanitizer.Sanitize(projectContext.DocumentId));
+        }
+
+        _sessionContext.SessionContextConversationId = conversationId;
+        _sessionContext.SessionContextDocumentId = projectContext.DocumentId;
+        _sessionContext.SessionContextWritten = true;
     }
 }

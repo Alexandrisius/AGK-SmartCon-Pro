@@ -475,6 +475,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, ListSharedParametersTool>();
         services.AddSingleton<IAgentTool, ListFiltersTool>();
         services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
+        services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();

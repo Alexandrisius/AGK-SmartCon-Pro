@@ -39,8 +39,11 @@ english.NoRevitFound=No supported Revit versions (2019-2027) were found on this 
 ; --- DLL set 0: Revit 2019-2020 (net48, RevitAPI 2020) ---
 Source: "..\..\artifacts\publish\SmartCon-R19\*"; DestDir: "{app}\2019-2020"; Check: NeedR19; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
-; --- DLL set 1: Revit 2021-2023 (net48, RevitAPI 2021) ---
+; --- DLL set 1: Revit 2021-2022 (net48, RevitAPI 2021; shared legacy binary without AI agent) ---
 Source: "..\..\artifacts\publish\SmartCon-R21\*"; DestDir: "{app}\2021-2023"; Check: NeedR21; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
+
+; --- DLL set 1b: Revit 2023 (net48, RevitAPI 2023; own binary — first version with AI agent) ---
+Source: "..\..\artifacts\publish\SmartCon-R23\*"; DestDir: "{app}\2023"; Check: NeedR23; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
 
 ; --- DLL set 2: Revit 2024 (net48, RevitAPI 2024) ---
 Source: "..\..\artifacts\publish\SmartCon-R24\*"; DestDir: "{app}\2024"; Check: NeedR24; Flags: ignoreversion recursesubdirs; Excludes: "RevitAPI*.dll,AdWindows*.dll,UIAutomation*.dll"
@@ -66,6 +69,7 @@ Source: "..\..\src\SmartCon.App\Resources\merged-dependencies.txt"; Flags: dontc
 [Registry]
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2019-2020"; ValueData: "{app}\2019-2020"; Check: NeedR19; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2021-2023"; ValueData: "{app}\2021-2023"; Check: NeedR21; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2023"; ValueData: "{app}\2023"; Check: NeedR23; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2024"; ValueData: "{app}\2024"; Check: NeedR24; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2025"; ValueData: "{app}\2025"; Check: NeedR25; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SmartCon\Installations"; ValueType: string; ValueName: "2026"; ValueData: "{app}\2026"; Check: NeedR26; Flags: uninsdeletevalue
@@ -137,7 +141,12 @@ end;
 
 function NeedR21: Boolean;
 begin
-  Result := Revit2021Installed or Revit2022Installed or Revit2023Installed;
+  Result := Revit2021Installed or Revit2022Installed;
+end;
+
+function NeedR23: Boolean;
+begin
+  Result := Revit2023Installed;
 end;
 
 function NeedR24: Boolean;
@@ -163,7 +172,7 @@ end;
 function InitializeSetup: Boolean;
 begin
   DetectRevitVersions;
-  if not NeedR19 and not NeedR21 and not NeedR24 and not NeedR25 and not NeedR26 and not NeedR27 then
+  if not NeedR19 and not NeedR21 and not NeedR23 and not NeedR24 and not NeedR25 and not NeedR26 and not NeedR27 then
     MsgBox(CustomMessage('NoRevitFound'), mbInformation, MB_OK);
   Result := True;
 end;
@@ -204,14 +213,15 @@ var
   TmpPath, Line, AppDir: String;
   Lines: TArrayOfString;
   I, J: Integer;
-  SubDirs: array[0..5] of String;
+  SubDirs: array[0..6] of String;
 begin
   SubDirs[0] := '2019-2020';
   SubDirs[1] := '2021-2023';
-  SubDirs[2] := '2024';
-  SubDirs[3] := '2025';
-  SubDirs[4] := '2026';
-  SubDirs[5] := '2027';
+  SubDirs[2] := '2023';
+  SubDirs[3] := '2024';
+  SubDirs[4] := '2025';
+  SubDirs[5] := '2026';
+  SubDirs[6] := '2027';
   TmpPath := ExpandConstant('{tmp}\merged-dependencies.txt');
   ExtractTemporaryFile('merged-dependencies.txt');
   if not LoadStringsFromFile(TmpPath, Lines) then
@@ -253,7 +263,10 @@ begin
     begin
       if Revit2021Installed then WriteAddinFile('2021', '2021-2023', False);
       if Revit2022Installed then WriteAddinFile('2022', '2021-2023', False);
-      if Revit2023Installed then WriteAddinFile('2023', '2021-2023', False);
+    end;
+    if NeedR23 then
+    begin
+      if Revit2023Installed then WriteAddinFile('2023', '2023', False);
     end;
     if NeedR24 then
     begin
@@ -284,7 +297,7 @@ begin
     RemoveAddinAndDlls('2020', '2019-2020');
     RemoveAddinAndDlls('2021', '2021-2023');
     RemoveAddinAndDlls('2022', '2021-2023');
-    RemoveAddinAndDlls('2023', '2021-2023');
+    RemoveAddinAndDlls('2023', '2023');
     RemoveAddinAndDlls('2024', '2024');
     RemoveAddinAndDlls('2025', '2025');
     RemoveAddinAndDlls('2026', '2026');
@@ -300,6 +313,7 @@ end;
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\2019-2020"
 Type: filesandordirs; Name: "{app}\2021-2023"
+Type: filesandordirs; Name: "{app}\2023"
 Type: filesandordirs; Name: "{app}\2024"
 Type: filesandordirs; Name: "{app}\2025"
 Type: filesandordirs; Name: "{app}\2026"

@@ -183,7 +183,8 @@ else {
 # --- 2. Build All Versions ---
 # Shipping artifacts:
 # R19  = Revit 2019-2020 (net48, RevitAPI 2020)
-# R21  = Revit 2021-2023 (net48, RevitAPI 2021 baseline, single shared binary)
+# R21  = Revit 2021-2022 (net48, RevitAPI 2021 baseline, shared binary)
+# R23  = Revit 2023      (net48 — own binary: first version with the AI agent)
 # R24  = Revit 2024      (net48, separate binary because of API / ElementId changes)
 # R25  = Revit 2025      (net8.0-windows, RevitAPI 2025)
 # R26  = Revit 2026      (net8.0-windows, RevitAPI 2026 — Conductor* wire model, #233;
@@ -191,7 +192,8 @@ else {
 # R27  = Revit 2027      (net10.0-windows — Revit 2027 перешёл на .NET 10, SDK 10 из global.json)
 $buildConfigs = @(
     @{ Config = "Release.R19"; Tfm = "net48";            Label = "Revit 2019-2020" }
-    @{ Config = "Release.R21"; Tfm = "net48";            Label = "Revit 2021-2023" }
+    @{ Config = "Release.R21"; Tfm = "net48";            Label = "Revit 2021-2022" }
+    @{ Config = "Release.R23"; Tfm = "net48";            Label = "Revit 2023" }
     @{ Config = "Release.R24"; Tfm = "net48";            Label = "Revit 2024" }
     @{ Config = "Release.R25"; Tfm = "net8.0-windows";   Label = "Revit 2025" }
     @{ Config = "Release.R26"; Tfm = "net8.0-windows";   Label = "Revit 2026" }
@@ -253,7 +255,7 @@ foreach ($bc in $buildConfigs) {
     # ADR-051 (Issue #134): obsolete-files.txt — список dll, сшитых ILRepack в SmartCon.Dependencies.
     # Updater и installer удаляют эти файлы при обновлении/установке поверх старых версий.
     # ТОЛЬКО net48-архивы: на net8 те же имена нужны как loose-файлы и удалять их нельзя.
-    if ($tag -in @("R19", "R21", "R24")) {
+    if ($tag -in @("R19", "R21", "R23", "R24")) {
         Copy-Item "$SrcDir\SmartCon.App\Resources\merged-dependencies.txt" "$publishDir\obsolete-files.txt" -Force
     }
 

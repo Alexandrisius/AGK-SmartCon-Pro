@@ -49,6 +49,8 @@ public sealed partial class UndoLastTool
             if (!IsFilterApplied(view, filterId))
                 view.AddFilter(filterId);
 
+            // Both Revit UI checkboxes are part of the recorded state (#400).
+            view.SetIsFilterEnabled(filterId, entry.Enabled);
             view.SetFilterVisibility(filterId, entry.Visible);
             view.SetFilterOverrides(filterId, AgentFilterWriteHelper.ToSettings(entry.Overrides));
         }

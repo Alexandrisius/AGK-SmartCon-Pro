@@ -115,9 +115,6 @@ public sealed partial class AgentOrchestrator
             }
 
             var userMessage = AgentMessage.User(userText, attachments);
-            await _conversationStore
-                .AppendMessageAsync(conversationId, userMessage, ct)
-                .ConfigureAwait(false);
 
             // The cached state belongs to the previous conversation: never
             // leak its goal/constraints into a different chat.
@@ -126,6 +123,25 @@ public sealed partial class AgentOrchestrator
 
             workingState = await PrepareWorkingStateAsync(
                     conversationId, userText, projectContext, ct)
+                .ConfigureAwait(false);
+
+            // The turn context is appended to the history once per turn, before
+            // the raw user message. It belongs to the append-only history, so
+            // the prefix of the previous request stays cacheable; the per-round
+            // status further down is ephemeral and is never persisted.
+            await EnsureSessionContextAsync(conversationId, projectContext, ct)
+                .ConfigureAwait(false);
+
+            await _conversationStore
+                .AppendMessageAsync(
+                    conversationId,
+                    AgentMessage.System(AgentSystemPrompt.BuildTurnContext(
+                        projectContext, _sessionContext.ApprovalMode, workingState)),
+                    ct)
+                .ConfigureAwait(false);
+
+            await _conversationStore
+                .AppendMessageAsync(conversationId, userMessage, ct)
                 .ConfigureAwait(false);
 
             var history = await _conversationStore
@@ -163,20 +179,17 @@ public sealed partial class AgentOrchestrator
                     " (" + checkpoint.ToRowId + " messages covered)");
             }
 
-            var systemMessage = AgentMessage.System(
-                _promptBuilder.Build(projectContext, _sessionContext.ApprovalMode));
-            var definitions = await SelectToolDefinitionsAsync(
-                    userText,
-                    _sessionContext.PendingToolNames.Count == 0
-                        ? null
-                        : _sessionContext.PendingToolNames.ToList(),
-                    ct)
+            var systemMessage = AgentMessage.System(_promptBuilder.BuildStatic());
+            var staticHash = AgentPromptHash.ComputeStatic(systemMessage.Content ?? string.Empty);
+            var definitions = await ResolveToolDefinitionsAsync(userText, ct)
                 .ConfigureAwait(false);
             SetActiveToolNames(definitions);
+            var toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
 
             var lastActualPromptTokens = 0;
             var lastRequestedWorkingCount = 0;
             AgentCompactionResult? lastCompaction = null;
+            string? lastCompactionId = null;
 
             Func<IReadOnlyList<AgentMessage>, int> rawEstimator = messages =>
                 _sessionContext.TokenCalibration.Apply(
@@ -211,6 +224,8 @@ public sealed partial class AgentOrchestrator
             working = projected.Messages;
             if (projected.Changed)
                 lastCompaction = projected;
+            if (projected.Record is not null)
+                lastCompactionId = projected.Record.Id;
 
             var allowCheckpoint = true;
             var toolCallCount = 0;
@@ -226,16 +241,16 @@ public sealed partial class AgentOrchestrator
 
                 if (_sessionContext.PendingToolNames.Count > 0)
                 {
-                    definitions = await ApplyPendingToolSetAsync(
-                            userText, definitions.Count, ct)
-                        .ConfigureAwait(false);
+                    var previousHash = toolSetHash;
+                    definitions = ApplyPendingToolSet();
+                    toolSetHash = AgentPromptHash.ComputeToolSet(definitions);
+                    SmartConLogger.Info(
+                        "Agent tool set changed: " + definitions.Count + " tools, " +
+                        previousHash.Substring(0, 8) + " -> " + toolSetHash.Substring(0, 8) +
+                        ", cache invalidated");
                 }
 
-                var turnContextBase = workingState is null
-                    ? string.Empty
-                    : AgentTurnContextBuilder.Build(workingState, projectContext);
-                var reserveTokens = AgentTokenEstimator.EstimateText(turnContextBase)
-                                    + AgentContextStatus.EstimatedTokens + 160;
+                var reserveTokens = AgentContextStatus.EstimatedTokens + 160;
 
                 var compaction = await CompactContextAsync(
                         working, workingState, conversationId, baseRowId, reserveTokens,
@@ -245,6 +260,8 @@ public sealed partial class AgentOrchestrator
                 if (compaction.Changed)
                 {
                     lastCompaction = compaction;
+                    if (compaction.Record is not null)
+                        lastCompactionId = compaction.Record.Id;
 
                     // The provider-reported prompt_tokens describes the prompt
                     // before this compaction. Keeping it as the floor for the
@@ -276,15 +293,8 @@ public sealed partial class AgentOrchestrator
                 lastContextTokens = contextTokens;
                 lastContextLimit = contextLimit;
 
-                var messages = new List<AgentMessage>(working.Count + 2) { systemMessage };
+                var messages = new List<AgentMessage>(working.Count + 1) { systemMessage };
                 messages.AddRange(working);
-
-                if (!string.IsNullOrEmpty(turnContextBase))
-                {
-                    ApplyTurnContext(
-                        messages, turnContextBase, round, elapsedMinutes,
-                        contextTokens, contextLimit);
-                }
 
                 messages.Add(AgentContextStatus.BuildMessage(
                     round, elapsedMinutes, contextTokens, contextLimit, lastCompaction));
@@ -314,7 +324,9 @@ public sealed partial class AgentOrchestrator
                     Messages = messages,
                     Tools = definitions,
                     Temperature = _settings.Temperature,
-                    MaxOutputTokens = _settings.MaxOutputTokens
+                    MaxOutputTokens = _settings.MaxOutputTokens,
+                    ConversationId = conversationId,
+                    CacheKey = conversationId.ToString("N")
                 };
 
                 AgentChatResponse? completion = null;
@@ -356,6 +368,8 @@ public sealed partial class AgentOrchestrator
 
                 usage = Add(usage, completion.Usage);
                 lastRequestId = completion.RequestId ?? lastRequestId;
+                SmartConLogger.Info(AgentCacheLog.Build(
+                    round, completion.RequestId, completion.Usage, staticHash, toolSetHash));
                 if (completion.Usage.PromptTokens > 0)
                 {
                     lastActualPromptTokens = completion.Usage.PromptTokens;
@@ -401,7 +415,8 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
+                        lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
@@ -521,7 +536,8 @@ public sealed partial class AgentOrchestrator
 
                     await WriteUsageAsync(
                         conversationId, usage, "ok", turnStartedAt,
-                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct).ConfigureAwait(false);
+                        lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
+                        lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {

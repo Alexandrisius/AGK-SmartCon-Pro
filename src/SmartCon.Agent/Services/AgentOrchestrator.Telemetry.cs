@@ -22,7 +22,8 @@ public sealed partial class AgentOrchestrator
         int estimatedPromptTokens,
         int contextTokens,
         int contextLimit,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? compactionId = null)
     {
         if (_usageStore is null)
             return;
@@ -42,6 +43,7 @@ public sealed partial class AgentOrchestrator
                     Status = status,
                     LatencyMs = latencyMs,
                     RequestId = requestId,
+                    CompactionId = compactionId,
                     EstimatedPromptTokens = estimatedPromptTokens,
                     ContextTokens = contextTokens,
                     ContextLimit = contextLimit

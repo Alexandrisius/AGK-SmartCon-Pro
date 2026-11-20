@@ -14,7 +14,7 @@ public sealed class AgentPromptHashTests
     [Fact]
     public void ComputeStatic_IsStableLowercaseHex()
     {
-        var prompt = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
+        var prompt = AgentSystemPrompt.BuildStatic();
         var first = AgentPromptHash.ComputeStatic(prompt);
         var second = AgentPromptHash.ComputeStatic(prompt);
 
@@ -23,14 +23,23 @@ public sealed class AgentPromptHashTests
     }
 
     [Fact]
-    public void ComputeStatic_DifferentApprovalMode_ChangesHash()
+    public void ComputeStatic_IsIndependentOfApprovalMode()
     {
-        var confirm = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
-        var readOnly = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ReadOnly);
+        // P.3: mode is a turn-context delta, never part of the static prefix.
+        var staticHash = AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic());
+        var context = Context("Project A", "План 1 этажа", 120);
 
-        Assert.NotEqual(
-            AgentPromptHash.ComputeStatic(confirm),
-            AgentPromptHash.ComputeStatic(readOnly));
+        var confirmTurn = AgentSystemPrompt.BuildTurnContext(
+            context, AgentApprovalMode.ConfirmWrites);
+        var readOnlyTurn = AgentSystemPrompt.BuildTurnContext(
+            context, AgentApprovalMode.ReadOnly);
+
+        Assert.NotEqual(confirmTurn, readOnlyTurn);
+        Assert.Contains("mode: ConfirmWrites", confirmTurn, StringComparison.Ordinal);
+        Assert.Contains("## Approval mode: ReadOnly", readOnlyTurn, StringComparison.Ordinal);
+        Assert.Equal(
+            staticHash,
+            AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic()));
     }
 
     [Fact]
@@ -58,7 +67,7 @@ public sealed class AgentPromptHashTests
     [Fact]
     public void Compute_SameSetAcrossTurns_IsStable()
     {
-        var prompt = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
+        var prompt = AgentSystemPrompt.BuildStatic();
         var firstTurn = new[]
         {
             Tool("list_views", """{"type":"object","properties":{}}"""),
@@ -78,7 +87,7 @@ public sealed class AgentPromptHashTests
     [Fact]
     public void Compute_ChangesWhenToolsChange()
     {
-        var prompt = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
+        var prompt = AgentSystemPrompt.BuildStatic();
         var one = Tool("list_views", """{"type":"object","properties":{}}""");
         var two = Tool("rename_views", """{"type":"object","properties":{}}""");
 
@@ -95,15 +104,17 @@ public sealed class AgentPromptHashTests
 
         var fullA = AgentSystemPrompt.Build(contextA, AgentApprovalMode.ConfirmWrites);
         var fullB = AgentSystemPrompt.Build(contextB, AgentApprovalMode.ConfirmWrites);
-        var staticPrompt = AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites);
+        var staticPrompt = AgentSystemPrompt.BuildStatic();
 
         Assert.NotEqual(fullA, fullB);
-        Assert.Contains("## Current Revit document", fullA);
-        Assert.DoesNotContain("## Current Revit document", staticPrompt);
+        Assert.Contains("<session_context>", fullA);
+        Assert.DoesNotContain("<session_context>", staticPrompt);
+        Assert.DoesNotContain("<turn_context>", staticPrompt);
+        Assert.DoesNotContain("План 1 этажа", staticPrompt);
         Assert.Contains("## Working rules for this session", staticPrompt);
         Assert.Equal(
             AgentPromptHash.ComputeStatic(staticPrompt),
-            AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites)));
+            AgentPromptHash.ComputeStatic(AgentSystemPrompt.BuildStatic()));
     }
 
     [Fact]
@@ -118,7 +129,7 @@ public sealed class AgentPromptHashTests
         Assert.Contains("find_tools", prompt);
         Assert.Contains(
             "## Tool catalog",
-            AgentSystemPrompt.BuildStatic(AgentApprovalMode.ConfirmWrites));
+            AgentSystemPrompt.BuildStatic());
     }
 
     private static AgentToolDefinition Tool(string name, string schema) =>

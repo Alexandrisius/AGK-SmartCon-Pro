@@ -3,6 +3,7 @@ using Autodesk.Revit.DB.ExtensibleStorage;
 using Nice3point.TUnit.Revit;
 using Nice3point.TUnit.Revit.Executors;
 using SmartCon.Core.Models;
+using SmartCon.Core.Services.Storage;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Storage;
 using SmartCon.Revit.Transactions;
@@ -59,13 +60,44 @@ public sealed class FittingMappingRepositoryTests : RevitApiTest
         // Assert
         using (Assert.Multiple())
         {
-            await Assert.That(beforeSave.Count).IsEqualTo(0);
+            // Fresh document: virtual out-of-the-box mapping (no DataStorage yet).
+            await Assert.That(beforeSave.Count).IsEqualTo(1);
+            await Assert.That(beforeSave[0].FromType.Value).IsEqualTo(MappingDefaults.StandardTypeCode);
+            await Assert.That(beforeSave[0].ToType.Value).IsEqualTo(MappingDefaults.StandardTypeCode);
+            await Assert.That(beforeSave[0].IsDirectConnect).IsTrue();
+            await Assert.That(beforeSave[0].FittingFamilies.Count).IsEqualTo(0);
             await Assert.That(afterSave.Count).IsEqualTo(1);
             await Assert.That(afterSave[0].FromType.Value).IsEqualTo(1);
             await Assert.That(afterSave[0].ToType.Value).IsEqualTo(2);
             await Assert.That(afterSave[0].IsDirectConnect).IsTrue();
             await Assert.That(afterSave[0].FittingFamilies[0].FamilyName).IsEqualTo("SmartCon Elbow");
             await Assert.That(Repository.GetStoragePath()).StartsWith("ExtensibleStorage:");
+        }
+    }
+
+    [Test]
+    public async Task FreshDocument_ReturnsVirtualStandardMapping_WithoutWritingDataStorage()
+    {
+        // Act — read-only calls must not modify the document (no transaction, no Undo).
+        var types = Repository.GetConnectorTypes();
+        var rules = Repository.GetMappingRules();
+
+        // Assert
+        using (Assert.Multiple())
+        {
+            await Assert.That(types.Count).IsEqualTo(1);
+            await Assert.That(types[0].Code).IsEqualTo(MappingDefaults.StandardTypeCode);
+            await Assert.That(types[0].Name).IsEqualTo(MappingDefaults.StandardTypeName);
+            await Assert.That(types[0].Description).IsEqualTo(string.Empty);
+
+            await Assert.That(rules.Count).IsEqualTo(1);
+            await Assert.That(rules[0].FromType.Value).IsEqualTo(MappingDefaults.StandardTypeCode);
+            await Assert.That(rules[0].ToType.Value).IsEqualTo(MappingDefaults.StandardTypeCode);
+            await Assert.That(rules[0].IsDirectConnect).IsTrue();
+            await Assert.That(rules[0].FittingFamilies.Count).IsEqualTo(0);
+            await Assert.That(rules[0].ReducerFamilies.Count).IsEqualTo(0);
+
+            await Assert.That(CountSmartConDataStorage()).IsEqualTo(0);
         }
     }
 

@@ -131,7 +131,8 @@ internal static class AgentFilterWriteHelper
             {
                 FilterId = filterId.GetValue(),
                 Name = filter?.Name,
-                Visible = SafeVisibility(view, filterId)
+                Enabled = AgentFilterViewState.ReadEnabled(view, filterId),
+                Visible = AgentFilterViewState.ReadVisible(view, filterId)
             };
 
             try
@@ -148,18 +149,6 @@ internal static class AgentFilterWriteHelper
 
         state.Filters.Sort((left, right) => left.FilterId.CompareTo(right.FilterId));
         return state;
-    }
-
-    private static bool SafeVisibility(View view, ElementId filterId)
-    {
-        try
-        {
-            return view.GetFilterVisibility(filterId);
-        }
-        catch (Exception)
-        {
-            return true;
-        }
     }
 
     internal static string SerializeState(ViewFilterState state) =>

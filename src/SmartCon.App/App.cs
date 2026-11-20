@@ -98,13 +98,13 @@ public sealed partial class App : AppBase
                 var agentProvider = ServiceHost.GetService<AgentPaneProvider>();
                 application.RegisterDockablePane(
                     AgentPaneIds.AgentPane,
-                    "SmartCon Agent",
+                    "Revit Harness",
                     agentProvider);
             }
             catch (Exception ex)
             {
                 SmartConLogger.Error(
-                    "SmartCon Agent pane registration failed: " +
+                    "BIM Agent pane registration failed: " +
                     ex.GetType().Name + ": " + ex.Message +
                     " [Action: verify SmartCon.Agent.dll is deployed next to SmartCon.App.dll]");
             }

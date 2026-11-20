@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Core.Models.Agent;
 
@@ -9,7 +10,7 @@ namespace SmartCon.Core.Models.Agent;
 /// </summary>
 public static class AgentSystemPrompt
 {
-    private const string BasePrompt = @"You are SmartCon Agent, an AI assistant embedded in Autodesk Revit.
+    private const string BasePrompt = @"You are BIM Agent, the AI assistant embedded in Autodesk Revit.
 
 ## Role
 You help the user read, search, rename and modify model attributes: views, view settings, parameters and shared-parameter migrations. You do not create geometry.
@@ -67,17 +68,112 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools with an empty query lists the whole catalog (name, description, pack) without schemas, paged with offset/nextOffset.
 - find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). The requested tools are callable from the next round; load_tool_pack always reports which tools are already available in the current request.
 - Never call a tool that is not in the current request; it will fail with unknown_tool.
+- Do not call load_tool_pack when find_tools or a previous load_tool_pack already reported the tool as alreadyAvailable/alreadyLoaded: it is callable now, loading it again only repeats the round trip.
+- load_tool_pack may return a pack skill (markdown operating manual). It is sent once per conversation; do not ask for it again.
 ";
 
+    private const string ChangeVerificationSection = @"## Reporting failed changes
+- A tool that returns success=false may still have changed the model; never claim ""nothing changed"" from the error text alone. Re-read the object (get_filter_details / get_view_settings / get_element_details / list_views) and compare it with the state you saw before the call.
+- When the result carries undoSupported=false, say plainly that undo_last will not revert it and name the call that reverts it instead (the result carries previousRules/previousCategories for that).
+- A result with errorCode=no_changes is a success: the requested state was already in place. Do not retry it.
+
+## View filters
+- A view filter has TWO independent Revit UI checkboxes: the filter itself (enabled/disabled) and «Видимость» (matching elements hidden or shown). hide = filter enabled + visibility off; show = filter enabled + visibility on; none = filter disabled (elements visible again).
+- Distinguish the user's wording: ""не вижу элементы"" / ""скрой"" means hide; ""отключи фильтр"" / ""верни видимость"" means none. If the wording is ambiguous, ask one short question with the three options before writing.
+- Pre-flight is mandatory: a filter parameter must be filterable for EVERY target category (list_filterable_parameters, supportedByAllCategories=true). Call it before create_view_filter/set_filter_rules when the category set includes fittings, accessories, equipment or another system-bearing category.
+- When a category has no such parameter, explain the data limitation and offer an alternative (hide the whole category with set_view_visibility, or filter by another attribute). Never send a rule set Revit will reject.
+- After create_view_filter/set_filter_rules verify the effect with get_filter_details(includeOverrides=true) and report filterEnabled, visible and mode per view.
+";
+
+    public const string SessionContextHeader = "<session_context>";
+
+    public const string SessionContextFooter = "</session_context>";
+
+    /// <summary>
+    /// Prompt prefix that never changes inside a conversation: role, plan
+    /// validation, tool catalog policy and working rules. It carries no
+    /// document, view, mode or counter state, so its hash is the stable
+    /// prompt-cache key (runbook H1-13, plan P.3).
+    /// </summary>
+    public static string BuildStatic()
+    {
+        var builder = new StringBuilder(BasePrompt);
+        builder.AppendLine();
+        builder.Append(PlanSection);
+        builder.AppendLine();
+        builder.Append(ToolCatalogV2Section);
+        builder.AppendLine();
+        builder.Append(JobsSection);
+        builder.AppendLine();
+        builder.Append(ChangeVerificationSection);
+        builder.AppendLine();
+        AppendWorkingRules(builder);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Per-conversation baseline: title, document id, Revit version, units and
+    /// worksharing. Persisted once per conversation and document; it must not
+    /// contain anything that changes between turns.
+    /// </summary>
+    public static string BuildSessionContext(AgentProjectContext context)
+    {
+        if (context is null) throw new ArgumentNullException(nameof(context));
+
+        var builder = new StringBuilder(256);
+        builder.AppendLine(SessionContextHeader);
+        if (!context.HasDocument)
+        {
+            builder.AppendLine("document: none");
+            builder.AppendLine(SessionContextFooter);
+            return builder.ToString();
+        }
+
+        builder.AppendLine("title: " + AgentTextSanitizer.Sanitize(context.Title));
+        builder.AppendLine("document_id: " + AgentTextSanitizer.Sanitize(context.DocumentId));
+        builder.AppendLine("revit_version: " + AgentTextSanitizer.Sanitize(context.RevitVersion));
+        if (!string.IsNullOrWhiteSpace(context.Units))
+            builder.AppendLine("units: " + AgentTextSanitizer.Sanitize(context.Units));
+        builder.AppendLine("workshared: " + (context.IsWorkshared ? "yes" : "no"));
+        builder.AppendLine(SessionContextFooter);
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Everything that may change between turns — date, active view, selection,
+    /// mode, plan and counters. Appended as the tail of the request, never part
+    /// of the static prefix.
+    /// </summary>
+    public static string BuildTurnContext(
+        AgentProjectContext context,
+        AgentApprovalMode mode,
+        WorkingState? state = null,
+        DateTime? nowUtc = null)
+    {
+        if (context is null) throw new ArgumentNullException(nameof(context));
+
+        var builder = new StringBuilder(1024);
+        builder.Append(AgentTurnContextBuilder.Build(
+            state ?? new WorkingState(), context, mode, nowUtc));
+        builder.AppendLine();
+        builder.AppendLine(ModeSection(mode));
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Complete prompt for consumers without a turn lifecycle (eval harness):
+    /// static prefix + session baseline + approval mode.
+    /// </summary>
     public static string Build(
         AgentProjectContext context,
         AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites,
         string? extraRules = null)
     {
-        var builder = new StringBuilder(BuildPrefix(mode));
-        builder.Append(context.BuildPromptSection());
+        var builder = new StringBuilder(BuildStatic());
         builder.AppendLine();
-        AppendWorkingRules(builder);
+        builder.Append(BuildSessionContext(context));
+        builder.AppendLine();
+        builder.AppendLine(ModeSection(mode));
 
         if (!string.IsNullOrWhiteSpace(extraRules))
         {
@@ -86,35 +182,6 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
             builder.AppendLine(extraRules);
         }
 
-        return builder.ToString();
-    }
-
-    /// <summary>
-    /// Prompt prefix that does not depend on the open document (runbook H1-13):
-    /// role, approval mode, plan validation and working rules. Stable between
-    /// turns, so its hash is the prompt-cache key; the per-document context is
-    /// appended by <see cref="Build"/> and never enters this hash.
-    /// </summary>
-    public static string BuildStatic(
-        AgentApprovalMode mode = AgentApprovalMode.ConfirmWrites)
-    {
-        var builder = new StringBuilder(BuildPrefix(mode));
-        AppendWorkingRules(builder);
-        return builder.ToString();
-    }
-
-    private static string BuildPrefix(AgentApprovalMode mode)
-    {
-        var builder = new StringBuilder(BasePrompt);
-        builder.AppendLine();
-        builder.Append(ModeSection(mode));
-        builder.AppendLine();
-        builder.Append(JobsSection);
-        builder.AppendLine();
-        builder.Append(PlanSection);
-        builder.AppendLine();
-        builder.Append(ToolCatalogV2Section);
-        builder.AppendLine();
         return builder.ToString();
     }
 

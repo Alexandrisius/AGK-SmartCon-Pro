@@ -235,7 +235,7 @@ public sealed partial class GitHubUpdateService
                 var tag = pattern.TrimStart('-').TrimEnd('.');
                 if (tag is "R20")
                     return "R19";
-                if (tag is "R22" or "R23")
+                if (tag is "R22")
                     return "R21";
                 return tag;
             }

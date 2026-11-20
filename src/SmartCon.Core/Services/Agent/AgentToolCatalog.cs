@@ -216,6 +216,11 @@ public static class AgentToolCatalog
                 "фильтры видов", "список фильтров", "view filters", "list filters",
                 "где применён фильтр"
             }),
+            ["list_filterable_parameters"] = new("Read", false, new[]
+            {
+                "фильтруемые параметры", "совместимость параметра", "filterable parameters",
+                "можно ли фильтровать", "параметр и категория", "preflight фильтра"
+            }),
             ["get_filter_details"] = new("Read", false, new[]
             {
                 "правила фильтра", "filter details", "filter rules", "категории фильтра",
