@@ -84,19 +84,19 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 
 | ID | Эпик | Prio | Статус | Issue | Задач | Зависимости |
 |---|---|---|---|---|---|---|
-| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 9 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой, A.9 (variants). |
-| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 5 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) и B.5 (частичный откат) — backlog. |
+| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 12 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой, A.9 (variants). |
+| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 6 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) и B.5 (частичный откат) — backlog. |
 | **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 10 | P.1–P.5 закрыты 2026-11-20; P.10 (эффективные 500k) в работе; остались P.6–P.9 (P2). |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 10 | H1/H1d закрыты; S.8–S.10 (фидбэк раунда 5) в работе. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | H1/H1d закрыты; S.8–S.10 (фидбэк раунда 5) в работе. |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций; G.5 поднят до P0 — без него не собрать альбом. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; ES-only отклонён, принят гибрид ES + SQLite/FTS. |
-| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 4 | B, E; H3.4 — commitOnMatch. |
+| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 6 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 5 | P.1 (cache-лог) желателен; H4.5 (метрики хода/сессии в чате) в работе. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
 | **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) в работе. |
@@ -121,6 +121,9 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `done` | #312 |
 | `A.8` | Tool surface job'а и приёмка эпика | P0 | `in-progress` | #313 |
 | `A.9` | Job variants: несколько групп значений за одну preview+apply | P1 | `backlog` | #414 |
+| `A.10` | action джобы replace_family_parameter — массовая замена общего параметра | P1 | `backlog` | #430 |
+| `A.11` | map_family_parameters: createTarget — авто-создание цели | P1 | `backlog` | #431 |
+| `A.12` | start_job: селектор familyNames[] (массив) | P2 | `backlog` | #433 |
 
 ### B — Trust & recovery: отчёт, откат, resume, false-done guard
 
@@ -133,6 +136,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `B.3` | False-done guard и crash reconciliation | P0 | `done` | #318 |
 | `B.4` | UI job-панель и приёмка recovery | P1 | `backlog` | #319 |
 | `B.5` | Частичный откат задания: подмножество юнитов и change set на батч | P1 | `backlog` | #412 |
+| `B.6` | CompletedUnverified — честная семантика непроверяемых целей джобы | P1 | `backlog` | #432 |
 
 ### P — Prompt cache & context ordering: стабильный префикс
 
@@ -213,6 +217,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `in-progress` | #417 |
 | `S.9` | execute_plan: digest auto-fill, видимость family read-back, byName-пути | P1 | `in-progress` | #418 |
 | `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `in-progress` | #419 |
+| `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P2 | `backlog` | #435 |
+| `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
@@ -273,6 +279,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `H3.2` | Атомарный план и verify-on-stop | P2 | `backlog` | #369 |
 | `H3.3` | L2 critic (только по метрике) | P3 | `backlog` | #370 |
 | `H3.4` | execute_plan: commitOnMatch в AutoApproveSession | P1 | `backlog` | #415 |
+| `H3.5` | start_job как шаг execute_plan (jobStep) | P2 | `backlog` | #434 |
+| `H3.6` | execute_plan: авто-подстановка toolName при единственном очевидном инструменте | P3 | `backlog` | #436 |
 
 ### H4 — Observability & eval v2
 
