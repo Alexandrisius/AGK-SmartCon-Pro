@@ -1,4 +1,4 @@
----
+﻿---
 module: agent
 ---
 # Модели и сервисы Agent (SmartCon.Core)
@@ -274,3 +274,33 @@ JSON-схемы тулов/параметров (источник для `AgentT
 ## LocalizationService.Keys.Agent
 
 Ключи локализации Agent-модуля (вложенный класс `LocalizationService.Keys`).
+
+## Jobs (batch engine, ADR-079)
+
+Каталог: `SmartCon.Core/Models/Agent/Jobs/`.
+
+| Тип | Назначение |
+|---|---|
+| `JobSpec` | Сериализуемое описание задания: `schemaVersion`, `documentId`, `action`, `mode` (Preview/Apply/Resume), `specJson`, `options`, `previewDigest`, `resumeJobId`, `conversationId` |
+| `JobOptions` | `batchSize`, `sliceBudgetMs`, `onError` (Continue/Abort), `rollbackOnError`, `savePolicy` (AfterEachBatch/EveryNMinutes/Never), `saveEveryMinutes`, `maxItems` |
+| `JobUnit` | Замороженный юнит: `seq`, `unitKey` (idempotency key), `argsJson`, `label` |
+| `JobExpansion` | Результат `Expand`: юниты + warnings + typed error |
+| `JobUnitPreview` | Dry-run юнита: `skipped`, `expectedJson`, `actualJson`, `undoJson`, `warnings` |
+| `JobUnitApply` | Факт применения: `success`, `skipped`, `expectedJson`, `undoJson`, typed error |
+| `JobUnitVerification` | Независимый read-back: `verified`, `actualJson`, `mismatchReason` |
+| `JobUnitUndo` | Откат юнита: `success`, `skipped`, `actualJson`, typed error |
+| `JobPreview` / `JobPreviewSample` | Frozen preview: `count`, `willChangeCount`, `skipCount`, `failedCount`, `sample`, `selectorHash`, `specHash`, `digest`, `expiresAtUtc` |
+| `JobState` | `PreviewRunning → PreviewReady → Running → Completed/CompletedWithFailures/Failed/Cancelled/Interrupted/RolledBack/RollbackPartial` (+ `Cancelling`, `AwaitingApproval`) |
+| `JobItemState` | `Pending → Previewed → Applying → Done/Skipped/Failed/Mismatch`, откат: `Undoing → Undone/UndoFailed` |
+| `JobRecord` | Строка `jobs`: spec, state, cancelRequested, previewJson, cursor, totals, lease, timestamps |
+| `JobItem` / `JobItemUpdate` | Строка `job_items` и её мутабельная проекция |
+| `JobTotals` / `JobTotals.Incomplete` | Счётчики; `Incomplete` = Pending+Applying+Undoing+Undone — запрещает `Completed` |
+| `JobReport` / `JobReportItem` | Операторский отчёт (строится read-back'ом), `truthful`, `mismatchCount`, пагинация |
+| `JobRollbackResult`, `JobRetryResult` | Результаты `rollback_job` / `retry_failed_items` |
+| `JobError` / `JobErrorCodes` | Typed error + actionable hint (`[Action: …]`) |
+| `JobStateMachine` | Таблица переходов + `Validate` (CAS в store сверяет `from`) |
+| `JobSpecValidator` | Валидация spec и apply-envelope (digest, документ, action, expiry) |
+| `JobPreviewDigest` | Канонический SHA256 превью (selector hash + spec hash + expiry) |
+| `JobSavePolicyDecider` | Чистые решения по save-политике |
+| `JobJson` | Единые JSON-опции (camelCase, case-insensitive) |
+| `JobStartResult`, `JobEvent`/`JobEventTypes` | Результат старта; append-only события job'а |

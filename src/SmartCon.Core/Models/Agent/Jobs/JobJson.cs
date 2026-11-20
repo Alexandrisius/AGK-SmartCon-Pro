@@ -19,5 +19,5 @@ public static class JobJson
     public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Options);
 
     public static T? Deserialize<T>(string? json) where T : class =>
-        string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<T>(json, Options);
+        string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<T>(json!, Options);
 }

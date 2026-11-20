@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
 
@@ -61,7 +61,7 @@ public abstract class RevitJobActionBase : IJobAction
 
         try
         {
-            return System.Text.Json.JsonSerializer.Deserialize<string>(json);
+            return System.Text.Json.JsonSerializer.Deserialize<string>(json!);
         }
         catch (System.Text.Json.JsonException)
         {

@@ -1,18 +1,21 @@
 ﻿using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
-using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Services.Interfaces;
+#if REVIT2023_OR_GREATER
+using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent.Jobs;
 using SmartCon.Revit.Agent.Jobs.Actions;
 using SmartCon.Revit.Agent.Tools.Jobs;
 using SmartCon.Revit.Transactions;
+#endif
 
 namespace SmartCon.App.DI;
 
 /// <summary>Job-engine registration: store, runner, actions, pump and tools.</summary>
 public static partial class ServiceRegistrar
 {
+#if REVIT2023_OR_GREATER
     private static void RegisterJobEngine(
         IServiceCollection services,
         IRevitContext revitContext,
@@ -66,4 +69,6 @@ public static partial class ServiceRegistrar
             sp.GetRequiredService<IJobRecovery>(),
             sp.GetRequiredService<IRevitContext>()));
     }
+
+#endif
 }

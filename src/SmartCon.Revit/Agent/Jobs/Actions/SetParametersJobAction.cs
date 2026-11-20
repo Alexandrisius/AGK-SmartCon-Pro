@@ -233,7 +233,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             reason = "'" + text + "' is not a valid number for parameter '" + name + "' " + Hint("pass a number");
             return false;
         }
-        var normalized = unit.Trim().ToLowerInvariant();
+        var normalized = unit!.Trim().ToLowerInvariant();
         var unitType = normalized switch
         {
             "mm" or "millimeter" or "millimeters" => UnitTypeId.Millimeters,

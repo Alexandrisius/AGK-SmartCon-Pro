@@ -1,4 +1,4 @@
-# ROADMAP — AI-агент SmartCon
+﻿# ROADMAP — AI-агент SmartCon
 
 > **Статус:** active · 2026-11-19 · владелец: продукт
 > **Единственный рабочий документ по AI-агенту.** Здесь: north star, принципы, приоритеты,
@@ -66,31 +66,25 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 
 | ID | Задача | Issue | Почему сейчас |
 |---|---|---|---|
-| `A.1` | A0: контракт verification & idempotency | #306 | **Фокус ночного прогона 4:** фундамент job engine |
-| `A.2` | Job spec, state machine и Core-модели | #307 | Следом за A.1 |
-| `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | #308 | Durable state job'а |
-| `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | #309 | Без него нет массовых операций |
-| `A.5` | Save policy, durable cursor и crash resume | #310 | Durability = Document.Save |
-| `A.6` | A1 project bulk: rename_views и set_parameters | #311 | Первые доверенные действия |
-| `A.7` | A2 family batch: map_family_parameters | #312 | Тяжёлый action-класс |
-| `A.8` | Tool surface job'а и приёмка эпика | #313 | LLM-вызовов на job ≤3 |
-| `B.1` | get_job_report: JSON/CSV с diff | #316 | Оператор видит, что изменилось |
-| `B.2` | rollback_job и retry_failed_items | #317 | Восстановление после сбоя |
-| `B.3` | False-done guard и crash reconciliation | #318 | Truthfulness 100 % |
+| `A.8` | Tool surface job'а: eval-кейсы и приёмка | #313 | Остаток эпика A: eval + ручная приёмка |
 | `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
-| `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Последний полный гейт не прогнан |
+| `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Финальный гейт ночного прогона |
 
-**Фокус сейчас — A: job engine (ночной прогон 4).**
-A.1 → A.2 → A.3 → A.4 → A.5 → **A.6 (rename_views + set_parameters)** → A.7 → A.8, затем B.1–B.3.
-Приоритет — 3–5 пакетных операций, которым можно доверять без человека; stretch-лестница (Tier-2 actions, C.1, D.1/D.2) — только после обязательного бара.
-**P (prompt cache) — отдельная сессия, после A.** Q.1/Q.2 — по готовности A/B.
+**Сделано в ночном прогоне 4 (2026-11-20):** job engine целиком — контракт A0/A.1,
+Core-модели A.2, SQLite v5 A.3, pump A.4, save/resume A.5, действия A.6/A.7,
+tool surface A.8 (без eval-кейсов), отчёт/откат/retry/reconciliation B.1–B.3.
+Evidence: unit 3914/3914, `AgentProjectJobTests` 15/15, `AgentFamilyJobTests` 2/2
+(100 семейств), storage 7/7; два прохода валидатора `general` — все блокеры закрыты.
+
+**Следующий шаг:** eval-кейсы job (нужна запись с ключом), ручная UI-приёмка Q.1,
+полный гейт Q.2, деплой Q.3. **P (prompt cache) — отдельная сессия.**
 
 ## 5. Эпики
 
 | ID | Эпик | Prio | Статус | Issue | Задач | Зависимости |
 |---|---|---|---|---|---|---|
-| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 8 | H1, H1c, H1d закрыты. A0 (A.1) — жёсткое предусловие для A.4–A.8. |
-| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `backlog` | #291 | 4 | Эпик A (A.5 минимум). |
+| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 8 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой. |
+| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 4 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) — backlog. |
 | **P** | Prompt cache & context ordering: стабильный префикс | P0 | `ready` | #298 | 9 | Независим от A; можно делать параллельно. |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
@@ -98,7 +92,7 @@ A.1 → A.2 → A.3 → A.4 → A.5 → **A.6 (rename_views + set_parameters)** 
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 6 | P0 definition-first закрыт; ADR-076/077. |
 | **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `backlog` | #296 | 7 | H1/H1d закрыты; часть — параллельно A. |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P1 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций. |
-| **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v4. |
+| **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills | P2 | `backlog` | #300 | 5 | Эпики A–E по метрике (selective memory помогает на трудных и вредит на лёгких). |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 3 | B, E. |
@@ -115,24 +109,24 @@ A.1 → A.2 → A.3 → A.4 → A.5 → **A.6 (rename_views + set_parameters)** 
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `A.1` | A0: контракт verification & idempotency | P0 | `in-progress` | #306 |
-| `A.2` | Job spec, state machine и Core-модели | P0 | `ready` | #307 |
-| `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | P0 | `backlog` | #308 |
-| `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | P0 | `backlog` | #309 |
-| `A.5` | Save policy, durable cursor и crash resume | P0 | `backlog` | #310 |
-| `A.6` | A1 project bulk: rename_views и set_parameters на движке | P0 | `backlog` | #311 |
-| `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `backlog` | #312 |
-| `A.8` | Tool surface job'а и приёмка эпика | P0 | `backlog` | #313 |
+| `A.1` | A0: контракт verification & idempotency | P0 | `done` | #306 |
+| `A.2` | Job spec, state machine и Core-модели | P0 | `done` | #307 |
+| `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | P0 | `done` | #308 |
+| `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | P0 | `done` | #309 |
+| `A.5` | Save policy, durable cursor и crash resume | P0 | `done` | #310 |
+| `A.6` | A1 project bulk: rename_views и set_parameters на движке | P0 | `done` | #311 |
+| `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `done` | #312 |
+| `A.8` | Tool surface job'а и приёмка эпика | P0 | `in-progress` | #313 |
 
 ### B — Trust & recovery: отчёт, откат, resume, false-done guard
 
-Эпик: #291 · приоритет `P0` · статус `backlog`
+Эпик: #291 · приоритет `P0` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `B.1` | get_job_report: JSON/CSV с diff и verified/mismatch | P0 | `backlog` | #316 |
-| `B.2` | rollback_job и retry_failed_items | P0 | `backlog` | #317 |
-| `B.3` | False-done guard и crash reconciliation | P0 | `backlog` | #318 |
+| `B.1` | get_job_report: JSON/CSV с diff и verified/mismatch | P0 | `done` | #316 |
+| `B.2` | rollback_job и retry_failed_items | P0 | `done` | #317 |
+| `B.3` | False-done guard и crash reconciliation | P0 | `done` | #318 |
 | `B.4` | UI job-панель и приёмка recovery | P1 | `backlog` | #319 |
 
 ### P — Prompt cache & context ordering: стабильный префикс

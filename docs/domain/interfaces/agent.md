@@ -1,4 +1,4 @@
----
+﻿---
 module: agent-interfaces
 ---
 # Интерфейсы Agent (SmartCon.Core)
@@ -70,3 +70,13 @@ Blob-store крупных результатов тулов (store-and-reference
 ## IAgentProjectContextProvider
 
 Поставщик контекста проекта Revit (`AgentProjectContext`).
+
+## Job engine (ADR-079)
+
+| Интерфейс | Назначение | Реализация |
+|---|---|---|
+| `IJobAction` | Одно массовое действие: `Expand` (заморозка юнитов), `Preview` (dry-run), `Apply` (в транзакции раннера), `Verify` (независимый read-back), `Undo` (per-item undo). `Scope` = ProjectInstance/ProjectType/FamilyDefinition/RfaFile | `RevitJobActionBase` + `RenameViewsJobAction`, `SetParametersJobAction`, `MapFamilyParametersJobAction` (SmartCon.Revit) |
+| `IJobStore` | Durable-хранилище: CAS-переходы, юниты/батчи/события, курсор после `Document.Save()`, lease | `SqliteAgentJobStore` (SmartCon.Agent, SQLite v5) |
+| `IJobScheduler` | `Start` (preview/apply/resume), `Cancel`, `EnsurePump` | `JobRunner` (SmartCon.Revit) |
+| `IJobRecovery` | `Reconcile` осиротевших job'ов, `Rollback`, `RetryFailed` | `JobRunner` |
+| `ITransactionScope` | Явный commit/rollback на батч (J-03), создаётся только `ITransactionService.BeginTransaction` | `RevitTransactionService` |

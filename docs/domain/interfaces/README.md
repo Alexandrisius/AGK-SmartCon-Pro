@@ -1,4 +1,4 @@
----
+﻿---
 module: interfaces-index
 ---
 # Интерфейсы и контракты
@@ -19,4 +19,4 @@ module: interfaces-index
 | [`drag-drop-contracts.md`](drag-drop-contracts.md) | IDragInfo, IDropInfo (минимальные контракты для WPF drag-drop) | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`ui-contracts.md`](ui-contracts.md) | IObservableRequestClose, ICloseAwareViewModel, ISaveableViewModel | `SmartCon.Core/Services/Interfaces/` (root) |
 | [`cross-cutting.md`](cross-cutting.md) | IClock, IIdGenerator, IDispatcher, ILocalCatalogMigrator, Guard, JsonOptions, SqliteConnectionExtensions, ITypeCatalogValueApplier, StorageTypeCode | `SmartCon.Core/Services/Interfaces/` (root) + `Core/Compatibility/`, `Core/Data/` |
-| [`agent.md`](agent.md) | AI-agent harness: IAgentTool, IToolRegistry, IAgentLlmClient, IAgentConversationStore, IAgentConfirmationService, IAgentContextCompactor, IAgentChangeSetStore и др. | `SmartCon.Core/Services/Interfaces/` (Agent) |
+| [`agent.md`](agent.md) | AI-agent harness: IAgentTool, IToolRegistry, IAgentLlmClient, IAgentConversationStore, IAgentConfirmationService, IAgentContextCompactor, IAgentChangeSetStore; job engine: IJobAction, IJobStore, IJobScheduler, IJobRecovery | `SmartCon.Core/Services/Interfaces/` (Agent) |
