@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
@@ -53,7 +54,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         foreach (var element in elements)
         {
             var resolution = AgentParameterWriteHelper.Resolve(
-                context.Document, element, resolveName, spec.Guid, scope);
+                context.Document, element, resolveName, spec.SharedParameterGuid, scope);
             if (!resolution.Ok)
                 missing++;
             units.Add(new JobUnit
@@ -69,7 +70,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                         ? resolution.Parameter!.Element?.UniqueId
                         : null,
                     Parameter = spec.Parameter,
-                    Guid = spec.Guid,
+                    SharedParameterGuid = spec.SharedParameterGuid,
                     BuiltInParameter = spec.BuiltInParameter,
                     Scope = scope,
                     Value = spec.Value,
@@ -431,11 +432,11 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             return "select.limit must be a positive number";
         if (spec.Value is null)
             return "set_parameters requires a string 'value'; pass \"\" to clear a text parameter";
-        if (string.IsNullOrWhiteSpace(spec.Parameter) && string.IsNullOrWhiteSpace(spec.Guid) &&
+        if (string.IsNullOrWhiteSpace(spec.Parameter) && string.IsNullOrWhiteSpace(spec.SharedParameterGuid) &&
             string.IsNullOrWhiteSpace(spec.BuiltInParameter))
             return "set_parameters requires 'parameter', 'guid' or 'builtInParameter'";
-        if (!string.IsNullOrWhiteSpace(spec.Guid) && !Guid.TryParse(spec.Guid, out _))
-            return "'" + spec.Guid + "' is not a valid shared-parameter GUID";
+        if (!string.IsNullOrWhiteSpace(spec.SharedParameterGuid) && !Guid.TryParse(spec.SharedParameterGuid, out _))
+            return "'" + spec.SharedParameterGuid + "' is not a valid shared-parameter GUID";
         if (!string.IsNullOrWhiteSpace(spec.Scope) &&
             !string.Equals(spec.Scope, "instance", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(spec.Scope, "type", StringComparison.OrdinalIgnoreCase))
@@ -445,7 +446,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
 
     private static string ParameterKey(SetParametersSpec spec)
     {
-        if (!string.IsNullOrWhiteSpace(spec.Guid) && Guid.TryParse(spec.Guid, out var guid))
+        if (!string.IsNullOrWhiteSpace(spec.SharedParameterGuid) && Guid.TryParse(spec.SharedParameterGuid, out var guid))
             return guid.ToString("D");
         if (!string.IsNullOrWhiteSpace(spec.BuiltInParameter))
             return spec.BuiltInParameter!.Trim();
@@ -453,7 +454,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
     }
 
     private static string NameOf(Parameter parameter, SetParameterUnitArgs args) =>
-        parameter.Definition?.Name ?? args.Parameter ?? args.BuiltInParameter ?? args.Guid ?? "?";
+        parameter.Definition?.Name ?? args.Parameter ?? args.BuiltInParameter ?? args.SharedParameterGuid ?? "?";
     private static string TargetText(string? value, string? unit) =>
         string.IsNullOrWhiteSpace(unit) ? value ?? string.Empty : (value ?? string.Empty) + " " + unit;
     private static string Hint(string action) => "[Action: " + action + "]";
@@ -469,7 +470,9 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
     {
         public ParametersSelectSpec? Select { get; set; }
         public string? Parameter { get; set; }
-        public string? Guid { get; set; }
+        [JsonPropertyName("guid")]
+        public string? SharedParameterGuid { get; set; }
+
         public string? BuiltInParameter { get; set; }
         public string? Scope { get; set; }
         public string? Value { get; set; }
@@ -494,7 +497,9 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         public string? UniqueId { get; set; }
         public string? OwnerUniqueId { get; set; }
         public string? Parameter { get; set; }
-        public string? Guid { get; set; }
+        [JsonPropertyName("guid")]
+        public string? SharedParameterGuid { get; set; }
+
         public string? BuiltInParameter { get; set; }
         public string? Scope { get; set; }
         public string? Value { get; set; }

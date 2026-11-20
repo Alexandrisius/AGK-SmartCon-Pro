@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
 using SmartCon.Core.Compatibility;
@@ -150,12 +150,12 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
                 return label + "source and target are both required. [Action: add the missing side]";
             }
 
-            if (string.IsNullOrWhiteSpace(sourceRef.Name) && string.IsNullOrWhiteSpace(sourceRef.Guid))
+            if (string.IsNullOrWhiteSpace(sourceRef.Name) && string.IsNullOrWhiteSpace(sourceRef.SharedParameterGuid))
             {
                 return label + "source needs a name or a shared-parameter guid. [Action: name the source parameter]";
             }
 
-            if (string.IsNullOrWhiteSpace(targetRef.Name) && string.IsNullOrWhiteSpace(targetRef.Guid))
+            if (string.IsNullOrWhiteSpace(targetRef.Name) && string.IsNullOrWhiteSpace(targetRef.SharedParameterGuid))
             {
                 return label + "target needs a name or a shared-parameter guid. [Action: name the target parameter]";
             }
@@ -412,7 +412,7 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         AgentFamilyReader.FindParameter(
             manager,
             reference.Name,
-            reference.Guid,
+            reference.SharedParameterGuid,
             reference.Scope,
             out _,
             out message);
@@ -457,7 +457,8 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
         public string? Scope { get; set; }
 
-        public string? Guid { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("guid")]
+        public string? SharedParameterGuid { get; set; }
     }
 
     private sealed class MapFamilyUnitArgs

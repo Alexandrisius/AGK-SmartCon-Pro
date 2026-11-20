@@ -101,7 +101,7 @@ public sealed partial class SetParametersJobAction
         var resolution = AgentParameterWriteHelper.Resolve(
             context.Document, element!,
             string.IsNullOrWhiteSpace(args.BuiltInParameter) ? args.Parameter : args.BuiltInParameter,
-            args.Guid, args.Scope);
+            args.SharedParameterGuid, args.Scope);
         if (!resolution.Ok)
         {
             errorCode = resolution.ErrorCode ?? ParameterNotFound;
