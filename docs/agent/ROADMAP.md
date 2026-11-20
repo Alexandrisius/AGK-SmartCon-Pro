@@ -67,6 +67,7 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 | ID | Задача | Issue | Почему сейчас |
 |---|---|---|---|
 | `A.8` | Tool surface job'а: eval-кейсы и приёмка | #313 | Остаток эпика A: eval + ручная приёмка |
+| `G.5` | Листы: создание, размещение видов, номера | #347 | Без write-тулов листов альбом физически не собрать (прогон 2026-11-20) |
 | `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
 | `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Финальный гейт ночного прогона |
 
@@ -83,24 +84,25 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 
 | ID | Эпик | Prio | Статус | Issue | Задач | Зависимости |
 |---|---|---|---|---|---|---|
-| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 8 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой. |
-| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 4 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) — backlog. |
+| **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 9 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой, A.9 (variants). |
+| **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 5 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) и B.5 (частичный откат) — backlog. |
 | **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 9 | P.1–P.5 закрыты 2026-11-20; остались P.6–P.9 (P2). |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
-| **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 6 | P0 definition-first закрыт; ADR-076/077. |
+| **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
 | **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `backlog` | #296 | 7 | H1/H1d закрыты; часть — параллельно A. |
-| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P1 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций. |
+| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций; G.5 поднят до P0 — без него не собрать альбом. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
-| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills | P2 | `backlog` | #300 | 5 | Эпики A–E по метрике (selective memory помогает на трудных и вредит на лёгких). |
-| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 3 | B, E. |
+| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; ES-only отклонён, принят гибрид ES + SQLite/FTS. |
+| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 4 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `backlog` | #302 | 4 | P.1 (cache-лог) желателен. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
 | **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `backlog` | #303 | 4 | A–E стабильны. |
 | **H6** | Vector retrieval — только по метрике | P3 | `backlog` | #304 | 2 | H1/H1b; каталог должен вырасти. |
 | **H7** | Typed facade IRevitOps и sandbox | P3 | `backlog` | #305 | 2 | ADR-076; после A–E. |
+| **W** | Visual feedback: тул снимка, агент сам решает когда смотреть | P3 | `backlog` | #413 | 0 | Задел на будущее по запросу владельца; scope в теле эпика, задачи заводятся при старте. |
 
 ## 6. Задачи по эпикам
 
@@ -118,6 +120,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `A.6` | A1 project bulk: rename_views и set_parameters на движке | P0 | `done` | #311 |
 | `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `done` | #312 |
 | `A.8` | Tool surface job'а и приёмка эпика | P0 | `in-progress` | #313 |
+| `A.9` | Job variants: несколько групп значений за одну preview+apply | P1 | `backlog` | #414 |
 
 ### B — Trust & recovery: отчёт, откат, resume, false-done guard
 
@@ -129,6 +132,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `B.2` | rollback_job и retry_failed_items | P0 | `done` | #317 |
 | `B.3` | False-done guard и crash reconciliation | P0 | `done` | #318 |
 | `B.4` | UI job-панель и приёмка recovery | P1 | `backlog` | #319 |
+| `B.5` | Частичный откат задания: подмножество юнитов и change set на батч | P1 | `backlog` | #412 |
 
 ### P — Prompt cache & context ordering: стабильный префикс
 
@@ -190,6 +194,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `R.4` | list_families в core-наборе | P1 | `backlog` | #333 |
 | `R.5` | Человекочитаемая карточка, readOnlyReason, классификация параметров | P2 | `backlog` | #334 |
 | `R.6` | Integration-покрытие, payload-бюджет, протокол чтения и eval | P2 | `backlog` | #335 |
+| `R.7` | Стабильные значения enum-параметров (классификация систем) | P1 | `backlog` | #416 |
 
 ### S — Harness hardening: стабильные ключи, карантин, паки
 
@@ -207,7 +212,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
-Эпик: #297 · приоритет `P1` · статус `backlog`
+Эпик: #297 · приоритет `P0` · статус `backlog`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
@@ -215,7 +220,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `backlog` | #344 |
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `backlog` | #345 |
 | `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `backlog` | #346 |
-| `G.5` | Листы: создание, размещение видов, номера | P1 | `backlog` | #347 |
+| `G.5` | Листы: создание, размещение видов, номера | P0 | `backlog` | #347 |
 | `G.6` | Виды: duplicate, create, delete, browser folder | P2 | `backlog` | #348 |
 | `G.7` | MEP: системы трубопроводов и материалы | P2 | `backlog` | #349 |
 | `G.8` | Browser organization: чтение и запись | P2 | `backlog` | #350 |
@@ -241,12 +246,13 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `E.2` | Persisted grants по scope | P2 | `backlog` | #328 |
 | `E.3` | Job-рецепты и eval | P2 | `backlog` | #329 |
 
-### H2 — Memory & knowledge: MEMORY.md, FTS5, skills
+### H2 — Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES
 
-Эпик: #300 · приоритет `P2` · статус `backlog`
+Эпик: #300 · приоритет `P1` · статус `backlog`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
+| `H2.6` | Project memory в ES + SQLite/FTS-кэш | P1 | `ready` | #411 |
 | `H2.1` | Memory v1: файлы и MEMORY.md | P2 | `backlog` | #365 |
 | `H2.2` | FTS5-поиск по памяти | P2 | `backlog` | #366 |
 | `H2.3` | Skills v1: 10–20 навыков и routing | P2 | `backlog` | #367 |
@@ -262,6 +268,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `H3.1` | Policy engine deny-first и grants | P2 | `backlog` | #368 |
 | `H3.2` | Атомарный план и verify-on-stop | P2 | `backlog` | #369 |
 | `H3.3` | L2 critic (только по метрике) | P3 | `backlog` | #370 |
+| `H3.4` | execute_plan: commitOnMatch в AutoApproveSession | P1 | `backlog` | #415 |
 
 ### H4 — Observability & eval v2
 
@@ -302,6 +309,18 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 |---|---|---|---|---|
 | `H7.1` | Typed facade IRevitOps | P3 | `backlog` | #378 |
 | `H7.2` | Sandbox и промоция скриптов | P3 | `backlog` | #379 |
+
+### W — Visual feedback: тул снимка, агент сам решает когда смотреть
+
+Эпик: #413 · приоритет `P3` · статус `backlog`
+
+Scope и проверенные факты API — в теле эпика. Задачи заводятся при старте; план:
+`W.1` `capture_view_image` + мост «tool result → вложение» → `W.2` change feed
+(`DocumentChanged`) → `W.4` отображение снимка в панели; `W.3` UI-снимок окна
+(`PrintWindow`/`PW_RENDERFULLCONTENT`) — только после проверки на живом Revit.
+Решение владельца: отдельный тул, агент сам решает, когда смотреть на модель;
+автоматических снимков каждого хода нет. Пайплайн изображений уже работает
+(`AgentAttachment` → `image_url`), не хватает тула и моста к tool-результату.
 
 ### V — Agent на Revit 2019–2022: совместимость параметров
 

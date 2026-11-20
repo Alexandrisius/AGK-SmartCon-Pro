@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -13,7 +14,10 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 /// </summary>
 internal static class AgentFilterRuleDescriber
 {
-    internal static Dictionary<string, object?> Describe(ElementFilter? filter, Document? doc = null)
+    internal static Dictionary<string, object?> Describe(
+        ElementFilter? filter,
+        Document? doc = null,
+        IReadOnlyDictionary<long, ForgeTypeId>? parameters = null)
     {
         if (filter is null)
             return new Dictionary<string, object?> { ["type"] = "none" };
@@ -24,7 +28,7 @@ internal static class AgentFilterRuleDescriber
             {
                 var children = new List<object?>();
                 foreach (var child in logical.GetFilters())
-                    children.Add(Describe(child, doc));
+                    children.Add(Describe(child, doc, parameters));
 
                 return new Dictionary<string, object?>
                 {
@@ -37,7 +41,7 @@ internal static class AgentFilterRuleDescriber
             {
                 var rules = new List<object?>();
                 foreach (var rule in parameterFilter.GetRules())
-                    rules.Add(DescribeRule(rule, doc));
+                    rules.Add(DescribeRule(rule, doc, parameters));
 
                 return new Dictionary<string, object?>
                 {
@@ -248,7 +252,7 @@ internal static class AgentFilterRuleDescriber
             {
                 FilterStringRule stringRule => stringRule.RuleString,
                 FilterDoubleRule doubleRule => doubleRule.RuleValue.ToString(
-                    "R", CultureInfo.InvariantCulture),
+                    "R", CultureInfo.InvariantCulture) + " (internal)",
                 FilterIntegerRule integerRule => integerRule.RuleValue.ToString(
                     CultureInfo.InvariantCulture),
                 FilterElementIdRule elementRule => elementRule.RuleValue is null
@@ -305,15 +309,20 @@ internal static class AgentFilterRuleDescriber
         return name;
     }
 
-    private static Dictionary<string, object?> DescribeRule(FilterRule rule, Document? doc)
+    private static Dictionary<string, object?> DescribeRule(
+        FilterRule rule,
+        Document? doc,
+        IReadOnlyDictionary<long, ForgeTypeId>? parameters = null)
     {
         var result = new Dictionary<string, object?> { ["type"] = rule.GetType().Name };
+        long? ruleParameterId = null;
 
         try
         {
             var parameterId = rule.GetRuleParameter();
             if (parameterId is not null && parameterId != ElementId.InvalidElementId)
             {
+                ruleParameterId = parameterId.GetValue();
                 result["parameterId"] = parameterId.GetValue();
                 var parameterName = ResolveParameterName(doc, parameterId);
                 if (!string.IsNullOrWhiteSpace(parameterName))
@@ -338,6 +347,18 @@ internal static class AgentFilterRuleDescriber
                     result["op"] = doubleRule.GetEvaluator().GetType().Name;
                     result["value"] = doubleRule.RuleValue;
                     result["epsilon"] = doubleRule.Epsilon;
+                    // The raw number cannot be distinguished from feet by the model:
+                    // 500 was read as 500 mm while the rule stored 500 ft (B1).
+                    // previousRules round-trip must pass unit="raw" (B2).
+                    result["unit"] = "raw";
+                    if (doc is not null && parameters is not null
+                        && ruleParameterId.HasValue
+                        && parameters.TryGetValue(ruleParameterId.Value, out var dataType))
+                    {
+                        result["displayValue"] = AgentParameterValue.FormatDisplay(
+                            doc, dataType, doubleRule.RuleValue);
+                    }
+
                     break;
 
                 case FilterIntegerRule integerRule:
@@ -351,7 +372,7 @@ internal static class AgentFilterRuleDescriber
                     break;
 
                 case FilterInverseRule inverseRule:
-                    result["inner"] = DescribeRule(inverseRule.GetInnerRule(), doc);
+                    result["inner"] = DescribeRule(inverseRule.GetInnerRule(), doc, parameters);
                     break;
             }
         }

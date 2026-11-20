@@ -24,7 +24,9 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
         Description =
             "Hides or shows categories in views. items: [{viewId, visibility:{categories:" +
             "[{category, hidden}]}}]. Use the BuiltInCategory name (OST_Grids) or the " +
-            "category display name. Worksets are not supported (the document is not " +
+            "category display name. viewId may be a view template: a template is a View, so its " +
+            "category visibility is written directly (no detach from a view needed). " +
+            "Worksets are not supported (the document is not " +
             "workshared). dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,

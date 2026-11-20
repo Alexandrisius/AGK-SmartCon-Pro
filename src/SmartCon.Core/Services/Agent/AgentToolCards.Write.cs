@@ -87,8 +87,9 @@ public static partial class AgentToolCards
                     "Когда после изменения нужно вернуть модель к состоянию до последней " +
                     "операции агента.",
                 WhenNotToUse =
-                    "Когда нужно закрыть change set без отката или отменить действие " +
-                    "пользователя вне change set.",
+                    "Когда изменение применено через start_job — его откатывает " +
+                    "rollback_job(jobId); когда нужно закрыть change set без отката или отменить " +
+                    "действие пользователя вне change set.",
                 Examples = new[]
                 {
                     "Отмени последнее изменение",
@@ -103,6 +104,7 @@ public static partial class AgentToolCards
                 },
                 NegativeExamples = new[]
                 {
+                    "Откати задание из 531 элемента (это rollback_job)",
                     "Закрой набор изменений без отката",
                     "Переименуй вид обратно"
                 },

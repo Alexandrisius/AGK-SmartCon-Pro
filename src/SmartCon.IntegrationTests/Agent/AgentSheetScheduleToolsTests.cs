@@ -267,6 +267,44 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task GetSheetContent_SheetIds_ReadsSeveralSheetsInOneCall()
+    {
+        if (!_sheetCreated)
+            Skip.Test("В шаблоне проекта нет Title Block — лист не создать");
+
+        var titleBlockId = ModelSeed.FindTitleBlockTypeId(Doc);
+        if (titleBlockId is null)
+            Skip.Test("Основная надпись недоступна");
+
+        long emptySheetId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed empty sheet", doc =>
+        {
+            var sheet = ViewSheet.Create(doc, titleBlockId);
+            sheet.SheetNumber = "SC-A102";
+            sheet.Name = "SC_Agent_Empty_Sheet";
+            emptySheetId = sheet.Id.GetValue();
+        });
+
+        var tool = new GetSheetContentTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"sheetIds\":[" + _sheetId + "," + emptySheetId + ",99999999]}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("mode").GetString()).IsEqualTo("batch");
+        await Assert.That(data.GetProperty("returned").GetInt32()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("notFound").GetArrayLength()).IsEqualTo(1);
+
+        var sheets = data.GetProperty("sheets").EnumerateArray().ToList();
+        await Assert.That(sheets[0].GetProperty("placedViewCount").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+        await Assert.That(sheets[1].GetProperty("placedViewCount").GetInt32()).IsEqualTo(0);
+        await Assert.That(sheets[1].GetProperty("placedScheduleCount").GetInt32()).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task GetSheetContent_ReturnsViewportAndScheduleCoordinates()
     {
         if (!_sheetCreated)

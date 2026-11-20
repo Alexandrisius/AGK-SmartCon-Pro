@@ -529,6 +529,52 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public async Task ReadBack_BracketIndexPath_ResolvesTheSameAsDotIndex()
+    {
+        var writeTool = new ScriptedTool("write_tool");
+        var readTool = new ScriptedTool(
+            "read_tool",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    categories = new[]
+                    {
+                        new { categoryId = 1, name = "Walls" },
+                        new { categoryId = 2, name = "Pipes" }
+                    }
+                }),
+                "read"),
+            schema: @"{""type"":""object"",""properties"":{},""additionalProperties"":false}");
+        var executor = CreateExecutor(
+            writeTool, readTool, new RecordingConfirmation(), new RecordingAuditLog());
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = WriteArguments,
+            ExpectedChanges = 1,
+            ReadBackTool = "read_tool",
+            ArgumentsReadBackJson = "{}",
+            ReadBackExpectations = new[]
+            {
+                // The bracket form is what tool output shows; "filter.categories[0].name"
+                // used to report mismatch even though the apply succeeded (B4).
+                new AgentPlanExpectation { Path = "categories[0].name", Expected = "Walls" },
+                new AgentPlanExpectation { Path = "categories.1.name", Expected = "Pipes" }
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(step), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.Mismatches);
+        Assert.Equal(2, result.ExpectationsChecked);
+    }
+
+    [Fact]
     public async Task FamilyIdAlias_ReTargetsLaterApplySteps()
     {
         const string schema =

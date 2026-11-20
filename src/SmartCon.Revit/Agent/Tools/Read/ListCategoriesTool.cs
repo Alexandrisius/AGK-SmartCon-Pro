@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -22,7 +22,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
         Description =
             "Lists model categories available in the project with element counts. " +
             "By default returns only categories that currently contain elements, " +
-            "sorted by element count descending. Use built-in names (OST_...) in queries.",
+            "sorted by element count descending. Each row has categoryId (for list_filterable_parameters and categoryIds) and the OST_/display name. Use built-in names (OST_...) in queries.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
@@ -64,6 +64,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
 
             categories.Add(new CategoryCard
             {
+                CategoryId = id,
                 Name = AgentElementCardFactory.GetCategoryName(category) ?? category.Name,
                 DisplayName = category.Name,
                 CategoryType = category.CategoryType.ToString(),

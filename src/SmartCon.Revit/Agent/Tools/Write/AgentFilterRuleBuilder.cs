@@ -1,19 +1,36 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Compatibility;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
-
 
 /// <summary>
 /// Turns the generic filter DSL into a Revit ElementFilter: one
 /// ElementParameterFilter per condition, combined with AND or OR.
+/// Unit conversion lives in <c>AgentFilterRuleBuilder.Units.cs</c>.
 /// </summary>
-internal static class AgentFilterRuleBuilder
+internal static partial class AgentFilterRuleBuilder
 {
     internal const int MaxConditions = 10;
+
+    /// <summary>
+    /// Storage and data type of a filterable parameter. Type parameters are not in
+    /// <c>Element.Parameters</c>, so the probe walks instance в†’ type в†’ project/shared
+    /// ParameterElement; without it a numeric type parameter silently became a text
+    /// rule and "500" was written as 500 feet (external run, B1).
+    /// </summary>
+    internal sealed class ParameterProbe
+    {
+        public StorageType? Storage { get; init; }
+
+        public ForgeTypeId? DataType { get; init; }
+
+        public string? Name { get; init; }
+    }
 
     internal static FilterRuleBuildResult Build(
         Document doc,
@@ -120,9 +137,9 @@ internal static class AgentFilterRuleBuilder
         }
 
         var valueText = ReadValueText(condition);
-        var storage = ProbeStorage(doc, categories, parameterId);
-        var rule = CreateRule(doc, field, parameterId, condition.Op, valueText, storage,
-            out var error);
+        var probe = ProbeParameter(doc, categories, parameterId);
+        var rule = CreateRule(
+            doc, field, parameterId, condition.Op, valueText, condition.Unit, probe, out var error);
         if (rule is null)
         {
             return new FilterRuleBuildResult
@@ -154,6 +171,8 @@ internal static class AgentFilterRuleBuilder
             };
         }
 
+        // System name/abbreviation are text parameters; no probe needed.
+        var probe = new ParameterProbe { Storage = StorageType.String };
         var filters = new List<ElementFilter>(2);
         foreach (var id in new[] { nameId, abbreviationId })
         {
@@ -161,7 +180,7 @@ internal static class AgentFilterRuleBuilder
                 continue;
 
             var rule = CreateRule(
-                doc, "system", id, condition.Op, valueText, StorageType.String, out _);
+                doc, "system", id, condition.Op, valueText, unit: null, probe, out _);
             if (rule is not null)
                 filters.Add(new ElementParameterFilter(rule));
         }
@@ -224,7 +243,12 @@ internal static class AgentFilterRuleBuilder
         return null;
     }
 
-    private static StorageType? ProbeStorage(
+    /// <summary>
+    /// Probes the parameter through every place it can live: the instance, its
+    /// element type, and (for project/shared parameters with a positive id) the
+    /// ParameterElement definition.
+    /// </summary>
+    private static ParameterProbe? ProbeParameter(
         Document doc,
         IReadOnlyList<ElementId> categories,
         ElementId parameterId)
@@ -247,21 +271,91 @@ internal static class AgentFilterRuleBuilder
             if (sample is null)
                 continue;
 
+            var instanceParameter = FindParameter(sample, parameterId);
+            if (instanceParameter is not null)
+                return Describe(instanceParameter);
+
+            var type = doc.GetElement(sample.GetTypeId());
+            var typeParameter = type is null ? null : FindParameter(type, parameterId);
+            if (typeParameter is not null)
+                return Describe(typeParameter);
+        }
+
+        if (parameterId.GetValue() > 0 && doc.GetElement(parameterId) is ParameterElement element)
+        {
+            var dataType = SafeDataType(element.GetDefinition());
+            return new ParameterProbe
+            {
+                Name = element.Name,
+                DataType = dataType,
+                Storage = StorageFromSpec(dataType)
+            };
+        }
+
+        // A category can have types loaded but no placed instances (doors, windows).
+        // Type parameters live on the element type, so scan those too.
+        foreach (var categoryId in categories)
+        {
+            Element? type;
             try
             {
-                foreach (Parameter parameter in sample.Parameters)
-                {
-                    if (parameter.Id.GetValue() == parameterId.GetValue())
-                        return parameter.StorageType;
-                }
+                type = new FilteredElementCollector(doc)
+                    .OfCategoryId(categoryId)
+                    .WhereElementIsElementType()
+                    .FirstElement();
             }
             catch (Exception)
             {
-                // Parameter not present on this sample; try the next category.
+                continue;
             }
+
+            if (type is null)
+                continue;
+
+            var typeParameter = FindParameter(type, parameterId);
+            if (typeParameter is not null)
+                return Describe(typeParameter);
         }
 
         return null;
+    }
+
+    private static Parameter? FindParameter(Element element, ElementId parameterId)
+    {
+        try
+        {
+            foreach (Parameter parameter in element.Parameters)
+            {
+                if (parameter.Id.GetValue() == parameterId.GetValue())
+                    return parameter;
+            }
+        }
+        catch (Exception)
+        {
+            // An element that rejects enumeration is skipped.
+        }
+
+        return null;
+    }
+
+    private static ParameterProbe Describe(Parameter parameter) =>
+        new()
+        {
+            Storage = parameter.StorageType,
+            DataType = SafeDataType(parameter.Definition),
+            Name = parameter.Definition?.Name
+        };
+
+    private static ForgeTypeId? SafeDataType(Definition? definition)
+    {
+        try
+        {
+            return RevitUnitsCompat.GetDataType(definition);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static FilterRule? CreateRule(
@@ -270,7 +364,8 @@ internal static class AgentFilterRuleBuilder
         ElementId parameterId,
         string? op,
         string? value,
-        StorageType? storage,
+        string? unit,
+        ParameterProbe? probe,
         out string? error)
     {
         error = null;
@@ -289,7 +384,27 @@ internal static class AgentFilterRuleBuilder
             return null;
         }
 
-        var effectiveStorage = storage ?? StorageType.String;
+        // Fail closed when neither an instance nor a type nor a ParameterElement
+        // reveals the parameter: guessing String wrote 500 as text, guessing Double
+        // wrote 500 as feet. unit="raw" is explicit, so it is allowed.
+        if (probe?.Storage is null)
+        {
+            var rawUnit = string.Equals(unit?.Trim(), "raw", StringComparison.OrdinalIgnoreCase);
+            if (rawUnit)
+                return CreateDoubleRule(doc, parameterId, operation, value!, unit, probe, out error);
+
+            var looksNumeric = TryParseNumber(value!, out _);
+            if (!string.IsNullOrWhiteSpace(unit) || looksNumeric)
+            {
+                error = "Cannot determine the storage and spec of parameter '" +
+                        (probe?.Name ?? parameterId.GetValue().ToString(CultureInfo.InvariantCulture)) +
+                        "': the categories have no elements and it is not a project parameter " +
+                        "element. Add one element, or pass unit=\"raw\" to write internal units.";
+                return null;
+            }
+        }
+
+        var effectiveStorage = probe?.Storage ?? StorageType.String;
         try
         {
             switch (effectiveStorage)
@@ -297,7 +412,7 @@ internal static class AgentFilterRuleBuilder
                 case StorageType.Integer:
                     return CreateIntegerRule(parameterId, operation, value!, out error);
                 case StorageType.Double:
-                    return CreateDoubleRule(parameterId, operation, value!, out error);
+                    return CreateDoubleRule(doc, parameterId, operation, value!, unit, probe, out error);
                 case StorageType.ElementId:
                     return CreateElementIdRule(doc, field, parameterId, operation, value!, out error);
                 default:
@@ -309,213 +424,6 @@ internal static class AgentFilterRuleBuilder
             error = "Revit rejected the rule: " + ex.Message;
             return null;
         }
-    }
-
-    private static FilterRule? CreateStringRule(
-        ElementId parameterId,
-        string operation,
-        string value,
-        out string? error)
-    {
-        error = null;
-        switch (operation)
-        {
-            case "eq":
-                return ParameterFilterRuleFactory.CreateEqualsRule(parameterId, value);
-            case "neq":
-                return ParameterFilterRuleFactory.CreateNotEqualsRule(parameterId, value);
-            case "contains":
-                return ParameterFilterRuleFactory.CreateContainsRule(parameterId, value);
-            case "notcontains":
-                return ParameterFilterRuleFactory.CreateNotContainsRule(parameterId, value);
-            case "beginswith":
-                return ParameterFilterRuleFactory.CreateBeginsWithRule(parameterId, value);
-            case "notbeginswith":
-                return ParameterFilterRuleFactory.CreateNotBeginsWithRule(parameterId, value);
-            case "endswith":
-                return ParameterFilterRuleFactory.CreateEndsWithRule(parameterId, value);
-            case "notendswith":
-                return ParameterFilterRuleFactory.CreateNotEndsWithRule(parameterId, value);
-            case "gt":
-                return ParameterFilterRuleFactory.CreateGreaterRule(parameterId, value);
-            case "ge":
-                return ParameterFilterRuleFactory.CreateGreaterOrEqualRule(parameterId, value);
-            case "lt":
-                return ParameterFilterRuleFactory.CreateLessRule(parameterId, value);
-            case "le":
-                return ParameterFilterRuleFactory.CreateLessOrEqualRule(parameterId, value);
-            default:
-                error = "Unsupported operator '" + operation + "' for a text parameter. " +
-                        "Use eq, neq, contains, notcontains, beginswith, endswith, gt, ge, lt, le.";
-                return null;
-        }
-    }
-
-    private static FilterRule? CreateIntegerRule(
-        ElementId parameterId,
-        string operation,
-        string value,
-        out string? error)
-    {
-        error = null;
-        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
-        {
-            error = "Parameter is integer; '" + value + "' is not a whole number.";
-            return null;
-        }
-
-        switch (operation)
-        {
-            case "eq":
-                return ParameterFilterRuleFactory.CreateEqualsRule(parameterId, number);
-            case "neq":
-                return ParameterFilterRuleFactory.CreateNotEqualsRule(parameterId, number);
-            case "gt":
-                return ParameterFilterRuleFactory.CreateGreaterRule(parameterId, number);
-            case "ge":
-                return ParameterFilterRuleFactory.CreateGreaterOrEqualRule(parameterId, number);
-            case "lt":
-                return ParameterFilterRuleFactory.CreateLessRule(parameterId, number);
-            case "le":
-                return ParameterFilterRuleFactory.CreateLessOrEqualRule(parameterId, number);
-            default:
-                error = "Unsupported operator '" + operation + "' for an integer parameter.";
-                return null;
-        }
-    }
-
-    private static FilterRule? CreateDoubleRule(
-        ElementId parameterId,
-        string operation,
-        string value,
-        out string? error)
-    {
-        error = null;
-        if (!double.TryParse(
-                value.Replace(',', '.'),
-                NumberStyles.Float,
-                CultureInfo.InvariantCulture,
-                out var number))
-        {
-            error = "Parameter is numeric; '" + value + "' is not a number. " +
-                    "Values are compared in Revit internal units (feet).";
-            return null;
-        }
-
-        const double epsilon = 0.0001;
-        switch (operation)
-        {
-            case "eq":
-                return ParameterFilterRuleFactory.CreateEqualsRule(parameterId, number, epsilon);
-            case "neq":
-                return ParameterFilterRuleFactory.CreateNotEqualsRule(parameterId, number, epsilon);
-            case "gt":
-                return ParameterFilterRuleFactory.CreateGreaterRule(parameterId, number, epsilon);
-            case "ge":
-                return ParameterFilterRuleFactory.CreateGreaterOrEqualRule(
-                    parameterId, number, epsilon);
-            case "lt":
-                return ParameterFilterRuleFactory.CreateLessRule(parameterId, number, epsilon);
-            case "le":
-                return ParameterFilterRuleFactory.CreateLessOrEqualRule(
-                    parameterId, number, epsilon);
-            default:
-                error = "Unsupported operator '" + operation + "' for a numeric parameter.";
-                return null;
-        }
-    }
-
-    private static FilterRule? CreateElementIdRule(
-        Document doc,
-        string field,
-        ElementId parameterId,
-        string operation,
-        string value,
-        out string? error)
-    {
-        error = null;
-        if (!TryResolveElementId(doc, field, value, out var target, out var reason))
-        {
-            error = reason;
-            return null;
-        }
-
-        switch (operation)
-        {
-            case "eq":
-                return ParameterFilterRuleFactory.CreateEqualsRule(parameterId, target);
-            case "neq":
-                return ParameterFilterRuleFactory.CreateNotEqualsRule(parameterId, target);
-            case "gt":
-                return ParameterFilterRuleFactory.CreateGreaterRule(parameterId, target);
-            case "ge":
-                return ParameterFilterRuleFactory.CreateGreaterOrEqualRule(parameterId, target);
-            case "lt":
-                return ParameterFilterRuleFactory.CreateLessRule(parameterId, target);
-            case "le":
-                return ParameterFilterRuleFactory.CreateLessOrEqualRule(parameterId, target);
-            default:
-                error = "Unsupported operator '" + operation + "' for an element-id parameter.";
-                return null;
-        }
-    }
-
-    private static bool TryResolveElementId(
-        Document doc,
-        string field,
-        string value,
-        out ElementId id,
-        out string? reason)
-    {
-        id = ElementId.InvalidElementId;
-        reason = null;
-
-        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
-        {
-            var candidate = doc.GetElement(ElementIdCompat.Create(numeric));
-            if (candidate is not null)
-            {
-                id = candidate.Id;
-                return true;
-            }
-
-            reason = "Element " + numeric + " does not exist.";
-            return false;
-        }
-
-        if (field is "level" or "parameter")
-        {
-            foreach (var level in new FilteredElementCollector(doc).OfClass(typeof(Level)).Cast<Level>())
-            {
-                if (string.Equals(level.Name, value, StringComparison.OrdinalIgnoreCase))
-                {
-                    id = level.Id;
-                    return true;
-                }
-            }
-
-            reason = "Level '" + value + "' was not found; pass its element id.";
-            return false;
-        }
-
-        if (field == "room")
-        {
-            foreach (var room in new FilteredElementCollector(doc).OfClass(typeof(Room)).Cast<Room>())
-            {
-                if (string.Equals(room.Number, value, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(room.Name, value, StringComparison.OrdinalIgnoreCase))
-                {
-                    id = room.Id;
-                    return true;
-                }
-            }
-
-            reason = "Room '" + value + "' was not found; pass its element id.";
-            return false;
-        }
-
-        reason = "The parameter stores an element id; pass the numeric id or a known name.";
-        return false;
     }
 
     private static string? ReadValueText(FilterConditionSpec condition)

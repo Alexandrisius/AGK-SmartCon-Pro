@@ -27,7 +27,10 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             "Copies settings from a reference view to target views. sections: any of " +
             "\"crop\", \"viewRange\", \"visibility\", \"template\", \"all\"; default is [\"crop\"]. " +
             "Crop copy works across views of the same orientation (the usual 'take the crop " +
-            "region from the reference view' case). The template section copies the source " +
+            "region from the reference view' case). The visibility section copies the source's " +
+            "local hidden set as local category visibility on the targets; a view whose V/G is " +
+            "controlled by a template is refused — copy the template instead. " +
+            "The template section copies the source " +
             "view's template onto the targets. Names are never copied: if the user asks to make " +
             "target views 'like the reference view' and their names should follow the same " +
             "pattern, include rename_views (or configure_views newName) in the same dry-run plan " +
@@ -284,10 +287,10 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
                     return AgentViewSettingsWriter.Change.Error(
                         "source_controlled_by_template",
                         "Visibility of the source view '" + source.Name + "' is controlled by " +
-                        "template '" + sourceTemplate + "', so the view itself stores no hidden " +
-                        "categories and copying would silently show everything. Copy the " +
-                        "template instead (sections=[\"template\"], templateId=" +
-                        sourceTemplateId + ") or edit the template's visibility.");
+                        "template '" + sourceTemplate + "'. Copying its effective hidden set would " +
+                        "write local category overrides on the targets and they would drift from " +
+                        "the template. Copy the template instead (sections=[\"template\"], " +
+                        "templateId=" + sourceTemplateId + ") or edit the template's visibility.");
                 }
 
                 return AgentViewSettingsWriter.MirrorVisibility(

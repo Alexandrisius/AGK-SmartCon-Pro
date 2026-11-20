@@ -123,6 +123,9 @@ public sealed class AgentReadToolsTests : RevitApiTest
 
         await Assert.That(walls.ValueKind).IsEqualTo(JsonValueKind.Object);
         await Assert.That(walls.GetProperty("elementCount").GetInt32()).IsGreaterThanOrEqualTo(1);
+        // list_filterable_parameters takes categoryIds; a read tool must expose them.
+        // Built-in category ids are negative (OST_Walls = -2000011), so only zero is invalid.
+        await Assert.That(walls.GetProperty("categoryId").GetInt64()).IsNotEqualTo(0);
     }
 
     [Test]
@@ -210,6 +213,38 @@ public sealed class AgentReadToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task GetViewSettings_ViewIds_ReadsBatchAndReportsMissing()
+    {
+        long secondId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed second plan", doc =>
+        {
+            var level = new FilteredElementCollector(doc)
+                .OfClass(typeof(Level))
+                .Cast<Level>()
+                .First(item => item.Name == SeededLevelName);
+            secondId = ModelSeed.CreateViewPlanChecked(doc, level.Id, "SC_Agent_Plan_2").Id.GetValue();
+        });
+
+        var tool = new GetViewSettingsTool(new StubRevitContext(Doc));
+        var args = JsonDocument.Parse(
+            "{\"viewIds\":[" + GetSeededViewId() + "," + secondId + ",99999999]}")
+            .RootElement.Clone();
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("mode").GetString()).IsEqualTo("batch");
+        await Assert.That(data.GetProperty("returned").GetInt32()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("notFound").GetArrayLength()).IsEqualTo(1);
+        foreach (var view in data.GetProperty("views").EnumerateArray())
+        {
+            await Assert.That(view.TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
+            await Assert.That(view.TryGetProperty("hiddenCategoryEditableCount", out _)).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task GetViewSettings_WithoutFields_ReturnsCompactSummary()
     {
         var tool = new GetViewSettingsTool(new StubRevitContext(Doc));
@@ -225,6 +260,8 @@ public sealed class AgentReadToolsTests : RevitApiTest
         await Assert.That(summary.Success).IsTrue();
         await Assert.That(full.Success).IsTrue();
         await Assert.That(summary.Data!.Value.TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
+        await Assert.That(summary.Data.Value.TryGetProperty("writable", out var writable)).IsTrue();
+        await Assert.That(writable.TryGetProperty("visibility", out _)).IsTrue();
         await Assert.That(summary.Data.Value.TryGetProperty("hiddenCategories", out _)).IsFalse();
         await Assert.That(summary.Data.Value.GetRawText().Length)
             .IsLessThan(full.Data!.Value.GetRawText().Length);
@@ -299,10 +336,33 @@ public sealed class AgentReadToolsTests : RevitApiTest
             .IsLessThan(full.Data!.Value.GetRawText().Length);
 
         await Assert.That(settingsField.Success).IsTrue();
-        await Assert.That(settingsField.Data!.Value.GetProperty("settings")
-            .TryGetProperty("hiddenCategories", out _)).IsTrue();
+        var compactSettings = settingsField.Data!.Value.GetProperty("settings");
+        await Assert.That(compactSettings.TryGetProperty("hiddenCategories", out _)).IsFalse();
+        await Assert.That(compactSettings.TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
+        await Assert.That(compactSettings.TryGetProperty("controlledParameters", out _)).IsFalse();
+        await Assert.That(compactSettings.TryGetProperty("controlledParameterCount", out _)).IsTrue();
         await Assert.That(templateField.Success).IsTrue();
         await Assert.That(templateField.Data!.Value.TryGetProperty("template", out _)).IsTrue();
+    }
+
+    [Test]
+    public async Task ListViewTemplates_Fields_ReturnsValuesAndFiltersByName()
+    {
+        CreateSeededTemplate();
+        var tool = new ListViewTemplatesTool(new StubRevitContext(Doc));
+        var args = JsonDocument.Parse(
+            "{\"nameContains\":\"SC_Agent_Template\"," +
+            "\"fields\":[\"name\",\"scale\",\"hiddenCategoryCount\"]}")
+            .RootElement.Clone();
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var rows = result.Data!.Value.GetProperty("templates").EnumerateArray().ToList();
+        await Assert.That(rows.Count).IsGreaterThanOrEqualTo(1);
+        var row = rows.First(item => item.GetProperty("name").GetString() == "SC_Agent_Template");
+        await Assert.That(row.TryGetProperty("scale", out _)).IsTrue();
+        await Assert.That(row.TryGetProperty("hiddenCategoryCount", out _)).IsTrue();
     }
 
     private long GetSeededViewId()

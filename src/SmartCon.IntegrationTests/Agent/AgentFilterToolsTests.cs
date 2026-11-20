@@ -80,10 +80,136 @@ public sealed class AgentFilterToolsTests : RevitApiTest
         await Assert.That(result.Data!.Value.GetProperty("dryRun").GetBoolean()).IsTrue();
         await Assert.That(result.Data.Value.GetProperty("created").GetBoolean()).IsFalse();
         await Assert.That(result.Data.Value.GetProperty("wouldCreate").GetBoolean()).IsTrue();
+        // A live filterId here points at the discarded probe element (A4).
+        await Assert.That(result.Data.Value.GetProperty("filterId").ValueKind)
+            .IsEqualTo(JsonValueKind.Null);
+        await Assert.That(result.Data.Value.GetProperty("wouldCreateId").GetInt64())
+            .IsGreaterThan(0);
         await Assert.That(result.Data.Value.GetProperty("sections").GetArrayLength())
             .IsGreaterThanOrEqualTo(3);
         await Assert.That(CountFilters()).IsEqualTo(0);
         await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task CreateViewFilter_NumericThreshold_UsesProjectMillimetersAndShowsDisplayValue()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"conditions\":[{\"parameter\":\"CURVE_ELEM_LENGTH\",\"op\":\"lt\"," +
+            "\"value\":500}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+        var filterId = result.Data!.Value.GetProperty("filterId").GetInt64();
+
+        var details = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var read = details.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+        await Assert.That(read.Success).IsTrue();
+        var rule = read.Data!.Value.GetProperty("rules").GetProperty("rules")[0];
+
+        // 500 must be read as 500 project millimetres, not 500 feet.
+        var raw = rule.GetProperty("value").GetDouble();
+        var expected = UnitUtils.ConvertToInternalUnits(500, UnitTypeId.Millimeters);
+        await Assert.That(Math.Abs(raw - expected)).IsLessThan(1e-6);
+        await Assert.That(rule.GetProperty("displayValue").GetString()).Contains("500");
+    }
+
+    [Test]
+    public async Task CreateViewFilter_ExplicitMmUnit_MatchesProjectUnit()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"conditions\":[{\"parameter\":\"CURVE_ELEM_LENGTH\",\"op\":\"lt\"," +
+            "\"value\":500,\"unit\":\"mm\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+        var filterId = result.Data!.Value.GetProperty("filterId").GetInt64();
+
+        var details = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var read = details.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+        var raw = read.Data!.Value.GetProperty("rules").GetProperty("rules")[0]
+            .GetProperty("value").GetDouble();
+        var expected = UnitUtils.ConvertToInternalUnits(500, UnitTypeId.Millimeters);
+        await Assert.That(Math.Abs(raw - expected)).IsLessThan(1e-6);
+    }
+
+    [Test]
+    public async Task CreateViewFilter_WrongDimensionUnit_IsRejected()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"conditions\":[{\"parameter\":\"CURVE_ELEM_LENGTH\",\"op\":\"lt\"," +
+            "\"value\":500,\"unit\":\"m2\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.Message ?? string.Empty).Contains("does not match parameter");
+        await Assert.That(CountFilters()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task CreateViewFilter_TypeParameter_UsesProjectUnitsAndRawRoundTrip()
+    {
+        if (!_wallsCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = CreateTool();
+        var args = Parse(
+            "{\"viewIds\":[" + _viewId + "],\"categories\":[\"OST_Walls\"]," +
+            "\"conditions\":[{\"parameter\":\"WALL_ATTR_WIDTH_PARAM\",\"op\":\"lt\"," +
+            "\"value\":200}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+        var filterId = result.Data!.Value.GetProperty("filterId").GetInt64();
+
+        var details = new GetFilterDetailsTool(new StubRevitContext(Doc));
+        var read = details.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+        await Assert.That(read.Success).IsTrue();
+        var rule = read.Data!.Value.GetProperty("rules").GetProperty("rules")[0];
+
+        // A type parameter must be probed through its element type, otherwise the
+        // value is written as feet/text (B1).
+        var expected = UnitUtils.ConvertToInternalUnits(200, UnitTypeId.Millimeters);
+        await Assert.That(Math.Abs(rule.GetProperty("value").GetDouble() - expected)).IsLessThan(1e-6);
+        await Assert.That(rule.GetProperty("unit").GetString()).IsEqualTo("raw");
+        await Assert.That(rule.GetProperty("displayValue").GetString()).Contains("200");
+
+        // previousRules round-trip: value + unit="raw" must not move the threshold.
+        var rules = new SetFilterRulesTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var restore = rules.ExecuteForTests(
+            Parse(
+                "{\"filterId\":" + filterId + ",\"conditions\":[{\"parameter\":" +
+                "\"WALL_ATTR_WIDTH_PARAM\",\"op\":\"lt\",\"value\":" +
+                rule.GetProperty("value").GetRawText() + ",\"unit\":\"raw\"}],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(restore.Success).IsTrue();
+        var after = details.ExecuteForTests(
+            Doc, Parse("{\"filterId\":" + filterId + "}"), CancellationToken.None);
+        var afterValue = after.Data!.Value.GetProperty("rules").GetProperty("rules")[0]
+            .GetProperty("value").GetDouble();
+        await Assert.That(Math.Abs(afterValue - expected)).IsLessThan(1e-6);
     }
 
     [Test]
@@ -388,6 +514,40 @@ public sealed class AgentFilterToolsTests : RevitApiTest
             .IsEqualTo(appliedId);
         await Assert.That(data.GetProperty("filters")[0].GetProperty("appliedViewCount")
             .GetInt32()).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ListFilters_ViewId_ReportsModeAndSkipsRules()
+    {
+        var filterId = CreateFilterElement("SC_Filter_Mode");
+        _transactions!.RunInTransaction(Doc, "Apply hiding filter", doc =>
+        {
+            var view = (View)doc.GetElement(ElementIdCompat.Create(_viewId));
+            view.AddFilter(ElementIdCompat.Create(filterId));
+            view.SetIsFilterEnabled(ElementIdCompat.Create(filterId), true);
+            view.SetFilterVisibility(ElementIdCompat.Create(filterId), false);
+        });
+
+        var tool = new ListFiltersTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{\"viewId\":" + _viewId + "}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("includeRules").GetBoolean()).IsFalse();
+        var row = data.GetProperty("filters")[0];
+        await Assert.That(row.GetProperty("mode").GetString()).IsEqualTo("hide");
+        await Assert.That(row.GetProperty("filterEnabled").GetBoolean()).IsTrue();
+        await Assert.That(row.GetProperty("visible").GetBoolean()).IsFalse();
+        await Assert.That(row.TryGetProperty("rulesSummary", out _)).IsFalse();
+
+        var withRules = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"viewId\":" + _viewId + ",\"includeRules\":true}"),
+            CancellationToken.None);
+        await Assert.That(withRules.Success).IsTrue();
+        await Assert.That(withRules.Data!.Value.GetProperty("filters")[0]
+            .TryGetProperty("rulesSummary", out _)).IsTrue();
     }
 
     [Test]
@@ -715,6 +875,8 @@ public async Task RenameFilter_DuplicateName_IsRefused()
         await Assert.That(result.Success).IsTrue();
         var data = result.Data!.Value;
         await Assert.That(data.GetProperty("errorCode").GetString()).IsEqualTo("no_changes");
+        // The flag makes "nothing to do" read as success, not as an empty failure (A8).
+        await Assert.That(data.GetProperty("noChanges").GetBoolean()).IsTrue();
         await Assert.That(data.GetProperty("wouldUpdate").GetBoolean()).IsFalse();
         await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(0);
     }

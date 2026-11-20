@@ -26,13 +26,20 @@ internal static class JobToolPayloads
     {
         var preview = Preview(job);
         var totals = Totals(job);
+        var mode = ModeOf(job);
 
         return new
         {
             jobId = job.JobId.ToString("D"),
             action = job.Spec.Action,
             state = job.State.ToString(),
-            mode = ModeOf(job),
+            mode,
+            // The apply call returns before the pump finishes: without an explicit
+            // flag the model reported "52/52" while the job was 50/52 Running (B6).
+            mustVerify = !JobStateMachine.IsTerminal(job.State),
+            revertWith = mode == JobMode.Preview.ToString()
+                ? null
+                : "rollback_job(jobId=" + job.JobId.ToString("D") + ")",
             saved = job.LastSavedCursor > 0 && job.LastSavedAt is not null,
             volatileJob = job.Spec.Options.SavePolicy == JobSavePolicy.Never,
             lastSavedCursor = job.LastSavedCursor,

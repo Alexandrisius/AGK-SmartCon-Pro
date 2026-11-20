@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Compatibility;
 using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Revit.Agent.Query;
@@ -317,26 +318,88 @@ internal static class AgentParameterValue
         }
     }
 
-    private static double ConvertToInternal(
+    internal static double ConvertToInternal(
         Document doc,
         Parameter parameter,
         double value,
         string? unit)
     {
-        if (!string.IsNullOrWhiteSpace(unit) && TryGetUnit(unit!, out var explicitUnit))
-            return UnitUtils.ConvertToInternalUnits(value, explicitUnit!);
-
-        var dataType = parameter.Definition.GetDataType();
-        if (UnitUtils.IsMeasurableSpec(dataType))
+        var requested = unit?.Trim();
+        if (string.Equals(requested, "raw", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(requested, "internal", StringComparison.OrdinalIgnoreCase))
         {
-            var projectUnit = doc.GetUnits().GetFormatOptions(dataType).GetUnitTypeId();
-            return UnitUtils.ConvertToInternalUnits(value, projectUnit);
+            return value;
         }
 
-        return value;
+        var dataType = parameter.Definition.GetDataType();
+        var measurable = UnitUtils.IsMeasurableSpec(dataType);
+
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            if (!TryGetUnit(requested!, out var explicitUnit) || explicitUnit is null)
+            {
+                throw new ArgumentException(
+                    "Unknown unit '" + requested + "'. Use mm, cm, m, ft, in, m2, m3 or raw " +
+                    "(raw = Revit internal units).");
+            }
+
+            if (!measurable)
+            {
+                throw new ArgumentException(
+                    "Parameter '" + (parameter.Definition?.Name ?? "?") +
+                    "' is dimensionless; omit unit or pass unit=\"raw\".");
+            }
+
+            if (!UnitUtils.IsValidUnit(dataType, explicitUnit))
+            {
+                throw new ArgumentException(
+                    "Unit '" + requested + "' does not match parameter '" +
+                    (parameter.Definition?.Name ?? "?") + "' (spec " + dataType.TypeId + ").");
+            }
+
+            return UnitUtils.ConvertToInternalUnits(value, explicitUnit);
+        }
+
+        if (!measurable)
+            return value;
+
+        var projectUnit = doc.GetUnits().GetFormatOptions(dataType).GetUnitTypeId();
+        return UnitUtils.ConvertToInternalUnits(value, projectUnit);
     }
 
-    private static bool TryGetUnit(string unit, out ForgeTypeId? unitTypeId)
+    /// <summary>Display form of an internal value ("500 мм") for read-back.</summary>
+    internal static string? FormatDisplay(Document doc, Parameter parameter, double internalValue)
+    {
+        try
+        {
+            return RevitUnitsCompat.FormatDisplayValue(doc, parameter, internalValue);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Display form when only the spec is known (type or project parameter).</summary>
+    internal static string? FormatDisplay(Document doc, ForgeTypeId? dataType, double internalValue)
+    {
+        if (dataType is null)
+            return null;
+
+        try
+        {
+            if (!UnitUtils.IsMeasurableSpec(dataType))
+                return null;
+
+            return UnitFormatUtils.Format(doc.GetUnits(), dataType, internalValue, false);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    internal static bool TryGetUnit(string unit, out ForgeTypeId? unitTypeId)
     {
         switch (unit.Trim().ToLowerInvariant())
         {
@@ -364,6 +427,17 @@ internal static class AgentParameterValue
             case "inch":
             case "inches":
                 unitTypeId = UnitTypeId.Inches;
+                return true;
+            case "m2":
+            case "sqm":
+            case "squaremeter":
+            case "squaremeters":
+                unitTypeId = UnitTypeId.SquareMeters;
+                return true;
+            case "m3":
+            case "cubicmeter":
+            case "cubicmeters":
+                unitTypeId = UnitTypeId.CubicMeters;
                 return true;
             default:
                 unitTypeId = null;

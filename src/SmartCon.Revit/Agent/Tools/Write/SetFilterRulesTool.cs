@@ -35,9 +35,12 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
         Name = "set_filter_rules",
         Description =
             "Replaces the rules of an existing view filter by filterId or filterName. Conditions " +
-            "use the same DSL as create_view_filter ({field: category|family|type|level|room|" +
-            "system|parameter, parameter, op, value} with logic=and|or); an empty conditions " +
-            "array clears all rules. categories (names) optionally replaces the filter's " +
+            "use the same DSL as create_view_filter ({field: family|type|level|room|" +
+            "system|parameter, parameter, op, value, unit} with logic=and|or); an empty conditions " +
+            "array clears all rules. Numeric values are converted with the Revit unit API: pass " +
+            "unit=\"mm\" (or cm|m|ft|in|m2|m3|raw) or omit it to use the parameter's project " +
+            "display unit; a unit of the wrong dimension is rejected with invalid_condition. " +
+            "categories (names) optionally replaces the filter's " +
             "categories. dryRun=true applies the change inside the transaction and rolls it " +
             "back: validated=true means Revit accepted the new categories and rule set. A " +
             "parameter that is not filterable for every target category fails with " +
@@ -46,7 +49,7 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
             "set cannot be restored by undo_last; the tool reports undoSupported=false.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string""},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string"",""enum"":[""family"",""type"",""level"",""room"",""system"",""parameter""]},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""contains"",""notcontains"",""beginswith"",""notbeginswith"",""endswith"",""notendswith"",""gt"",""ge"",""lt"",""le"",""hasvalue"",""novalue""],""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]},""unit"":{""type"":""string"",""description"":""Numeric only: mm|cm|m|ft|in|m2|m3|raw. Default = the parameter's project display unit (same rule as query_elements).""}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -165,6 +168,14 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
         // the old tree: parameterId + parameterName, operator and value per rule
         // (external run 6, P1).
         outcome.Data["previousRules"] = previous.Rules;
+        if (ContainsRawNumericRule(previous.Rules))
+        {
+            outcome.Warnings.Add(
+                "Numeric previousRules[].value is in Revit internal units (unit=\"raw\"). " +
+                "When restoring these rules pass unit=\"raw\", otherwise the number is read " +
+                "in project display units and the threshold changes.");
+        }
+
         outcome.Data["previousCategories"] = previous.CategoryNames;
         outcome.Data["previousCategoryIds"] = previous.CategoryIds
             .Select(id => id.GetValue())
@@ -385,6 +396,25 @@ public sealed class SetFilterRulesTool : AgentWriteToolBase
             CategoryIds = categoryIds,
             CategoryNames = categoryNames
         };
+    }
+
+    private static bool ContainsRawNumericRule(object? node)
+    {
+        switch (node)
+        {
+            case Dictionary<string, object?> map:
+                if (map.TryGetValue("unit", out var unit)
+                    && string.Equals(unit as string, "raw", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                return map.Values.Any(ContainsRawNumericRule);
+            case IEnumerable<object?> items:
+                return items.Any(ContainsRawNumericRule);
+            default:
+                return false;
+        }
     }
 
     private static bool SameCategories(

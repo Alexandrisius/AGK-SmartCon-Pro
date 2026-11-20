@@ -197,7 +197,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                 expectedRaw = integer.ToString(CultureInfo.InvariantCulture);
                 return true;
             case StorageType.Double:
-                return TryNormalizeDouble(text, args.Unit, name, out expectedRaw, out reason);
+                return TryNormalizeDouble(text, args.Unit, name, parameter, out expectedRaw, out reason);
             case StorageType.ElementId:
                 if (string.IsNullOrWhiteSpace(text) ||
                     string.Equals(text, "none", StringComparison.OrdinalIgnoreCase))
@@ -224,6 +224,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         string text,
         string? unit,
         string name,
+        Parameter parameter,
         out string expectedRaw,
         out string reason)
     {
@@ -246,16 +247,47 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             "mm" or "millimeter" or "millimeters" => UnitTypeId.Millimeters,
             "cm" => UnitTypeId.Centimeters,
             "m" => UnitTypeId.Meters,
+            "ft" or "foot" or "feet" => UnitTypeId.Feet,
+            "in" or "inch" or "inches" => UnitTypeId.Inches,
             "m2" or "sqm" => UnitTypeId.SquareMeters,
             "m3" => UnitTypeId.CubicMeters,
             _ => null
         };
-        if (unitType is null && normalized is not ("ft" or "raw" or "internal"))
+        if (unitType is null && normalized is not ("raw" or "internal"))
         {
             reason = "Unit '" + unit + "' is not supported for parameter '" + name + "' " +
-                     Hint("pass mm, cm, m, ft, m2, m3 or raw");
+                     Hint("pass mm, cm, m, ft, in, m2, m3 or raw");
             return false;
         }
+
+        // A unit of the wrong dimension silently wrote a meaningless value (m2 for a
+        // length); validate against the parameter spec before converting.
+        if (unitType is not null)
+        {
+            ForgeTypeId? spec = null;
+            try
+            {
+                spec = parameter.Definition?.GetDataType();
+            }
+            catch (Exception)
+            {
+                // No spec: the dimension cannot be checked.
+            }
+
+            if (spec is not null && !UnitUtils.IsMeasurableSpec(spec))
+            {
+                reason = "Parameter '" + name + "' is dimensionless; omit unit or pass unit=\"raw\".";
+                return false;
+            }
+
+            if (spec is not null && !UnitUtils.IsValidUnit(spec, unitType))
+            {
+                reason = "Unit '" + unit + "' does not match parameter '" + name +
+                         "' (spec " + spec.TypeId + ").";
+                return false;
+            }
+        }
+
         var raw = unitType is null ? number : UnitUtils.ConvertToInternalUnits(number, unitType);
         expectedRaw = raw.ToString("R", CultureInfo.InvariantCulture);
         return true;

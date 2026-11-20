@@ -32,6 +32,7 @@ internal static class AgentViewSettingsReader
             Crop = ReadCrop(view),
             HiddenCategories = hiddenCategories,
             HiddenCategoryCount = hiddenCategories.Count,
+            HiddenCategoryEditableCount = CountEditableHiddenCategories(view, hiddenCategories),
             HiddenWorksets = ReadHiddenWorksets(doc, view),
             ControlledParameters = ReadTemplateParameters(doc, view, controlled: true),
             NonControlledParameters = ReadTemplateParameters(doc, view, controlled: false)
@@ -75,6 +76,7 @@ internal static class AgentViewSettingsReader
             CropVisible = settings.Crop?.Visible,
             CropShapeSet = settings.Crop?.ShapeValid,
             HiddenCategoryCount = settings.HiddenCategories.Count,
+            HiddenCategoryEditableCount = settings.HiddenCategoryEditableCount,
             HiddenWorksetCount = settings.HiddenWorksets.Count,
             ControlledParameterCount = settings.ControlledParameters.Count,
             NonControlledParameterCount = settings.NonControlledParameters.Count
@@ -250,6 +252,45 @@ internal static class AgentViewSettingsReader
         }
 
         return hidden;
+    }
+
+    /// <summary>
+    /// How many of the already hidden categories Revit still allows to toggle on
+    /// this view (<c>CanCategoryBeHidden</c>). The rest are hidden but not editable
+    /// here: the V/G parameter may be controlled by the view template, or the
+    /// category cannot be hidden in this view type. The counter does not claim
+    /// which reason applies.
+    /// </summary>
+    private static int CountEditableHiddenCategories(
+        View view,
+        IReadOnlyList<CategoryVisibilityInfo> hidden)
+    {
+        var editable = 0;
+        foreach (var entry in hidden)
+        {
+            if (CanToggleCategory(view, entry.CategoryId))
+                editable++;
+        }
+
+        return editable;
+    }
+
+    /// <summary>
+    /// <c>CanCategoryBeHidden</c> is a capability of the view type, not a
+    /// statement about the template: false means "cannot be toggled through the
+    /// API on this view". Shared by the reader and the writer so read and write
+    /// counters always agree.
+    /// </summary>
+    internal static bool CanToggleCategory(View view, long categoryId)
+    {
+        try
+        {
+            return view.CanCategoryBeHidden(ElementIdCompat.Create(categoryId));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static IReadOnlyList<string> ReadHiddenWorksets(Document doc, View view)

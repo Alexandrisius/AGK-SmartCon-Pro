@@ -248,7 +248,9 @@ public sealed class FindToolsTool : IAgentTool
                 "cards with argument schemas. Use it when the tool you need is not in the " +
                 "current request. Discovery only: it does not change the tool set. After it, " +
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                "chosen tools for the next round. An empty query returns the whole catalog " +
+                "chosen tools for the next round. A search returns compact cards (name, pack, risk, " +
+                "purpose, alreadyAvailable, inputSchema); pass fields to add whenToUse, examples, " +
+                "synonyms or timeoutMs. An empty query returns the whole catalog " +
                 "(name, description, pack, risk) without schemas, paged with offset/nextOffset; " +
                 "add pack to browse one pack. fields=[...] projects each card onto the listed " +
                 "properties (for example fields=[\"name\",\"pack\"]).",
@@ -278,10 +280,15 @@ public sealed class FindToolsTool : IAgentTool
         AgentToolContext context,
         bool listing)
     {
-        var defaultFields = listing
-            ? new[] { "name", "description", "pack", "risk" }
-            : null;
-        var selected = fields.Count > 0 ? fields : defaultFields;
+        // Search mode used to return the whole routing card (purpose, whenToUse,
+        // whenNotToUse, examples, synonyms) for every hit. Five hits cost several
+        // thousand tokens while the caller only needs the name, what the tool does
+        // and its schema; the rest is one fields=[...] away.
+        IReadOnlyList<string> selected = fields.Count > 0
+            ? fields
+            : listing
+                ? new[] { "name", "description", "pack", "risk" }
+                : new[] { "name", "pack", "risk", "purpose", "alreadyAvailable", "inputSchema" };
         var result = new List<Dictionary<string, object?>>();
 
         foreach (var definition in definitions)
@@ -302,12 +309,6 @@ public sealed class FindToolsTool : IAgentTool
                 ["alreadyAvailable"] = context.ActiveToolNames.Contains(definition.Name),
                 ["inputSchema"] = ParseSchema(definition.InputSchemaJson)
             };
-
-            if (selected is null)
-            {
-                result.Add(card);
-                continue;
-            }
 
             var projected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in selected)

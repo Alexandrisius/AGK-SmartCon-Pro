@@ -324,7 +324,8 @@ public sealed class StartJobTool : IAgentTool
                 (preview is null ? string.Empty : ": " + preview.Count + " unit(s)") +
                 ". Call get_job_status to follow progress.",
             JobState.Running =>
-                "Job started. Call get_job_status (waitSeconds=10) to follow progress.",
+                "Job started. Call get_job_status (waitSeconds=10) until the state is terminal " +
+                "and mustVerify=false; do not report it as finished before that.",
             JobState.Completed or JobState.CompletedWithFailures =>
                 "Job finished: " + job.State + ". Call get_job_report for the per-item diff.",
             _ => "Job state: " + job.State

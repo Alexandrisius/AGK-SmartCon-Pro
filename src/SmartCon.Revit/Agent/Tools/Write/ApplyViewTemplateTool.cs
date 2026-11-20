@@ -218,6 +218,8 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
     {
         if (change.ErrorCode is not null)
         {
+            if (change.SuggestedViewId.HasValue)
+                report.SuggestedViewIds = new List<long> { change.SuggestedViewId.Value };
             Fail(outcome, report, change.ErrorCode, change.Reason);
             Abort(outcome, atomic);
             return;

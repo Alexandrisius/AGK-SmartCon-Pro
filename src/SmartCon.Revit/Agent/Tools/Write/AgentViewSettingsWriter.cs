@@ -25,6 +25,9 @@ internal static class AgentViewSettingsWriter
 
         public string? Detail { get; set; }
 
+        /// <summary>Template id that controls the parameter, when a write was refused.</summary>
+        public long? SuggestedViewId { get; set; }
+
         public ChangeItem? ToChangeItem(View view, string key)
         {
             if (!Changed)
@@ -171,12 +174,14 @@ internal static class AgentViewSettingsWriter
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
                 view, BuiltInParameter.PLAN_VIEW_RANGE, out var rangeTemplateId, out var rangeTemplate))
         {
-            return Change.Error(
+            var rangeError = Change.Error(
                 "view_controlled_by_template",
                 "The view range of '" + view.Name + "' is controlled by template '" +
                 rangeTemplate + "'; writing it on the view has no effect. Detach it with " +
                 "set_view_template_inclusion(templateId=" + rangeTemplateId +
                 ", parameters=[\"viewRange\"], included=false), then retry.");
+            rangeError.SuggestedViewId = rangeTemplateId;
+            return rangeError;
         }
 
         ViewRangeSpec? before;
@@ -224,14 +229,16 @@ internal static class AgentViewSettingsWriter
             return Change.Skip("No crop settings specified.");
 
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
-                view, BuiltInParameter.VIEWER_CROP_REGION, out _, out var cropTemplate))
+                view, BuiltInParameter.VIEWER_CROP_REGION, out var cropTemplateId, out var cropTemplate))
         {
-            return Change.Error(
+            var cropError = Change.Error(
                 "view_controlled_by_template",
                 "The crop region of '" + view.Name + "' is controlled by template '" +
                 cropTemplate + "'; writing it on the view has no effect. Revit does not allow " +
                 "detaching crop from a template (and a template's crop cannot be edited through " +
                 "the API): remove the template from this view, then set the crop.");
+            cropError.SuggestedViewId = cropTemplateId;
+            return cropError;
         }
 
         ViewCropState before;
@@ -316,12 +323,14 @@ internal static class AgentViewSettingsWriter
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
                 view, BuiltInParameter.VIS_GRAPHICS_MODEL, out var visibilityTemplateId, out var visibilityTemplate))
         {
-            return Change.Error(
+            var visibilityError = Change.Error(
                 "view_controlled_by_template",
                 "Category visibility of '" + view.Name + "' is controlled by template '" +
                 visibilityTemplate + "'; writing it on the view has no effect. Detach it with " +
                 "set_view_template_inclusion(templateId=" + visibilityTemplateId +
                 ", parameters=[\"visibility\"], included=false), then retry.");
+            visibilityError.SuggestedViewId = visibilityTemplateId;
+            return visibilityError;
         }
 
         var before = AgentViewWriteHelper.ReadVisibility(doc, view);
@@ -342,14 +351,34 @@ internal static class AgentViewSettingsWriter
         if (string.Equals(oldJson, newJson, StringComparison.Ordinal))
             return Change.Skip("Visibility is already set to these values (no-op).");
 
+        var editableBefore = CountEditableHidden(view, before);
+        var editableAfter = CountEditableHidden(view, after);
         return new Change
         {
             Changed = true,
             OldValue = oldJson,
             NewValue = newJson,
             Detail = "visibility (" + before.HiddenCategoryIds.Count + " → " +
-                     after.HiddenCategoryIds.Count + " hidden categories)"
+                     after.HiddenCategoryIds.Count + " hidden categories; editable via API " +
+                     editableBefore + " → " + editableAfter + ")"
         };
+    }
+
+    /// <summary>
+    /// Hidden categories Revit still allows to toggle on this view. Shared with the
+    /// reader (<c>AgentViewSettingsReader.CanToggleCategory</c>) so the change
+    /// detail and <c>get_view_settings</c> always report the same numbers.
+    /// </summary>
+    private static int CountEditableHidden(View view, ViewVisibilityState state)
+    {
+        var editable = 0;
+        foreach (var categoryId in state.HiddenCategoryIds)
+        {
+            if (AgentViewSettingsReader.CanToggleCategory(view, categoryId))
+                editable++;
+        }
+
+        return editable;
     }
 
     internal static Change MirrorVisibility(Document doc, View source, View target, List<string> warnings)
@@ -357,12 +386,14 @@ internal static class AgentViewSettingsWriter
         if (AgentViewSettingsReader.IsParameterLockedByTemplate(
                 target, BuiltInParameter.VIS_GRAPHICS_MODEL, out var targetTemplateId, out var targetTemplate))
         {
-            return Change.Error(
+            var mirrorError = Change.Error(
                 "view_controlled_by_template",
                 "Category visibility of '" + target.Name + "' is controlled by template '" +
                 targetTemplate + "'; copying visibility onto it has no effect. Detach it with " +
                 "set_view_template_inclusion(templateId=" + targetTemplateId +
                 ", parameters=[\"visibility\"], included=false), then retry.");
+            mirrorError.SuggestedViewId = targetTemplateId;
+            return mirrorError;
         }
 
         var before = AgentViewWriteHelper.ReadVisibility(doc, target);

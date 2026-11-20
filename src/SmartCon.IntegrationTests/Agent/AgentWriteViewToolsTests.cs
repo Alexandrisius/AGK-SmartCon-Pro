@@ -805,6 +805,66 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task SetViewVisibility_OnViewTemplate_WritesTheTemplateDirectly()
+    {
+        var category = Category.GetCategory(Doc, BuiltInCategory.OST_Grids);
+        if (category is null)
+            Skip.Test("Категория OST_Grids недоступна");
+
+        long templateId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed visibility template", doc =>
+        {
+            var plan = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            var template = plan.CreateViewTemplate();
+            template.Name = "SC_Agent_Visibility_Template";
+            templateId = template.Id.GetValue();
+        });
+
+        var tool = new SetViewVisibilityTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"items\":[{\"viewId\":" + templateId +
+            ",\"visibility\":{\"categories\":[{\"category\":\"OST_Grids\",\"hidden\":true}]}}]," +
+            "\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var templateView = (View)Doc.GetElement(ElementIdCompat.Create(templateId));
+        await Assert.That(templateView.GetCategoryHidden(category!.Id)).IsTrue();
+
+        var detail = result.Data!.Value.GetProperty("changed")[0].GetProperty("detail").GetString();
+        await Assert.That(detail).Contains("hidden categories");
+        await Assert.That(detail).Contains("editable via API");
+    }
+
+    [Test]
+    public async Task SetViewParameters_OnViewTemplate_WritesTheTemplateDirectly()
+    {
+        long templateId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed parameter template", doc =>
+        {
+            var plan = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            var template = plan.CreateViewTemplate();
+            template.Name = "SC_Agent_Parameter_Template";
+            templateId = template.Id.GetValue();
+        });
+
+        var disciplineParameterId = new ElementId(BuiltInParameter.VIEW_DISCIPLINE).GetValue();
+        var tool = new SetViewParametersTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var args = Parse(
+            "{\"viewIds\":[" + templateId + "],\"parameters\":[{\"parameterId\":" + disciplineParameterId +
+            ",\"value\":\"4\"}],\"dryRun\":false}");
+
+        var result = tool.ExecuteForTests(args, approved: true, CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+
+        var templateView = (View)Doc.GetElement(ElementIdCompat.Create(templateId));
+        var discipline = templateView
+            .get_Parameter(BuiltInParameter.VIEW_DISCIPLINE)?.AsInteger();
+        await Assert.That(discipline).IsEqualTo(4);
+    }
+
+    [Test]
     public async Task ConfigureViews_AppliesNameAndCrop()
     {
         _transactions!.RunInTransaction(Doc, "Seed crop", doc =>

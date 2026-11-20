@@ -61,6 +61,15 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
+            // "categories[0]" (the form tool output actually shows) as well as the
+            // legacy "categories.0" segment. A rejected path reported mismatch on an
+            // apply that had actually succeeded (B4).
+            if (TryResolveIndexed(current, segment, out var indexed))
+            {
+                current = indexed;
+                continue;
+            }
+
             if (current.ValueKind == JsonValueKind.Object
                 && current.TryGetProperty(segment, out var property))
             {
@@ -112,6 +121,34 @@ public sealed partial class AgentPlanExecutor
             return false;
 
         return TryFindById(current, raw, out found);
+    }
+
+    /// <summary>A segment like <c>categories[0]</c>: property name plus array index.</summary>
+    private static bool TryResolveIndexed(JsonElement current, string segment, out JsonElement found)
+    {
+        found = default;
+        var open = segment.IndexOf('[');
+        if (open <= 0 || !segment.EndsWith("]", StringComparison.Ordinal))
+            return false;
+
+        var name = segment.Substring(0, open);
+        var indexText = segment.Substring(open + 1, segment.Length - open - 2);
+        if (!int.TryParse(indexText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index)
+            || index < 0)
+        {
+            return false;
+        }
+
+        if (current.ValueKind != JsonValueKind.Object
+            || !current.TryGetProperty(name, out var array)
+            || array.ValueKind != JsonValueKind.Array
+            || index >= array.GetArrayLength())
+        {
+            return false;
+        }
+
+        found = array[index];
+        return true;
     }
 
     private static bool TryFindById(JsonElement element, string id, out JsonElement found)

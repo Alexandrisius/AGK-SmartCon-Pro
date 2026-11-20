@@ -29,10 +29,18 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
         Description =
             "Creates (or reuses by name) a parameter view filter and applies it to views, " +
             "optionally hiding or showing the matching elements. Conditions use a generic DSL: " +
-            "{field: category|family|type|level|room|system|parameter, parameter: \"Система\", " +
+            "{field: family|type|level|room|system|parameter, parameter: \"Система\", " +
             "op: eq|neq|contains|notcontains|beginswith|endswith|gt|ge|lt|le|hasvalue|novalue, " +
-            "value: \"Т1\"} combined with logic=and|or. categories accept OST_ names or localized " +
-            "names. dryRun defaults to true; dryRun=false requires user confirmation. The answer " +
+            "value: \"Т1\"} combined with logic=and|or. Numeric values are converted with the Revit unit " +
+            "API: pass unit=\"mm\" (or cm|m|ft|in|m2|m3|raw) or omit it to use the parameter's " +
+            "project display unit; a wrong-dimension unit (mm for an area) is rejected. " +
+            "categories accept OST_ names or localized " +
+            "names. Field meanings: system = system NAME/ABBREVIATION (\"Т11\"), not the system " +
+            "classification; type = element type; «Тип системы» (подача/обратка) is a parameter — " +
+            "use field=\"parameter\" with parameter=\"Классификация систем\" (or " +
+            "RBS_SYSTEM_CLASSIFICATION_PARAM), value is the display string. Check the " +
+            "category×parameter pair with list_filterable_parameters before writing. " +
+            "dryRun defaults to true; dryRun=false requires user confirmation. The answer " +
             "contains per-section status, changed/skipped/failed items and read-back per view. The " +
             "filter is created only when at least one passed view can accept it: when every " +
             "view fails validation (template-controlled, schedule, legend, sheet), nothing is " +
@@ -41,7 +49,7 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             "atomic=true makes the whole call all-or-nothing.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""name"":{""type"":""string""},""categories"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string"",""description"":""category|family|type|level|room|system|parameter""},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""visibility"":{""type"":""string"",""enum"":[""none"",""hide"",""show""],""default"":""none""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""viewIds"",""categories""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""name"":{""type"":""string""},""categories"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string"",""enum"":[""family"",""type"",""level"",""room"",""system"",""parameter""]},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""contains"",""notcontains"",""beginswith"",""notbeginswith"",""endswith"",""notendswith"",""gt"",""ge"",""lt"",""le"",""hasvalue"",""novalue""],""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]},""unit"":{""type"":""string"",""description"":""Numeric only: mm|cm|m|ft|in|m2|m3|raw. Default = the parameter's project display unit (same rule as query_elements).""}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""visibility"":{""type"":""string"",""enum"":[""none"",""hide"",""show""],""default"":""none""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""viewIds"",""categories""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -221,11 +229,13 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
                 continue;
             }
 
-            if (AgentFilterWriteHelper.IsFilterControlLockedByTemplate(view, out var templateId))
+            if (AgentFilterWriteHelper.IsFilterControlLockedByTemplate(view, out var templateId)
+                && templateId.HasValue)
             {
+                report.SuggestedViewIds = new List<long> { templateId.Value };
                 ApplyViewTemplateTool.Fail(outcome, report, "view_controlled_by_template",
-                    "The view template " + templateId + " controls V/G overrides; change the " +
-                    "template instead of the view.");
+                    "The view template " + templateId.Value + " controls V/G overrides; change the " +
+                    "template instead of the view (retry with viewIds=[" + templateId.Value + "]).");
                 validationFailed++;
                 continue;
             }
@@ -364,6 +374,19 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
 
             report.Name = view.Name;
 
+            // A filter on a category that is hidden in this view cannot be seen at all;
+            // the model should know before it promises a colour (B8).
+            var hiddenCategories = categoryIds
+                .Where(id => IsCategoryHidden(view, id))
+                .ToList();
+            if (categoryIds.Count > 0 && hiddenCategories.Count == categoryIds.Count)
+            {
+                outcome.Warnings.Add(
+                    "All filter categories are hidden on view '" + view.Name +
+                    "' — the filter is applied but has no visible effect. Show the category " +
+                    "first (set_view_visibility hidden=false).");
+            }
+
             var before = AgentFilterWriteHelper.ReadState(view);
             var beforeJson = AgentFilterWriteHelper.SerializeState(before);
 
@@ -399,7 +422,8 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             {
                 viewId = view.Id.GetValue(),
                 viewName = view.Name,
-                filterId = filterIdValue,
+                filterId = created && dryRun ? null : (long?)filterIdValue,
+                discardedProbeId = created && dryRun ? (long?)filterIdValue : null,
                 filterName = filterName,
                 applied = true,
                 filterEnabled = AgentFilterViewState.ReadEnabled(view, filterId),
@@ -495,85 +519,33 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             failed = validationFailed + viewFailed
         };
 
-        outcome.Data["filterId"] = filterIdValue;
+        // A dry run creates the filter only to read it back and then deletes it; a live
+        // rollback deletes it too. A live filterId would invite a follow-up call
+        // against a dead element (A4).
+        var discardedProbe = created && dryRun;
+        outcome.Data["filterId"] = discardedProbe || rolledBack ? null : (long?)filterIdValue;
+        if (discardedProbe)
+            outcome.Data["wouldCreateId"] = filterIdValue;
+        if (rolledBack)
+            outcome.Data["rolledBackId"] = filterIdValue;
         outcome.Data["filterName"] = filterName;
         outcome.Data["atomic"] = atomic;
         outcome.Data["created"] = created && !dryRun && !rolledBack;
-        outcome.Data["wouldCreate"] = created && dryRun;
+        outcome.Data["wouldCreate"] = discardedProbe;
         outcome.Data["reused"] = reused;
         outcome.Data["visibility"] = AgentFilterViewState.ToWireName(mode);
         outcome.Data["visibilitySemantics"] =
             "hide = filter enabled + matching elements hidden; show = filter enabled + " +
             "elements visible; none = filter added but disabled (elements visible).";
-        if (created && dryRun)
+        if (discardedProbe)
         {
             outcome.Warnings.Add(
                 "Dry run: the filter was created inside the rolled-back transaction and " +
-                "nothing was saved; filterId refers to the discarded element. Run with " +
-                "dryRun=false to apply it.");
+                "nothing was saved. filterId is null; wouldCreateId is the discarded probe id. " +
+                "Run with dryRun=false to apply and get the real filterId.");
         }
 
         Finish(outcome, sections, readBack);
     }
 
-    private static bool IsAcceptable(
-        Document doc,
-        IReadOnlyList<ElementId> categories,
-        ElementFilter filter,
-        out string? reason)
-    {
-        reason = null;
-        try
-        {
-            var set = new HashSet<ElementId>(categories);
-            if (ParameterFilterElement.ElementFilterIsAcceptableForParameterFilterElement(
-                    doc, set, filter))
-            {
-                return true;
-            }
-
-            reason = "The rule set is not acceptable for these categories: a rule references a " +
-                     "parameter that does not apply to the categories.";
-            return false;
-        }
-        catch (Exception ex)
-        {
-            reason = "Revit rejected the filter rules: " + ex.Message;
-            return false;
-        }
-    }
-
-    private static bool CategoriesMatch(
-        ParameterFilterElement filter,
-        IReadOnlyList<ElementId> categoryIds)
-    {
-        try
-        {
-            var existing = filter.GetCategories();
-            if (existing.Count != categoryIds.Count)
-                return false;
-
-            foreach (var id in categoryIds)
-            {
-                var found = false;
-                foreach (var candidate in existing)
-                {
-                    if (candidate.GetValue() == id.GetValue())
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found)
-                    return false;
-            }
-
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
 }

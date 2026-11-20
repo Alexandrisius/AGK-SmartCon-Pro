@@ -31,6 +31,9 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
             "the rule tree (and/or/parameter rules with parameterId, parameterName, operator, value), " +
             "the parameters used and the views the filter is applied to (paged with " +
             "appliedViewsLimit/appliedViewsOffset, appliedViewsTotal shows the full count). " +
+            "Numeric rules report value in Revit internal units plus unit=\"raw\" and " +
+            "displayValue in project units; pass that value back with unit=\"raw\" when " +
+            "restoring the rule. " +
             "includeOverrides=true adds per-view visibility and graphic overrides (what the " +
             "filter actually hides or colours). Each applied view reports both Revit UI " +
             "checkboxes: filterEnabled (View.GetIsFilterEnabled) and visible " +
@@ -84,7 +87,8 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
             });
         }
 
-        var rules = AgentFilterRuleDescriber.Describe(SafeElementFilter(filter), doc);
+        var rules = AgentFilterRuleDescriber.Describe(
+            SafeElementFilter(filter), doc, SampleParameterSpecs(doc, categoryIds));
         var ruleCount = AgentFilterRuleDescriber.CountRules(SafeElementFilter(filter));
 
         var parameterIds = new List<long>();
@@ -200,6 +204,96 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Spec per parameter id from the filter's categories: instance parameters, the
+    /// element type (type parameters live there, not on the instance) and project /
+    /// shared ParameterElements. Numeric rules store internal units, and the spec is
+    /// what turns them into a display value (B1).
+    /// </summary>
+    private static Dictionary<long, ForgeTypeId> SampleParameterSpecs(
+        Document doc,
+        IReadOnlyList<ElementId> categoryIds)
+    {
+        var map = new Dictionary<long, ForgeTypeId>();
+        foreach (var categoryId in categoryIds)
+        {
+            Element? sample;
+            try
+            {
+                sample = new FilteredElementCollector(doc)
+                    .OfCategoryId(categoryId)
+                    .WhereElementIsNotElementType()
+                    .FirstElement();
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            if (sample is not null)
+            {
+                Collect(sample);
+                var type = doc.GetElement(sample.GetTypeId());
+                if (type is not null)
+                    Collect(type);
+            }
+
+            // Type-only categories (doors/windows not placed yet) still carry specs.
+            try
+            {
+                var typeOnly = new FilteredElementCollector(doc)
+                    .OfCategoryId(categoryId)
+                    .WhereElementIsElementType()
+                    .FirstElement();
+                if (typeOnly is not null)
+                    Collect(typeOnly);
+            }
+            catch (Exception)
+            {
+                // A category whose types cannot be collected is skipped.
+            }
+        }
+
+        foreach (var parameterId in map.Keys.ToList())
+        {
+            if (parameterId <= 0 || doc.GetElement(ElementIdCompat.Create(parameterId))
+                    is not ParameterElement element)
+            {
+                continue;
+            }
+
+            try
+            {
+                var spec = element.GetDefinition()?.GetDataType();
+                if (spec is not null)
+                    map[parameterId] = spec;
+            }
+            catch (Exception)
+            {
+                // A definition without a spec is skipped.
+            }
+        }
+
+        return map;
+
+        void Collect(Element owner)
+        {
+            try
+            {
+                foreach (Parameter parameter in owner.Parameters)
+                {
+                    var spec = parameter.Definition?.GetDataType();
+                    if (spec is not null)
+                        map[parameter.Id.GetValue()] = spec;
+                }
+            }
+            catch (Exception)
+            {
+                // A sample that rejects enumeration is skipped.
+            }
         }
     }
 }

@@ -28,9 +28,13 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
     {
         Name = "undo_last",
         Description =
-            "Reverts the last change set that SmartCon applied to the active document. " +
+            "Reverts the last change set that SmartCon applied to the active document by a write " +
+            "tool. Changes applied by start_job are not change sets — revert those with " +
+            "rollback_job(jobId). " +
             "Items changed by somebody else after the operation are reported as conflicts " +
-            "and skipped (pass force=true to restore them anyway). dryRun defaults to true " +
+            "and skipped (pass force=true to restore them anyway). Category visibility is " +
+            "compared on the categories this view can toggle, so a later edit of its template is " +
+            "not a conflict. dryRun defaults to true " +
             "and shows what would be restored.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
@@ -470,77 +474,6 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         {
             return null;
         }
-    }
-
-    private static (bool, string?, string?) RevertViewRange(View view, ChangeItem item, bool force)
-    {
-        if (view is not ViewPlan plan)
-            return (false, "unsupported_view_type", "View range applies to plan views only.");
-
-        var spec = AgentViewWriteHelper.Deserialize<ViewRangeSpec>(item.OldValue);
-        if (spec is null || spec.IsEmpty)
-            return (false, null, "The recorded view range is empty — nothing to restore.");
-
-        var current = AgentViewWriteHelper.Serialize(
-            AgentViewWriteHelper.ReadViewRange(view) ?? new ViewRangeSpec());
-        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
-            return (false, null, "The view range already matches the recorded previous state.");
-
-        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
-        {
-            return (false, "undo_conflict",
-                "The view range of '" + view.Name +
-                "' changed after the operation (conflict).");
-        }
-
-        AgentViewWriteHelper.ApplyViewRange(plan, spec);
-        return (true, null, null);
-    }
-
-    private static (bool, string?, string?) RevertCrop(View view, ChangeItem item, bool force)
-    {
-        var state = AgentViewWriteHelper.Deserialize<ViewCropState>(item.OldValue);
-        if (state is null)
-            return (false, null, "The recorded crop state is empty — nothing to restore.");
-
-        var current = AgentViewWriteHelper.Serialize(AgentViewWriteHelper.ReadCropState(view));
-        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
-            return (false, null, "The crop region already matches the recorded previous state.");
-
-        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
-        {
-            return (false, "undo_conflict",
-                "The crop region of '" + view.Name + "' changed after the operation (conflict).");
-        }
-
-        var warnings = new List<string>();
-        AgentViewWriteHelper.ApplyCropState(view, state, warnings);
-        return (true, null, null);
-    }
-
-    private static (bool, string?, string?) RevertVisibility(
-        Document doc,
-        View view,
-        ChangeItem item,
-        bool force)
-    {
-        var state = AgentViewWriteHelper.Deserialize<ViewVisibilityState>(item.OldValue);
-        if (state is null)
-            return (false, null, "The recorded visibility state is empty — nothing to restore.");
-
-        var current = AgentViewWriteHelper.Serialize(
-            AgentViewWriteHelper.ReadVisibility(doc, view));
-        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
-            return (false, null, "Visibility already matches the recorded previous state.");
-
-        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
-        {
-            return (false, "undo_conflict",
-                "Visibility of '" + view.Name + "' changed after the operation (conflict).");
-        }
-
-        AgentViewWriteHelper.ApplyVisibilityState(doc, view, state);
-        return (true, null, null);
     }
 
     private static (bool, string?, string?) RevertParameter(

@@ -225,7 +225,10 @@ public sealed class FindToolsToolTests
 
         var result = await tool.ExecuteAsync(
             Context(),
-            Parse("{\"query\":\"что контролирует шаблон вида\"}"),
+            Parse(
+                "{\"query\":\"что контролирует шаблон вида\",\"fields\":[\"name\",\"purpose\"," +
+                "\"whenToUse\",\"whenNotToUse\",\"examples\",\"synonyms\",\"timeoutMs\"," +
+                "\"inputSchema\",\"pack\"]}"),
             CancellationToken.None);
 
         Assert.True(result.Success);
@@ -322,5 +325,29 @@ public sealed class FindToolsToolTests
             Assert.False(entry.TryGetProperty("description", out _));
             Assert.False(entry.TryGetProperty("risk", out _));
         }
+    }
+
+    [Fact]
+    public async Task FindToolsV2_Search_ReturnsCompactCardsByDefault()
+    {
+        var registry = new AgentToolRegistry(new IAgentTool[]
+        {
+            new ScriptedTool("get_view_template_details"),
+            new ScriptedTool("get_view_settings")
+        });
+        var tool = CreateTool(registry);
+
+        var result = await tool.ExecuteAsync(
+            Context(), Parse("{\"query\":\"что контролирует шаблон вида\"}"), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var first = result.Data!.Value.GetProperty("tools")[0];
+        Assert.True(first.TryGetProperty("name", out _));
+        Assert.True(first.TryGetProperty("purpose", out _));
+        Assert.True(first.TryGetProperty("alreadyAvailable", out _));
+        Assert.True(first.TryGetProperty("inputSchema", out _));
+        Assert.False(first.TryGetProperty("whenToUse", out _));
+        Assert.False(first.TryGetProperty("examples", out _));
+        Assert.False(first.TryGetProperty("synonyms", out _));
     }
 }

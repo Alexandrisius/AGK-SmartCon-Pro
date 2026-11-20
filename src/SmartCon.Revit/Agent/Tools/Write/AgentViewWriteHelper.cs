@@ -189,6 +189,13 @@ internal static partial class AgentViewWriteHelper
         plan.SetViewRange(range);
     }
 
+    /// <summary>
+    /// Every hidden category of the view, including the ones the template hides.
+    /// The read must match <c>get_view_settings</c>: a write that reported
+    /// "16 → 17" while the view had 24 hidden categories made the numbers look
+    /// wrong and cost the model a diagnostic round (external benchmark, task 5).
+    /// Write guards stay where they belong (CanCategoryBeHidden in apply/undo).
+    /// </summary>
     internal static ViewVisibilityState ReadVisibility(Document doc, View view)
     {
         var state = new ViewVisibilityState();
@@ -196,8 +203,6 @@ internal static partial class AgentViewWriteHelper
         {
             try
             {
-                if (!view.CanCategoryBeHidden(category.Id))
-                    continue;
                 if (view.GetCategoryHidden(category.Id))
                     state.HiddenCategoryIds.Add(category.Id.GetValue());
             }

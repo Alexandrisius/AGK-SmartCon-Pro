@@ -11,6 +11,13 @@ internal sealed class FilterConditionSpec
 
     public string Op { get; set; } = "eq";
 
+    /// <summary>
+    /// Unit of a numeric value: mm|cm|m|ft|m2|m3|raw. When omitted, the parameter's
+    /// project display unit is used (same rule as query_elements), so "500" means
+    /// 500 mm in a metric project instead of 500 feet.
+    /// </summary>
+    public string? Unit { get; set; }
+
     public JsonElement Value { get; set; }
 
     public bool HasValue { get; set; }

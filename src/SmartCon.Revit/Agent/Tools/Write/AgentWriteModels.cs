@@ -23,6 +23,13 @@ public sealed class WriteItemReport
 
     /// <summary>Per-section result for composite writes (copy_view_settings).</summary>
     public List<SectionReport>? Sections { get; set; }
+
+    /// <summary>
+    /// Where the same write is actually allowed, when it is blocked by a view
+    /// template: the template id. Lets the model retry in the same round instead
+    /// of spending a call to find the controller (A5).
+    /// </summary>
+    public List<long>? SuggestedViewIds { get; set; }
 }
 
 public sealed class SectionReport

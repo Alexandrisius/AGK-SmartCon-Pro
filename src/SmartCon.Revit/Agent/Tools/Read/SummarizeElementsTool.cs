@@ -78,7 +78,15 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         var sumParameter = AgentJson.GetString(args, "sumParameter");
 
         var query = new AgentElementQuery(doc);
-        var result = query.Execute(spec, MaxElementsForSummary, ct);
+        AgentQueryResult result;
+        try
+        {
+            result = query.Execute(spec, MaxElementsForSummary, ct);
+        }
+        catch (ArgumentException ex)
+        {
+            return ToolResult.Fail("invalid_unit", ex.Message);
+        }
         if (result.UnknownCategories.Count > 0)
         {
             return ToolResult.Fail(
@@ -130,21 +138,35 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
 
         if (groupBy == "parameter" && !groupParameterResolved && result.Elements.Count > 0)
         {
+            // The parameter may exist on the element TYPE while the caller asked for
+            // instance-only scope. Saying "not found" there is a lie and costs a retry
+            // loop (external run, A1).
+            var foundOnType = !spec.IncludeTypeParameters
+                              && AgentParameterResolver.Find(
+                                  doc, result.Elements[0], groupParameter!, true) is not null;
             var suggestions = ParameterNameSuggestions(doc, result.Elements[0], groupParameter!);
-            var message = "Parameter '" + groupParameter + "' was not found on the scanned " +
-                          result.Elements.Count + " element(s)." +
-                          (suggestions.Count > 0
-                              ? " Did you mean " + string.Join(
-                                  " or ", suggestions.Select(name => "'" + name + "'")) + "?"
-                              : string.Empty) +
-                          " Use get_element_details(parameterNameContains=...) to find the exact name.";
+            var message = foundOnType
+                ? "Parameter '" + groupParameter + "' exists on the element type, but " +
+                  "includeTypeParameters=false. Retry with includeTypeParameters=true."
+                : "Parameter '" + groupParameter + "' was not found on the scanned " +
+                  result.Elements.Count + " element(s)." +
+                  (suggestions.Count > 0
+                      ? " Did you mean " + string.Join(
+                          " or ", suggestions.Select(name => "'" + name + "'")) + "?"
+                      : string.Empty) +
+                  " Use get_element_details(parameterNameContains=...) to find the exact name.";
             var data = JsonSerializer.SerializeToElement(new
             {
                 unknownParameter = groupParameter,
+                foundOnTypes = foundOnType,
+                retryWith = foundOnType
+                    ? new { includeTypeParameters = true }
+                    : null,
                 suggestions,
                 scanned = result.Elements.Count
             });
-            return ToolResult.Fail("unknown_parameter", message, data: data);
+            return ToolResult.Fail(
+                foundOnType ? "parameter_on_type" : "unknown_parameter", message, data: data);
         }
 
         var includeZeroCount = AgentJson.GetBool(args, "includeZeroCount", false);
@@ -250,9 +272,16 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                     groupParameter!,
                     includeTypeParameters);
 
-                parameterFound = parameter is not null;
-                if (parameter is null || !parameter.HasValue)
-                    return "(empty)";
+                // Three different facts, three different labels: a missing
+                // parameter is a data/name problem, HasValue=false is a real
+                // "no value", and a blank string is an empty value. Collapsing
+                // them into "(empty)" made the model re-run the query.
+                if (parameter is null)
+                    return "(no parameter)";
+
+                parameterFound = true;
+                if (!parameter.HasValue)
+                    return "(no value)";
 
                 var value = parameter.StorageType == StorageType.String
                     ? parameter.AsString()
@@ -288,6 +317,9 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
 
         var limit = Math.Max(2, (requested.Length + 1) / 2);
         return names
+            // Never suggest the string the caller already passed: "Did you mean
+            // 'Классификация систем'?" for the same request is noise (A1).
+            .Where(name => !string.Equals(name, requested, StringComparison.OrdinalIgnoreCase))
             .Select(name => (
                 Name: name,
                 Distance: Distance(requested.ToLowerInvariant(), name.ToLowerInvariant())))

@@ -33,7 +33,9 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
             "parameterId, value, unit}]. Use it for the project-browser parameters (Назначение " +
             "вида, Раздел, ADSK_Имя вида в штампе) and any other view parameter. Read current " +
             "values with get_element_details (elementIds=[viewId]) or list_views " +
-            "(browserFolderParameters shows which parameters group the browser). A parameter " +
+            "(browserFolderParameters shows which parameters group the browser). A view template id " +
+            "is accepted too: a template is a View, so its own parameters are written directly. " +
+            "A parameter " +
             "controlled by a view template is refused with view_controlled_by_template: detach " +
             "the template first (apply_view_template with templateId=0). Dry run by default.",
         Risk = AgentToolRisk.Write,
@@ -112,6 +114,7 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
                     item.Reason = "Parameter '" + item.Name + "' is controlled by view template " +
                                   view.ViewTemplateId.GetValue() +
                                   "; detach the template first (apply_view_template with templateId=0).";
+                    item.SuggestedViewIds = new List<long> { view.ViewTemplateId.GetValue() };
                     outcome.Batch.Failed.Add(item);
                     failed++;
                     continue;
@@ -190,7 +193,9 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
             var name = AgentJson.GetString(item, "name");
             var parameterId = AgentJson.GetLong(item, "parameterId", 0);
             var value = AgentJson.GetString(item, "value");
-            if (string.IsNullOrWhiteSpace(name) && parameterId <= 0)
+            // Built-in parameter ids are negative (ElementId.InvalidElementId is -1),
+            // so 0 is the only "not provided" sentinel.
+            if (string.IsNullOrWhiteSpace(name) && parameterId == 0)
             {
                 outcome.Success = false;
                 outcome.ErrorCode = "invalid_arguments";
@@ -209,7 +214,7 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
             result.Add(new ViewParameterSpec
             {
                 Name = name,
-                ParameterId = parameterId > 0 ? parameterId : null,
+                ParameterId = parameterId != 0 ? parameterId : null,
                 Value = value,
                 Unit = AgentJson.GetString(item, "unit")
             });

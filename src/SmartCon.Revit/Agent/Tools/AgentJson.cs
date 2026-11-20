@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SmartCon.Revit.Agent.Tools;
@@ -8,7 +9,11 @@ internal static class AgentJson
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // Non-ASCII text (Cyrillic system names, view names) must reach the model as
+        // plain text: escaped \u0422 sequences cost extra rounds and were misread
+        // as different system names (external run, blocks A3).
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     /// <summary>
@@ -20,7 +25,8 @@ internal static class AgentJson
     private static readonly JsonSerializerOptions CardOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     private static readonly JsonSerializerOptions DeserializerOptions = new()

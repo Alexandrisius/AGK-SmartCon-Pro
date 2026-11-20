@@ -29,6 +29,9 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
             "worksets) plus the exact list of parameters controlled and not controlled by it. " +
             "Without fields and with compact=true (default) it returns a compact summary; pass " +
             "fields to request specific settings or compact=false for the full payload. " +
+            "fields=[\"settings\"] is also compact: the hidden-category and controlled-parameter " +
+            "lists are replaced by counts — ask for settings.hiddenCategories or " +
+            "controlledParameters explicitly to get the lists. " +
             "Use it to verify what will change when the template is applied to a view.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""templateId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,settings. Use settings.scale / settings.hiddenCategories for template values."",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""templateId""],""additionalProperties"":false}"
     };
@@ -64,13 +67,28 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
 
         if (!AgentJson.GetBool(args, "compact", true))
         {
-            var full = new { template = card, settings };
+            var full = new
+            {
+                kind = "template",
+                note = "settings describes the values stored in the template. " +
+                       "settings.hasTemplate=false and an absent settings.templateId are " +
+                       "expected: a template cannot use another template.",
+                template = card,
+                settings
+            };
             return ToolResult.Ok(
                 AgentJson.Serialize(full),
                 "Read the full settings of view template '" + view.Name + "'.");
         }
 
-        var summary = new { template = card, settings = AgentViewSettingsReader.CreateSummary(settings) };
+        var summary = new
+        {
+            kind = "template",
+            note = "settings describes the values stored in the template; " +
+                   "settings.hasTemplate=false is expected for a template.",
+            template = card,
+            settings = AgentViewSettingsReader.CreateSummary(settings)
+        };
         return ToolResult.Ok(
             Compact(summary),
             "Read a compact summary of view template '" + view.Name + "'. " + CompactHint);
@@ -122,12 +140,31 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
         var node = new JsonObject();
         if (includeAllSettings)
         {
-            node["settings"] = ToNode(settingsJson);
+            // "settings" is a compact projection: the two long lists are replaced by
+            // their counts and stay available as explicit fields (A6).
+            node["settings"] = CompactSettings(settingsJson);
         }
-        else if (projectSettingsFields.Count > 0)
+
+        if (projectSettingsFields.Count > 0)
         {
-            node["settings"] = ToNode(AgentCardProjection.Apply(
+            var explicitSettings = ToNode(AgentCardProjection.Apply(
                 settingsJson, projectSettingsFields, ignored));
+            if (includeAllSettings
+                && node["settings"] is JsonObject settingsNode
+                && explicitSettings is JsonObject explicitNode)
+            {
+                // fields=["settings","settings.hiddenCategories"] must keep the lists
+                // that the caller explicitly asked for.
+                foreach (var pair in explicitNode.ToList())
+                {
+                    explicitNode.Remove(pair.Key);
+                    settingsNode[pair.Key] = pair.Value;
+                }
+            }
+            else
+            {
+                node["settings"] = explicitSettings;
+            }
         }
 
         if (includeAllCard)
@@ -171,6 +208,37 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
 
     private static JsonNode? ToNode(JsonElement element) =>
         JsonNode.Parse(element.GetRawText());
+
+    /// <summary>
+    /// Replaces hiddenCategories / controlledParameters / nonControlledParameters with
+    /// their counts. Their lists made "fields=[\"settings\"]" ~30 KB per template
+    /// (external run, A6); request them explicitly when the values are needed.
+    /// </summary>
+    private static JsonNode? CompactSettings(JsonElement settingsJson)
+    {
+        if (JsonNode.Parse(settingsJson.GetRawText()) is not JsonObject node)
+            return null;
+
+        if (node["hiddenCategories"] is JsonArray hidden)
+        {
+            node["hiddenCategoryCount"] = hidden.Count;
+            node.Remove("hiddenCategories");
+        }
+
+        if (node["controlledParameters"] is JsonArray controlled)
+        {
+            node["controlledParameterCount"] = controlled.Count;
+            node.Remove("controlledParameters");
+        }
+
+        if (node["nonControlledParameters"] is JsonArray nonControlled)
+        {
+            node["nonControlledParameterCount"] = nonControlled.Count;
+            node.Remove("nonControlledParameters");
+        }
+
+        return node;
+    }
 
     private static JsonArray ToArray(IReadOnlyList<string> values)
     {

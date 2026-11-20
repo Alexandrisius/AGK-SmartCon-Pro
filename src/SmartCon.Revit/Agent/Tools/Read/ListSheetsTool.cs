@@ -21,7 +21,8 @@ public sealed class ListSheetsTool : AgentReadToolBase
         Description =
             "Lists sheets (листы) without opening them. Filters: number substring, name substring, " +
             "excludePlaceholders. Returns sheet id, number, name, size in millimetres, placed view " +
-            "count, placed schedule count and isPlaceholder. Number matching also covers the " +
+            "count, placed schedule count (title-block revision schedules are excluded and " +
+            "reported as revisionScheduleCount) and isPlaceholder. Number matching also covers the " +
             "visible glyphs: numberVisual/hasInvisibleCharacters/numberCodePoints expose numbers " +
             "that differ only by invisible code units, and duplicateVisualNumber marks visually " +
             "identical numbers. Paged: limit (default 200, max 500), offset, returned, nextOffset, " +
@@ -29,7 +30,7 @@ public sealed class ListSheetsTool : AgentReadToolBase
             "properties; unknown names are reported in ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""numberContains"":{""type"":""string""},""nameContains"":{""type"":""string""},""excludePlaceholders"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: sheetId,id,number|sheetNumber,name,uniqueId,numberVisual,hasInvisibleCharacters,numberCodePoints,duplicateVisualNumber,widthMm,heightMm,viewCount,scheduleCount,isPlaceholder. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""numberContains"":{""type"":""string""},""nameContains"":{""type"":""string""},""excludePlaceholders"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: sheetId,id,number|sheetNumber,name,uniqueId,numberVisual,hasInvisibleCharacters,numberCodePoints,duplicateVisualNumber,widthMm,heightMm,viewCount,scheduleCount,revisionScheduleCount,isPlaceholder. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

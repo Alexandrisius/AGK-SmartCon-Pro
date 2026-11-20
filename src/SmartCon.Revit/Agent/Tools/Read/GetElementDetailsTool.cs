@@ -33,8 +33,9 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             "parameterClasses=[\"family\"] to include them. instanceParametersTotal/Returned/" +
             "Truncated and parametersTotal/Returned/Truncated describe the caps (the cap applies " +
             "per scope). readOnlyReason is set for parameters the agent cannot write. Narrow the " +
-            "payload with parameterNames, parameterNameContains, onlyNonEmpty or excludeDerived.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""parameterClasses"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""system"",""shared"",""family""]}},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":false},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
+            "payload with parameterNames, parameterNameContains, excludeDerived; onlyNonEmpty " +
+            "defaults to true (empty values are hidden, pass false to list them).",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""parameterClasses"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""system"",""shared"",""family""]}},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":true},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -77,7 +78,7 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         }
 
         var includeTypeParameters = AgentJson.GetBool(args, "includeTypeParameters", false);
-        var onlyNonEmpty = AgentJson.GetBool(args, "onlyNonEmpty", false);
+        var onlyNonEmpty = AgentJson.GetBool(args, "onlyNonEmpty", true);
         var excludeDerived = AgentJson.GetBool(args, "excludeDerived", false);
         var parameterNameContains = AgentJson.GetString(args, "parameterNameContains");
         var maxParameters = Math.Max(

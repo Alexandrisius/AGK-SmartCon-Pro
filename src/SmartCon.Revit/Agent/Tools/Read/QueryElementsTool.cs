@@ -88,7 +88,16 @@ public sealed class QueryElementsTool : AgentReadToolBase
         }
 
         var query = new AgentElementQuery(doc);
-        var result = query.Execute(spec, spec.Offset + spec.Limit, ct);
+        AgentQueryResult result;
+        try
+        {
+            result = query.Execute(spec, spec.Offset + spec.Limit, ct);
+        }
+        catch (ArgumentException ex)
+        {
+            // Wrong-dimension or unknown unit in a numeric condition.
+            return ToolResult.Fail("invalid_unit", ex.Message);
+        }
 
         if (result.UnknownCategories.Count > 0)
         {

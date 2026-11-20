@@ -166,6 +166,13 @@ internal static class AgentParameterWriteHelper
                     return false;
                 }
 
+                if (!TryValidateUnit(parameter, unit!, out var unitError))
+                {
+                    errorCode = "invalid_unit";
+                    reason = unitError!;
+                    return false;
+                }
+
                 var (parsed, ok) = ParseDouble(text, unit);
                 if (!ok)
                 {
@@ -368,6 +375,56 @@ internal static class AgentParameterWriteHelper
         return false;
     }
 
+    /// <summary>
+    /// Rejects a unit of the wrong dimension (m2 for Length) and a physical unit on a
+    /// dimensionless parameter. The conversion itself stays in ParseDouble.
+    /// </summary>
+    private static bool TryValidateUnit(Parameter parameter, string unit, out string? error)
+    {
+        error = null;
+        var requested = unit.Trim();
+        if (string.Equals(requested, "raw", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(requested, "internal", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!AgentParameterValue.TryGetUnit(requested, out var unitId) || unitId is null)
+        {
+            error = "Unknown unit '" + requested + "'. Use mm, cm, m, ft, in, m2, m3 or raw.";
+            return false;
+        }
+
+        ForgeTypeId? spec = null;
+        try
+        {
+            spec = parameter.Definition?.GetDataType();
+        }
+        catch (Exception)
+        {
+            // No spec available: the dimension cannot be checked here.
+        }
+
+        if (spec is null)
+            return true;
+
+        if (!UnitUtils.IsMeasurableSpec(spec))
+        {
+            error = "Parameter '" + (parameter.Definition?.Name ?? "?") +
+                    "' is dimensionless; omit unit or pass unit=\"raw\".";
+            return false;
+        }
+
+        if (!UnitUtils.IsValidUnit(spec, unitId))
+        {
+            error = "Unit '" + requested + "' does not match parameter '" +
+                    (parameter.Definition?.Name ?? "?") + "' (spec " + spec.TypeId + ").";
+            return false;
+        }
+
+        return true;
+    }
+
     private static (double Value, bool Ok) ParseDouble(string text, string? unit)
     {
         if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
@@ -390,9 +447,16 @@ internal static class AgentParameterWriteHelper
                 return (UnitUtils.ConvertToInternalUnits(number, UnitTypeId.Meters), true);
 
             case "ft":
+            case "foot":
+            case "feet":
             case "raw":
             case "internal":
                 return (number, true);
+
+            case "in":
+            case "inch":
+            case "inches":
+                return (UnitUtils.ConvertToInternalUnits(number, UnitTypeId.Inches), true);
 
             case "m2":
             case "sqm":

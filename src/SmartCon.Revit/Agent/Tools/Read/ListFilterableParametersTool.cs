@@ -38,7 +38,7 @@ public sealed class ListFilterableParametersTool : AgentReadToolBase
             "parameterName to check one parameter before create_view_filter/set_filter_rules; " +
             "when it is missing for some categories the row reports them and the write tools " +
             "return parameter_not_supported_for_categories.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categoryIds"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""integer""}},""categories"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""string""}},""parameterName"":{""type"":""string""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""required"":[""categoryIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""categoryIds"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""integer""}},""categories"":{""type"":""array"",""maxItems"":10,""description"":""OST_ names or localized category names; alias for categoryIds"",""items"":{""type"":""string""}},""parameterName"":{""type"":""string""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -358,22 +358,55 @@ public sealed class ListFilterableParametersTool : AgentReadToolBase
 
             foreach (var sample in samples)
             {
+                Collect(sample);
                 try
                 {
-                    foreach (Parameter parameter in sample.Parameters)
+                    var typeId = sample.GetTypeId();
+                    if (typeId != ElementId.InvalidElementId
+                        && doc.GetElement(typeId) is Element type)
                     {
-                        var id = parameter.Id.GetValue();
-                        if (!result.ContainsKey(id))
-                            result[id] = parameter.StorageType;
+                        Collect(type);
                     }
                 }
                 catch (Exception)
                 {
-                    // A sample without readable parameters is skipped.
+                    // A sample without a readable type is skipped.
                 }
+            }
+
+            // Type-only categories: the parameter may exist only on the type.
+            try
+            {
+                var typeOnly = new FilteredElementCollector(doc)
+                    .OfCategoryId(categoryId)
+                    .WhereElementIsElementType()
+                    .FirstElement();
+                if (typeOnly is not null)
+                    Collect(typeOnly);
+            }
+            catch (Exception)
+            {
+                // A category whose types cannot be collected is skipped.
             }
         }
 
         return result;
+
+        void Collect(Element owner)
+        {
+            try
+            {
+                foreach (Parameter parameter in owner.Parameters)
+                {
+                    var id = parameter.Id.GetValue();
+                    if (!result.ContainsKey(id))
+                        result[id] = parameter.StorageType;
+                }
+            }
+            catch (Exception)
+            {
+                // A sample without readable parameters is skipped.
+            }
+        }
     }
 }

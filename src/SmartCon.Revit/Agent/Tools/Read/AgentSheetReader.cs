@@ -32,7 +32,11 @@ internal sealed class SheetCard
 
     public int ViewCount { get; set; }
 
+    /// <summary>Placed schedules that carry content (title-block revision schedules are excluded).</summary>
     public int ScheduleCount { get; set; }
+
+    /// <summary>Title-block revision schedules: present on every sheet, not sheet content.</summary>
+    public int RevisionScheduleCount { get; set; }
 
     public bool IsPlaceholder { get; set; }
 }
@@ -56,9 +60,14 @@ internal static class AgentSheetReader
         return sheets;
     }
 
-    internal static IReadOnlyDictionary<long, int> CountPlacedSchedules(Document doc)
+    /// <summary>
+    /// Placed schedules per sheet. Title-block revision schedules are counted
+    /// separately: every sheet with a title block has at least one, so counting
+    /// them as content made an empty sheet look filled.
+    /// </summary>
+    internal static IReadOnlyDictionary<long, ScheduleCounts> CountPlacedSchedules(Document doc)
     {
-        var counts = new Dictionary<long, int>();
+        var counts = new Dictionary<long, ScheduleCounts>();
         foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(ScheduleSheetInstance)))
         {
             if (element is not ScheduleSheetInstance instance)
@@ -70,10 +79,21 @@ internal static class AgentSheetReader
 
             var key = owner.GetValue();
             counts.TryGetValue(key, out var current);
-            counts[key] = current + 1;
+            if (instance.IsTitleblockRevisionSchedule)
+                current.Revisions++;
+            else
+                current.Schedules++;
+            counts[key] = current;
         }
 
         return counts;
+    }
+
+    internal struct ScheduleCounts
+    {
+        public int Schedules { get; set; }
+
+        public int Revisions { get; set; }
     }
 
     /// <summary>
@@ -103,7 +123,7 @@ internal static class AgentSheetReader
 
     internal static SheetCard CreateCard(
         ViewSheet sheet,
-        IReadOnlyDictionary<long, int> scheduleCounts,
+        IReadOnlyDictionary<long, ScheduleCounts> scheduleCounts,
         ISet<string>? visualDuplicates = null)
     {
         double? widthMm = null;
@@ -147,7 +167,8 @@ internal static class AgentSheetReader
             WidthMm = widthMm,
             HeightMm = heightMm,
             ViewCount = sheet.GetAllPlacedViews().Count,
-            ScheduleCount = scheduleCount,
+            ScheduleCount = scheduleCount.Schedules,
+            RevisionScheduleCount = scheduleCount.Revisions,
             IsPlaceholder = sheet.IsPlaceholder
         };
     }

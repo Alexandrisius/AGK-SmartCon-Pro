@@ -67,7 +67,7 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
     private const string ToolCatalogV2Section = @"## Tool catalog
 - Only the core tools plus a bounded set of recent and relevant tools are available in each request.
 - If the tool you need is not available, call find_tools(query, pack?, context) to discover it; find_tools with an empty query lists the whole catalog (name, description, pack) without schemas, paged with offset/nextOffset.
-- find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). The requested tools are callable from the next round; load_tool_pack always reports which tools are already available in the current request.
+- find_tools only returns cards: to call a discovered tool, enable it with load_tool_pack(pack=...) or load_tool_pack(tools=[...]). Pass load_tool_pack(packs=[...]) to enable several packs at once — a release/audit scenario usually needs views + view_settings + filters + sheets in one round, not four calls. The requested tools are callable from the next round; load_tool_pack always reports which tools are already available in the current request.
 - Never call a tool that is not in the current request; it will fail with unknown_tool.
 - Do not call load_tool_pack when find_tools or a previous load_tool_pack already reported the tool as alreadyAvailable/alreadyLoaded: it is callable now, loading it again only repeats the round trip.
 - load_tool_pack may return a pack skill (markdown operating manual). It is sent once per conversation; do not ask for it again.
@@ -77,6 +77,7 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 - A tool that returns success=false may still have changed the model; never claim ""nothing changed"" from the error text alone. Re-read the object (get_filter_details / get_view_settings / get_element_details / list_views) and compare it with the state you saw before the call.
 - When the result carries undoSupported=false, say plainly that undo_last will not revert it and name the call that reverts it instead (the result carries previousRules/previousCategories for that).
 - A result with errorCode=no_changes is a success: the requested state was already in place. Do not retry it.
+- undo_last reverts change sets recorded by write tools (rename_views, set_parameters, set_view_visibility, …). Changes applied by start_job are NOT a change set: revert them with rollback_job(jobId), and name that call in the report. Never promise ""undo_last reverts everything"" after a job.
 
 ## View filters
 - A view filter has TWO independent Revit UI checkboxes: the filter itself (enabled/disabled) and «Видимость» (matching elements hidden or shown). hide = filter enabled + visibility off; show = filter enabled + visibility on; none = filter disabled (elements visible again).

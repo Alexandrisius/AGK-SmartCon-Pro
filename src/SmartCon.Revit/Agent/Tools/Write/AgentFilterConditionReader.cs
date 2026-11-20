@@ -33,7 +33,8 @@ internal static class AgentFilterConditionReader
             {
                 Field = AgentJson.GetString(item, "field"),
                 Parameter = AgentJson.GetString(item, "parameter"),
-                Op = AgentJson.GetString(item, "op") ?? "eq"
+                Op = AgentJson.GetString(item, "op") ?? "eq",
+                Unit = AgentJson.GetString(item, "unit")
             };
 
             if (string.IsNullOrWhiteSpace(spec.Parameter)

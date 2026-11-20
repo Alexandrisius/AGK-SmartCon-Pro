@@ -73,6 +73,8 @@ public sealed class LevelCard
 
 public sealed class CategoryCard
 {
+    public long CategoryId { get; init; }
+
     public required string Name { get; init; }
 
     public string? DisplayName { get; init; }
@@ -195,6 +197,15 @@ public sealed class ViewSettings
     /// <summary>Total hidden categories, present even when the list is omitted.</summary>
     public int HiddenCategoryCount { get; init; }
 
+    /// <summary>
+    /// How many of the hidden categories Revit still allows to toggle on this view
+    /// (CanCategoryBeHidden). The remainder are hidden but cannot be changed here:
+    /// the V/G parameter may be controlled by the view template, or the category
+    /// cannot be hidden in this view type at all. The counter never claims which
+    /// of the two reasons applies.
+    /// </summary>
+    public int HiddenCategoryEditableCount { get; init; }
+
     public IReadOnlyList<string> HiddenWorksets { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> ControlledParameters { get; init; } = Array.Empty<string>();
@@ -238,6 +249,13 @@ public sealed class ViewSettingsSummary
 
     public int HiddenCategoryCount { get; init; }
 
+    /// <summary>
+    /// Hidden categories Revit still allows to toggle on this view. The rest are
+    /// hidden but not editable here (template-controlled V/G or a view-type
+    /// limitation); the count does not attribute the reason.
+    /// </summary>
+    public int HiddenCategoryEditableCount { get; init; }
+
     public int HiddenWorksetCount { get; init; }
 
     public int ControlledParameterCount { get; init; }
@@ -247,6 +265,9 @@ public sealed class ViewSettingsSummary
 
 public sealed class ViewTemplateCard
 {
+    /// <summary>Marks the payload as a view template, not a view.</summary>
+    public string Kind { get; init; } = "template";
+
     public long TemplateId { get; init; }
 
     public required string Name { get; init; }

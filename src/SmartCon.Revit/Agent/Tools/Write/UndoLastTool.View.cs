@@ -1,0 +1,122 @@
+using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Revit.Agent.Query;
+
+namespace SmartCon.Revit.Agent.Tools.Write;
+
+public sealed partial class UndoLastTool
+{
+    private static (bool, string?, string?) RevertViewRange(View view, ChangeItem item, bool force)
+    {
+        if (view is not ViewPlan plan)
+            return (false, "unsupported_view_type", "View range applies to plan views only.");
+
+        var spec = AgentViewWriteHelper.Deserialize<ViewRangeSpec>(item.OldValue);
+        if (spec is null || spec.IsEmpty)
+            return (false, null, "The recorded view range is empty — nothing to restore.");
+
+        var current = AgentViewWriteHelper.Serialize(
+            AgentViewWriteHelper.ReadViewRange(view) ?? new ViewRangeSpec());
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The view range already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
+        {
+            return (false, "undo_conflict",
+                "The view range of '" + view.Name +
+                "' changed after the operation (conflict).");
+        }
+
+        AgentViewWriteHelper.ApplyViewRange(plan, spec);
+        return (true, null, null);
+    }
+
+    private static (bool, string?, string?) RevertCrop(View view, ChangeItem item, bool force)
+    {
+        var state = AgentViewWriteHelper.Deserialize<ViewCropState>(item.OldValue);
+        if (state is null)
+            return (false, null, "The recorded crop state is empty — nothing to restore.");
+
+        var current = AgentViewWriteHelper.Serialize(AgentViewWriteHelper.ReadCropState(view));
+        if (string.Equals(current, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The crop region already matches the recorded previous state.");
+
+        if (!force && !string.Equals(current, item.NewValue, StringComparison.Ordinal))
+        {
+            return (false, "undo_conflict",
+                "The crop region of '" + view.Name + "' changed after the operation (conflict).");
+        }
+
+        var warnings = new List<string>();
+        AgentViewWriteHelper.ApplyCropState(view, state, warnings);
+        return (true, null, null);
+    }
+
+    private static (bool, string?, string?) RevertVisibility(
+        Document doc,
+        View view,
+        ChangeItem item,
+        bool force)
+    {
+        var state = AgentViewWriteHelper.Deserialize<ViewVisibilityState>(item.OldValue);
+        if (state is null)
+            return (false, null, "The recorded visibility state is empty — nothing to restore.");
+
+        var current = AgentViewWriteHelper.ReadVisibility(doc, view);
+        var recordedNew = AgentViewWriteHelper.Deserialize<ViewVisibilityState>(item.NewValue);
+
+        // Visibility is stored as the full hidden set, but only the categories the
+        // view can toggle are written back. Restricting the conflict check to that
+        // same subset keeps a template edit (or a category the API cannot hide in
+        // this view type) from reporting a conflict on a view nobody touched.
+        var toggleable = CollectToggleableCategories(doc, view);
+        var currentFiltered = Filter(current.HiddenCategoryIds, toggleable);
+        var previousFiltered = Filter(state.HiddenCategoryIds, toggleable);
+
+        if (SameSequence(currentFiltered, previousFiltered))
+            return (false, null, "Visibility already matches the recorded previous state.");
+
+        if (!force && recordedNew is not null)
+        {
+            var newFiltered = Filter(recordedNew.HiddenCategoryIds, toggleable);
+            if (!SameSequence(currentFiltered, newFiltered))
+            {
+                return (false, "undo_conflict",
+                    "Visibility of '" + view.Name + "' changed after the operation (conflict).");
+            }
+        }
+
+        AgentViewWriteHelper.ApplyVisibilityState(doc, view, state);
+        return (true, null, null);
+    }
+
+    private static HashSet<long> CollectToggleableCategories(Document doc, View view)
+    {
+        var toggleable = new HashSet<long>();
+        foreach (Category category in doc.Settings.Categories)
+        {
+            if (AgentViewSettingsReader.CanToggleCategory(view, category.Id.GetValue()))
+                toggleable.Add(category.Id.GetValue());
+        }
+
+        return toggleable;
+    }
+
+    private static List<long> Filter(IEnumerable<long> ids, HashSet<long> allowed) =>
+        ids.Where(allowed.Contains).OrderBy(id => id).ToList();
+
+    private static bool SameSequence(IReadOnlyList<long> left, IReadOnlyList<long> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (left[index] != right[index])
+                return false;
+        }
+
+        return true;
+    }
+}

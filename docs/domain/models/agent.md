@@ -275,6 +275,20 @@ JSON-схемы тулов/параметров (источник для `AgentT
 
 Карточка вида для live-поиска.
 
+## ViewSettings / ViewSettingsSummary / ViewTemplateCard
+
+`Models/Agent/ViewCard.cs` — снимок настроек вида и шаблона.
+
+- `HiddenCategoryCount` — все скрытые категории вида (ровно то, что показывает
+  `get_view_settings`); `HiddenCategoryEditableCount` — сколько из них Revit ещё разрешает
+  переключать на этом виде (`CanCategoryBeHidden`). Остальные скрыты, но здесь не
+  редактируются: V/G может управляться шаблоном, либо категорию нельзя скрывать в этом
+  типе вида. Счётчик не приписывает причину. Writer считает по тому же правилу, поэтому
+  diff записи сходится с чтением.
+- `ViewTemplateCard.Kind = "template"` помечает ответ `get_view_template_details`.
+  Вложенный `settings` описывает значения самого шаблона: `hasTemplate=false` и
+  отсутствующий `templateId` там ожидаемы — шаблон не может использовать другой шаблон.
+
 ## ElementSummaryGroup
 
 Группа сводки элементов (`summarize_parameter_values`, topN/excludeInternal).

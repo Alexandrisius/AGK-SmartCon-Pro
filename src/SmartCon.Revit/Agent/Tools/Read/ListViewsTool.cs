@@ -20,7 +20,7 @@ public sealed class ListViewsTool : AgentReadToolBase
     {
         Name = "list_views",
         Description =
-            "Lists project views (not sheets and not view templates by default). " +
+            "Lists project views (not sheets and not view templates by default). totalAll/totalTemplates are always reported next to total, so includeTemplates does not change the inventory silently. " +
             "Filters: view types (FloorPlan, CeilingPlan, Section, ThreeD, Elevation, " +
             "DraftingView, Legend, AreaPlan, StructuralPlan, Detail), level ids, name substring, " +
             "browser folder path substring. Returns view id, name, type, level, template, " +
@@ -60,14 +60,12 @@ public sealed class ListViewsTool : AgentReadToolBase
             // Older projects or a broken browser organization: folder data is optional.
         }
 
-        var matched = new List<ViewCard>();
+        var allMatched = new List<ViewCard>();
         foreach (var view in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
         {
             ct.ThrowIfCancellationRequested();
 
             if (!IsSupportedView(view))
-                continue;
-            if (view.IsTemplate && !includeTemplates)
                 continue;
             if (!MatchesType(view, requestedTypes))
                 continue;
@@ -80,8 +78,16 @@ public sealed class ListViewsTool : AgentReadToolBase
             if (!MatchesFolder(card, folders))
                 continue;
 
-            matched.Add(card);
+            allMatched.Add(card);
         }
+
+        // includeTemplates changes total (117 vs 72) and that trap cost a round:
+        // both numbers are always reported (external run, B3).
+        var totalAll = allMatched.Count;
+        var totalTemplates = allMatched.Count(card => card.IsTemplate);
+        var matched = includeTemplates
+            ? allMatched
+            : allMatched.Where(card => !card.IsTemplate).ToList();
 
         matched.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
         var total = matched.Count;
@@ -91,6 +97,8 @@ public sealed class ListViewsTool : AgentReadToolBase
             var summaryPayload = new
             {
                 total,
+                totalAll,
+                totalTemplates,
                 summaryOnly = true,
                 browserOrganization = browserOrganization?.Name,
                 byType = GroupBy(matched, view => view.ViewType),
@@ -128,6 +136,8 @@ public sealed class ListViewsTool : AgentReadToolBase
             var projectedPayload = new
             {
                 total,
+                totalAll,
+                totalTemplates,
                 returned = projected.Count,
                 truncated = total > projected.Count,
                 browserOrganization = browserOrganization?.Name,
@@ -148,6 +158,8 @@ public sealed class ListViewsTool : AgentReadToolBase
         var payload = new
         {
             total,
+            totalAll,
+            totalTemplates,
             returned = views.Count,
             truncated = total > views.Count,
             browserOrganization = browserOrganization?.Name,
