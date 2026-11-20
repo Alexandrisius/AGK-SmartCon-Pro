@@ -1,4 +1,5 @@
 using SmartCon.Agent.Services.Llm;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.Agent.Services.Decisions;
 
@@ -150,7 +151,12 @@ public sealed class AgentDecisionsSettings
         if (!string.IsNullOrWhiteSpace(ApiKey))
             values["SMARTCON_DECIDER_API_KEY"] = ApiKey;
 
-        AgentEnvFile.Save(values);
+        if (!AgentEnvFile.Save(values))
+        {
+            SmartConLogger.Warn(
+                "Decision settings were not persisted to secrets.env " +
+                "[Action: check write access to %APPDATA%\\AGK\\SmartCon\\Agent]");
+        }
     }
 
     public static AgentDecisionsSettings Load()

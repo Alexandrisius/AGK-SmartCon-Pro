@@ -1322,7 +1322,8 @@
                                  Style="{DynamicResource CompactTextBox}"/>
 
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKey}" Style="{StaticResource SettingsLabel}"/>
-                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
+                                     uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Height="28"
                                      Style="{DynamicResource CompactPasswordBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
@@ -1345,10 +1346,18 @@
                                   Style="{DynamicResource CompactComboBox}"/>
 
                         <TextBlock Text="{loc:Loc Agent_Settings_DecisionApiKey}" Style="{StaticResource SettingsLabel}"/>
-                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsDecisionApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
+                                     uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsDecisionApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Height="28"
                                      Style="{DynamicResource CompactPasswordBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
+
+                        <TextBlock Text="{Binding SettingsError}"
+                                   Visibility="{Binding HasSettingsError, Converter={StaticResource BoolToVis}}"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource DangerBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="2,8,0,0"/>
 
                         <Grid Margin="0,16,0,0">
                             <Grid.ColumnDefinitions>

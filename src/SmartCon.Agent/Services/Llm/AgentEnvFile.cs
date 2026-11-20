@@ -50,7 +50,7 @@ internal static class AgentEnvFile
         return result;
     }
 
-    internal static void Save(IReadOnlyDictionary<string, string> values)
+    internal static bool Save(IReadOnlyDictionary<string, string> values)
     {
         try
         {
@@ -71,12 +71,14 @@ internal static class AgentEnvFile
                 lines.Add(pair.Key + "=" + pair.Value);
 
             File.WriteAllLines(path, lines);
+            return true;
         }
         catch (Exception ex)
         {
             SmartCon.Core.Logging.SmartConLogger.Warn(
                 "AgentEnvFile.Save failed: " + ex.GetType().Name + ": " + ex.Message +
                 " [Action: check write access to %APPDATA%\\AGK\\SmartCon\\Agent]");
+            return false;
         }
     }
 }

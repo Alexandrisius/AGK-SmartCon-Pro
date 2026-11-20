@@ -19,6 +19,9 @@ public sealed class AgentLocalizationTests
     [InlineData("Agent_Risk_Discard")]
     [InlineData("Agent_Settings_DecisionModel")]
     [InlineData("Agent_Settings_DecisionHint")]
+    [InlineData("Agent_Settings_KeyRequired")]
+    [InlineData("Agent_Settings_DecisionKeyRequired")]
+    [InlineData("Agent_Settings_SaveFailed")]
     [InlineData("Agent_Decision_Off")]
     public void ApprovalAndRiskKeys_HaveRuAndEnText(string key)
     {

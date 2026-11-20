@@ -171,7 +171,7 @@ public sealed class AgentLlmSettings
         return values.TryGetValue(keyName, out var value) ? value.Trim() : string.Empty;
     }
 
-    public void Save()
+    public bool Save()
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -190,7 +190,7 @@ public sealed class AgentLlmSettings
             values["SMARTCON_OPENROUTER_BASE_URL"] = BaseUrl;
         }
 
-        AgentEnvFile.Save(values);
+        return AgentEnvFile.Save(values);
     }
 
     private static double ParseDouble(string? value, double fallback) =>

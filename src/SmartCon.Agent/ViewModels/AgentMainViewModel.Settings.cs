@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
+using SmartCon.Core.Logging;
 
 namespace SmartCon.Agent.ViewModels;
 
@@ -20,6 +21,12 @@ public sealed partial class AgentMainViewModel
             ["perplexity"] = new[] { AgentDecisionsSettings.DefaultPerplexityModel },
             ["typesafe"] = new[] { AgentDecisionsSettings.DefaultTypeSafeModel }
         };
+
+    private readonly Dictionary<string, string> _chatKeyDrafts =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, string> _decisionKeyDrafts =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<string> ProviderOptions { get; } = new[] { "openrouter", "opencode-go" };
 
@@ -49,17 +56,32 @@ public sealed partial class AgentMainViewModel
     private string _settingsDecisionApiKeyInput = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSettingsError))]
+    private string _settingsError = string.Empty;
+
+    [ObservableProperty]
     private AgentDecisionModelOption? _selectedDecisionModel;
+
+    public bool HasSettingsError => !string.IsNullOrWhiteSpace(SettingsError);
 
     [RelayCommand]
     private void OpenSettings()
     {
+        _chatKeyDrafts.Clear();
+        _decisionKeyDrafts.Clear();
+        SettingsError = string.Empty;
+
         SettingsProvider = _settings.Provider;
         SettingsModel = _settings.Model;
         SettingsApiKeyInput = _settings.ApiKey;
+        _chatKeyDrafts[NormalizeChatProvider(SettingsProvider)] = SettingsApiKeyInput;
+
         SettingsDecisionProvider = _decisionsSettings.Provider;
         RebuildDecisionOptions();
         SettingsDecisionApiKeyInput = _decisionsSettings.ApiKey;
+        _decisionKeyDrafts[NormalizeDecisionProvider(SettingsDecisionProvider)] =
+            SettingsDecisionApiKeyInput;
+
         IsSettingsOpen = true;
     }
 
@@ -68,22 +90,71 @@ public sealed partial class AgentMainViewModel
     {
         SettingsApiKeyInput = string.Empty;
         SettingsDecisionApiKeyInput = string.Empty;
+        _chatKeyDrafts.Clear();
+        _decisionKeyDrafts.Clear();
+        SettingsError = string.Empty;
         IsSettingsOpen = false;
     }
 
     [RelayCommand]
     private void SaveSettings()
     {
-        _settings.Apply(SettingsProvider, SettingsModel, SettingsApiKeyInput);
-        _settings.Save();
+        using var _scope = SmartConLogger.BeginScope("Agent", ("Method", nameof(SaveSettings)));
+
+        var chatProvider = NormalizeChatProvider(SettingsProvider);
+        var chatKey = ResolveChatKey(chatProvider);
+        if (string.IsNullOrWhiteSpace(chatKey))
+        {
+            SettingsError = S(
+                "Agent_Settings_KeyRequired",
+                "Укажите API-ключ провайдера — без него агент не сможет отправить запрос.");
+            SmartConLogger.Warn(
+                "Agent settings save blocked: no API key for provider '" + chatProvider + "' " +
+                "[Action: enter the provider key in the agent settings]");
+            return;
+        }
+
+        var decisionProvider = NormalizeDecisionProvider(SettingsDecisionProvider);
+        var decisionEnabled = !string.IsNullOrWhiteSpace(SelectedDecisionModel?.Value);
+        var decisionKey = ResolveDecisionKey(decisionProvider, chatProvider, chatKey);
+        if (decisionEnabled && string.IsNullOrWhiteSpace(decisionKey))
+        {
+            SettingsError = S(
+                "Agent_Settings_DecisionKeyRequired",
+                "Для выбранной модели поиска инструментов нужен API-ключ " +
+                "или выберите «Не использовать».");
+            SmartConLogger.Warn(
+                "Agent settings save blocked: decision model '" + SelectedDecisionModel?.Value +
+                "' has no API key for provider '" + decisionProvider + "' " +
+                "[Action: enter the decision key or turn the decision model off]");
+            return;
+        }
+
+        _settings.Apply(chatProvider, SettingsModel, chatKey);
+        if (!_settings.Save())
+        {
+            SettingsError = S(
+                "Agent_Settings_SaveFailed",
+                "Не удалось записать ключи в профиль (%APPDATA%\\AGK\\SmartCon\\Agent). " +
+                "Проверьте доступ к папке и повторите сохранение.");
+            SmartConLogger.Warn(
+                "Agent settings save failed: secrets.env is not writable " +
+                "(provider='" + chatProvider + "') " +
+                "[Action: check write access to %APPDATA%\\AGK\\SmartCon\\Agent and retry]");
+            return;
+        }
+
         _decisionsSettings.Apply(
-            SettingsDecisionProvider,
+            decisionProvider,
             SelectedDecisionModel?.Value,
-            SettingsDecisionApiKeyInput);
+            decisionEnabled ? decisionKey : null);
 
         _hasApiKey = _settings.HasApiKey;
         SettingsApiKeyInput = string.Empty;
         SettingsDecisionApiKeyInput = string.Empty;
+        _chatKeyDrafts.Clear();
+        _decisionKeyDrafts.Clear();
+        SettingsError = string.Empty;
         IsSettingsOpen = false;
 
         OnPropertyChanged(nameof(HasApiKey));
@@ -93,22 +164,97 @@ public sealed partial class AgentMainViewModel
 
         StatusText = S("Agent_Settings_Saved", "Настройки сохранены");
         HasError = false;
+
+        SmartConLogger.Info(
+            "Agent settings saved: provider=" + _settings.Provider +
+            ", model=" + _settings.Model +
+            ", hasChatKey=" + _settings.HasApiKey +
+            ", decisionEnabled=" + _decisionsSettings.Enabled +
+            ", hasDecisionKey=" + _decisionsSettings.HasApiKey);
     }
 
-    partial void OnSettingsProviderChanged(string value)
-    {
-        if (IsSettingsOpen)
-            SettingsApiKeyInput = AgentLlmSettings.GetStoredKeyFor(value);
-    }
-
-    partial void OnSettingsDecisionProviderChanged(string value)
+    partial void OnSettingsProviderChanged(string? oldValue, string newValue)
     {
         if (!IsSettingsOpen)
             return;
 
-        SettingsDecisionApiKeyInput = AgentDecisionsSettings.GetStoredKeyFor(value);
+        if (!string.IsNullOrWhiteSpace(oldValue))
+            _chatKeyDrafts[NormalizeChatProvider(oldValue)] = SettingsApiKeyInput;
+
+        var provider = NormalizeChatProvider(newValue);
+        SettingsApiKeyInput = _chatKeyDrafts.TryGetValue(provider, out var draft)
+            ? draft
+            : AgentLlmSettings.GetStoredKeyFor(provider);
+
+        // Follow the provider default until the user edits the model by hand:
+        // switching OpenRouter <-> OpenCode Go otherwise keeps an id the new
+        // provider does not know.
+        if (string.IsNullOrWhiteSpace(SettingsModel)
+            || string.Equals(
+                SettingsModel.Trim(),
+                AgentLlmSettings.DefaultModelFor(oldValue),
+                StringComparison.Ordinal))
+        {
+            SettingsModel = AgentLlmSettings.DefaultModelFor(provider);
+        }
+
+        SettingsError = string.Empty;
+    }
+
+    partial void OnSettingsDecisionProviderChanged(string? oldValue, string newValue)
+    {
+        if (!IsSettingsOpen)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(oldValue))
+        {
+            _decisionKeyDrafts[NormalizeDecisionProvider(oldValue)] =
+                SettingsDecisionApiKeyInput;
+        }
+
+        var provider = NormalizeDecisionProvider(newValue);
+        SettingsDecisionApiKeyInput = _decisionKeyDrafts.TryGetValue(provider, out var draft)
+            ? draft
+            : AgentDecisionsSettings.GetStoredKeyFor(provider);
+        SettingsError = string.Empty;
         RebuildDecisionOptions();
     }
+
+    partial void OnSettingsApiKeyInputChanged(string value) => SettingsError = string.Empty;
+
+    partial void OnSettingsDecisionApiKeyInputChanged(string value) =>
+        SettingsError = string.Empty;
+
+    private string ResolveChatKey(string provider) =>
+        !string.IsNullOrWhiteSpace(SettingsApiKeyInput)
+            ? SettingsApiKeyInput.Trim()
+            : AgentLlmSettings.GetStoredKeyFor(provider);
+
+    private string ResolveDecisionKey(
+        string decisionProvider,
+        string chatProvider,
+        string chatKey)
+    {
+        if (!string.IsNullOrWhiteSpace(SettingsDecisionApiKeyInput))
+            return SettingsDecisionApiKeyInput.Trim();
+
+        var stored = AgentDecisionsSettings.GetStoredKeyFor(decisionProvider);
+        if (!string.IsNullOrWhiteSpace(stored))
+            return stored;
+
+        // The decision layer falls back to the chat key when both use the same
+        // provider; the key typed in this dialog is not on disk yet, so resolve
+        // it from the chat field explicitly.
+        return string.Equals(decisionProvider, chatProvider, StringComparison.Ordinal)
+            ? chatKey
+            : string.Empty;
+    }
+
+    private static string NormalizeChatProvider(string? provider) =>
+        string.IsNullOrWhiteSpace(provider) ? "openrouter" : provider!.Trim();
+
+    private static string NormalizeDecisionProvider(string? provider) =>
+        AgentDecisionsSettings.NormalizeProvider(provider);
 
     private void RebuildDecisionOptions()
     {

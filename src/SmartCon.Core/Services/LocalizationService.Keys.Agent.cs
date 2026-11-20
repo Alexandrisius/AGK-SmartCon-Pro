@@ -138,6 +138,18 @@ public static partial class LocalizationService
         en["Agent_Settings_Save"] = "Save";
         ru["Agent_Settings_Saved"] = "Настройки сохранены";
         en["Agent_Settings_Saved"] = "Settings saved";
+        ru["Agent_Settings_KeyRequired"] =
+            "Укажите API-ключ провайдера — без него агент не сможет отправить запрос.";
+        en["Agent_Settings_KeyRequired"] =
+            "Enter the provider API key — without it the agent cannot send a request.";
+        ru["Agent_Settings_DecisionKeyRequired"] =
+            "Для выбранной модели поиска инструментов нужен API-ключ или выберите «Не использовать».";
+        en["Agent_Settings_DecisionKeyRequired"] =
+            "The selected tool-search model needs an API key, or choose \"Don't use\".";
+        ru["Agent_Settings_SaveFailed"] =
+            "Не удалось записать ключи в профиль (%APPDATA%\\AGK\\SmartCon\\Agent). Проверьте доступ к папке и повторите сохранение.";
+        en["Agent_Settings_SaveFailed"] =
+            "Could not write the keys to the profile (%APPDATA%\\AGK\\SmartCon\\Agent). Check folder access and save again.";
         ru["Agent_Image_Open"] = "Открыть изображение";
         en["Agent_Image_Open"] = "Open image";
         ru["Agent_Image_Close"] = "Закрыть";

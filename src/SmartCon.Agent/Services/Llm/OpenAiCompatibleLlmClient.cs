@@ -41,9 +41,13 @@ public sealed class OpenAiCompatibleLlmClient : IAgentLlmClient, IDisposable
     {
         if (!_settings.HasApiKey)
         {
+            var keyName = _settings.IsOpenCodeGo
+                ? "SMARTCON_OPENCODE_GO_API_KEY"
+                : "SMARTCON_OPENROUTER_API_KEY";
             throw new AgentLlmException(
-                "LLM API key is not configured. Set SMARTCON_OPENROUTER_API_KEY " +
-                "as an environment variable or in %APPDATA%\\AGK\\SmartCon\\Agent\\secrets.env.");
+                "LLM API key is not configured for provider '" + _settings.Provider +
+                "'. Open the agent settings (gear) and enter the key, or set " + keyName +
+                " in %APPDATA%\\AGK\\SmartCon\\Agent\\secrets.env.");
         }
 
         var cachePlan = AgentProviderCachePolicy.Resolve(

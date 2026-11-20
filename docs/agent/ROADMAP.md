@@ -320,6 +320,12 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **H1c** | View configuration: фильтры, overrides, visibility, crop (закрыт) | #381 | Фильтры/overrides/visibility/crop/шаблоны: 13+ тулов, undo фильтров; integration и eval зелёные. |
 | **H1d** | Family editing pack: 9 тулов, EditFamily без UI, undo (закрыт) | #382 | 9 family-тулов, EditFamily без UI, shared/формулы/lookup, map 5000 значений, backup и точный undo. |
 
+### Закрытые дефекты
+
+| ID | Дефект | Issue | Итог |
+|---|---|---|---|
+| **AGT-KEYS-1** | API-ключ из настроек агента не сохранялся на чистой машине (пустой `secrets.env`) | #409 | Root cause: `PasswordBoxBehavior` подписывался на `PasswordChanged` только в callback'е `BoundPassword`, а WPF не вызывает его, когда значение равно metadata default (`""`) → ввод в поле ключа молча терялся. Фикс: `BindPassword` + `SetCurrentValue`, честная валидация сохранения, per-provider черновики ключей. Unit 3973/3973; ручная приёмка Revit 2025 (лог: `hasChatKey=True`, `LLM turn completed`). |
+
 ## 8. Поглощённые и отложенные ID
 
 - `H8` (bulk/cyclic job engine) — **absorbed by A**.
