@@ -145,6 +145,11 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
                 JobErrorCodes.CancelledByUser,
                 JobErrors.Cancelled().ToMessage(),
                 CancellationToken.None));
+            lock (_gate)
+            {
+                _previewWarnings.Remove(jobId);
+            }
+
             Sync(_store.AppendEventAsync(jobId, JobEventTypes.Cancelled, null, CancellationToken.None));
             return true;
         }
@@ -211,8 +216,12 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             var job = LoadActiveJob(documentId);
             if (job is null)
             {
-                // A cached job in another document keeps the pump alive.
-                _wantsPump = _activeJobId is not null;
+                // A cached job in another document keeps the pump alive only while
+                // that job actually needs slices (a finished preview does not).
+                _wantsPump = _activeJobId is { } cachedId &&
+                             JobStateMachine.NeedsPump(
+                                 Sync(_store.GetAsync(cachedId, CancellationToken.None))?.State
+                                 ?? JobState.Completed);
                 return JobSliceResult.Idle();
             }
 

@@ -44,10 +44,15 @@ public sealed partial class JobRunner
             var preview = JobJson.Deserialize<JobUnitPreview>(item.PreviewJson);
             if (preview is null)
             {
+                // No dry-run data: the unit cannot be re-applied safely and must be
+                // visible in the report instead of lingering as Pending forever.
                 updates.Add(new JobItemUpdate
                 {
                     Seq = item.Seq,
-                    State = JobItemState.Pending
+                    State = JobItemState.Failed,
+                    ErrorCode = JobErrorCodes.PreviewRequired,
+                    ErrorDetail = "The unit has no stored preview data " +
+                                  "[Action: run a fresh preview for this unit]"
                 });
                 redone++;
                 continue;
@@ -156,7 +161,7 @@ public sealed partial class JobRunner
         var items = Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None));
         var undoable = items
             .Where(item => item.State is JobItemState.Done or JobItemState.Mismatch
-                or JobItemState.Applying or JobItemState.UndoFailed)
+                or JobItemState.Applying or JobItemState.Undoing or JobItemState.UndoFailed)
             .ToList();
 
         if (undoable.Count == 0)
@@ -302,18 +307,22 @@ public sealed partial class JobRunner
                 Sync(_store.LoadAllItemsAsync(jobId, CancellationToken.None)))),
             CancellationToken.None));
 
+        var failureDetail = outcome.UndoFailed > 0
+            ? outcome.UndoFailed + " units could not be restored"
+            : outcome.SaveError?.ToMessage();
+
         return new JobRollbackResult
         {
             JobId = jobId,
-            Success = outcome.UndoFailed == 0,
+            Success = outcome.UndoFailed == 0 && outcome.SaveError is null,
             Restored = outcome.Restored,
             RestoreFailed = outcome.UndoFailed,
             Skipped = outcome.Skipped,
             State = target,
-            ErrorCode = outcome.UndoFailed > 0 ? JobErrorCodes.RollbackFailed : null,
-            ErrorDetail = outcome.UndoFailed > 0
-                ? outcome.UndoFailed + " units could not be restored"
-                : null
+            ErrorCode = outcome.UndoFailed > 0 || outcome.SaveError is not null
+                ? JobErrorCodes.RollbackFailed
+                : null,
+            ErrorDetail = failureDetail
         };
     }
 

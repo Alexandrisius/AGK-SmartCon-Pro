@@ -70,6 +70,11 @@ public sealed partial class JobRunner
 
         lock (_gate)
         {
+            if (_previewWarnings.Count >= 16)
+            {
+                _previewWarnings.Clear();
+            }
+
             _previewWarnings[record.JobId] = expansion.Warnings.ToList();
         }
 

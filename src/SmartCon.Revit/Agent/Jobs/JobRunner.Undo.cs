@@ -25,13 +25,19 @@ public sealed partial class JobRunner
         var context = CreateContext(document, job.Spec.DocumentId, job.JobId, job.Spec, dryRun: false);
         var batchSize = EffectiveBatchSize(job, action);
 
-        var applied = Sync(_store.LoadItemsAsync(
-            job.JobId,
-            new[]
+        // In pump mode (cancel-with-rollback) a failed unit is not recycled: that
+        // would spin the pump forever after a commit that Revit keeps rolling back.
+        var resetStates = singleBatchPerSlice
+            ? new[] { JobItemState.Done, JobItemState.Mismatch, JobItemState.Applying, JobItemState.Undoing }
+            : new[]
             {
                 JobItemState.Done, JobItemState.Mismatch, JobItemState.Applying,
                 JobItemState.Undoing, JobItemState.UndoFailed
-            },
+            };
+
+        var applied = Sync(_store.LoadItemsAsync(
+            job.JobId,
+            resetStates,
             0,
             int.MaxValue,
             CancellationToken.None));

@@ -320,14 +320,15 @@ public sealed partial class JobRunner
         var target = outcome.UndoFailed > 0 || outcome.SaveError is not null
             ? JobState.RollbackPartial
             : JobState.RolledBack;
+        var rollbackProblem = outcome.UndoFailed > 0 || outcome.SaveError is not null;
         var transition = Sync(_store.TransitionAsync(
             job.JobId,
             JobState.Cancelling,
             target,
-            outcome.UndoFailed > 0 ? JobErrorCodes.RollbackFailed : null,
+            rollbackProblem ? JobErrorCodes.RollbackFailed : null,
             outcome.UndoFailed > 0
                 ? JobErrors.RollbackFailed(outcome.UndoFailed + " units could not be restored").ToMessage()
-                : null,
+                : outcome.SaveError?.ToMessage(),
             CancellationToken.None));
 
         if (transition is not null)
@@ -339,8 +340,10 @@ public sealed partial class JobRunner
         Sync(_store.MarkFinishedAsync(
             job.JobId,
             target,
-            outcome.UndoFailed > 0 ? JobErrorCodes.RollbackFailed : null,
-            outcome.UndoFailed > 0 ? outcome.UndoFailed + " units could not be restored" : null,
+            rollbackProblem ? JobErrorCodes.RollbackFailed : null,
+            outcome.UndoFailed > 0
+                ? outcome.UndoFailed + " units could not be restored"
+                : outcome.SaveError?.Message,
             CancellationToken.None));
         Sync(_store.AppendEventAsync(
             job.JobId,

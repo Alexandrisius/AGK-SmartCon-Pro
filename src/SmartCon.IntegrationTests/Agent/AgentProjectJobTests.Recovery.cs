@@ -169,6 +169,30 @@ public sealed partial class AgentProjectJobTests
     }
 
 
+    [Test]
+    public async Task Job_RollbackContinuesAfterAnInterruptedUndoPass()
+    {
+        var job = PrepareApplyJob(JobSavePolicy.Never, batchSize: 50);
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(2));
+
+        // Simulate a rollback that was killed mid-pass: every unit is left Undoing.
+        var items = await Store.LoadAllItemsAsync(job.JobId, CancellationToken.None);
+        await Store.ResetItemsAsync(
+            job.JobId,
+            items.Select(item => item.Seq).ToList(),
+            JobItemState.Undoing,
+            CancellationToken.None);
+
+        var rollback = Runner.Rollback(Doc, job.JobId, dryRun: false);
+
+        await Assert.That(rollback.ErrorCode).IsNull();
+        await Assert.That(rollback.Restored).IsEqualTo(ViewCount);
+        await Assert.That(rollback.State).IsEqualTo(JobState.RolledBack);
+
+        var names = CollectViewNames();
+        await Assert.That(names.Count(name => name.StartsWith(ViewPrefix))).IsEqualTo(ViewCount);
+    }
+
     /// <summary>Delegates to the real action and fires a callback once a seq is reached.</summary>
     private sealed class CancelAfterAction : IJobAction
     {
