@@ -89,8 +89,13 @@ public sealed partial class AgentOrchestrator
             && (message.Content ?? string.Empty).StartsWith(
                 AgentSystemPrompt.SessionContextHeader, StringComparison.Ordinal));
         var matchesDocument = lastSessionContext is not null
+#if NETFRAMEWORK
+            && (lastSessionContext.Content ?? string.Empty)
+                .IndexOf(documentMarker, StringComparison.Ordinal) >= 0;
+#else
             && (lastSessionContext.Content ?? string.Empty)
                 .Contains(documentMarker, StringComparison.Ordinal);
+#endif
 
         if (!matchesDocument)
         {

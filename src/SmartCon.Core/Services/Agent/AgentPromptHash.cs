@@ -58,7 +58,7 @@ public static class AgentPromptHash
         if (string.IsNullOrWhiteSpace(schemaJson))
             return string.Empty;
 
-        using var document = JsonDocument.Parse(schemaJson);
+        using var document = JsonDocument.Parse(schemaJson!);
         var builder = new StringBuilder(schemaJson!.Length);
         WriteCanonical(document.RootElement, builder);
         return builder.ToString();

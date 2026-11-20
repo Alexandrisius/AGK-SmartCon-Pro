@@ -66,7 +66,7 @@ internal static class AgentFilterUsage
     /// tool (external run 6, P0).
     /// </summary>
     internal static Dictionary<long, List<View>> Map(Document doc, CancellationToken ct) =>
-        Map(doc, ct, onlyViewId: null);
+        Map(doc, onlyViewId: null, ct);
 
     /// <summary>
     /// Same map, but a positive <paramref name="onlyViewId"/> scans that one view
@@ -74,8 +74,8 @@ internal static class AgentFilterUsage
     /// </summary>
     internal static Dictionary<long, List<View>> Map(
         Document doc,
-        CancellationToken ct,
-        long? onlyViewId)
+        long? onlyViewId,
+        CancellationToken ct)
     {
         var map = new Dictionary<long, List<View>>();
 

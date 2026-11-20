@@ -83,7 +83,7 @@ public sealed class ListFiltersTool : AgentReadToolBase
         }
 
         var usage = includeAppliedViews
-            ? AgentFilterUsage.Map(doc, ct, onlyViewId)
+            ? AgentFilterUsage.Map(doc, onlyViewId, ct)
             : null;
 
         // Rules are read once per filter: the digest lets the model spot duplicates

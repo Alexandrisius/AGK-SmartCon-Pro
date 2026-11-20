@@ -14,7 +14,7 @@ public static class AgentConversationTitle
         if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
 
-        var title = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        var title = text!.Replace('\r', ' ').Replace('\n', ' ').Trim();
         return title.Length > MaxLength
             ? title.Remove(MaxLength) + "…"
             : title;
