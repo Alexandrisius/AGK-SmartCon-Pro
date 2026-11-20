@@ -61,6 +61,15 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
+            // Flat tool payloads (get_family_parameters.parameters[]) have no id
+            // in older answers; parameters.byName["Ширина"] and
+            // valuesByType.byName["Тип 1"] are the readable alternative.
+            if (TryResolveByName(current, segment, out var byName))
+            {
+                current = byName;
+                continue;
+            }
+
             // "categories[0]" (the form tool output actually shows) as well as the
             // legacy "categories.0" segment. A rejected path reported mismatch on an
             // apply that had actually succeeded (B4).
@@ -121,6 +130,27 @@ public sealed partial class AgentPlanExecutor
             return false;
 
         return TryFindById(current, raw, out found);
+    }
+
+    /// <summary>
+    /// Addresses an object inside an array by its name: <c>parameters.byName["Ширина"]</c>
+    /// or <c>valuesByType.byName["Тип 1"]</c>. Matches <c>name</c>/<c>typeName</c>
+    /// (and the other *Name identity properties) case-insensitively.
+    /// </summary>
+    private static bool TryResolveByName(JsonElement current, string segment, out JsonElement found)
+    {
+        found = default;
+        if (!segment.StartsWith("byName[", StringComparison.Ordinal)
+            || !segment.EndsWith("]", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var raw = segment.Substring(7, segment.Length - 8).Trim().Trim('"', '\'');
+        if (raw.Length == 0)
+            return false;
+
+        return TryFindByName(current, raw, out found);
     }
 
     /// <summary>A segment like <c>categories[0]</c>: property name plus array index.</summary>
@@ -191,6 +221,66 @@ public sealed partial class AgentPlanExecutor
         || string.Equals(name, "viewId", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name, "elementId", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name, "levelId", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryFindByName(JsonElement element, string name, out JsonElement found)
+    {
+        found = default;
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                // Match only the object's own identity property. Recursing into
+                // valuesByType here would let parameters.byName["Тип 1"] match a
+                // parameter that merely contains a type with that name.
+                var hasIdentity = false;
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (!IsNameProperty(property.Name))
+                        continue;
+
+                    hasIdentity = true;
+                    if (NameMatches(property.Value, name))
+                    {
+                        found = element;
+                        return true;
+                    }
+                }
+
+                if (hasIdentity)
+                    return false;
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (TryFindByName(property.Value, name, out found))
+                        return true;
+                }
+
+                return false;
+
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (TryFindByName(item, name, out found))
+                        return true;
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsNameProperty(string name) =>
+        string.Equals(name, "name", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "typeName", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "familyName", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "viewName", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "parameterName", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(name, "toolName", StringComparison.OrdinalIgnoreCase);
+
+    private static bool NameMatches(JsonElement value, string name) =>
+        value.ValueKind == JsonValueKind.String
+        && string.Equals(value.GetString(), name, StringComparison.OrdinalIgnoreCase);
 
     private static bool PropertyMatches(JsonElement value, string id)
     {

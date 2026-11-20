@@ -112,7 +112,8 @@ public static class AgentToolCatalog
             }),
             ["remap_parameter_values"] = new("Write", true, new[]
             {
-                "заменить", "ремап", "remap", "replace value", "переименовать значение"
+                "заменить", "ремап", "remap", "replace value", "переименовать значение",
+                "bulk elements", "many elements", "сотни элементов", "массовая замена"
             }),
             ["undo_last"] = new("Write", false, new[]
             {
@@ -175,7 +176,8 @@ public static class AgentToolCatalog
             ["find_families_with_parameter"] = new("Read", false, new[]
             {
                 "найти семейства с параметром", "find families with parameter",
-                "в каких семействах", "ТДСК_Наименование", "АДСК_Наименование", "matchedParameter"
+                "в каких семействах", "ТДСК_Наименование", "АДСК_Наименование", "matchedParameter",
+                "instance параметр", "параметр экземпляра", "ADSK_Наименование"
             }),
             ["rename_family_parameter"] = new("Write", false, new[]
             {
@@ -200,7 +202,8 @@ public static class AgentToolCatalog
             ["map_family_parameters"] = new("Write", true, new[]
             {
                 "перенести значения", "map parameters", "map family parameters", "смапить",
-                "перенос параметров семейства", "скопировать формулу", "source target"
+                "перенос параметров семейства", "скопировать формулу", "source target",
+                "bulk families", "many families", "миграция семейств", "migration"
             }),
             ["find_tools"] = new("Meta", false, new[]
             {
@@ -274,8 +277,11 @@ public static class AgentToolCatalog
             }),
             ["start_job"] = new("Write", true, new[]
             {
-                "массово", "пакетно", "batch", "bulk", "job", "задание", "движок", "все элементы",
-                "сотни", "по правилу", "массовая операция", "прогон"
+                "массово", "пакетно", "batch", "bulk", "bulk job", "job", "задание", "движок",
+                "все элементы", "сотни", "по правилу", "массовая операция", "прогон",
+                "миграция", "migration", "migrate", "массовая миграция", "заменить во всех",
+                "всех семействах", "сотни семейств", "many families", "hundreds",
+                "replace across families", "пакетная замена"
             }),
             ["get_job_status"] = new("Read", true, new[]
             {

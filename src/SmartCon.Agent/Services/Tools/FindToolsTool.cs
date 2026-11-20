@@ -24,6 +24,20 @@ public sealed class FindToolsTool : IAgentTool
         "request the schema of the chosen tool via find_tools(query=...) or load_tool_pack; " +
         "page with offset/nextOffset when truncated=true";
 
+    private const string StartJobName = "start_job";
+
+    /// <summary>
+    /// Bulk wording must pull the job engine into the shortlist even when the
+    /// decision router prefers a single-family/single-element tool: the external
+    /// run asked for "bulk job replace shared parameter across many families"
+    /// and got map_family_parameters instead of start_job (S.10).
+    /// </summary>
+    private static readonly string[] BulkIntentMarkers =
+    {
+        "bulk", "batch", "mass", "migration", "migrate", "many families", "many elements",
+        "hundreds", "сотни", "массов", "пакетн", "миграц", "во всех", "всех семейств"
+    };
+
     private readonly IToolRouter _router;
 
     private IToolRegistry? _registry;
@@ -117,6 +131,14 @@ public sealed class FindToolsTool : IAgentTool
         {
             if (names.Add(definition.Name))
                 merged.Add(definition);
+        }
+
+        if (string.IsNullOrWhiteSpace(packName) && HasBulkIntent(state))
+        {
+            var startJob = rankable.FirstOrDefault(definition =>
+                string.Equals(definition.Name, StartJobName, StringComparison.Ordinal));
+            if (startJob is not null)
+                Add(startJob);
         }
 
         foreach (var definition in chosen)
@@ -274,6 +296,17 @@ public sealed class FindToolsTool : IAgentTool
             trimmed = trimmed.Substring(0, maxContext);
 
         return query + "\n\nContext:\n" + trimmed;
+    }
+
+    private static bool HasBulkIntent(string state)
+    {
+        foreach (var marker in BulkIntentMarkers)
+        {
+            if (state.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        }
+
+        return false;
     }
 
     private static List<Dictionary<string, object?>> Cards(

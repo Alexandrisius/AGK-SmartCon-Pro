@@ -7,7 +7,7 @@ public sealed class AgentCompactionRequest
 
     public int ContextBudgetTokens { get; init; } = 500_000;
 
-    public double Threshold { get; init; } = 0.7;
+    public double Threshold { get; init; } = 1.0;
 
     /// <summary>Newest tool results always kept verbatim.</summary>
     public int KeepRecentToolResults { get; init; } = 6;
@@ -28,9 +28,15 @@ public sealed class AgentCompactionRequest
     /// <summary>
     /// Tokens reserved for the ephemeral turn context and context-status block
     /// that are added after compaction. The effective trigger is
-    /// <c>(ContextBudgetTokens - ReserveTokens) * Threshold</c>.
+    /// <c>(ContextBudgetTokens - ReserveTokens - OutputReserveTokens) * Threshold</c>.
     /// </summary>
     public int ReserveTokens { get; init; }
+
+    /// <summary>
+    /// Completion budget of the model. The prompt must fit the model window
+    /// together with the answer, so the trigger subtracts it (S.10/P.10).
+    /// </summary>
+    public int OutputReserveTokens { get; init; }
 
     /// <summary>
     /// 1-based ordinal of the last session message before

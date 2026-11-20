@@ -279,10 +279,17 @@ public sealed partial class AgentOrchestrator
                     allowCheckpoint = false;
                 }
 
-                var contextLimit = (int)(Math.Max(
-                                             1000,
-                                             _settings.ContextWindowTokens - reserveTokens) *
-                                         Math.Max(0.3, Math.Min(_settings.ContextThreshold, 0.95)));
+                // The panel shows the working window (500k by default), not the internal
+// trigger: compaction starts at window - MaxOutputTokens - status reserve.
+                // With an explicit lower threshold (env), show that trigger instead.
+                var contextLimit = _settings.ContextThreshold >= 0.999
+                    ? _settings.ContextWindowTokens
+                    : (int)(Math.Max(
+                                 1000,
+                                 _settings.ContextWindowTokens
+                                 - reserveTokens
+                                 - Math.Max(0, _settings.MaxOutputTokens)) *
+                             Math.Max(0.3, Math.Min(_settings.ContextThreshold, 1.0)));
                 // Measured on the same working set the compactor triggers on;
                 // the turn context/status reserve is internal headroom.
                 var contextTokens = rawEstimator(working);

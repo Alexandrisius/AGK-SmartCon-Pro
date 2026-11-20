@@ -43,11 +43,14 @@ public sealed partial class AgentMainViewModel
         Attachments.Clear();
         _toolCards.Clear();
         _currentAssistant = null;
+        _lastAssistantWithText = null;
+        _turnWorkItems.Clear();
+        _turnToolCalls = 0;
+        _turnStartedUtc = DateTime.UtcNow;
 
         var session = SelectedSession;
         _turnCancellation = new CancellationTokenSource();
         IsBusy = true;
-        IsTyping = true;
         IsStopping = false;
         HasError = false;
         StatusText = S("Agent_Status_Sending", "Отправка…");
@@ -67,9 +70,13 @@ public sealed partial class AgentMainViewModel
                 .ConfigureAwait(true);
 
             if (_currentAssistant is not null)
+            {
+                FinalizeReasoning(_currentAssistant);
                 _currentAssistant.IsStreaming = false;
+            }
 
             AddTurnCost(result.Usage);
+            FinishTurn(result, session.Id);
             StatusText = result.MaxRoundsReached
                 ? S("Agent_Status_StepLimit", "Достигнут лимит шагов")
                 : S("Agent_Status_Ready", "Готов");
@@ -79,17 +86,21 @@ public sealed partial class AgentMainViewModel
         {
             if (_currentAssistant is not null)
             {
+                FinalizeReasoning(_currentAssistant);
                 _currentAssistant.IsStreaming = false;
                 _currentAssistant.Text += "\n\n" + S("Agent_Stop_Suffix", "(остановлено)");
+                _lastAssistantWithText = _currentAssistant;
             }
 
             AddInfo(S("Agent_Status_Stopped", "Остановлено"));
+            FinishTurn(null, session.Id, stopped: true);
             StatusText = S("Agent_Status_Stopped", "Остановлено");
         }
         catch (Exception ex)
         {
             AddError(ex.Message);
             HasError = true;
+            FinishTurn(null, session.Id);
             StatusText = S("Agent_Status_Error", "Ошибка");
         }
         finally
@@ -97,10 +108,12 @@ public sealed partial class AgentMainViewModel
             HideConfirmation();
 
             if (_currentAssistant is not null)
+            {
+                FinalizeReasoning(_currentAssistant);
                 _currentAssistant.IsStreaming = false;
+            }
 
             IsBusy = false;
-            IsTyping = false;
             IsStopping = false;
 
             // Exchange-then-dispose: a concurrent Stop/OnActiveDocumentChanged
@@ -108,6 +121,8 @@ public sealed partial class AgentMainViewModel
             var cancellation = Interlocked.Exchange(ref _turnCancellation, null);
             cancellation?.Dispose();
             _currentAssistant = null;
+            _lastAssistantWithText = null;
+            _turnWorkItems.Clear();
             SendCommand.NotifyCanExecuteChanged();
             StopCommand.NotifyCanExecuteChanged();
 
@@ -211,34 +226,31 @@ public sealed partial class AgentMainViewModel
         switch (progress.Kind)
         {
             case AgentProgressKind.Status:
-                IsTyping = true;
                 StatusText = progress.Text ?? "…";
                 break;
 
             case AgentProgressKind.TextDelta:
-                IsTyping = false;
-                if (_currentAssistant is null)
-                {
-                    _currentAssistant = new AgentChatItemViewModel(AgentChatItemKind.Assistant)
-                    {
-                        Header = S("Agent_Assistant", "BIM Agent"),
-                        IsStreaming = true
-                    };
-                    Messages.Add(_currentAssistant);
-                }
+                var textItem = EnsureAssistant();
+                if (textItem.IsReasoningStreaming)
+                    FinalizeReasoning(textItem);
 
-                _currentAssistant.Text += progress.Text ?? string.Empty;
+                textItem.Text += progress.Text ?? string.Empty;
+                _lastAssistantWithText = textItem;
                 break;
 
             case AgentProgressKind.ReasoningDelta:
+                AppendReasoning(progress.Text);
                 StatusText = S("Agent_Status_Thinking", "Думаю…");
                 break;
 
             case AgentProgressKind.ToolStarted:
-                IsTyping = false;
                 if (_currentAssistant is not null)
+                {
+                    FinalizeReasoning(_currentAssistant);
                     _currentAssistant.IsStreaming = false;
-                _currentAssistant = null;
+                    _currentAssistant = null;
+                }
+
                 var toolLabel = AgentToolDisplayNames.Get(progress.ToolName);
                 if (string.IsNullOrEmpty(toolLabel))
                     toolLabel = "tool";
@@ -248,9 +260,12 @@ public sealed partial class AgentMainViewModel
                     ToolName = progress.ToolName,
                     Text = S("Agent_Tool_Running", "Выполняется…"),
                     StatusText = "…",
-                    IsStreaming = true
+                    IsStreaming = true,
+                    IsWorkItem = true
                 };
                 Messages.Add(toolCard);
+                _turnWorkItems.Add(toolCard);
+                _turnToolCalls++;
                 if (progress.ToolCallId is not null)
                     _toolCards[progress.ToolCallId] = toolCard;
 
@@ -283,7 +298,11 @@ public sealed partial class AgentMainViewModel
 
             case AgentProgressKind.TurnCompleted:
                 if (_currentAssistant is not null)
+                {
+                    FinalizeReasoning(_currentAssistant);
                     _currentAssistant.IsStreaming = false;
+                }
+
                 // The final text normally arrives as deltas. A turn that was
                 // aborted by the loop guard (or a provider that returns text
                 // only in the completion) has no delta at all — without this
@@ -292,16 +311,10 @@ public sealed partial class AgentMainViewModel
                     && (_currentAssistant is null
                         || string.IsNullOrWhiteSpace(_currentAssistant.Text)))
                 {
-                    if (_currentAssistant is null)
-                    {
-                        _currentAssistant = new AgentChatItemViewModel(AgentChatItemKind.Assistant)
-                        {
-                            Header = S("Agent_Assistant", "BIM Agent")
-                        };
-                        Messages.Add(_currentAssistant);
-                    }
-
-                    _currentAssistant.Text = progress.Text!;
+                    var finalItem = EnsureAssistant();
+                    finalItem.Text = progress.Text!;
+                    finalItem.IsStreaming = false;
+                    _lastAssistantWithText = finalItem;
                 }
 
                 break;
@@ -418,5 +431,11 @@ public sealed partial class AgentMainViewModel
     {
         var format = LanguageManager.GetString(key) ?? fallback;
         return string.Format(CultureInfo.InvariantCulture, format, value);
+    }
+
+    private static string FormatMany(string key, string fallback, params object[] values)
+    {
+        var format = LanguageManager.GetString(key) ?? fallback;
+        return string.Format(CultureInfo.InvariantCulture, format, values);
     }
 }

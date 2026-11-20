@@ -113,6 +113,7 @@ public sealed class AgentHistoryCompactorTests
         var (result, compacted) = AgentHistoryCompactor.Compact(
             messages,
             contextBudgetTokens: 1000,
+            threshold: 0.5,
             keepRecent: 1);
 
         Assert.True(compacted > 0);

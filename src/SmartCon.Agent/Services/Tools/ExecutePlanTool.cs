@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -13,7 +13,7 @@ namespace SmartCon.Agent.Services.Tools;
 /// performs the L6 read-back. The plan executor still creates one change set per
 /// write step, so undo_last keeps working.
 /// </summary>
-public sealed class ExecutePlanTool : IAgentTool
+public sealed partial class ExecutePlanTool : IAgentTool
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -47,12 +47,19 @@ public sealed class ExecutePlanTool : IAgentTool
             "changes. Show that diff to the user. Call again with dryRun=false and the " +
             "planDigest from the preview only after the user approves: the steps are applied in " +
             "dependency order, one change set per step (undo_last works per step) and a " +
-            "read-back verifies the result. Steps that depend on an earlier write are marked " +
-            "preview_skipped in the preview and run only during apply. Never include " +
-            "execute_plan as a step. readBackExpectations.path is dot-addressed from the " +
-            "read-back tool's data object (for example views.byId[123].templateName); use " +
-            "byId[<elementId>].property when the read-back returns an array (index access " +
-            "can check the wrong element).",
+            "read-back verifies the result. If the tool-level confirmation already approved the " +
+            "exact arguments, planDigest may be omitted: it is derived from those arguments " +
+            "(planDigestAutoFilled=true) and the apply runs without a separate preview. Steps " +
+            "that depend on an earlier write are marked preview_skipped in the preview and run " +
+            "only during apply. Never include execute_plan as a step. readBackExpectations.path " +
+            "is dot-addressed from the read-back tool's data object (for example " +
+            "views.byId[123].templateName). For arrays use byId[<id>] when the row has an id, " +
+            "or byName[<name>] when it does not: get_family_parameters returns a flat " +
+            "parameters[] with id/name, so parameters.byName[Ширина].name and " +
+            "parameters.byName[Ширина].valuesByType.byName[Тип 1].displayValue are valid. " +
+            "Family write tools already do their own read-back after LoadFamily; the apply " +
+            "answer counts it as planReadBack.toolVerified, so verified is not zero just " +
+            "because no plan-level expectation was declared.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         Category = "Write",
@@ -106,18 +113,26 @@ public sealed class ExecutePlanTool : IAgentTool
         plan = RepairPlanSteps(plan, registry);
 
         var digest = AgentPlanExecutor.ComputeDigest(plan, context.DocumentId);
+        var digestAutoFilled = false;
         if (!dryRun)
         {
             var presentedDigest = GetString(args, "planDigest");
             if (string.IsNullOrWhiteSpace(presentedDigest))
             {
-                return ToolResult.Fail(
-                    "plan_digest_required",
-                    "Pass planDigest from the dry-run preview so the applied plan is the plan " +
-                    "the user saw. Current digest: " + digest);
+                // The outer executor already showed the confirmation for these exact
+                // arguments (WriteApproved), so re-deriving the same digest adds a
+                // round without adding safety. Keep strict comparison when a digest
+                // is supplied: it catches an edited plan after the preview.
+                digestAutoFilled = context.WriteApproved;
+                if (!digestAutoFilled)
+                {
+                    return ToolResult.Fail(
+                        "plan_digest_required",
+                        "Pass planDigest from the dry-run preview so the applied plan is the plan " +
+                        "the user saw. Current digest: " + digest);
+                }
             }
-
-            if (!string.Equals(presentedDigest, digest, StringComparison.Ordinal))
+            else if (!string.Equals(presentedDigest, digest, StringComparison.Ordinal))
             {
                 return ToolResult.Fail(
                     "plan_digest_mismatch",
@@ -148,17 +163,20 @@ public sealed class ExecutePlanTool : IAgentTool
             return ToolResult.Fail(
                 result.ErrorCode ?? "plan_failed",
                 result.Message ?? "The plan could not be executed.",
-                data: FailureResult(plan, result, digest, dryRun));
+                data: FailureResult(plan, result, digest, dryRun, digestAutoFilled));
         }
 
-        return dryRun ? PreviewResult(plan, result) : ApplyResult(result);
+        return dryRun
+            ? PreviewResult(plan, result)
+            : ApplyResult(result, digestAutoFilled);
     }
 
     private static JsonElement FailureResult(
         AgentPlan plan,
         AgentPlanExecutionResult result,
         string digest,
-        bool dryRun)
+        bool dryRun,
+        bool digestAutoFilled)
     {
         var failedStepId = result.Steps
             .FirstOrDefault(step =>
@@ -172,6 +190,8 @@ public sealed class ExecutePlanTool : IAgentTool
             goal = plan.Goal,
             planDigest = digest,
             planDigestAlgorithm = "sha256",
+            planDigestAutoFilled = digestAutoFilled,
+            appliedWithoutPreview = !dryRun && digestAutoFilled,
             errorCode = result.ErrorCode,
             message = result.Message,
             affected = result.AffectedCount > 0
@@ -220,126 +240,6 @@ public sealed class ExecutePlanTool : IAgentTool
             (result.PreviewIncomplete
                 ? " " + result.NotPreviewed.Count + " dependent step(s) were not previewed."
                 : string.Empty));
-    }
-
-    private static ToolResult ApplyResult(AgentPlanExecutionResult result)
-    {
-        var payload = JsonSerializer.SerializeToElement(new
-        {
-            dryRun = false,
-            planDigest = result.PlanDigest,
-            planDigestAlgorithm = "sha256",
-            affected = result.AffectedCount,
-            previewIncomplete = result.PreviewIncomplete,
-            notPreviewed = result.NotPreviewed,
-            steps = Steps(result, apply: true),
-            planReadBack = new
-            {
-                executedSteps = result.Steps.Count(step => step.ReadBackExecuted),
-                expectationsChecked = result.ExpectationsChecked,
-                verified = result.Verified.Count,
-                mismatches = result.Mismatches.Count
-            },
-            verified = result.Verified,
-            mismatches = result.Mismatches,
-            hint = result.Mismatches.Count > 0
-                ? "Read-back found mismatches. Review them and offer undo_last for the " +
-                  "affected step."
-                : result.ExpectationsChecked == 0
-                    ? "No plan read-back expectations were declared, so there are no verified " +
-                      "values; tool-internal read-back (if any) is in each step's toolReadBack."
-                    : "All " + result.ExpectationsChecked +
-                      " plan read-back expectation(s) verified."
-        }, SerializerOptions);
-
-        return ToolResult.Ok(
-            payload,
-            "Plan applied: " + result.AffectedCount + " change(s); " +
-            result.Verified.Count + " verified, " + result.Mismatches.Count + " mismatch(es).",
-            result.AffectedCount);
-    }
-
-    private static IReadOnlyList<object> Steps(AgentPlanExecutionResult result, bool apply) =>
-        result.Steps.Select(step => (object)new
-        {
-            stepId = step.StepId,
-            toolName = step.ToolName,
-            status = Status(step, apply),
-            changed = step.Changed,
-            skipped = step.Skipped,
-            failed = step.Failed,
-            items = StepItems(step, apply),
-            toolReadBack = ToolReadBack(step, apply),
-            planReadBack = new
-            {
-                executed = step.ReadBackExecuted,
-                expectationsChecked = step.ExpectationsChecked,
-                verified = step.VerifiedCount,
-                mismatches = step.MismatchCount
-            },
-            fidelity = step.FidelityChecked
-                ? new
-                {
-                    expected = step.FidelityExpected,
-                    matched = step.FidelityMatched
-                }
-                : null,
-            preflightSkipped = step.PreflightSkipped,
-            preflightDeferred = step.PreflightDeferred,
-            previewSkipped = step.PreviewSkipped,
-            previewSkipReason = step.PreviewSkipReason
-        }).ToList();
-
-    private static string Status(AgentPlanStepResult step, bool apply)
-    {
-        if (apply)
-        {
-            if (step.ApplyResult is null)
-                return "not_run";
-
-            return step.ApplyResult.Success ? "applied" : "failed";
-        }
-
-        if (step.DryRunResult is not null)
-            return step.DryRunResult.Success ? "previewed" : "preview_failed";
-
-        return step.PreviewSkipped ? "preview_skipped" : "not_previewed";
-    }
-
-    private static JsonElement? ToolReadBack(AgentPlanStepResult step, bool apply)
-    {
-        var result = apply
-            ? step.ApplyResult ?? step.DryRunResult
-            : step.DryRunResult ?? step.ApplyResult;
-        if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
-            return null;
-
-        return data.TryGetProperty("readBack", out var readBack) ? readBack : null;
-    }
-
-    /// <summary>
-    /// Per-item diff from the step's dry run (or apply): changed / skipped / failed
-    /// cards with id, name, before and after. Without it the model has to re-read
-    /// the model just to show the user what will change (live dogfood P1-4).
-    /// </summary>
-    private static JsonElement? StepItems(AgentPlanStepResult step, bool apply)
-    {
-        // Preview shows the dry-run diff; the applied report must show the apply
-        // result, otherwise every item still says dryRun=true (feedback #2).
-        var result = apply
-            ? step.ApplyResult ?? step.DryRunResult
-            : step.DryRunResult ?? step.ApplyResult;
-        if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
-            return null;
-
-        if (!data.TryGetProperty("changed", out _)
-            && !data.TryGetProperty("skipped", out _)
-            && !data.TryGetProperty("failed", out _))
-        {
-            return null;
-        }
-
-        return data;
     }
 
     private AgentPlan RepairPlanSteps(AgentPlan plan, IToolRegistry registry)

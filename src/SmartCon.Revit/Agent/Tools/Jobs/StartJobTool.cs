@@ -29,7 +29,7 @@ public sealed class StartJobTool : IAgentTool
 {
   "type": "object",
   "properties": {
-    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters"] },
+    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters"], "description": "rename_views and set_parameters handle up to 5000 units; map_family_parameters is hard-capped at 200 family units per job." },
     "spec": {
       "type": "object",
       "properties": {
@@ -104,6 +104,7 @@ public sealed class StartJobTool : IAgentTool
         },
         "mappings": {
           "type": "array",
+          "description": "One source->target per mapping. map_family_parameters processes at most 200 family units per job; split larger migrations into several jobs.",
           "items": {
             "type": "object",
             "properties": {
@@ -145,7 +146,7 @@ public sealed class StartJobTool : IAgentTool
     "batchSize": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 },
     "onError": { "type": "string", "enum": ["continue", "abort"] },
     "rollbackOnError": { "type": "boolean", "default": false },
-    "maxItems": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 1000 },
+    "maxItems": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 1000, "description": "Upper bound for selected units (<=10000). Per-action caps still apply: rename_views/set_parameters 5000, map_family_parameters 200. allowLargeJobs only acknowledges apply/resume above 200 units; it does not raise an action cap." },
     "allowLargeJobs": { "type": "boolean", "default": false, "description": "Required to apply/resume more than 200 units; a preview cannot grant it." },
     "includeSample": { "type": "boolean", "description": "Default true for preview, false for apply/resume; set false to omit the preview sample." }
   },
@@ -158,7 +159,10 @@ public sealed class StartJobTool : IAgentTool
     {
         Name = "start_job",
         Description =
-            "Starts a bulk job for hundreds of elements or dozens of families. " +
+            "Starts a bulk job: select units, preview, apply. Per-action caps: rename_views and " +
+            "set_parameters handle up to 5000 units; map_family_parameters handles up to 200 " +
+            "family units per job (a hard cap — allowLargeJobs does not raise it). maxItems is " +
+            "an upper bound (<=10000); the smaller per-action cap still applies. " +
             "dryRun=true (default) previews only and returns previewDigest; " +
             "then call again with dryRun=false and that previewDigest to apply. " +
             "resumeJobId alone resumes an interrupted/failed job. Actions: rename_views, " +

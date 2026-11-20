@@ -187,6 +187,11 @@ public sealed class AgentCacheLoggingTests
             Guid sessionId,
             CancellationToken ct) =>
             Task.FromResult<AgentContextSnapshot?>(null);
+
+        public Task<AgentSessionMetrics?> GetSessionMetricsAsync(
+            Guid sessionId,
+            CancellationToken ct) =>
+            Task.FromResult<AgentSessionMetrics?>(null);
     }
 
     private sealed class AutoApproveConfirmation : IAgentConfirmationService

@@ -380,4 +380,39 @@ public sealed class FindToolsToolTests
         Assert.False(first.TryGetProperty("examples", out _));
         Assert.False(first.TryGetProperty("synonyms", out _));
     }
+
+    [Fact]
+    public async Task FindToolsV2_BulkIntent_PullsStartJobIntoTheShortlist()
+    {
+        var registry = new AgentToolRegistry(new IAgentTool[]
+        {
+            new ScriptedTool("start_job"),
+            new ScriptedTool("map_family_parameters"),
+            new ScriptedTool("remap_parameter_values"),
+            new ScriptedTool("list_shared_parameters")
+        });
+        var definitions = registry.GetDefinitions();
+        var router = new RecordingToolRouter
+        {
+            Result = new ToolRoutingDecision
+            {
+                Tools = definitions
+                    .Where(definition => definition.Name != "start_job")
+                    .ToArray()
+            }
+        };
+        var tool = new FindToolsTool(router);
+        tool.Attach(registry);
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"query\":\"bulk job replace shared parameter across many families migration\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var names = result.Data!.Value.GetProperty("tools").EnumerateArray()
+            .Select(entry => entry.GetProperty("name").GetString())
+            .ToList();
+        Assert.Equal("start_job", names[0]);
+    }
 }

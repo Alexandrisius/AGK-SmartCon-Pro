@@ -12,9 +12,9 @@ namespace SmartCon.Agent.Services;
 /// </summary>
 public static class AgentHistoryCompactor
 {
-    public const double DefaultThreshold = 0.6;
+    public const double DefaultThreshold = 1.0;
     public const int KeepRecentToolResults = 4;
-    public const int DefaultContextBudgetTokens = 200_000;
+    public const int DefaultContextBudgetTokens = 500_000;
 
     public static (List<AgentMessage> Messages, int CompactedCount) Compact(
         IReadOnlyList<AgentMessage> messages,

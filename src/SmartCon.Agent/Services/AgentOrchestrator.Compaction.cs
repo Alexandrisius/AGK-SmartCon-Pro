@@ -88,7 +88,11 @@ public sealed partial class AgentOrchestrator
             var before = estimator(working);
             var (masked, count) = AgentHistoryCompactor.Compact(
                 working,
-                _settings.ContextWindowTokens,
+                Math.Max(
+                    1000,
+                    _settings.ContextWindowTokens
+                    - Math.Max(0, _settings.MaxOutputTokens)
+                    - reserveTokens),
                 _settings.ContextThreshold,
                 AgentHistoryCompactor.KeepRecentToolResults,
                 estimator);
@@ -142,6 +146,7 @@ public sealed partial class AgentOrchestrator
             KeepRecentTokens = ComputeTailTokens(_settings),
             HardShrinkMessages = 4,
             ReserveTokens = reserveTokens,
+            OutputReserveTokens = Math.Max(0, _settings.MaxOutputTokens),
             BaseRowId = baseRowId,
             MinMaskSavingsTokens = ProjectionMinMaskSavingsTokens,
             RawHistory = rawHistory,

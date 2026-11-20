@@ -30,9 +30,10 @@ public sealed class AgentLlmSettings
 
     /// <summary>
     /// Share of <see cref="ContextWindowTokens"/> after which old tool results are
-    /// compacted. Override with SMARTCON_AGENT_CONTEXT_THRESHOLD (0.3..0.95).
+    /// compacted. 1.0 means "at the window" (minus the output and status reserve);
+    /// override with SMARTCON_AGENT_CONTEXT_THRESHOLD (0.3..1.0).
     /// </summary>
-    public double ContextThreshold { get; set; } = 0.7;
+    public double ContextThreshold { get; set; } = 1.0;
 
     /// <summary>
     /// Model used for history summaries when the context ladder reaches the
@@ -97,8 +98,8 @@ public sealed class AgentLlmSettings
             ContextThreshold = Math.Max(
                 0.3,
                 Math.Min(
-                    ParseDouble(Get(values, "SMARTCON_AGENT_CONTEXT_THRESHOLD"), 0.7),
-                    0.95)),
+                    ParseDouble(Get(values, "SMARTCON_AGENT_CONTEXT_THRESHOLD"), 1.0),
+                    1.0)),
             SummaryModel = Get(values, "SMARTCON_AGENT_SUMMARY_MODEL") ?? string.Empty,
             SummaryMaxInputTokens = Math.Max(
                 4_000,

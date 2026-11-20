@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
+using Autodesk.Revit.DB.Structure;
 using Nice3point.TUnit.Revit;
+using RevitFamily = Autodesk.Revit.DB.Family;
 using SmartCon.Core.Models.Agent;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Families;
@@ -285,6 +287,60 @@ public sealed class AgentFamilyReadToolsTests : RevitApiTest
         await Assert.That(matched.GetArrayLength()).IsEqualTo(1);
         await Assert.That(
             matched[0].GetProperty("value").GetString()!).Contains("A-1");
+    }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_InstanceParameters_RequireTheFlag()
+    {
+        var family = new FilteredElementCollector(Doc)
+            .OfClass(typeof(RevitFamily))
+            .Cast<RevitFamily>()
+            .First(item => string.Equals(
+                item.Name, Seed.FamilyName, StringComparison.OrdinalIgnoreCase));
+        var symbol = (FamilySymbol)Doc.GetElement(family.GetFamilySymbolIds().First());
+
+        using (var transaction = new Transaction(Doc, "Place instance"))
+        {
+            transaction.Start();
+            if (!symbol.IsActive)
+                symbol.Activate();
+
+            var instance = Doc.Create.NewFamilyInstance(
+                XYZ.Zero, symbol, StructuralType.NonStructural);
+            instance.LookupParameter(FamilySeed.InstanceParam)?.Set("instance-value");
+            transaction.Commit();
+        }
+
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        // FamilySymbol.Parameters carries type parameters only: without the flag
+        // the instance parameter is invisible even though an instance exists.
+        var without = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.InstanceParam + "\"}"),
+            CancellationToken.None);
+        await Assert.That(without.Success).IsTrue();
+        await Assert.That(Data(without).GetProperty("total").GetInt32()).IsEqualTo(0);
+
+        var with = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"parameterName\":\"" + FamilySeed.InstanceParam +
+                "\",\"includeInstanceParameters\":true}"),
+            CancellationToken.None);
+        await Assert.That(with.Success).IsTrue();
+        var matchedFamily = FindFamily(Data(with), Seed.FamilyId);
+        var matches = matchedFamily.GetProperty("matchedInstanceParameters");
+        await Assert.That(matches.GetArrayLength()).IsGreaterThanOrEqualTo(1);
+
+        var match = matches[0];
+        await Assert.That(match.GetProperty("scope").GetString()).IsEqualTo("instance");
+        await Assert.That(match.GetProperty("parameterName").GetString())
+            .IsEqualTo(FamilySeed.InstanceParam);
+        await Assert.That(match.GetProperty("instanceCount").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+        await Assert.That(match.GetProperty("sampleValues").GetArrayLength())
+            .IsGreaterThanOrEqualTo(1);
     }
 
     [Test]

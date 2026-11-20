@@ -17,6 +17,10 @@ public static partial class AgentToolPackSkills
 - `retry_failed_items` — пере-оценка и повтор только неудачных единиц.
 - `cancel_job` — кооперативная остановка между пачками (текущая пачка докатывается), частичный отчёт.
 
+**Не путать:** `map_family_parameters` — это и отдельный тул (одно семейство), и action джобы
+(до 200 family units). Для массовой миграции по десяткам/сотням семейств вызывайте
+`start_job(action:""map_family_parameters"")`, а не тул в цикле.
+
 ### Кухня Revit
 - Транзакция в Revit дорога: по замерам сообщества 10 отдельных коммитов ≈7.3 с против 1.4 с у группы; 10×100 элементов — 202 с против 44 с. Поэтому джоба коммитит **пачками** (`batchSize`, по умолчанию 50), а не по элементу.
 - Worksharing: правка элемента, занятого другим пользователем, откатывает **всю** транзакцию; try/catch вокруг `Parameter.Set` не спасает. Ошибка такого рода валит текущую пачку, а не только один элемент.
@@ -30,12 +34,16 @@ public static partial class AgentToolPackSkills
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (не более 100).
 - `spec.parameter/guid/builtInParameter/scope/value/unit` — запись параметра (`value` — строка, `""` очищает).
 - `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never`.
-- Потолок единиц: `rename_views` и `set_parameters` — 5000, `map_family_parameters` — 200.
+- Потолок единиц: `rename_views` и `set_parameters` — 5000, `map_family_parameters` — 200
+  family units **жёстко**: `allowLargeJobs` его не поднимает, большие миграции дробятся на
+  несколько джоб.
 
 ### Инварианты
 - `dryRun=true` (по умолчанию) не меняет модель и возвращает `count`, `sample`, `warnings`, `previewDigest`. Применение — повторный вызов с `dryRun=false` и **тем же** `previewDigest`; устаревший (`job_preview_stale`), просроченный (`job_preview_expired`, TTL 30 мин) или чужой digest отклоняется.
 - Новая превью вытесняет предыдущую (`job_preview_superseded`), но не во время выполнения: в документе одновременно одна джоба.
-- Джоб больше 200 единиц требует `allowLargeJobs=true` в apply/resume; превью этого разрешения не даёт.
+- Джоб больше 200 единиц требует `allowLargeJobs=true` в apply/resume (это порог
+  подтверждения, а не поднятие per-action потолка); превью этого разрешения не даёт.
+  Для `map_family_parameters` потолок 200 всё равно остаётся.
 - Опрос — `get_job_status(waitSeconds=...)`, не повторный `start_job`. Без `jobId` статус показывает **активную** джобу (или `state:""idle""` + последние 5).
 - `get_job_report(readBack=true)` — не только отчёт: найденные расхождения помечаются в задании как `Mismatch`. Это нормально, но учтите при последующем `retry_failed_items` (он берёт только `Failed`, не `Mismatch`).
 - `retry_failed_items` не принимает `allowLargeJobs`: если неудачных больше 200, ретрай может упасть с `job_confirmation_required` — запустите новую превью.

@@ -86,20 +86,20 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 |---|---|---|---|---|---|---|
 | **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 9 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой, A.9 (variants). |
 | **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 5 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) и B.5 (частичный откат) — backlog. |
-| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 9 | P.1–P.5 закрыты 2026-11-20; остались P.6–P.9 (P2). |
+| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 10 | P.1–P.5 закрыты 2026-11-20; P.10 (эффективные 500k) в работе; остались P.6–P.9 (P2). |
 | **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `backlog` | #296 | 7 | H1/H1d закрыты; часть — параллельно A. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 10 | H1/H1d закрыты; S.8–S.10 (фидбэк раунда 5) в работе. |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций; G.5 поднят до P0 — без него не собрать альбом. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в ES | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; ES-only отклонён, принят гибрид ES + SQLite/FTS. |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 4 | B, E; H3.4 — commitOnMatch. |
-| **H4** | Observability & eval v2 | P2 | `backlog` | #302 | 4 | P.1 (cache-лог) желателен. |
+| **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 5 | P.1 (cache-лог) желателен; H4.5 (метрики хода/сессии в чате) в работе. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
-| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `backlog` | #303 | 4 | A–E стабильны. |
+| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) в работе. |
 | **H6** | Vector retrieval — только по метрике | P3 | `backlog` | #304 | 2 | H1/H1b; каталог должен вырасти. |
 | **H7** | Typed facade IRevitOps и sandbox | P3 | `backlog` | #305 | 2 | ADR-076; после A–E. |
 | **W** | Visual feedback: тул снимка, агент сам решает когда смотреть | P3 | `backlog` | #413 | 0 | Задел на будущее по запросу владельца; scope в теле эпика, задачи заводятся при старте. |
@@ -149,6 +149,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `P.7` | Summary-запрос с тем же префиксом и cache-aware компакция | P2 | `backlog` | #359 |
 | `P.8` | UI cache-метрики и ADR-078 | P2 | `backlog` | #360 |
 | `P.9` | 1M context profile, overflow recovery и output budget | P2 | `backlog` | #383 |
+| `P.10` | Эффективные 500k: поздняя компакция и честный лимит в UI | P1 | `in-progress` | #420 |
 
 ### Q — Release readiness: ручная приёмка, полный гейт, деплой
 
@@ -209,6 +210,9 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `S.5` | Карантин/confirmNames для destructive-операций | P1 | `backlog` | #340 |
 | `S.6` | Персистентность загруженных паков на диалог | P2 | `backlog` | #341 |
 | `S.7` | copy_document/save_as_copy и регрессионный стресс-набор | P2 | `backlog` | #342 |
+| `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `in-progress` | #417 |
+| `S.9` | execute_plan: digest auto-fill, видимость family read-back, byName-пути | P1 | `in-progress` | #418 |
+| `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `in-progress` | #419 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
@@ -280,6 +284,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `H4.2` | Eval v2: 200 routing-фраз и snapshots | P2 | `backlog` | #372 |
 | `H4.3` | Dashboard/export метрик | P3 | `backlog` | #373 |
 | `H4.4` | LLM reliability: fake SSE, retry matrix, stream errors, request log | P2 | `backlog` | #386 |
+| `H4.5` | Аналитика хода и сессии в чате | P1 | `in-progress` | #422 |
 
 ### H5 — UX и расширяемость: steering, timeline, MCP
 
@@ -291,6 +296,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `H5.2` | MCP-сервер (backlog) | P3 | `backlog` | #375 |
 | `H5.3` | Web search через Exa REST с privacy guard | P3 | `backlog` | #387 |
 | `H5.4` | Сессии по документу: dropdown и миграция при Save As | P3 | `backlog` | #388 |
+| `H5.5` | UI: streaming размышлений и сворачивание рабочей области | P1 | `in-progress` | #421 |
 
 ### H6 — Vector retrieval — только по метрике
 

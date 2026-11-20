@@ -529,6 +529,73 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public async Task ReadBack_ByName_ResolvesFlatFamilyParameterArray()
+    {
+        var writeTool = new ScriptedTool("write_tool");
+        var readTool = new ScriptedTool(
+            "read_tool",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    parameters = new object[]
+                    {
+                        new
+                        {
+                            id = "-1010101",
+                            name = "Ширина",
+                            scope = "type",
+                            valuesByType = new object[]
+                            {
+                                new { typeName = "Тип 1", displayValue = "1200 мм" }
+                            }
+                        },
+                        new
+                        {
+                            id = "-1010102",
+                            name = "Высота",
+                            scope = "instance",
+                            valuesByType = Array.Empty<object>()
+                        }
+                    }
+                }),
+                "read"),
+            schema: @"{""type"":""object"",""properties"":{},""additionalProperties"":false}");
+        var executor = CreateExecutor(
+            writeTool, readTool, new RecordingConfirmation(), new RecordingAuditLog());
+        var step = new AgentPlanStep
+        {
+            StepId = "s1",
+            ToolName = "write_tool",
+            ArgumentsJson = WriteArguments,
+            ExpectedChanges = 1,
+            ReadBackTool = "read_tool",
+            ArgumentsReadBackJson = "{}",
+            ReadBackExpectations = new[]
+            {
+                new AgentPlanExpectation
+                {
+                    Path = "parameters.byName[Ширина].valuesByType.byName[Тип 1].displayValue",
+                    Expected = "1200 мм"
+                },
+                new AgentPlanExpectation
+                {
+                    Path = "parameters.byId[-1010101].name",
+                    Expected = "Ширина"
+                }
+            }
+        };
+
+        var result = await executor.ExecuteAsync(
+            Plan(step), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.Mismatches);
+        Assert.Equal(2, result.ExpectationsChecked);
+    }
+
+    [Fact]
     public async Task ReadBack_BracketIndexPath_ResolvesTheSameAsDotIndex()
     {
         var writeTool = new ScriptedTool("write_tool");

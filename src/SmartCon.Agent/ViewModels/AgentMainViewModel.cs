@@ -43,9 +43,14 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private readonly Dictionary<string, AgentChatItemViewModel> _toolCards =
         new(StringComparer.Ordinal);
 
+    private readonly List<AgentChatItemViewModel> _turnWorkItems = new();
+
     private AgentProjectContext? _currentContext;
     private CancellationTokenSource? _turnCancellation;
     private AgentChatItemViewModel? _currentAssistant;
+    private AgentChatItemViewModel? _lastAssistantWithText;
+    private DateTime _turnStartedUtc;
+    private int _turnToolCalls;
     private bool _isRefreshing;
     private bool _refreshAfterTurn;
     private bool _disposed;
@@ -142,9 +147,6 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
     private bool _isBusy;
 
     [ObservableProperty]
-    private bool _isTyping;
-
-    [ObservableProperty]
     private bool _isStopping;
 
     [ObservableProperty]
@@ -164,6 +166,16 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _tokenSummary = "$0.0000";
+
+    /// <summary>
+    /// Compact session aggregate shown next to the cost line: turns, tool calls
+    /// and elapsed LLM/tool time (H4.5).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSessionMetrics))]
+    private string _sessionMetricsText = string.Empty;
+
+    public bool HasSessionMetrics => !string.IsNullOrEmpty(SessionMetricsText);
 
     [ObservableProperty]
     private int _contextTokens;
@@ -597,6 +609,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
 
             await RefreshSessionCostAsync(session.Id).ConfigureAwait(true);
             await RestoreContextUsageAsync(session.Id).ConfigureAwait(true);
+            await RefreshSessionMetricsAsync(session.Id).ConfigureAwait(true);
 
             if (!ReferenceEquals(SelectedSession, session))
                 return;
@@ -604,6 +617,7 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
             Messages.Clear();
             _toolCards.Clear();
             RenderStoredMessages(messages);
+            AppendSessionMetrics(messages.Count > 0);
             StatusText = messages.Count == 0
                 ? S("Agent_Status_NewChat", "Новый чат")
                 : S("Agent_Status_HistoryLoaded", "История загружена");
@@ -637,7 +651,13 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                         Messages.Add(new AgentChatItemViewModel(AgentChatItemKind.Assistant)
                         {
                             Header = S("Agent_Assistant", "BIM Agent"),
-                            Text = message.Content!
+                            Text = message.Content!,
+                            IsWorkItem = true,
+                            ReasoningText = message.ReasoningContent ?? string.Empty,
+                            ReasoningHeader = string.IsNullOrWhiteSpace(message.ReasoningContent)
+                                ? string.Empty
+                                : S("Agent_Reasoning", "Размышления"),
+                            IsReasoningExpanded = false
                         });
                     }
 
@@ -648,7 +668,8 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                             Header = AgentToolDisplayNames.Get(call.Name),
                             ToolName = call.Name,
                             Text = S("Agent_Tool_Done", "выполнено"),
-                            StatusText = "✓"
+                            StatusText = "✓",
+                            IsWorkItem = true
                         };
                         Messages.Add(card);
                         _toolCards[call.Id] = card;
@@ -669,7 +690,16 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
                     break;
             }
         }
+
+        CollapseHistoryWork();
     }
+
+    /// <summary>
+    /// Re-opens a stored conversation as question → collapsed work → answer.
+    /// Everything except the last assistant text of each user turn is hidden
+    /// behind one WorkSummary row; the transcript does not grow with old tool
+    /// cards after a restart (H5.5).
+    /// </summary>
 
     private static string WithToolName(string? toolName, string details)
     {

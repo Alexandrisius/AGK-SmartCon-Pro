@@ -14,6 +14,42 @@ public sealed partial class AgentContextCompactorTests
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
     [Fact]
+    public async Task OutputReserve_LowersTheCompactionTrigger()
+    {
+        var compactor = new AgentContextCompactor(new FakeSummarizer());
+        var messages = new List<AgentMessage>
+        {
+            AssistantCall("c1", "get_test"),
+            AgentMessage.ToolResult("c1", LargeToolPayload(400)),
+            AssistantCall("c2", "get_test"),
+            AgentMessage.ToolResult("c2", LargeToolPayload(50))
+        };
+        Func<IReadOnlyList<AgentMessage>, int> estimator = _ => 8_500;
+        Func<IReadOnlyList<AgentMessage>, int> postEstimator = _ => 5_000;
+
+        var withoutReserve = await compactor.CompactAsync(
+            Request(
+                messages,
+                keepRecentToolResults: 1,
+                threshold: 1.0,
+                estimator: estimator,
+                postEstimator: postEstimator),
+            CancellationToken.None);
+        var withReserve = await compactor.CompactAsync(
+            Request(
+                messages,
+                keepRecentToolResults: 1,
+                outputReserveTokens: 2_000,
+                threshold: 1.0,
+                estimator: estimator,
+                postEstimator: postEstimator),
+            CancellationToken.None);
+
+        Assert.False(withoutReserve.Changed); // limit 10000 > 8500
+        Assert.True(withReserve.Changed);     // limit 8000 < 8500
+    }
+
+    [Fact]
     public async Task BelowThreshold_DoesNothing()
     {
         var summarizer = new FakeSummarizer();
@@ -269,14 +305,17 @@ public sealed partial class AgentContextCompactorTests
         int baseRowId = 0,
         int minMaskSavings = 0,
         int reserveTokens = 0,
+        int outputReserveTokens = 0,
+        double threshold = Threshold,
         IReadOnlyList<AgentMessage>? rawHistory = null,
+        Func<IReadOnlyList<AgentMessage>, int>? estimator = null,
         Func<IReadOnlyList<AgentMessage>, int>? postEstimator = null,
         bool allowCheckpoint = true) =>
         new()
         {
             Messages = messages,
             ContextBudgetTokens = Budget,
-            Threshold = Threshold,
+            Threshold = threshold,
             KeepRecentToolResults = keepRecentToolResults,
             KeepRecentMessages = keepRecentMessages,
             KeepRecentTokens = keepRecentTokens,
@@ -284,7 +323,9 @@ public sealed partial class AgentContextCompactorTests
             BaseRowId = baseRowId,
             MinMaskSavingsTokens = minMaskSavings,
             ReserveTokens = reserveTokens,
+            OutputReserveTokens = outputReserveTokens,
             RawHistory = rawHistory,
+            Estimator = estimator,
             PostEstimator = postEstimator,
             AllowCheckpoint = allowCheckpoint,
             SessionId = Session,

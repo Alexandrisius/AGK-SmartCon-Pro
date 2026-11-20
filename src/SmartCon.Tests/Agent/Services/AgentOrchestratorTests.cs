@@ -364,6 +364,11 @@ public sealed partial class AgentOrchestratorTests
                     Limit = last.ContextLimit
                 });
         }
+
+        public Task<AgentSessionMetrics?> GetSessionMetricsAsync(
+            Guid sessionId,
+            CancellationToken ct) =>
+            Task.FromResult<AgentSessionMetrics?>(null);
     }
 
     private sealed class InMemoryWorkingStateStore : IAgentWorkingStateStore

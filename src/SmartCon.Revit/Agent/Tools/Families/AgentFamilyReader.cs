@@ -539,6 +539,7 @@ internal static class AgentFamilyReader
         var formulaDriven = IsFormulaDriven(parameter);
         var report = new FamilyParameterReport
         {
+            Id = parameter.Id.ToString(),
             Name = parameter.Definition.Name,
             Scope = parameter.IsInstance ? "instance" : "type",
             IsInstance = parameter.IsInstance,

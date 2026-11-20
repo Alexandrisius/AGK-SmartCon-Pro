@@ -286,7 +286,8 @@
             </Style>
 
             <DataTemplate x:Key="AgentChatItemTemplate">
-                <Grid Margin="0,5">
+                <Grid Margin="0,5"
+                      Visibility="{Binding IsVisible, Converter={StaticResource BoolToVis}}">
 
                     <!-- Assistant message -->
                     <Grid x:Name="AssistantRow" Visibility="Collapsed">
@@ -316,6 +317,64 @@
                                     CornerRadius="3,12,12,12"
                                     Padding="11,8">
                                 <StackPanel>
+                                    <!-- Streamed chain-of-thought: open while it streams,
+                                         collapses as soon as the answer/tool call starts. -->
+                                    <Border Visibility="{Binding HasReasoning, Converter={StaticResource BoolToVis}}"
+                                            Background="#11000000"
+                                            BorderBrush="{DynamicResource BorderAltBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="7,5"
+                                            Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Button Command="{Binding ToggleReasoningCommand}"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="0"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    Cursor="Hand">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
+                                                                                Kind="ChevronRight"
+                                                                                Width="12" Height="12"
+                                                                                VerticalAlignment="Center"
+                                                                                Foreground="{DynamicResource TextMutedBrush}"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding ReasoningHeader}"
+                                                               FontSize="10"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Margin="5,0,0,0"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding ReasoningStatus}"
+                                                               FontSize="10"
+                                                               Foreground="{DynamicResource TextMutedBrush}"
+                                                               Margin="6,0,0,0"
+                                                               VerticalAlignment="Center"
+                                                               Visibility="{Binding HasReasoningStatus, Converter={StaticResource BoolToVis}}"/>
+                                                </Grid>
+                                            </Button>
+                                            <Border x:Name="ReasoningBody"
+                                                    Visibility="Collapsed"
+                                                    Margin="0,5,0,0"
+                                                    MaxHeight="180">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                              HorizontalScrollBarVisibility="Disabled">
+                                                    <TextBlock Text="{Binding ReasoningText}"
+                                                               TextWrapping="Wrap"
+                                                               FontSize="11"
+                                                               FontStyle="Italic"
+                                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
                                     <TextBlock x:Name="AssistantPlain"
                                                Text="{Binding Text}"
                                                TextWrapping="Wrap"
@@ -540,6 +599,68 @@
                             </StackPanel>
                         </Border>
                     </Grid>
+
+                    <!-- Collapsed work of one turn: tool calls and intermediate
+                         narration. Expanding it shows the items in place. -->
+                    <Grid x:Name="WorkRow"
+                          Visibility="Collapsed"
+                          Margin="34,2,0,2"
+                          HorizontalAlignment="Left"
+                          MaxWidth="480">
+                        <Button Command="{Binding ToggleWorkCommand}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0"
+                                HorizontalContentAlignment="Stretch"
+                                Cursor="Hand"
+                                ToolTip="{Binding Details}">
+                            <Border Background="{DynamicResource StatusBarSurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderAltBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="8,4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <iconPacks:PackIconMaterial x:Name="WorkChevron"
+                                                                Kind="ChevronRight"
+                                                                Width="12" Height="12"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource TextMutedBrush}"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding Header}"
+                                               FontSize="10"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               Margin="5,0,0,0"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding Text}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </Border>
+                        </Button>
+                    </Grid>
+
+                    <!-- Per-turn metrics under the answer (H4.5). -->
+                    <Grid x:Name="MetricsRow"
+                          Visibility="Collapsed"
+                          Margin="34,0,0,2"
+                          HorizontalAlignment="Left"
+                          MaxWidth="520">
+                        <TextBlock Text="{Binding Text}"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   TextWrapping="Wrap"
+                                   ToolTip="{Binding Details}"/>
+                    </Grid>
                 </Grid>
 
                 <DataTemplate.Triggers>
@@ -551,6 +672,12 @@
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="Tool">
                         <Setter TargetName="ToolRow" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding KindName}" Value="WorkSummary">
+                        <Setter TargetName="WorkRow" Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding KindName}" Value="Metrics">
+                        <Setter TargetName="MetricsRow" Property="Visibility" Value="Visible"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="Error">
                         <Setter TargetName="SystemRow" Property="Visibility" Value="Visible"/>
@@ -587,6 +714,13 @@
                     <DataTrigger Binding="{Binding IsExpanded}" Value="True">
                         <Setter TargetName="ToolDetailsPanel" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="ToolChevron" Property="Kind" Value="ChevronDown"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsReasoningExpanded}" Value="True">
+                        <Setter TargetName="ReasoningBody" Property="Visibility" Value="Visible"/>
+                        <Setter TargetName="ReasoningChevron" Property="Kind" Value="ChevronDown"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsWorkExpanded}" Value="True">
+                        <Setter TargetName="WorkChevron" Property="Kind" Value="ChevronDown"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsSuccess}" Value="False">
                         <Setter TargetName="ToolIcon" Property="Foreground"
@@ -788,98 +922,6 @@
                            MaxWidth="280"
                            Margin="0,4,0,0"/>
             </StackPanel>
-        </Grid>
-
-        <Grid Grid.Row="4"
-              Margin="2,2,0,0"
-              Visibility="{Binding IsTyping, Converter={StaticResource BoolToVis}}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Border Width="26" Height="26" CornerRadius="13"
-                    Background="{DynamicResource AccentBrush}"
-                    VerticalAlignment="Top" Margin="0,2,8,0">
-                <ContentControl Width="16" Height="16"
-                                Style="{StaticResource AgentBotIconStyle}"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"/>
-            </Border>
-
-            <Border Grid.Column="1"
-                    HorizontalAlignment="Left"
-                    Background="{DynamicResource SurfaceBrush}"
-                    BorderBrush="{DynamicResource BorderAltBrush}"
-                    BorderThickness="1"
-                    CornerRadius="3,12,12,12"
-                    Padding="12,11">
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse x:Name="TypingDot1" Width="6" Height="6"
-                             Fill="{DynamicResource TextMutedBrush}"
-                             Margin="0,0,5,0">
-                        <Ellipse.RenderTransform>
-                            <TranslateTransform x:Name="TypingDot1Transform"/>
-                        </Ellipse.RenderTransform>
-                    </Ellipse>
-                    <Ellipse x:Name="TypingDot2" Width="6" Height="6"
-                             Fill="{DynamicResource TextMutedBrush}"
-                             Margin="0,0,5,0">
-                        <Ellipse.RenderTransform>
-                            <TranslateTransform x:Name="TypingDot2Transform"/>
-                        </Ellipse.RenderTransform>
-                    </Ellipse>
-                    <Ellipse x:Name="TypingDot3" Width="6" Height="6"
-                             Fill="{DynamicResource TextMutedBrush}">
-                        <Ellipse.RenderTransform>
-                            <TranslateTransform x:Name="TypingDot3Transform"/>
-                        </Ellipse.RenderTransform>
-                    </Ellipse>
-                </StackPanel>
-            </Border>
-
-            <Grid.Triggers>
-                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                    <BeginStoryboard>
-                        <Storyboard RepeatBehavior="Forever">
-                            <DoubleAnimation Storyboard.TargetName="TypingDot1"
-                                             Storyboard.TargetProperty="Opacity"
-                                             From="0.25" To="1"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"/>
-                            <DoubleAnimation Storyboard.TargetName="TypingDot1Transform"
-                                             Storyboard.TargetProperty="Y"
-                                             From="0" To="-3"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"/>
-                            <DoubleAnimation Storyboard.TargetName="TypingDot2"
-                                             Storyboard.TargetProperty="Opacity"
-                                             From="0.25" To="1"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"
-                                             BeginTime="0:0:0.15"/>
-                            <DoubleAnimation Storyboard.TargetName="TypingDot2Transform"
-                                             Storyboard.TargetProperty="Y"
-                                             From="0" To="-3"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"
-                                             BeginTime="0:0:0.15"/>
-                            <DoubleAnimation Storyboard.TargetName="TypingDot3"
-                                             Storyboard.TargetProperty="Opacity"
-                                             From="0.25" To="1"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"
-                                             BeginTime="0:0:0.30"/>
-                            <DoubleAnimation Storyboard.TargetName="TypingDot3Transform"
-                                             Storyboard.TargetProperty="Y"
-                                             From="0" To="-3"
-                                             Duration="0:0:0.45"
-                                             AutoReverse="True"
-                                             BeginTime="0:0:0.30"/>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
-            </Grid.Triggers>
         </Grid>
 
         <!-- Attachments -->
@@ -1171,12 +1213,19 @@
                 </TextBlock.Style>
             </TextBlock>
 
-            <TextBlock Grid.Column="1"
-                       Text="{Binding TokenSummary}"
-                       FontSize="10"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource TextMutedBrush}"
-                       Margin="8,0,0,0"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <TextBlock Text="{Binding SessionMetricsText}"
+                           FontSize="10"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="8,0,0,0"
+                           Visibility="{Binding HasSessionMetrics, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Text="{Binding TokenSummary}"
+                           FontSize="10"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="8,0,0,0"/>
+            </StackPanel>
         </Grid>
 
         <!-- Write confirmation overlay -->

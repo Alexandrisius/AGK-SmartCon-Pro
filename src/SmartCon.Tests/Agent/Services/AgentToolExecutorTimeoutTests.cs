@@ -78,7 +78,10 @@ public sealed class AgentToolExecutorTimeoutTests
             timeoutMs: 50,
             async _ =>
             {
-                await Task.Delay(6000, CancellationToken.None);
+                // Longer than the 5 s grace by a wide margin: a 6 s delay made this
+                // test flaky on a loaded machine (the tool finished before the grace
+                // timer won the race).
+                await Task.Delay(TimeSpan.FromMinutes(1), CancellationToken.None);
                 return ToolResult.Ok();
             });
         var executor = CreateExecutor(tool);

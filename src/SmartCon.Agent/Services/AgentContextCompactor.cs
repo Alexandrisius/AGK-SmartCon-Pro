@@ -18,12 +18,12 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
     private const int CircuitBreakerThreshold = 3;
 
     /// <summary>
-    /// Turn-start projection only runs once the raw history reaches this share of
-    /// the compaction limit. Masking a conversation that still sits at 30-40 % of
-    /// the limit only hides results the model is using and makes the context
-    /// indicator shrink for no reason.
+    /// Turn-start projection only runs once the raw history reaches the compaction
+    /// limit. The owner asked for no context reduction before ~500k, so this used
+    /// to be 0.75 of the limit (≈262k at a 500k window) and hid results the agent
+    /// was still using.
     /// </summary>
-    private const double ProjectionPressureRatio = 0.75;
+    private const double ProjectionPressureRatio = 1.0;
 
     private readonly IAgentSummarizer _summarizer;
     private readonly IAgentCompactionStore? _store;
@@ -259,8 +259,10 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
     {
         var budget = Math.Max(
             1000,
-            request.ContextBudgetTokens - Math.Max(0, request.ReserveTokens));
-        var threshold = Math.Max(0.3, Math.Min(request.Threshold, 0.95));
+            request.ContextBudgetTokens
+            - Math.Max(0, request.ReserveTokens)
+            - Math.Max(0, request.OutputReserveTokens));
+        var threshold = Math.Max(0.3, Math.Min(request.Threshold, 1.0));
         return (int)(budget * threshold);
     }
 

@@ -25,6 +25,13 @@ public interface IAgentUsageStore
     /// conversation has no measured turn yet.
     /// </summary>
     Task<AgentContextSnapshot?> GetLastContextAsync(Guid sessionId, CancellationToken ct);
+
+    /// <summary>
+    /// Aggregates the token usage and tool-call tables for one conversation.
+    /// Used by the chat analytics line; returns an empty aggregate when the
+    /// conversation has no recorded turn yet.
+    /// </summary>
+    Task<AgentSessionMetrics?> GetSessionMetricsAsync(Guid sessionId, CancellationToken ct);
 }
 
 /// <summary>

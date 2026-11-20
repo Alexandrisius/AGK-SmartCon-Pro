@@ -102,7 +102,7 @@ public sealed class ExecutePlanToolTests
     }
 
     [Fact]
-    public async Task Apply_WithoutPreviewDigest_IsRejected()
+    public async Task Apply_WithoutPreviewDigest_AutoFillsDigestAfterApproval()
     {
         var writeTool = new ScriptedTool("write_tool");
         var tool = CreateTool(writeTool);
@@ -112,9 +112,13 @@ public sealed class ExecutePlanToolTests
             Parse(PlanArgs.Replace("\"steps\"", "\"dryRun\":false,\"steps\"")),
             CancellationToken.None);
 
-        Assert.False(result.Success);
-        Assert.Equal("plan_digest_required", result.ErrorCode);
-        Assert.Empty(writeTool.Executions);
+        // The outer executor already confirmed these exact arguments, so the
+        // digest is derived from them instead of demanding another round.
+        Assert.True(result.Success);
+        Assert.Equal(2, writeTool.Executions.Count);
+        Assert.Contains("\"dryRun\":false", writeTool.Executions[1].ArgumentsJson);
+        Assert.True(result.Data!.Value.GetProperty("planDigestAutoFilled").GetBoolean());
+        Assert.True(result.Data.Value.GetProperty("appliedWithoutPreview").GetBoolean());
     }
 
     [Fact]

@@ -133,6 +133,108 @@ FROM token_usage;";
         Assert.Equal(0.5012m, Math.Round(total, 6));
     }
 
+    [Fact]
+    public async Task GetSessionMetricsAsync_AggregatesUsageAndToolCalls()
+    {
+        using var fixture = new DatabaseFixture();
+        fixture.Database.Initialize();
+        var usageStore = new SqliteAgentUsageStore(fixture.Database);
+        var toolStore = new SqliteAgentToolCallStore(fixture.Database);
+        var sessionId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var otherId = Guid.Parse("99999999-8888-7777-6666-555555555555");
+
+        await usageStore.RecordAsync(
+            new AgentUsageRecord
+            {
+                SessionId = sessionId.ToString("D"),
+                Provider = "openrouter",
+                Model = "model-x",
+                Usage = new AgentUsage
+                {
+                    PromptTokens = 100,
+                    CompletionTokens = 20,
+                    ReasoningTokens = 5,
+                    CachedTokens = 40,
+                    CostUsd = 0.001m
+                },
+                Status = "ok",
+                LatencyMs = 300
+            },
+            CancellationToken.None);
+        await usageStore.RecordAsync(
+            new AgentUsageRecord
+            {
+                SessionId = sessionId.ToString("D"),
+                Provider = "openrouter",
+                Model = "model-x",
+                Usage = new AgentUsage
+                {
+                    PromptTokens = 150,
+                    CompletionTokens = 30,
+                    CostUsd = 0.002m
+                },
+                Status = "ok",
+                LatencyMs = 200
+            },
+            CancellationToken.None);
+        await usageStore.RecordAsync(
+            new AgentUsageRecord
+            {
+                SessionId = otherId.ToString("D"),
+                Provider = "openrouter",
+                Model = "model-x",
+                Usage = new AgentUsage { PromptTokens = 9_999 },
+                Status = "ok",
+                LatencyMs = 9_999
+            },
+            CancellationToken.None);
+
+        await toolStore.RecordAsync(
+            new AgentToolCallRecord
+            {
+                Id = "t1",
+                SessionId = sessionId.ToString("D"),
+                ToolName = "query_elements",
+                Status = "ok",
+                DurationMs = 120
+            },
+            CancellationToken.None);
+        await toolStore.RecordAsync(
+            new AgentToolCallRecord
+            {
+                Id = "t2",
+                SessionId = sessionId.ToString("D"),
+                ToolName = "start_job",
+                Status = "error",
+                DurationMs = 80
+            },
+            CancellationToken.None);
+        await toolStore.RecordAsync(
+            new AgentToolCallRecord
+            {
+                Id = "t3",
+                SessionId = otherId.ToString("D"),
+                ToolName = "list_views",
+                Status = "ok",
+                DurationMs = 9_999
+            },
+            CancellationToken.None);
+
+        var metrics = await usageStore.GetSessionMetricsAsync(sessionId, CancellationToken.None);
+
+        Assert.NotNull(metrics);
+        Assert.Equal(2, metrics!.Turns);
+        Assert.Equal(2, metrics.ToolCalls);
+        Assert.Equal(1, metrics.FailedToolCalls);
+        Assert.Equal(250, metrics.PromptTokens);
+        Assert.Equal(50, metrics.CompletionTokens);
+        Assert.Equal(5, metrics.ReasoningTokens);
+        Assert.Equal(40, metrics.CachedTokens);
+        Assert.Equal(0.003m, metrics.CostUsd);
+        Assert.Equal(500, metrics.LlmLatencyMs);
+        Assert.Equal(200, metrics.ToolDurationMs);
+    }
+
     private sealed class DatabaseFixture : IDisposable
     {
         private readonly string _directory;

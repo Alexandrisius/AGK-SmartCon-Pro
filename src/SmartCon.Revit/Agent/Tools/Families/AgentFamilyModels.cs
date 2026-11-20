@@ -164,6 +164,13 @@ internal sealed class FamilyTypeValueReport
 /// <summary>Parameter card used by get_family_parameters.</summary>
 internal sealed class FamilyParameterReport
 {
+    /// <summary>
+    /// FamilyParameter.Id as text: int on Revit 2021-2023 and ElementId on 2024+,
+    /// so read-back expectations can address a parameter with
+    /// <c>parameters.byId[&lt;id&gt;]</c> without a version-specific cast.
+    /// </summary>
+    public string? Id { get; set; }
+
     public string? Name { get; set; }
 
     public string? Scope { get; set; }

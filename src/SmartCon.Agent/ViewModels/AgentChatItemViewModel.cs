@@ -9,7 +9,9 @@ public enum AgentChatItemKind
     Assistant = 1,
     Tool = 2,
     Error = 3,
-    Info = 4
+    Info = 4,
+    WorkSummary = 5,
+    Metrics = 6
 }
 
 public sealed partial class AgentChatItemViewModel : ObservableObject
@@ -58,10 +60,54 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
+    /// <summary>
+    /// Streamed chain-of-thought of one assistant message. Shown in its own
+    /// collapsible block above the answer and auto-collapsed when the answer or a
+    /// tool call starts (H5.5).
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasReasoning))]
+    private string _reasoningText = string.Empty;
+
+    [ObservableProperty]
+    private string _reasoningHeader = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasReasoningStatus))]
+    private string _reasoningStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _isReasoningExpanded = true;
+
+    [ObservableProperty]
+    private bool _isReasoningStreaming;
+
+    /// <summary>
+    /// True for tool cards and intermediate assistant narration of the current
+    /// turn. At TurnCompleted every work item except the final answer is hidden
+    /// and one WorkSummary row toggles them back.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isWorkItem;
+
+    [ObservableProperty]
+    private bool _isVisible = true;
+
+    [ObservableProperty]
+    private bool _isWorkExpanded;
+
+    /// <summary>
+    /// Items hidden behind this WorkSummary row. The summary command flips their
+    /// IsVisible in place, so the transcript order stays intact.
+    /// </summary>
+    public IReadOnlyList<AgentChatItemViewModel> WorkItems { get; init; } =
+        Array.Empty<AgentChatItemViewModel>();
+
     public bool HasDetails => !string.IsNullOrEmpty(Details);
 
-    [RelayCommand]
-    private void ToggleDetails() => IsExpanded = !IsExpanded;
+    public bool HasReasoning => !string.IsNullOrEmpty(ReasoningText);
+
+    public bool HasReasoningStatus => !string.IsNullOrEmpty(ReasoningStatus);
 
     public string MarkdownText => IsStreaming ? string.Empty : Text;
 
@@ -81,5 +127,23 @@ public sealed partial class AgentChatItemViewModel : ObservableObject
 
     public bool IsInfo => Kind == AgentChatItemKind.Info;
 
+    public bool IsWorkSummary => Kind == AgentChatItemKind.WorkSummary;
+
+    public bool IsMetrics => Kind == AgentChatItemKind.Metrics;
+
     public string Alignment => IsUser ? "Right" : "Left";
+
+    [RelayCommand]
+    private void ToggleDetails() => IsExpanded = !IsExpanded;
+
+    [RelayCommand]
+    private void ToggleReasoning() => IsReasoningExpanded = !IsReasoningExpanded;
+
+    [RelayCommand]
+    private void ToggleWork()
+    {
+        IsWorkExpanded = !IsWorkExpanded;
+        foreach (var item in WorkItems)
+            item.IsVisible = IsWorkExpanded;
+    }
 }

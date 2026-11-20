@@ -12,9 +12,11 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
-  `find_families_with_parameter` (ищет по параметрам, видимым на **типах**; значения размещённых
-  экземпляров не сканирует), `list_shared_parameters` (нужен активный файл общих параметров,
-  иначе `shared_parameter_file_missing`).
+  `find_families_with_parameter` (по параметрам типов; `includeInstanceParameters=true`
+  добавляет параметры размещённых экземпляров, например `ADSK_Наименование`; без
+  размещённых экземпляров — только `get_family_parameters`),
+  `list_shared_parameters` (нужен активный файл общих параметров, иначе
+  `shared_parameter_file_missing`).
 - Запись: `rename_family_parameter`, `add_family_parameter`, `set_family_parameter_values`,
   `set_family_formula`, `map_family_parameters`, `delete_family_types`,
   `remove_family_parameter`.
@@ -66,17 +68,14 @@ public static partial class AgentToolPackSkills
   `values` формула target сначала снимается; в режиме `formula` — переносится текст формулы.
 - `rename_family_parameter` не переименовывает **shared**-параметр (`shared_parameter_not_renameable`):
   имя приходит из определения. Built-in параметры не переименовываются и не удаляются.
-- `remove_family_parameter` удаляет family/shared параметр; формулы, ссылающиеся на него,
-  Revit удаляет автоматически — ответ перечисляет их в warning.
+- `remove_family_parameter` удаляет family **и shared** параметр (shared — по `guid`); формулы,
+  ссылающиеся на него, Revit удаляет автоматически — ответ перечисляет их в warning.
+  Built-in удалять нельзя (`builtin_not_removable`); определение shared остаётся в файле
+  общих параметров.
 - Перед реальной правкой создаётся backup `.rfa`; `undo_last` восстанавливает семейство из
   него. `delete_family_types` — исключение: `undoSupported=false`.
-- `FamilyManager.Set` требует выставленного `CurrentType`; значение пишется во внутренних
-  единицах. Формула параметра хранится строкой и пересчитывает значения типов.
 - Параметр под формулой нельзя задавать вручную — сначала снимите формулу
   (`set_family_formula(formula=null)`).
-- Удаление параметра, от которого зависят формулы, Revit выполняет, но формулы исчезают:
-  ответ перечисляет их в warning. Built-in-параметры удалять нельзя; shared-параметр удалить
-  можно (его определение остаётся в файле общих параметров).
 - Удаление типа с размещёнными экземплярами отклоняется (`force=false`); `force=true`
   удаляет и экземпляры из модели — это необратимо.
 - Shared-параметр добавляется по `guid` из файла общих параметров; если определения нет,
@@ -103,6 +102,17 @@ public static partial class AgentToolPackSkills
   которые будут удалены.
 - После любой успешной записи — read-back (`get_family_parameters(includeValues=true)`);
   тул делает свою проверку, но итог читается из модели.
+
+### Форма get_family_parameters (для read-back)
+- `parameters[]` — плоский массив: `id` (`FamilyParameter.Id`), `name`, `scope`
+  (`instance`/`type`), `isShared`, `guid`, `storageType`, `formula`, `canSetValue`.
+- `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей),
+  `unit`, `hasValue`.
+- В `execute_plan.readBackExpectations` адресуйте параметр как
+  `parameters.byName[""Ширина""].valuesByType.byName[""Тип 1""].displayValue` или
+  `parameters.byId[<id>].name`; `byName` сравнивает `name`/`typeName` без учёта регистра.
+- Family write-тулы сами делают read-back после загрузки (`readBack.verified`/`mismatched`);
+  отдельный read-back нужен только для дополнительных условий.
 
 ### Рецепты
 1. «Добавь общий параметр ADSK_Наименование»: `list_shared_parameters(nameContains:""ADSK"")`
