@@ -120,7 +120,7 @@ public sealed class ListFiltersTool : AgentReadToolBase
         var includeDuplicateGroups = includeRules
                                     && AgentJson.GetBool(args, "includeDuplicateGroups", true);
         var duplicateGroups = includeDuplicateGroups
-            ? BuildDuplicateGroups(rows)
+            ? BuildDuplicateGroups(rows, usage)
             : new List<Dictionary<string, object?>>();
 
         var page = new List<Dictionary<string, object?>>();
@@ -206,7 +206,8 @@ public sealed class ListFiltersTool : AgentReadToolBase
     }
 
     private static List<Dictionary<string, object?>> BuildDuplicateGroups(
-        IReadOnlyList<FilterRow> rows)
+        IReadOnlyList<FilterRow> rows,
+        Dictionary<long, List<View>>? usage)
     {
         var byDigest = new Dictionary<string, List<FilterRow>>(StringComparer.Ordinal);
         foreach (var row in rows)
@@ -234,11 +235,16 @@ public sealed class ListFiltersTool : AgentReadToolBase
             var filters = new List<Dictionary<string, object?>>();
             foreach (var row in pair.Value)
             {
+                // Liveness of every copy (S.27): a group is resolved by one
+                // merge_duplicate_filters call when it is clear which copy is alive.
                 filters.Add(new Dictionary<string, object?>
                 {
                     ["filterId"] = row.Filter.Id.GetValue(),
                     ["name"] = row.Filter.Name,
-                    ["ruleCount"] = row.RuleCount
+                    ["ruleCount"] = row.RuleCount,
+                    ["appliedViewCount"] = usage is null
+                        ? "notComputed"
+                        : AgentFilterUsage.Count(usage, row.Filter.Id.GetValue())
                 });
             }
 

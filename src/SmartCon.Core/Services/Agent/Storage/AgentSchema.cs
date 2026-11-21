@@ -36,7 +36,7 @@ public sealed class AgentSchemaMigration
 /// </summary>
 public static class AgentSchema
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     public static IReadOnlyList<AgentSchemaMigration> All { get; } =
         new AgentSchemaMigration[]
@@ -368,6 +368,34 @@ CREATE INDEX IF NOT EXISTS ix_job_events_job
                     // "everything verified that was checkable".
                     AddColumn("job_items", "not_verifiable",
                         "ALTER TABLE job_items ADD COLUMN not_verifiable INTEGER NOT NULL DEFAULT 0;")
+                }
+            },
+            new()
+            {
+                Version = 7,
+                Name = "v7_filter_quarantine",
+                Statements = new[]
+                {
+                    // #459 (S.26): quarantine snapshots of deleted view filters.
+                    // A deleted filter cannot be restored by undo_last, so the full
+                    // state (rules, categories, applied views with overrides) is
+                    // persisted here before every delete_filter/merge apply.
+                    Statement(@"
+CREATE TABLE IF NOT EXISTS filter_snapshots (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NULL,
+    name TEXT NOT NULL,
+    unique_id TEXT NULL,
+    element_id INTEGER NULL,
+    rules_json TEXT NOT NULL,
+    categories_json TEXT NOT NULL,
+    applied_views_json TEXT NOT NULL,
+    reason TEXT NULL,
+    created_at TEXT NOT NULL
+);"),
+                    Statement(@"
+CREATE INDEX IF NOT EXISTS ix_filter_snapshots_created
+    ON filter_snapshots(created_at);")
                 }
             }
         };

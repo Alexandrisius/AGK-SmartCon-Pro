@@ -447,6 +447,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
         services.AddSingleton<IAgentToolResultBlobStore, SqliteAgentToolResultBlobStore>();
         services.AddSingleton<IAgentCompactionStore, SqliteAgentCompactionStore>();
+        services.AddSingleton<IAgentFilterQuarantineStore, SqliteAgentFilterQuarantineStore>();
         services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
 
         RegisterJobEngine(services, revitContext, agentDatabase);
@@ -499,6 +500,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetFilterRulesTool>();
         services.AddSingleton<IAgentTool, RenameFilterTool>();
         services.AddSingleton<IAgentTool, DeleteFilterTool>();
+        services.AddSingleton<IAgentTool, MergeDuplicateFiltersTool>();
         services.AddSingleton<IAgentTool, SetViewParametersTool>();
         services.AddSingleton<IAgentTool, DeleteViewsTool>();
         services.AddSingleton<IAgentTool, DuplicateViewTool>();

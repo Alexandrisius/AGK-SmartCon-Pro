@@ -20,6 +20,7 @@ public sealed class AgentDatabaseMigrationTests
         Assert.True(TableExists(fixture.DatabasePath, "compactions"));
         Assert.True(TableExists(fixture.DatabasePath, "tool_result_blobs"));
         Assert.True(TableExists(fixture.DatabasePath, "working_states"));
+        Assert.True(TableExists(fixture.DatabasePath, "filter_snapshots"));
         Assert.True(ColumnExists(fixture.DatabasePath, "job_items", "not_verifiable"));
 
         foreach (var column in new[]

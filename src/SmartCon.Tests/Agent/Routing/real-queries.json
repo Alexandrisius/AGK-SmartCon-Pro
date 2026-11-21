@@ -2631,6 +2631,22 @@
         "start_job"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r327",
+      "query": "Объедини дублирующиеся фильтры вентиляции в один канонический",
+      "expectedTools": [
+        "merge_duplicate_filters"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r328",
+      "query": "merge duplicate view filters keep applied",
+      "expectedTools": [
+        "merge_duplicate_filters"
+      ],
+      "kind": "write"
     }
   ]
 }

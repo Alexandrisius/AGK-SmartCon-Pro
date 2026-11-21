@@ -98,7 +98,8 @@ public sealed class AgentToolPacksTests
             {
                 "list_filters", "get_filter_details", "list_filterable_parameters",
                 "create_view_filter", "set_filter_rules",
-                "rename_filter", "delete_filter", "set_filter_overrides"
+                "rename_filter", "delete_filter", "merge_duplicate_filters",
+                "set_filter_overrides"
             },
             ["families"] = new[]
             {
@@ -136,7 +137,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(107, placements.Length);
+        Assert.Equal(108, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

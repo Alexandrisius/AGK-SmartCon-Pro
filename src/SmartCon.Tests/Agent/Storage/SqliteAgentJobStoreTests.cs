@@ -23,7 +23,7 @@ public sealed class SqliteAgentJobStoreTests
 
         fixture.Database.Initialize();
 
-        Assert.Equal(6, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(7, ReadUserVersion(fixture.DatabasePath));
         Assert.True(TableExists(fixture.DatabasePath, "jobs"));
         Assert.True(TableExists(fixture.DatabasePath, "job_batches"));
         Assert.True(TableExists(fixture.DatabasePath, "job_items"));
@@ -33,7 +33,7 @@ public sealed class SqliteAgentJobStoreTests
 
         // A second Initialize is a no-op and must not create a second backup.
         fixture.Database.Initialize();
-        Assert.Equal(6, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(7, ReadUserVersion(fixture.DatabasePath));
         Assert.Single(Directory.GetFiles(fixture.DirectoryPath, "*.bak-v4-*"));
     }
 

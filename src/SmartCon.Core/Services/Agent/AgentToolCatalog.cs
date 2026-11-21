@@ -363,9 +363,15 @@ public static class AgentToolCatalog
                 "изменить фильтр", "правила фильтра", "set filter rules", "очистить фильтр",
                 "настроить фильтр"
             }),
-            ["delete_filter"] = new("Write", false, new[]
+            ["delete_filter"] = new("Write", true, new[]
             {
-                "удалить фильтр", "убрать фильтр", "delete filter", "remove filter"
+                "удалить фильтр", "убрать фильтр", "delete filter", "remove filter",
+                "удалить мёртвые фильтры", "почистить фильтры партией"
+            }),
+            ["merge_duplicate_filters"] = new("Write", false, new[]
+            {
+                "объединить дубликаты фильтров", "слить дубликаты фильтров",
+                "merge filters", "замена дубликата фильтра"
             }),
             ["delete_views"] = new("Write", true, new[]
             {

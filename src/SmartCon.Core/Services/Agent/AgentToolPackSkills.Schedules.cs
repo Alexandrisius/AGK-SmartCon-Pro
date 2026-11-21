@@ -103,12 +103,20 @@ public static partial class AgentToolPackSkills
 overrides хранятся **в каждом виде отдельно**.
 
 ### Карта тулов
-- `list_filters` — список с применёнными видами и правилами.
+- `list_filters` — список с применёнными видами и правилами; duplicateGroups показывают
+  группы дубликатов с `appliedViewCount` каждой копии (кто живой).
 - `get_filter_details` — фильтр: категории, правила, `filterEnabled`, `visible`, `mode`, overrides.
 - `list_filterable_parameters` — pre-flight: какие параметры фильтруемы для категорий.
 - `create_view_filter` — создать и применить к видам; `visibility: none|hide|show`, `reused`.
 - `set_filter_rules` — заменить категории/правила; `undoSupported=false`.
-- `rename_filter`, `delete_filter`, `set_filter_overrides`.
+- `delete_filter` — удаление одного фильтра или партии (`filterIds`/`filterNames`, до 100):
+  батч = 2 вызова (dryRun → apply с `confirmNames` = один перечень на всю партию);
+  `deadOnly=true` — гард: применённый фильтр в списке → отказ `filter_in_use` с видами.
+  Перед удалением каждого фильтра — карантин-снимок в agent.db (90 дней).
+- `merge_duplicate_filters` — слить дубль в канонический: во всех видах дубль заменяется
+  на канонический, затем дубль удаляется (с карантином); батч = 2 вызова
+  (dryRun-план видов → apply с `confirmNames`).
+- `rename_filter`, `set_filter_overrides`.
 
 ### Две галочки Revit UI (не путать!)
 - **«Фильтр включён»** = `View.SetIsFilterEnabled`. Выключен → фильтр не действует, overrides
@@ -161,6 +169,14 @@ overrides хранятся **в каждом виде отдельно**.
 - После `success=false` — read-back `get_filter_details` до вывода «ничего не изменилось».
 - `set_filter_rules` не откатывается `undo_last`: откат — повторный вызов с `previousRules`
   и `previousCategories`.
+- Удаление фильтра и merge дубликатов необратимы (`undoSupported=false`): перед каждым
+  удалением тул сам кладёт карантин-снимок (правила+категории+виды+overrides) в agent.db
+  на 90 дней — восстановление только ручное, по snapshotId из отчёта. Массовая чистка
+  мёртвых фильтров — ОДИН вызов `delete_filter` с массивом (13 фильтров = 2 вызова:
+  preview+apply), не поштучно.
+- `merge_duplicate_filters` не переносит overrides дубликата на канонический фильтр
+  (Revit добавляет фильтр с дефолтными overrides): виды с настроенной графикой попадают
+  в `overridesNotTransferred` — переложи через `set_filter_overrides`.
 
 ### Рецепты
 1. Создать, пока не скрывая: `create_view_filter(visibility=""none"")`; включить скрытие —
@@ -169,6 +185,13 @@ overrides хранятся **в каждом виде отдельно**.
    + `mode`; состав — `query_elements(viewId=...)`.
 3. «Не вижу элементы»: сначала проверить, не выключен ли фильтр (`filterEnabled=false`),
    потом `visible=false` у фильтра, потом скрытие категории в V/G.
+4. «Почисти мёртвые фильтры»: `list_filters` (мёртвые = `appliedViewCount=0`) →
+   `delete_filter(filterNames=[...], dryRun=true)` → подтверждение →
+   `delete_filter(filterNames=[...], dryRun=false, confirmNames=names[])`.
+5. «Слей дубликаты»: `list_filters` → группа в `duplicateGroups` (живая копия —
+   каноническая, у неё `appliedViewCount`>0) → `merge_duplicate_filters(duplicateFilterId,
+   canonicalFilterId, dryRun=true)` → `merge_duplicate_filters(..., dryRun=false,
+   confirmNames=names[])`.
 
 ### Что нельзя
 - Добавлять категорию без pre-flight: фитинги и арматура часто не имеют параметра системы.

@@ -178,12 +178,13 @@ public static class AgentToolPacks
         new()
         {
             Name = "filters",
-            Description = "Фильтры видов: чтение, создание, правила, переименование, удаление и overrides.",
+            Description = "Фильтры видов: чтение, создание, правила, переименование, удаление (батч с карантином), слияние дубликатов и overrides.",
             Tools = new[]
             {
                 "list_filters", "get_filter_details", "list_filterable_parameters",
                 "create_view_filter", "set_filter_rules",
-                "rename_filter", "delete_filter", "set_filter_overrides"
+                "rename_filter", "delete_filter", "merge_duplicate_filters",
+                "set_filter_overrides"
             },
             // #400: opening a filter on a view needs the view state first; loading
             // the pack must not force a second load_tool_pack for it.
