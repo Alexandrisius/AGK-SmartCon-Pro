@@ -13,6 +13,12 @@ public sealed class JobItem
 
     public JobItemState State { get; init; }
 
+    /// <summary>
+    /// Target values of this unit that no project-side read can verify (family
+    /// instance scope / element references). Only meaningful on Done/Skipped rows.
+    /// </summary>
+    public int NotVerifiable { get; init; }
+
     /// <summary>Serialized <see cref="JobUnitPreview"/> produced by the dry run.</summary>
     public string? PreviewJson { get; init; }
 
@@ -40,6 +46,9 @@ public sealed class JobItemUpdate
     public int Seq { get; init; }
 
     public JobItemState State { get; init; }
+
+    /// <summary>Refreshes the per-unit not-verifiable target count (0 clears it).</summary>
+    public int NotVerifiable { get; init; }
 
     public string? PreviewJson { get; init; }
 
@@ -75,6 +84,13 @@ public sealed class JobTotals
 
     public int Mismatch { get; init; }
 
+    /// <summary>
+    /// Target values applied but not verifiable from the project side (family
+    /// instance scope / element references). Kept separate from
+    /// <see cref="Mismatch"/>: "unknown" is not "wrong" (#432).
+    /// </summary>
+    public int NotVerifiable { get; init; }
+
     public int Undone { get; init; }
 
     public int UndoFailed { get; init; }
@@ -99,6 +115,7 @@ public sealed class JobTotals
         var skipped = 0;
         var failed = 0;
         var mismatch = 0;
+        var notVerifiable = 0;
         var undone = 0;
         var undoFailed = 0;
         var appliedBefore = 0;
@@ -108,6 +125,8 @@ public sealed class JobTotals
 
         foreach (var item in items)
         {
+            notVerifiable += item.NotVerifiable;
+
             if (item.State is JobItemState.Previewed or JobItemState.Applying or JobItemState.Done
                 or JobItemState.Skipped or JobItemState.Failed or JobItemState.Mismatch
                 or JobItemState.Undoing or JobItemState.Undone or JobItemState.UndoFailed)
@@ -170,6 +189,7 @@ public sealed class JobTotals
             Skipped = skipped,
             Failed = failed,
             Mismatch = mismatch,
+            NotVerifiable = notVerifiable,
             Undone = undone,
             UndoFailed = undoFailed,
             AppliedBefore = appliedBefore,
@@ -253,6 +273,7 @@ public static class JobEventTypes
     public const string Reconciled = "reconciled";
     public const string Completed = "completed";
     public const string CompletedWithFailures = "completed_with_failures";
+    public const string CompletedUnverified = "completed_unverified";
     public const string Failed = "failed";
     public const string DocumentChanged = "document_changed";
 }

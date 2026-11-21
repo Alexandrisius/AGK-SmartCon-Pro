@@ -63,7 +63,7 @@ VALUES(@jobId, @seq, @unitKey, @argsJson, @label, @state, 0, @updatedAt);";
             using var command = connection.CreateCommand();
             command.CommandText = @"
 SELECT seq, unit_key, args_json, label, state, preview_json, expected_json, actual_json,
-       undo_json, error_code, error_detail, attempts, batch_index, updated_at
+       undo_json, error_code, error_detail, attempts, batch_index, updated_at, not_verifiable
 FROM job_items
 WHERE job_id = @jobId AND seq > @afterSeq AND state IN " + stateFilter + @"
 ORDER BY seq
@@ -86,7 +86,7 @@ LIMIT @limit;";
             using var command = connection.CreateCommand();
             command.CommandText = @"
 SELECT seq, unit_key, args_json, label, state, preview_json, expected_json, actual_json,
-       undo_json, error_code, error_detail, attempts, batch_index, updated_at
+       undo_json, error_code, error_detail, attempts, batch_index, updated_at, not_verifiable
 FROM job_items
 WHERE job_id = @jobId
 ORDER BY seq;";
@@ -139,11 +139,13 @@ UPDATE job_items SET
     undo_json = COALESCE(@undoJson, undo_json),
     error_code = @errorCode,
     error_detail = @errorDetail,
+    not_verifiable = @notVerifiable,
     attempts = attempts + @attemptIncrement,
     batch_index = COALESCE(@batchIndex, batch_index),
     updated_at = @updatedAt
 WHERE job_id = @jobId AND seq = @seq;";
                 command.Parameters.AddWithValue("@state", (int)update.State);
+                command.Parameters.AddWithValue("@notVerifiable", update.NotVerifiable);
                 command.Parameters.AddWithValue("@previewJson", (object?)update.PreviewJson ?? DBNull.Value);
                 command.Parameters.AddWithValue("@expectedJson", (object?)update.ExpectedJson ?? DBNull.Value);
                 command.Parameters.AddWithValue("@actualJson", (object?)update.ActualJson ?? DBNull.Value);
@@ -387,6 +389,7 @@ LIMIT @limit;";
                 ArgsJson = reader.GetString(2),
                 Label = reader.IsDBNull(3) ? null : reader.GetString(3),
                 State = (JobItemState)reader.GetInt32(4),
+                NotVerifiable = reader.GetInt32(14),
                 PreviewJson = reader.IsDBNull(5) ? null : reader.GetString(5),
                 ExpectedJson = reader.IsDBNull(6) ? null : reader.GetString(6),
                 ActualJson = reader.IsDBNull(7) ? null : reader.GetString(7),

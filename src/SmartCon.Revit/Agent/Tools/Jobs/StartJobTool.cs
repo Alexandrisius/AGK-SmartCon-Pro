@@ -369,7 +369,7 @@ public sealed class StartJobTool : IAgentTool
             JobState.Running =>
                 "Job started. Call get_job_status (waitSeconds=10) until the state is terminal " +
                 "and mustVerify=false; do not report it as finished before that.",
-            JobState.Completed or JobState.CompletedWithFailures =>
+            JobState.Completed or JobState.CompletedWithFailures or JobState.CompletedUnverified =>
                 "Job finished: " + job.State + ". Call get_job_report for the per-item diff.",
             _ => "Job state: " + job.State
         };

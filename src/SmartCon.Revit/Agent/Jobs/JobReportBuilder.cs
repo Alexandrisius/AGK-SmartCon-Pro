@@ -117,6 +117,15 @@ public sealed class JobReportBuilder
             warnings.Add(mismatches + " unit(s) no longer match the expected values in the model");
         }
 
+        if (totals.NotVerifiable > 0)
+        {
+            // #432: not a failure — these values live in the family document and
+            // no project-side read can prove them.
+            warnings.Add(
+                totals.NotVerifiable + " target value(s) are not verifiable from the project side " +
+                "(instance scope / element references); check them in the Family Editor if needed");
+        }
+
         if (job.ErrorCode is not null)
         {
             warnings.Add(job.ErrorCode + ": " + job.ErrorDetail);

@@ -15,7 +15,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// Family batch job: one family per unit, backup + edit + load-back + close, and
 /// per-unit rollback. The 100-family test is the A.7 acceptance bar.
 /// </summary>
-public sealed class AgentFamilyJobTests : RevitApiTest
+public sealed partial class AgentFamilyJobTests : RevitApiTest
 {
     private const int FamilyCount = 100;
     private const int RollbackFamilyCount = 5;

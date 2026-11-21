@@ -24,15 +24,15 @@ public static class JobStateMachine
             },
             [JobState.Running] = new[]
             {
-                JobState.Completed, JobState.CompletedWithFailures, JobState.Failed,
-                JobState.Cancelling, JobState.Interrupted, JobState.RolledBack,
-                JobState.RollbackPartial
+                JobState.Completed, JobState.CompletedWithFailures, JobState.CompletedUnverified,
+                JobState.Failed, JobState.Cancelling, JobState.Interrupted,
+                JobState.RolledBack, JobState.RollbackPartial
             },
             [JobState.Cancelling] = new[]
             {
                 JobState.Cancelled, JobState.RolledBack, JobState.RollbackPartial,
-                JobState.Completed, JobState.CompletedWithFailures, JobState.Failed,
-                JobState.Interrupted
+                JobState.Completed, JobState.CompletedWithFailures, JobState.CompletedUnverified,
+                JobState.Failed, JobState.Interrupted
             },
             [JobState.Interrupted] = new[]
             {
@@ -44,6 +44,7 @@ public static class JobStateMachine
             {
                 JobState.RolledBack, JobState.RollbackPartial, JobState.Running
             },
+            [JobState.CompletedUnverified] = new[] { JobState.RolledBack, JobState.RollbackPartial },
             [JobState.Failed] = new[] { JobState.Running, JobState.RolledBack, JobState.RollbackPartial },
             [JobState.Cancelled] = new[] { JobState.RolledBack, JobState.RollbackPartial },
             [JobState.RollbackPartial] = new[] { JobState.RolledBack },
@@ -58,7 +59,8 @@ public static class JobStateMachine
 
     /// <summary>Terminal states have no background work left (rollback commands may still change them).</summary>
     public static bool IsTerminal(JobState state) =>
-        state is JobState.Completed or JobState.CompletedWithFailures or JobState.Failed
+        state is JobState.Completed or JobState.CompletedWithFailures
+            or JobState.CompletedUnverified or JobState.Failed
             or JobState.Cancelled or JobState.RolledBack or JobState.RollbackPartial;
 
     /// <summary>States in which the pump must keep (or start) doing work.</summary>

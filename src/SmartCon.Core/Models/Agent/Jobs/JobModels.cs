@@ -25,7 +25,13 @@ public enum JobState
     Cancelled = 8,
     Interrupted = 9,
     RolledBack = 10,
-    RollbackPartial = 11
+    RollbackPartial = 11,
+    /// <summary>
+    /// Applied without failures, but some targets are physically not verifiable
+    /// from the project side (family instance scope / element references). Not a
+    /// failure: everything that could be checked matched (#432).
+    /// </summary>
+    CompletedUnverified = 12
 }
 
 /// <summary>
@@ -271,6 +277,13 @@ public sealed class JobUnitApply
 public sealed class JobUnitVerification
 {
     public bool Verified { get; init; }
+
+    /// <summary>
+    /// Target values the project side can never read back (family instance scope,
+    /// element references). They are "unknown", not "wrong": every target that
+    /// could be checked matched. Counted separately from mismatches (#432).
+    /// </summary>
+    public int NotVerifiable { get; init; }
 
     public string? ActualJson { get; init; }
 

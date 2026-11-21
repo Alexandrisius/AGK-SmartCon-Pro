@@ -450,6 +450,7 @@ WHERE id = @id;";
             // Terminal states are final: the write is allowed when the row already
             // holds the target state (finalizing a transition) or when the row is
             // still non-terminal; a racing slice can never rewrite another terminal.
+            // Terminal ints: 4,5,6,8,10,11 and 12 (CompletedUnverified, #432).
             command.CommandText = @"
 UPDATE jobs SET
     state = @state,
@@ -457,7 +458,7 @@ UPDATE jobs SET
     error_detail = @errorDetail,
     finished_at = @finishedAt,
     updated_at = @finishedAt
-WHERE id = @id AND (state = @state OR state NOT IN (4, 5, 6, 8, 10, 11));";
+WHERE id = @id AND (state = @state OR state NOT IN (4, 5, 6, 8, 10, 11, 12));";
             command.Parameters.AddWithValue("@state", (int)finalState);
             command.Parameters.AddWithValue("@errorCode", (object?)errorCode ?? DBNull.Value);
             command.Parameters.AddWithValue("@errorDetail", (object?)errorDetail ?? DBNull.Value);

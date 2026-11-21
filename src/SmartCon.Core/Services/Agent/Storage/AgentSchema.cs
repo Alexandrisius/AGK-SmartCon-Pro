@@ -36,7 +36,7 @@ public sealed class AgentSchemaMigration
 /// </summary>
 public static class AgentSchema
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     public static IReadOnlyList<AgentSchemaMigration> All { get; } =
         new AgentSchemaMigration[]
@@ -354,6 +354,20 @@ CREATE TABLE IF NOT EXISTS job_events (
                     Statement(@"
 CREATE INDEX IF NOT EXISTS ix_job_events_job
     ON job_events(job_id, id);")
+                }
+            },
+            new()
+            {
+                Version = 6,
+                Name = "v6_job_not_verifiable",
+                Statements = new[]
+                {
+                    // #432 (B.6): per-unit count of applied target values that no
+                    // project-side read can verify (family instance scope / element
+                    // references). Additive with default 0, so pre-v6 rows read as
+                    // "everything verified that was checkable".
+                    AddColumn("job_items", "not_verifiable",
+                        "ALTER TABLE job_items ADD COLUMN not_verifiable INTEGER NOT NULL DEFAULT 0;")
                 }
             }
         };

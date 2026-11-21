@@ -148,7 +148,11 @@ public sealed class GetJobReportTool : IAgentTool
                 ", ", report.Errors.Select(group => group.ErrorCode + " ×" + group.Count)) + "]";
         var message = "Report: " + report.Totals.Done + " done, " + report.Totals.Skipped +
                       " skipped, " + report.Totals.Failed + " failed, " + report.Totals.Mismatch +
-                      " mismatch" + (report.Saved ? ", saved" : ", NOT saved") +
+                      " mismatch" +
+                      (report.Totals.NotVerifiable > 0
+                          ? ", " + report.Totals.NotVerifiable + " not verifiable (instance/element refs)"
+                          : string.Empty) +
+                      (report.Saved ? ", saved" : ", NOT saved") +
                       (report.Cancelled ? ", CANCELLED (" + report.InterruptedUnits + " not applied)" : string.Empty) +
                       (report.Totals.Stale > 0 ? ", stale=" + report.Totals.Stale + " (rerun preview)" : string.Empty) +
                       (!report.ReadBack

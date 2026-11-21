@@ -46,6 +46,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
         var actual = new List<FamilyReplaceActualState>();
         var mismatches = new List<string>();
         var checkedTargets = 0;
+        var skippedUnverifiable = 0;
 
         foreach (var entry in expected)
         {
@@ -58,6 +59,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
             // rebinds are family-type defaults no project element proves.
             if (string.Equals(entry.Source.Scope, "instance", StringComparison.OrdinalIgnoreCase))
             {
+                skippedUnverifiable += entry.Types.Count;
                 continue;
             }
 
@@ -66,6 +68,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
                 if (string.Equals(typeState.Storage, "elementId", StringComparison.OrdinalIgnoreCase))
                 {
                     // Element references get new project-side ids on load-back.
+                    skippedUnverifiable++;
                     continue;
                 }
 
@@ -102,8 +105,21 @@ public sealed partial class ReplaceFamilyParameterJobAction
 
         if (checkedTargets == 0)
         {
-            // Fail closed: a unit whose targets cannot be read back from the project
-            // side (instance scope / element references) is never silently "done".
+            if (skippedUnverifiable > 0)
+            {
+                // #432 (B.6): every target of this unit lives in the family document
+                // only (instance scope / element references). Nothing checkable
+                // failed, so this is "unknown", not "wrong".
+                return new JobUnitVerification
+                {
+                    Verified = true,
+                    NotVerifiable = skippedUnverifiable,
+                    ActualJson = Json(actual)
+                };
+            }
+
+            // Fail closed: a unit with no checkable target and nothing skipped had
+            // an empty expected state — that is never silently "done".
             return new JobUnitVerification
             {
                 Verified = false,
@@ -117,6 +133,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
         return new JobUnitVerification
         {
             Verified = mismatches.Count == 0,
+            NotVerifiable = skippedUnverifiable,
             ActualJson = Json(actual),
             MismatchReason = mismatches.Count == 0 ? null : string.Join("; ", mismatches)
         };

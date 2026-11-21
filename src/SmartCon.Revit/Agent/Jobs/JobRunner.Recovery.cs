@@ -78,6 +78,7 @@ public sealed partial class JobRunner
                 {
                     Seq = item.Seq,
                     State = preview.Skipped ? JobItemState.Skipped : JobItemState.Done,
+                    NotVerifiable = verification.NotVerifiable,
                     ActualJson = verification.ActualJson
                 });
                 kept++;

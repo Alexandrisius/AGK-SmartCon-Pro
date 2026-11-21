@@ -56,6 +56,9 @@ internal static class JobToolPayloads
             stale = totals.Stale,
             done = totals.Done,
             mismatch = totals.Mismatch,
+            // #432: applied targets no project-side read can verify; separate from
+            // mismatch ("unknown" is not "wrong").
+            notVerified = totals.NotVerifiable,
             undone = totals.Undone,
             undoFailed = totals.UndoFailed,
             appliedBefore = totals.AppliedBefore,
@@ -131,9 +134,13 @@ internal static class JobToolPayloads
         JobState.Cancelling => "wait: the runner is stopping between units",
         JobState.Interrupted =>
             "resume: call start_job with action, resumeJobId, dryRun=false",
-        JobState.Completed => "report: call get_job_report to get the per-item diff",
-        JobState.CompletedWithFailures =>
-            "report: call get_job_report; then retry_failed_items or rollback_job",
+            JobState.Completed => "report: call get_job_report to get the per-item diff",
+            JobState.CompletedUnverified =>
+                "applied; " + Totals(job).NotVerifiable +
+                " target(s) not verifiable from the project (instance/element refs) — nothing to " +
+                "retry; rollback_job if unwanted",
+            JobState.CompletedWithFailures =>
+                "report: call get_job_report; then retry_failed_items or rollback_job",
         JobState.Cancelled => "report: call get_job_report; then rollback_job if needed",
         JobState.RolledBack => "nothing to do: the model was restored",
         JobState.RollbackPartial =>

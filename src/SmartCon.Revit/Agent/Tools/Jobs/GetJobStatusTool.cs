@@ -80,7 +80,8 @@ public sealed class GetJobStatusTool : IAgentTool
             }
 
             var settled = job.State is JobState.PreviewReady or JobState.Completed
-                or JobState.CompletedWithFailures or JobState.Failed or JobState.Cancelled
+                or JobState.CompletedWithFailures or JobState.CompletedUnverified
+                or JobState.Failed or JobState.Cancelled
                 or JobState.RolledBack or JobState.RollbackPartial or JobState.Interrupted;
 
             if (settled || DateTime.UtcNow >= deadline)

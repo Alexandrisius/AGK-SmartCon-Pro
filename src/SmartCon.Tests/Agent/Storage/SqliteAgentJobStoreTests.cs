@@ -23,17 +23,88 @@ public sealed class SqliteAgentJobStoreTests
 
         fixture.Database.Initialize();
 
-        Assert.Equal(5, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(6, ReadUserVersion(fixture.DatabasePath));
         Assert.True(TableExists(fixture.DatabasePath, "jobs"));
         Assert.True(TableExists(fixture.DatabasePath, "job_batches"));
         Assert.True(TableExists(fixture.DatabasePath, "job_items"));
         Assert.True(TableExists(fixture.DatabasePath, "job_events"));
+        Assert.True(ColumnExists(fixture.DatabasePath, "job_items", "not_verifiable"));
         Assert.Equal("Legacy", ReadSessionTitle(fixture.DatabasePath, "s1"));
 
         // A second Initialize is a no-op and must not create a second backup.
         fixture.Database.Initialize();
-        Assert.Equal(5, ReadUserVersion(fixture.DatabasePath));
+        Assert.Equal(6, ReadUserVersion(fixture.DatabasePath));
         Assert.Single(Directory.GetFiles(fixture.DirectoryPath, "*.bak-v4-*"));
+    }
+
+    [Fact]
+    public void Migration_FromV5JobRow_ReadsNotVerifiableAsZero()
+    {
+        // #432: a pre-v6 job_items row has no not_verifiable value; it must read
+        // as 0 ("everything verified that was checkable"), never break the load.
+        using var fixture = new DatabaseFixture();
+        CreateDatabaseUpToVersion(fixture.DatabasePath, 5);
+        fixture.Database.Initialize();
+
+        var store = CreateStore(fixture);
+        var job = store.CreateAsync(Spec(), CancellationToken.None).GetAwaiter().GetResult();
+        using (var connection = Open(fixture.DatabasePath))
+        {
+            Execute(
+                connection,
+                "INSERT INTO job_items(job_id, seq, unit_key, args_json, state, updated_at) VALUES('" +
+                job.JobId.ToString("D") + "', 1, 'legacy-unit', '{}', 3, '2026-01-01T00:00:00Z');");
+        }
+
+        var items = store.LoadAllItemsAsync(job.JobId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        Assert.Single(items);
+        Assert.Equal(JobItemState.Done, items[0].State);
+        Assert.Equal(0, items[0].NotVerifiable);
+    }
+
+    [Fact]
+    public void UpdateItems_PersistsNotVerifiableCount_AcrossReopen()
+    {
+        using var fixture = new DatabaseFixture();
+        fixture.Database.Initialize();
+        var first = CreateStore(fixture);
+        var job = first.CreateAsync(Spec(), CancellationToken.None).GetAwaiter().GetResult();
+
+        first.AddUnitsAsync(
+            job.JobId,
+            new[] { Unit(1, "fam-a", "{}"), Unit(2, "fam-b", "{}") },
+            CancellationToken.None).GetAwaiter().GetResult();
+
+        first.UpdateItemsAsync(
+            job.JobId,
+            new[]
+            {
+                new JobItemUpdate { Seq = 1, State = JobItemState.Done, NotVerifiable = 4 },
+                new JobItemUpdate { Seq = 2, State = JobItemState.Done }
+            },
+            CancellationToken.None).GetAwaiter().GetResult();
+
+        // A failed/mismatch rewrite must clear the count for that row.
+        first.UpdateItemsAsync(
+            job.JobId,
+            new[] { new JobItemUpdate { Seq = 2, State = JobItemState.Mismatch, ErrorCode = "m" } },
+            CancellationToken.None).GetAwaiter().GetResult();
+
+        var reopened = new AgentDatabase(fixture.DatabasePath);
+        reopened.Initialize();
+        var store = CreateStore(fixture, reopened);
+
+        var items = store.LoadAllItemsAsync(job.JobId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        Assert.Equal(4, items[0].NotVerifiable);
+        Assert.Equal(0, items[1].NotVerifiable);
+
+        var totals = JobTotals.FromItems(items);
+        Assert.Equal(4, totals.NotVerifiable);
+        Assert.Equal(1, totals.Mismatch);
     }
 
     [Fact]
@@ -296,6 +367,23 @@ INSERT INTO sessions (id, document_id, title, created_at, updated_at)
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
         command.Parameters.AddWithValue("$name", table);
         return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
+    }
+
+    private static bool ColumnExists(string path, string table, string column)
+    {
+        using var connection = Open(path);
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(\"" + table + "\");";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static SqliteConnection Open(string path)

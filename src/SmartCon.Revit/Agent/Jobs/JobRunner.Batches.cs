@@ -321,6 +321,7 @@ public sealed partial class JobRunner
             {
                 Seq = plan.Item.Seq,
                 State = result.Skipped || plan.Preview.Skipped ? JobItemState.Skipped : JobItemState.Done,
+                NotVerifiable = verification.NotVerifiable,
                 ActualJson = verification.ActualJson,
                 UndoJson = result.UndoJson ?? plan.Preview.UndoJson,
                 ErrorCode = null,
@@ -402,17 +403,32 @@ public sealed partial class JobRunner
                 };
             }
 
-            if (!verification.Verified)
+            if (verification.Verified)
             {
-                corrections.Add(new JobItemUpdate
+                // #432: keep the stored not-verifiable count in step with the final
+                // read-back; the state itself stays Done/Skipped.
+                if (verification.NotVerifiable != item.NotVerifiable)
                 {
-                    Seq = item.Seq,
-                    State = JobItemState.Mismatch,
-                    ActualJson = verification.ActualJson,
-                    ErrorCode = JobErrorCodes.Mismatch,
-                    ErrorDetail = verification.MismatchReason ?? "final read-back mismatch"
-                });
+                    corrections.Add(new JobItemUpdate
+                    {
+                        Seq = item.Seq,
+                        State = item.State,
+                        NotVerifiable = verification.NotVerifiable,
+                        ActualJson = verification.ActualJson
+                    });
+                }
+
+                continue;
             }
+
+            corrections.Add(new JobItemUpdate
+            {
+                Seq = item.Seq,
+                State = JobItemState.Mismatch,
+                ActualJson = verification.ActualJson,
+                ErrorCode = JobErrorCodes.Mismatch,
+                ErrorDetail = verification.MismatchReason ?? "final read-back mismatch"
+            });
         }
 
         if (corrections.Count > 0)
@@ -442,10 +458,7 @@ public sealed partial class JobRunner
         var totals = JobTotals.FromItems(items);
         Sync(_store.UpdateTotalsAsync(job.JobId, JobJson.Serialize(totals), CancellationToken.None));
 
-        var finalState = totals.Mismatch > 0 || totals.Failed > 0 || totals.UndoFailed > 0
-                         || totals.Incomplete > 0
-            ? JobState.CompletedWithFailures
-            : JobState.Completed;
+        var finalState = JobFinalStateDecider.Decide(totals);
 
         var transition = Sync(_store.TransitionAsync(
             job.JobId,
@@ -506,9 +519,12 @@ public sealed partial class JobRunner
             job.JobId,
             finalState == JobState.Completed
                 ? JobEventTypes.Completed
-                : JobEventTypes.CompletedWithFailures,
+                : finalState == JobState.CompletedUnverified
+                    ? JobEventTypes.CompletedUnverified
+                    : JobEventTypes.CompletedWithFailures,
             "{\"done\":" + totals.Done + ",\"skipped\":" + totals.Skipped +
-            ",\"failed\":" + totals.Failed + ",\"mismatch\":" + totals.Mismatch + "}",
+            ",\"failed\":" + totals.Failed + ",\"mismatch\":" + totals.Mismatch +
+            ",\"notVerifiable\":" + totals.NotVerifiable + "}",
             CancellationToken.None));
 
         _wantsPump = false;
