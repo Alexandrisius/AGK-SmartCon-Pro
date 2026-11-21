@@ -230,6 +230,9 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `done` | #344 |
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `done` | #345 |
 | `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `done` | #346 |
+| `G.4a` | duplicate/rename/replace для СИСТЕМНЫХ типов + list_system_types | P1 | `backlog` | #441 |
+| `G.2a` | Спецификации: поля (удаление/порядок), totals, единицы | P2 | `backlog` | #442 |
+| `G.2b` | Спецификации на листе: перемещение и секции | P3 | `backlog` | #443 |
 | `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
 | `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `backlog` | #438 |
 | `G.5b` | remove_viewport: снять вид с листа | P2 | `backlog` | #439 |
