@@ -47,6 +47,9 @@ public sealed class AgentToolCardsTests
         "set_view_visibility",
         "configure_views",
         "copy_view_settings",
+        "copy_crop_from_view",
+        "list_scope_boxes",
+        "assign_scope_box",
         "create_view_filter",
         "set_filter_overrides",
         "list_families",
@@ -110,7 +113,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(97, AgentToolCards.Count);
+        Assert.Equal(100, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

@@ -475,7 +475,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         var key = item.ParameterName ?? string.Empty;
 
         if (key is "view_template" or "view_range" or "crop" or "visibility"
-            or "viewRange" or "template" or "view_template_inclusion")
+            or "viewRange" or "template" or "view_template_inclusion" or "scope_box")
         {
             if (element is not View view)
                 return (false, "unsupported_element", "Element " + item.ElementId + " is not a view.");
@@ -486,6 +486,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 "view_range" or "viewRange" => RevertViewRange(view, item, force),
                 "crop" => RevertCrop(view, item, force),
                 "view_template_inclusion" => RevertTemplateInclusion(view, item, force),
+                "scope_box" => RevertScopeBox(view, item, force),
                 _ => RevertVisibility(doc, view, item, force)
             };
         }

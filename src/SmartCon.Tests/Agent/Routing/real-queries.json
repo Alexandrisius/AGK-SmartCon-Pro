@@ -2439,6 +2439,70 @@
         "audit_model"
       ],
       "kind": "read"
+    },
+    {
+      "id": "r303",
+      "query": "Вырежи планы этажа как эталонный вид 101",
+      "expectedTools": [
+        "copy_crop_from_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r304",
+      "query": "Скопируй подрезку с эталонного вида на все планы этажа",
+      "expectedTools": [
+        "copy_crop_from_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r305",
+      "query": "Область подрезки как на образце, только рамку",
+      "expectedTools": [
+        "copy_crop_from_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r306",
+      "query": "Какие габаритные боксы есть в проекте",
+      "expectedTools": [
+        "list_scope_boxes"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r307",
+      "query": "Покажи список scope box с границами",
+      "expectedTools": [
+        "list_scope_boxes"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r308",
+      "query": "Назначь габаритный бокс Секция 3 всем планам этажа",
+      "expectedTools": [
+        "assign_scope_box"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r309",
+      "query": "Привяжи виды к масштабному боксу по имени",
+      "expectedTools": [
+        "assign_scope_box"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r310",
+      "query": "Сними габаритный бокс с выбранных планов",
+      "expectedTools": [
+        "assign_scope_box"
+      ],
+      "kind": "write"
     }
   ]
 }

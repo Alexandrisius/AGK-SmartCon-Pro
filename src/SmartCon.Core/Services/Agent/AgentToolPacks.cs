@@ -43,18 +43,18 @@ public static class AgentToolPacks
         new()
         {
             Name = "view_settings",
-            Description = "Чтение и изменение настроек вида: диапазон, подрезка, видимость, параметры.",
+            Description = "Чтение и изменение настроек вида: диапазон, подрезка, видимость, габаритные боксы, параметры.",
             Tools = new[]
             {
                 "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility",
-                "set_view_parameters"
+                "set_view_parameters", "list_scope_boxes", "assign_scope_box"
             }
         },
         new()
         {
             Name = "view_edit",
             Description = "Композитная настройка видов и копирование настроек с эталона.",
-            Tools = new[] { "configure_views", "copy_view_settings" }
+            Tools = new[] { "configure_views", "copy_view_settings", "copy_crop_from_view" }
         },
         new()
         {

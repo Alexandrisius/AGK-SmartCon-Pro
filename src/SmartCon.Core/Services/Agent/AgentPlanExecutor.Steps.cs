@@ -100,11 +100,15 @@ public sealed partial class AgentPlanExecutor
 
             // Every dry run is rolled back, so a step that consumes the output of
             // an earlier write step cannot be previewed honestly. It is reported
-            // as preview_skipped and executed for real during apply.
+            // as preview_skipped (with the blocking step) and executed for real
+            // during apply.
             if (DependsOnWrite(step, byId))
             {
+                var blocking = FirstWriteDependency(step, byId);
                 result.PreviewSkipped = true;
-                result.PreviewSkipReason = "depends_on_unapplied_step";
+                result.PreviewSkipReason = "depends_on_unapplied_step:" +
+                                           (blocking is null ? "?" : blocking.StepId) +
+                                           "(" + (blocking?.ToolName ?? "?") + ")";
                 continue;
             }
 
@@ -261,6 +265,7 @@ public sealed partial class AgentPlanExecutor
                 result.DryRunOk = result.ApplyResult.Success;
                 if (!result.ApplyResult.Success)
                 {
+                    MarkUpstreamFailures(step, steps, results);
                     return AgentPlanExecutionResult.Fail(
                         "plan_read_failed",
                         "Step '" + step.StepId + "' (read) failed: " +
@@ -281,6 +286,7 @@ public sealed partial class AgentPlanExecutor
 
             if (!applyResult.Success)
             {
+                MarkUpstreamFailures(step, steps, results);
                 return AgentPlanExecutionResult.Fail(
                     "plan_apply_failed",
                     "Step '" + step.StepId + "' failed: " +
@@ -290,6 +296,58 @@ public sealed partial class AgentPlanExecutor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A failed apply step stops the plan, so the steps that wanted the id it was
+    /// supposed to create never run. They get a typed upstream_step_failed result
+    /// instead of a bare not_run, so the model sees which dependency broke.
+    /// </summary>
+    private static void MarkUpstreamFailures(
+        AgentPlanStep failedStep,
+        IReadOnlyList<AgentPlanStep> steps,
+        IReadOnlyList<AgentPlanStepResult> results)
+    {
+        var byId = steps.ToDictionary(step => step.StepId, StringComparer.Ordinal);
+        foreach (var step in steps)
+        {
+            var result = results.FirstOrDefault(item => item.StepId == step.StepId);
+            if (result is null || result.ApplyResult is not null)
+                continue;
+
+            var visiting = new HashSet<string>(StringComparer.Ordinal);
+            if (!DependsOnCore(step, failedStep.StepId, byId, visiting))
+                continue;
+
+            result.ApplyResult = ToolResult.Fail(
+                "upstream_step_failed",
+                "Step '" + step.StepId + "' depends on failed step '" + failedStep.StepId +
+                "' (tool " + failedStep.ToolName + ") and was not run.");
+        }
+    }
+
+    private static bool DependsOnCore(
+        AgentPlanStep step,
+        string stepId,
+        IReadOnlyDictionary<string, AgentPlanStep> byId,
+        ISet<string> visiting)
+    {
+        foreach (var dependency in step.DependsOn)
+        {
+            if (string.Equals(dependency, stepId, StringComparison.Ordinal))
+                return true;
+
+            if (!visiting.Add(dependency))
+                continue;
+
+            if (byId.TryGetValue(dependency, out var dependentStep)
+                && DependsOnCore(dependentStep, stepId, byId, visiting))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task<(IReadOnlyList<string> Verified, IReadOnlyList<string> Mismatches)>

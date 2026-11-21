@@ -42,9 +42,9 @@ public sealed class AgentToolPacksTests
             ["view_settings"] = new[]
             {
                 "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility",
-                "set_view_parameters"
+                "set_view_parameters", "list_scope_boxes", "assign_scope_box"
             },
-            ["view_edit"] = new[] { "configure_views", "copy_view_settings" },
+            ["view_edit"] = new[] { "configure_views", "copy_view_settings", "copy_crop_from_view" },
             ["templates"] = new[]
             {
                 "list_view_templates", "get_view_template_details", "apply_view_template",
@@ -132,7 +132,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(97, placements.Length);
+        Assert.Equal(100, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

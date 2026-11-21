@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Core.Compatibility;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 
@@ -945,6 +946,293 @@ public sealed class AgentWriteViewToolsTests : RevitApiTest
             .FirstOrDefault(view => view.Name == "SC_AgentWrite_Cascade_New");
         await Assert.That(cascadeView).IsNotNull();
         await Assert.That(_changeSets!.Last!.Items[0].ParameterName).IsEqualTo("level_name");
+    }
+
+    [Test]
+    public async Task CopyCropFromView_AppliesReadsBackAndUndoRestores()
+    {
+        _transactions!.RunInTransaction(Doc, "Seed source crop", doc =>
+        {
+            var source = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            source.CropBoxActive = true;
+            source.CropBox = new BoundingBoxXYZ
+            {
+                Min = new XYZ(-9, -4, 0),
+                Max = new XYZ(9, 4, 0)
+            };
+        });
+
+        var targetBefore = GetView(_targetId);
+        var activeBefore = targetBefore.CropBoxActive;
+        var boxBefore = targetBefore.CropBox is { } before
+            ? new XYZ(before.Min.X, before.Min.Y, before.Min.Z)
+            : null;
+
+        var tool = new CopyCropFromViewTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"sourceViewId\":" + _planId + ",\"targetViewIds\":[" + _targetId +
+                  "],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var target = GetView(_targetId);
+        await Assert.That(target.CropBoxActive).IsTrue();
+        var sourceBox = GetView(_planId).CropBox!;
+        // ±1 mm in model units (1 mm ≈ 0.0033 ft) — read-back from the model.
+        await Assert.That(Math.Abs(target.CropBox!.Min.X - sourceBox.Min.X) < 0.0033).IsTrue();
+        await Assert.That(Math.Abs(target.CropBox.Max.Y - sourceBox.Max.Y) < 0.0033).IsTrue();
+        await Assert.That(_changeSets!.Last!.Items[0].ParameterName).IsEqualTo("crop");
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(GetView(_targetId).CropBoxActive).IsEqualTo(activeBefore);
+        if (boxBefore is not null)
+        {
+            await Assert.That(Math.Abs(GetView(_targetId).CropBox!.Min.X - boxBefore.X) < 0.0033)
+                .IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task CopyCropFromView_TemplateLockedTarget_ReturnsTypedError()
+    {
+        if (_templateId == 0)
+            Skip.Test("Шаблон вида не создан");
+
+        _transactions!.RunInTransaction(Doc, "Seed source crop and lock target", doc =>
+        {
+            var source = (View)doc.GetElement(ElementIdCompat.Create(_planId));
+            source.CropBoxActive = true;
+            source.CropBox = new BoundingBoxXYZ
+            {
+                Min = new XYZ(-5, -5, 0),
+                Max = new XYZ(5, 5, 0)
+            };
+            GetView(_targetId).ViewTemplateId = ElementIdCompat.Create(_templateId);
+        });
+
+        var tool = new CopyCropFromViewTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"sourceViewId\":" + _planId + ",\"targetViewIds\":[" + _targetId +
+                  "],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        var failed = result.Data!.Value.GetProperty("failed");
+        await Assert.That(failed.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(failed[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("crop_controlled_by_template");
+        await Assert.That(failed[0].GetProperty("reason").GetString()).Contains("apply_view_template");
+        await Assert.That(GetView(_targetId).CropBoxActive).IsFalse();
+    }
+
+    [Test]
+    public async Task SetViewCrop_Select_ResolvesTargetsWithoutExplicitIds()
+    {
+        var tool = new SetViewCropTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"select\":{\"type\":\"FloorPlan\",\"nameContains\":\"SC_AgentWrite\"}," +
+                  "\"crop\":{\"active\":true,\"visible\":true,\"minMm\":[-6000,-6000]," +
+                  "\"maxMm\":[6000,6000]},\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var selected = result.Data!.Value.GetProperty("selectedViewIds");
+        await Assert.That(selected.GetArrayLength()).IsGreaterThanOrEqualTo(2);
+        await Assert.That(result.Data.Value.GetProperty("selectorMatched").GetInt32())
+            .IsEqualTo(selected.GetArrayLength());
+        await Assert.That(GetView(_targetId).CropBoxActive).IsFalse();
+    }
+
+    [Test]
+    public async Task SetViewCrop_Select_ApplyWritesResolvedViews()
+    {
+        var tool = new SetViewCropTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"select\":{\"type\":\"FloorPlan\",\"nameContains\":\"SC_AgentWrite_Target\"}," +
+                  "\"crop\":{\"active\":true,\"minMm\":[-4000,-4000],\"maxMm\":[4000,4000]}," +
+                  "\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(GetView(_targetId).CropBoxActive).IsTrue();
+        await Assert.That(GetView(_planId).CropBoxActive).IsFalse();
+    }
+
+    [Test]
+    public async Task ListScopeBoxes_OnProjectWithoutScopeBoxes_ReturnsOk()
+    {
+        var existing = new FilteredElementCollector(Doc)
+            .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+            .WhereElementIsNotElementType()
+            .ToList();
+        if (existing.Count > 0)
+            Skip.Test("В шаблоне проекта есть scope box — тест проверяет пустой список");
+
+        var tool = new ListScopeBoxesTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{}"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("total").GetInt32()).IsEqualTo(0);
+        await Assert.That(result.Data.Value.GetProperty("scopeBoxes").GetArrayLength()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AssignScopeBox_AssignsReadsBackAndUndoRestores()
+    {
+        var scopeBox = FindOrImportScopeBox()!;
+
+        var tool = new AssignScopeBoxTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"viewIds\":[" + _targetId + "],\"scopeBoxId\":" + scopeBox.Id.GetValue() +
+                  ",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var assigned = GetView(_targetId)
+            .get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)!;
+        await Assert.That(assigned.AsElementId().GetValue()).IsEqualTo(scopeBox.Id.GetValue());
+        await Assert.That(_changeSets!.Last!.Items[0].ParameterName).IsEqualTo("scope_box");
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        var restored = GetView(_targetId)
+            .get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)!;
+        await Assert.That(restored.AsElementId())
+            .IsEqualTo(ElementId.InvalidElementId);
+    }
+
+    [Test]
+    public async Task AssignScopeBox_ClearRemovesScopeBox()
+    {
+        var scopeBox = FindOrImportScopeBox()!;
+
+        _transactions!.RunInTransaction(Doc, "Seed scope box", doc =>
+            GetView(_targetId)
+                .get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)!
+                .Set(scopeBox.Id));
+
+        var tool = new AssignScopeBoxTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"viewIds\":[" + _targetId + "],\"clear\":true,\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var cleared = GetView(_targetId)
+            .get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP)!;
+        await Assert.That(cleared.AsElementId()).IsEqualTo(ElementId.InvalidElementId);
+    }
+
+    private static string? _scopeBoxTemplatePath;
+
+    /// <summary>
+    /// A scope box for the assign tests: the seed document has none and the API
+    /// cannot create one (#351), so an existing box is borrowed from an installed
+    /// project template via ElementTransformUtils.CopyElements.
+    /// </summary>
+    private Element? FindOrImportScopeBox()
+    {
+        var existing = new FilteredElementCollector(Doc)
+            .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+            .WhereElementIsNotElementType()
+            .FirstOrDefault();
+        if (existing is not null)
+            return existing;
+
+        if (_scopeBoxTemplatePath is null)
+        {
+            _scopeBoxTemplatePath = FindTemplateWithScopeBox(
+                Doc.Application.VersionNumber,
+                out var checkedPaths);
+            if (_scopeBoxTemplatePath is null)
+            {
+                Skip.Test(
+                    "Ни в одном установленном шаблоне нет scope box, а создать его через API " +
+                    "нельзя (#351). Проверены: " + checkedPaths);
+            }
+        }
+
+        var imported = new List<ElementId>();
+        var source = Application.OpenDocumentFile(_scopeBoxTemplatePath);
+        try
+        {
+            var ids = new FilteredElementCollector(source)
+                .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                .WhereElementIsNotElementType()
+                .ToElementIds()
+                .ToList();
+            _transactions!.RunInTransaction(Doc, "Borrow scope box from template", doc =>
+                imported.AddRange(ElementTransformUtils.CopyElements(
+                    source, ids, doc, Transform.Identity, new CopyPasteOptions())));
+        }
+        finally
+        {
+            source.Close(false);
+        }
+
+        return imported.Count > 0 ? Doc.GetElement(imported[0]) : null;
+    }
+
+    private string? FindTemplateWithScopeBox(
+        string revitMajorVersion,
+        out string checkedPaths)
+    {
+        checkedPaths = string.Empty;
+        var roots = new List<string>();
+        var templates = $@"C:\ProgramData\Autodesk\RVT {revitMajorVersion}\Templates";
+        if (Directory.Exists(templates))
+            roots.Add(templates);
+
+        var checkedFiles = new List<string>();
+        foreach (var root in roots)
+        {
+            // Default_* first: localized sub-folders repeat the same content.
+            foreach (var file in Directory.EnumerateFiles(root, "*.rte", SearchOption.AllDirectories)
+                         .OrderBy(file => file.Contains("Default_") ? 0 : 1))
+            {
+                checkedFiles.Add(file);
+                try
+                {
+                    var document = Application.OpenDocumentFile(file);
+                    try
+                    {
+                        if (!new FilteredElementCollector(document)
+                                .OfCategory(BuiltInCategory.OST_VolumeOfInterest)
+                                .WhereElementIsNotElementType()
+                                .Any())
+                        {
+                            continue;
+                        }
+                    }
+                    finally
+                    {
+                        document.Close(false);
+                    }
+
+                    return file;
+                }
+                catch (Exception)
+                {
+                    // Unreadable template: try the next one.
+                }
+            }
+        }
+
+        checkedPaths = string.Join(", ", checkedFiles);
+        return null;
     }
 
     private RenameViewsTool CreateRenameViewsTool() =>

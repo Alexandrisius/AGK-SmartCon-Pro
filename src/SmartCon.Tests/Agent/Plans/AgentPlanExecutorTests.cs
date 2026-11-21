@@ -775,6 +775,99 @@ public sealed class AgentPlanExecutorTests
     }
 
     [Fact]
+    public async Task Preview_DependentStep_SkipReasonNamesBlockingStep()
+    {
+        var writeTool = new ScriptedTool("write_tool");
+        var executor = CreateExecutor(writeTool, ReadTool(), new RecordingConfirmation(), new RecordingAuditLog());
+
+        var steps = new[]
+        {
+            new AgentPlanStep
+            {
+                StepId = "s1",
+                ToolName = "write_tool",
+                ArgumentsJson = WriteArguments,
+                ExpectedChanges = 1
+            },
+            new AgentPlanStep
+            {
+                StepId = "s2",
+                ToolName = "write_tool",
+                ArgumentsJson = WriteArguments,
+                ExpectedChanges = 1,
+                DependsOn = new[] { "s1" }
+            }
+        };
+
+        var result = await executor.PreviewAsync(Plan(steps), Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(result.PreviewIncomplete);
+        Assert.Contains("s2", result.NotPreviewed);
+        var skipped = result.Steps.Single(step => step.StepId == "s2");
+        Assert.True(skipped.PreviewSkipped);
+        Assert.Equal("depends_on_unapplied_step:s1(write_tool)", skipped.PreviewSkipReason);
+    }
+
+    [Fact]
+    public async Task Apply_FailedStep_MarksDependentsUpstreamFailed()
+    {
+        var writeTool = new ScriptedTool(
+            "write_tool",
+            handler: args => args.ValueKind == JsonValueKind.Object
+                              && args.TryGetProperty("dryRun", out var dryRun)
+                              && dryRun.ValueKind == JsonValueKind.False
+                ? ToolResult.Fail("boom", "apply exploded")
+                : ToolResult.Ok(
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        changed = new[] { new { id = 1 } },
+                        skipped = Array.Empty<object>(),
+                        failed = Array.Empty<object>(),
+                        total = 1,
+                        affected = 1
+                    }),
+                    "preview ok"));
+        var executor = CreateExecutor(writeTool, ReadTool(), new RecordingConfirmation(), new RecordingAuditLog());
+
+        var steps = new[]
+        {
+            new AgentPlanStep
+            {
+                StepId = "s1",
+                ToolName = "write_tool",
+                ArgumentsJson = WriteArguments,
+                ExpectedChanges = 1
+            },
+            new AgentPlanStep
+            {
+                StepId = "s2",
+                ToolName = "write_tool",
+                ArgumentsJson = WriteArguments,
+                DependsOn = new[] { "s1" }
+            },
+            new AgentPlanStep
+            {
+                StepId = "s3",
+                ToolName = "read_tool",
+                ArgumentsJson = @"{""viewId"":1}"
+            }
+        };
+
+        var result = await executor.ExecuteAsync(Plan(steps), Context(), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("plan_apply_failed", result.ErrorCode);
+        var dependent = result.Steps.Single(step => step.StepId == "s2");
+        Assert.NotNull(dependent.ApplyResult);
+        Assert.False(dependent.ApplyResult!.Success);
+        Assert.Equal("upstream_step_failed", dependent.ApplyResult.ErrorCode);
+        Assert.Contains("s1", dependent.ApplyResult.Message, StringComparison.Ordinal);
+        var independent = result.Steps.Single(step => step.StepId == "s3");
+        Assert.Null(independent.ApplyResult);
+    }
+
+    [Fact]
     public async Task ExpectedChangesAtLeast_AcceptsMoreChanges()
     {
         var writeTool = new ScriptedTool(

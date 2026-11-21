@@ -480,6 +480,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, ListSystemTypesTool>();
         services.AddSingleton<IAgentTool, ListMepSystemsTool>();
         services.AddSingleton<IAgentTool, ListMaterialsTool>();
+        services.AddSingleton<IAgentTool, ListScopeBoxesTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();
@@ -491,6 +492,8 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetViewVisibilityTool>();
         services.AddSingleton<IAgentTool, ConfigureViewsTool>();
         services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
+        services.AddSingleton<IAgentTool, CopyCropFromViewTool>();
+        services.AddSingleton<IAgentTool, AssignScopeBoxTool>();
         services.AddSingleton<IAgentTool, CreateViewFilterTool>();
         services.AddSingleton<IAgentTool, SetFilterRulesTool>();
         services.AddSingleton<IAgentTool, RenameFilterTool>();

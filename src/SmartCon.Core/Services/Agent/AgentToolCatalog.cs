@@ -136,6 +136,21 @@ public static class AgentToolCatalog
                 "скопировать", "перенести", "как эталон", "как образец", "copy", "reference",
                 "same as", "подобно"
             }),
+            ["copy_crop_from_view"] = new("Write", true, new[]
+            {
+                "подрезка", "обрезка", "crop", "как эталон", "рамка", "вырезать", "copy crop",
+                "область подрезки"
+            }),
+            ["list_scope_boxes"] = new("Read", false, new[]
+            {
+                "габаритный бокс", "масштабный бокс", "scope box", "объём интереса",
+                "границы вида", "scopebox"
+            }),
+            ["assign_scope_box"] = new("Write", true, new[]
+            {
+                "габаритный бокс", "масштабный бокс", "scope box", "назначить бокс",
+                "привязать вид к бокс", "scopebox", "снять бокс"
+            }),
             ["set_parameters"] = new("Write", true, new[]
             {
                 "параметр", "параметры", "комментарий", "значение", "поставить", "установить",

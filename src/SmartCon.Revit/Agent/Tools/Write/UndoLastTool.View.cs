@@ -161,6 +161,46 @@ public sealed partial class UndoLastTool
         return (true, null, null);
     }
 
+    private static (bool, string?, string?) RevertScopeBox(
+        View view,
+        ChangeItem item,
+        bool force)
+    {
+        var parameter = view.get_Parameter(BuiltInParameter.VIEWER_VOLUME_OF_INTEREST_CROP);
+        if (parameter is null)
+            return (false, "unsupported_view_type",
+                "View '" + view.Name + "' has no Scope Box parameter.");
+
+        var current = AssignScopeBoxTool.DescribeId(parameter.AsElementId());
+        if (string.Equals(current, item.OldValue ?? string.Empty, StringComparison.Ordinal))
+            return (false, null, "The view already uses the recorded previous scope box.");
+
+        if (!force && !string.Equals(current, item.NewValue ?? string.Empty, StringComparison.Ordinal))
+        {
+            return (false, "undo_conflict",
+                "The scope box of '" + view.Name + "' is '" + current +
+                "' instead of '" + item.NewValue +
+                "' — it was changed after the operation (conflict).");
+        }
+
+        var restore = string.IsNullOrEmpty(item.OldValue)
+            ? ElementId.InvalidElementId
+            : ElementIdCompat.Create(long.Parse(
+                item.OldValue,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture));
+        if (!parameter.Set(restore)
+            || AssignScopeBoxTool.DescribeId(parameter.AsElementId())
+                != (item.OldValue ?? string.Empty))
+        {
+            return (false, "undo_scope_box_failed",
+                "The scope box of '" + view.Name + "' did not restore to '" +
+                (item.OldValue ?? string.Empty) + "'.");
+        }
+
+        return (true, null, null);
+    }
+
     private static (bool, string?, string?) RevertVisibility(
         Document doc,
         View view,

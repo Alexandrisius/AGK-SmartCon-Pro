@@ -136,8 +136,9 @@ public sealed partial class AgentOrchestratorTests
         Assert.Contains(llm.Requests[1].Tools, tool => tool.Name == "set_view_parameters");
         Assert.Empty(session.PendingToolNames);
         // get_view_settings is part of the research core now, so it is reported as
-        // alreadyLoaded; only the four write setters enter the loaded set.
-        Assert.Equal(4, session.LoadedToolNames.Count);
+        // alreadyLoaded; the write setters (range/crop/visibility/parameters/scope box)
+        // and the list_scope_boxes reader enter the loaded set (#351).
+        Assert.Equal(6, session.LoadedToolNames.Count);
     }
 
     [Fact]

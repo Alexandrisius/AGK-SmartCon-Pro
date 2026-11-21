@@ -306,6 +306,43 @@ public sealed partial class AgentPlanExecutor
         return DependsOnWriteCore(step, byId, visiting);
     }
 
+    /// <summary>
+    /// The first write step reachable from <paramref name="step"/>'s dependsOn
+    /// chain (direct or through read steps), so the preview_skip reason can name
+    /// the exact blocking step instead of a generic flag.
+    /// </summary>
+    private AgentPlanStep? FirstWriteDependency(
+        AgentPlanStep step,
+        IReadOnlyDictionary<string, AgentPlanStep> byId)
+    {
+        var visiting = new HashSet<string>(StringComparer.Ordinal);
+        return FirstWriteDependencyCore(step, byId, visiting);
+    }
+
+    private AgentPlanStep? FirstWriteDependencyCore(
+        AgentPlanStep step,
+        IReadOnlyDictionary<string, AgentPlanStep> byId,
+        ISet<string> visiting)
+    {
+        foreach (var dependency in step.DependsOn)
+        {
+            if (!byId.TryGetValue(dependency, out var dependentStep))
+                continue;
+
+            if (!visiting.Add(dependency))
+                continue;
+
+            if (IsWrite(dependentStep.ToolName))
+                return dependentStep;
+
+            var nested = FirstWriteDependencyCore(dependentStep, byId, visiting);
+            if (nested is not null)
+                return nested;
+        }
+
+        return null;
+    }
+
     private bool DependsOnWriteCore(
         AgentPlanStep step,
         IReadOnlyDictionary<string, AgentPlanStep> byId,

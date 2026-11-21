@@ -29,6 +29,7 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
     private Document? _document;
     private RevitTransactionService? _transactions;
     private InMemoryAgentChangeSetStore? _changeSets;
+    private long _levelId;
     private long _planId;
     private long _targetId;
 
@@ -48,6 +49,7 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
         {
             var level = ModelSeed.CreateLevel(doc, 3.0);
             level.Name = LevelName;
+            _levelId = level.Id.GetValue();
 
             _planId = ModelSeed.CreateViewPlanChecked(doc, level.Id, PlanName).Id.GetValue();
             _targetId = ModelSeed.CreateViewPlanChecked(doc, level.Id, TargetName).Id.GetValue();
@@ -258,6 +260,86 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
         await Assert.That(result.Success).IsFalse();
         await Assert.That(result.ErrorCode).IsEqualTo("change_set_not_applied");
     }
+
+    [Test]
+    public async Task Plan_CreateViewThenCropOnCreated_PreviewSkipsDependentAndApplyRunsBoth()
+    {
+        const string createdName = "SC_Plan_Created";
+        var create = new CreateViewTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var crop = new SetViewCropTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var registry = new TestToolRegistry(new IAgentTool[] { create, crop });
+        var executor = new AgentPlanExecutor(
+            registry, new ImmediateAwaitableEvent(), new FixedConfirmation());
+
+        var plan = new AgentPlan
+        {
+            Goal = "Create a view and crop it",
+            Steps = new[]
+            {
+                new AgentPlanStep
+                {
+                    StepId = "s1",
+                    ToolName = "create_view",
+                    ArgumentsJson = "{\"kind\":\"plan\",\"levelId\":" + _levelId +
+                                    ",\"name\":\"" + createdName + "\",\"dryRun\":false}"
+                },
+                new AgentPlanStep
+                {
+                    StepId = "s2",
+                    ToolName = "set_view_crop",
+                    ArgumentsJson = "{\"select\":{\"nameContains\":\"" + createdName +
+                                    "\"},\"crop\":{\"active\":true,\"minMm\":[-5000,-5000]," +
+                                    "\"maxMm\":[5000,5000]},\"dryRun\":false}",
+                    DependsOn = new[] { "s1" }
+                }
+            }
+        };
+        var execution = new AgentPlanExecutionContext
+        {
+            DocumentId = AgentDocumentIdentity.GetDocumentId(Doc)
+        };
+
+        var preview = await executor.PreviewAsync(plan, execution, CancellationToken.None);
+
+        if (!preview.Success)
+        {
+            var details = string.Join("; ", preview.Steps.Select(step =>
+                step.StepId + ":" + step.ToolName + ":" +
+                (step.DryRunResult is null
+                    ? "no-dry-run"
+                    : step.DryRunResult.Success + "/" + step.DryRunResult.ErrorCode + "/" +
+                      step.DryRunResult.Message)));
+            throw new InvalidOperationException(
+                "preview failed: " + preview.ErrorCode + ": " + preview.Message + " steps=" + details);
+        }
+
+        await Assert.That(preview.Success).IsTrue();
+        await Assert.That(preview.PreviewIncomplete).IsTrue();
+        await Assert.That(preview.NotPreviewed.Contains("s2")).IsTrue();
+        var skippedStep = preview.Steps.Single(step => step.StepId == "s2");
+        await Assert.That(skippedStep.PreviewSkipped).IsTrue();
+        await Assert.That(skippedStep.PreviewSkipReason)
+            .IsEqualTo("depends_on_unapplied_step:s1(create_view)");
+        await Assert.That(FindViewByName(createdName)).IsNull();
+
+        var apply = await executor.ExecuteAsync(plan, execution, CancellationToken.None);
+
+        await Assert.That(apply.Success).IsTrue();
+        await Assert.That(apply.PreviewIncomplete).IsTrue();
+        var created = FindViewByName(createdName);
+        await Assert.That(created).IsNotNull();
+        await Assert.That(created!.CropBoxActive).IsTrue();
+        var width = created.CropBox!.Max.X - created.CropBox.Min.X;
+        await Assert.That(Math.Abs(width - UnitUtils.ConvertToInternalUnits(
+                10000, UnitTypeId.Millimeters)) < 0.0033).IsTrue();
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(2);
+    }
+
+    private View? FindViewByName(string name) =>
+        new FilteredElementCollector(Doc)
+            .OfClass(typeof(View))
+            .Cast<View>()
+            .FirstOrDefault(view => string.Equals(view.Name, name, StringComparison.Ordinal));
 
     private static AgentPlanStep RenameStep(string id, long viewId, string newName) =>
         new()

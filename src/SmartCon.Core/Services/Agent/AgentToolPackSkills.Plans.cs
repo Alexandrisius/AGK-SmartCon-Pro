@@ -45,12 +45,12 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 - `planDigest` считается по шагам (id, toolName, аргументы без `dryRun`, зависимости,
   ожидаемые количества) и документу; `goal` и `rationale` в него не входят — их можно
   уточнять, не ломая подтверждение.
-- В превью шаги, зависящие от ещё не применённой записи, пропускаются
-  (`preview_skipped: depends_on_unapplied_step`) — это нормально, но значит, что превью
-  покрыло не всё; в apply они выполнятся.
-- Apply: первый упавший шаг останавливает план (`plan_apply_failed`), уже применённые шаги
-  остаются (у каждого свой change set), последующие получают `not_run`. **Автоматического
-  откката плана нет** — откат по шагам через `undo_last` или `rollback_job`.
+- В превью шаги, зависящие от ещё не применённой записи, пропускаются (`preview_skipped`,
+  reason `depends_on_unapplied_step:<stepId>(<tool>)`); в apply они выполнятся. Флаг
+  `previewIncomplete` = такие шаги есть.
+- Apply: первый упавший шаг останавливает план (`plan_apply_failed`); зависевшие от него шаги
+  получают `upstream_step_failed`, прочие последующие — `not_run`. **Автоотката плана нет** —
+  `undo_last` по шагам или `rollback_job`.
 - `readBackExpectations` — обязательный способ доказать, что шаг сделал заявленное: путь +
   ожидаемое значение читаются после шага. Несовпадение попадает в `mismatches[]`, но общий
   `success` остаётся true — **сверяйте `mismatches`, а не только `success`**.

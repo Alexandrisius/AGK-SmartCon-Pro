@@ -13,11 +13,11 @@ public static partial class AgentToolPackSkills
 
     private const string Views = @"## Пак views: виды
 
-Обзор, поиск, создание, дублирование, папки браузера, переименование и удаление видов; активный вид.
+Обзор, поиск, создание, дублирование, папки браузера, переименование и удаление видов.
 
 ### Карта тулов
 - `list_views` — список видов: `types`, `levelIds`, `nameContains`, `folders`, `fields`, `limit` (≤500).
-- `get_current_view_info` — активный вид (id, тип, шаблон, масштаб) — начните с него, если пользователь говорит «этот вид».
+- `get_current_view_info` — активный вид (id, тип, шаблон, масштаб) — старт, если пользователь говорит «этот вид».
 - `rename_views` — пакетно `items[{viewId,newName}]`, `atomic`.
 - `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
 - `duplicate_view` — копия одного вида (`viewId|viewName`, `newName`, `option`).
@@ -25,55 +25,44 @@ public static partial class AgentToolPackSkills
 - `set_browser_folder` — подпапка браузера: `viewIds|viewNames|sheetIds` (1..100) + `folder`.
 
 ### Кухня Revit
-- Имя вида уникально **в пределах своего вида/семейства видов**: «Этаж 1» может существовать
-  и как план этажа, и как план потолка, и как план конструкции — Revit сам создаёт такие
-  пары. Наш `rename_views` сравнивает имена по всему документу (консервативно): отказ
-  `duplicate_name` при свободном в вашем типе имени — это ограничение тула, а не Revit.
-- Шаблон вида — тоже `View`, но `IsTemplate=true`. Он не размещается на листах и не считается
-  обычным видом: rename/delete отказывают (`view_is_template`) без явного флага.
-- Лист (`ViewSheet`) — не вид. `delete_views` на листе даёт `use_delete_sheets`; удаление
-  листа — пак `sheets`. Спецификация (`ViewSchedule`) — тоже не «обычный» вид:
-  `delete_views` откажет с `use_delete_schedules`.
-- Удаление вида каскадно: уходят его `Viewport`, аннотации вида и **зависимые виды**. Так же
-  удаление уровня уносит его план, удаление камеры — 3D-вид. Предупреждайте о каскаде.
-- `list_views` отдаёт браузерную папку (`folder`), номер листа (`sheet`) и `isOnSheet` —
-  используйте это вместо догадок о том, где живёт вид.
-- `View.Duplicate`: `with_detailing` — с аннотациями, `without_detailing` — только модель,
-  `dependent` — зависимый план (только планы). Отказ `view_not_duplicatable`,
-  `dependent_not_supported`.
-- **Легенды API не создаёт**: `create_view(kind:""legend"")` дублирует существующую легенду;
-  нет легенд → `legend_source_missing` (попросите пользователя создать одну в Revit).
-- Папка браузера — не параметр вида (built-in «GROUP_TITLE» не существует): папку задаёт
-  **параметр группировки текущей организации браузера** (напр. «Раздел»). `set_browser_folder`
-  пишет его; группировка по read-only свойству → `browser_folder_parameter_read_only`
-  (перестройте схему в Revit). Виды и листы — разные схемы, тул выбирает по элементу.
+- Имя вида уникально **в пределах семейства видов** («Этаж 1» есть и как план этажа, и как
+  план потолка). `rename_views` сравнивает имена по всему документу (консервативно): отказ
+  `duplicate_name` при свободном в своём типе имени — ограничение тула, не Revit.
+- Шаблон вида — тоже `View` (`IsTemplate=true`): rename/delete отказывают
+  (`view_is_template`). Лист (`ViewSheet`) — не вид: `use_delete_sheets`; спецификация —
+  `use_delete_schedules`.
+- Удаление каскадно: уходят `Viewport`, аннотации и **зависимые виды**; уровень уносит свой
+  план, камера — 3D-вид. Предупреждайте.
+- `list_views` отдаёт `folder` (браузер), `sheet`, `isOnSheet` — не гадайте, где живёт вид.
+- `View.Duplicate`: `with_detailing` (с аннотациями), `without_detailing` (модель),
+  `dependent` (зависимый план). Отказы `view_not_duplicatable`, `dependent_not_supported`.
+- **Легенды API не создаёт**: `create_view(kind:""legend"")` дублирует существующую; нет
+  легенд → `legend_source_missing`.
+- Папка браузера — не параметр вида: её задаёт **параметр группировки текущей организации
+  браузера** (напр. «Раздел»). Группировка по read-only свойству →
+  `browser_folder_parameter_read_only` (перестройте схему). Виды и листы — разные схемы.
 
 ### Аргументы
-- `fields` сокращает ответ: `viewId,name,type,level,template,sheet,isOnSheet,folder`. Не запрашивайте всё, если нужен только список имён.
-- `summaryOnly=true` — только количество и типы, без карточек.
+- `fields` сокращает ответ (`viewId,name,type,level,template,sheet,isOnSheet,folder`);
+  `summaryOnly=true` — только количество и типы.
 
 ### Инварианты
-- Перед переименованием получите `viewId` через `list_views` (имена не уникальны между семействами — по имени можно попасть не в тот вид).
-- Имя: trim, ≤250 символов, без `\ : { } [ ] | ; < > ? ' ~`. Листы и браузерные виды через
-  `rename_views` не переименовываются (`unsupported_view_type` в `failed[]`).
-- `atomic=true` в `rename_views` откатывает весь пакет, если хоть одно имя занято (`duplicate_name`). Без него применяются только успешные элементы.
-- `delete_views` необратим (`undoSupported=false`, change set не пишется): только `dryRun=true`
-  перед применением. Apply требует `confirmNames` = `names[]` СВЕЖЕГО dry-run: отказ
-  `confirm_names_required`/`confirm_names_mismatch` означает «повтори dry-run и передай его
-  свежий names[]» — модель изменилась, и это защита, а не ошибка.
-- `duplicate_view`/`create_view`/`set_browser_folder` откатываются `undo_last`; созданный вид
-  удаляется каскадно с зависимыми. `duplicate_view` — один вид за вызов (пакетного job-action
-  нет).
-- Все write-тулы по умолчанию `dryRun=true`: сначала план, затем повтор с `dryRun=false`.
-- Массовые переименования видов — `start_job(action:""rename_views"")`, а не цикл rename_views.
+- Перед переименованием возьмите `viewId` из `list_views` (имена не уникальны между семействами).
+- Имя: trim, ≤250, без `\ : { } [ ] | ; < > ? ' ~`; листы/браузерные виды — `unsupported_view_type`.
+- `atomic=true` в `rename_views` откатывает пакет при занятом имени (`duplicate_name`).
+- `delete_views` необратим (`undoSupported=false`): только `dryRun=true` перед применением; apply
+  требует `confirmNames` = `names[]` свежего dry-run (`confirm_names_required`/`_mismatch` =
+  «повтори dry-run и передай свежий names[]» — защита, не ошибка).
+- `duplicate_view`/`create_view`/`set_browser_folder` откатываются `undo_last`; `duplicate_view` —
+  один вид за вызов. Write-тулы по умолчанию `dryRun=true`.
+- Массовые переименования — `start_job(action:""rename_views"")`.
 
 ### Рецепты
-1. «Переименуй все планы по шаблону»: `list_views(types=[""FloorPlan""])` → сформировать имена → `rename_views(items, atomic=true)`.
-2. «Какой вид открыт?»: `get_current_view_info` → при необходимости `get_view_settings(viewId)`.
-3. «Удали лишние виды»: `list_views(types=[...], fields=[viewId,name])` → `delete_views(dryRun=true)`
-   → подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
-4. «Вид на каждый раздел»: `duplicate_view(newName=...)` → `set_browser_folder(viewIds,
-   folder=раздел)`. План/разрез с нуля — `create_view(kind, levelId, name)`.
+1. «Переименуй все планы по шаблону»: `list_views(types=[""FloorPlan""])` → `rename_views(items, atomic=true)`.
+2. «Какой вид открыт?»: `get_current_view_info`.
+3. «Удали лишние виды»: `list_views(fields=[viewId,name])` → `delete_views(dryRun=true)` →
+   подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
+4. «Вид на каждый раздел»: `duplicate_view(newName=...)` → `set_browser_folder(viewIds, folder=раздел)`.
 
 ### Что нельзя
 - Удалять виды, размещённые на листах, без предупреждения: они пропадут с листов.
@@ -83,76 +72,72 @@ public static partial class AgentToolPackSkills
 
     private const string ViewSettings = @"## Пак view_settings: настройки вида
 
-Чтение и запись диапазона, подрезки, видимости категорий/рабочих наборов и параметров вида.
-
 ### Карта тулов
-- `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`. Поддерживает `viewIds` (пакетно, ≤200) и `fields`.
-- `set_view_range` — `items[{viewId, viewRange:{top,cutPlane,bottom,viewDepth:{levelId,offsetMm}}}]`.
-- `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`.
-- `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[{name|worksetId,hidden}]}`.
+- `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`; `viewIds` (≤200) и `fields`.
+- `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны.
+- `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[…]}`.
 - `set_view_parameters` — `parameters:[{name|parameterId,value,unit}]` для общих свойств вида.
+- `list_scope_boxes` — боксы: `scopeBoxId`, `name`, `minMm/maxMm`; `assign_scope_box` — `viewIds|viewSelect` + один из `scopeBoxId|scopeBoxName|clear:true`.
 
 ### Кухня Revit
-- Любой write-тул отказывает на **workshared-документе** (`workshared_not_supported`): запись в
-  совместные модели пока не поддерживается. Читать такие виды можно.
-- Диапазон вида существует **только у планов** (`ViewPlan`) и областей плана: для разрезов/3D
-  тул вернёт `unsupported_view_type`. Меняются только переданные плоскости, остальные
-  сохраняются.
-- Диапазон — четыре плоскости: `top`, `cutPlane`, `bottom`, `viewDepth`. Каждая = уровень +
-  смещение. Revit валидирует порядок: для плана этажа Top > Cut > Bottom, View Depth ниже
-  Bottom; для плана потолка картина зеркальная (`PlanViewRangeError`). Невалидный набор
-  отклоняется целиком.
-- Подрезка (`crop`) имеет **две независимые галочки**: `active` (подрезка включена) и
-  `visible` (рамка показана). Форму подрезки (`ViewCropRegionShapeManager`) можно задать
-  только у вида, который её поддерживает: у чертёжных видов подрезки нет вовсе, у 3D форма
-  не задаётся, только `CropBox`.
-- `minMm`/`maxMm` передаются только парой; при `copyFromViewId` остальные поля crop
-  игнорируются; явные границы заменяют существующий контур (с warning).
-- Если на виде включён **Scope Box**, границы подрезки задаёт он: `Crop View` в UI серый,
-  запись `CropBox` не даёт эффекта. Сначала снимите Scope Box.
-- Аннотационная подрезка — отдельная сущность (`VIEWER_ANNOTATION_CROP_ACTIVE` и
-  `*AnnotationCropOffset`), не `CropBox`. Через `set_view_crop` она не меняется.
-- Скрытие категории на виде (`View.SetCategoryHidden`) — настройка **вида**, не глобальная
-  видимость категории в проекте. `GetCategoryHidden=false` **не значит «видно»**: фильтры,
-  настройки классов и поэлементное скрытие действуют поверх. Для «виден ли элемент» —
-  `Element.IsHidden(view)` / `query_elements(viewId=...)`.
-- `set_view_visibility`: неизвестная или нередактируемая категория — это **warning**, а не
-  `failed`; скрытие рабочих наборов (`worksets`) тул не поддерживает (всегда warning).
-- Если настройку контролирует шаблон, запись в вид **молча не работает** — Revit не бросает
-  исключение. Поэтому тулы возвращают `view_controlled_by_template` и рецепт отвязки.
+- Любой write-тул отказывает на **workshared-документе** (`workshared_not_supported`); читать можно.
+- Диапазон — **только у планов** (`ViewPlan`); разрезы/3D → `unsupported_view_type`. Четыре
+  плоскости: `top`, `cutPlane`, `bottom`, `viewDepth` = уровень + смещение; меняются только
+  переданные. Порядок валидируется (план: Top > Cut > Bottom; потолок зеркально,
+  `PlanViewRangeError`), невалидный набор отклоняется целиком.
+- Подрезка: **две галочки** — `active` (включена) и `visible` (рамка показана). Форму
+  (`ViewCropRegionShapeManager`) поддерживают не все виды: чертёжные — без подрезки, 3D — только `CropBox`.
+- `minMm`/`maxMm` — только парой; `copyFromViewId` игнорирует остальные поля; явные границы
+  заменяют контур (warning).
+- **Scope Box**: пока назначен — задаёт границы подрезки (`CropBox` писать бесполезно), снимается
+  `assign_scope_box(clear:true)`. Бокс — Element (OST_VolumeOfInterest): создать/изменить через API
+  нельзя (UI Revit); повёрнутый отдаётся охватывающим боксом. Подконтролен шаблону —
+  `view_controlled_by_template`.
+- Аннотационная подрезка (`VIEWER_ANNOTATION_CROP_ACTIVE`, `*AnnotationCropOffset`) — не `CropBox`,
+  через `set_view_crop` не меняется.
+- Скрытие категории (`View.SetCategoryHidden`) — настройка **вида**; `GetCategoryHidden=false` ≠ «видно»
+  (поверх — фильтры и поэлементное скрытие). «Виден ли элемент» — `Element.IsHidden(view)` /
+  `query_elements(viewId=...)`.
+- `set_view_visibility`: неизвестная/нередактируемая категория и `worksets` — **warning**, не `failed`.
+- Настройку, контролируемую шаблоном, записать в вид **молча не получается** (Revit не бросает
+  исключение) — тулы возвращают `view_controlled_by_template` с рецептом.
 
 ### Инварианты
-- `get_view_settings` для обычного вида отдаёт `writable{visibility,crop,viewRange,filters}` и
-  `templateControls{...}` — именно по ним видно, что шаблон контролирует. Списки
-  `controlledParameters`/`nonControlledParameters` заполняются только для самого шаблона.
-- `view_controlled_by_template` → не повторяйте вызов: либо `set_view_template_inclusion(parameters=[""viewRange""|""visibility""], included=false)` (для crop это невозможно), либо правьте сам шаблон.
-- `set_view_parameters`: только instance-параметры вида (`scope_mismatch` для типовых), GUID не
-  поддерживается, `value` — строка, для `Double` нужен `unit`; флага `atomic` нет.
-- `set_view_parameters` не откатывается `undo_last` (`undoSupported=false`): откат — повторный
-  вызов с прежними значениями из `changed[].oldValue`.
-- После записи делайте read-back: итоговое значение читается из модели, а не из отчёта.
+- `get_view_settings` отдаёт `writable{...}` и `templateControls{...}` — по ним виден контроль
+  шаблона. `view_controlled_by_template` → не повторяйте вызов:
+  `set_view_template_inclusion(parameters=[""viewRange""|""visibility""], included=false)` (crop —
+  невозможно) или правьте шаблон.
+- `set_view_parameters`: только instance-параметры (`scope_mismatch`), GUID нет, `value` — строка,
+  для `Double` нужен `unit`; `undo_last` не откатывает — повторный вызов со значениями из
+  `changed[].oldValue`. После записи — read-back из модели.
 
 ### Рецепты
-1. Поднять/опустить диапазон: `get_view_settings(viewId, fields=[viewRange])` → `set_view_range` с новыми `offsetMm` → read-back.
-2. Скрыть категорию: `set_view_visibility(visibility.categories=[{category:""OST_Furniture"",hidden:true}])`.
-3. Подрезка по границам: `crop:{active:true,visible:true,minMm:[x,y],maxMm:[x,y]}`; скопировать форму — `copyFromViewId`.
-4. «Скрыть раздел на плане» — не `set_view_visibility`, а фильтр вида (пак `filters`), если нужно правило по параметру.
+1. Диапазон: `get_view_settings(viewId, fields=[viewRange])` → `set_view_range` → read-back.
+2. Скрыть категорию на всех планах этажа: `set_view_visibility(select:{type:""FloorPlan"",levelId},...)`.
+3. Подрезка по границам: `crop:{active:true,minMm:[x,y],maxMm:[x,y]}`; форма — `copyFromViewId`; «как эталон» на пачку — `copy_crop_from_view` (пак `view_edit`).
+4. «Привяжи к боксу»: `list_scope_boxes` → `assign_scope_box(scopeBoxId, viewSelect)`; отвязать — `clear:true`.
+5. «Скрыть раздел на плане» — фильтр вида (пак `filters`), если нужно правило по параметру.
 
 ### Что нельзя
-- Править диапазон у не-планов и ждать успеха.
-- Считать `visible=false` выключенной подрезкой: `active` и `visible` — разные галочки.
-- Писать в настройку, управляемую шаблоном, и потом «чинить» повторной записью.
+- Править диапазон у не-планов; считать `visible=false` выключенной подрезкой (это `active`).
+- Писать в настройку под шаблоном и «чинить» повторной записью.
 ";
 
     private const string ViewEdit = @"## Пак view_edit: композитная настройка и копирование
 
 ### Карта тулов
-- `configure_views` — один вызов на много видов: переименование, шаблон, диапазон, подрезка, видимость. Два режима: `items[]` (явные виды) или `select` + `settings` (выбор по критериям; `type` — точное имя `ViewType`).
+- `configure_views` — один вызов на много видов (имя, шаблон, диапазон, подрезка, видимость): `items[]` или `select` + `settings` (`type` — точное имя `ViewType`).
 - `copy_view_settings` — `sourceViewId` → `targetViewIds`, секции `crop|viewRange|visibility|template|all` (по умолчанию только `crop`).
+- `copy_crop_from_view` — только подрезка: `sourceViewId|sourceViewName`, цели `targetViewIds(≤50)|targetSelect`, `includeActive` (по умолч. true).
 
 ### Кухня Revit
 - Копирование настроек между видами разного типа бессмысленно: диапазон скопируется только в
   план, подрезка — в виды с подрезкой. Тул отчитывается по секциям, а не «успех целиком».
+  `set_view_parameters` и `set_view_template_inclusion` (пишут в один шаблон/набор параметров).
+- `copy_crop_from_view`: координаты — в системе вида, источник и цели нужны **одной ориентации**
+  (иначе прямоугольник уедет). Цель под шаблоном с включённой подрезкой → per-item
+  `crop_controlled_by_template`: снять шаблон (`apply_view_template templateId=0`) или править в
+  нём. Неактивная подрезка источника — warning, копируются хранящиеся границы.
 - `copy_view_settings` копирует **только** эти четыре секции: имя, масштаб, уровень детализации,
   дисциплину, фильтры и overrides он не переносит. `all` разворачивается в порядке
   `template → viewRange → crop → visibility`.
@@ -171,19 +156,18 @@ public static partial class AgentToolPackSkills
   созданный вид может уже быть под шаблоном.
 
 ### Инварианты
-- `configure_views` и `copy_view_settings` по умолчанию `dryRun=true` и возвращают `changed/skipped/failed` по каждому виду — читайте `skipped` с причинами, а не только `success`.
-- При `atomic=true` первый отказ откатывает весь пакет (`atomic_aborted`).
-- После применения проверяйте результат `get_view_settings` по каждому изменённому виду.
+- `configure_views`/`copy_view_settings` — `dryRun=true` по умолчанию, `changed/skipped/failed`
+  по виду: читайте `skipped`. `atomic=true` — первый отказ откатывает пакет (`atomic_aborted`).
 
 ### Рецепты
-1. «Одинаковый диапазон на все планы этажа»: `list_views(levelIds=[...], types=[""FloorPlan""])` → `configure_views(select:..., settings:{viewRange:...})`.
-2. «Скопируй настройки с эталонного вида»: `copy_view_settings(sourceViewId, targetViewIds, sections=[""all""])`, затем read-back на 1–2 целях.
-3. «Переименуй и назначь шаблон одной операцией»: `configure_views(items:[{viewId,newName,templateId}])`.
+1. «Одинаковый диапазон на все планы»: `configure_views(select:{type:""FloorPlan"",levelId}, settings:{viewRange:...})`.
+2. «Сделай как эталон»: `copy_view_settings(sourceViewId, targetViewIds, sections=[""all""])` + read-back на 1–2 целях.
+3. «Вырежи как на эталоне»: `copy_crop_from_view(sourceViewId, targetSelect:{type:""FloorPlan"",levelId})`.
+4. «Переименуй и назначь шаблон одной операцией»: `configure_views(items:[{viewId,newName,templateId}])`.
 
 ### Что нельзя
-- Использовать `settings` без `select`: нужен хотя бы один критерий, иначе тул откажет.
-- Ожидать, что `copy_view_settings` скопирует фильтры вида: секции ограничены `crop/viewRange/visibility/template`.
-- Игнорировать `skipped[]`: это и есть ответ, почему «не применилось».
+- `settings` без `select` (нужен критерий); ждать от `copy_view_settings` фильтров вида
+  (секции: crop/viewRange/visibility/template); игнорировать `skipped[]` — там причина «не применилось».
 ";
 
     private const string Templates = @"## Пак templates: шаблоны видов
@@ -195,29 +179,26 @@ public static partial class AgentToolPackSkills
 - `set_view_template_inclusion` — галочка «Include in template»: `parameters:[""crop""|""visibility""|""viewRange""|""scale""|""detailLevel""|""discipline""|""filters""|""worksets""]`, `included`.
 
 ### Кухня Revit
-- Шаблон — это `View` с `IsTemplate=true`; создаётся из настроенного вида (`CreateViewTemplate`),
-  не отображает элементы и не назначается другому шаблону.
-- **Назначить ≠ применить.** `appliedViewTemplate` (Assign) — постоянная связь: правки
-  шаблона приходят в вид, а контролируемые параметры нельзя менять на виде. Разовая
-  «Apply Template Properties» — `View.ApplyViewTemplateParameters`, связь при этом не
-  возникает. Не путайте эти два сценария в ответе пользователю.
-- Включённые галочки — `GetTemplateParameterIds()` (полный whitelist для этого типа вида) и
-  `GetNonControlledTemplateParameterIds()` (снятые). Набор меняется read-modify-write; id вне
-  whitelist игнорируются. Сопоставляйте по `BuiltInParameter`, не по локализованному имени.
+- Шаблон — `View` с `IsTemplate=true`; создаётся из вида (`CreateViewTemplate`), не отображает
+  элементы, не назначается другому шаблону.
+- **Назначить ≠ применить.** Assign (`appliedViewTemplate`) — постоянная связь: правки шаблона
+  приходят в вид, контролируемые параметры менять нельзя. Разовая «Apply Template Properties» —
+  `View.ApplyViewTemplateParameters`, связи не возникает.
+- Галочки — `GetTemplateParameterIds()` (whitelist) и `GetNonControlledTemplateParameterIds()`
+  (снятые); read-modify-write, id вне whitelist игнорируются. Сопоставляйте по
+  `BuiltInParameter`, не по имени.
 - Масштаб — это **три** параметра (`VIEW_SCALE` + два `*_PULLDOWN_*`): включение только
   `VIEW_SCALE` оставляет шаблон в несогласованном состоянии.
 - `apply_view_template` требует не только совместимого семейства, но и **точного `ViewType`**:
   иначе `template_view_type_mismatch`. Если у вида уже другой шаблон и `overwriteTemplate=false`,
   это skip, а не ошибка.
-- `set_view_template_inclusion` меняет **сам шаблон**, поэтому затрагивает все виды с ним
-  (`affectedViewCount`); `affectedViews` показывает первые 50.
-- Подрезку (`crop`) открепить через include-list нельзя: Revit не отдаёт её параметр в
-  `GetTemplateParameterIds`, тул вернёт `parameter_not_in_template`. Если шаблон задаёт
-  подрезку — правьте её в шаблоне или снимайте шаблон с вида.
-- Диапазон вида включает, но у шаблона уровни только относительные (Current / Level Above /
-  Level Below / Unlimited); шаблон с жёстким уровнем «перекинет» вид на чужой уровень.
-- Снятие шаблона **не возвращает** прежние значения: на виде остаётся то, что шаблон
-  последним задал. Снятие галочки Include тоже не откатывает уже применённое значение.
+- `set_view_template_inclusion` меняет **сам шаблон**: затрагивает все виды с ним
+  (`affectedViewCount`, первые 50 в `affectedViews`).
+- Подрезку (`crop`) открепить через include-list нельзя (нет в `GetTemplateParameterIds`,
+  `parameter_not_in_template`): правьте в шаблоне или снимайте шаблон с вида.
+- У шаблона уровни диапазона только относительные (Current / Level Above / Below / Unlimited);
+  жёсткий уровень «перекинет» вид на чужой уровень.
+- Снятие шаблона/галочки Include **не возвращает** прежние значения — остаётся заданное шаблоном.
 - Пока шаблон назначен и параметр включён, запись того же параметра в вид игнорируется Revit
   (`view_controlled_by_template` в наших тулах) — это главная причина «писал, ничего не изменилось».
 - Шаблон применим не к любому виду: `View.IsValidViewTemplate` проверяет совместимость типа.
@@ -226,12 +207,14 @@ public static partial class AgentToolPackSkills
   `SCHEDULE_*_PARAM`, а не через V/G.
 
 ### Инварианты
-- Прежде чем писать в настройку вида, проверьте `hasTemplate` и `controlledParameters` (`get_view_settings`).
-- `apply_view_template` с `templateId=0|null` — это отвязка, а не «шаблон по умолчанию».
-- `set_view_template_inclusion` требует, чтобы у вида уже был шаблон (`no_view_template`) и чтобы параметр существовал в шаблоне (`template_parameter_not_found`).
+- Перед записью в вид проверьте `hasTemplate`/`controlledParameters` (`get_view_settings`).
+- `apply_view_template` с `templateId=0|null` — отвязка, не «шаблон по умолчанию».
+- `set_view_template_inclusion` требует существующий шаблон (`no_view_template`) и параметр в нём
+  (`template_parameter_not_found`).
 
 ### Рецепты
-1. «Почему не меняется подрезка на виде?»: `get_view_settings(viewId, fields=[templateName,controlledParameters])` → если параметр контролируется, `set_view_template_inclusion(templateId, parameters=[""crop""], included=false)`.
+1. «Почему не меняется подрезка?»: `get_view_settings(fields=[templateName,controlledParameters])` →
+   `set_view_template_inclusion(templateId, parameters=[""crop""], included=false)`.
 2. «Повесить шаблон на все планы»: `list_view_templates` → `apply_view_template(select:{viewType:""FloorPlan""}, templateId=...)`.
 3. «Сделать шаблон, который не управляет видимостью»: `set_view_template_inclusion(parameters=[""visibility""], included=false)`.
 
