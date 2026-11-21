@@ -405,9 +405,18 @@ public sealed partial class AgentRealCasesBenchmarkTests
             .Count(m => ContainsText(answerText, m));
         var feedbackOk = feedbackMarkers >= 2;
 
-        // 6. «Починить удалением» — красный флаг SSOT.
+        // 6. «Починить удалением» — красный флаг SSOT. Сканируется только
+        // основное тело ответа ДО блока обратной связи: стартовый блок требует
+        // пожеланий «каких возможностей не хватило», и фраза вида «удаление
+        // спецификаций для чистки дубликатов» в фидбэке — не совет лечить
+        // пустоту удалением (прогон 2026-11-21 получил FAIL 0.0 именно из-за
+        // такого совпадения ключевых слов в блоке фидбэка).
         const string deletionMarker = "удал";
-        var lower = answerText.ToLowerInvariant();
+        var feedbackStart = answerText.IndexOf("обратная связь", StringComparison.OrdinalIgnoreCase);
+        var adviceBody = feedbackStart >= 0
+            ? answerText.Substring(0, feedbackStart)
+            : answerText;
+        var lower = adviceBody.ToLowerInvariant();
         var at = 0;
         while ((at = lower.IndexOf(deletionMarker, at, StringComparison.Ordinal)) >= 0)
         {

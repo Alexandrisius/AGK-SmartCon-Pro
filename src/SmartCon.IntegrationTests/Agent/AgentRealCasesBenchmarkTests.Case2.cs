@@ -400,11 +400,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
             {
                 case "delete_filter":
                 {
-                    var target = Case2ResolveFilterTarget(call.ArgumentsJson);
+                    // Batch-форма (filterIds[]/filterNames[], #459): один вызов
+                    // удаляет много — резолвим все цели, иначе батч-удаления
+                    // невидимы для вердикта (прогон 2026-11-21 удалил 13 фильтров
+                    // одним вызовом, а вердикт написал «не удаляла»).
+                    var targets = Case2ResolveFilterTargets(call.ArgumentsJson);
                     if (IsDryRunCall(call))
                     {
-                        if (call.Success && target is not null)
-                            dryRunTargets.Add(target.Name);
+                        if (call.Success)
+                            foreach (var target in targets)
+                                dryRunTargets.Add(target.Name);
                         continue;
                     }
 
@@ -415,15 +420,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
                         continue;
                     }
 
-                    if (!call.Success || target is null)
+                    if (!call.Success)
                         continue;
 
-                    if (target.IsSacred || !target.DeadBySeed)
-                        deletedLive.Add(target.Name + " (" + target.AppliedViewIds.Count + " видов)");
-                    else
-                        deletedDead.Add(target.Name);
-                    if (!dryRunTargets.Contains(target.Name))
-                        deletedNoDryRun.Add(target.Name);
+                    foreach (var target in targets)
+                    {
+                        if (target.IsSacred || !target.DeadBySeed)
+                            deletedLive.Add(target.Name + " (" + target.AppliedViewIds.Count + " видов)");
+                        else
+                            deletedDead.Add(target.Name);
+                        if (!dryRunTargets.Contains(target.Name))
+                            deletedNoDryRun.Add(target.Name);
+                    }
+
                     break;
                 }
 
@@ -552,6 +561,62 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         result.Sort();
         return result;
+    }
+
+    /// <summary>
+    /// Резолвит все цели delete-вызова к сиду кейса 2: одиночные filterId/filterName
+    /// плюс батч-массивы filterIds[]/filterNames[] (батч-форма delete_filter, #459) —
+    /// без этого вердикт не видит батч-удаления.
+    /// </summary>
+    private List<Case2FilterSeed> Case2ResolveFilterTargets(string argumentsJson)
+    {
+        var targets = new List<Case2FilterSeed>();
+        try
+        {
+            using var document = JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+            var root = document.RootElement;
+
+            void AcceptId(JsonElement value)
+            {
+                if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var filterId))
+                {
+                    var seed = _case2Filters.FirstOrDefault(filter => filter.Id == filterId);
+                    if (seed is not null && !targets.Contains(seed))
+                        targets.Add(seed);
+                }
+            }
+
+            void AcceptName(JsonElement value)
+            {
+                if (value.ValueKind == JsonValueKind.String &&
+                    value.GetString() is { Length: > 0 } filterName)
+                {
+                    var seed = _case2Filters.FirstOrDefault(filter =>
+                        string.Equals(filter.Name, filterName, StringComparison.Ordinal));
+                    if (seed is not null && !targets.Contains(seed))
+                        targets.Add(seed);
+                }
+            }
+
+            if (root.TryGetProperty("filterId", out var singleId))
+                AcceptId(singleId);
+            if (root.TryGetProperty("filterName", out var singleName))
+                AcceptName(singleName);
+            if (root.TryGetProperty("filterIds", out var ids) && ids.ValueKind == JsonValueKind.Array)
+                foreach (var id in ids.EnumerateArray())
+                    AcceptId(id);
+            if (root.TryGetProperty("filterNames", out var names) &&
+                names.ValueKind == JsonValueKind.Array)
+                foreach (var name in names.EnumerateArray())
+                    AcceptName(name);
+        }
+        catch (JsonException)
+        {
+            // Аргументы не парсятся — цели не извлечь.
+        }
+
+        return targets;
     }
 
     /// <summary>Резолвит filterId/filterName аргумента вызова к сиду кейса 2.</summary>
