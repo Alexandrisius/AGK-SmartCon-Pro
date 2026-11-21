@@ -496,6 +496,11 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, DeleteSheetsTool>();
         services.AddSingleton<IAgentTool, DeleteElementsTool>();
         services.AddSingleton<IAgentTool, DeleteSchedulesTool>();
+        services.AddSingleton<IAgentTool, CreateScheduleTool>();
+        services.AddSingleton<IAgentTool, AddScheduleFieldTool>();
+        services.AddSingleton<IAgentTool, SetScheduleFilterTool>();
+        services.AddSingleton<IAgentTool, SetScheduleSortTool>();
+        services.AddSingleton<IAgentTool, PlaceScheduleOnSheetTool>();
         services.AddSingleton<IAgentTool, CreateSheetTool>();
         services.AddSingleton<IAgentTool, CreateViewportsTool>();
         services.AddSingleton<IAgentTool, MoveViewportTool>();

@@ -67,6 +67,11 @@ public sealed class AgentToolCardsTests
         "delete_sheets",
         "delete_elements",
         "delete_schedules",
+        "create_schedule",
+        "add_schedule_field",
+        "set_schedule_filter",
+        "set_schedule_sort",
+        "place_schedule_on_sheet",
         "delete_family_types",
         "remove_family_parameter",
         "set_view_parameters",
@@ -84,7 +89,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(71, AgentToolCards.Count);
+        Assert.Equal(76, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

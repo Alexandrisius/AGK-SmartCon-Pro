@@ -448,7 +448,8 @@ public static partial class AgentToolCards
                 "модели: нужно понять, что отсекает фильтр или как устроены поля.",
             WhenNotToUse =
                 "Когда нужны строки — get_schedule_data; когда нужен список спецификаций — " +
-                "list_schedules. Изменять спецификации агент пока не умеет.",
+                "list_schedules; для изменения — create_schedule / add_schedule_field / " +
+                "set_schedule_filter / set_schedule_sort.",
             Examples = new[]
             {
                 "Почему в спецификации 0 строк, хотя элементы есть?",

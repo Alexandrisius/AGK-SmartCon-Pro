@@ -2007,6 +2007,86 @@
         "delete_schedules"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r249",
+      "query": "Создай спецификацию по трубам с полями тип и длина",
+      "expectedTools": [
+        "create_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r250",
+      "query": "Сделай новую ведомость стен проекта",
+      "expectedTools": [
+        "create_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r251",
+      "query": "Добавь в спецификацию труб поле диаметр",
+      "expectedTools": [
+        "add_schedule_field"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r252",
+      "query": "Дополни ведомость стен колонкой уровень",
+      "expectedTools": [
+        "add_schedule_field"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r253",
+      "query": "Настрой фильтр спецификации: система равна В1",
+      "expectedTools": [
+        "set_schedule_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r254",
+      "query": "Убери все фильтры из ведомости дверей",
+      "expectedTools": [
+        "set_schedule_filter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r255",
+      "query": "Отсортируй спецификацию труб по диаметру по возрастанию",
+      "expectedTools": [
+        "set_schedule_sort"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r256",
+      "query": "Сгруппируй ведомость стен по уровню",
+      "expectedTools": [
+        "set_schedule_sort"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r257",
+      "query": "Помести спецификацию труб на лист ОВ-01",
+      "expectedTools": [
+        "place_schedule_on_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r258",
+      "query": "Размести ведомость стен на листе в правом нижнем углу",
+      "expectedTools": [
+        "place_schedule_on_sheet"
+      ],
+      "kind": "write"
     }
   ]
 }

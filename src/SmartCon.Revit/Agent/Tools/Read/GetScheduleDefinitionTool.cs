@@ -30,9 +30,9 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             "Reads the definition of one schedule by scheduleId or exact scheduleName: " +
             "category, key-schedule/itemized flags, fields (name, heading, hidden, calculated, " +
             "field type), filters (field, operator, value) and sorting/grouping fields. Use it " +
-            "to explain why a schedule shows zero rows or fewer rows than the model has. " +
-            "Schedules are read-only in this version: fields, filters and sorting cannot be " +
-            "changed by the agent.",
+            "to explain why a schedule shows zero rows or fewer rows than the model has, and " +
+            "to verify changes made by add_schedule_field / set_schedule_filter / " +
+            "set_schedule_sort.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""}},""additionalProperties"":false}"
     };
 
@@ -180,8 +180,8 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             ["sortGroupFieldCount"] = sortFields.Count,
             ["sortGroupFields"] = sortFields,
             ["hint"] = "Zero rows with elements present usually mean a filter, a phase or an " +
-                       "empty parameter used by the filter. Changing schedule fields/filters " +
-                       "is not supported yet; report the finding instead of editing."
+                       "empty parameter used by the filter. Fields, filters and sorting can " +
+                       "be changed: add_schedule_field, set_schedule_filter, set_schedule_sort."
         };
 
         return ToolResult.Ok(

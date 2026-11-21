@@ -15,6 +15,12 @@ public static partial class AgentToolPackSkills
 - `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
 - `get_schedule_definition` — структура: поля, сортировка/группировка, фильтры.
+- `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
+  (уникальное), `fields` (0..15), `itemized`.
+- `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
+- `set_schedule_filter` — заменить фильтры (0..8, только AND; `[]` — очистить).
+- `set_schedule_sort` — заменить сортировку (0..4) и `itemized`.
+- `place_schedule_on_sheet` — разместить на листе: координаты левого верхнего угла в мм.
 - `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
   `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
   удаление самой спецификации — `delete_schedules`.
@@ -29,15 +35,24 @@ public static partial class AgentToolPackSkills
 - Изменённый объект `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
 - Данные тела читаются `GetTableData()` → `GetCellText(row, col)`; полный обход большого расписания — секунды, поэтому `limit/offset` в наших тулах обязательны.
 - Группировка: при `IsItemized=false` строки с одинаковыми группирующими значениями сливаются; итоги — `ShowFooter*`.
+- Фильтровать и сортировать можно только по полям-колонкам спецификации: Revit требует
+  `ScheduleFieldId`, а не имя параметра. Нет колонки → `field_not_in_schedule` →
+  сначала `add_schedule_field`.
+- `ScheduleSheetInstance.Create(doc, sheetId, scheduleId, XYZ)` — точка это **левый верхний
+  угол** таблицы (не центр, как у Viewport). `instance.Point` возвращает ту же точку —
+  `get_sheet_content` показывает её как `xMm/yMm`. Один ScheduleSheetInstance на лист
+  через наш тул: дубль → no_changes (Revit допускает дубли, агент — нет).
 
 ### Инварианты
 - «Покажи спецификацию» — сначала `get_schedule_definition`, потом `get_schedule_data` с
   `limit`: без структуры непонятно, что за колонки.
 - Значения в ячейках — отформатированный текст как в ведомости (с единицами); типизированных
   чисел в ответе нет. Для вычислений берите числа из параметров элементов (`query_elements`).
-- Структуру ведомости (поля, фильтры, сортировку) тулы только **читают** — изменить её нельзя;
-  если пользователь просит перестроить спецификацию, скажите об ограничении прямо. Удалить —
-  можно (`delete_schedules`).
+- «Сделай спецификацию по X и помести на лист» — цепочка: `create_schedule` →
+  `add_schedule_field` (если полей мало) → `set_schedule_filter` → `set_schedule_sort` →
+  `place_schedule_on_sheet`; каждый шаг dry-run → apply, после apply читайте read-back.
+- Фильтров не больше 8 (инвариант Revit, `filter_limit_exceeded`); условия только AND —
+  для «ИЛИ» стройте отдельные спецификации.
 - `scheduleName` ищется по точному имени; несколько совпадений → `ambiguous_schedule`
   (с candidates — берите id), шаблон → `schedule_is_template`. Надёжнее брать `scheduleId`
   из `list_schedules`.
@@ -47,14 +62,18 @@ public static partial class AgentToolPackSkills
 - `delete_schedules` необратим (`undoSupported=false`): сначала `dryRun=true` (вернёт
   `names[]`), apply — с `confirmNames` = `names[]` СВЕЖЕГО dry-run. Отказ
   `confirm_names_required`/`confirm_names_mismatch` = модель изменилась: повтори dry-run и
-  передай его свежий names[].
+  передай его свежий names[]. Остальные write-тулы пака откатываются `undo_last`.
 - Расписание на листе ищется через `get_sheet_content`, а не по номеру листа в параметре.
 
 ### Рецепты
 1. «Что в спецификации дверей?»: `list_schedules(nameContains:""Двери"")` → `get_schedule_definition` → `get_schedule_data(limit=50)`.
 2. «Сколько строк в ведомости?»: `get_schedule_data(limit=1)` → `total`/`rowCount`.
 3. «Где эта спецификация стоит?»: `list_schedules(fields=[name,sheetNumbers])`.
-4. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` →
+4. «Сделай спецификацию по трубам и помести на лист»: `list_categories` →
+   `create_schedule(category=""OST_Pipes"", name=""Спецификация труб"", fields=[...])` →
+   `set_schedule_filter` → `set_schedule_sort` → `create_sheet`/`list_sheets` →
+   `place_schedule_on_sheet(pointMmX=..., pointMmY=...)` → `get_sheet_content` (проверка).
+5. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` →
    `delete_schedules(scheduleIds, dryRun=true)` → подтверждение →
    `delete_schedules(scheduleIds, dryRun=false, confirmNames=names[])`.
 
@@ -62,6 +81,8 @@ public static partial class AgentToolPackSkills
 - Считать, что спецификация — обычный вид: у неё нет подрезки/диапазона, на лист она ставится иначе.
 - Читать тысячи строк без `limit`: ответ придёт обрезанным и с `hint`.
 - Ожидать OR в фильтрах расписания: только AND, до 8 условий.
+- Фильтровать/сортировать по полю, которого нет в колонках: сначала `add_schedule_field`.
+- Считать точку `place_schedule_on_sheet` центром таблицы: это левый верхний угол.
 - Удалять спецификации через `delete_views` — он откажет с `use_delete_schedules`.
 ";
 
