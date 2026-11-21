@@ -150,6 +150,104 @@ public sealed partial class AgentContextCompactorTests
     }
 
     [Fact]
+    public async Task Checkpoint_LosingALoadToolPackSkill_ReportsThePackForResend()
+    {
+        // #455: a load_tool_pack result is protected from masking, but a checkpoint
+        // drops it with the covered prefix anyway. The compaction must report the
+        // pack, so the orchestrator unmarks it and the manual is re-sent instead of
+        // the model working without the rules for the rest of the chat.
+        var summarizer = new FakeSummarizer { Result = "CHECKPOINT" };
+        var compactor = new AgentContextCompactor(summarizer);
+        var messages = new List<AgentMessage>
+        {
+            AssistantCall("lp", "load_tool_pack"),
+            AgentMessage.ToolResult("lp", LoadToolPackResultWithSkill("filters"))
+        };
+        for (var index = 0; index < 8; index++)
+        {
+            messages.Add(AgentMessage.User("шаг " + index + " " + new string('я', 4000)));
+            messages.Add(AgentMessage.Assistant("ответ " + index));
+        }
+
+        var result = await compactor.CompactAsync(
+            Request(messages, keepRecentMessages: 2), CancellationToken.None);
+
+        Assert.True(result.Summarized);
+        Assert.Contains("filters", result.SkillPacksToResend);
+    }
+
+    [Fact]
+    public async Task Checkpoint_KeepsTheTailSkill_NoResendReported()
+    {
+        var summarizer = new FakeSummarizer { Result = "CHECKPOINT" };
+        var compactor = new AgentContextCompactor(summarizer);
+        var messages = new List<AgentMessage>();
+        for (var index = 0; index < 8; index++)
+        {
+            messages.Add(AgentMessage.User("шаг " + index + " " + new string('я', 4000)));
+            messages.Add(AgentMessage.Assistant("ответ " + index));
+        }
+
+        messages.Add(AssistantCall("lp", "load_tool_pack"));
+        messages.Add(AgentMessage.ToolResult("lp", LoadToolPackResultWithSkill("filters")));
+
+        var result = await compactor.CompactAsync(
+            Request(messages, keepRecentMessages: 2), CancellationToken.None);
+
+        Assert.True(result.Summarized);
+        Assert.Empty(result.SkillPacksToResend);
+    }
+
+    [Fact]
+    public async Task Masking_DigestedWriteSkill_ReportsThePackForResend()
+    {
+        // #455: the first write of a pack tool carries the manual at the root
+        // level. Masking replaces it with a digest (pack name only,
+        // skillsDropped=true): the markdown is gone, so the pack must be re-sent.
+        var summarizer = new FakeSummarizer();
+        var compactor = new AgentContextCompactor(summarizer);
+        var messages = new List<AgentMessage>();
+        var withSkill = WriteResultWithSkill("views", 12_000);
+        var small = LargeToolPayload(50);
+
+        for (var index = 0; index < 10; index++)
+        {
+            messages.Add(AssistantCall("call_" + index, "rename_views"));
+            messages.Add(AgentMessage.ToolResult(
+                "call_" + index, index < 4 ? withSkill : small));
+        }
+
+        var result = await compactor.CompactAsync(
+            Request(messages, keepRecentToolResults: 6), CancellationToken.None);
+
+        Assert.False(result.Summarized);
+        Assert.Equal(4, result.MaskedCount);
+        Assert.Contains("views", result.SkillPacksToResend);
+        var digested = result.Messages.First(message => message.Role == AgentRole.Tool);
+        Assert.Contains("\"skillsDropped\":true", digested.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Projection_MaskedWriteSkill_ReportsThePackForResend()
+    {
+        var compactor = new AgentContextCompactor(new FakeSummarizer());
+        var messages = new List<AgentMessage>();
+        for (var index = 0; index < 4; index++)
+        {
+            messages.Add(AssistantCall("call_" + index, "rename_views"));
+            messages.Add(AgentMessage.ToolResult(
+                "call_" + index, WriteResultWithSkill("views", 12_000)));
+        }
+
+        var result = await compactor.ProjectAsync(
+            Request(messages, keepRecentToolResults: 0, minMaskSavings: 1),
+            CancellationToken.None);
+
+        Assert.Equal(4, result.MaskedCount);
+        Assert.Contains("views", result.SkillPacksToResend);
+    }
+
+    [Fact]
     public async Task OverBudget_SummarizesAndPinsConstraints()
     {
         var summarizer = new FakeSummarizer { Result = "1. Goal\n2. Constraints" };
@@ -356,6 +454,20 @@ public sealed partial class AgentContextCompactorTests
     private static string LargeToolPayload(int padding) =>
         "{\"success\":true,\"message\":\"original\",\"affectedCount\":2,\"data\":{\"items\":\"" +
         new string('x', padding) + "\"}}";
+
+    /// <summary>Payload shape of a load_tool_pack result that delivered a skill.</summary>
+    private static string LoadToolPackResultWithSkill(string pack) =>
+        "{\"success\":true,\"message\":\"Loaded 4 tool(s) for the next round.\"," +
+        "\"affectedCount\":0,\"data\":{\"loaded\":[\"list_filters\"]," +
+        "\"skills\":[{\"pack\":\"" + pack + "\",\"markdown\":\"## Пак " + pack +
+        "\\n### Карта тулов\\nmanual body\"}],\"appliedTo\":\"next_round\"}}";
+
+    /// <summary>Payload shape of a first write whose pack skill was attached.</summary>
+    private static string WriteResultWithSkill(string pack, int padding) =>
+        "{\"success\":true,\"message\":\"renamed\",\"affectedCount\":2," +
+        "\"data\":{\"changed\":[\"" + new string('x', padding) + "\"]}," +
+        "\"skills\":[{\"pack\":\"" + pack + "\",\"markdown\":\"## Пак " + pack +
+        " — manual body\"}]}";
 
     internal sealed class FakeSummarizer : IAgentSummarizer
     {

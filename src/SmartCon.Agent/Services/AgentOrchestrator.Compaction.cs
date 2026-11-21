@@ -172,4 +172,28 @@ public sealed partial class AgentOrchestrator
         var tail = (int)(usable * 0.15);
         return Math.Max(2_000, Math.Min(150_000, tail));
     }
+
+    /// <summary>
+    /// Compaction can push a pack skill out of the visible history (masked into
+    /// a digest or dropped with a covered prefix): the model no longer has the
+    /// manual, so the "sent once" mark must go too. The next load_tool_pack or
+    /// the first write of a pack tool delivers the manual again (#455).
+    /// </summary>
+    private void UnmarkSkillPacksOutsideProjection(AgentCompactionResult compaction)
+    {
+        if (compaction.SkillPacksToResend.Count == 0)
+            return;
+
+        var removed = new List<string>();
+        foreach (var pack in compaction.SkillPacksToResend)
+        {
+            if (_sessionContext.SentPackSkills.Remove(pack))
+                removed.Add(pack);
+        }
+
+        if (removed.Count > 0)
+            SmartConLogger.Info(
+                "Agent pack skill(s) left the projection after compaction and will be " +
+                "re-sent on the next load or write: " + string.Join(", ", removed));
+    }
 }

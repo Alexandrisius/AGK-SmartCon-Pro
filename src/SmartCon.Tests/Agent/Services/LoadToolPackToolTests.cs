@@ -384,6 +384,100 @@ public sealed class LoadToolPackToolTests
     }
 
     [Fact]
+    public async Task Execute_MoreThanFivePacks_IsRejected()
+    {
+        // #453: every pack adds a markdown skill, so an unbounded packs[] could
+        // push the largest call past the meta budget. The call must fail before
+        // anything is queued or marked as sent.
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, ViewsRegistry());
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse(
+                "{\"packs\":[\"views\",\"levels\",\"filters\",\"families\",\"templates\"," +
+                "\"schedules\"]}"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_arguments", result.ErrorCode);
+        Assert.Contains("second call", result.Message, StringComparison.Ordinal);
+        Assert.Contains("views", result.Message, StringComparison.Ordinal);
+        Assert.Empty(session.PendingToolNames);
+        Assert.Empty(session.LoadedToolNames);
+        Assert.Empty(session.SentPackSkills);
+    }
+
+    [Fact]
+    public async Task Execute_FivePacks_ReturnsUpToFiveSkills()
+    {
+        // The cap itself must stay loadable: five packs is the allowed worst call.
+        var session = new AgentSessionContext();
+        var tool = CreateTool(session, ViewsRegistry());
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse(
+                "{\"packs\":[\"views\",\"levels\",\"filters\",\"families\",\"templates\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var skills = result.Data!.Value.GetProperty("skills").EnumerateArray()
+            .Select(item => item.GetProperty("pack").GetString()!)
+            .ToList();
+        Assert.Equal(5, skills.Count);
+        Assert.Equal(5, session.SentPackSkills.Count);
+    }
+
+    [Fact]
+    public async Task Execute_ToolsSpanningMoreThanFivePacks_AttachesOnlyFiveSkills()
+    {
+        // #453: a tools= call spanning 6+ packs must not flood the context with a
+        // manual per pack. The tools themselves load — the cap limits only the
+        // skill channel and reports the rest in a note instead of an error.
+        var session = new AgentSessionContext();
+        var tool = CreateTool(
+            session,
+            new FakeToolRegistry(
+                new ScriptedTool("rename_views"),
+                new ScriptedTool("rename_levels"),
+                new ScriptedTool("create_view_filter"),
+                new ScriptedTool("list_families"),
+                new ScriptedTool("apply_view_template"),
+                new ScriptedTool("list_schedules")));
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse(
+                "{\"tools\":[\"rename_views\",\"rename_levels\",\"create_view_filter\"," +
+                "\"list_families\",\"apply_view_template\",\"list_schedules\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+
+        // All six tools are queued: the cap limits only the skill channel.
+        Assert.Equal(6, data.GetProperty("loaded").GetArrayLength());
+        Assert.Equal(6, session.PendingToolNames.Count);
+
+        var skills = data.GetProperty("skills").EnumerateArray()
+            .Select(item => item.GetProperty("pack").GetString()!)
+            .ToList();
+        Assert.Equal(5, skills.Count);
+
+        // Deterministic pick: owner packs in name order, the rest reported.
+        Assert.Equal(
+            new[] { "families", "filters", "levels", "schedules", "templates" },
+            skills);
+        Assert.Equal(5, session.SentPackSkills.Count);
+
+        var note = data.GetProperty("skillPackNote").GetString();
+        Assert.NotNull(note);
+        Assert.Contains("5 of 6", note!, StringComparison.Ordinal);
+        Assert.Contains("load_tool_pack", note!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Execute_ExplicitTool_DeliversTheSkillOfItsPack()
     {
         // The model may enable one tool by name instead of the whole pack: the manual

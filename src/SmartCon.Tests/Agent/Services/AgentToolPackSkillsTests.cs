@@ -88,16 +88,22 @@ public sealed class AgentToolPackSkillsTests
     [Fact]
     public void AllSkills_FitTheConversationBudget()
     {
-        // load_tool_pack returns every skill of the requested packs in one result.
-        // The budget protects skills from trimming (#400), so their total must stay
-        // below the expanded meta-tool budget even when every pack is loaded at once.
-        // #441/#348 grew the catalog (83 → 87 tools): reserve 20000 → 17500; G.5
-        // (87 → 90 tools, batch recipes of sheets): 17500 → 16000.
-        var total = AgentToolPacks.Populated
-            .Sum(pack => AgentToolPackSkills.TryGet(pack.Name)!.Length);
+        // load_tool_pack is capped at MaxPacksPerCall packs per call (#453), so the
+        // worst result carries at most the five largest manuals plus the tool
+        // schemas — that is the sum this gate must fit into the meta budget. The
+        // budget protects skills from trimming (#400); the TOTAL of all skills no
+        // longer presses, so the catalog can keep growing without re-basing this
+        // gate on every new pack. Reserve history: #441/#348 grew the catalog
+        // (83 → 87 tools): 20000 → 17500; G.5 (87 → 90 tools): 17500 → 16000;
+        // #453 re-based the checked sum from "all packs" to "five largest".
+        var worstCall = AgentToolPacks.Populated
+            .Select(pack => AgentToolPackSkills.TryGet(pack.Name)!.Length)
+            .OrderByDescending(length => length)
+            .Take(SmartCon.Agent.Services.Tools.LoadToolPackTool.MaxPacksPerCall)
+            .Sum();
 
         Assert.InRange(
-            total,
+            worstCall,
             1000,
             SmartCon.Core.Models.Agent.ToolResultBudget.MetaMaxCharacters - 16000);
     }

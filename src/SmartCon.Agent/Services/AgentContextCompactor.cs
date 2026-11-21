@@ -76,7 +76,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
             Messages = masked,
             MaskedCount = maskedCount,
             TokensBefore = tokensBefore,
-            TokensAfter = tokensAfter
+            TokensAfter = tokensAfter,
+            SkillPacksToResend = CollectSkillPacksToResend(messages, masked)
         });
     }
 
@@ -106,7 +107,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
                 Messages = masked,
                 MaskedCount = maskedCount,
                 TokensBefore = tokensBefore,
-                TokensAfter = maskedTokens
+                TokensAfter = maskedTokens,
+                SkillPacksToResend = CollectSkillPacksToResend(messages, masked)
             };
         }
 
@@ -127,7 +129,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
                 TokensAfter = hardTokens,
                 Fallback = true,
                 FallbackReason = "summary_disabled",
-                CoveredToRowId = request.BaseRowId
+                CoveredToRowId = request.BaseRowId,
+                SkillPacksToResend = CollectSkillPacksToResend(messages, hard.Messages)
             };
         }
 
@@ -138,7 +141,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
                 var cut = ComputeCut(masked, request);
                 if (cut <= 0 || cut >= masked.Count)
                     return NothingToSummarize(
-                        masked, tokensBefore, maskedTokens, maskedCount);
+                        masked, tokensBefore, maskedTokens, maskedCount,
+                        CollectSkillPacksToResend(messages, masked));
 
                 var summary = await SummarizeCompactionAsync(
                         masked.Take(cut).ToList(), request, ct)
@@ -211,7 +215,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
                     CoveredToRowId = coveredToRowId,
                     Fallback = checkpointTokens > limit,
                     FallbackReason = checkpointTokens > limit ? "hard_shrink" : null,
-                    Record = record
+                    Record = record,
+                    SkillPacksToResend = CollectSkillPacksToResend(messages, checkpointed)
                 };
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -251,7 +256,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
             TokensBefore = tokensBefore,
             TokensAfter = fallbackTokens,
             Fallback = true,
-            FallbackReason = "summary_unavailable"
+            FallbackReason = "summary_unavailable",
+            SkillPacksToResend = CollectSkillPacksToResend(messages, hardShrink.Messages)
         };
     }
 
@@ -293,7 +299,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
         List<AgentMessage> messages,
         int tokensBefore,
         int tokensAfter,
-        int maskedCount)
+        int maskedCount,
+        IReadOnlyList<string> skillPacksToResend)
     {
         SmartConLogger.Warn(
             "Agent context: nothing safe to summarize (" + messages.Count +
@@ -308,7 +315,8 @@ public sealed partial class AgentContextCompactor : IAgentContextCompactor
             TokensBefore = tokensBefore,
             TokensAfter = tokensAfter,
             Fallback = true,
-            FallbackReason = "nothing_to_summarize"
+            FallbackReason = "nothing_to_summarize",
+            SkillPacksToResend = skillPacksToResend
         };
     }
 

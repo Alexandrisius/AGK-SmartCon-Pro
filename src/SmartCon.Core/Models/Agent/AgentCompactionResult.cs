@@ -31,5 +31,14 @@ public sealed class AgentCompactionResult
 
     public AgentCompactionRecord? Record { get; init; }
 
+    /// <summary>
+    /// Packs whose skill markdown is no longer delivered verbatim by any message
+    /// of the projection (masked into a digest or dropped with the covered
+    /// prefix). The orchestrator unmarks them in <c>SentPackSkills</c>, so the
+    /// next load_tool_pack or the next write of a pack tool re-sends the manual
+    /// instead of silently working without it (#455).
+    /// </summary>
+    public IReadOnlyList<string> SkillPacksToResend { get; init; } = Array.Empty<string>();
+
     public bool Changed => MaskedCount > 0 || DroppedCount > 0 || Summarized;
 }

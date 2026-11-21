@@ -15,6 +15,13 @@ public sealed class LoadToolPackTool : IAgentTool
 {
     public const string ToolName = "load_tool_pack";
 
+    /// <summary>
+    /// Upper bound of packs per call (#453): every pack adds a markdown skill to
+    /// the result, so an unbounded list could push the largest call past the meta
+    /// budget no matter how high it is. The rest is loadable in a second call.
+    /// </summary>
+    public const int MaxPacksPerCall = 5;
+
     private const int MaxSuggestions = 3;
     private const int MaxSchemas = 8;
     private const string Hint =
@@ -33,12 +40,13 @@ public sealed class LoadToolPackTool : IAgentTool
     public AgentToolDefinition Definition { get; } = new()
     {
         Name = ToolName,
-        Description =
+            Description =
             "Enables a tool pack or explicit tools for the next round; the current round keeps " +
             "its tool set. Returns the input schemas of the tools it enabled and, for packs " +
             "that have one, the pack skill (markdown operating manual) — one entry per pack in " +
             "'skills', each sent once per conversation. Loading a single tool also delivers " +
-            "the skill of its pack; prefer pack= to get the sibling tools too. Use it after " +
+            "the skill of its pack; prefer pack= to get the sibling tools too. At most " +
+            MaxPacksPerCall + " packs per call: load the rest in a second call. Use it after " +
             "find_tools to make the discovered tools callable.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
@@ -46,7 +54,7 @@ public sealed class LoadToolPackTool : IAgentTool
         InputSchemaJson =
             @"{""type"":""object"",""properties"":{" +
             @"""pack"":{""type"":""string""}," +
-            @"""packs"":{""type"":""array"",""items"":{""type"":""string""}}," +
+            @"""packs"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":" + MaxPacksPerCall + @"}," +
             @"""tools"":{""type"":""array"",""items"":{""type"":""string""}}," +
             @"""context"":{""type"":""string""}}," +
             @"""additionalProperties"":false}"
@@ -79,8 +87,23 @@ public sealed class LoadToolPackTool : IAgentTool
                 "Provide 'pack', 'packs' or at least one tool name in 'tools'."));
         }
 
+        // The schema caps 'packs' at maxItems, but a provider that ignores it must
+        // still get a bounded answer (#453): every pack adds a markdown skill, so
+        // the worst call is the largest five skills plus the tool schemas.
+        var distinctPacks = packNames.Distinct(StringComparer.Ordinal).ToList();
+        if (distinctPacks.Count > MaxPacksPerCall)
+        {
+            return Task.FromResult(ToolResult.Fail(
+                "invalid_arguments",
+                "At most " + MaxPacksPerCall + " pack(s) can be requested per call, got " +
+                distinctPacks.Count + ": " +
+                string.Join(", ", distinctPacks.Take(MaxPacksPerCall)) +
+                ", and " + (distinctPacks.Count - MaxPacksPerCall) + " more. " +
+                "Load the rest in a second call."));
+        }
+
         var wanted = new List<string>();
-        foreach (var name in packNames.Distinct(StringComparer.Ordinal))
+        foreach (var name in distinctPacks)
         {
             if (!AgentToolPacks.TryGet(name, out var pack) || pack is null)
             {
@@ -136,16 +159,40 @@ public sealed class LoadToolPackTool : IAgentTool
 
         // A skill belongs to a pack, but the model may load a single tool by name.
         // Deliver the manual of every pack the loaded tools belong to: loading one
-        // tool must not skip the knowledge of its pack (#400).
-        var skillPacks = new List<string>(packNames);
+        // tool must not skip the knowledge of its pack (#400). The skill channel
+        // is capped at MaxPacksPerCall like the pack list (#453): a tools= call
+        // spanning many packs attaches at most five manuals — the tools still
+        // load, only the skill delivery is bounded. Explicitly requested packs
+        // keep their slots; owner packs fill the rest in name order, so the
+        // choice is deterministic.
+        var skillPacks = new List<string>(distinctPacks);
+        var additionalOwners = new List<string>();
         foreach (var name in requested)
         {
             var owner = AgentToolPacks.PackOfTool(name);
-            if (owner is not null
-                && !skillPacks.Contains(owner.Name, StringComparer.Ordinal))
+            if (owner is null
+                || skillPacks.Contains(owner.Name, StringComparer.Ordinal)
+                || additionalOwners.Contains(owner.Name, StringComparer.Ordinal))
             {
-                skillPacks.Add(owner.Name);
+                continue;
             }
+
+            additionalOwners.Add(owner.Name);
+        }
+
+        var totalSkillPacks = skillPacks.Count + additionalOwners.Count;
+        string? skillPackNote = null;
+        foreach (var owner in additionalOwners.OrderBy(name => name, StringComparer.Ordinal))
+        {
+            if (skillPacks.Count < MaxPacksPerCall)
+            {
+                skillPacks.Add(owner);
+                continue;
+            }
+
+            skillPackNote = "Skills attached for " + skillPacks.Count + " of " +
+                totalSkillPacks + " packs; call load_tool_pack for the rest.";
+            break;
         }
 
         // "Loaded" must mean "callable right now", not "remembered for this
@@ -260,6 +307,7 @@ public sealed class LoadToolPackTool : IAgentTool
             remainingByPack,
             skills = skills.Count == 0 ? null : skills,
             skillAlreadySent = skillAlreadySent.Count == 0 ? null : skillAlreadySent,
+            skillPackNote,
             // Legacy field: tools enabled in this conversation, including pack names
             // that the registry does not know (should not happen in production).
             totalTools = _sessionContext.LoadedToolNames.Count,

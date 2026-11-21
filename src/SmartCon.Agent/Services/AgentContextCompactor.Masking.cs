@@ -209,4 +209,95 @@ public sealed partial class AgentContextCompactor
                 ? direct.GetString()
                 : null;
     }
+
+    /// <summary>
+    /// Packs whose skills left the projection: delivered verbatim before the
+    /// pass and gone after it (#455). load_tool_pack carries its manuals in
+    /// <c>data.skills</c>, a first write of a pack tool in root-level
+    /// <c>skills</c> — both shapes count, digest entries (pack name without
+    /// markdown) do not.
+    /// </summary>
+    private static List<string> CollectSkillPacksToResend(
+        IReadOnlyList<AgentMessage> original,
+        IReadOnlyList<AgentMessage> projected)
+    {
+        var deliveredBefore = CollectDeliveredSkillPacks(original);
+        if (deliveredBefore.Count == 0)
+            return new List<string>();
+
+        var deliveredAfter = CollectDeliveredSkillPacks(projected);
+        return deliveredBefore
+            .Where(pack => !deliveredAfter.Contains(pack))
+            .ToList();
+    }
+
+    private static HashSet<string> CollectDeliveredSkillPacks(
+        IReadOnlyList<AgentMessage> messages)
+    {
+        var packs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var message in messages)
+        {
+            if (message.Role != AgentRole.Tool)
+                continue;
+
+            var content = message.Content;
+            if (string.IsNullOrEmpty(content)
+                || content!.IndexOf("\"skills\"", StringComparison.Ordinal) < 0)
+            {
+                continue;
+            }
+
+            CollectDeliveredSkillPacks(content!, packs);
+        }
+
+        return packs;
+    }
+
+    private static void CollectDeliveredSkillPacks(string content, HashSet<string> packs)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                return;
+
+            CollectDeliveredSkillPacks(root, packs);
+            if (root.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Object)
+            {
+                CollectDeliveredSkillPacks(data, packs);
+            }
+        }
+        catch (JsonException)
+        {
+            // Not JSON: no verbatim skill to protect.
+        }
+    }
+
+    private static void CollectDeliveredSkillPacks(JsonElement container, HashSet<string> packs)
+    {
+        if (!container.TryGetProperty("skills", out var skills)
+            || skills.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var entry in skills.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object
+                || !entry.TryGetProperty("pack", out var pack)
+                || pack.ValueKind != JsonValueKind.String
+                || !entry.TryGetProperty("markdown", out var markdown)
+                || markdown.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(markdown.GetString()))
+            {
+                continue;
+            }
+
+            var name = pack.GetString();
+            if (!string.IsNullOrEmpty(name))
+                packs.Add(name!);
+        }
+    }
 }

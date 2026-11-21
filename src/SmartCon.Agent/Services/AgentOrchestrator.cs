@@ -218,6 +218,7 @@ public sealed partial class AgentOrchestrator
                     estimator, rawEstimator, ct)
                 .ConfigureAwait(false);
             working = projected.Messages;
+            UnmarkSkillPacksOutsideProjection(projected);
             if (projected.Changed)
                 lastCompaction = projected;
             if (projected.Record is not null)
@@ -253,6 +254,7 @@ public sealed partial class AgentOrchestrator
                         rawHistory, allowCheckpoint, estimator, rawEstimator, ct)
                     .ConfigureAwait(false);
                 working = compaction.Messages;
+                UnmarkSkillPacksOutsideProjection(compaction);
                 if (compaction.Changed)
                 {
                     lastCompaction = compaction;
