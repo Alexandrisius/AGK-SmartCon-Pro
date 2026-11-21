@@ -206,7 +206,8 @@ public sealed class AgentToolCardsTests
             "set_parameters",
             "remap_parameter_values",
             "rename_views",
-            "map_family_parameters"
+            "map_family_parameters",
+            "replace_family_parameter"
         };
         var actualBatchedTools = AgentToolCards.All
             .Where(card => card.BatchAnalogue is not null)
@@ -221,8 +222,14 @@ public sealed class AgentToolCardsTests
                 return;
 
             Assert.Matches(
-                "^start_job\\(action:\"(rename_views|set_parameters|map_family_parameters)\"\\)$",
+                "^start_job\\(action:\"(rename_views|set_parameters|map_family_parameters|replace_family_parameter)\"\\)$",
                 card.BatchAnalogue);
+            // #430: replace_family_parameter is a single-shot write (one parameter of
+            // one family per call, SupportsBulk=false), so its card stays Bulk=false —
+            // the batch path is the job action itself, not the tool.
+            if (card.ToolName == "replace_family_parameter")
+                return;
+
             Assert.True(card.Bulk, card.ToolName + ": BatchAnalogue requires a batch write card");
         });
     }

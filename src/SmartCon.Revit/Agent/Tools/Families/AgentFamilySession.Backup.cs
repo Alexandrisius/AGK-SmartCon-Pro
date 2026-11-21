@@ -108,12 +108,16 @@ internal sealed partial class AgentFamilySession
 
             try
             {
-                var directory = BackupDirectory();
+                // The backup file must be named exactly as the family: a doc-to-doc
+                // LoadFamily from a differently named file creates a NEW family named
+                // after the file instead of replacing the loaded one (#430), so the
+                // timestamp lives in the directory, not in the file name.
+                var root = BackupDirectory();
+                var directory = UniqueDirectory(Path.Combine(root, stamp));
                 Directory.CreateDirectory(directory);
-                CleanupOldBackups(directory);
-                var fileName = AgentFamilySpecs.SanitizeFileName(family.Name) + "-" + stamp +
-                               ".rfa";
-                var path = UniquePath(Path.Combine(directory, fileName));
+                CleanupOldBackups(root);
+                var fileName = AgentFamilySpecs.SanitizeFileName(family.Name) + ".rfa";
+                var path = Path.Combine(directory, fileName);
                 backupDoc.SaveAs(path, new SaveAsOptions { OverwriteExistingFile = true });
                 backupPath = path;
                 return true;
@@ -170,21 +174,46 @@ internal sealed partial class AgentFamilySession
         "Agent",
         "family-backups");
 
-    private static void CleanupOldBackups(string directory)
+    private static void CleanupOldBackups(string root)
     {
         try
         {
             var cutoff = DateTime.UtcNow.AddDays(-30);
-            foreach (var file in Directory.GetFiles(directory, "*.rfa"))
+            // Legacy layout: timestamped .rfa files directly under the root.
+            foreach (var file in Directory.GetFiles(root, "*.rfa"))
             {
                 if (File.GetLastWriteTimeUtc(file) < cutoff)
                     File.Delete(file);
+            }
+
+            // Current layout: one directory per backup, the .rfa named as the family.
+            foreach (var directory in Directory.GetDirectories(root))
+            {
+                if (Directory.GetLastWriteTimeUtc(directory) < cutoff)
+                    Directory.Delete(directory, recursive: true);
             }
         }
         catch (Exception)
         {
             // Cleanup is best-effort; a stale backup never blocks the edit.
         }
+    }
+
+    private static string UniqueDirectory(string path)
+    {
+        if (!Directory.Exists(path))
+            return path;
+
+        var parent = Path.GetDirectoryName(path) ?? string.Empty;
+        var name = Path.GetFileName(path);
+        for (var index = 2; index < 1000; index++)
+        {
+            var candidate = Path.Combine(parent, name + "-" + index);
+            if (!Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return Path.Combine(parent, name + "-" + Guid.NewGuid().ToString("N"));
     }
 
     private static string UniquePath(string path)

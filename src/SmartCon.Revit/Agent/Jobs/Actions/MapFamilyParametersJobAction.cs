@@ -90,105 +90,21 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         }
 
         var select = spec.Select!;
-        if (select.Limit.HasValue && select.Limit.Value <= 0)
+        var selection = FamilyJobSelectors.Resolve(
+            context.Document,
+            select.FamilyIds,
+            select.FamilyUniqueIds,
+            select.FamilyNames,
+            select.NameContains,
+            select.CategoryIds,
+            select.Limit);
+        if (!selection.Success)
         {
-            return ExpansionFail(
-                JobErrorCodes.InvalidSpec,
-                "select.limit must be greater than zero. [Action: pass a positive limit or omit it]");
+            return ExpansionFail(selection.ErrorCode!, selection.ErrorDetail!);
         }
 
-        var hasSelector = select.FamilyIds is { Count: > 0 }
-                          || select.FamilyUniqueIds is { Count: > 0 }
-                          || select.FamilyNames is { Count: > 0 }
-                          || !string.IsNullOrWhiteSpace(select.NameContains)
-                          || select.CategoryIds is { Count: > 0 };
-        if (!hasSelector)
-        {
-            return ExpansionFail(
-                JobErrorCodes.SelectorEmpty,
-                "The select block names no family: pass familyIds, familyUniqueIds, familyNames, " +
-                "nameContains or categoryIds. [Action: list the loaded families and narrow the selector]");
-        }
-
-        // #433: familyNames resolve to whatever loaded family bears the name; names
-        // that match nothing stay here and surface as warnings (or, when nothing at
-        // all was selected, in the selector-empty error).
-        var pendingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (select.FamilyNames is { Count: > 0 })
-        {
-            foreach (var name in select.FamilyNames)
-            {
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    pendingNames.Add(name.Trim());
-                }
-            }
-        }
-
-        var families = new List<RevitFamily>();
-        var skipped = 0;
-        foreach (var element in new FilteredElementCollector(context.Document).OfClass(typeof(RevitFamily)))
-        {
-            if (element is not RevitFamily family)
-            {
-                continue;
-            }
-
-            pendingNames.Remove(family.Name);
-            if (!MatchesSelect(family, select))
-            {
-                continue;
-            }
-
-            if (family.IsInPlace || !family.IsEditable)
-            {
-                skipped++;
-                continue;
-            }
-
-            families.Add(family);
-        }
-
-        families.Sort((left, right) =>
-            string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
-
-        if (families.Count == 0)
-        {
-            if (pendingNames.Count > 0)
-            {
-                return ExpansionFail(
-                    JobErrorCodes.SelectorEmpty,
-                    "None of the select.familyNames matched a loaded family: " +
-                    JoinNames(pendingNames) + ". [Action: list the loaded families and fix the names]");
-            }
-
-            return ExpansionFail(
-                JobErrorCodes.SelectorEmpty,
-                skipped > 0
-                    ? "All " + skipped + " matched families are in-place or not editable, so none can be " +
-                      "mapped. [Action: pick a loadable, editable family]"
-                    : "The select block matched no family. [Action: list the loaded families and widen the " +
-                      "selector]");
-        }
-
-        if (select.Limit is { } limit && families.Count > limit)
-        {
-            families.RemoveRange(limit, families.Count - limit);
-        }
-
-        var warnings = new List<string>();
-        foreach (var unmatched in pendingNames.OrderBy(name => name, StringComparer.Ordinal))
-        {
-            warnings.Add(
-                "No loaded family named '" + unmatched + "'. [Action: list_families to see the loaded families]");
-        }
-
-        if (skipped > 0)
-        {
-            warnings.Add(
-                skipped + " matched family/families are in-place or not editable; they were skipped because " +
-                "a family document cannot be opened for them.");
-        }
+        var families = selection.Families.ToList();
+        var warnings = selection.Warnings.ToList();
 
         return new JobExpansion
         {
@@ -264,75 +180,10 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         return null;
     }
 
-    private static bool MatchesSelect(RevitFamily family, MapFamilySelectSpec select)
-    {
-        if (select.FamilyIds is { Count: > 0 } && !select.FamilyIds.Contains(family.Id.GetValue()))
-        {
-            return false;
-        }
-
-        if (select.FamilyNames is { Count: > 0 } && !MatchesAnyName(select.FamilyNames, family.Name))
-        {
-            return false;
-        }
-
-        if (select.FamilyUniqueIds is { Count: > 0 })
-        {
-            var matched = false;
-            foreach (var uniqueId in select.FamilyUniqueIds)
-            {
-                if (string.Equals(uniqueId, family.UniqueId, StringComparison.Ordinal))
-                {
-                    matched = true;
-                    break;
-                }
-            }
-
-            if (!matched)
-            {
-                return false;
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(select.NameContains)
-            && family.Name.IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0)
-        {
-            return false;
-        }
-
-        if (select.CategoryIds is { Count: > 0 })
-        {
-            var categoryId = family.FamilyCategory?.Id.GetValue();
-            if (!categoryId.HasValue || !select.CategoryIds.Contains(categoryId.Value))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool MatchesAnyName(IReadOnlyList<string> names, string familyName)
-    {
-        foreach (var name in names)
-        {
-            if (string.Equals(name?.Trim(), familyName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string JoinNames(IEnumerable<string> names) =>
-        string.Join(", ", names.OrderBy(name => name, StringComparer.Ordinal));
-
     /// <summary>
-    /// LoadFamily recreates the family element, so the unit key (and the family id)
-    /// captured at expansion stops resolving after apply. Resolution order: the
-    /// frozen unit key, then the post-load-back unique id stored in the undo payload,
-    /// then the family name (family names are unique in a project).
+    /// LoadFamily recreates the family element, so the family is resolved through
+    /// the frozen unit key, the post-load-back unique id and the family name
+    /// (see <see cref="FamilyJobSelectors.TryResolveFamily"/>).
     /// </summary>
     private static bool TryResolveFamily(
         Document document,
@@ -340,54 +191,13 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         string? undoJson,
         out RevitFamily? family)
     {
-        family = null;
-        if (!string.IsNullOrWhiteSpace(unitKey))
-        {
-            family = FindFamilyByUniqueId(document, unitKey);
-            if (family is not null)
-            {
-                return true;
-            }
-        }
-
         var plan = Parse<FamilyMapUndoPlan>(undoJson);
-        if (!string.IsNullOrWhiteSpace(plan?.NewFamilyUniqueId))
-        {
-            family = FindFamilyByUniqueId(document, plan!.NewFamilyUniqueId!);
-            if (family is not null)
-            {
-                return true;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(plan?.FamilyName))
-        {
-            return false;
-        }
-
-        foreach (var element in new FilteredElementCollector(document).OfClass(typeof(RevitFamily)))
-        {
-            if (element is RevitFamily candidate
-                && string.Equals(candidate.Name, plan!.FamilyName, StringComparison.OrdinalIgnoreCase))
-            {
-                family = candidate;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static RevitFamily? FindFamilyByUniqueId(Document document, string uniqueId)
-    {
-        try
-        {
-            return document.GetElement(uniqueId) as RevitFamily;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        return FamilyJobSelectors.TryResolveFamily(
+            document,
+            unitKey,
+            plan?.NewFamilyUniqueId,
+            plan?.FamilyName,
+            out family);
     }
 
     private static List<FamilyType>? ResolveTypes(

@@ -254,100 +254,13 @@ public sealed class ReplaceFamilyParameterTool : AgentFamilyWriteToolBase
         string? guidText,
         WriteOutcome outcome)
     {
-        Guid? guid = null;
-        if (!string.IsNullOrWhiteSpace(guidText))
+        var resolution = FamilySharedDefinitions.FindExisting(session.ProjectDoc, name, guidText);
+        if (resolution.Ok)
         {
-            if (!Guid.TryParse(guidText!.Trim(), out var parsed))
-            {
-                Fail(
-                    outcome,
-                    "invalid_arguments",
-                    "newSharedParameterGuid is not a valid GUID: '" + guidText + "'.",
-                    "Pass the definition GUID from list_shared_parameters.");
-                return null;
-            }
-
-            guid = parsed;
+            return resolution.Definition;
         }
 
-        if (string.IsNullOrWhiteSpace(name) && guid is null)
-        {
-            Fail(
-                outcome,
-                "invalid_arguments",
-                "newSharedParameterName or newSharedParameterGuid is required.",
-                "list_shared_parameters lists the existing definitions.");
-            return null;
-        }
-
-        DefinitionFile? file;
-        try
-        {
-            file = session.ProjectDoc.Application.OpenSharedParameterFile();
-        }
-        catch (Exception ex)
-        {
-            Fail(
-                outcome,
-                "shared_parameter_file_missing",
-                "The shared parameter file could not be opened: " + ex.Message,
-                "[Action: configure a shared parameter file in Manage > Shared Parameters " +
-                "and retry]");
-            return null;
-        }
-
-        if (file is null)
-        {
-            Fail(
-                outcome,
-                "shared_parameter_file_missing",
-                "No shared parameter file is configured, so a shared definition cannot be " +
-                "resolved.",
-                "[Action: configure a shared parameter file in Manage > Shared Parameters " +
-                "and retry]");
-            return null;
-        }
-
-        try
-        {
-            foreach (DefinitionGroup group in file.Groups)
-            {
-                foreach (Definition definition in group.Definitions)
-                {
-                    if (definition is not ExternalDefinition external)
-                        continue;
-
-                    var sameGuid = guid.HasValue && external.GUID == guid.Value;
-                    var sameName = !string.IsNullOrWhiteSpace(name)
-                        && string.Equals(external.Name, name!.Trim(), StringComparison.OrdinalIgnoreCase);
-                    if (!sameGuid && !sameName)
-                        continue;
-
-                    if (guid.HasValue && external.GUID != guid.Value)
-                        continue;
-
-                    return external;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Fail(
-                outcome,
-                "shared_parameter_file_missing",
-                "The shared parameter file could not be read: " + ex.Message,
-                "[Action: check the shared parameter file and retry]");
-            return null;
-        }
-
-        Fail(
-            outcome,
-            "definition_not_found",
-            "The active shared parameter file has no definition named '" + name + "'" +
-            (guid.HasValue ? " with GUID " + guid.Value.ToString("D") : string.Empty) + ".",
-            "This tool never writes into the shared parameter file: pick an existing " +
-            "definition from list_shared_parameters, or create it with " +
-            "add_family_parameter createDefinition=true first.");
+        Fail(outcome, resolution.ErrorCode ?? "definition_not_found", resolution.Message ?? string.Empty);
         return null;
     }
 

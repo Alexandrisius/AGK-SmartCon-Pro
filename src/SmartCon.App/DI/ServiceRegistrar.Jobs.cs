@@ -28,7 +28,8 @@ public static partial class ServiceRegistrar
         {
             new RenameViewsJobAction(),
             new SetParametersJobAction(),
-            new MapFamilyParametersJobAction()
+            new MapFamilyParametersJobAction(),
+            new ReplaceFamilyParameterJobAction()
         };
         var jobRunner = new JobRunner(jobStore, jobActions, new RevitTransactionService(revitContext));
         services.AddSingleton<IJobStore>(jobStore);

@@ -224,9 +224,10 @@ public static partial class AgentToolCards
                 "→ remove, чей последний шаг необратим. Цель берите из " +
                 "list_shared_parameters; тул не пишет в файл общих параметров.",
             WhenNotToUse =
-                "Когда достаточно переименовать параметр — rename_family_parameter; когда " +
-                "нужен новый общий параметр, которого нет в файле — add_family_parameter " +
-                "с createDefinition=true; когда нужно удалить — remove_family_parameter.",
+                "Когда достаточно переименовать — rename_family_parameter; когда нужен новый " +
+                "общий параметр, которого нет в файле — add_family_parameter " +
+                "с createDefinition=true; когда нужно удалить — remove_family_parameter; " +
+                "когда семейств много — start_job(action:\"replace_family_parameter\").",
             Examples = new[]
             {
                 "Замени общий параметр АДСК_Наименование на ТДСК_Наименование",
@@ -249,7 +250,8 @@ public static partial class AgentToolCards
             },
             Idempotent = false,
             TimeoutMs = 90000,
-            Bulk = false
+            Bulk = false,
+            BatchAnalogue = "start_job(action:\"replace_family_parameter\")"
         },
         new AgentToolCard
         {

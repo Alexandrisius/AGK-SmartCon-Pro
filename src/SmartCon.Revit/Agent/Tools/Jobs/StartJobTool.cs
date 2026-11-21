@@ -29,7 +29,7 @@ public sealed class StartJobTool : IAgentTool
 {
   "type": "object",
   "properties": {
-    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters"], "description": "rename_views and set_parameters handle up to 5000 units; map_family_parameters is hard-capped at 200 family units per job." },
+    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters", "replace_family_parameter"], "description": "rename_views and set_parameters handle up to 5000 units; map_family_parameters and replace_family_parameter are hard-capped at 200 family units per job." },
     "spec": {
       "type": "object",
       "properties": {
@@ -131,6 +131,29 @@ public sealed class StartJobTool : IAgentTool
             }
           }
         },
+        "replacements": {
+          "type": "array",
+          "description": "replace_family_parameter only: source->target shared definition pairs; at most 50 per job. The target definition must already exist in the shared parameter file; the source keeps its scope, values, formulas and labels.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "guid": { "type": "string" }
+                }
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "guid": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
         "parameter": { "type": "string" },
         "guid": { "type": "string" },
         "builtInParameter": { "type": "string" },
@@ -148,7 +171,7 @@ public sealed class StartJobTool : IAgentTool
     "batchSize": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 },
     "onError": { "type": "string", "enum": ["continue", "abort"] },
     "rollbackOnError": { "type": "boolean", "default": false },
-    "maxItems": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 1000, "description": "Upper bound for selected units (<=10000). Per-action caps still apply: rename_views/set_parameters 5000, map_family_parameters 200. allowLargeJobs only acknowledges apply/resume above 200 units; it does not raise an action cap." },
+    "maxItems": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 1000, "description": "Upper bound for selected units (<=10000). Per-action caps still apply: rename_views/set_parameters 5000, map_family_parameters/replace_family_parameter 200. allowLargeJobs only acknowledges apply/resume above 200 units; it does not raise an action cap." },
     "allowLargeJobs": { "type": "boolean", "default": false, "description": "Required to apply/resume more than 200 units; a preview cannot grant it." },
     "includeSample": { "type": "boolean", "description": "Default true for preview, false for apply/resume; set false to omit the preview sample." }
   },
@@ -162,14 +185,16 @@ public sealed class StartJobTool : IAgentTool
         Name = "start_job",
         Description =
             "Starts a bulk job: select units, preview, apply. Per-action caps: rename_views and " +
-            "set_parameters handle up to 5000 units; map_family_parameters handles up to 200 " +
-            "family units per job (a hard cap — allowLargeJobs does not raise it). maxItems is " +
+            "set_parameters handle up to 5000 units; map_family_parameters and " +
+            "replace_family_parameter handle up to 200 family units per job (a hard cap — " +
+            "allowLargeJobs does not raise it). maxItems is " +
             "an upper bound (<=10000); the smaller per-action cap still applies. " +
             "dryRun=true (default) previews only and returns previewDigest; " +
             "then call again with dryRun=false and that previewDigest to apply. " +
             "resumeJobId alone resumes an interrupted/failed job. Actions: rename_views, " +
-            "set_parameters, map_family_parameters. The typed spec schema lists every selector, " +
-            "rename and mapping key; unknown spec keys are rejected with the allowed-key list. " +
+            "set_parameters, map_family_parameters, replace_family_parameter. The typed spec " +
+            "schema lists every selector, rename, mapping and replacement key; unknown spec " +
+            "keys are rejected with the allowed-key list. " +
             "One call replaces hundreds of per-element calls.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,

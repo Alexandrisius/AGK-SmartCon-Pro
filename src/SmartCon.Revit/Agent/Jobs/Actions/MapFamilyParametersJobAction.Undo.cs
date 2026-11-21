@@ -463,6 +463,16 @@ public sealed partial class MapFamilyParametersJobAction
                 throw new InvalidOperationException("Revit did not load the family from the backup.");
             }
 
+            if (!string.IsNullOrEmpty(plan.FamilyName)
+                && !string.Equals(loaded.Name, plan.FamilyName, StringComparison.OrdinalIgnoreCase))
+            {
+                // A backup saved under another file name loads as a NEW family named
+                // after the file while the replaced one stays — never a restore (#430).
+                throw new InvalidOperationException(
+                    "Revit loaded the backup as a new family '" + loaded.Name + "' instead of replacing '" +
+                    plan.FamilyName + "'.");
+            }
+
             return new JobUnitUndo
             {
                 Success = true,
