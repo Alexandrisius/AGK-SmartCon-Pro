@@ -67,7 +67,7 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 | ID | Задача | Issue | Почему сейчас |
 |---|---|---|---|
 | `A.8` | Tool surface job'а: eval-кейсы и приёмка | #313 | Остаток эпика A: eval + ручная приёмка |
-| `G.1–G.4` | Missing operations: удаления, спецификации, ФОП, семейства | #343–#346 | Эпик G в работе (2026-11-21): G.5 закрыт (листы + dogfood), далее P1-слой |
+| `G-эпик` | Полностью закрыт (17/17 задач) | #297 | Каталог 63→107 тулов за один день; финальные гейты — sweep 6/6, полный IT R25+net48 |
 | `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
 | `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Финальный гейт ночного прогона |
 
@@ -92,7 +92,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
 | **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | S.5/S.10/S.11 закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
-| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.1–G.5 закрыты 2026-11-21 (+S.5 confirmNames); остаются P2 G.6–G.10 + follow-ups #438–#440; follow-ups #438–#440. |
+| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `done` | #297 | 17 | Закрыт 2026-11-21: все 17 задач done (G.1–G.10 + G.2a/b + G.4a + G.5a-c + G.7a); каталог 63→107 тулов; G.8-write невозможен по API (read-only, зафиксировано). |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
@@ -231,16 +231,16 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `done` | #345 |
 | `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `done` | #346 |
 | `G.4a` | duplicate/rename/replace для СИСТЕМНЫХ типов + list_system_types | P1 | `done` | #441 |
-| `G.2a` | Спецификации: поля (удаление/порядок), totals, единицы | P2 | `backlog` | #442 |
-| `G.2b` | Спецификации на листе: перемещение и секции | P3 | `backlog` | #443 |
+| `G.2a` | Спецификации: поля (удаление/порядок), totals, единицы | P2 | `done` | #442 |
+| `G.2b` | Спецификации на листе: перемещение и секции | P3 | `done` | #443 |
 | `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
 | `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `done` | #438 |
 | `G.5b` | remove_viewport: снять вид с листа | P2 | `done` | #439 |
 | `G.5c` | renumber_sheets: перенумерация со сдвигом | P3 | `done` | #440 |
 | `G.6` | Виды: duplicate, create, delete, browser folder | P2 | `done` | #348 |
 | `G.7` | MEP: системы трубопроводов и материалы | P2 | `done` | #349 |
-| `G.7a` | set_mep_system_type: abbreviation/name типа системы | P3 | `backlog` | #444 |
-| `G.8` | Browser organization: чтение и запись | P2 | `backlog` | #350 |
+| `G.7a` | set_mep_system_type: abbreviation/name типа системы | P3 | `done` | #444 |
+| `G.8` | Browser organization: чтение и запись | P2 | `done` | #350 |
 | `G.9` | Crop-from-template, select-наборы и preview зависимых шагов | P2 | `done` | #351 |
 | `G.10` | Change sets list/undo_until, save_document, export, audit_model | P2 | `done` | #352 |
 
