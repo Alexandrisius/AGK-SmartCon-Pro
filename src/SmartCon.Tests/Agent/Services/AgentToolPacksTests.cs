@@ -65,7 +65,11 @@ public sealed class AgentToolPacksTests
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
                 "add_project_shared_parameter"
             },
-            ["changes"] = new[] { "undo_last", "discard_change_set" },
+            ["changes"] = new[]
+            {
+                "list_change_sets", "get_change_set_details", "undo_last", "undo_until",
+                "discard_change_set", "save_document", "audit_model"
+            },
             ["jobs"] = new[]
             {
                 "start_job", "get_job_status", "cancel_job",
@@ -128,7 +132,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(92, placements.Length);
+        Assert.Equal(97, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

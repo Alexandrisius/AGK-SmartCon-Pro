@@ -24,6 +24,20 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
     {
     }
 
+    /// <summary>
+    /// Test/undo_until seam: runs the revert of one change set inside the
+    /// CALLER-managed transaction (undo_until dry run simulates the whole chain
+    /// in a single rolling-back transaction, so each older set sees the state
+    /// the newer reverts would produce).
+    /// </summary>
+    internal void ApplyForTests(
+        Document doc,
+        JsonElement args,
+        WriteOutcome outcome,
+        bool dryRun,
+        CancellationToken ct) =>
+        Apply(doc, args, outcome, dryRun, ct);
+
     public override AgentToolDefinition Definition { get; } = new()
     {
         Name = "undo_last",

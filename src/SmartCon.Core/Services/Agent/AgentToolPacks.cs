@@ -104,8 +104,13 @@ public static class AgentToolPacks
         new()
         {
             Name = "changes",
-            Description = "Откат и закрытие наборов изменений SmartCon.",
-            Tools = new[] { "undo_last", "discard_change_set" }
+            Description =
+                "Наборы изменений SmartCon: список и детали, откат последнего и до указанного, закрытие набора; сохранение документа и аудит модели.",
+            Tools = new[]
+            {
+                "list_change_sets", "get_change_set_details", "undo_last", "undo_until",
+                "discard_change_set", "save_document", "audit_model"
+            }
         },
         new()
         {

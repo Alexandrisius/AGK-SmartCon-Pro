@@ -79,11 +79,13 @@ internal sealed class InMemoryAgentChangeSetStore : IAgentChangeSetStore
     public Task<IReadOnlyList<ChangeSetHeader>> ListAsync(
         string documentId,
         int limit,
+        int offset,
         CancellationToken ct)
     {
         var headers = _sets.Values
             .Where(set => set.Header.DocumentId == documentId)
             .OrderByDescending(set => set.Header.CreatedAt)
+            .Skip(Math.Max(0, offset))
             .Take(Math.Max(1, limit))
             .Select(set => set.Header)
             .ToList();

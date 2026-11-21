@@ -536,6 +536,11 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, PurgeFamiliesTool>();
         services.AddSingleton<IAgentTool, DiscardChangeSetTool>();
         services.AddSingleton<IAgentTool, UndoLastTool>();
+        services.AddSingleton<IAgentTool, UndoUntilTool>();
+        services.AddSingleton<IAgentTool, SaveDocumentTool>();
+        services.AddSingleton<IAgentTool, ListChangeSetsTool>();
+        services.AddSingleton<IAgentTool, GetChangeSetDetailsTool>();
+        services.AddSingleton<IAgentTool, AuditModelTool>();
         services.AddSingleton<IAgentTool>(sp => new ExecutePlanTool(
             () => sp.GetRequiredService<IToolRegistry>(),
             sp.GetRequiredService<IAgentAwaitableEvent>(),

@@ -26,6 +26,7 @@ public static partial class AgentToolCards
             .Concat(MepCards())
             .Concat(AdminCards())
             .Concat(WriteCards())
+            .Concat(ChangesCards())
             .Concat(JobCards())
             .ToArray();
 

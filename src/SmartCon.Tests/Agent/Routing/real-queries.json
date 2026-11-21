@@ -2359,6 +2359,86 @@
         "list_materials"
       ],
       "kind": "read"
+    },
+    {
+      "id": "r293",
+      "query": "Покажи историю изменений документа",
+      "expectedTools": [
+        "list_change_sets"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r294",
+      "query": "Какие наборы изменений ты делал в этом документе?",
+      "expectedTools": [
+        "list_change_sets"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r295",
+      "query": "Что входило в набор изменений перед откатом?",
+      "expectedTools": [
+        "get_change_set_details"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r296",
+      "query": "Покажи состав набора изменений: элементы и старые значения",
+      "expectedTools": [
+        "get_change_set_details"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r297",
+      "query": "Откати все изменения до этой операции",
+      "expectedTools": [
+        "undo_until"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r298",
+      "query": "Верни модель к состоянию до серии переименований",
+      "expectedTools": [
+        "undo_until"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r299",
+      "query": "Сохрани документ",
+      "expectedTools": [
+        "save_document"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r300",
+      "query": "Сохрани проект после изменений",
+      "expectedTools": [
+        "save_document"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r301",
+      "query": "Проверь модель на типовые проблемы",
+      "expectedTools": [
+        "audit_model"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r302",
+      "query": "Аудит модели: найди проблемы перед выдачей",
+      "expectedTools": [
+        "audit_model"
+      ],
+      "kind": "read"
     }
   ]
 }

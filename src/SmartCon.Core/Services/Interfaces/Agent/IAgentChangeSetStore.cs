@@ -10,7 +10,16 @@ public interface IAgentChangeSetStore
 
     Task MarkAppliedAsync(Guid changeSetId, DateTime appliedAt, CancellationToken ct);
 
-    Task<IReadOnlyList<ChangeSetHeader>> ListAsync(string documentId, int limit, CancellationToken ct);
+    /// <summary>
+    /// Headers of the document's change sets in reverse-chronological order
+    /// (newest first). Implementations cap <paramref name="limit"/>; pass
+    /// <paramref name="offset"/> to read the next page.
+    /// </summary>
+    Task<IReadOnlyList<ChangeSetHeader>> ListAsync(
+        string documentId,
+        int limit,
+        int offset,
+        CancellationToken ct);
 
     Task<ChangeSetDetails?> GetAsync(Guid changeSetId, CancellationToken ct);
 

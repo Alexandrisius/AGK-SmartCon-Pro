@@ -106,10 +106,12 @@ VALUES(@id, @changeSetId, @uniqueId, @elementId, @parameterName,
     public Task<IReadOnlyList<ChangeSetHeader>> ListAsync(
         string documentId,
         int limit,
+        int offset,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var safeLimit = Math.Max(1, Math.Min(limit, 100));
+        var safeOffset = Math.Max(0, offset);
         var result = new List<ChangeSetHeader>();
 
         lock (_database.WriteLock)
@@ -123,9 +125,10 @@ SELECT id, session_id, tool_call_id, operation, document_id, document_path, revi
 FROM change_sets
 WHERE document_id = @documentId
 ORDER BY created_at DESC
-LIMIT @limit;";
+LIMIT @limit OFFSET @offset;";
             command.Parameters.AddWithValue("@documentId", documentId);
             command.Parameters.AddWithValue("@limit", safeLimit);
+            command.Parameters.AddWithValue("@offset", safeOffset);
             using var reader = command.ExecuteReader();
             while (reader.Read())
                 result.Add(ReadHeader(reader));
