@@ -23,15 +23,15 @@ public static partial class AgentToolPackSkills
 
 ### Кухня Revit
 - Транзакция в Revit дорога: по замерам сообщества 10 отдельных коммитов ≈7.3 с против 1.4 с у группы; 10×100 элементов — 202 с против 44 с. Поэтому джоба коммитит **пачками** (`batchSize`, по умолчанию 50), а не по элементу.
-- Worksharing: правка элемента, занятого другим пользователем, откатывает **всю** транзакцию; try/catch вокруг `Parameter.Set` не спасает. Ошибка такого рода валит текущую пачку, а не только один элемент.
+- Worksharing: правка элемента, занятого другим пользователем, откатывает **всю** транзакцию (try/catch не спасает); ошибка валит текущую пачку, а не один элемент.
 - Отмена в Revit API кооперативная: жёстко прервать чужой вызов нельзя. `cancel_job` выставляет флаг, движок проверяет его между пачками и возвращает частичный отчёт; текущая пачка докатывается целиком.
 - `RegenerationFailedException` при коммите означает повреждение документа — это фатально, продолжать джобу нельзя.
 - Revit однопоточен: джоба живёт в ExternalEvent-контексте и не может «крутиться в фоне»; прогресс виден только через опрос статуса.
 
 ### Аргументы (start_job)
-- `spec.select` — селектор: `viewIds/elementIds/nameContains/nameStartsWith/nameEndsWith/viewTypes/types/levelIds/folders/templateId/hasTemplate/familyIds/categoryNames/typeIds/conditions[]/logic/limit`.
-- `spec.rename` — `find/replace/prefix/suffix/setName` (`{n}`, `{name}`, `{index}`) и `numbering{start,step,padding,format}`; для переименования видов `excludeSheets` по умолчанию true.
-- `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (не более 100).
+- `spec.select` — селектор: `viewIds/elementIds/nameContains/nameStartsWith/nameEndsWith/viewTypes/types/levelIds/folders/templateId/hasTemplate/familyIds/familyNames (стабильнее id)/categoryNames/typeIds/conditions[]/logic/limit`.
+- `spec.rename` — `find/replace/prefix/suffix/setName` (`{n}`,`{name}`,`{index}`) и `numbering{start,step,padding,format}`; у видов `excludeSheets` по умолчанию true.
+- `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (≤100), `createTarget:true` — цель создать из ФОП (definition в файле не откатывается).
 - `spec.parameter/guid/builtInParameter/scope/value/unit` — запись параметра (`value` — строка, `""` очищает).
 - `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never` (**по умолчанию never**: джоба не перезаписывает .rvt на диске — изменения живут в документе, файл сохраняет пользователь; не включайте автосейв без явной просьбы).
 - Потолок единиц: `rename_views` и `set_parameters` — 5000, `map_family_parameters` — 200

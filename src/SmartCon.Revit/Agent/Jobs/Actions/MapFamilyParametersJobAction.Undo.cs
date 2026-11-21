@@ -334,6 +334,21 @@ public sealed partial class MapFamilyParametersJobAction
         {
             switch (operation.Kind)
             {
+                case "add":
+                {
+                    var parameter = AgentFamilyUndo.FindParameter(
+                        manager, operation.Parameter, operation.Scope);
+                    if (parameter is null)
+                    {
+                        // Idempotent: the parameter is already gone — the recorded
+                        // state is restored, nothing to remove.
+                        return true;
+                    }
+
+                    manager.RemoveParameter(parameter);
+                    changed = true;
+                    return true;
+                }
                 case "value":
                 {
                     var parameter = AgentFamilyUndo.FindParameter(

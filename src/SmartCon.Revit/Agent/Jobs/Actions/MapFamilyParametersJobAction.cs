@@ -31,12 +31,12 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         new()
         {
             Path = "select",
-            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "nameContains", "categoryIds", "limit" }
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "limit" }
         },
         new()
         {
             Path = "mappings[]",
-            AllowedKeys = new[] { "source", "target", "mode", "typeNames" }
+            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget" }
         },
         new()
         {
@@ -69,8 +69,9 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         {
             return ExpansionFail(
                 JobErrorCodes.InvalidSpec,
-                "map_family_parameters requires {select:{familyIds|familyUniqueIds|nameContains|categoryIds, limit?}, " +
-                "mappings:[{source:{name,scope,guid?}, target:{name,scope,guid?}, mode, typeNames?}]}");
+                "map_family_parameters requires {select:{familyIds|familyUniqueIds|familyNames|nameContains|" +
+                "categoryIds, limit?}, mappings:[{source:{name,scope,guid?}, target:{name,scope,guid?}, mode, " +
+                "typeNames?, createTarget?}]}");
         }
 
         var mappings = spec.Mappings!;
@@ -98,21 +99,43 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
         var hasSelector = select.FamilyIds is { Count: > 0 }
                           || select.FamilyUniqueIds is { Count: > 0 }
+                          || select.FamilyNames is { Count: > 0 }
                           || !string.IsNullOrWhiteSpace(select.NameContains)
                           || select.CategoryIds is { Count: > 0 };
         if (!hasSelector)
         {
             return ExpansionFail(
                 JobErrorCodes.SelectorEmpty,
-                "The select block names no family: pass familyIds, familyUniqueIds, nameContains or " +
-                "categoryIds. [Action: list the loaded families and narrow the selector]");
+                "The select block names no family: pass familyIds, familyUniqueIds, familyNames, " +
+                "nameContains or categoryIds. [Action: list the loaded families and narrow the selector]");
+        }
+
+        // #433: familyNames resolve to whatever loaded family bears the name; names
+        // that match nothing stay here and surface as warnings (or, when nothing at
+        // all was selected, in the selector-empty error).
+        var pendingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (select.FamilyNames is { Count: > 0 })
+        {
+            foreach (var name in select.FamilyNames)
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    pendingNames.Add(name.Trim());
+                }
+            }
         }
 
         var families = new List<RevitFamily>();
         var skipped = 0;
         foreach (var element in new FilteredElementCollector(context.Document).OfClass(typeof(RevitFamily)))
         {
-            if (element is not RevitFamily family || !MatchesSelect(family, select))
+            if (element is not RevitFamily family)
+            {
+                continue;
+            }
+
+            pendingNames.Remove(family.Name);
+            if (!MatchesSelect(family, select))
             {
                 continue;
             }
@@ -131,6 +154,14 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
         if (families.Count == 0)
         {
+            if (pendingNames.Count > 0)
+            {
+                return ExpansionFail(
+                    JobErrorCodes.SelectorEmpty,
+                    "None of the select.familyNames matched a loaded family: " +
+                    JoinNames(pendingNames) + ". [Action: list the loaded families and fix the names]");
+            }
+
             return ExpansionFail(
                 JobErrorCodes.SelectorEmpty,
                 skipped > 0
@@ -146,6 +177,12 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         }
 
         var warnings = new List<string>();
+        foreach (var unmatched in pendingNames.OrderBy(name => name, StringComparer.Ordinal))
+        {
+            warnings.Add(
+                "No loaded family named '" + unmatched + "'. [Action: list_families to see the loaded families]");
+        }
+
         if (skipped > 0)
         {
             warnings.Add(
@@ -195,6 +232,12 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
                 return label + "target needs a name or a shared-parameter guid. [Action: name the target parameter]";
             }
 
+            if (mapping.CreateTarget && string.IsNullOrWhiteSpace(targetRef.Name))
+            {
+                return label + "createTarget needs target.name (a guid alone cannot name the parameter to " +
+                               "create). [Action: add target.name, or create the parameter with add_family_parameter]";
+            }
+
             var mode = string.IsNullOrWhiteSpace(mapping.Mode)
                 ? "values"
                 : mapping.Mode!.Trim().ToLowerInvariant();
@@ -224,6 +267,11 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
     private static bool MatchesSelect(RevitFamily family, MapFamilySelectSpec select)
     {
         if (select.FamilyIds is { Count: > 0 } && !select.FamilyIds.Contains(family.Id.GetValue()))
+        {
+            return false;
+        }
+
+        if (select.FamilyNames is { Count: > 0 } && !MatchesAnyName(select.FamilyNames, family.Name))
         {
             return false;
         }
@@ -263,6 +311,22 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
         return true;
     }
+
+    private static bool MatchesAnyName(IReadOnlyList<string> names, string familyName)
+    {
+        foreach (var name in names)
+        {
+            if (string.Equals(name?.Trim(), familyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string JoinNames(IEnumerable<string> names) =>
+        string.Join(", ", names.OrderBy(name => name, StringComparer.Ordinal));
 
     /// <summary>
     /// LoadFamily recreates the family element, so the unit key (and the family id)
@@ -376,6 +440,15 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         string typeName,
         FamilyParameter target,
         string storage,
+        string value) =>
+        AddState(map, typeName, target.Definition.Name, ParameterScope(target), storage, value);
+
+    private static void AddState(
+        Dictionary<string, List<FamilyMapValueState>> map,
+        string typeName,
+        string name,
+        string scope,
+        string storage,
         string value)
     {
         if (!map.TryGetValue(typeName, out var list))
@@ -386,8 +459,8 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
         list.Add(new FamilyMapValueState
         {
-            Name = target.Definition.Name,
-            Scope = ParameterScope(target),
+            Name = name,
+            Scope = scope,
             Storage = storage,
             Value = value
         });
@@ -454,128 +527,4 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
 
     private static FamilyParameter? FindParameter(RevitFamilyManager manager, MapFamilyParameterRef reference) =>
         FindParameter(manager, reference, out _);
-
-    public sealed class MapFamilyParametersSpec
-    {
-        public MapFamilySelectSpec? Select { get; set; }
-
-        public List<MapFamilyMappingSpec>? Mappings { get; set; }
-    }
-
-    public sealed class MapFamilySelectSpec
-    {
-        public List<long>? FamilyIds { get; set; }
-
-        public List<string>? FamilyUniqueIds { get; set; }
-
-        public string? NameContains { get; set; }
-
-        public List<long>? CategoryIds { get; set; }
-
-        public int? Limit { get; set; }
-    }
-
-    public sealed class MapFamilyMappingSpec
-    {
-        public MapFamilyParameterRef? Source { get; set; }
-
-        public MapFamilyParameterRef? Target { get; set; }
-
-        public string? Mode { get; set; }
-
-        public List<string>? TypeNames { get; set; }
-    }
-
-    public sealed class MapFamilyParameterRef
-    {
-        public string? Name { get; set; }
-
-        public string? Scope { get; set; }
-
-        [System.Text.Json.Serialization.JsonPropertyName("guid")]
-        public string? SharedParameterGuid { get; set; }
-    }
-
-    private sealed class MapFamilyUnitArgs
-    {
-        public long FamilyId { get; set; }
-
-        public string? FamilyUniqueId { get; set; }
-
-        public string FamilyName { get; set; } = string.Empty;
-
-        public List<MapFamilyMappingSpec>? Mappings { get; set; }
-
-        public string? Error { get; set; }
-    }
-
-    private sealed class FamilyMapState
-    {
-        public List<FamilyMapTypeState> Types { get; init; } = new();
-    }
-
-    private sealed class FamilyMapTypeState
-    {
-        public string TypeName { get; init; } = string.Empty;
-
-        public List<FamilyMapValueState> Targets { get; init; } = new();
-    }
-
-    private sealed class FamilyMapValueState
-    {
-        public string Name { get; init; } = string.Empty;
-
-        public string Scope { get; init; } = string.Empty;
-
-        public string Storage { get; init; } = string.Empty;
-
-        public string Value { get; init; } = string.Empty;
-    }
-
-    private sealed class FamilyMapUndoPlan
-    {
-        public string? FamilyName { get; set; }
-
-        public string? BackupPath { get; set; }
-
-        public string? NewFamilyUniqueId { get; set; }
-
-        public List<FamilyUndoOperation> Ops { get; set; } = new();
-    }
-
-    private sealed class MapPlanEntry
-    {
-        public required MapFamilyParameterRef Source { get; init; }
-
-        public required MapFamilyParameterRef Target { get; init; }
-
-        public required string SourceName { get; init; }
-
-        public required string TargetName { get; init; }
-
-        public required string Scope { get; init; }
-
-        public required string Storage { get; init; }
-
-        public required string Mode { get; init; }
-
-        public required HashSet<string> TypeNames { get; init; }
-
-        public string? FormulaToApply { get; init; }
-
-        public bool ClearTargetFormula { get; init; }
-    }
-
-    private sealed class FamilyMapPlan
-    {
-        public List<MapPlanEntry> Entries { get; } = new();
-
-        public List<FamilyUndoOperation> UndoOps { get; } = new();
-
-        public FamilyMapState Expected { get; set; } = new();
-
-        public FamilyMapState Actual { get; set; } = new();
-
-        public int ChangeCount { get; set; }
-    }
 }

@@ -187,6 +187,9 @@ public sealed partial class MapFamilyParametersJobAction
             // J-04: the crash anchor (backup path + old values) must be durable before the first write.
             persistUndo?.Invoke(Json(undo));
 
+            // Surfaced in the unit result: createTarget definitions are written to the
+            // shared parameter file, which the job undo cannot revert.
+            var applyWarnings = new List<string>();
             using var transaction = new Transaction(session.FamilyDoc, "SmartCon job: map_family_parameters");
             var started = false;
             try
@@ -194,14 +197,19 @@ public sealed partial class MapFamilyParametersJobAction
                 transaction.Start();
                 started = true;
 
-                var applyError = ApplyPlan(session.FamilyDoc.FamilyManager, plan, context.CancellationToken);
+                var applyError = ApplyPlan(
+                    session.FamilyDoc.FamilyManager,
+                    context.Document,
+                    plan,
+                    applyWarnings,
+                    context.CancellationToken);
                 if (applyError is not null)
                 {
                     if (transaction.HasStarted())
                         transaction.RollBack();
 
                     started = false;
-                    return ApplyFail(JobErrorCodes.ItemFailed, applyError);
+                    return ApplyFail(applyError.Code, applyError.Detail);
                 }
 
                 var commitStatus = transaction.Commit();
@@ -252,7 +260,8 @@ public sealed partial class MapFamilyParametersJobAction
             {
                 Success = true,
                 ExpectedJson = Json(plan.Expected),
-                UndoJson = finalJson
+                UndoJson = finalJson,
+                Warnings = applyWarnings
             };
         }
         catch (OperationCanceledException)
@@ -272,7 +281,12 @@ public sealed partial class MapFamilyParametersJobAction
         }
     }
 
-    private static string? ApplyPlan(RevitFamilyManager manager, FamilyMapPlan plan, CancellationToken ct)
+    private static PlanApplyError? ApplyPlan(
+        RevitFamilyManager manager,
+        Document projectDoc,
+        FamilyMapPlan plan,
+        List<string> warnings,
+        CancellationToken ct)
     {
         var originalType = manager.CurrentType;
         try
@@ -285,11 +299,20 @@ public sealed partial class MapFamilyParametersJobAction
                     var formulaTarget = FindParameter(manager, entry.Target);
                     if (formulaTarget is null)
                     {
-                        return MissingTargetError(entry.TargetName);
+                        return ItemFailed(MissingTargetError(entry.TargetName));
                     }
 
                     manager.SetFormula(formulaTarget, entry.FormulaToApply);
                     continue;
+                }
+
+                if (entry.CreateTarget && FindParameter(manager, entry.Target) is null)
+                {
+                    var createError = EnsureSharedTargetParameter(manager, projectDoc, entry, warnings);
+                    if (createError is not null)
+                    {
+                        return createError;
+                    }
                 }
 
                 if (!entry.ClearTargetFormula)
@@ -300,7 +323,7 @@ public sealed partial class MapFamilyParametersJobAction
                 var clearTarget = FindParameter(manager, entry.Target);
                 if (clearTarget is null)
                 {
-                    return MissingTargetError(entry.TargetName);
+                    return ItemFailed(MissingTargetError(entry.TargetName));
                 }
 
                 manager.SetFormula(clearTarget, null);
@@ -321,7 +344,8 @@ public sealed partial class MapFamilyParametersJobAction
                     var target = FindParameter(manager, entry.Target);
                     if (source is null || target is null)
                     {
-                        return "A mapped parameter disappeared while applying. [Action: run the preview again]";
+                        return ItemFailed(
+                            "A mapped parameter disappeared while applying. [Action: run the preview again]");
                     }
 
                     var sourceValue = FamilyValueSnapshot.ReadFamilyType(type, source);
@@ -351,8 +375,9 @@ public sealed partial class MapFamilyParametersJobAction
         }
         catch (Exception ex)
         {
-            return "Revit refused to apply the mapping (" + ex.GetType().Name + ": " + ex.Message +
-                   "). [Action: check the mapping spec and run the preview again]";
+            return ItemFailed(
+                "Revit refused to apply the mapping (" + ex.GetType().Name + ": " + ex.Message +
+                "). [Action: check the mapping spec and run the preview again]");
         }
         finally
         {

@@ -29,6 +29,8 @@ public sealed class AgentFamilyJobTests : RevitApiTest
     private string? _databasePath;
     private SqliteAgentJobStore? _store;
     private JobRunner? _runner;
+    private string? _sharedFilePrevious;
+    private string? _sharedFilePath;
     private readonly List<FamilySeed> _seeds = new();
 
     private Document Doc => _document!;
@@ -65,6 +67,7 @@ public sealed class AgentFamilyJobTests : RevitApiTest
         }
 
         _seeds.Clear();
+        RestoreSharedParameterFile();
         Doc.Close(false);
 
         if (_databasePath is not null && File.Exists(_databasePath))
@@ -203,6 +206,186 @@ public sealed class AgentFamilyJobTests : RevitApiTest
         await Assert.That(Doc.Application.Documents.Cast<Document>().Count()).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task FamilyJob_SelectByNames_ResolvesAndWarns()
+    {
+        if (!SeedFamilies(3))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        // #433: two names resolve, the third matches nothing and must warn.
+        var spec =
+            "{\"select\":{\"familyNames\":[\"" + FamilyPrefix + "1\",\"" + FamilyPrefix + "2\"," +
+            "\"НетТакогоСемейства\"]},\"mappings\":[{\"source\":{\"name\":\"Ширина\"}," +
+            "\"target\":{\"name\":\"Высота\"}}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 10)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(2);
+        await Assert.That(previewData.Warnings.Any(w => w.Contains("НетТакогоСемейства"))).IsTrue();
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 10)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        var items = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(items.Count(item => item.State == JobItemState.Done)).IsEqualTo(2);
+
+        foreach (var seed in _seeds.Take(2))
+        {
+            var width = seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
+            var height = seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.HeightParam);
+            await Assert.That(width).IsNotNull();
+            await Assert.That(height).IsNotNull();
+            await Assert.That(Math.Abs(height!.AsDouble() - width!.AsDouble()) < 1e-9).IsTrue();
+        }
+
+        // The unselected family keeps its original values.
+        var thirdWidth = _seeds[2].GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
+        var thirdHeight = _seeds[2].GetProjectParameter(FamilySeed.Type1, FamilySeed.HeightParam);
+        await Assert.That(Math.Abs(thirdHeight!.AsDouble() - thirdWidth!.AsDouble()) < 1e-9).IsFalse();
+    }
+
+    [Test]
+    public async Task FamilyJob_CreateTarget_CreatesAndMaps()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+        const string targetName = "ЦельНовая";
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"Ширина\"},\"target\":{\"name\":\"" + targetName +
+            "\"},\"createTarget\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.WillChangeCount).IsEqualTo(1);
+
+        var previewItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        // The JSON writer escapes Cyrillic, so the created-target name is asserted
+        // through the parsed document instead of a raw substring.
+        using var expected = System.Text.Json.JsonDocument.Parse(previewItems[0].ExpectedJson!);
+        var creates = expected.RootElement.GetProperty("wouldCreateTargets");
+        await Assert.That(creates.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(creates[0].GetProperty("name").GetString()).IsEqualTo(targetName);
+        await Assert.That(creates[0].GetProperty("scope").GetString()).IsEqualTo("type");
+        await Assert.That(previewItems[0].ActualJson!.Contains("target parameter will be created")).IsTrue();
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(applyItems.Count(item => item.State == JobItemState.Done)).IsEqualTo(1);
+
+        var seed = _seeds[0];
+        var created = seed.GetProjectParameter(FamilySeed.Type1, targetName);
+        var width = seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.WidthParam);
+        await Assert.That(created).IsNotNull();
+        await Assert.That(Math.Abs(created!.AsDouble() - width!.AsDouble()) < 1e-9).IsTrue();
+
+        var rollback = Runner.Rollback(Doc, jobId, dryRun: false);
+
+        await Assert.That(rollback.State).IsEqualTo(JobState.RolledBack);
+        await Assert.That(rollback.Restored).IsEqualTo(1);
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, targetName)).IsNull();
+    }
+
+    [Test]
+    public async Task FamilyJob_CreateTargetFalse_FailsPreviewWithHint()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"Ширина\"},\"target\":{\"name\":\"НетТакойЦели\"}}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.FailedCount).IsEqualTo(1);
+        await Assert.That(previewData.Sample.Any(s => s.ErrorDetail!.Contains("createTarget"))).IsTrue();
+    }
+
     private bool SeedFamilies(int count)
     {
         for (var index = 1; index <= count; index++)
@@ -231,4 +414,46 @@ public sealed class AgentFamilyJobTests : RevitApiTest
         SliceBudgetMs = 1500,
         MaxItems = 500
     };
+
+    /// <summary>Points Revit at a fresh shared parameter file for createTarget tests.</summary>
+    private void UseSharedParameterFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "SmartConFamilyTests");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "jobfam-shared-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(path, string.Empty);
+        _sharedFilePrevious = Application.SharedParametersFilename;
+        _sharedFilePath = path;
+        Application.SharedParametersFilename = path;
+    }
+
+    private void RestoreSharedParameterFile()
+    {
+        if (_sharedFilePath is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Application.SharedParametersFilename = _sharedFilePrevious ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            // Restoring the shared parameter file is best-effort in the test host.
+        }
+
+        try
+        {
+            if (File.Exists(_sharedFilePath))
+            {
+                File.Delete(_sharedFilePath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        _sharedFilePath = null;
+    }
 }

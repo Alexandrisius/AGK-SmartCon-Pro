@@ -60,6 +60,7 @@ public sealed class StartJobTool : IAgentTool
             "onSheet": { "type": "boolean" },
             "familyIds": { "type": "array", "items": { "type": "integer" } },
             "familyUniqueIds": { "type": "array", "items": { "type": "string" } },
+            "familyNames": { "type": "array", "items": { "type": "string" }, "maxItems": 200, "description": "Family names to include; stable across reloads (preferred over familyIds which change on every reload)" },
             "categoryIds": { "type": "array", "items": { "type": "integer" } },
             "categoryNames": { "type": "array", "items": { "type": "string" } },
             "typeIds": { "type": "array", "items": { "type": "integer" } },
@@ -125,7 +126,8 @@ public sealed class StartJobTool : IAgentTool
                 }
               },
               "mode": { "type": "string", "enum": ["values", "formula"] },
-              "typeNames": { "type": "array", "items": { "type": "string" } }
+              "typeNames": { "type": "array", "items": { "type": "string" } },
+              "createTarget": { "type": "boolean", "default": false, "description": "Create the missing target parameter from a shared definition (source spec/group); a definition written to the shared parameter file is not reverted by job undo" }
             }
           }
         },

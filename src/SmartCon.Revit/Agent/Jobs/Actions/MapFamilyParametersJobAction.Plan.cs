@@ -65,12 +65,42 @@ public sealed partial class MapFamilyParametersJobAction
                 return null;
             }
 
+            var mode = string.IsNullOrWhiteSpace(mapping.Mode)
+                ? "values"
+                : mapping.Mode!.Trim().ToLowerInvariant();
+            if (mode != "values" && mode != "formula")
+            {
+                error = label + "mode must be 'values' or 'formula'. [Action: fix the mode]";
+                return null;
+            }
+
             var target = FindParameter(manager, targetRef, out var targetMessage);
             if (target is null)
             {
-                error = label + "target: " + (targetMessage ?? "parameter not found") +
-                        " [Action: use add_family_parameter to create the target, or fix its name]";
-                return null;
+                if (!mapping.CreateTarget)
+                {
+                    error = label + "target: " + (targetMessage ?? "parameter not found") +
+                            " [Action: pass createTarget=true in the mapping to create it from the shared " +
+                            "parameter file, use add_family_parameter, or fix its name]";
+                    return null;
+                }
+
+                error = PlanCreateTarget(
+                    mapping,
+                    source,
+                    manager,
+                    allTypes,
+                    label,
+                    plan,
+                    expectedByType,
+                    actualByType,
+                    ct);
+                if (error is not null)
+                {
+                    return null;
+                }
+
+                continue;
             }
 
             if (source.IsInstance != target.IsInstance)
@@ -78,15 +108,6 @@ public sealed partial class MapFamilyParametersJobAction
                 error = label + "source '" + source.Definition.Name + "' is " + ParameterScope(source) +
                         ", target '" + target.Definition.Name + "' is " + ParameterScope(target) +
                         ". [Action: map to a target parameter of the same scope]";
-                return null;
-            }
-
-            var mode = string.IsNullOrWhiteSpace(mapping.Mode)
-                ? "values"
-                : mapping.Mode!.Trim().ToLowerInvariant();
-            if (mode != "values" && mode != "formula")
-            {
-                error = label + "mode must be 'values' or 'formula'. [Action: fix the mode]";
                 return null;
             }
 
@@ -239,7 +260,133 @@ public sealed partial class MapFamilyParametersJobAction
 
         plan.Expected = BuildState(expectedByType);
         plan.Actual = BuildState(actualByType);
+        if (plan.Creates.Count > 0)
+        {
+            plan.Expected.WouldCreateTargets = plan.Creates.ToList();
+        }
+
         return plan;
+    }
+
+    /// <summary>
+    /// Plans a createTarget mapping (#431): the target parameter does not exist, so
+    /// the apply will create it from a shared definition with the source spec/group
+    /// and then map the per-type values. Nothing is written here — the preview stays
+    /// read-only and never touches the shared parameter file.
+    /// </summary>
+    private static string? PlanCreateTarget(
+        MapFamilyMappingSpec mapping,
+        FamilyParameter source,
+        RevitFamilyManager manager,
+        IReadOnlyList<FamilyType> allTypes,
+        string label,
+        FamilyMapPlan plan,
+        Dictionary<string, List<FamilyMapValueState>> expectedByType,
+        Dictionary<string, List<FamilyMapValueState>> actualByType,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var mode = string.IsNullOrWhiteSpace(mapping.Mode)
+            ? "values"
+            : mapping.Mode!.Trim().ToLowerInvariant();
+        if (mode == "formula")
+        {
+            return label + "createTarget supports mode=values only. [Action: create the target with values " +
+                           "first, then map the formula in a second job]";
+        }
+
+        var targetRef = mapping.Target!;
+        var targetName = targetRef.Name!.Trim();
+        var targetIsInstance = source.IsInstance;
+        if (!string.IsNullOrWhiteSpace(targetRef.Scope))
+        {
+            var parsed = AgentFamilyReader.ParseScope(targetRef.Scope, out var scopeMessage);
+            if (parsed is null)
+            {
+                return label + "target: " + (scopeMessage ?? "scope must be 'instance' or 'type'.") +
+                       " [Action: pass 'instance' or 'type', or omit target.scope to inherit the source scope]";
+            }
+
+            if (parsed.Value != source.IsInstance)
+            {
+                return label + "source '" + source.Definition.Name + "' is " + ParameterScope(source) +
+                       ", the target to create would be " + (parsed.Value ? "instance" : "type") +
+                       ". [Action: omit target.scope so the created target inherits the source scope]";
+            }
+
+            targetIsInstance = parsed.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetRef.SharedParameterGuid)
+            && !Guid.TryParse(targetRef.SharedParameterGuid, out _))
+        {
+            return label + "target: '" + targetRef.SharedParameterGuid + "' is not a valid GUID. " +
+                   "[Action: fix the guid or omit it]";
+        }
+
+        var types = ResolveTypes(manager, allTypes, mapping.TypeNames, out var typeError);
+        if (types is null)
+        {
+            return label + typeError + " [Action: list the family types and fix typeNames]";
+        }
+
+        var targetScope = targetIsInstance ? "instance" : "type";
+        var storage = AgentFamilySpecs.StorageTypeName(source.StorageType);
+
+        // J-04: the add op is recorded before any write; Apply rebuilds this plan
+        // before opening the transaction, so the op reaches persistUndo first.
+        plan.UndoOps.Add(new FamilyUndoOperation
+        {
+            Kind = "add",
+            Parameter = targetName,
+            Scope = targetScope
+        });
+
+        plan.Entries.Add(new MapPlanEntry
+        {
+            Source = mapping.Source!,
+            Target = targetRef,
+            SourceName = source.Definition.Name,
+            TargetName = targetName,
+            Scope = targetScope,
+            Storage = storage,
+            Mode = "values",
+            TypeNames = TypeNameSet(types),
+            CreateTarget = true,
+            TargetIsInstance = targetIsInstance
+        });
+
+        plan.Creates.Add(new FamilyMapCreateState
+        {
+            Name = targetName,
+            Scope = targetScope,
+            Spec = AgentFamilySpecs.SpecName(source.Definition)
+        });
+
+        // Creating the parameter is itself a change, so the unit can never preview
+        // as skipped; the per-type writes are counted on top of it.
+        plan.ChangeCount++;
+        foreach (var type in types)
+        {
+            ct.ThrowIfCancellationRequested();
+            var sourceValue = FamilyValueSnapshot.ReadFamilyType(type, source).ToRaw();
+            AddState(expectedByType, type.Name, targetName, targetScope, storage, sourceValue);
+            AddState(
+                actualByType,
+                type.Name,
+                targetName,
+                targetScope,
+                storage,
+                "target parameter will be created");
+
+            if (source.StorageType != StorageType.String || !string.IsNullOrEmpty(sourceValue))
+            {
+                plan.ChangeCount++;
+            }
+        }
+
+        return null;
     }
 
 }

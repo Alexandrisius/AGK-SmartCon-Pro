@@ -503,3 +503,64 @@ public sealed class JobOptionsMergerTests
         Assert.Contains("batchSize", error!.Message);
     }
 }
+
+/// <summary>
+/// Key contract of the map_family_parameters spec (#431/#433). The unit-test
+/// project cannot reference SmartCon.Revit, so the rules below mirror
+/// MapFamilyParametersJobAction.SpecRules; the live rules are exercised by the
+/// AgentFamilyJobTests integration suite.
+/// </summary>
+public sealed class MapFamilySpecKeyContractTests
+{
+    private static readonly JobSpecObjectRule[] Rules =
+    {
+        new() { Path = string.Empty, AllowedKeys = new[] { "select", "mappings" } },
+        new()
+        {
+            Path = "select",
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "limit" }
+        },
+        new()
+        {
+            Path = "mappings[]",
+            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget" }
+        },
+        new() { Path = "mappings[].source", AllowedKeys = new[] { "name", "scope", "guid" } },
+        new() { Path = "mappings[].target", AllowedKeys = new[] { "name", "scope", "guid" } }
+    };
+
+    [Fact]
+    public void Select_familyNames_is_a_known_key()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{""familyNames"":[""A"",""B""]},""mappings"":[{""source"":{""name"":""S""}," +
+            @"""target"":{""name"":""T""}}]}",
+            Rules);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Mappings_createTarget_is_a_known_key()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{""familyIds"":[5]},""mappings"":[{""source"":{""name"":""S""}," +
+            @"""target"":{""name"":""T""},""createTarget"":true}]}",
+            Rules);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Select_singular_familyName_is_rejected()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{""familyName"":""A""},""mappings"":[{""source"":{""name"":""S""}," +
+            @"""target"":{""name"":""T""}}]}",
+            Rules);
+
+        Assert.NotNull(error);
+        Assert.Contains("select.familyName", error!);
+        Assert.Contains("familyNames", error);
+    }
+}
