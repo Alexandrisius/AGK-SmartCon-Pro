@@ -49,16 +49,16 @@ public sealed class LoadToolPackToolTests
         var loaded = data.GetProperty("loaded").EnumerateArray()
             .Select(item => item.GetString()!)
             .ToList();
-        Assert.Equal(7, loaded.Count);
+        Assert.Equal(8, loaded.Count);
         Assert.Contains("rename_views", loaded);
         Assert.Contains("delete_views", loaded);
         Assert.Equal("views", data.GetProperty("pack").GetString());
-        Assert.Equal(7, data.GetProperty("totalTools").GetInt32());
+        Assert.Equal(8, data.GetProperty("totalTools").GetInt32());
         Assert.Equal("next_round", data.GetProperty("appliedTo").GetString());
         Assert.False(string.IsNullOrWhiteSpace(data.GetProperty("hint").GetString()));
 
-        Assert.Equal(7, session.PendingToolNames.Count);
-        Assert.Equal(7, session.LoadedToolNames.Count);
+        Assert.Equal(8, session.PendingToolNames.Count);
+        Assert.Equal(8, session.LoadedToolNames.Count);
         Assert.Contains("get_current_view_info", session.PendingToolNames);
     }
 
@@ -86,7 +86,7 @@ public sealed class LoadToolPackToolTests
             .ToList();
         Assert.Contains("rename_views", loaded);
         Assert.Contains("rename_levels", loaded);
-        Assert.Equal(9, session.PendingToolNames.Count);
+        Assert.Equal(10, session.PendingToolNames.Count);
     }
 
     [Fact]
@@ -149,9 +149,9 @@ public sealed class LoadToolPackToolTests
             .Select(item => item.GetString()!)
             .ToList();
         Assert.Equal(new[] { "apply_view_template" }, loaded);
-        Assert.Equal(8, data.GetProperty("totalTools").GetInt32());
+        Assert.Equal(9, data.GetProperty("totalTools").GetInt32());
         Assert.Equal("next_round", data.GetProperty("appliedTo").GetString());
-        Assert.Equal(8, session.LoadedToolNames.Count);
+        Assert.Equal(9, session.LoadedToolNames.Count);
     }
 
     [Fact]
@@ -168,7 +168,8 @@ public sealed class LoadToolPackToolTests
         session.ActiveToolNames = new[]
         {
             "list_views", "get_current_view_info", "rename_views", "delete_views",
-            "duplicate_view", "create_view", "set_browser_folder"
+            "duplicate_view", "create_view", "set_browser_folder",
+            "get_browser_organization"
         };
 
         var second = await tool.ExecuteAsync(
@@ -177,9 +178,9 @@ public sealed class LoadToolPackToolTests
         Assert.True(second.Success);
         var data = second.Data!.Value;
         Assert.Equal(0, data.GetProperty("loaded").GetArrayLength());
-        Assert.Equal(7, data.GetProperty("alreadyLoaded").GetArrayLength());
+        Assert.Equal(8, data.GetProperty("alreadyLoaded").GetArrayLength());
         Assert.Equal("none", data.GetProperty("appliedTo").GetString());
-        Assert.Equal(7, session.PendingToolNames.Count);
+        Assert.Equal(8, session.PendingToolNames.Count);
     }
 
     [Fact]

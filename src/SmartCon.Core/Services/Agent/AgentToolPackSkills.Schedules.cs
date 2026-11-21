@@ -18,9 +18,15 @@ public static partial class AgentToolPackSkills
 - `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
   (уникальное), `fields` (0..15), `itemized`.
 - `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
+- `remove_schedule_field` — удалить поля (1..15); undo_last возвращает.
+- `set_schedule_field_order` — порядок колонок: ПОЛНЫЙ список имён в новом порядке.
+- `set_schedule_field_visibility` — скрыть/показать колонки: `fields[{name,hidden}]`.
+- `set_schedule_totals` — итоги: `fields[{name,mode}]` (standard|totals|min|max|minmax)
+  + `grandTotal`/`grandTotalCount`/`grandTotalTitle`.
 - `set_schedule_filter` — заменить фильтры (0..8, только AND; `[]` — очистить).
 - `set_schedule_sort` — заменить сортировку (0..4) и `itemized`.
 - `place_schedule_on_sheet` — разместить на листе: координаты левого верхнего угла в мм.
+- `move_schedule_on_sheet` — переместить размещённую таблицу (`instanceId|лист+спецификация`, мм).
 - `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
   `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
   удаление самой спецификации — `delete_schedules`.
@@ -31,6 +37,7 @@ public static partial class AgentToolPackSkills
 - Копия существующего расписания со всей структурой — `View.Duplicate(ViewDuplicateOption)`, а не «создать и настроить заново».
 - `GetSchedulableFields()` отдаёт только допустимые не-вычисляемые поля; `AddField` всегда добавляет в конец (порядок меняется `SetFieldOrder`), повторное поле — `ArgumentException`.
 - `ScheduleField.IsHidden=true` скрывает колонку, но поле продолжает работать в фильтрах, сортировке и группировке. Служебные поля (уровень, маркер) прячут, а не удаляют.
+- Итоги колонки — `ScheduleField.DisplayType` (Totals/Min/Max, гвард `CanTotal()`); строка «Итого» — `ShowGrandTotal*` на определении. Разбиение таблицы на части на листе — только UI (`ViewSchedule.Split`, Revit 2022.1+), тула нет.
 - Фильтры расписания объединяются **только по AND**, лимит — 8. Подстрочные фильтры (`contains`, `beginswith`, `endswith`) применимы только к строковым полям: `CanFilterBySubstring`.
 - Изменённый объект `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
 - Данные тела читаются `GetTableData()` → `GetCellText(row, col)`; полный обход большого расписания — секунды, поэтому `limit/offset` в наших тулах обязательны.
@@ -53,6 +60,9 @@ public static partial class AgentToolPackSkills
   `place_schedule_on_sheet`; каждый шаг dry-run → apply, после apply читайте read-back.
 - Фильтров не больше 8 (инвариант Revit, `filter_limit_exceeded`); условия только AND —
   для «ИЛИ» стройте отдельные спецификации.
+- Паттерн правки наборов (фильтры/порядок колонок): прочитай `get_schedule_definition` →
+  измени → передай ПОЛНЫЙ набор — `set_schedule_filter`/`set_schedule_field_order`
+  заменяют его целиком.
 - `scheduleName` ищется по точному имени; несколько совпадений → `ambiguous_schedule`
   (с candidates — берите id), шаблон → `schedule_is_template`. Надёжнее брать `scheduleId`
   из `list_schedules`.

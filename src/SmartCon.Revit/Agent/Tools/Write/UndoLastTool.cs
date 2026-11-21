@@ -187,82 +187,11 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 continue;
             }
 
-            // Name renames are reverted as one batch: an A↔B swap must be planned with
-            // temporary names, otherwise the first restore collides with the second view.
+            // View-filter items are reverted by UndoLastTool.Filters.cs: the recorded
+            // filter state is restored, a filter created by the set is deleted.
             if (key is "filter" or "filter_created")
             {
-                var report = CreateReport(item);
-                var element = ResolveElement(doc, item);
-
-                if (key == "filter_created")
-                {
-                    if (element is null)
-                    {
-                        report.Reason = "The filter no longer exists — already removed.";
-                        outcome.Batch.Skipped.Add(report);
-                        continue;
-                    }
-
-                    if (element is not ParameterFilterElement createdFilter)
-                    {
-                        report.ErrorCode = "unsupported_element";
-                        report.Reason = "Element " + item.ElementId + " is not a view filter.";
-                        outcome.Batch.Failed.Add(report);
-                        continue;
-                    }
-
-                    var (deleted, deleteError, deleteReason) =
-                        RevertFilterCreated(doc, createdFilter);
-                    if (deleted)
-                    {
-                        outcome.Batch.Changed.Add(report);
-                        outcome.AffectedCount++;
-                    }
-                    else
-                    {
-                        report.ErrorCode = deleteError;
-                        report.Reason = deleteReason;
-                        outcome.Batch.Failed.Add(report);
-                    }
-
-                    continue;
-                }
-
-                if (element is null)
-                {
-                    report.ErrorCode = "element_not_found";
-                    report.Reason = "The view no longer exists in the document.";
-                    outcome.Batch.Failed.Add(report);
-                    continue;
-                }
-
-                if (element is not View filteredView)
-                {
-                    report.ErrorCode = "unsupported_element";
-                    report.Reason = "Element " + item.ElementId + " is not a view.";
-                    outcome.Batch.Failed.Add(report);
-                    continue;
-                }
-
-                var (reverted, revertError, revertReason) =
-                    RevertFilter(filteredView, item, force);
-                if (reverted)
-                {
-                    outcome.Batch.Changed.Add(report);
-                    outcome.AffectedCount++;
-                }
-                else if (revertError is null)
-                {
-                    report.Reason = revertReason;
-                    outcome.Batch.Skipped.Add(report);
-                }
-                else
-                {
-                    report.ErrorCode = revertError;
-                    report.Reason = revertReason;
-                    outcome.Batch.Failed.Add(report);
-                }
-
+                RecordFilterRevert(doc, outcome, item, key, force);
                 continue;
             }
 
@@ -292,10 +221,11 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             }
 
             // Schedule changes are reverted by UndoLastTool.Schedules.cs: created
-            // schedules and placements are deleted, and the fields/filters/sorting
-            // snapshots are restored from the recorded previous state.
+            // schedules and placements are deleted, placements are moved back, and
+            // the fields/totals/filters/sorting snapshots are restored.
             if (key is "schedule_created" or "schedule_placed" or "schedule_fields"
-                or "schedule_filters" or "schedule_sort")
+                or "schedule_filters" or "schedule_sort" or "schedule_moved"
+                or "schedule_totals")
             {
                 var report = CreateReport(item);
                 var element = ResolveElement(doc, item);
@@ -318,6 +248,14 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                     outcome.Batch.Failed.Add(report);
                 }
 
+                continue;
+            }
+
+            // MEP system type property changes (name/abbreviation) are reverted by
+            // UndoLastTool.Mep.cs from the recorded value snapshot.
+            if (key == "mep_system_type")
+            {
+                RecordMepSystemTypeRevert(doc, outcome, item, force);
                 continue;
             }
 

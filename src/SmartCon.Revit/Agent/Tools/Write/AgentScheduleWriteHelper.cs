@@ -53,7 +53,7 @@ internal sealed class ScheduleSortFieldRecord
 /// lookup by id/name, schedulable-field matching by display name, and the
 /// JSON snapshots of filters/sorting that change items carry for undo.
 /// </summary>
-internal static class AgentScheduleWriteHelper
+internal static partial class AgentScheduleWriteHelper
 {
     internal const int MaxFilters = 8;
 

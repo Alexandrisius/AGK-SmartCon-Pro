@@ -13,11 +13,12 @@ public static partial class AgentToolPackSkills
   `systemId/name/domain/classification/typeId/abbreviation/elementCount/equipmentCount`.
 - `list_materials` — материалы: `nameContains`, пагинация; поля
   `materialId/name/materialClass/category/color/transparency/shininess`.
+- `set_mep_system_type` — аббревиатура/имя типа системы (`typeId|systemId` + `abbreviation`/`name`).
 
 ### Кухня Revit
-- Система ≠ тип: аббревиатура/классификация живут на типе (`typeId`); у электрических
-  цепей типа нет → null. Аббревиатура на инстансе — read-only зеркало: `set_parameters`
-  откажет (readonly_parameter), сменить её этим паком нельзя.
+- Система ≠ тип: аббревиатура/классификация живут на типе (`typeId`) как свойства; у
+  электрических цепей типа нет → null. Аббревиатура на инстансе — read-only зеркало:
+  `set_parameters` откажет (readonly_parameter), пишет тип `set_mep_system_type`.
 - `elementCount` — терминальные элементы, оборудование отдельно (`equipmentCount` 0/1);
   пустая система (isEmpty) валидна.
 - Материалы — обычные элементы: `set_parameters` по `materialId`
@@ -27,7 +28,8 @@ public static partial class AgentToolPackSkills
 
 ### Рецепты
 1. «Какие системы в модели»: `list_mep_systems` → элементы через `query_elements`.
-2. «Смени аббревиатуру»: нельзя — зеркало read-only, скажи это пользователю.
+2. «Смени аббревиатуру»: `set_mep_system_type(typeId|systemId, abbreviation)` — свойство
+   типа, все системы типа отразят сразу; undo_last вернёт.
 3. «Материалы»: `list_materials` → правки через `set_parameters(materialId…)`.
 
 ### Что нельзя

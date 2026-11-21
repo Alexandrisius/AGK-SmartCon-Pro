@@ -410,6 +410,45 @@ public static class AgentToolCatalog
                 "разместить спецификацию на листе", "положить ведомость на лист",
                 "поместить таблицу на лист", "place schedule on sheet", "вставить ведомость"
             }),
+            ["remove_schedule_field"] = new("Write", false, new[]
+            {
+                "удалить поле спецификации", "убрать колонку ведомости",
+                "remove schedule field", "remove column", "убрать поле", "delete field"
+            }),
+            ["set_schedule_field_order"] = new("Write", false, new[]
+            {
+                "порядок полей спецификации", "порядок колонок ведомости",
+                "переставить колонки", "field order", "column order", "reorder fields",
+                "переместить колонку"
+            }),
+            ["set_schedule_field_visibility"] = new("Write", false, new[]
+            {
+                "скрыть колонку ведомости", "показать поле спецификации", "скрыть поле",
+                "hide schedule field", "show column", "hide column", "спрятать колонку"
+            }),
+            ["set_schedule_totals"] = new("Write", false, new[]
+            {
+                "итоги спецификации", "итоговая строка ведомости", "сумма колонки",
+                "итого", "totals", "grand total", "посчитать сумму в ведомости"
+            }),
+            ["move_schedule_on_sheet"] = new("Write", false, new[]
+            {
+                "переместить спецификацию на листе", "сдвинуть ведомость на листе",
+                "передвинуть таблицу", "move schedule on sheet", "move schedule",
+                "позиция спецификации"
+            }),
+            ["set_mep_system_type"] = new("Write", false, new[]
+            {
+                "аббревиатура системы", "аббревиатура типа системы",
+                "переименовать тип системы", "сокращение системы", "set mep system type",
+                "аббревиатура инженерной системы", "поменять аббревиатуру"
+            }),
+            ["get_browser_organization"] = new("Read", false, new[]
+            {
+                "организация браузера", "структура браузера проекта", "группировка видов",
+                "browser organization", "как организован браузер", "уровни папок браузера",
+                "текущая организация браузера"
+            }),
             ["delete_family_types"] = new("Write", true, new[]
             {
                 "удалить типоразмер", "удалить тип", "delete family type", "remove type"

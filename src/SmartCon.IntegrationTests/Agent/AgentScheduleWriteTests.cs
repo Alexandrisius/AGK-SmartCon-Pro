@@ -432,6 +432,286 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
         await Assert.That(restored.GetProperty("value").GetString()).IsEqualTo(WallComment);
     }
 
+    [Test]
+    public async Task RemoveScheduleField_Applies_ReadsBack_AndUndoReaddsField()
+    {
+        var created = CreateWallSchedule();
+        var addField = CreateTool<AddScheduleFieldTool>();
+        await Assert.That(
+            addField.ExecuteForTests(
+                Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + _commentsField +
+                      "\",\"" + _markField + "\"],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None).Success).IsTrue();
+
+        var tool = CreateTool<RemoveScheduleFieldTool>();
+        var result = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + _commentsField +
+                  "\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var fields = result.Data!.Value.GetProperty("fields").EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+        await Assert.That(fields.Contains(_commentsField)).IsFalse();
+        await Assert.That(fields.Contains(_markField)).IsTrue();
+
+        var unknown = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[\"Нет такого поля\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(unknown.Success).IsTrue();
+        await Assert.That(unknown.Data!.Value.GetProperty("noChanges").GetBoolean()).IsTrue();
+
+        var undo = UndoLast();
+        await Assert.That(undo.Success).IsTrue();
+        var schedule = (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!;
+        var remaining = AgentScheduleReadFieldNames(schedule);
+        await Assert.That(remaining.Contains(_commentsField)).IsTrue();
+    }
+
+    [Test]
+    public async Task SetScheduleFieldOrder_Applies_ReadsBack_Mismatch_AndUndoRestores()
+    {
+        var created = CreateWallSchedule();
+        var addField = CreateTool<AddScheduleFieldTool>();
+        await Assert.That(
+            addField.ExecuteForTests(
+                Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + _commentsField +
+                      "\",\"" + _markField + "\"],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None).Success).IsTrue();
+
+        var schedule = (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!;
+        var actual = AgentScheduleReadFieldNames(schedule);
+        if (actual.Count < 2 || actual.Any(name => name.Contains('"')))
+            Skip.Test("Шаблон дал неожидаемые имена полей: " + string.Join("|", actual));
+
+        var tool = CreateTool<SetScheduleFieldOrderTool>();
+        var mismatch = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + actual[0] +
+                  "\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(mismatch.Success).IsFalse();
+        await Assert.That(mismatch.ErrorCode).IsEqualTo("order_mismatch");
+
+        var reversed = Enumerable.Reverse(actual).ToList();
+        var result = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + reversed[0] +
+                  "\",\"" + reversed[1] + "\"],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(result.Success).IsTrue();
+        var order = result.Data!.Value.GetProperty("fields").EnumerateArray()
+            .Select(value => value.GetString())
+            .ToList();
+        await Assert.That(order.Count).IsEqualTo(2);
+        await Assert.That(string.Join("|", order)).IsEqualTo(string.Join("|", reversed));
+
+        var undo = UndoLast();
+        await Assert.That(undo.Success).IsTrue();
+        var restored = AgentScheduleReadFieldNames(
+            (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!);
+        await Assert.That(string.Join("|", restored)).IsEqualTo(string.Join("|", actual));
+    }
+
+    [Test]
+    public async Task SetScheduleFieldVisibility_Applies_ReadsBack_AndUndoRestores()
+    {
+        var created = CreateWallSchedule();
+        var addField = CreateTool<AddScheduleFieldTool>();
+        await Assert.That(
+            addField.ExecuteForTests(
+                Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + _commentsField +
+                      "\"],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None).Success).IsTrue();
+
+        var tool = CreateTool<SetScheduleFieldVisibilityTool>();
+        var result = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[{\"name\":\"" + _commentsField +
+                  "\",\"hidden\":true}],\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var states = result.Data!.Value.GetProperty("fields").EnumerateArray().ToList();
+        var hiddenState = states.First(state =>
+            string.Equals(state.GetProperty("name").GetString(), _commentsField,
+                StringComparison.OrdinalIgnoreCase));
+        await Assert.That(hiddenState.GetProperty("hidden").GetBoolean()).IsTrue();
+
+        var undo = UndoLast();
+        await Assert.That(undo.Success).IsTrue();
+        var schedule = (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!;
+        foreach (var fieldId in schedule.Definition.GetFieldOrder())
+        {
+            var field = schedule.Definition.GetField(fieldId);
+            if (string.Equals(field.GetName(), _commentsField, StringComparison.OrdinalIgnoreCase))
+                await Assert.That(field.IsHidden).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task SetScheduleTotals_Applies_ReadsBack_AndUndoRestores()
+    {
+        var created = CreateWallSchedule();
+        var lengthField = FindSchedulableFieldName(
+            (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!,
+            BuiltInParameter.CURVE_ELEM_LENGTH);
+        if (lengthField is null)
+            Skip.Test("В шаблоне нет поля длины для стен");
+
+        var addField = CreateTool<AddScheduleFieldTool>();
+        await Assert.That(
+            addField.ExecuteForTests(
+                Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + lengthField +
+                      "\"],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None).Success).IsTrue();
+
+        var columnField = ActualFieldName(
+            (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!,
+            BuiltInParameter.CURVE_ELEM_LENGTH);
+        if (columnField is null)
+            Skip.Test("Поле длины не стало колонкой спецификации");
+
+        var tool = CreateTool<SetScheduleTotalsTool>();
+        var result = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"fields\":[{\"name\":\"" + columnField +
+                  "\",\"mode\":\"totals\"}],\"grandTotal\":true,\"grandTotalCount\":true," +
+                  "\"grandTotalTitle\":\"Всего\",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        if (!result.Success)
+            Assert.Fail("set_schedule_totals failed: " + result.ErrorCode + " — " +
+                        result.Message);
+
+        await Assert.That(result.Success).IsTrue();
+        var totals = result.Data!.Value.GetProperty("totals");
+        await Assert.That(totals.GetProperty("grandTotal").GetBoolean()).IsTrue();
+        await Assert.That(totals.GetProperty("grandTotalCount").GetBoolean()).IsTrue();
+        await Assert.That(totals.GetProperty("grandTotalTitle").GetString()).IsEqualTo("Всего");
+        var modes = totals.GetProperty("fields").EnumerateArray()
+            .Where(state => string.Equals(state.GetProperty("name").GetString(), columnField,
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        await Assert.That(modes.Count).IsEqualTo(1);
+        await Assert.That(modes[0].GetProperty("mode").GetString()).IsEqualTo("totals");
+
+        var afterApplyDef = ((ViewSchedule)Doc.GetElement(
+            ElementIdCompat.Create(created))!).Definition;
+        if (!afterApplyDef.ShowGrandTotal)
+            Assert.Fail("apply did not stick: after commit ShowGrandTotal=" +
+                        afterApplyDef.ShowGrandTotal);
+
+        var undo = UndoLast();
+        if (!undo.Success)
+        {
+            var failed = undo.Data!.Value.GetProperty("failed");
+            Assert.Fail("undo of totals failed: " + undo.ErrorCode + " — " + undo.Message +
+                        " | failed=" + JsonSerializer.Serialize(failed));
+        }
+        await Assert.That(undo.Success).IsTrue();
+        var schedule = (ViewSchedule)Doc.GetElement(ElementIdCompat.Create(created))!;
+        await Assert.That(schedule.Definition.ShowGrandTotal).IsFalse();
+        foreach (var fieldId in schedule.Definition.GetFieldOrder())
+        {
+            var field = schedule.Definition.GetField(fieldId);
+            if (string.Equals(field.GetName(), columnField, StringComparison.OrdinalIgnoreCase))
+                await Assert.That(field.DisplayType).IsEqualTo(ScheduleFieldDisplayType.Standard);
+        }
+    }
+
+    private static string? ActualFieldName(ViewSchedule schedule, BuiltInParameter parameter)
+    {
+        foreach (var fieldId in schedule.Definition.GetFieldOrder())
+        {
+            var field = schedule.Definition.GetField(fieldId);
+            if (field.ParameterId == new ElementId(parameter))
+                return field.GetName();
+        }
+
+        return null;
+    }
+
+    [Test]
+    public async Task MoveScheduleOnSheet_Applies_ReadsBack_NotPlaced_AndUndoRestores()
+    {
+        if (!_sheetCreated)
+            Skip.Test("В шаблоне проекта нет Title Block — лист не создать");
+
+        var created = CreateWallSchedule();
+        var place = CreateTool<PlaceScheduleOnSheetTool>();
+        var placed = place.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"sheetNumber\":\"" + SheetNumber +
+                  "\",\"pointMmX\":120,\"pointMmY\":80,\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(placed.Success).IsTrue();
+
+        var notPlaced = CreateTool<MoveScheduleOnSheetTool>().ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"sheetNumber\":\"SC-SW-999\"," +
+                  "\"pointMmX\":10,\"pointMmY\":10,\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(notPlaced.Success).IsFalse();
+        await Assert.That(notPlaced.ErrorCode).IsEqualTo("sheet_not_found");
+
+        var tool = CreateTool<MoveScheduleOnSheetTool>();
+        var result = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"sheetNumber\":\"" + SheetNumber +
+                  "\",\"pointMmX\":200,\"pointMmY\":150,\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(
+            Math.Abs(result.Data!.Value.GetProperty("actualMmX").GetDouble() - 200) < 0.5)
+            .IsTrue();
+        await Assert.That(
+            Math.Abs(result.Data.Value.GetProperty("actualMmY").GetDouble() - 150) < 0.5)
+            .IsTrue();
+
+        var content = new GetSheetContentTool(new StubRevitContext(Doc));
+        var sheetContent = content.ExecuteForTests(
+            Doc,
+            Parse("{\"number\":\"" + SheetNumber + "\"}"),
+            CancellationToken.None);
+        var placement = sheetContent.Data!.Value.GetProperty("schedules").EnumerateArray()
+            .First(item => item.GetProperty("scheduleId").GetInt64() == created);
+        await Assert.That(Math.Abs(placement.GetProperty("xMm").GetDouble() - 200) < 0.5).IsTrue();
+        await Assert.That(Math.Abs(placement.GetProperty("yMm").GetDouble() - 150) < 0.5).IsTrue();
+
+        var undo = UndoLast();
+        await Assert.That(undo.Success).IsTrue();
+        var afterUndo = content.ExecuteForTests(
+            Doc,
+            Parse("{\"number\":\"" + SheetNumber + "\"}"),
+            CancellationToken.None);
+        var restored = afterUndo.Data!.Value.GetProperty("schedules").EnumerateArray()
+            .First(item => item.GetProperty("scheduleId").GetInt64() == created);
+        await Assert.That(Math.Abs(restored.GetProperty("xMm").GetDouble() - 120) < 0.5).IsTrue();
+        await Assert.That(Math.Abs(restored.GetProperty("yMm").GetDouble() - 80) < 0.5).IsTrue();
+    }
+
+    private static string? FindSchedulableFieldName(
+        ViewSchedule schedule,
+        BuiltInParameter parameter)
+    {
+        foreach (var field in schedule.Definition.GetSchedulableFields())
+        {
+            if (field.ParameterId == new ElementId(parameter))
+                return field.GetName(schedule.Document);
+        }
+
+        return null;
+    }
+
     private long CreateWallSchedule()
     {
         var tool = CreateTool<CreateScheduleTool>();
@@ -501,6 +781,16 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
             nameof(SetScheduleSortTool) => (T)(object)new SetScheduleSortTool(
                 context, _transactions!, _changeSets!),
             nameof(PlaceScheduleOnSheetTool) => (T)(object)new PlaceScheduleOnSheetTool(
+                context, _transactions!, _changeSets!),
+            nameof(RemoveScheduleFieldTool) => (T)(object)new RemoveScheduleFieldTool(
+                context, _transactions!, _changeSets!),
+            nameof(SetScheduleFieldOrderTool) => (T)(object)new SetScheduleFieldOrderTool(
+                context, _transactions!, _changeSets!),
+            nameof(SetScheduleFieldVisibilityTool) => (T)(object)new SetScheduleFieldVisibilityTool(
+                context, _transactions!, _changeSets!),
+            nameof(SetScheduleTotalsTool) => (T)(object)new SetScheduleTotalsTool(
+                context, _transactions!, _changeSets!),
+            nameof(MoveScheduleOnSheetTool) => (T)(object)new MoveScheduleOnSheetTool(
                 context, _transactions!, _changeSets!),
             _ => throw new ArgumentOutOfRangeException(nameof(T), typeof(T).Name)
         };

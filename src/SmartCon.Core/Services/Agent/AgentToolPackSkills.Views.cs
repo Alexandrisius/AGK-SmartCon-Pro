@@ -23,6 +23,8 @@ public static partial class AgentToolPackSkills
 - `duplicate_view` — копия одного вида (`viewId|viewName`, `newName`, `option`).
 - `create_view` — новый вид (`kind: plan|section|3d|legend`, `name`, план/разрез — `levelId`).
 - `set_browser_folder` — подпапка браузера: `viewIds|viewNames|sheetIds` (1..100) + `folder`.
+- `get_browser_organization` — схемы организации браузера (`target: views|sheets`): список,
+  текущая, параметр сортировки, путь папок типового элемента.
 
 ### Кухня Revit
 - Имя вида уникально **в пределах семейства видов** («Этаж 1» есть и как план этажа, и как
@@ -41,6 +43,8 @@ public static partial class AgentToolPackSkills
 - Папка браузера — не параметр вида: её задаёт **параметр группировки текущей организации
   браузера** (напр. «Раздел»). Группировка по read-only свойству →
   `browser_folder_parameter_read_only` (перестройте схему). Виды и листы — разные схемы.
+- Организация браузера в API **read-only**: переключить текущую схему или создать новую
+  нельзя (нет setter/builder) — только диалог Browser Organization в UI Revit.
 
 ### Аргументы
 - `fields` сокращает ответ (`viewId,name,type,level,template,sheet,isOnSheet,folder`);

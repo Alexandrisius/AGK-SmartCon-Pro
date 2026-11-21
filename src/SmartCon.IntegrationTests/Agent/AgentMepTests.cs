@@ -275,6 +275,68 @@ public sealed class AgentMepTests : RevitApiTest
         await Assert.That(_changeSets!.All.Count).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task SetMepSystemType_Abbreviation_AppliesReadsBackAndUndoes()
+    {
+        if (!_systemCreated)
+            Skip.Test("В шаблоне проекта нет PipingSystemType или MEP-дисциплина отключена");
+
+        var type = (MEPSystemType)Doc.GetElement(ElementIdCompat.Create(_systemTypeId))!;
+        var before = type.Abbreviation ?? string.Empty;
+        var target = before == "SCB" ? "SCA" : "SCB";
+
+        var tool = new SetMepSystemTypeTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"systemId\":" + _systemId + ",\"abbreviation\":\"" + target +
+                  "\",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Data!.Value.GetProperty("abbreviation").GetString())
+            .IsEqualTo(target);
+        await Assert.That(((MEPSystemType)Doc.GetElement(
+            ElementIdCompat.Create(_systemTypeId))!).Abbreviation).IsEqualTo(target);
+
+        var undoTool = new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("{\"dryRun\":false}"), approved: true, CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(((MEPSystemType)Doc.GetElement(
+            ElementIdCompat.Create(_systemTypeId))!).Abbreviation).IsEqualTo(before);
+    }
+
+    [Test]
+    public async Task SetMepSystemType_NameTaken_TypedConflict()
+    {
+        if (!_systemCreated)
+            Skip.Test("В шаблоне проекта нет PipingSystemType или MEP-дисциплина отключена");
+
+        var otherName = new FilteredElementCollector(Doc)
+            .OfClass(typeof(MEPSystemType))
+            .Cast<MEPSystemType>()
+            .Where(type => type.Id.GetValue() != _systemTypeId)
+            .Select(type => type.Name)
+            .FirstOrDefault(name =>
+                !string.IsNullOrEmpty(name) &&
+                name!.IndexOf('"') < 0 && name.IndexOf('\\') < 0);
+        if (string.IsNullOrEmpty(otherName))
+            Skip.Test("В шаблоне нет второго типа трубопроводной системы с простым именем");
+
+        var tool = new SetMepSystemTypeTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"typeId\":" + _systemTypeId + ",\"name\":\"" + otherName +
+                  "\",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("name_taken");
+    }
+
     private SetParametersTool CreateSetParametersTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 

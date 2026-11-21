@@ -1849,16 +1849,16 @@
       "kind": "write"
     },
     {
-      "id": "r232",
-      "query": "Замени общий параметр АДСК_Наименование на ТДСК_Наименование в семействе",
+      "id": "r231",
+      "query": "Перепривяжи параметр семейства на другой общий параметр из ЕИР",
       "expectedTools": [
         "replace_family_parameter"
       ],
       "kind": "write"
     },
     {
-      "id": "r231",
-      "query": "Перепривяжи параметр семейства на другой общий параметр из ЕИР",
+      "id": "r232",
+      "query": "Замени общий параметр АДСК_Наименование на ТДСК_Наименование в семействе",
       "expectedTools": [
         "replace_family_parameter"
       ],
@@ -1969,18 +1969,18 @@
       "kind": "write"
     },
     {
-      "id": "r246",
-      "query": "Убери невидимые символы из номеров листов",
-      "expectedTools": [
-        "sanitize_sheet_numbers"
-      ],
-      "kind": "write"
-    },
-    {
       "id": "r245",
       "query": "Удали эти элементы из модели по списку id",
       "expectedTools": [
         "delete_elements"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r246",
+      "query": "Убери невидимые символы из номеров листов",
+      "expectedTools": [
+        "sanitize_sheet_numbers"
       ],
       "kind": "write"
     },
@@ -2501,6 +2501,118 @@
       "query": "Сними габаритный бокс с выбранных планов",
       "expectedTools": [
         "assign_scope_box"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r311",
+      "query": "Удали колонку уровень из спецификации труб",
+      "expectedTools": [
+        "remove_schedule_field"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r312",
+      "query": "Убери лишние поля из ведомости дверей",
+      "expectedTools": [
+        "remove_schedule_field"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r313",
+      "query": "Переставь колонку марка в начало ведомости",
+      "expectedTools": [
+        "set_schedule_field_order"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r314",
+      "query": "Поменяй порядок полей в спецификации",
+      "expectedTools": [
+        "set_schedule_field_order"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r315",
+      "query": "Скрой колонку уровень в ведомости, сортировку оставь",
+      "expectedTools": [
+        "set_schedule_field_visibility"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r316",
+      "query": "Спрячь служебное поле в спецификации",
+      "expectedTools": [
+        "set_schedule_field_visibility"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r317",
+      "query": "Включи итоги по длине в спецификации труб",
+      "expectedTools": [
+        "set_schedule_totals"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r318",
+      "query": "Добавь строку итого с количеством элементов",
+      "expectedTools": [
+        "set_schedule_totals"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r319",
+      "query": "Передвинь спецификацию труб на листе правее",
+      "expectedTools": [
+        "move_schedule_on_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r320",
+      "query": "Сдвинь ведомость в левый нижний угол листа",
+      "expectedTools": [
+        "move_schedule_on_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r321",
+      "query": "Поменяй аббревиатуру системы на ХВС",
+      "expectedTools": [
+        "set_mep_system_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r322",
+      "query": "Как организован браузер проекта",
+      "expectedTools": [
+        "get_browser_organization"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r323",
+      "query": "По какому параметру группируются виды в браузере",
+      "expectedTools": [
+        "get_browser_organization"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r324",
+      "query": "Переименуй тип трубопроводной системы",
+      "expectedTools": [
+        "set_mep_system_type"
       ],
       "kind": "write"
     }

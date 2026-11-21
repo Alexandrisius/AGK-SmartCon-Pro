@@ -37,7 +37,7 @@ public static class AgentToolPacks
             Tools = new[]
             {
                 "list_views", "get_current_view_info", "rename_views", "delete_views",
-                "duplicate_view", "create_view", "set_browser_folder"
+                "duplicate_view", "create_view", "set_browser_folder", "get_browser_organization"
             }
         },
         new()
@@ -165,12 +165,14 @@ public static class AgentToolPacks
         {
             Name = "schedules",
             Description =
-                "Ведомости и спецификации: список, данные, определение, создание, поля, фильтры, сортировка, размещение на листе и удаление.",
+                "Ведомости и спецификации: список, данные, определение, создание, поля (добавление, удаление, порядок, видимость, итоги), фильтры, сортировка, размещение и перемещение на листе и удаление.",
             Tools = new[]
             {
                 "list_schedules", "get_schedule_data", "get_schedule_definition", "delete_schedules",
-                "create_schedule", "add_schedule_field", "set_schedule_filter",
-                "set_schedule_sort", "place_schedule_on_sheet"
+                "create_schedule", "add_schedule_field", "remove_schedule_field",
+                "set_schedule_field_order", "set_schedule_field_visibility", "set_schedule_totals",
+                "set_schedule_filter", "set_schedule_sort", "place_schedule_on_sheet",
+                "move_schedule_on_sheet"
             }
         },
         new()
@@ -200,8 +202,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "mep",
-            Description = "Инженерные системы и материалы: списки MEP-систем (трубы, воздуховоды, цепи) и материалов.",
-            Tools = new[] { "list_mep_systems", "list_materials" }
+            Description = "Инженерные системы и материалы: списки MEP-систем (трубы, воздуховоды, цепи) и материалов, свойства типов систем.",
+            Tools = new[] { "list_mep_systems", "list_materials", "set_mep_system_type" }
         },
         new()
         {

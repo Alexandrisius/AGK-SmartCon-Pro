@@ -7,6 +7,89 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 public sealed partial class UndoLastTool
 {
     /// <summary>
+    /// Undo dispatch of the view-filter change items: a filter created by the
+    /// reverted set is deleted, the filter state of a view is restored from the
+    /// recorded snapshot.
+    /// </summary>
+    private static void RecordFilterRevert(
+        Document doc,
+        WriteOutcome outcome,
+        ChangeItem item,
+        string key,
+        bool force)
+    {
+        var report = CreateReport(item);
+        var element = ResolveElement(doc, item);
+
+        if (key == "filter_created")
+        {
+            if (element is null)
+            {
+                report.Reason = "The filter no longer exists — already removed.";
+                outcome.Batch.Skipped.Add(report);
+                return;
+            }
+
+            if (element is not ParameterFilterElement createdFilter)
+            {
+                report.ErrorCode = "unsupported_element";
+                report.Reason = "Element " + item.ElementId + " is not a view filter.";
+                outcome.Batch.Failed.Add(report);
+                return;
+            }
+
+            var (deleted, deleteError, deleteReason) = RevertFilterCreated(doc, createdFilter);
+            if (deleted)
+            {
+                outcome.Batch.Changed.Add(report);
+                outcome.AffectedCount++;
+            }
+            else
+            {
+                report.ErrorCode = deleteError;
+                report.Reason = deleteReason;
+                outcome.Batch.Failed.Add(report);
+            }
+
+            return;
+        }
+
+        if (element is null)
+        {
+            report.ErrorCode = "element_not_found";
+            report.Reason = "The view no longer exists in the document.";
+            outcome.Batch.Failed.Add(report);
+            return;
+        }
+
+        if (element is not View filteredView)
+        {
+            report.ErrorCode = "unsupported_element";
+            report.Reason = "Element " + item.ElementId + " is not a view.";
+            outcome.Batch.Failed.Add(report);
+            return;
+        }
+
+        var (reverted, revertError, revertReason) = RevertFilter(filteredView, item, force);
+        if (reverted)
+        {
+            outcome.Batch.Changed.Add(report);
+            outcome.AffectedCount++;
+        }
+        else if (revertError is null)
+        {
+            report.Reason = revertReason;
+            outcome.Batch.Skipped.Add(report);
+        }
+        else
+        {
+            report.ErrorCode = revertError;
+            report.Reason = revertReason;
+            outcome.Batch.Failed.Add(report);
+        }
+    }
+
+    /// <summary>
     /// Restores the filter state of a view: removes filters that were added after
     /// the recorded state, re-applies recorded visibility and overrides.
     /// </summary>

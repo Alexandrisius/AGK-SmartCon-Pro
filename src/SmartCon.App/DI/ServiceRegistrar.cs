@@ -479,6 +479,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
         services.AddSingleton<IAgentTool, ListSystemTypesTool>();
         services.AddSingleton<IAgentTool, ListMepSystemsTool>();
+        services.AddSingleton<IAgentTool, GetBrowserOrganizationTool>();
         services.AddSingleton<IAgentTool, ListMaterialsTool>();
         services.AddSingleton<IAgentTool, ListScopeBoxesTool>();
 
@@ -511,6 +512,12 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetScheduleFilterTool>();
         services.AddSingleton<IAgentTool, SetScheduleSortTool>();
         services.AddSingleton<IAgentTool, PlaceScheduleOnSheetTool>();
+        services.AddSingleton<IAgentTool, RemoveScheduleFieldTool>();
+        services.AddSingleton<IAgentTool, SetScheduleFieldOrderTool>();
+        services.AddSingleton<IAgentTool, SetScheduleFieldVisibilityTool>();
+        services.AddSingleton<IAgentTool, SetScheduleTotalsTool>();
+        services.AddSingleton<IAgentTool, MoveScheduleOnSheetTool>();
+        services.AddSingleton<IAgentTool, SetMepSystemTypeTool>();
         services.AddSingleton<IAgentTool, CreateSheetTool>();
         services.AddSingleton<IAgentTool, CreateViewportsTool>();
         services.AddSingleton<IAgentTool, MoveViewportTool>();
