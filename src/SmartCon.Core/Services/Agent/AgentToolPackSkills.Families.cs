@@ -12,76 +12,70 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
-  `find_families_with_parameter` (по параметрам типов; `includeInstanceParameters=true`
-  добавляет параметры размещённых экземпляров, например `ADSK_Наименование`; без
-  размещённых экземпляров — только `get_family_parameters`),
-  `list_shared_parameters` (нужен активный файл общих параметров, иначе
-  `shared_parameter_file_missing`).
-- Запись: `rename_family_parameter`, `add_family_parameter`, `set_family_parameter_values`,
-  `set_family_formula`, `map_family_parameters`, `delete_family_types`,
-  `remove_family_parameter`.
-- Каждый write возвращает `blastRadius{affectedTypes,affectedInstances,sampleInstanceIds}` —
-  покажите пользователю, сколько экземпляров затронет загрузка.
+  `find_families_with_parameter` (instance-параметры — `includeInstanceParameters=true`),
+  `list_shared_parameters` (нужен активный ФОП, иначе `shared_parameter_file_missing`).
+- Запись в документ семейства: `rename_family_parameter`, `add_family_parameter`,
+  `set_family_parameter_values`, `set_family_formula`, `map_family_parameters`,
+  `remove_family_parameter`, `replace_family_parameter`.
+- Типы проекта и файлы: `duplicate_family_type`, `rename_family_type`,
+  `replace_family_type` (bulk), `load_family` (.rfa по абсолютному пути),
+  `purge_families` (destructive, confirmNames), `delete_family_types`.
+- Каждый write семейства возвращает `blastRadius` — покажите пользователю, сколько
+  экземпляров затронет загрузка.
 
 ### Три уровня, которые нельзя путать
-- **Семейство** (`Family`) — контейнер, у него есть id и имя (`familyId`, `familyName`, `familyUniqueId`).
+- **Семейство** (`Family`) — контейнер: `familyId`, `familyName`, `familyUniqueId`.
 - **Тип** (`FamilySymbol`) — конкретный размер/марка; параметры типа живут здесь.
-- **Экземпляр** (`FamilyInstance`) — размещённый в модели элемент; `scope:""instance""` пишет
+- **Экземпляр** (`FamilyInstance`) — размещённый элемент; `scope:""instance""` пишет
   экземплярное значение, `scope:""type""` — на тип и значит «для всех его экземпляров».
 
 ### Кухня Revit
-- `Document.EditFamily(family)` открывает **независимую копию** семейства без окна редактора.
-  Запрещено: при открытой транзакции/read-only документе проекта, для системных и in-place
-  семейств (`Family.IsEditable=false`), а также если это семейство уже редактируется или
-  открыт Family Editor. Отсюда ошибки «The document is currently modifiable» и «Family is
-  not editable» — тул возвращает их текстом с рецептом.
+- `Document.EditFamily(family)` открывает **независимую копию** семейства без редактора;
+  запрещено в открытой транзакции, для системных/in-place семейств и при открытом Family
+  Editor (ошибки «document is modifiable» / «Family is not editable»).
 - Документ семейства — отдельный `Document` со своим стеком транзакций (I-03b): транзакции
   открываются на нём, а не на проекте; проектные `ITransactionService` к нему не применяются.
 - Правится только `FamilyManager.CurrentType`. Если у семейства нет ни одного типа, значения
   задавать некуда: сначала создайте тип. Имена типов уникальны.
 - После правки семейство **загружается обратно** в проект (`LoadFamily` с `IFamilyLoadOptions`).
-  При этом Revit **удаляет и создаёт семейство заново**: `familyId`/`familyUniqueId` меняются;
-  ответ содержит `previousFamilyId`/`previousFamilyUniqueId` и `familyIdNote`. Для следующих
-  вызовов — `familyName` или новые id.
-- Перезагрузка **не удаляет** из проекта типы, которых больше нет в семействе, и **не
-  переименовывает** типы: переименованный в семействе тип появится в проекте как **дубль**.
-  Убирать тип надо двумя разными операциями: в проекте — `delete_family_types`, в семействе —
-  `remove`/`DeleteCurrentType` до загрузки.
+  Revit **удаляет и создаёт семейство заново**: `familyId`/`familyUniqueId` меняются; ответ
+  содержит `previousFamilyId`/`previousFamilyUniqueId`. Для следующих вызовов — `familyName`.
+- Перезагрузка **не удаляет** и **не переименовывает** типы проекта: переименованный в
+  семействе тип появится как **дубль**. Удалять: в проекте — `delete_family_types`, в
+  семействе — до загрузки. Поэтому для переименования типа используйте `rename_family_type`
+  (прямо в проекте), а не правку семейства.
 - `Document.Delete(FamilySymbol)` в проекте удаляет тип **и все его размещённые экземпляры**
   без подтверждения — это и есть `force=true` в `delete_family_types`.
+- Типы проекта: `duplicate_family_type` — независимая копия (правка копии не трогает
+  исходный тип); `rename_family_type` не трогает экземпляры; `replace_family_type` — bulk
+  одним статическим `ChangeTypeId` (одна регенерация; несовместимые — per-item
+  `type_not_valid_for_element`).
+- `load_family` грузит .rfa по абсолютному пути: дубль имени → `family_already_loaded`;
+  `overwrite=true` перезагружает файл поверх, но **не откатывается** `undo_last`.
+- `purge_families`: кандидат = загружаемое семейство, ни один тип которого не имеет
+  размещённых экземпляров; in-place помечены `isInPlace=true` — согласуйте отдельно.
 - Значения `FamilyManager.Set` пишутся во внутренних единицах (футы, радианы); `SetValueString`
   парсит строку в единицах документа. `Set` отказывает, если параметр управляется формулой.
-- `FamilyParameter.Formula` — **только чтение**; формула ставится `FamilyManager.SetFormula`,
-  `null` её снимает. Ошибка на цикле или недопустимом параметре — «invalid formula string».
+- `FamilyParameter.Formula` — **только чтение**; ставится `SetFormula`, `null` снимает.
+  Ошибка на цикле — «invalid formula string».
 - Диалект формул Revit: имена параметров регистрозависимы, `<=`/`>=` **не поддерживаются**
   (пишите `NOT(a > b)`), условие — `IF(cond, true, false)`, округление — `round/roundup/
-  rounddown`; формулы размерные: складывать можно только одинаковые единицы, для округления
-  делят на `1 mm`, текстовые значения — только через `IF`.
+  rounddown`; формулы размерные: складывать только одинаковые единицы, округление делит
+  на `1 mm`, текст — только через `IF`.
 - Добавление параметра: обычный (`name` + `storageType`), **shared** (по `guid`;
-  `createDefinition=true` создаёт определение в активном файле общих параметров) и параметр
-  типа семейства. Определение shared-параметра фиксируется в проекте при первой загрузке:
-  смена группы/описания в `.rfa` проект не обновит.
+  `createDefinition=true` создаёт определение в активном ФОП). Определение shared фиксируется
+  в проекте при первой загрузке (правка `.rfa` его не обновит).
 - `createDefinition=true` пишет **вне** транзакции семейства: если следующая операция упадёт,
   документ семейства откатится, а определение в файле общих параметров останется.
-- `map_family_parameters`: source и target должны быть одного scope (`scope_mismatch`) и одной
-  размерности (`spec_mismatch`) — значения переносятся **без конверсии единиц**. В режиме
-  `values` формула target сначала снимается; в режиме `formula` — переносится текст формулы.
+- `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/
+  `spec_mismatch`), значения **без конверсии единиц**; `values` снимает формулу target,
+  `formula` переносит её текст.
 - `rename_family_parameter` не переименовывает **shared**-параметр (`shared_parameter_not_renameable`):
   имя приходит из определения. Built-in параметры не переименовываются и не удаляются.
-- `remove_family_parameter` удаляет family **и shared** параметр (shared — по `guid`); формулы,
-  ссылающиеся на него, Revit удаляет автоматически — ответ перечисляет их в warning.
-  Built-in удалять нельзя (`builtin_not_removable`); определение shared остаётся в файле
-  общих параметров.
+- `remove_family_parameter` удаляет family **и shared** (по `guid`) параметр; формулы с ним
+  Revit удаляет сам (warning в ответе). Built-in — нельзя (`builtin_not_removable`).
 - Перед реальной правкой создаётся backup `.rfa`; `undo_last` восстанавливает семейство из
-  него. `delete_family_types` — исключение: `undoSupported=false`.
-- Параметр под формулой нельзя задавать вручную — сначала снимите формулу
-  (`set_family_formula(formula=null)`).
-- Удаление типа с размещёнными экземплярами отклоняется (`force=false`); `force=true`
-  удаляет и экземпляры из модели — это необратимо.
-- Shared-параметр добавляется по `guid` из файла общих параметров; если определения нет,
-  `createDefinition=true` создаёт его, иначе `definition_not_found`.
-- `replace_family_parameter` заменяет параметр другим существующим общим (значения/
-  формулы переезжают сами); цепочка add → перенос → remove необратима.
+  него. `delete_family_types` и `purge_families` — исключения: `undoSupported=false`.
 
 ### Инварианты
 - Все write-тулы: `dryRun=true` по умолчанию, затем apply. Ошибка чтения/записи в документе
@@ -93,27 +87,27 @@ public static partial class AgentToolPackSkills
   (shared) — имена экземплярного и типового параметра могут совпадать.
 - `set_family_parameter_values`: `typeId` — это `FamilySymbol` **проекта** того же семейства;
   `typeName` — имя типа в документе семейства.
-- Встроенный read-back проверяет только **типовые** параметры: instance-значения и ссылки на
-  элементы он не подтверждает (`readBack.notVerifiableReasons`). Их проверяйте отдельно.
-- `delete_family_types`, `remove_family_parameter` и `replace_family_parameter` не
-  откатываются `undo_last` (`undoSupported=false`); у них есть `backupPath`.
+- Встроенный read-back проверяет только **типовые** параметры
+  (`readBack.notVerifiableReasons`); instance-значения проверяйте отдельно.
+- `delete_family_types`, `remove_family_parameter`, `replace_family_parameter` и
+  `purge_families` не откатываются `undo_last` (`undoSupported=false`); у первых трёх есть
+  `backupPath`. `duplicate/rename/replace_family_type` и `load_family` (без overwrite)
+  откатываются.
 - Перед `delete_family_types` прочитайте `list_family_types(includePlaced=true)`: число
   размещённых экземпляров — это радиус поражения (`type_in_use` без `force=true`).
 - Перед `remove_family_parameter` прочитайте `get_family_parameters`: тул покажет формулы,
   которые будут удалены.
-- После любой успешной записи — read-back (`get_family_parameters(includeValues=true)`);
-  тул делает свою проверку, но итог читается из модели.
+- После успешной записи — read-back (`get_family_parameters(includeValues=true)`).
 
-### Форма get_family_parameters (для read-back)
-- `parameters[]` — плоский массив: `id` (`FamilyParameter.Id`), `name`, `scope`
-  (`instance`/`type`), `isShared`, `guid`, `storageType`, `formula`, `canSetValue`.
+### Форма get_family_parameters
+- `parameters[]` — плоский массив: `id`, `name`, `scope` (`instance`/`type`), `isShared`,
+  `guid`, `storageType`, `formula`, `canSetValue`.
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей),
   `unit`, `hasValue`.
 - В `execute_plan.readBackExpectations` адресуйте параметр как
-  `parameters.byName[""Ширина""].valuesByType.byName[""Тип 1""].displayValue` или
-  `parameters.byId[<id>].name`; `byName` сравнивает `name`/`typeName` без учёта регистра.
-- Family write-тулы сами делают read-back после загрузки (`readBack.verified`/`mismatched`);
-  отдельный read-back нужен только для дополнительных условий.
+  `parameters.byName[""Ширина""].valuesByType.byName[""Тип 1""].displayValue`; `byName`
+  сравнивает без учёта регистра.
+- Family write-тулы сами делают read-back (`readBack.verified`/`mismatched`).
 
 ### Рецепты
 1. «Добавь общий параметр ADSK_Наименование»: `list_shared_parameters(nameContains:""ADSK"")`
@@ -122,11 +116,19 @@ public static partial class AgentToolPackSkills
 2. «Перенеси значения из A в B»: `get_family_parameters(includeValues=true)` →
    `map_family_parameters(mappings:[{source:{name:A}, target:{name:B}}], mode:""values"")`.
 3. «Поставь формулу длины»: `set_family_parameter_values` для входных параметров →
-   `set_family_formula(parameter:""Длина"", formula:""Ширина + 20 mm * 2"")` → read-back значений
-   по типам. Константам в формуле всегда указывайте единицы.
+   `set_family_formula(parameter:""Длина"", formula:""Ширина + 20 mm * 2"")` → read-back.
+   Константам в формуле всегда указывайте единицы.
 4. «Убери лишний тип»: `list_family_types(includePlaced=true)` → `delete_family_types(dryRun=true)`
    → решение о `force` → apply.
-5. «Массовая правка по десяткам/сотням семейств» — пакетный путь
+5. «Независимый вариант типа»: `duplicate_family_type` → `set_family_parameter_values` на
+   новый тип (исходный не меняется).
+6. «Переведи все элементы на новый тип»: `duplicate_family_type` (если тип новый) →
+   `replace_family_type(fromTypeIds:[старый], targetTypeId:новый)` — bulk одним вызовом.
+7. «Загрузи семейство из файла»: `load_family(path, dryRun=true)` → apply; дубль имени —
+   решить с пользователем: `overwrite=true` или отказаться.
+8. «Почисти неиспользуемые семейства»: `purge_families(dryRun=true)` → показать
+   candidates[]/names[] (in-place — отдельно) → `purge_families(confirmNames:names[])`.
+9. «Массовая правка по десяткам/сотням семейств» — пакетный путь
    `start_job(action:""map_family_parameters"")` (до 200 family units за джобу);
    поштучный тул — только для 1–5 семейств.
 
@@ -135,5 +137,6 @@ public static partial class AgentToolPackSkills
 - Править семейство через `Parameter.Set` без `FamilyManager` — значения не запишутся.
 - Ставить значение параметру с формулой, не сняв формулу.
 - Удалять типы с экземплярами «на всякий случай» с `force=true` без явного согласия.
+- Загружать .rfa из непроверенных источников без явного указания пользователя.
 ";
 }

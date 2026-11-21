@@ -520,6 +520,11 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();
         services.AddSingleton<IAgentTool, SetFamilyFormulaTool>();
         services.AddSingleton<IAgentTool, MapFamilyParametersTool>();
+        services.AddSingleton<IAgentTool, DuplicateFamilyTypeTool>();
+        services.AddSingleton<IAgentTool, RenameFamilyTypeTool>();
+        services.AddSingleton<IAgentTool, ReplaceFamilyTypeTool>();
+        services.AddSingleton<IAgentTool, LoadFamilyTool>();
+        services.AddSingleton<IAgentTool, PurgeFamiliesTool>();
         services.AddSingleton<IAgentTool, DiscardChangeSetTool>();
         services.AddSingleton<IAgentTool, UndoLastTool>();
         services.AddSingleton<IAgentTool>(sp => new ExecutePlanTool(

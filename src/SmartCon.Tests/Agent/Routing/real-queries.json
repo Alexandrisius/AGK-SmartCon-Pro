@@ -2119,6 +2119,86 @@
         "add_project_shared_parameter"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r263",
+      "query": "Сделай копию типоразмера 1200x2100 с именем 1200x2100_тест",
+      "expectedTools": [
+        "duplicate_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r264",
+      "query": "Дублируй тип семейства дверей под новым именем",
+      "expectedTools": [
+        "duplicate_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r265",
+      "query": "Переименуй типоразмер дверей в 1200x2100_ТДСК",
+      "expectedTools": [
+        "rename_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r266",
+      "query": "Смени имя типа Тип1 у семейства KR_SHAR",
+      "expectedTools": [
+        "rename_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r267",
+      "query": "Переведи все элементы со старого типа на новый",
+      "expectedTools": [
+        "replace_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r268",
+      "query": "Замени тип у выделенных элементов на 1200x2100",
+      "expectedTools": [
+        "replace_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r269",
+      "query": "Загрузи семейство из файла D:/Libraries/KR_SHAR.rfa",
+      "expectedTools": [
+        "load_family"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r270",
+      "query": "Подгрузи rfa-семейство в проект по пути",
+      "expectedTools": [
+        "load_family"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r271",
+      "query": "Почисти неиспользуемые семейства в проекте",
+      "expectedTools": [
+        "purge_families"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r272",
+      "query": "Найди и удали семейства без размещённых экземпляров",
+      "expectedTools": [
+        "purge_families"
+      ],
+      "kind": "write"
     }
   ]
 }

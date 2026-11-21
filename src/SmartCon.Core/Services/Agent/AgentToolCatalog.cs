@@ -337,6 +337,32 @@ public static class AgentToolCatalog
                 "заменить общий параметр", "replace family parameter", "перепривязать параметр",
                 "rebind shared parameter", "сменить общий параметр", "подставить другой общий"
             }),
+            ["duplicate_family_type"] = new("Write", false, new[]
+            {
+                "дублировать тип", "копия типоразмера", "duplicate family type",
+                "duplicate type", "копировать типоразмер", "новый тип на основе"
+            }),
+            ["rename_family_type"] = new("Write", false, new[]
+            {
+                "переименовать типоразмер", "rename family type", "переименовать тип семейства",
+                "новое имя типа", "смена имени типоразмера"
+            }),
+            ["replace_family_type"] = new("Write", true, new[]
+            {
+                "заменить типоразмер", "replace family type", "сменить тип у элементов",
+                "перевести на другой тип", "переключить тип", "bulk замена типа"
+            }),
+            ["load_family"] = new("Write", false, new[]
+            {
+                "загрузить семейство", "load family", "загрузка rfa", "подгрузить семейство",
+                "добавить семейство из файла", "load rfa"
+            }),
+            ["purge_families"] = new("Write", true, new[]
+            {
+                "очистить семейства", "purge families", "неиспользуемые семейства",
+                "удалить неиспользуемые семейства", "почистить проект от семейств",
+                "семейства без экземпляров", "purge unused"
+            }),
             ["set_view_parameters"] = new("Write", true, new[]
             {
                 "параметры вида", "set view parameters", "назначение вида", "раздел",

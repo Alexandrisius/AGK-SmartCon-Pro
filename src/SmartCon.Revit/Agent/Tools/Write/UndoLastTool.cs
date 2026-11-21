@@ -109,6 +109,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
 
         var renames = new List<(ChangeItem Item, Element Element)>();
         var sheetRenames = new List<(ChangeItem Item, ViewSheet Sheet)>();
+        var elementTypes = new List<(ChangeItem Item, Element? Element)>();
 
         for (var index = details.Items.Count - 1; index >= 0; index--)
         {
@@ -123,6 +124,45 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             if (key == "family")
             {
                 RegisterFamilyRestore(outcome, item);
+                continue;
+            }
+
+            // G.4 family type operations are reverted by UndoLastTool.FamilyTypes.cs:
+            // a duplicated type is deleted, a renamed type gets its old name back,
+            // a loaded family is deleted and an overwrite reload is refused.
+            if (key is "family_type_created" or "family_type_name"
+                or "family_loaded" or "family_overwritten")
+            {
+                var report = CreateReport(item);
+                var element = ResolveElement(doc, item);
+                var (reverted, revertError, revertReason) =
+                    RevertFamilyElementSafe(doc, element, item, key, force);
+                if (reverted)
+                {
+                    outcome.Batch.Changed.Add(report);
+                    outcome.AffectedCount++;
+                }
+                else if (revertError is null)
+                {
+                    report.Reason = revertReason;
+                    outcome.Batch.Skipped.Add(report);
+                }
+                else
+                {
+                    report.ErrorCode = revertError;
+                    report.Reason = revertReason;
+                    outcome.Batch.Failed.Add(report);
+                }
+
+                continue;
+            }
+
+            // replace_family_type items are reverted as one batch after the loop:
+            // elements are grouped by their previous type so each group is a single
+            // static ChangeTypeId call (UndoLastTool.FamilyTypes.cs).
+            if (key == "element_type")
+            {
+                elementTypes.Add((item, ResolveElement(doc, item)));
                 continue;
             }
 
@@ -373,6 +413,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
 
         RevertRenames(doc, renames, outcome, force);
         RevertSheetRenames(doc, sheetRenames, outcome, force);
+        RevertElementTypes(doc, elementTypes, outcome, force);
 
         // Family restores run after the project transaction and decide the final
         // success/affected state themselves (UndoLastTool.Families.cs).

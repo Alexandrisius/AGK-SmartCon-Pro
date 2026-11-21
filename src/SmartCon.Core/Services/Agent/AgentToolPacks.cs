@@ -135,7 +135,7 @@ public static class AgentToolPacks
         new()
         {
             Name = "families",
-            Description = "Семейства: типы, параметры, значения, формулы, перенос значений.",
+            Description = "Семейства: типы, параметры, значения, формулы, перенос значений, загрузка и очистка.",
             Tools = new[]
             {
                 "list_families", "list_family_types", "get_family_parameters",
@@ -143,7 +143,8 @@ public static class AgentToolPacks
                 "rename_family_parameter", "add_family_parameter",
                 "set_family_parameter_values", "set_family_formula",
                 "map_family_parameters", "delete_family_types", "remove_family_parameter",
-                "replace_family_parameter"
+                "replace_family_parameter", "duplicate_family_type", "rename_family_type",
+                "replace_family_type", "load_family", "purge_families"
             }
         },
         new()
