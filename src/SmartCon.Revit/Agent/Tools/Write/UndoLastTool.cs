@@ -166,6 +166,13 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 continue;
             }
 
+            // G.6 view tools: a created view is deleted, a browser folder restored.
+            if (key is "view_created" or "browser_folder")
+            {
+                RecordViewRevert(doc, outcome, item, key, force);
+                continue;
+            }
+
             // Name renames are reverted as one batch: an A↔B swap must be planned with
             // temporary names, otherwise the first restore collides with the second view.
             if (key is "filter" or "filter_created")

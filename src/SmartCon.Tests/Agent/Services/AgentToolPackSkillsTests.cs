@@ -60,9 +60,10 @@ public sealed class AgentToolPackSkillsTests
         {
             var skill = AgentToolPackSkills.TryGet(pack.Name)!;
 
-            // Families carries the most risk (12 tools, family documents) and is intentionally
-            // the longest manual; everything else stays well below this ceiling.
-            Assert.InRange(skill.Length, 900, 9300);
+            // Families carries the most risk (19 tools incl. system types #441, family
+            // documents) and is intentionally the longest manual; everything else stays
+            // well below this ceiling.
+            Assert.InRange(skill.Length, 900, 9500);
         }
     }
 
@@ -90,12 +91,14 @@ public sealed class AgentToolPackSkillsTests
         // load_tool_pack returns every skill of the requested packs in one result.
         // The budget protects skills from trimming (#400), so their total must stay
         // below the expanded meta-tool budget even when every pack is loaded at once.
+        // #441/#348 grew the catalog (83 → 87 tools, skills of views/model/families):
+        // the envelope reserve shrinks from 20000 to 17500 accordingly.
         var total = AgentToolPacks.Populated
             .Sum(pack => AgentToolPackSkills.TryGet(pack.Name)!.Length);
 
         Assert.InRange(
             total,
             1000,
-            SmartCon.Core.Models.Agent.ToolResultBudget.MetaMaxCharacters - 20000);
+            SmartCon.Core.Models.Agent.ToolResultBudget.MetaMaxCharacters - 17500);
     }
 }

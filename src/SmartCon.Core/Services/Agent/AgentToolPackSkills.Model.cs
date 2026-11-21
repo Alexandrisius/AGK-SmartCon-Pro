@@ -17,6 +17,8 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - `get_project_overview` — паспорт модели: имя, номер, единицы, категории с количеством, уровни, счётчики видов/листов.
 - `list_categories` — категории: `usedOnly` (по умолчанию true), `limit/offset`.
+- `list_system_types` — системные типы категории (стены, трубы, воздуховоды):
+  `category`, поля `typeId/name/instanceCount/canBeDuplicated`.
 - `get_selected_elements` — что выделено в Revit сейчас (id, категория, тип).
 
 ### Кухня Revit
@@ -25,6 +27,10 @@ public static partial class AgentToolPackSkills
 - `Category` есть не у всех элементов (материалы, виды, служебные объекты) — `Element.Category` может быть null.
 - Фазы: `Document.Phases` только читаются; создавать фазы через API нельзя. Новый элемент получает фазу активного вида, а в headless-сценарии — последнюю фазу документа.
 - Данные проекта (`ProjectInfo`) — это built-in параметры (имя, номер, статус, заказчик); не ищите их по локализованному имени.
+- Типы бывают **загружаемые** (FamilySymbol, `list_family_types`) и **системные**
+  (WallType/DuctType/..., `list_system_types`): `duplicate/rename/replace_family_type`
+  (пак `families`) принимают оба — для системных `typeName + categoryName`. `instanceCount`
+  — сколько элементов стоит на типе (у стен — сами стены).
 
 ### Аргументы
 - `usedOnly=false` в `list_categories` — показать пустые категории (полезно, чтобы объяснить, почему в модели «нет мебели»).
@@ -38,6 +44,8 @@ public static partial class AgentToolPackSkills
 1. Первый ход в незнакомой модели: `get_project_overview` → `list_levels` → `list_categories(usedOnly=true)`.
 2. «Что я выделил?»: `get_selected_elements` → `get_element_details(elementIds)`.
 3. «Есть ли в проекте двери?»: `list_categories(usedOnly=true)` и поиск по имени/`OST_Doors`.
+4. «Какие типы стен есть?»: `list_system_types(category:""OST_Walls"")` → id годятся для
+   тулов пака `families`.
 
 ### Что нельзя
 - Полагаться на английские имена категорий в русской Revit.

@@ -2199,6 +2199,86 @@
         "purge_families"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r273",
+      "query": "Какие типы стен есть в проекте?",
+      "expectedTools": [
+        "list_system_types"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r274",
+      "query": "Покажи системные типы воздуховодов с количеством элементов",
+      "expectedTools": [
+        "list_system_types"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r275",
+      "query": "Продублируй тип стены Основной 200",
+      "expectedTools": [
+        "duplicate_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r276",
+      "query": "Переведи все стены на новый тип стен",
+      "expectedTools": [
+        "replace_family_type"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r277",
+      "query": "Продублируй план этажа 1 с аннотациями",
+      "expectedTools": [
+        "duplicate_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r278",
+      "query": "Сделай копию вида с настройками под другим именем",
+      "expectedTools": [
+        "duplicate_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r279",
+      "query": "Создай план этажа по уровню 2",
+      "expectedTools": [
+        "create_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r280",
+      "query": "Сделай 3D-вид с именем Обзор",
+      "expectedTools": [
+        "create_view"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r281",
+      "query": "Перенеси виды в папку 02_Конструкции в браузере проекта",
+      "expectedTools": [
+        "set_browser_folder"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r282",
+      "query": "Разложи виды по подпапкам браузера",
+      "expectedTools": [
+        "set_browser_folder"
+      ],
+      "kind": "write"
     }
   ]
 }

@@ -13,13 +13,16 @@ public static partial class AgentToolPackSkills
 
     private const string Views = @"## Пак views: виды
 
-Обзор, поиск, переименование и удаление видов; активный вид.
+Обзор, поиск, создание, дублирование, папки браузера, переименование и удаление видов; активный вид.
 
 ### Карта тулов
 - `list_views` — список видов: `types`, `levelIds`, `nameContains`, `folders`, `fields`, `limit` (≤500).
 - `get_current_view_info` — активный вид (id, тип, шаблон, масштаб) — начните с него, если пользователь говорит «этот вид».
 - `rename_views` — пакетно `items[{viewId,newName}]`, `atomic`.
 - `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
+- `duplicate_view` — копия одного вида (`viewId|viewName`, `newName`, `option`).
+- `create_view` — новый вид (`kind: plan|section|3d|legend`, `name`, план/разрез — `levelId`).
+- `set_browser_folder` — подпапка браузера: `viewIds|viewNames|sheetIds` (1..100) + `folder`.
 
 ### Кухня Revit
 - Имя вида уникально **в пределах своего вида/семейства видов**: «Этаж 1» может существовать
@@ -35,6 +38,15 @@ public static partial class AgentToolPackSkills
   удаление уровня уносит его план, удаление камеры — 3D-вид. Предупреждайте о каскаде.
 - `list_views` отдаёт браузерную папку (`folder`), номер листа (`sheet`) и `isOnSheet` —
   используйте это вместо догадок о том, где живёт вид.
+- `View.Duplicate`: `with_detailing` — с аннотациями, `without_detailing` — только модель,
+  `dependent` — зависимый план (только планы). Отказ `view_not_duplicatable`,
+  `dependent_not_supported`.
+- **Легенды API не создаёт**: `create_view(kind:""legend"")` дублирует существующую легенду;
+  нет легенд → `legend_source_missing` (попросите пользователя создать одну в Revit).
+- Папка браузера — не параметр вида (built-in «GROUP_TITLE» не существует): папку задаёт
+  **параметр группировки текущей организации браузера** (напр. «Раздел»). `set_browser_folder`
+  пишет его; группировка по read-only свойству → `browser_folder_parameter_read_only`
+  (перестройте схему в Revit). Виды и листы — разные схемы, тул выбирает по элементу.
 
 ### Аргументы
 - `fields` сокращает ответ: `viewId,name,type,level,template,sheet,isOnSheet,folder`. Не запрашивайте всё, если нужен только список имён.
@@ -49,6 +61,9 @@ public static partial class AgentToolPackSkills
   перед применением. Apply требует `confirmNames` = `names[]` СВЕЖЕГО dry-run: отказ
   `confirm_names_required`/`confirm_names_mismatch` означает «повтори dry-run и передай его
   свежий names[]» — модель изменилась, и это защита, а не ошибка.
+- `duplicate_view`/`create_view`/`set_browser_folder` откатываются `undo_last`; созданный вид
+  удаляется каскадно с зависимыми. `duplicate_view` — один вид за вызов (пакетного job-action
+  нет).
 - Все write-тулы по умолчанию `dryRun=true`: сначала план, затем повтор с `dryRun=false`.
 - Массовые переименования видов — `start_job(action:""rename_views"")`, а не цикл rename_views.
 
@@ -57,6 +72,8 @@ public static partial class AgentToolPackSkills
 2. «Какой вид открыт?»: `get_current_view_info` → при необходимости `get_view_settings(viewId)`.
 3. «Удали лишние виды»: `list_views(types=[...], fields=[viewId,name])` → `delete_views(dryRun=true)`
    → подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
+4. «Вид на каждый раздел»: `duplicate_view(newName=...)` → `set_browser_folder(viewIds,
+   folder=раздел)`. План/разрез с нуля — `create_view(kind, levelId, name)`.
 
 ### Что нельзя
 - Удалять виды, размещённые на листах, без предупреждения: они пропадут с листов.

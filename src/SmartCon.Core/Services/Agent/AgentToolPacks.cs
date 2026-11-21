@@ -33,8 +33,12 @@ public static class AgentToolPacks
         new()
         {
             Name = "views",
-            Description = "Поиск, просмотр, переименование и удаление видов; активный вид.",
-            Tools = new[] { "list_views", "get_current_view_info", "rename_views", "delete_views" }
+            Description = "Поиск, просмотр, создание, дублирование, переименование, папки браузера и удаление видов; активный вид.",
+            Tools = new[]
+            {
+                "list_views", "get_current_view_info", "rename_views", "delete_views",
+                "duplicate_view", "create_view", "set_browser_folder"
+            }
         },
         new()
         {
@@ -65,8 +69,12 @@ public static class AgentToolPacks
         new()
         {
             Name = "model",
-            Description = "Обзор проекта, категории и текущее выделение.",
-            Tools = new[] { "get_project_overview", "list_categories", "get_selected_elements" }
+            Description = "Обзор проекта, категории, системные типы и текущее выделение.",
+            Tools = new[]
+            {
+                "get_project_overview", "list_categories", "list_system_types",
+                "get_selected_elements"
+            }
         },
         new()
         {

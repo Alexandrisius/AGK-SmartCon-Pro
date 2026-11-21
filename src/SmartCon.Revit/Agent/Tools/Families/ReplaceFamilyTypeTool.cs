@@ -9,10 +9,11 @@ using SmartCon.Revit.Agent.Tools.Write;
 namespace SmartCon.Revit.Agent.Tools.Families;
 
 /// <summary>
-/// Switches elements to another family type in one bulk call: the static
+/// Switches elements to another type in one bulk call: the static
 /// <see cref="Element.ChangeTypeId(Document, ICollection{ElementId}, ElementId)"/>
-/// changes the whole set with a single regeneration. Elements come either as
-/// an explicit elementIds list or as every instance of fromTypeIds.
+/// changes the whole set with a single regeneration. The target may be a
+/// family type or a system type (walls, floors, ducts); elements come either
+/// as an explicit elementIds list or as every element of fromTypeIds.
 /// </summary>
 public sealed class ReplaceFamilyTypeTool : AgentWriteToolBase
 {
@@ -30,16 +31,17 @@ public sealed class ReplaceFamilyTypeTool : AgentWriteToolBase
     {
         Name = "replace_family_type",
         Description =
-            "Replaces the family type of many elements at once (bulk). Target type: targetTypeId " +
-            "or familyName + typeName. Elements: elementIds[] (explicit list, 1..2000) or " +
-            "fromTypeIds[] (every placed instance of those types). Elements already on the " +
-            "target type are skipped; an element the target type does not fit is reported " +
-            "per-item as type_not_valid_for_element. undo_last restores the previous types. " +
-            "Dry run by default.",
+            "Replaces the type of many elements at once (bulk) — family types and system types " +
+            "(walls, floors, roofs, pipes, ducts). Target type: targetTypeId, familyName + " +
+            "typeName, or typeName + categoryName/categoryId for a system type. Elements: " +
+            "elementIds[] (explicit list, 1..2000) or fromTypeIds[] (every element of those " +
+            "types). Elements already on the target type are skipped; an element the target " +
+            "type does not fit is reported per-item as type_not_valid_for_element. undo_last " +
+            "restores the previous types. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""targetTypeId"":{""type"":""integer"",""description"":""Type id to switch to (list_family_types)""},""familyName"":{""type"":""string"",""description"":""Target family, when targetTypeId is unknown""},""typeName"":{""type"":""string"",""description"":""Target type name""},""elementIds"":{""type"":""array"",""minItems"":1,""maxItems"":2000,""items"":{""type"":""integer""},""description"":""Explicit element list""},""fromTypeIds"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""integer""},""description"":""Every placed instance of these source types""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""targetTypeId"":{""type"":""integer"",""description"":""Type id to switch to (list_family_types / list_system_types)""},""familyName"":{""type"":""string"",""description"":""Target family, when targetTypeId is unknown""},""typeName"":{""type"":""string"",""description"":""Target type name""},""categoryName"":{""type"":""string"",""description"":""System types: category of the target type (Walls, OST_Walls...)""},""categoryId"":{""type"":""integer"",""description"":""System types: category id""},""elementIds"":{""type"":""array"",""minItems"":1,""maxItems"":2000,""items"":{""type"":""integer""},""description"":""Explicit element list""},""fromTypeIds"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""integer""},""description"":""Every element of these source types""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -49,11 +51,13 @@ public sealed class ReplaceFamilyTypeTool : AgentWriteToolBase
         bool dryRun,
         CancellationToken ct)
     {
-        var target = AgentFamilyTypeResolver.ResolveType(
+        var target = AgentFamilyTypeResolver.ResolveElementType(
             doc,
             TryGetLong(args, "targetTypeId"),
             AgentJson.GetString(args, "familyName"),
             AgentJson.GetString(args, "typeName"),
+            TryGetLong(args, "categoryId"),
+            AgentJson.GetString(args, "categoryName"),
             out var errorCode,
             out var message);
         if (target is null)
@@ -244,6 +248,11 @@ public sealed class ReplaceFamilyTypeTool : AgentWriteToolBase
         outcome.Data["nowOnTargetCount"] = onTarget;
     }
 
+    /// <summary>
+    /// Every model element of the source types. System types belong to walls,
+    /// ducts and other non-FamilyInstance elements, so the collector walks
+    /// all non-type elements (#441).
+    /// </summary>
     private static List<long> CollectInstancesOfTypes(
         Document doc,
         IReadOnlyList<long> fromTypeIds,
@@ -251,14 +260,15 @@ public sealed class ReplaceFamilyTypeTool : AgentWriteToolBase
     {
         var typeSet = new HashSet<long>(fromTypeIds);
         var result = new List<long>();
-        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance)))
+        foreach (var element in new FilteredElementCollector(doc)
+                     .WhereElementIsNotElementType())
         {
             ct.ThrowIfCancellationRequested();
-            if (element is FamilyInstance instance
-                && typeSet.Contains(instance.GetTypeId().GetValue()))
-            {
-                result.Add(instance.Id.GetValue());
-            }
+            if (element is ElementType)
+                continue;
+
+            if (typeSet.Contains(element.GetTypeId().GetValue()))
+                result.Add(element.Id.GetValue());
         }
 
         return result;

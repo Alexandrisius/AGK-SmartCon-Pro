@@ -74,6 +74,43 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
+                ToolName = "list_system_types",
+                Pack = "model",
+                Purpose =
+                    "Список системных типов одной категории (типы стен, перекрытий, покрытий, " +
+                    "труб, воздуховодов, лотков) с количеством элементов и признаками " +
+                    "canBeDuplicated/canBeRenamed.",
+                WhenToUse =
+                    "Когда нужны типы, не привязанные к загружаемым семействам: перед " +
+                    "duplicate_family_type / rename_family_type / replace_family_type для стен " +
+                    "и MEP-систем. Категория — имя ('Стены', 'OST_Walls') или id.",
+                WhenNotToUse =
+                    "Когда нужны типоразмеры загружаемого семейства — list_family_types; когда " +
+                    "нужны сами элементы — query_elements.",
+                Examples = new[]
+                {
+                    "Покажи все типы стен в проекте",
+                    "Какие типы воздуховодов есть в модели?",
+                    "Найди тип стены «Основной 200» и его id",
+                    "Сколько элементов использует каждый тип перекрытия?"
+                },
+                Synonyms = new[]
+                {
+                    "системные типы", "типы стен", "тип стены", "system types", "wall type",
+                    "типы перекрытий", "типы воздуховодов", "типы труб", "WallType", "DuctType",
+                    "FloorType", "типы крыш", "стандартные типы"
+                },
+                NegativeExamples = new[]
+                {
+                    "Покажи типоразмеры семейства дверей",
+                    "Смени тип у стен"
+                },
+                Idempotent = true,
+                TimeoutMs = 30000,
+                Bulk = false
+            },
+            new AgentToolCard
+            {
                 ToolName = "get_selected_elements",
                 Pack = "model",
                 Purpose = "Карточки элементов, выделенных пользователем в активном виде.",

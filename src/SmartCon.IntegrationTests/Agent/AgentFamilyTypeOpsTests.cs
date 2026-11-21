@@ -26,6 +26,9 @@ public sealed class AgentFamilyTypeOpsTests : RevitApiTest
     private FamilySeed? _seed;
     private RevitTransactionService? _transactions;
     private InMemoryAgentChangeSetStore? _changeSets;
+    private long _levelId;
+    private long _wallId;
+    private long _wallTypeId;
 
     private Document Doc => _document!;
 
@@ -40,6 +43,23 @@ public sealed class AgentFamilyTypeOpsTests : RevitApiTest
         _seed = FamilySeed.Create(Application, Doc, "SC_AgentTypeOps", out var reason);
         if (_seed is null)
             Skip.Test(reason ?? "Не удалось сидировать семейство");
+
+        if (ModelSeed.HasWallType(Doc))
+        {
+            _transactions.RunInTransaction(Doc, "Seed system type wall", doc =>
+            {
+                var level = ModelSeed.CreateLevel(doc, 0.0);
+                level.Name = "SC_AgentTypeOps_Level";
+                _levelId = level.Id.GetValue();
+
+                var wall = ModelSeed.TryCreateWall(doc, level.Id);
+                if (wall is not null)
+                {
+                    _wallId = wall.Id.GetValue();
+                    _wallTypeId = wall.GetTypeId().GetValue();
+                }
+            });
+        }
     }
 
     [After(Test)]
@@ -249,6 +269,111 @@ public sealed class AgentFamilyTypeOpsTests : RevitApiTest
             unusedSeed.Dispose();
         }
     }
+
+    [Test]
+    public async Task SystemTypes_ListWallTypes_WithCounts()
+    {
+        RequireSeededWall();
+
+        var tool = new ListSystemTypesTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"category\":\"OST_Walls\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var types = Data(result).GetProperty("types");
+        await Assert.That(types.GetArrayLength()).IsGreaterThan(0);
+
+        var found = false;
+        foreach (var type in types.EnumerateArray())
+        {
+            if (type.GetProperty("typeId").GetInt64() != _wallTypeId)
+                continue;
+
+            found = true;
+            await Assert.That(type.GetProperty("instanceCount").GetInt32()).IsEqualTo(1);
+            await Assert.That(type.GetProperty("canBeDuplicated").GetBoolean()).IsTrue();
+        }
+
+        await Assert.That(found).IsTrue();
+    }
+
+    [Test]
+    public async Task System_DuplicateWallType_ReplaceAllWalls_UndoBothSteps()
+    {
+        RequireSeededWall();
+        var wallTypeName = WallType().Name;
+        var typeNameJson = JsonSerializer.Serialize(wallTypeName);
+
+        var dry = Run(
+            CreateDuplicateTool(),
+            "{\"typeName\":" + typeNameJson + ",\"categoryName\":\"OST_Walls\"," +
+            "\"newName\":\"SC_Стена_копия\",\"dryRun\":true}");
+        await Assert.That(dry.Success).IsTrue();
+
+        var duplicate = Run(
+            CreateDuplicateTool(),
+            "{\"typeName\":" + typeNameJson + ",\"categoryName\":\"OST_Walls\"," +
+            "\"newName\":\"SC_Стена_копия\",\"dryRun\":false}");
+        await Assert.That(duplicate.Success).IsTrue();
+        var copyTypeId = Data(duplicate).GetProperty("typeId").GetInt64();
+        await Assert.That(CountElementsOnType(copyTypeId)).IsEqualTo(0);
+
+        var replace = Run(
+            CreateReplaceTool(),
+            "{\"targetTypeId\":" + copyTypeId + ",\"fromTypeIds\":[" + _wallTypeId +
+            "],\"dryRun\":false}");
+        await Assert.That(replace.Success).IsTrue();
+        await Assert.That(Data(replace).GetProperty("changed").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(CountElementsOnType(copyTypeId)).IsEqualTo(1);
+        await Assert.That(CountElementsOnType(_wallTypeId)).IsEqualTo(0);
+
+        var undoReplace = RunUndo();
+        await Assert.That(undoReplace.Success).IsTrue();
+        await Assert.That(CountElementsOnType(_wallTypeId)).IsEqualTo(1);
+        await Assert.That(CountElementsOnType(copyTypeId)).IsEqualTo(0);
+
+        var undoDuplicate = RunUndo();
+        await Assert.That(undoDuplicate.Success).IsTrue();
+        await Assert.That(Doc.GetElement(ElementIdCompat.Create(copyTypeId))).IsNull();
+        await Assert.That(Doc.GetElement(ElementIdCompat.Create(_wallId))).IsNotNull();
+    }
+
+    [Test]
+    public async Task System_RenameWallType_ByCategoryName_AndUndo()
+    {
+        RequireSeededWall();
+        var wallTypeName = WallType().Name;
+
+        var rename = Run(
+            CreateRenameTool(),
+            "{\"typeName\":" + JsonSerializer.Serialize(wallTypeName) +
+            ",\"categoryName\":\"OST_Walls\"," +
+            "\"newName\":\"SC_Стена_нов\",\"dryRun\":false}");
+
+        await Assert.That(rename.Success).IsTrue();
+        await Assert.That(WallType().Name).IsEqualTo("SC_Стена_нов");
+        await Assert.That(Doc.GetElement(ElementIdCompat.Create(_wallId))).IsNotNull();
+
+        var undo = RunUndo();
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(WallType().Name).IsEqualTo(wallTypeName);
+    }
+
+    private void RequireSeededWall()
+    {
+        if (_wallId == 0)
+            Skip.Test("В шаблоне нет типов стен или стену не удалось создать");
+    }
+
+    private WallType WallType() =>
+        (WallType)Doc.GetElement(ElementIdCompat.Create(_wallTypeId));
+
+    private ToolResult RunUndo() =>
+        Run(
+            new UndoLastTool(new StubRevitContext(Doc), _transactions!, _changeSets!),
+            "{\"dryRun\":false}");
 
     private DuplicateFamilyTypeTool CreateDuplicateTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);

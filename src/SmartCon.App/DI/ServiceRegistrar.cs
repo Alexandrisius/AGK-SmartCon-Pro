@@ -477,6 +477,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, ListFiltersTool>();
         services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
         services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
+        services.AddSingleton<IAgentTool, ListSystemTypesTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();
@@ -494,6 +495,9 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, DeleteFilterTool>();
         services.AddSingleton<IAgentTool, SetViewParametersTool>();
         services.AddSingleton<IAgentTool, DeleteViewsTool>();
+        services.AddSingleton<IAgentTool, DuplicateViewTool>();
+        services.AddSingleton<IAgentTool, CreateViewTool>();
+        services.AddSingleton<IAgentTool, SetBrowserFolderTool>();
         services.AddSingleton<IAgentTool, DeleteSheetsTool>();
         services.AddSingleton<IAgentTool, DeleteElementsTool>();
         services.AddSingleton<IAgentTool, DeleteSchedulesTool>();

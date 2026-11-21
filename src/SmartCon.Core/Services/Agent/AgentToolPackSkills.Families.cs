@@ -50,6 +50,9 @@ public static partial class AgentToolPackSkills
   исходный тип); `rename_family_type` не трогает экземпляры; `replace_family_type` — bulk
   одним статическим `ChangeTypeId` (одна регенерация; несовместимые — per-item
   `type_not_valid_for_element`).
+- `duplicate/rename/replace_family_type` работают и с **системными типами** (#441: стены,
+  трубы): резолв `typeName + categoryName` или id из `list_system_types`; `fromTypeIds`
+  переводит все элементы типа.
 - `load_family` грузит .rfa по абсолютному пути: дубль имени → `family_already_loaded`;
   `overwrite=true` перезагружает файл поверх, но **не откатывается** `undo_last`.
 - `purge_families`: кандидат = загружаемое семейство, ни один тип которого не имеет

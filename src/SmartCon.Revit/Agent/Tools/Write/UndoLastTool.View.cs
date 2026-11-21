@@ -7,6 +7,97 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 
 public sealed partial class UndoLastTool
 {
+    /// <summary>
+    /// Undo dispatch of the G.6 view items: a view created by duplicate_view
+    /// or create_view is deleted (cascade: dependents and viewports go with
+    /// it), and the browser folder of set_browser_folder is restored by
+    /// writing the recorded value back into the grouping parameter of the
+    /// current browser organization.
+    /// </summary>
+    private static void RecordViewRevert(
+        Document doc,
+        WriteOutcome outcome,
+        ChangeItem item,
+        string key,
+        bool force)
+    {
+        var report = CreateReport(item);
+        var (reverted, errorCode, reason) =
+            RevertViewChange(doc, ResolveElement(doc, item), item, key, force);
+        if (reverted)
+        {
+            outcome.Batch.Changed.Add(report);
+            outcome.AffectedCount++;
+        }
+        else if (errorCode is null)
+        {
+            report.Reason = reason;
+            outcome.Batch.Skipped.Add(report);
+        }
+        else
+        {
+            report.ErrorCode = errorCode;
+            report.Reason = reason;
+            outcome.Batch.Failed.Add(report);
+        }
+    }
+
+    private static (bool, string?, string?) RevertViewChange(
+        Document doc,
+        Element? element,
+        ChangeItem item,
+        string key,
+        bool force)
+    {
+        if (key == "view_created")
+        {
+            if (element is null)
+                return (false, null, "The view no longer exists — already removed.");
+
+            if (element is not View view)
+                return (false, "unsupported_element",
+                    "Element " + item.ElementId + " is not a view.");
+
+            doc.Delete(view.Id);
+            return (true, null, null);
+        }
+
+        if (element is null)
+            return (false, "element_not_found", "The view no longer exists in the document.");
+
+        if (element is not View folderView)
+            return (false, "unsupported_element",
+                "Element " + item.ElementId + " is not a view.");
+
+        var organization = folderView is ViewSheet
+            ? BrowserOrganization.GetCurrentBrowserOrganizationForSheets(doc)
+            : BrowserOrganization.GetCurrentBrowserOrganizationForViews(doc);
+        Parameter? parameter = null;
+        string? reason = null;
+        if (organization is null
+            || !SetBrowserFolderTool.TryGetGroupingParameter(
+                doc, organization, folderView, out parameter, out reason))
+        {
+            return (false, "browser_folder_unavailable",
+                reason ?? "The document has no browser organization.");
+        }
+
+        var current = parameter.AsString() ?? string.Empty;
+        if (string.Equals(current, item.OldValue ?? string.Empty, StringComparison.Ordinal))
+            return (false, null, "The view is already in the recorded previous folder.");
+
+        if (!force && !string.Equals(current, item.NewValue ?? string.Empty, StringComparison.Ordinal))
+        {
+            return (false, "undo_conflict",
+                "The browser folder of '" + folderView.Name + "' is '" + current +
+                "' instead of '" + item.NewValue +
+                "' — it was changed after the operation (conflict).");
+        }
+
+        parameter.Set(item.OldValue ?? string.Empty);
+        return (true, null, null);
+    }
+
     private static (bool, string?, string?) RevertViewRange(View view, ChangeItem item, bool force)
     {
         if (view is not ViewPlan plan)

@@ -31,6 +31,11 @@ public static class AgentToolCatalog
             {
                 "категории", "категория", "categories", "counts"
             }),
+            ["list_system_types"] = new("Read", false, new[]
+            {
+                "системные типы", "типы стен", "тип стены", "system types", "wall types",
+                "типы воздуховодов", "типы перекрытий", "WallType", "DuctType", "FloorType"
+            }),
             ["get_selected_elements"] = new("Read", false, new[]
             {
                 "выделение", "выбрано", "выбранные", "selection", "selected"
@@ -70,6 +75,21 @@ public static class AgentToolCatalog
             ["rename_views"] = new("Write", true, new[]
             {
                 "переименовать", "переименуй", "имя", "название", "rename", "view name"
+            }),
+            ["duplicate_view"] = new("Write", false, new[]
+            {
+                "дублировать вид", "копия вида", "duplicate view", "copy view",
+                "зависимый вид", "dependent view", "клон вида"
+            }),
+            ["create_view"] = new("Write", false, new[]
+            {
+                "создать вид", "новый вид", "create view", "новый план", "новый разрез",
+                "создай 3d", "новая легенда", "create plan", "create section", "create 3d"
+            }),
+            ["set_browser_folder"] = new("Write", true, new[]
+            {
+                "папка браузера", "подпапка", "browser folder", "sub-folder", "разложить виды",
+                "переместить вид в папку", "sub-directory", "браузер проекта"
             }),
             ["rename_levels"] = new("Write", true, new[]
             {

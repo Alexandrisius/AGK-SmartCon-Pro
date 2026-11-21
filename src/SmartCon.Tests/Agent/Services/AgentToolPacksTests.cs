@@ -34,7 +34,11 @@ public sealed class AgentToolPacksTests
     private static readonly IReadOnlyDictionary<string, string[]> ExpectedToolsByPack =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["views"] = new[] { "list_views", "get_current_view_info", "rename_views", "delete_views" },
+            ["views"] = new[]
+            {
+                "list_views", "get_current_view_info", "rename_views", "delete_views",
+                "duplicate_view", "create_view", "set_browser_folder"
+            },
             ["view_settings"] = new[]
             {
                 "get_view_settings", "set_view_range", "set_view_crop", "set_view_visibility",
@@ -46,7 +50,11 @@ public sealed class AgentToolPacksTests
                 "list_view_templates", "get_view_template_details", "apply_view_template",
                 "set_view_template_inclusion"
             },
-            ["model"] = new[] { "get_project_overview", "list_categories", "get_selected_elements" },
+            ["model"] = new[]
+            {
+                "get_project_overview", "list_categories", "list_system_types",
+                "get_selected_elements"
+            },
             ["levels"] = new[] { "list_levels", "rename_levels" },
             ["elements"] = new[]
             {
@@ -118,7 +126,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(83, placements.Length);
+        Assert.Equal(87, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
