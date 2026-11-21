@@ -30,6 +30,14 @@ public sealed class WriteItemReport
     /// of spending a call to find the controller (A5).
     /// </summary>
     public List<long>? SuggestedViewIds { get; set; }
+
+    /// <summary>
+    /// Template-controlled sections (viewRange/visibility/crop) that were NOT
+    /// synchronized because the template has their Include checkbox off — the
+    /// view keeps its own values. Reported by apply_view_template so the side
+    /// effect of a detached setting is visible (#457, benchmark case 3).
+    /// </summary>
+    public List<string>? SkippedByTemplateInclude { get; set; }
 }
 
 public sealed class SectionReport

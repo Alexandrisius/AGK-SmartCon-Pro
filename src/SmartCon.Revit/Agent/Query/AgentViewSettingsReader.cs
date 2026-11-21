@@ -107,6 +107,71 @@ internal static class AgentViewSettingsReader
     }
 
     /// <summary>
+    /// View-setting sections (viewRange / visibility / crop) whose Include
+    /// checkbox exists on the template but is unchecked: assigning the template
+    /// leaves the view's own values (Autodesk: properties without Include
+    /// "will not be overridden when you apply the view template"). The apply
+    /// report spells these out (#457): a detached viewRange made 4 of 6 views
+    /// keep a default range while the tool reported a clean success.
+    /// Visibility spans two V/G parameters: both off → "visibility", exactly one
+    /// off → "visibility-model" / "visibility-annotation".
+    /// </summary>
+    internal static IReadOnlyList<string> ReadIncludeSkippedSections(View template)
+    {
+        var skipped = new List<string>();
+        try
+        {
+            if (IsWhitelistedButNotIncluded(template, BuiltInParameter.PLAN_VIEW_RANGE))
+                skipped.Add("viewRange");
+            var modelOff = IsWhitelistedButNotIncluded(
+                template, BuiltInParameter.VIS_GRAPHICS_MODEL);
+            var annotationOff = IsWhitelistedButNotIncluded(
+                template, BuiltInParameter.VIS_GRAPHICS_ANNOTATION);
+            if (modelOff && annotationOff)
+                skipped.Add("visibility");
+            else if (modelOff)
+                skipped.Add("visibility-model");
+            else if (annotationOff)
+                skipped.Add("visibility-annotation");
+            if (IsWhitelistedButNotIncluded(template, BuiltInParameter.VIEWER_CROP_REGION))
+                skipped.Add("crop");
+        }
+        catch (Exception)
+        {
+            // The skip report is informational; it must never fail the apply.
+        }
+
+        return skipped;
+    }
+
+    private static bool IsWhitelistedButNotIncluded(
+        View template,
+        BuiltInParameter parameter)
+    {
+        var target = new ElementId(parameter).GetValue();
+        var whitelisted = false;
+        foreach (var id in template.GetTemplateParameterIds())
+        {
+            if (id.GetValue() != target)
+                continue;
+
+            whitelisted = true;
+            break;
+        }
+
+        if (!whitelisted)
+            return false;
+
+        foreach (var id in template.GetNonControlledTemplateParameterIds())
+        {
+            if (id.GetValue() == target)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// True when the view gets <paramref name="parameter"/> from its template, so
     /// a local write would be silently ignored. Writes must fail with
     /// <c>view_controlled_by_template</c> instead of reporting a no-op or a

@@ -39,6 +39,13 @@ public sealed class ViewCard
     public IReadOnlyList<ViewBrowserFolderSegment> BrowserFolderParameters { get; init; } =
         Array.Empty<ViewBrowserFolderSegment>();
 
+    /// <summary>
+    /// Value of the project parameter «Раздел» (shared or project, found by
+    /// name on the view); null when the view has no such parameter or its
+    /// value is empty. Never guessed from the view name.
+    /// </summary>
+    public string? Section { get; init; }
+
     /// <summary>False when the current browser-organization filter hides the view.</summary>
     public bool InBrowser { get; init; } = true;
 }

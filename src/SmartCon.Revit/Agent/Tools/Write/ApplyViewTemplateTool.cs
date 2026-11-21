@@ -5,6 +5,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent.Query;
+using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -25,14 +26,21 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         Name = "apply_view_template",
         Description =
             "Applies an existing view template to views. items: [{viewId, templateId, " +
-            "overwriteTemplate?}] or select: {type?, levelId?, folder?, nameContains?, templateId?} " +
-            "with a top-level templateId (select resolves the view set for you). templateId=0 " +
-            "(or null) detaches the current template from the views. A view that " +
+            "overwriteTemplate?}] or select: {type?, levelId?, folder?, nameContains?, " +
+            "templateId?, section?} with a top-level templateId (select resolves the view set " +
+            "for you). select.section matches the project parameter 'Раздел' by exact value " +
+            "(section_parameter_missing when no view has the parameter). exceptViewIds / " +
+            "exceptNameContains remove views from the resolved set (excludedViewIds). " +
+            "templateId=0 (or null) detaches the current template from the views. A view that " +
             "already has a different template is skipped unless overwriteTemplate=true. The " +
-            "template must belong to the same view family. dryRun defaults to true.",
+            "template must belong to the same view family. Every view that receives a " +
+            "template reports skippedByTemplateInclude: sections (viewRange/visibility/crop; " +
+            "visibility-model/visibility-annotation when only one V/G parameter is off) " +
+            "left at the view's own values because their Include is off on the template — " +
+            "summary lines in templateIncludeSkips. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""exceptViewIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""View ids removed from the resolved selection""},""exceptNameContains"":{""type"":""string"",""description"":""Views whose name contains this substring are removed from the selection""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override PlanPreflightResult PreflightCore(
@@ -45,15 +53,15 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return basic;
 
         var request = AgentJson.Deserialize<ApplyTemplateRequest>(args);
-        var items = ExpandItems(document, request, out var itemsError, out var itemsMessage);
-        if (items is null)
+        var expanded = ExpandItems(document, request, out var itemsError, out var itemsMessage);
+        if (expanded is null)
         {
             return PlanPreflightResult.Fail(
                 itemsError ?? "invalid_arguments",
                 itemsMessage ?? "Invalid items.");
         }
 
-        foreach (var item in items)
+        foreach (var item in expanded.Items)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -91,8 +99,8 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         CancellationToken ct)
     {
         var request = AgentJson.Deserialize<ApplyTemplateRequest>(args);
-        var items = ExpandItems(doc, request, out var itemsError, out var itemsMessage);
-        if (items is null)
+        var expanded = ExpandItems(doc, request, out var itemsError, out var itemsMessage);
+        if (expanded is null)
         {
             outcome.Success = false;
             outcome.ErrorCode = itemsError ?? "invalid_arguments";
@@ -100,6 +108,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return;
         }
 
+        var items = expanded.Items;
         if (items.Count > MaxItems)
         {
             outcome.Success = false;
@@ -114,9 +123,13 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             outcome.Data["selectorMatched"] = items.Count;
         }
 
+        if (expanded.ExcludedViewIds.Count > 0)
+            outcome.Data["excludedViewIds"] = expanded.ExcludedViewIds;
+
         var atomic = AgentJson.GetBool(args, "atomic", false);
         outcome.Description = "Applied view template to " + items.Count + " view(s)";
 
+        var includeSkips = new TemplateIncludeSkipReport(dryRun);
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
@@ -132,8 +145,9 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
 
             report.Name = view.Name;
             var detach = item.TemplateId is null or <= 0;
-            if (dryRun && !detach
-                && WillApplyTemplate(view, item.TemplateId!.Value, item.OverwriteTemplate))
+            var willApply = !detach
+                && WillApplyTemplate(view, item.TemplateId!.Value, item.OverwriteTemplate);
+            if (dryRun && willApply)
             {
                 AddTemplateDelta(doc, view, item.TemplateId!.Value, outcome);
             }
@@ -146,7 +160,12 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             ApplyChange(outcome, view, report, change, "view_template", atomic);
             if (outcome.Aborted)
                 return;
+
+            if (willApply && change.Changed)
+                includeSkips.Record(doc, item.TemplateId!.Value, report);
         }
+
+        includeSkips.Publish(outcome);
     }
 
     /// <summary>
@@ -202,6 +221,9 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                     0, after.HiddenCategories.Count - before.HiddenCategories.Count),
                 controlledParameters = after.ControlledParameters.Count,
                 overwritten = after.ControlledParameters,
+                skippedByTemplateInclude = AgentViewSettingsReader
+                    .ReadIncludeSkippedSections(template)
+                    .ToList(),
                 controls = new
                 {
                     crop = AgentViewSettingsReader.IsTemplateParameterControlled(
@@ -290,7 +312,14 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         return true;
     }
 
-    private static List<ApplyTemplateItem>? ExpandItems(
+    private sealed class ExpandedSelection
+    {
+        public List<ApplyTemplateItem> Items { get; } = new();
+
+        public List<long> ExcludedViewIds { get; } = new();
+    }
+
+    private static ExpandedSelection? ExpandItems(
         Document doc,
         ApplyTemplateRequest? request,
         out string? errorCode,
@@ -317,38 +346,152 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return null;
         }
 
+        var expanded = new ExpandedSelection();
         if (explicitItems.Count > 0)
-            return explicitItems;
+        {
+            expanded.Items.AddRange(explicitItems);
+        }
+        else if (hasSelect)
+        {
+            if (!request.TemplateId.HasValue)
+            {
+                errorCode = "invalid_arguments";
+                message = "select requires a top-level templateId (0 detaches the current template).";
+                return null;
+            }
 
-        if (!hasSelect)
+            var detach = request.TemplateId.Value <= 0;
+
+            var viewIds = AgentViewSelector.Resolve(
+                doc, request.Select!.Value, out errorCode, out message);
+            if (errorCode is not null)
+                return null;
+
+            expanded.Items.AddRange(viewIds.Select(viewId => new ApplyTemplateItem
+            {
+                ViewId = viewId,
+                TemplateId = detach ? (long?)null : request.TemplateId.Value,
+                OverwriteTemplate = request.OverwriteTemplate
+            }));
+        }
+        else
         {
             errorCode = "invalid_arguments";
             message = "Pass items or a select filter with a top-level templateId.";
             return null;
         }
 
-        if (!request.TemplateId.HasValue)
+        ApplyExceptions(doc, expanded, request);
+        if (expanded.Items.Count == 0)
         {
-            errorCode = "invalid_arguments";
-            message = "select requires a top-level templateId (0 detaches the current template).";
+            errorCode = "no_items";
+            message = "Every matched view was excluded by exceptViewIds/exceptNameContains; " +
+                      "nothing to apply.";
             return null;
         }
 
-        var detach = request.TemplateId.Value <= 0;
+        return expanded;
+    }
 
-        var viewIds = AgentViewSelector.Resolve(
-            doc, request.Select!.Value, out errorCode, out message);
-        if (errorCode is not null)
-            return null;
+    /// <summary>
+    /// Subtracts the exception profile (exceptViewIds / exceptNameContains) from
+    /// the resolved selection — simple set semantics, no guessing (#457: the
+    /// model filtered exclusions by hand from read-back ids).
+    /// </summary>
+    private static void ApplyExceptions(
+        Document doc,
+        ExpandedSelection expanded,
+        ApplyTemplateRequest request)
+    {
+        var exceptIds = request.ExceptViewIds;
+        var exceptName = request.ExceptNameContains;
+        var hasExceptIds = exceptIds is { Count: > 0 };
+        var hasExceptName = !string.IsNullOrWhiteSpace(exceptName);
+        if (!hasExceptIds && !hasExceptName)
+            return;
 
-        return viewIds
-            .Select(viewId => new ApplyTemplateItem
+        var excludedIds = hasExceptIds ? new HashSet<long>(exceptIds!) : null;
+        for (var index = expanded.Items.Count - 1; index >= 0; index--)
+        {
+            var item = expanded.Items[index];
+            var excluded = excludedIds is not null && excludedIds.Contains(item.ViewId);
+            if (!excluded && hasExceptName
+                && doc.GetElement(ElementIdCompat.Create(item.ViewId)) is View view
+                && ListViewsTool.MatchesName(view, exceptName))
             {
-                ViewId = viewId,
-                TemplateId = detach ? (long?)null : request.TemplateId.Value,
-                OverwriteTemplate = request.OverwriteTemplate
-            })
-            .ToList();
+                excluded = true;
+            }
+
+            if (!excluded)
+                continue;
+
+            expanded.Items.RemoveAt(index);
+            expanded.ExcludedViewIds.Add(item.ViewId);
+        }
+
+        expanded.ExcludedViewIds.Sort();
+    }
+
+    /// <summary>
+    /// Collects, per template, which Include-off sections every newly templated
+    /// view keeps, and publishes the summary line(s) the model must see (#457:
+    /// templates with a detached viewRange were applied and the views silently
+    /// kept a default range while the tool reported success).
+    /// </summary>
+    private sealed class TemplateIncludeSkipReport
+    {
+        private readonly bool _dryRun;
+        private readonly Dictionary<long, string> _templateNames = new();
+        private readonly Dictionary<long, Dictionary<string, int>> _sectionCounts = new();
+
+        public TemplateIncludeSkipReport(bool dryRun)
+        {
+            _dryRun = dryRun;
+        }
+
+        public void Record(Document doc, long templateId, WriteItemReport report)
+        {
+            if (doc.GetElement(ElementIdCompat.Create(templateId)) is not View template)
+                return;
+
+            var skipped = AgentViewSettingsReader.ReadIncludeSkippedSections(template);
+            if (skipped.Count == 0)
+                return;
+
+            report.SkippedByTemplateInclude = new List<string>(skipped);
+            _templateNames[templateId] = template.Name;
+            if (!_sectionCounts.TryGetValue(templateId, out var sections))
+            {
+                sections = new Dictionary<string, int>();
+                _sectionCounts[templateId] = sections;
+            }
+
+            foreach (var section in skipped)
+                sections[section] = sections.TryGetValue(section, out var count)
+                    ? count + 1
+                    : 1;
+        }
+
+        public void Publish(WriteOutcome outcome)
+        {
+            if (_sectionCounts.Count == 0)
+                return;
+
+            var lines = new List<string>();
+            foreach (var templateId in _sectionCounts.Keys.OrderBy(id => id))
+            {
+                var templateName = _templateNames[templateId];
+                foreach (var pair in _sectionCounts[templateId].OrderBy(pair => pair.Key))
+                {
+                    lines.Add(
+                        pair.Value + " view(s): " + pair.Key +
+                        (_dryRun ? " would be left as-is" : " left as-is") +
+                        " (Include off on template '" + templateName + "')");
+                }
+            }
+
+            outcome.Data["templateIncludeSkips"] = lines;
+        }
     }
 
     private sealed class ApplyTemplateRequest
@@ -360,6 +503,10 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         public long? TemplateId { get; set; }
 
         public bool OverwriteTemplate { get; set; }
+
+        public List<long>? ExceptViewIds { get; set; }
+
+        public string? ExceptNameContains { get; set; }
     }
 }
 

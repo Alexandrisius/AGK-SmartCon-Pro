@@ -17,6 +17,7 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `list_views` — список видов: `types`, `levelIds`, `nameContains`, `folders`, `fields`, `limit` (≤500).
+  Поле `section` карточки = значение проектного параметра «Раздел» (нет параметра → null, без эвристик).
 - `get_current_view_info` — активный вид (id, тип, шаблон, масштаб) — старт, если пользователь говорит «этот вид».
 - `rename_views` — пакетно `items[{viewId,newName}]`, `atomic`.
 - `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
@@ -78,7 +79,7 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`; `viewIds` (≤200) и `fields`.
-- `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны.
+- `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?,section?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны (`section` — точное значение параметра «Раздел»).
 - `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[…]}`.
 - `set_view_parameters` — `parameters:[{name|parameterId,value,unit}]` для общих свойств вида.
 - `list_scope_boxes` — боксы: `scopeBoxId`, `name`, `minMm/maxMm`; `assign_scope_box` — `viewIds|viewSelect` + один из `scopeBoxId|scopeBoxName|clear:true`.
@@ -179,7 +180,9 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - `list_view_templates` — список шаблонов с типом вида и включёнными настройками.
 - `get_view_template_details` — карта шаблона: `includesViewRange`, `includesCrop`, `includesVisibility`, `settings`.
-- `apply_view_template` — назначить/снять шаблон: `items[{viewId,templateId}]`, `templateId:0|null` снимает.
+- `apply_view_template` — назначить/снять шаблон: `items[{viewId,templateId}]`, `templateId:0|null` снимает;
+  `select.section:""АР""` — отбор по параметру «Раздел»; `exceptViewIds`/`exceptNameContains` — минус-выборка
+  (исключённые — в `excludedViewIds`).
 - `set_view_template_inclusion` — галочка «Include in template»: `parameters:[""crop""|""visibility""|""viewRange""|""scale""|""detailLevel""|""discipline""|""filters""|""worksets""]`, `included`.
 
 ### Кухня Revit
@@ -203,6 +206,9 @@ public static partial class AgentToolPackSkills
 - У шаблона уровни диапазона только относительные (Current / Level Above / Below / Unlimited);
   жёсткий уровень «перекинет» вид на чужой уровень.
 - Снятие шаблона/галочки Include **не возвращает** прежние значения — остаётся заданное шаблоном.
+- Вид, получивший шаблон со снятым Include (viewRange/visibility/crop), **сохраняет свои значения** —
+  отчёт помечает это `skippedByTemplateInclude` per-view + summary-строками `templateIncludeSkips`;
+  «шаблон применился ко всем настройкам» в этом случае неверно (кейс 3 бенчмарка).
 - Пока шаблон назначен и параметр включён, запись того же параметра в вид игнорируется Revit
   (`view_controlled_by_template` в наших тулах) — это главная причина «писал, ничего не изменилось».
 - Шаблон применим не к любому виду: `View.IsValidViewTemplate` проверяет совместимость типа.
@@ -221,6 +227,8 @@ public static partial class AgentToolPackSkills
    `set_view_template_inclusion(templateId, parameters=[""crop""], included=false)`.
 2. «Повесить шаблон на все планы»: `list_view_templates` → `apply_view_template(select:{viewType:""FloorPlan""}, templateId=...)`.
 3. «Сделать шаблон, который не управляет видимостью»: `set_view_template_inclusion(parameters=[""visibility""], included=false)`.
+4. «Шаблон всем планам раздела АР»: `add_project_shared_parameter` («Раздел», text, категории views) →
+   `set_parameters` проставить разделы → `apply_view_template(select:{viewType:""FloorPlan"",section:""АР""}, templateId=…)`.
 
 ### Что нельзя
 - Пытаться включить в шаблон параметр, которого там нет (`parameter_not_in_template` — это ответ Revit, а не баг).

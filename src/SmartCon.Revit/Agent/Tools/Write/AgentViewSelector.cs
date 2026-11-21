@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
@@ -8,8 +9,9 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// <summary>
 /// Resolves a select filter into view ids so write tools do not require the
 /// model to enumerate nine view ids by hand. Supported filters: type/viewType,
-/// levelId, folder (browser folder substring), nameContains and templateId.
-/// View templates are always excluded.
+/// levelId, folder (browser folder substring), nameContains, templateId and
+/// section (exact match of the project parameter «Раздел»). View templates are
+/// always excluded.
 /// </summary>
 internal static class AgentViewSelector
 {
@@ -33,16 +35,19 @@ internal static class AgentViewSelector
         var templateId = AgentJson.GetLong(select, "templateId", 0);
         var nameContains = AgentJson.GetString(select, "nameContains");
         var folder = AgentJson.GetString(select, "folder");
+        var section = AgentJson.GetString(select, "section");
         var type = AgentJson.GetString(select, "type") ?? AgentJson.GetString(select, "viewType");
 
         if (levelId <= 0
             && templateId <= 0
             && string.IsNullOrWhiteSpace(nameContains)
             && string.IsNullOrWhiteSpace(folder)
+            && string.IsNullOrWhiteSpace(section)
             && string.IsNullOrWhiteSpace(type))
         {
             errorCode = "invalid_arguments";
-            message = "select needs at least one of type, levelId, folder, nameContains, templateId.";
+            message = "select needs at least one of type, levelId, folder, nameContains, " +
+                      "templateId, section.";
             return Array.Empty<long>();
         }
 
@@ -84,6 +89,8 @@ internal static class AgentViewSelector
             : new[] { folder! };
 
         var result = new List<long>();
+        var sectionFilterSet = !string.IsNullOrWhiteSpace(section);
+        var anyViewHasSectionParameter = false;
         foreach (var view in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
         {
             if (!ListViewsTool.IsSupportedView(view) || view.IsTemplate)
@@ -101,6 +108,16 @@ internal static class AgentViewSelector
                 continue;
             }
 
+            if (sectionFilterSet)
+            {
+                if (!AgentViewSection.TryRead(view, out var sectionValue))
+                    continue;
+
+                anyViewHasSectionParameter = true;
+                if (!string.Equals(sectionValue, section, StringComparison.Ordinal))
+                    continue;
+            }
+
             if (folders.Length > 0)
             {
                 var card = ListViewsTool.CreateCard(doc, view, browserOrganization);
@@ -114,9 +131,25 @@ internal static class AgentViewSelector
         result.Sort();
         if (result.Count == 0)
         {
-            errorCode = "no_items";
-            message = "The select filter matched no views. Check type, levelId, folder, " +
-                      "nameContains and templateId.";
+            if (sectionFilterSet && !anyViewHasSectionParameter)
+            {
+                // The model asked for sections but the project never defined the
+                // parameter: a plain no_items would send it guessing (benchmark
+                // case 3 feedback — the section was guessed from view names).
+                errorCode = "section_parameter_missing";
+                message = "No view in the document has a project parameter '" +
+                          AgentViewSection.ParameterName + "'. Create it with " +
+                          "add_project_shared_parameter (name '" +
+                          AgentViewSection.ParameterName + "', spec 'text', categories " +
+                          "[views]), set it per view with set_parameters, or filter with " +
+                          "nameContains.";
+            }
+            else
+            {
+                errorCode = "no_items";
+                message = "The select filter matched no views. Check type, levelId, folder, " +
+                          "nameContains, templateId and section.";
+            }
         }
 
         return result;

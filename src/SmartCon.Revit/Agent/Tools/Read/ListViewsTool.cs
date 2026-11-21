@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -26,8 +27,10 @@ public sealed class ListViewsTool : AgentReadToolBase
             "specifications; any ViewType name is accepted), level ids, name substring, " +
             "browser folder path substring. Returns view id, name, type, level, template, " +
             "sheet number, browserFolder (path), browserFolderPath (segments), " +
-            "browserFolderParameters (grouping parameter per segment: name/shared/built-in) " +
-            "and inBrowser. Default limit 200, max 500; offset/nextOffset page through a larger " +
+            "browserFolderParameters (grouping parameter per segment: name/shared/built-in), " +
+            "inBrowser and section — the value of the project parameter 'Раздел' on the view " +
+            "(null when the project has no such parameter; it is read, never guessed from the " +
+            "view name). Default limit 200, max 500; offset/nextOffset page through a larger " +
             "inventory. " +
             "summaryOnly=true returns counts by view type, level and browser folder instead of cards. " +
             "fields=[\"viewId\",\"name\",\"type\",\"level\",\"folder\"] projects each card onto the " +
@@ -35,7 +38,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser,section. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn; section is the project parameter 'Раздел' value (null when absent). Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -372,7 +375,8 @@ public sealed class ListViewsTool : AgentReadToolBase
             BrowserFolder = browserFolder,
             BrowserFolderPath = folderPath,
             BrowserFolderParameters = folderParameters,
-            InBrowser = inBrowser
+            InBrowser = inBrowser,
+            Section = AgentViewSection.ReadValue(view)
         };
     }
 
