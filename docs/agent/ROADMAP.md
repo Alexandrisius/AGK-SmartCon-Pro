@@ -92,7 +92,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
 | **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | S.5/S.10/S.11 закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
-| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.1/G.2/G.3/G.5 закрыты 2026-11-21 (+S.5); в работе G.4; follow-ups #438–#440. |
+| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.1–G.5 закрыты 2026-11-21 (+S.5 confirmNames); остаются P2 G.6–G.10 + follow-ups #438–#440; follow-ups #438–#440. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
@@ -229,7 +229,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.1` | delete-инструменты: элементы, листы, ведомости | P1 | `done` | #343 |
 | `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `done` | #344 |
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `done` | #345 |
-| `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `backlog` | #346 |
+| `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `done` | #346 |
 | `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
 | `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `backlog` | #438 |
 | `G.5b` | remove_viewport: снять вид с листа | P2 | `backlog` | #439 |
