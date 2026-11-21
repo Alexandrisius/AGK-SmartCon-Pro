@@ -47,6 +47,7 @@ public static partial class AgentToolPackSkills
 - `delete_views` необратим (`undoSupported=false`, change set не пишется): только `dryRun=true`
   перед применением.
 - Все write-тулы по умолчанию `dryRun=true`: сначала план, затем повтор с `dryRun=false`.
+- Массовые переименования видов — `start_job(action:""rename_views"")`, а не цикл rename_views.
 
 ### Рецепты
 1. «Переименуй все планы по шаблону»: `list_views(types=[""FloorPlan""])` → сформировать имена → `rename_views(items, atomic=true)`.

@@ -1863,6 +1863,22 @@
         "replace_family_parameter"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r233",
+      "query": "bulk job replace shared parameter across many families migration",
+      "expectedTools": [
+        "start_job"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r234",
+      "query": "массовая миграция параметра по семействам",
+      "expectedTools": [
+        "start_job"
+      ],
+      "kind": "write"
     }
   ]
 }

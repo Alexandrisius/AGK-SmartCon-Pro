@@ -30,4 +30,6 @@ public sealed class AgentToolCard
     public string? RequiredContext { get; init; }
 
     public bool Bulk { get; init; }
+
+    public string? BatchAnalogue { get; init; }
 }

@@ -126,6 +126,9 @@ public static partial class AgentToolPackSkills
    по типам. Константам в формуле всегда указывайте единицы.
 4. «Убери лишний тип»: `list_family_types(includePlaced=true)` → `delete_family_types(dryRun=true)`
    → решение о `force` → apply.
+5. «Массовая правка по десяткам/сотням семейств» — пакетный путь
+   `start_job(action:""map_family_parameters"")` (до 200 family units за джобу);
+   поштучный тул — только для 1–5 семейств.
 
 ### Что нельзя
 - Считать `familyId` стабильным после записи: загрузка пересоздаёт семейство.

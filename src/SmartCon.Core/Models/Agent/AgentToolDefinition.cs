@@ -54,6 +54,9 @@ public sealed class AgentToolDefinition
     /// <summary>"active_view", "selection" or null when the tool has no context requirement.</summary>
     public string? RequiredContext { get; init; }
 
+    /// <summary>Batch analogue hint like start_job(action:"set_parameters") for per-element write tools.</summary>
+    public string? BatchAnalogue { get; init; }
+
     /// <summary>Alias of <see cref="SupportsBulk"/> (runbook §7.1 contract).</summary>
     public bool Bulk
     {

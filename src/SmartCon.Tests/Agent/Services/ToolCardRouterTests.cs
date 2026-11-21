@@ -34,6 +34,7 @@ public sealed class ToolCardRouterTests
     [InlineData("применить шаблон", "apply_view_template")]
     [InlineData("скрой категорию", "set_view_visibility")]
     [InlineData("сколько элементов", "summarize_elements")]
+    [InlineData("массовая миграция параметра по семействам", "start_job")]
     public void Rank_EnrichedCatalog_PutsExpectedToolFirst(string query, string expected)
     {
         var ranked = ToolCardRouter.Rank(query, EnrichedCatalog(), 5);
@@ -47,6 +48,7 @@ public sealed class ToolCardRouterTests
     [InlineData("применить шаблон", "apply_view_template")]
     [InlineData("скрой категорию", "set_view_visibility")]
     [InlineData("сколько элементов", "summarize_elements")]
+    [InlineData("массовое переименование видов", "start_job")]
     public void Rank_EnrichedCatalog_KeepsExpectedToolInTopThree(string query, string expected)
     {
         var ranked = ToolCardRouter.Rank(query, EnrichedCatalog(), 3);

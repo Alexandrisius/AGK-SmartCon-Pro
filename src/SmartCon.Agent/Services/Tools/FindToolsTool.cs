@@ -257,7 +257,8 @@ public sealed class FindToolsTool : IAgentTool
             @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0," +
             @"""description"":""Listing mode offset; use nextOffset from the previous page""}," +
             @"""fields"":{""type"":""array"",""items"":{""type"":""string""," +
-            @"""enum"":[""name"",""description"",""pack"",""packHasSkill"",""risk"",""purpose"",""whenToUse""," +
+            @"""enum"":[""name"",""description"",""pack"",""packHasSkill"",""risk"",""purpose""," +
+            @"""batchAnalogue"",""whenToUse""," +
             @"""whenNotToUse"",""examples"",""synonyms"",""supportsDryRun"",""timeoutMs""," +
             @"""alreadyAvailable"",""inputSchema""]}}}," +
             @"""additionalProperties"":false}";
@@ -273,9 +274,11 @@ public sealed class FindToolsTool : IAgentTool
                 "chosen tools for the next round; the pack also brings its skill (markdown " +
                 "operating manual). A card with packHasSkill=true means its pack has such a " +
                 "manual — load the pack to read it. A search returns compact cards (name, pack, " +
-                "packHasSkill, risk, purpose, alreadyAvailable, inputSchema); pass fields to add " +
+                "packHasSkill, risk, purpose, batchAnalogue, alreadyAvailable, inputSchema); " +
+                "batchAnalogue names the start_job(action:...) batch path and appears only on " +
+                "per-element write tools that have one; pass fields to add " +
                 "whenToUse, examples, synonyms or timeoutMs. An empty query returns the whole " +
-                "catalog (name, description, pack, risk) without schemas, paged with " +
+                "catalog (name, description, pack, risk, batchAnalogue) without schemas, paged with " +
                 "offset/nextOffset; add pack to browse one pack. fields=[...] projects each card " +
                 "onto the listed properties (for example fields=[\"name\",\"pack\"]).",
             Risk = AgentToolRisk.Read,
@@ -322,11 +325,11 @@ public sealed class FindToolsTool : IAgentTool
         IReadOnlyList<string> selected = fields.Count > 0
             ? fields
             : listing
-                ? new[] { "name", "description", "pack", "risk" }
+                ? new[] { "name", "description", "pack", "risk", "batchAnalogue" }
                 : new[]
                 {
-                    "name", "pack", "packHasSkill", "risk", "purpose", "alreadyAvailable",
-                    "inputSchema"
+                    "name", "pack", "packHasSkill", "risk", "purpose", "batchAnalogue",
+                    "alreadyAvailable", "inputSchema"
                 };
         var result = new List<Dictionary<string, object?>>();
 
@@ -354,6 +357,8 @@ public sealed class FindToolsTool : IAgentTool
                 ["alreadyAvailable"] = context.ActiveToolNames.Contains(definition.Name),
                 ["inputSchema"] = ParseSchema(definition.InputSchemaJson)
             };
+            if (definition.BatchAnalogue is not null)
+                card["batchAnalogue"] = definition.BatchAnalogue;
 
             var projected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             foreach (var field in selected)

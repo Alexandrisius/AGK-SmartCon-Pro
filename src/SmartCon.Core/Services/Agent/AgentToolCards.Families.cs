@@ -406,7 +406,8 @@ public static partial class AgentToolCards
             },
             Idempotent = true,
             TimeoutMs = 150000,
-            Bulk = true
+            Bulk = true,
+            BatchAnalogue = "start_job(action:\"map_family_parameters\")"
         }
     };
 }

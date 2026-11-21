@@ -415,4 +415,40 @@ public sealed class FindToolsToolTests
             .ToList();
         Assert.Equal("start_job", names[0]);
     }
+
+    [Fact]
+    public async Task FindToolsV2_BulkIntent_RussianFamilyMigration_PutsStartJobInTopFive()
+    {
+        var registry = new AgentToolRegistry(new IAgentTool[]
+        {
+            new ScriptedTool("start_job"),
+            new ScriptedTool("map_family_parameters"),
+            new ScriptedTool("remap_parameter_values"),
+            new ScriptedTool("list_shared_parameters")
+        });
+        var definitions = registry.GetDefinitions();
+        var router = new RecordingToolRouter
+        {
+            Result = new ToolRoutingDecision
+            {
+                Tools = definitions
+                    .Where(definition => definition.Name != "start_job")
+                    .ToArray()
+            }
+        };
+        var tool = new FindToolsTool(router);
+        tool.Attach(registry);
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"query\":\"массовая миграция параметра по семействам\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var names = result.Data!.Value.GetProperty("tools").EnumerateArray()
+            .Select(entry => entry.GetProperty("name").GetString())
+            .ToList();
+        Assert.InRange(names.Count, 1, 5);
+        Assert.Contains("start_job", names);
+    }
 }

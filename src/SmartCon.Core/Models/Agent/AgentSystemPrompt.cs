@@ -56,6 +56,7 @@ Write tools: rename_views, rename_levels, apply_view_template, set_view_range, s
 
 
     private const string JobsSection = @"## Bulk jobs
+- Batch first: when the same write must be applied to many targets (dozens+ elements, views or families), check start_job actions BEFORE calling per-element write tools; start_job is the primary path for large repetitive operations, not a fallback.
 - Never run a bulk operation element by element: one start_job call replaces hundreds of per-element calls.
 - start_job with dryRun=true previews the whole operation (nothing changes) and returns count, sample, warnings and previewDigest. Read the preview, then call start_job again with dryRun=false and that exact previewDigest to apply.
 - After apply starts, poll get_job_status with waitSeconds (max 25) instead of repeating start_job. One running job per document; a finished preview is superseded by a new preview, so no cancel is needed between previews. Use includeSample=false on polling to keep the context small.

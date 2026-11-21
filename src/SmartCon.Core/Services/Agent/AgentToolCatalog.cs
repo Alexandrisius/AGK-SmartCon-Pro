@@ -343,7 +343,8 @@ public static class AgentToolCatalog
             NegativeExamples = card?.NegativeExamples ?? Array.Empty<string>(),
             Idempotent = card?.Idempotent ?? false,
             TimeoutMs = card?.TimeoutMs ?? 30000,
-            RequiredContext = card?.RequiredContext
+            RequiredContext = card?.RequiredContext,
+            BatchAnalogue = card?.BatchAnalogue
         };
     }
 }

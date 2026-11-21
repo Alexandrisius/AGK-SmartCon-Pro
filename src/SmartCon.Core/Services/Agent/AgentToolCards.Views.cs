@@ -84,7 +84,8 @@ public static partial class AgentToolCards
                     "Переименование существующих видов по списку viewId → newName с проверкой " +
                     "уникальности и обменов имён.",
                 WhenToUse =
-                    "Когда есть ID видов и точные новые имена; инструмент не создаёт виды.",
+                    "Когда есть ID видов и точные новые имена; инструмент не создаёт виды; " +
+                    "для сотен видов — пакетный аналог start_job(action:\"rename_views\").",
                 WhenNotToUse =
                     "Когда нужно переименовать уровни, создать вид или изменить его настройки " +
                     "и шаблон.",
@@ -110,7 +111,8 @@ public static partial class AgentToolCards
                 },
                 Idempotent = false,
                 TimeoutMs = 120000,
-                Bulk = true
+                Bulk = true,
+                BatchAnalogue = "start_job(action:\"rename_views\")"
             },
             new AgentToolCard
             {

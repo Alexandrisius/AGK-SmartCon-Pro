@@ -16,7 +16,8 @@ public static partial class AgentToolCards
                     "для числовых значений.",
                 WhenToUse =
                     "Когда известны elementId и точные значения параметров; поддерживает батч " +
-                    "и dryRun.",
+                    "и dryRun; для сотен/тысяч элементов — пакетный аналог " +
+                    "start_job(action:\"set_parameters\").",
                 WhenNotToUse =
                     "Когда нужно прочитать параметры, найти элементы или перенести значения " +
                     "между параметрами.",
@@ -40,7 +41,8 @@ public static partial class AgentToolCards
                 },
                 Idempotent = true,
                 TimeoutMs = 120000,
-                Bulk = true
+                Bulk = true,
+                BatchAnalogue = "start_job(action:\"set_parameters\")"
             },
             new AgentToolCard
             {
@@ -51,7 +53,8 @@ public static partial class AgentToolCards
                     "до 20 пар за вызов.",
                 WhenToUse =
                     "Когда нужна миграция значений старого параметра в новый, включая смену " +
-                    "типа хранения.",
+                    "типа хранения; для сотен элементов сначала прочитай значения, затем " +
+                    "пакетно примени через start_job(action:\"set_parameters\").",
                 WhenNotToUse =
                     "Когда нужно задать конкретное значение, прочитать параметры или " +
                     "переименовать вид.",
@@ -75,7 +78,8 @@ public static partial class AgentToolCards
                 },
                 Idempotent = false,
                 TimeoutMs = 120000,
-                Bulk = true
+                Bulk = true,
+                BatchAnalogue = "start_job(action:\"set_parameters\")"
             },
             new AgentToolCard
             {

@@ -155,6 +155,35 @@ public sealed class AgentToolCardsTests
     }
 
     [Fact]
+    public void BatchAnalogue_OnlyOnPerElementWriteToolsWithARealJobAction()
+    {
+        var expectedBatchedTools = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "set_parameters",
+            "remap_parameter_values",
+            "rename_views",
+            "map_family_parameters"
+        };
+        var actualBatchedTools = AgentToolCards.All
+            .Where(card => card.BatchAnalogue is not null)
+            .Select(card => card.ToolName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(expectedBatchedTools, actualBatchedTools);
+
+        Assert.All(AgentToolCards.All, card =>
+        {
+            if (card.BatchAnalogue is null)
+                return;
+
+            Assert.Matches(
+                "^start_job\\(action:\"(rename_views|set_parameters|map_family_parameters)\"\\)$",
+                card.BatchAnalogue);
+            Assert.True(card.Bulk, card.ToolName + ": BatchAnalogue requires a batch write card");
+        });
+    }
+
+    [Fact]
     public void Cards_AreNotMutatedByIdEnrich()
     {
         var before = AgentToolCards.All
