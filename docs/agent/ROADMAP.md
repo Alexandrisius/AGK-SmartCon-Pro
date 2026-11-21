@@ -81,11 +81,18 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 63→107 тулов, dogfood ×2, sweep+полные IT) сделан одним агентом за **12 часов**.
 Эпик сопоставимого размера ≈ полдня–день, задача ≈ 1–2 часа.
 
-**Следующий шаг (план владельца 2026-11-21):** задача 2 — массовая миграция
-семейств одним пайплайном (#430+#431+#433+#432), затем задача 3 — real-cases
-benchmark end-to-end. HANDOFF — в телах issues. Не начинать в той же сессии
-после эпика G (владелец включает суммаризацию контекста). Q.1/Q.2/деплой — по
-готовности к приёмке; P.6–P.9 (P2) — отдельной сессией.
+**Задача 2 закрыта (2026-11-21, та же сессия после суммаризации):** массовая
+миграция семейств одним пайплайном — A.11+A.12 (ad0d066d) → A.10 (74676e0c,
+replace_family_parameter action + фикс латентного бага backup) → B.6 (f71c59e3,
+CompletedUnverified + SQLite v6). Sweep 6/6; dogfood живым LLM (glm-5.3-flash)
+ЗЕЛЁНЫЙ с первого раза: модель сама выбрала start_job batch-first
+(preview→digest→apply, 6 раундов, 0 поштучных вызовов), оценка 4/5 → фидбэк
+issues #446–#449. Каталог 107 тулов (+1 job action), real-queries 326.
+
+**Следующий шаг (план владельца):** задача 3 — real-cases benchmark end-to-end
+(#445, все 5 кейсов живым агентом, порядок 4→3→1→2→5, цикл до зелёного);
+затем эпик B (#291). Q.1/Q.2/деплой — по готовности к приёмке; P.6–P.9 (P2) —
+отдельной сессией.
 
 ## 5. Эпики
 
@@ -128,9 +135,9 @@ benchmark end-to-end. HANDOFF — в телах issues. Не начинать в
 | `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `done` | #312 |
 | `A.8` | Tool surface job'а и приёмка эпика | P0 | `in-progress` | #313 |
 | `A.9` | Job variants: несколько групп значений за одну preview+apply | P1 | `backlog` | #414 |
-| `A.10` | action джобы replace_family_parameter — массовая замена общего параметра | P1 | `backlog` | #430 |
-| `A.11` | map_family_parameters: createTarget — авто-создание цели | P1 | `backlog` | #431 |
-| `A.12` | start_job: селектор familyNames[] (массив) | P2 | `backlog` | #433 |
+| `A.10` | action джобы replace_family_parameter — массовая замена общего параметра | P1 | `done` | #430 |
+| `A.11` | map_family_parameters: createTarget — авто-создание цели | P1 | `done` | #431 |
+| `A.12` | start_job: селектор familyNames[] (массив) | P2 | `done` | #433 |
 
 ### B — Trust & recovery: отчёт, откат, resume, false-done guard
 
@@ -143,7 +150,7 @@ benchmark end-to-end. HANDOFF — в телах issues. Не начинать в
 | `B.3` | False-done guard и crash reconciliation | P0 | `done` | #318 |
 | `B.4` | UI job-панель и приёмка recovery | P1 | `backlog` | #319 |
 | `B.5` | Частичный откат задания: подмножество юнитов и change set на батч | P1 | `backlog` | #412 |
-| `B.6` | CompletedUnverified — честная семантика непроверяемых целей джобы | P1 | `backlog` | #432 |
+| `B.6` | CompletedUnverified — честная семантика непроверяемых целей джобы | P1 | `done` | #432 |
 
 ### P — Prompt cache & context ordering: стабильный префикс
 
