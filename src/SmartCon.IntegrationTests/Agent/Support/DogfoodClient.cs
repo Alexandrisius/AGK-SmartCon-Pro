@@ -49,7 +49,10 @@ internal static class DogfoodClient
             ["model"] = config.Model,
             ["messages"] = messages,
             ["temperature"] = 0.2,
-            ["max_tokens"] = 1500,
+            // Aligned with AgentLlmSettings.MaxOutputTokens (8192): reasoning
+            // models count thinking tokens against max_tokens, so a small cap
+            // truncates the answer to an empty content without tool calls.
+            ["max_tokens"] = 8192,
             ["tools"] = tools.Select(definition => new Dictionary<string, object?>
             {
                 ["type"] = "function",
@@ -175,6 +178,12 @@ internal sealed class DogfoodConfig
     private const string DefaultBaseUrl = "https://openrouter.ai/api/v1";
     private const string DefaultModel = "deepseek/deepseek-v4.1-flash-1017";
 
+    // Mirrors AgentLlmSettings (SmartCon.Agent) — duplicated here so the
+    // dogfood client stays self-contained (same provider resolution as
+    // AgentLlmSettings.Load: env first, then %APPDATA%\AGK\SmartCon\Agent\secrets.env).
+    private const string DefaultZaiBaseUrl = "https://api.z.ai/api/coding/paas/v4";
+    private const string DefaultZaiModel = "glm-5.3";
+
     private DogfoodConfig(string provider, string model, string baseUrl, string apiKey)
     {
         Provider = provider;
@@ -204,24 +213,31 @@ internal sealed class DogfoodConfig
 
         var values = LoadEnvironment();
 
-        var apiKey = First(values,
-            "SMARTCON_AGENT_API_KEY",
-            "SMARTCON_OPENROUTER_API_KEY",
-            "OPENROUTER_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return null;
-
         var provider = First(values, "SMARTCON_LLM_PROVIDER") ?? "openrouter";
         var openCodeGo = string.Equals(provider, "opencode-go", StringComparison.OrdinalIgnoreCase)
                          || string.Equals(provider, "opencode", StringComparison.OrdinalIgnoreCase);
+        var zai = string.Equals(provider, "zai-glm", StringComparison.OrdinalIgnoreCase)
+                  || string.Equals(provider, "zai", StringComparison.OrdinalIgnoreCase);
+
+        var apiKey = zai
+            ? First(values, "SMARTCON_ZAI_API_KEY", "SMARTCON_AGENT_API_KEY")
+            : First(values,
+                "SMARTCON_AGENT_API_KEY",
+                "SMARTCON_OPENROUTER_API_KEY",
+                "OPENROUTER_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return null;
 
         var baseUrl = openCodeGo
             ? First(values, "SMARTCON_OPENCODE_GO_BASE_URL")
               ?? "https://opencode.ai/inference/go/openai/v1"
-            : First(values, "SMARTCON_OPENROUTER_BASE_URL",
-                    "SMARTCON_AGENT_BASE_URL") ?? DefaultBaseUrl;
+            : zai
+                ? First(values, "SMARTCON_ZAI_BASE_URL") ?? DefaultZaiBaseUrl
+                : First(values, "SMARTCON_OPENROUTER_BASE_URL",
+                        "SMARTCON_AGENT_BASE_URL") ?? DefaultBaseUrl;
 
-        var model = First(values, "SMARTCON_AGENT_MODEL", "SMARTCON_LLM_MODEL") ?? DefaultModel;
+        var model = First(values, "SMARTCON_AGENT_MODEL", "SMARTCON_LLM_MODEL")
+                    ?? (zai ? DefaultZaiModel : DefaultModel);
 
         return new DogfoodConfig(provider, model!, baseUrl!, apiKey!);
     }
@@ -235,7 +251,8 @@ internal sealed class DogfoodConfig
                      "SMARTCON_AGENT_API_KEY", "SMARTCON_OPENROUTER_API_KEY", "OPENROUTER_API_KEY",
                      "SMARTCON_LLM_PROVIDER", "SMARTCON_AGENT_BASE_URL", "SMARTCON_AGENT_MODEL",
                      "SMARTCON_LLM_MODEL", "SMARTCON_OPENROUTER_BASE_URL",
-                     "SMARTCON_OPENCODE_GO_BASE_URL"
+                     "SMARTCON_OPENCODE_GO_BASE_URL",
+                     "SMARTCON_ZAI_API_KEY", "SMARTCON_ZAI_BASE_URL"
                  })
         {
             var value = Environment.GetEnvironmentVariable(name);
