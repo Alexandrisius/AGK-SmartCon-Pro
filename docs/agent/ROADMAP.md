@@ -234,9 +234,9 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.2a` | Спецификации: поля (удаление/порядок), totals, единицы | P2 | `backlog` | #442 |
 | `G.2b` | Спецификации на листе: перемещение и секции | P3 | `backlog` | #443 |
 | `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
-| `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `backlog` | #438 |
-| `G.5b` | remove_viewport: снять вид с листа | P2 | `backlog` | #439 |
-| `G.5c` | renumber_sheets: перенумерация со сдвигом | P3 | `backlog` | #440 |
+| `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `done` | #438 |
+| `G.5b` | remove_viewport: снять вид с листа | P2 | `done` | #439 |
+| `G.5c` | renumber_sheets: перенумерация со сдвигом | P3 | `done` | #440 |
 | `G.6` | Виды: duplicate, create, delete, browser folder | P2 | `done` | #348 |
 | `G.7` | MEP: системы трубопроводов и материалы | P2 | `backlog` | #349 |
 | `G.8` | Browser organization: чтение и запись | P2 | `backlog` | #350 |
