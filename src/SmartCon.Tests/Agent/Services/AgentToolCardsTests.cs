@@ -236,6 +236,22 @@ public sealed class AgentToolCardsTests
     }
 
     [Fact]
+    public void ScheduleCards_DescribeDiagnosticBlocks()
+    {
+        // #450/#452: routing cards must advertise the new payload blocks, or the
+        // model will not know list_schedules surfaces empty schedules and
+        // duplicates, and that set_schedule_filter previews the row estimate.
+        Assert.True(AgentToolCards.TryGet("list_schedules", out var list));
+        Assert.NotNull(list);
+        Assert.Contains("emptySchedules", list!.Purpose, StringComparison.Ordinal);
+        Assert.Contains("duplicateGroups", list.Purpose, StringComparison.Ordinal);
+
+        Assert.True(AgentToolCards.TryGet("set_schedule_filter", out var filter));
+        Assert.NotNull(filter);
+        Assert.Contains("estimatedRowsAfter", filter!.Purpose, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Cards_AreNotMutatedByIdEnrich()
     {
         var before = AgentToolCards.All

@@ -96,6 +96,46 @@ public sealed class AgentQueryToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task QueryElements_ProjectsBuiltInMarkCommentsPhaseCreated()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        _transactions!.RunInTransaction(Doc, "Set wall mark", doc =>
+        {
+            var wall = doc.GetElement(ElementIdCompat.Create(_wallId));
+            wall?.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set("SC-Q1");
+        });
+
+        var tool = new QueryElementsTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("""{"categories":["OST_Walls"],"fields":["elementId","mark","comments","phaseCreated"],"limit":10}"""),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var elements = result.Data!.Value.GetProperty("elements").EnumerateArray().ToList();
+        var wall = elements.First(card => card.GetProperty("elementId").GetInt64() == _wallId);
+        await Assert.That(wall.GetProperty("mark").GetString()).IsEqualTo("SC-Q1");
+        await Assert.That(wall.GetProperty("comments").GetString()).IsEqualTo(SeededComment);
+        await Assert.That(string.IsNullOrWhiteSpace(wall.GetProperty("phaseCreated").GetString()))
+            .IsFalse();
+        // Null payload fields are omitted by the serializer: the projection must
+        // not report any of the requested fields as ignored.
+        await Assert.That(
+            result.Data.Value.TryGetProperty("ignoredFields", out _)).IsFalse();
+
+        // The same aliases work in conditions, not only in projections.
+        var byMark = tool.ExecuteForTests(
+            Doc,
+            Parse("""{"categories":["OST_Walls"],"conditions":[{"parameter":"mark","op":"eq","value":"SC-Q1"}],"limit":10}"""),
+            CancellationToken.None);
+        await Assert.That(byMark.Success).IsTrue();
+        await Assert.That(byMark.Data!.Value.GetProperty("total").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
     public async Task QueryElements_UnknownCategory_ReturnsStructuredFailure()
     {
         var tool = new QueryElementsTool(new StubRevitContext(Doc));

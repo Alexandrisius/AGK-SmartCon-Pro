@@ -386,6 +386,49 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         await Assert.That(previewData.Sample.Any(s => s.ErrorDetail!.Contains("createTarget"))).IsTrue();
     }
 
+    [Test]
+    public async Task FamilyJob_CreateTarget_NameCollisionInOtherScope_FailsPreview()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        // The family already has Примечание_экз (instance); the mapping asks for a
+        // type-scoped target with the same name and createTarget=true — the apply
+        // would die in AddParameter, so the preview must fail with the collision.
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"Ширина\"},\"target\":{\"name\":\"" +
+            FamilySeed.InstanceParam + "\",\"scope\":\"type\"},\"createTarget\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.FailedCount).IsEqualTo(1);
+        await Assert.That(previewData.WillChangeCount).IsEqualTo(0);
+        var detail = previewData.Sample.First().ErrorDetail!;
+        await Assert.That(detail.Contains("already exists")).IsTrue();
+        await Assert.That(detail.Contains("instance")).IsTrue();
+        await Assert.That(detail.Contains("createTarget")).IsTrue();
+    }
+
     private bool SeedFamilies(int count)
     {
         for (var index = 1; index <= count; index++)

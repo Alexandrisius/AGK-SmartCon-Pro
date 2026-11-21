@@ -13,8 +13,11 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
+  Пустые спецификации — блоком `emptySchedules` (все сразу, не потеряешь при диагностике);
+  дубли по одинаковому определению (поля+фильтры+сортировка) — `duplicateGroups`.
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
-- `get_schedule_definition` — структура: поля, сортировка/группировка, фильтры.
+- `get_schedule_definition` — структура: поля, сортировка/группировка, фильтры
+  (фазные — в `phaseFilters` с именем фазы; фильтры-ссылки — `valueName`).
 - `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
   (уникальное), `fields` (0..15), `itemized`.
 - `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
@@ -23,7 +26,8 @@ public static partial class AgentToolPackSkills
 - `set_schedule_field_visibility` — скрыть/показать колонки: `fields[{name,hidden}]`.
 - `set_schedule_totals` — итоги: `fields[{name,mode}]` (standard|totals|min|max|minmax)
   + `grandTotal`/`grandTotalCount`/`grandTotalTitle`.
-- `set_schedule_filter` — заменить фильтры (0..8, только AND; `[]` — очистить).
+- `set_schedule_filter` — заменить фильтры (0..8, только AND; `[]` — очистить). Dry-run
+  сразу показывает эффект: `estimatedRowsAfter` + `estimatedSampleNames` (до 5 имён).
 - `set_schedule_sort` — заменить сортировку (0..4) и `itemized`.
 - `place_schedule_on_sheet` — разместить на листе: координаты левого верхнего угла в мм.
 - `move_schedule_on_sheet` — переместить размещённую таблицу (`instanceId|лист+спецификация`, мм).

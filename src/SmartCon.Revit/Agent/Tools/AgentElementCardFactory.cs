@@ -51,10 +51,43 @@ internal static class AgentElementCardFactory
             LevelId = level is null ? null : level.Id.GetValue(),
             LevelName = level?.Name,
             Room = ReadRoomName(element),
+            Mark = ReadParameter(element.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)),
+            Comments = ReadParameter(element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)),
+            PhaseCreated = ReadPhaseCreated(doc, element),
             // Omit the field when nothing was collected: an empty "{}" reads as
             // "the query found no parameter values" (stress test #2).
             Parameters = parameters.Count == 0 ? null : parameters
         };
+    }
+
+    /// <summary>
+    /// Phase name of PHASE_CREATED. CreatedPhaseId throws for elements that do
+    /// not take phases (types, families), so the parameter is the fallback.
+    /// </summary>
+    private static string? ReadPhaseCreated(Document doc, Element element)
+    {
+        try
+        {
+            ElementId? phaseId;
+            try
+            {
+                phaseId = element.CreatedPhaseId;
+            }
+            catch (Exception)
+            {
+                phaseId = element.get_Parameter(BuiltInParameter.PHASE_CREATED)?.AsElementId();
+            }
+
+            if (phaseId is null || phaseId == ElementId.InvalidElementId)
+                return null;
+
+            var name = doc.GetElement(phaseId)?.Name;
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

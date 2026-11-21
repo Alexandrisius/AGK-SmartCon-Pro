@@ -26,6 +26,15 @@ public sealed class ElementCard
 
     public string? Room { get; init; }
 
+    /// <summary>ALL_MODEL_MARK value; projectable as fields=["mark"] regardless of the UI language (#451).</summary>
+    public string? Mark { get; init; }
+
+    /// <summary>ALL_MODEL_INSTANCE_COMMENTS value; projectable as fields=["comments"].</summary>
+    public string? Comments { get; init; }
+
+    /// <summary>Name of the phase the element was created in (PHASE_CREATED), for phase-aware diagnosis.</summary>
+    public string? PhaseCreated { get; init; }
+
     public IReadOnlyDictionary<string, string?>? Parameters { get; init; }
 }
 

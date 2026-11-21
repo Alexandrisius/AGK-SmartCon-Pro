@@ -28,7 +28,10 @@ public sealed class QueryElementsTool : AgentReadToolBase
             "without unit the project display unit for that parameter is used. " +
             "Default limit 50, max 200; use offset/nextOffset to paginate. " +
             "Broad queries without categories/levelIds/typeIds/conditions/viewId are rejected " +
-            "when limit > 50. fields=[\"elementId\",\"name\"] projects each card.",
+            "when limit > 50. fields=[\"elementId\",\"name\"] projects each card; every card also " +
+            "carries mark, comments and phaseCreated (built-in values, independent of the UI " +
+            "language), projectable directly: fields=[\"mark\",\"phaseCreated\"]. Parameter " +
+            "conditions accept the same aliases (parameter=\"mark\", \"comments\", \"phaseCreated\").",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""roomId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":50,""maximum"":200},""offset"":{""type"":""integer"",""default"":0},""fields"":{""type"":""array"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 

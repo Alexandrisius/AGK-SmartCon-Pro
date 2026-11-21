@@ -24,6 +24,7 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
     private bool _sheetCreated;
     private long _sheetId;
     private long _levelId;
+    private int _wallCount;
     private string _commentsField = "Comments";
     private string _markField = "Mark";
 
@@ -51,6 +52,7 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
                 if (wall is null)
                     continue;
 
+                _wallCount++;
                 wall.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)
                     ?.Set(WallComment);
                 wall.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)
@@ -278,6 +280,57 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
             Parse("{\"scheduleId\":" + created + "}"),
             CancellationToken.None);
         await Assert.That(afterUndo.Data!.Value.GetProperty("filterCount").GetInt32()).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetScheduleFilter_DryRun_EstimatesRowsAfterWithSampleNames()
+    {
+        if (_wallCount == 0)
+            Skip.Test("В шаблоне проекта нет типа стены");
+
+        var created = CreateWallSchedule();
+        var addField = CreateTool<AddScheduleFieldTool>();
+        await Assert.That(
+            addField.ExecuteForTests(
+                Parse("{\"scheduleId\":" + created + ",\"fields\":[\"" + _commentsField +
+                      "\"],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None).Success).IsTrue();
+
+        var tool = CreateTool<SetScheduleFilterTool>();
+        var dry = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"filters\":[{\"field\":\"" + _commentsField +
+                  "\",\"op\":\"equals\",\"value\":\"" + WallComment + "\"}],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(dry.Success).IsTrue();
+        var data = dry.Data!.Value;
+        await Assert.That(data.GetProperty("estimatedRowsAfter").GetInt32()).IsEqualTo(_wallCount);
+        var sample = data.GetProperty("estimatedSampleNames").EnumerateArray().ToList();
+        await Assert.That(sample.Count).IsEqualTo(Math.Min(5, _wallCount));
+
+        var none = tool.ExecuteForTests(
+            Parse("{\"scheduleId\":" + created + ",\"filters\":[{\"field\":\"" + _commentsField +
+                  "\",\"op\":\"equals\",\"value\":\"NoSuchCommentValue\"}],\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(none.Success).IsTrue();
+        await Assert.That(none.Data!.Value.GetProperty("estimatedRowsAfter").GetInt32())
+            .IsEqualTo(0);
+        await Assert.That(none.Data.Value.GetProperty("estimatedSampleNames").GetArrayLength())
+            .IsEqualTo(0);
+
+        // The estimate ran inside the rolled-back dry-run transaction: the
+        // schedule itself must be untouched.
+        var reader = new GetScheduleDefinitionTool(new StubRevitContext(Doc));
+        var definition = reader.ExecuteForTests(
+            Doc,
+            Parse("{\"scheduleId\":" + created + "}"),
+            CancellationToken.None);
+        await Assert.That(definition.Data!.Value.GetProperty("filterCount").GetInt32())
+            .IsEqualTo(0);
     }
 
     [Test]

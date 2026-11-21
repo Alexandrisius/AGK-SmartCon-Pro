@@ -174,6 +174,71 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task ListSchedules_ReportsEmptySchedulesAndDuplicateGroups()
+    {
+        if (!_scheduleCreated)
+            Skip.Test("Ведомость не создалась в шаблоне проекта");
+
+        _transactions!.RunInTransaction(Doc, "Seed empty and duplicate schedules", doc =>
+        {
+            var empty = ModelSeed.CreateScheduleChecked(doc);
+            empty.Name = "SC_Agent_Empty";
+            var emptyField = empty.Definition.AddField(
+                ScheduleFieldType.Instance,
+                new ElementId(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS));
+            empty.Definition.AddFilter(new ScheduleFilter(
+                emptyField.FieldId, ScheduleFilterType.Equal, "SC_NoSuchComment"));
+            empty.RefreshData();
+
+            for (var index = 0; index < 2; index++)
+            {
+                var duplicate = ModelSeed.CreateScheduleChecked(doc);
+                duplicate.Name = "SC_Agent_Dup_" + (char)('A' + index);
+                duplicate.Definition.AddField(
+                    ScheduleFieldType.Instance,
+                    new ElementId(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS));
+                duplicate.Definition.AddField(
+                    ScheduleFieldType.Instance,
+                    new ElementId(BuiltInParameter.ALL_MODEL_MARK));
+            }
+        });
+
+        var tool = new ListSchedulesTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"nameContains\":\"SC_Agent\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+
+        await Assert.That(data.GetProperty("emptyCount").GetInt32()).IsEqualTo(1);
+        var emptySchedules = data.GetProperty("emptySchedules");
+        await Assert.That(emptySchedules.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(emptySchedules[0].GetProperty("name").GetString())
+            .IsEqualTo("SC_Agent_Empty");
+        await Assert.That(emptySchedules[0].GetProperty("rowCount").GetInt32()).IsEqualTo(0);
+
+        var groups = data.GetProperty("duplicateGroups");
+        await Assert.That(data.GetProperty("duplicateGroupCount").GetInt32()).IsEqualTo(1);
+        await Assert.That(groups.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(groups[0].GetProperty("count").GetInt32()).IsEqualTo(2);
+        var groupNames = groups[0].GetProperty("schedules").EnumerateArray()
+            .Select(item => item.GetProperty("name").GetString())
+            .ToList();
+        await Assert.That(groupNames.Contains("SC_Agent_Dup_A")).IsTrue();
+        await Assert.That(groupNames.Contains("SC_Agent_Dup_B")).IsTrue();
+
+        var cards = data.GetProperty("schedules").EnumerateArray().ToList();
+        var duplicateA = cards.First(card =>
+            card.GetProperty("name").GetString() == "SC_Agent_Dup_A");
+        var duplicateB = cards.First(card =>
+            card.GetProperty("name").GetString() == "SC_Agent_Dup_B");
+        await Assert.That(duplicateA.GetProperty("definitionsDigest").GetString())
+            .IsEqualTo(duplicateB.GetProperty("definitionsDigest").GetString());
+    }
+
+    [Test]
     public async Task GetScheduleData_ReturnsRowsAndHonoursPaging()
     {
         if (!_scheduleCreated)

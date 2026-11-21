@@ -34,7 +34,8 @@ public sealed class SetScheduleFilterTool : AgentWriteToolBase
             "already be a column of the schedule (add_schedule_field first) — otherwise " +
             "field_not_in_schedule. Filters combine only by AND and Revit allows at most 8 " +
             "(filter_limit_exceeded). Read the result back with get_schedule_definition. " +
-            "Dry run defaults to true.",
+            "Dry run defaults to true and reports the preview effect: estimatedRowsAfter " +
+            "(elements passing the new filters) with estimatedSampleNames (up to 5).",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""filters"":{""type"":""array"",""maxItems"":8,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""equals"",""not_equals"",""contains"",""begins_with"",""ends_with"",""greater_than"",""less_than"",""greater_or_equal"",""less_or_equal""]},""value"":{""type"":[""string"",""number""]}},""required"":[""field"",""op"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""filters""],""additionalProperties"":false}"
@@ -240,6 +241,36 @@ public sealed class SetScheduleFilterTool : AgentWriteToolBase
         });
         outcome.Data["scheduleId"] = schedule.Id.GetValue();
         outcome.Data["filters"] = JsonSerializer.Deserialize<JsonElement>(newJson);
+
+        if (dryRun)
+        {
+            AppendDryRunEstimate(doc, schedule, outcome, ct);
+        }
+    }
+
+    /// <summary>
+    /// Preview of the effect (#452): the new filters are already applied to the
+    /// definition inside the dry-run transaction, so the estimator evaluates
+    /// them against the elements of the schedule category. Null means the
+    /// definition cannot be evaluated this way (key schedule, calculated field)
+    /// — the dry-run report then simply carries no estimate.
+    /// </summary>
+    private static void AppendDryRunEstimate(
+        Document doc,
+        ViewSchedule schedule,
+        WriteOutcome outcome,
+        CancellationToken ct)
+    {
+        var estimate = AgentScheduleFilterEstimator.Estimate(doc, schedule, ct);
+        if (estimate is null)
+            return;
+
+        var (count, sample) = estimate.Value;
+        outcome.Data["estimatedRowsAfter"] = count;
+        outcome.Data["estimatedSampleNames"] = sample;
+        outcome.Data["estimateNote"] =
+            "Element count under the new filters (itemized schedules: rows == elements; " +
+            "grouped schedules may show fewer rows).";
     }
 
     private static bool CanFilterBySubstring(ScheduleDefinition definition, ScheduleFieldId fieldId)

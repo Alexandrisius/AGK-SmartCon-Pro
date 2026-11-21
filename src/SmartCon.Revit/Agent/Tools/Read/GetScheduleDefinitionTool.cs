@@ -111,6 +111,7 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         }
 
         var filters = new List<Dictionary<string, object?>>();
+        var phaseFilters = new List<Dictionary<string, object?>>();
         try
         {
             foreach (var filter in definition.GetFilters())
@@ -119,13 +120,48 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                 if (filters.Count >= MaxFilters)
                     break;
 
-                filters.Add(new Dictionary<string, object?>
+                // An ElementId filter value (a phase, a level, a type) is a bare
+                // number without the name; phase filters stayed invisible in
+                // diagnostics for exactly that reason (#451).
+                string? valueName = null;
+                try
+                {
+                    if (filter.IsElementIdValue)
+                    {
+                        var valueId = filter.GetElementIdValue();
+                        valueName = valueId is null || valueId == ElementId.InvalidElementId
+                            ? null
+                            : doc.GetElement(valueId)?.Name;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Value kind did not match; keep the raw value only.
+                }
+
+                var entry = new Dictionary<string, object?>
                 {
                     ["field"] = FieldName(fieldNames, filter.FieldId),
                     ["fieldId"] = filter.FieldId?.IntegerValue,
                     ["op"] = filter.FilterType.ToString(),
                     ["value"] = ReadFilterValue(filter)
-                });
+                };
+                if (!string.IsNullOrWhiteSpace(valueName))
+                    entry["valueName"] = valueName;
+
+                if (IsPhaseField(definition, filter.FieldId))
+                {
+                    entry["isPhase"] = true;
+                    phaseFilters.Add(new Dictionary<string, object?>
+                    {
+                        ["field"] = entry["field"],
+                        ["op"] = entry["op"],
+                        ["value"] = entry["value"],
+                        ["valueName"] = valueName
+                    });
+                }
+
+                filters.Add(entry);
             }
         }
         catch (Exception)
@@ -177,11 +213,15 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             ["filterCount"] = filters.Count,
             ["filters"] = filters,
             ["filtersTruncated"] = filters.Count >= MaxFilters,
+            ["hasPhaseFilter"] = phaseFilters.Count > 0,
+            ["phaseFilters"] = phaseFilters.Count > 0 ? phaseFilters : null,
             ["sortGroupFieldCount"] = sortFields.Count,
             ["sortGroupFields"] = sortFields,
             ["hint"] = "Zero rows with elements present usually mean a filter, a phase or an " +
-                       "empty parameter used by the filter. Fields, filters and sorting can " +
-                       "be changed: add_schedule_field, set_schedule_filter, set_schedule_sort."
+                       "empty parameter used by the filter; phase filters are listed in " +
+                       "phaseFilters with the phase name. Fields, filters and sorting can be " +
+                       "changed with the schedule write tools if they are available in this " +
+                       "session (add_schedule_field, set_schedule_filter, set_schedule_sort)."
         };
 
         return ToolResult.Ok(
@@ -228,6 +268,28 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    /// <summary>The filter field is Phase Created / Phase Demolished.</summary>
+    private static bool IsPhaseField(ScheduleDefinition definition, ScheduleFieldId? fieldId)
+    {
+        if (fieldId is null)
+            return false;
+
+        try
+        {
+            var parameterId = definition.GetField(fieldId).ParameterId;
+            if (parameterId is null || parameterId == ElementId.InvalidElementId)
+                return false;
+
+            var value = parameterId.GetValue();
+            return value == (long)(int)BuiltInParameter.PHASE_CREATED
+                   || value == (long)(int)BuiltInParameter.PHASE_DEMOLISHED;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

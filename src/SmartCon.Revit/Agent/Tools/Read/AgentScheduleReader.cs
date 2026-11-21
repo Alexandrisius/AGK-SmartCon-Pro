@@ -46,6 +46,9 @@ internal sealed class ScheduleCard
     public bool IsTitleblockRevisionSchedule { get; set; }
 
     public IReadOnlyList<string> SheetNumbers { get; set; } = Array.Empty<string>();
+
+    /// <summary>Definition digest (fields/filters/sorting); "unavailable" when the definition cannot be read.</summary>
+    public string? DefinitionsDigest { get; set; }
 }
 
 internal static class AgentScheduleReader
@@ -143,7 +146,8 @@ internal static class AgentScheduleReader
             IsKeySchedule = isKeySchedule,
             IsInternalKeynoteSchedule = schedule.IsInternalKeynoteSchedule,
             IsTitleblockRevisionSchedule = schedule.IsTitleblockRevisionSchedule,
-            SheetNumbers = onSheets ?? Array.Empty<string>()
+            SheetNumbers = onSheets ?? Array.Empty<string>(),
+            DefinitionsDigest = AgentScheduleDigest.Compute(schedule)
         };
     }
 

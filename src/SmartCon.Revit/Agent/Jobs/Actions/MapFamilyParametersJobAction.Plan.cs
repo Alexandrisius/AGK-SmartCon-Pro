@@ -334,6 +334,24 @@ public sealed partial class MapFamilyParametersJobAction
         var targetScope = targetIsInstance ? "instance" : "type";
         var storage = AgentFamilySpecs.StorageTypeName(source.StorageType);
 
+        // A family cannot hold two parameters with the same name: when the target
+        // name is already taken (any scope — the same-name lookup above missed it
+        // because of a guid reference or an explicit other scope), AddParameter
+        // would refuse at apply time. Fail the unit already in the preview with
+        // the scope-mismatch wording of the regular path (#461).
+        foreach (var existing in manager.GetParameters())
+        {
+            if (!string.Equals(existing.Definition.Name, targetName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var existingScope = existing.IsInstance ? "instance" : "type";
+            return label + "target: a parameter named '" + targetName + "' already exists in this " +
+                   "family with scope '" + existingScope + "' (this mapping would create '" +
+                   targetScope + "'), so createTarget cannot proceed — a family cannot hold " +
+                   "two parameters with the same name. [Action: map to the existing parameter " +
+                   "with scope='" + existingScope + "', or choose another target name]";
+        }
+
         // J-04: the add op is recorded before any write; Apply rebuilds this plan
         // before opening the transaction, so the op reaches persistUndo first.
         plan.UndoOps.Add(new FamilyUndoOperation

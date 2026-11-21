@@ -4,6 +4,22 @@ namespace SmartCon.Revit.Agent.Query;
 
 internal static class AgentParameterResolver
 {
+    /// <summary>
+    /// Stable English aliases for the built-ins the model asks for most; the
+    /// localized display names do not match them (Mark vs Марка), so a plain
+    /// LookupParameter refused them in non-English projects (#451).
+    /// </summary>
+    private static readonly Dictionary<string, BuiltInParameter> BuiltInAliases =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mark"] = BuiltInParameter.ALL_MODEL_MARK,
+            ["comments"] = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS,
+            ["phasecreated"] = BuiltInParameter.PHASE_CREATED,
+            ["phase created"] = BuiltInParameter.PHASE_CREATED,
+            ["phasedemolished"] = BuiltInParameter.PHASE_DEMOLISHED,
+            ["phase demolished"] = BuiltInParameter.PHASE_DEMOLISHED
+        };
+
     internal static Parameter? Find(
         Document doc,
         Element element,
@@ -12,6 +28,13 @@ internal static class AgentParameterResolver
     {
         if (string.IsNullOrWhiteSpace(name))
             return null;
+
+        if (BuiltInAliases.TryGetValue(name.Trim(), out var alias))
+        {
+            var aliased = element.get_Parameter(alias);
+            if (aliased is not null)
+                return aliased;
+        }
 
         if (Enum.TryParse<BuiltInParameter>(name, ignoreCase: true, out var builtIn))
         {
