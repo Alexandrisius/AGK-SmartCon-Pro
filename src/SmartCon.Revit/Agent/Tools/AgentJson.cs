@@ -95,6 +95,21 @@ internal static class AgentJson
         return fallback;
     }
 
+    internal static bool TryGetDouble(JsonElement args, string property, out double value)
+    {
+        value = 0;
+        if (args.ValueKind == JsonValueKind.Object
+            && args.TryGetProperty(property, out var element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetDouble(out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
     internal static IReadOnlyList<string> GetStringArray(JsonElement args, string property)
     {
         if (args.ValueKind != JsonValueKind.Object

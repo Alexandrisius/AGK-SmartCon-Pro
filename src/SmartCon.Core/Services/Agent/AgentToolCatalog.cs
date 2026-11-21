@@ -148,6 +148,36 @@ public static class AgentToolCatalog
                 "содержимое листа", "что на листе", "виды на листе", "видовые окна",
                 "координаты видов", "sheet content", "views on sheet"
             }),
+            ["create_sheet"] = new("Write", false, new[]
+            {
+                "создать лист", "новый лист", "добавить лист", "create sheet", "new sheet",
+                "номер нового листа"
+            }),
+            ["create_viewports"] = new("Write", true, new[]
+            {
+                "разместить виды на листе", "разложить по листам", "поставить вид на лист",
+                "create viewports", "place views", "компоновка листа", "видовые окна пакетно"
+            }),
+            ["move_viewport"] = new("Write", false, new[]
+            {
+                "переместить видовое окно", "сдвинуть вид на листе", "move viewport",
+                "позиция видового окна", "передвинуть вьюпорт"
+            }),
+            ["set_sheet_number"] = new("Write", false, new[]
+            {
+                "номер листа", "сменить номер листа", "перенумеровать лист",
+                "set sheet number", "renumber sheet", "присвоить номер"
+            }),
+            ["rename_sheet"] = new("Write", false, new[]
+            {
+                "переименовать лист", "имя листа", "название листа", "rename sheet",
+                "назови лист", "смена названия"
+            }),
+            ["sanitize_sheet_numbers"] = new("Write", true, new[]
+            {
+                "очистить номера листов", "невидимые символы", "sanitize sheet numbers",
+                "почистить номера", "исправить номера листов"
+            }),
             ["create_view_filter"] = new("Write", true, new[]
             {
                 "фильтр вида", "создать фильтр", "скрыть по параметру", "убрать с вида",

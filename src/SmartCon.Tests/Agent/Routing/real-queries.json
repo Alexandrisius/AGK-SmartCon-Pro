@@ -1879,6 +1879,102 @@
         "start_job"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r235",
+      "query": "Создай лист ОВ-01 и назови его План 1 этажа",
+      "expectedTools": [
+        "create_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r236",
+      "query": "Добавь в комплект новый лист с номером АР-101",
+      "expectedTools": [
+        "create_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r237",
+      "query": "Разложи эти виды на листе АР-1",
+      "expectedTools": [
+        "create_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r238",
+      "query": "Размести план 1 этажа на листе в левом верхнем углу",
+      "expectedTools": [
+        "create_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r239",
+      "query": "Перенеси видовое окно правее на листе",
+      "expectedTools": [
+        "move_viewport"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r240",
+      "query": "Сдвинь видовой экран на листе чуть ниже штампа",
+      "expectedTools": [
+        "move_viewport"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r241",
+      "query": "Поменяй номер листа АР-1 на АР-101",
+      "expectedTools": [
+        "set_sheet_number"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r242",
+      "query": "Присвой листу «План 1 этажа» номер ОВ-2",
+      "expectedTools": [
+        "set_sheet_number"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r243",
+      "query": "Переименуй лист ОВ-01 в «План отопления»",
+      "expectedTools": [
+        "rename_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r244",
+      "query": "Смени название листа со штампом на «Аксонометрия»",
+      "expectedTools": [
+        "rename_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r245",
+      "query": "Исправь номера листов с невидимыми символами",
+      "expectedTools": [
+        "sanitize_sheet_numbers"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r246",
+      "query": "Убери невидимые символы из номеров листов",
+      "expectedTools": [
+        "sanitize_sheet_numbers"
+      ],
+      "kind": "write"
     }
   ]
 }

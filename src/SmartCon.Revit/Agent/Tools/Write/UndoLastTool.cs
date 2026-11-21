@@ -108,6 +108,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         outcome.RollBackChangeSetId = details.Header.Id;
 
         var renames = new List<(ChangeItem Item, Element Element)>();
+        var sheetRenames = new List<(ChangeItem Item, ViewSheet Sheet)>();
 
         for (var index = details.Items.Count - 1; index >= 0; index--)
         {
@@ -229,6 +230,59 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 continue;
             }
 
+            // Sheet changes are reverted by UndoLastTool.Sheets.cs: created
+            // elements are deleted, centers restored, and number/name values
+            // planned as one batch (a swap needs temporary values).
+            if (key is "sheet_created" or "viewport_created" or "viewport_center")
+            {
+                var report = CreateReport(item);
+                var element = ResolveElement(doc, item);
+                var (reverted, revertError, revertReason) =
+                    RevertSheetChange(doc, element, item, key, force);
+                if (reverted)
+                {
+                    outcome.Batch.Changed.Add(report);
+                    outcome.AffectedCount++;
+                }
+                else if (revertError is null)
+                {
+                    report.Reason = revertReason;
+                    outcome.Batch.Skipped.Add(report);
+                }
+                else
+                {
+                    report.ErrorCode = revertError;
+                    report.Reason = revertReason;
+                    outcome.Batch.Failed.Add(report);
+                }
+
+                continue;
+            }
+
+            if (key is "sheet_number" or "sheet_name")
+            {
+                var element = ResolveElement(doc, item);
+                var report = CreateReport(item);
+                if (element is null)
+                {
+                    report.ErrorCode = "element_not_found";
+                    report.Reason = "The sheet no longer exists in the document.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                if (element is not ViewSheet sheet)
+                {
+                    report.ErrorCode = "unsupported_element";
+                    report.Reason = "Element " + item.ElementId + " is not a sheet.";
+                    outcome.Batch.Failed.Add(report);
+                    continue;
+                }
+
+                sheetRenames.Add((item, sheet));
+                continue;
+            }
+
             var genericReport = CreateReport(item);
 
             var genericElement = ResolveElement(doc, item);
@@ -260,6 +314,7 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         }
 
         RevertRenames(doc, renames, outcome, force);
+        RevertSheetRenames(doc, sheetRenames, outcome, force);
 
         // Family restores run after the project transaction and decide the final
         // success/affected state themselves (UndoLastTool.Families.cs).

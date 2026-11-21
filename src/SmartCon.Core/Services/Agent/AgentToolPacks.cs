@@ -117,8 +117,13 @@ public static class AgentToolPacks
         new()
         {
             Name = "sheets",
-            Description = "Листы и размещение видов.",
-            Tools = new[] { "list_sheets", "get_sheet_content", "delete_sheets" }
+            Description = "Листы и размещение видов: список, содержимое, создание, размещение видовых окон, номера и имена.",
+            Tools = new[]
+            {
+                "list_sheets", "get_sheet_content", "delete_sheets", "create_sheet",
+                "create_viewports", "move_viewport", "set_sheet_number", "rename_sheet",
+                "sanitize_sheet_numbers"
+            }
         },
         new()
         {

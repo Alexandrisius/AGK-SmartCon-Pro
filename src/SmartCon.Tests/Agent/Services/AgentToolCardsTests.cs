@@ -22,6 +22,12 @@ public sealed class AgentToolCardsTests
         "get_current_view_info",
         "list_sheets",
         "get_sheet_content",
+        "create_sheet",
+        "create_viewports",
+        "move_viewport",
+        "set_sheet_number",
+        "rename_sheet",
+        "sanitize_sheet_numbers",
         "list_schedules",
         "get_schedule_data",
         "rename_views",
@@ -76,7 +82,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(63, AgentToolCards.Count);
+        Assert.Equal(69, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

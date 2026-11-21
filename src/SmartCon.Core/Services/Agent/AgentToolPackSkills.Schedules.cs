@@ -6,8 +6,7 @@ public static partial class AgentToolPackSkills
         new[]
         {
             ("schedules", Schedules),
-            ("filters", Filters),
-            ("sheets", Sheets)
+            ("filters", Filters)
         };
 
     private const string Schedules = @"## Пак schedules: ведомости и спецификации
@@ -133,50 +132,4 @@ overrides хранятся **в каждом виде отдельно**.
   и категориями (`reused=true`).
 ";
 
-    private const string Sheets = @"## Пак sheets: листы и размещение видов
-
-### Карта тулов
-- `list_sheets` — листы: `numberContains`, `nameContains`, `excludePlaceholders`, `fields`.
-  Возвращает `widthMm/heightMm`, `viewCount`, `scheduleCount` и `visualDuplicates[]` —
-  номера, которые выглядят одинаково, но различаются невидимыми символами.
-- `get_sheet_content` — состав листа: виды (с координатами вьюпорта в мм) и расписания
-  (`instanceId`, координаты); `sheetIds` — пакетно, ≤50.
-- `delete_sheets` — удаление листов, `sheetIds` ≤50.
-
-### Кухня Revit
-- Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип
-  рамки (`FamilySymbol` категории `OST_TitleBlocks`); лист без рамки — `InvalidElementId`.
-- Размер листа хранится **не на листе**, а в параметрах экземпляра рамки `SHEET_WIDTH`/
-  `SHEET_HEIGHT`; id рамки — `ViewSheet.SheetTitleBlockId`.
-- Обычные виды ставятся на лист через `Viewport.Create`, расписания — через
-  `ScheduleSheetInstance.Create` (у расписания нет вьюпорта).
-- `Viewport.Create` принимает координаты листа в дюймах, `[0,0]` — левый нижний угол; после
-  создания нужен `Regenerate`, затем позиционирование `GetBoxOutline`/`SetBoxCenter`.
-- Один вид нельзя разместить на двух листах (`Viewport.CanAddViewToSheet`): для второго
-  листа вид дублируют (`View.Duplicate`: WithDetailing / AsDependent). Исключения — легенды
-  и расписания.
-- «Снять вид с листа» = удалить `Viewport`; сам вид остаётся в проекте. Обратное неверно:
-  удаление вида удаляет его размещения.
-- `ViewSheet.GetAllViewports()` **не показывает расписания** — их надо собирать отдельно
-  (`ScheduleSheetInstance`). «Лист пуст» по одному GetAllViewports — неверный вывод.
-- `SheetNumber` уникален (в 2026 — в пределах коллекции листов); дубль бросает исключение.
-
-### Инварианты
-- Прежде чем удалять лист, прочитайте `get_sheet_content`: размещённые виды останутся в
-  проекте (удаляются только размещения), но пользователь должен это знать.
-- `delete_sheets` — необратимо (`undoSupported=false`); всегда сначала `dryRun=true`.
-- Для «поставь вид на лист» проверяйте `isOnSheet` (`list_views`): занятый вид на второй
-  лист не встанет.
-
-### Рецепты
-1. «Что на листе А-101?»: `list_sheets(numberContains:""А-101"")` → `get_sheet_content(sheetId)`.
-2. «Найди листы без видов»: `list_sheets(fields=[sheetId,number,viewCount,scheduleCount])`
-   → кандидаты с нулями → уточнить `get_sheet_content`.
-3. «Удали пустые листы»: список → `delete_sheets(dryRun=true)` → подтверждение → apply.
-
-### Что нельзя
-- Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.
-- Удалять вид, чтобы освободить его для другого листа: удаляйте вьюпорт.
-- Ставить один вид на два листа без дублирования.
-";
 }
