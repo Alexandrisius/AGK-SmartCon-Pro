@@ -2087,6 +2087,38 @@
         "place_schedule_on_sheet"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r259",
+      "query": "Какие проектные параметры привязаны в модели?",
+      "expectedTools": [
+        "list_project_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r260",
+      "query": "К каким категориям привязан общий параметр АДСК_Этаж",
+      "expectedTools": [
+        "list_project_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r261",
+      "query": "Создай в проекте общий параметр Система для труб и фитингов",
+      "expectedTools": [
+        "add_project_shared_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r262",
+      "query": "Привяжи параметр Марка_КИП к категории как типовой",
+      "expectedTools": [
+        "add_project_shared_parameter"
+      ],
+      "kind": "write"
     }
   ]
 }

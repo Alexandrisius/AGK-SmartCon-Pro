@@ -473,6 +473,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
         services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
         services.AddSingleton<IAgentTool, ListSharedParametersTool>();
+        services.AddSingleton<IAgentTool, ListProjectParametersTool>();
         services.AddSingleton<IAgentTool, ListFiltersTool>();
         services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
         services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
@@ -513,6 +514,7 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
+        services.AddSingleton<IAgentTool, AddProjectSharedParameterTool>();
         services.AddSingleton<IAgentTool, RenameFamilyParameterTool>();
         services.AddSingleton<IAgentTool, AddFamilyParameterTool>();
         services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();

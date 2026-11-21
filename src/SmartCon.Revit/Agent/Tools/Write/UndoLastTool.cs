@@ -260,6 +260,34 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
                 continue;
             }
 
+            // Project parameter bindings are reverted by UndoLastTool.Parameters.cs:
+            // a created binding is removed, an extended one is re-bound to the
+            // recorded category set.
+            if (key == "project_parameter_binding")
+            {
+                var report = CreateReport(item);
+                var (reverted, revertError, revertReason) =
+                    RevertProjectParameterBinding(doc, item, force);
+                if (reverted)
+                {
+                    outcome.Batch.Changed.Add(report);
+                    outcome.AffectedCount++;
+                }
+                else if (revertError is null)
+                {
+                    report.Reason = revertReason;
+                    outcome.Batch.Skipped.Add(report);
+                }
+                else
+                {
+                    report.ErrorCode = revertError;
+                    report.Reason = revertReason;
+                    outcome.Batch.Failed.Add(report);
+                }
+
+                continue;
+            }
+
             // Sheet changes are reverted by UndoLastTool.Sheets.cs: created
             // elements are deleted, centers restored, and number/name values
             // planned as one batch (a swap needs temporary values).

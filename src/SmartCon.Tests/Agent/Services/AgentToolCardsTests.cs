@@ -53,6 +53,8 @@ public sealed class AgentToolCardsTests
         "map_family_parameters",
         "set_parameters",
         "remap_parameter_values",
+        "list_project_parameters",
+        "add_project_shared_parameter",
         "undo_last",
         "discard_change_set",
         "execute_plan",
@@ -89,7 +91,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(76, AgentToolCards.Count);
+        Assert.Equal(78, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

@@ -86,8 +86,12 @@ public static class AgentToolPacks
         new()
         {
             Name = "params",
-            Description = "Запись и перенос значений параметров.",
-            Tools = new[] { "set_parameters", "remap_parameter_values" }
+            Description = "Запись и перенос значений параметров; проектные общие параметры.",
+            Tools = new[]
+            {
+                "set_parameters", "remap_parameter_values", "list_project_parameters",
+                "add_project_shared_parameter"
+            }
         },
         new()
         {

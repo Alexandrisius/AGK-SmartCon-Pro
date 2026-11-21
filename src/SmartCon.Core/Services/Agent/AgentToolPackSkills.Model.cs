@@ -139,6 +139,8 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - `set_parameters` — `items[{elementId, parameter|guid, value, scope: instance|type, unit}]` ≤500, `dryRun`, `atomic`.
 - `remap_parameter_values` — перенос: `mapping[{source{name,guid,scope}, target{name,guid,scope}}]` ≤20, `filter{categories,levelIds,typeIds,limit}` ≤500.
+- `list_project_parameters` — проектные биндинги: имя, isShared, GUID, bindingType, категории.
+- `add_project_shared_parameter` — привязка определения из ФОП к категориям.
 
 ### Кухня Revit
 - У параметра четыре `StorageType`: String, Double, Integer, ElementId. `Parameter.Set` имеет типизированные перегрузки, и перегрузка не по тому типу просто не запишет значение.
@@ -156,6 +158,10 @@ public static partial class AgentToolPackSkills
 - `value` передаётся **строкой** — даже число. Для `Double` поле `unit` обязательно (в том числе
   `unit:""raw""` для безразмерных): без единицы тул вернёт `invalid_value`, а не подставит
   внутренние единицы.
+- `add_project_shared_parameter`: `createDefinition=true` — только по явной договорённости:
+  определение пишется в ФОП, откатывается лишь биндинг (`definitionCreated: true`).
+  Тот же GUID — добавление недостающих категорий (повтор — `no_changes`); смена
+  instance↔type — `binding_type_conflict`; чужое имя — `name_conflict`.
 - После записи читайте `changed`/`failed` с причинами: `parameter_not_found`,
   `readonly_parameter`, `invalid_value`, `invalid_unit`, `scope_mismatch`,
   `unsupported_storage_type`, `set_failed` — у каждого свой следующий шаг.
@@ -165,7 +171,8 @@ public static partial class AgentToolPackSkills
 ### Рецепты
 1. Проставить «Этаж» 300 стенам: `query_elements` → `set_parameters(items, scope:""instance"")` → read-back по 2–3 элементам.
 2. Изменить типовой параметр у типа трубы: `set_parameters([{elementId:typeId, parameter:""Диаметр"", value:""100"", unit:""mm"", scope:""type""}])`.
-3. Перенести «Наименование» в «Марка»: `remap_parameter_values(mapping:[{source:{name:""Наименование""}, target:{name:""Марка""}}])`.
+3. Перенести «Наименование» в «Марку»: `remap_parameter_values(mapping:[{source:{name:""Наименование""}, target:{name:""Марка""}}])`.
+4. Новый общий параметр: `list_shared_parameters` → `add_project_shared_parameter` → `list_project_parameters`.
 
 ### Что нельзя
 - Писать числовое значение без единиц и удивляться масштабу.

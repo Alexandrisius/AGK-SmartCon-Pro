@@ -115,6 +115,18 @@ public static class AgentToolCatalog
                 "заменить", "ремап", "remap", "replace value", "переименовать значение",
                 "bulk elements", "many elements", "сотни элементов", "массовая замена"
             }),
+            ["list_project_parameters"] = new("Read", false, new[]
+            {
+                "проектные параметры", "параметры проекта", "привязка параметра", "биндинг",
+                "project parameters", "parameter bindings", "какие параметры в проекте",
+                "забинден", "привязать параметр категорию"
+            }),
+            ["add_project_shared_parameter"] = new("Write", false, new[]
+            {
+                "создать общий параметр в проекте", "добавить проектный параметр",
+                "привязать общий параметр", "забиндить параметр на категорию",
+                "add project shared parameter", "bind shared parameter", "новый параметр проекта"
+            }),
             ["undo_last"] = new("Write", false, new[]
             {
                 "отменить", "откатить", "вернуть", "откат", "undo", "revert", "rollback"
