@@ -91,8 +91,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | H1/H1d закрыты; S.10/S.11 (batch-first discovery) закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
-| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.5 закрыт 2026-11-21 (листы, dogfood 4/5, follow-ups #438–#440); в работе G.1–G.4. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | S.5/S.10/S.11 закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
+| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.1/G.2/G.5 закрыты 2026-11-21 (+S.5); в работе G.3–G.4; follow-ups #438–#440. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
@@ -211,7 +211,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `S.2` | Политика overwrite шаблона и прогресс больших батчей | P2 | `backlog` | #337 |
 | `S.3` | Fidelity guard для формул | P2 | `backlog` | #338 |
 | `S.4` | Судьба пустых паков: реализовать или удалить | P2 | `backlog` | #339 |
-| `S.5` | Карантин/confirmNames для destructive-операций | P1 | `backlog` | #340 |
+| `S.5` | Карантин/confirmNames для destructive-операций | P1 | `done` | #340 |
 | `S.6` | Персистентность загруженных паков на диалог | P2 | `backlog` | #341 |
 | `S.7` | copy_document/save_as_copy и регрессионный стресс-набор | P2 | `backlog` | #342 |
 | `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `in-progress` | #417 |
@@ -226,8 +226,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `G.1` | delete-инструменты: элементы, листы, ведомости | P1 | `backlog` | #343 |
-| `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `backlog` | #344 |
+| `G.1` | delete-инструменты: элементы, листы, ведомости | P1 | `done` | #343 |
+| `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `done` | #344 |
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `backlog` | #345 |
 | `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `backlog` | #346 |
 | `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
