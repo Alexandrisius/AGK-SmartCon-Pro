@@ -19,6 +19,11 @@ public sealed partial class UndoLastTool
         string key,
         bool force)
     {
+        // A removed viewport no longer exists by design — its placement is
+        // re-created from the data recorded in OldValue.
+        if (key == "viewport_removed")
+            return RevertViewportRemoved(doc, item, element);
+
         if (element is null)
         {
             return key == "sheet_created"
@@ -51,6 +56,77 @@ public sealed partial class UndoLastTool
             }
 
             return (false, null, "Unknown change item type '" + key + "' — skipped.");
+        }
+        catch (Exception ex)
+        {
+            return (false, "revert_failed", ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Restores a removed placement: the viewport is re-created on the recorded
+    /// sheet at the recorded center. A view placed on another sheet in the
+    /// meantime is a conflict, not something to undo silently.
+    /// </summary>
+    private static (bool Ok, string? ErrorCode, string? Reason) RevertViewportRemoved(
+        Document doc,
+        ChangeItem item,
+        Element? element)
+    {
+        if (!AgentSheetWriteHelper.TryParsePlacement(
+                item.OldValue, out var viewId, out var sheetId, out var mmX, out var mmY))
+            return (false, "invalid_change_item",
+                "The recorded placement is not 'viewId;sheetId;x;y' millimetres.");
+
+        if (element is Viewport existing)
+        {
+            if (existing.ViewId.GetValue() == viewId && existing.SheetId.GetValue() == sheetId)
+                return (false, null,
+                    "The view is already placed on the recorded sheet (no-op).");
+
+            return (false, "undo_conflict",
+                "Element " + item.ElementId + " exists again as another viewport — the " +
+                "placement was restored separately (conflict).");
+        }
+
+        if (doc.GetElement(ElementIdCompat.Create(viewId)) is not View view)
+            return (false, "element_not_found",
+                "The view " + viewId + " no longer exists in the document.");
+
+        if (doc.GetElement(ElementIdCompat.Create(sheetId)) is not ViewSheet sheet)
+            return (false, "sheet_not_found",
+                "The sheet " + sheetId + " no longer exists in the document.");
+
+        foreach (var candidate in new FilteredElementCollector(doc).OfClass(typeof(Viewport)))
+        {
+            if (candidate is Viewport viewport && viewport.ViewId.GetValue() == viewId)
+                return (false, "undo_conflict",
+                    "View '" + view.Name + "' is placed on another sheet in the meantime " +
+                    "(conflict); removing that placement first is up to the user.");
+        }
+
+        try
+        {
+            doc.Regenerate();
+            var pointX = AgentSheetWriteHelper.MillimetersToInternal(mmX);
+            var pointY = AgentSheetWriteHelper.MillimetersToInternal(mmY);
+            var point = new XYZ(pointX, pointY, 0);
+            var restored = Viewport.Create(doc, sheet.Id, view.Id, point);
+            if (restored is null)
+            {
+                // Viewport.Create returns null on a document that was not
+                // regenerated after its last change; one more try (IT-verified
+                // pattern from CreateViewportsTool).
+                doc.Regenerate();
+                restored = Viewport.Create(doc, sheet.Id, view.Id, point);
+            }
+
+            if (restored is null)
+                return (false, "revert_failed",
+                    "Revit returned no viewport for '" + view.Name + "' on sheet '" +
+                    sheet.SheetNumber + "'.");
+
+            return (true, null, null);
         }
         catch (Exception ex)
         {
@@ -266,6 +342,35 @@ public sealed partial class UndoLastTool
                     current + "': " + ex.Message +
                     " [Action: set the " + valueKind + " manually in Revit]");
             }
+        }
+    }
+
+    private static void RevertSheetElementItem(
+        Document doc,
+        ChangeItem item,
+        string key,
+        bool force,
+        WriteOutcome outcome)
+    {
+        var report = CreateReport(item);
+        var element = ResolveElement(doc, item);
+        var (reverted, revertError, revertReason) =
+            RevertSheetChange(doc, element, item, key, force);
+        if (reverted)
+        {
+            outcome.Batch.Changed.Add(report);
+            outcome.AffectedCount++;
+        }
+        else if (revertError is null)
+        {
+            report.Reason = revertReason;
+            outcome.Batch.Skipped.Add(report);
+        }
+        else
+        {
+            report.ErrorCode = revertError;
+            report.Reason = revertReason;
+            outcome.Batch.Failed.Add(report);
         }
     }
 }

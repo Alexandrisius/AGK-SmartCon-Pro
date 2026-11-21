@@ -76,7 +76,8 @@ public sealed class AgentToolPacksTests
             ["sheets"] = new[]
             {
                 "list_sheets", "get_sheet_content", "delete_sheets", "create_sheet",
-                "create_viewports", "move_viewport", "set_sheet_number", "rename_sheet",
+                "create_viewports", "move_viewport", "move_viewports", "remove_viewports",
+                "set_sheet_number", "renumber_sheets", "rename_sheet",
                 "sanitize_sheet_numbers"
             },
             ["schedules"] = new[]
@@ -126,7 +127,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(87, placements.Length);
+        Assert.Equal(90, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

@@ -17,7 +17,18 @@ public static partial class AgentToolPackSkills
 - `create_viewports` — разместить виды на листе пакетно (≤100, одна транзакция):
   `sheetId` + `items[{viewId, pointMmX, pointMmY}]`.
 - `move_viewport` — переместить видовое окно: `viewportId` + новый центр `pointMmX/pointMmY`.
-- `set_sheet_number` / `rename_sheet` — номер и имя листа (лист по `sheetId`/номеру/имени).
+- `move_viewports` — пакетное перемещение окон (≤100, одна транзакция):
+  `items[{viewportId, pointMmX, pointMmY}]` или `shiftMm {dx,dy}` — сдвиг каждого окна
+  от текущего центра (координаты в items игнорируются).
+- `remove_viewports` — снять виды с листа (≤100, одна транзакция): `viewportIds[]` или
+  `sheetId`+`viewIds[]`. Удаляются только Viewport — виды остаются (`viewsKept`); undo
+  восстанавливает размещения по записанным координатам.
+- `set_sheet_number` / `rename_sheet` — номер и имя одного листа (лист по
+  `sheetId`/номеру/имени).
+- `renumber_sheets` — перенумеровать блок листов (≤50, одна транзакция): `sheetIds[]` в
+  целевом порядке, номера `numbers[]` по порядку или `startNumber` («ОВ-5» → ОВ-5,
+  ОВ-6...). Через временные номера: вставка в середину без промежуточных коллизий;
+  undo возвращает все номера.
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
 
@@ -56,7 +67,7 @@ public static partial class AgentToolPackSkills
 - Для «поставь вид на лист» проверяйте `isOnSheet` (`list_views`): занятый вид на второй
   лист не встанет.
 - Write-тулы: сначала `dryRun=true` (по умолчанию), покажите план, потом `dryRun=false`.
-  Координаты для create_viewports/move_viewport берите из `get_sheet_content`
+  Координаты для create_viewports/move_viewport(s) берите из `get_sheet_content`
   (`centerXMm/centerYMm` — уже в мм от левого нижнего угла листа).
 - Коллизию номера после очистки `sanitize_sheet_numbers` не перезаписывает молча — лист
   помечается `sheet_number_taken` и разрешается вручную.
@@ -68,18 +79,29 @@ public static partial class AgentToolPackSkills
 3. «Создать лист и разложить планы»: `create_sheet(number:""ОВ-01"", name:""План 1 этажа"",
    dryRun=false)` → `list_views` (ids свободных планов) → `create_viewports(sheetId,
    items=[{viewId, pointMmX, pointMmY}], dryRun=false)` → `get_sheet_content` — проверка.
-4. «Перенумеровать лист»: `set_sheet_number(sheetNumber:""АР-1"", newNumber:""АР-101"")`.
-5. «Номер выглядит нормально, но Revit говорит „занят“»: `list_sheets` →
+4. «Сдвинуть все виды на листе вправо на 100 мм»: `move_viewports(items=[{viewportId}...],
+   shiftMm={""dx"":100,""dy"":0}, dryRun=false)` — центры берутся текущие.
+5. «Снять виды с листа» (виды оставить): `get_sheet_content` →
+   `remove_viewports(viewportIds=[...], dryRun=false)` → `viewsKept` — виды живы.
+6. «Вставить номер в середину» (ОВ-1,ОВ-2 → ОВ-1,ОВ-3,ОВ-2):
+   `renumber_sheets(sheetIds=[порядок], numbers=[""ОВ-1"",""ОВ-3"",""ОВ-2""],
+   dryRun=false)`; сквозная последовательность — `startNumber:""ОВ-5""`.
+7. «Перенумеровать один лист»: `set_sheet_number(sheetNumber:""АР-1"", newNumber:""АР-101"")`.
+8. «Номер выглядит нормально, но Revit говорит „занят“»: `list_sheets` →
    `hasInvisibleCharacters`/`numberCodePoints` → `sanitize_sheet_numbers(dryRun=false)`.
-6. «Удали пустые листы»: `list_sheets` (viewCount/scheduleCount) → `get_sheet_content`
+9. «Удали пустые листы»: `list_sheets` (viewCount/scheduleCount) → `get_sheet_content`
    каждого кандидата → `delete_sheets(dryRun=true)` → подтвердить список →
    `delete_sheets(dryRun=false, confirmNames=names[])`.
 
 ### Что нельзя
 - Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.
-- Удалять вид, чтобы освободить его для другого листа: удаляйте вьюпорт.
+- Удалять вид, чтобы освободить его для другого листа: снимайте вьюпорт
+  (`remove_viewports`) — вид остаётся в проекте.
 - Ставить один вид на два листа без дублирования.
-- Сдвигать вьюпорт «на сколько-то мм» — только абсолютная точка (центр); посчитайте
-  новую позицию сами по текущим координатам из `get_sheet_content`.
+- Двигать десятки окон по одному (`move_viewport` в цикле) — для этого
+  `move_viewports` (одна транзакция, один change set); сдвиг — `shiftMm`,
+  абсолютные центры — `pointMmX/pointMmY`.
+- Перенумеровывать цепочку листов циклом `set_sheet_number` (промежуточные
+  коллизии) — для этого `renumber_sheets` (временные номера внутри).
 ";
 }

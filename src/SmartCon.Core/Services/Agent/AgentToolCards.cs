@@ -18,6 +18,7 @@ public static partial class AgentToolCards
             .Concat(ViewCards())
             .Concat(ViewSettingsCards())
             .Concat(SheetCards())
+            .Concat(SheetBatchCards())
             .Concat(ScheduleCards())
             .Concat(FilterCards())
             .Concat(FamilyCards())

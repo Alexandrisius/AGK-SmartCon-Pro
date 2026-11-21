@@ -178,8 +178,8 @@ public static partial class AgentToolCards
                     "листа». viewportId и текущие координаты бери из get_sheet_content.",
                 WhenNotToUse =
                     "Когда вида ещё нет на листе — create_viewports; когда нужно узнать позицию — " +
-                    "get_sheet_content; когда нужно убрать вид с листа — удали Viewport вручную " +
-                    "(инструмента пока нет).",
+                    "get_sheet_content; когда окон несколько — move_viewports; когда нужно " +
+                    "убрать вид с листа — remove_viewports.",
                 Examples = new[]
                 {
                     "Перенеси видовое окно правее",
@@ -215,7 +215,7 @@ public static partial class AgentToolCards
                     "sheet_number_invalid; занятый (включая визуальный дубль) — sheet_number_taken.",
                 WhenToUse =
                     "Когда надо перенумеровать листы: «поменяй номер АР-1 на АР-101». Для " +
-                    "массовой перенумерации вызывай по одному листу или собери execute_plan.",
+                    "массовой перенумерации нескольких листов — renumber_sheets.",
                 WhenNotToUse =
                     "Когда нужно поменять имя (название) листа — rename_sheet; когда нужно " +
                     "убрать невидимые символы из номеров — sanitize_sheet_numbers; когда лист " +

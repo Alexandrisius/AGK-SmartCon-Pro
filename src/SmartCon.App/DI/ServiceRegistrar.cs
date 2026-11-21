@@ -509,7 +509,10 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, CreateSheetTool>();
         services.AddSingleton<IAgentTool, CreateViewportsTool>();
         services.AddSingleton<IAgentTool, MoveViewportTool>();
+        services.AddSingleton<IAgentTool, MoveViewportsTool>();
+        services.AddSingleton<IAgentTool, RemoveViewportsTool>();
         services.AddSingleton<IAgentTool, SetSheetNumberTool>();
+        services.AddSingleton<IAgentTool, RenumberSheetsTool>();
         services.AddSingleton<IAgentTool, RenameSheetTool>();
         services.AddSingleton<IAgentTool, SanitizeSheetNumbersTool>();
         services.AddSingleton<IAgentTool, DeleteFamilyTypesTool>();

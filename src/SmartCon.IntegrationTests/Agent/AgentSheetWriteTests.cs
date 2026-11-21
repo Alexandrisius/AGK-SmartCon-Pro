@@ -8,7 +8,7 @@ using SmartCon.Revit.Transactions;
 
 namespace SmartCon.IntegrationTests.Agent;
 
-public sealed class AgentSheetWriteTests : RevitApiTest
+public sealed partial class AgentSheetWriteTests : RevitApiTest
 {
     private const string LevelName = "SC_SheetWrite_Level";
     private const string SheetNumber = "SC-W-100";
@@ -443,6 +443,12 @@ public sealed class AgentSheetWriteTests : RevitApiTest
             nameof(RenameSheetTool) => (T)(object)new RenameSheetTool(
                 context, _transactions!, _changeSets!),
             nameof(SanitizeSheetNumbersTool) => (T)(object)new SanitizeSheetNumbersTool(
+                context, _transactions!, _changeSets!),
+            nameof(MoveViewportsTool) => (T)(object)new MoveViewportsTool(
+                context, _transactions!, _changeSets!),
+            nameof(RemoveViewportsTool) => (T)(object)new RemoveViewportsTool(
+                context, _transactions!, _changeSets!),
+            nameof(RenumberSheetsTool) => (T)(object)new RenumberSheetsTool(
                 context, _transactions!, _changeSets!),
             _ => throw new ArgumentOutOfRangeException(nameof(T), typeof(T).Name)
         };

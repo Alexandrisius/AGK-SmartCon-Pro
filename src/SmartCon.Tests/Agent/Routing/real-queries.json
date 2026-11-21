@@ -2279,6 +2279,54 @@
         "set_browser_folder"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r283",
+      "query": "Сдвинь все видовые окна на листе вправо на 100 мм",
+      "expectedTools": [
+        "move_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r284",
+      "query": "Переставь сетку планов на листе одним вызовом",
+      "expectedTools": [
+        "move_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r285",
+      "query": "Убери эти виды с листа, сами виды не удаляй",
+      "expectedTools": [
+        "remove_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r286",
+      "query": "Сними все виды с листа, лист должен стать пустым",
+      "expectedTools": [
+        "remove_viewports"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r287",
+      "query": "Перенумеруй блок листов: вставь номер в середину альбома",
+      "expectedTools": [
+        "renumber_sheets"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r288",
+      "query": "Пронумеруй эти листы подряд с АР-10",
+      "expectedTools": [
+        "renumber_sheets"
+      ],
+      "kind": "write"
     }
   ]
 }

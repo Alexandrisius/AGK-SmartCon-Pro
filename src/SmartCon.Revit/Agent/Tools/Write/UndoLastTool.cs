@@ -336,31 +336,13 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             }
 
             // Sheet changes are reverted by UndoLastTool.Sheets.cs: created
-            // elements are deleted, centers restored, and number/name values
-            // planned as one batch (a swap needs temporary values).
-            if (key is "sheet_created" or "viewport_created" or "viewport_center")
+            // elements are deleted, centers restored, removed placements
+            // re-created, and number/name values planned as one batch (a swap
+            // needs temporary values).
+            if (key is "sheet_created" or "viewport_created" or "viewport_center"
+                or "viewport_removed")
             {
-                var report = CreateReport(item);
-                var element = ResolveElement(doc, item);
-                var (reverted, revertError, revertReason) =
-                    RevertSheetChange(doc, element, item, key, force);
-                if (reverted)
-                {
-                    outcome.Batch.Changed.Add(report);
-                    outcome.AffectedCount++;
-                }
-                else if (revertError is null)
-                {
-                    report.Reason = revertReason;
-                    outcome.Batch.Skipped.Add(report);
-                }
-                else
-                {
-                    report.ErrorCode = revertError;
-                    report.Reason = revertReason;
-                    outcome.Batch.Failed.Add(report);
-                }
-
+                RevertSheetElementItem(doc, item, key, force, outcome);
                 continue;
             }
 

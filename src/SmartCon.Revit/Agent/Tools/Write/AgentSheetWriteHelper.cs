@@ -152,6 +152,39 @@ internal static class AgentSheetWriteHelper
                && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out mmY);
     }
 
+    /// <summary>
+    /// Serialized placement of a removed viewport ("viewId;sheetId;x;y" with the
+    /// center in millimetres) — enough for undo_last to re-create the viewport.
+    /// </summary>
+    internal static string PlacementText(long viewId, long sheetId, double mmX, double mmY) =>
+        viewId.ToString(CultureInfo.InvariantCulture) + ";" +
+        sheetId.ToString(CultureInfo.InvariantCulture) + ";" +
+        CenterText(mmX, mmY);
+
+    internal static bool TryParsePlacement(
+        string? text,
+        out long viewId,
+        out long sheetId,
+        out double mmX,
+        out double mmY)
+    {
+        viewId = 0;
+        sheetId = 0;
+        mmX = 0;
+        mmY = 0;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var parts = text!.Split(';');
+        if (parts.Length != 4)
+            return false;
+
+        return long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out viewId)
+               && long.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out sheetId)
+               && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out mmX)
+               && double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out mmY);
+    }
+
     internal static double MillimetersToInternal(double mm) =>
         UnitUtils.ConvertToInternalUnits(mm, UnitTypeId.Millimeters);
 }
