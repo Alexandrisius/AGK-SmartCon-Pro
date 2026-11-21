@@ -8,6 +8,7 @@ using Nice3point.TUnit.Revit;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
@@ -33,8 +34,11 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
     // No product turn limits (owner policy): ни раундов, ни времени. This harness
     // cap only guards test runtime: case 3 with a diligent dry-run → apply →
     // read-back → fix cycle needed 8+ rounds (first live run #445 ran out at 7
-    // mid-fix, which measured the cap, not the model).
-    private const int MaxRoundsPerTask = 10;
+    // mid-fix, which measured the cap, not the model). Case 5 re-measured it
+    // (2026-11-21): a 12-family migration spends 3–4 rounds on reads plus 5+ on
+    // the job lifecycle, and both live runs hit 10 before the final report —
+    // the model was mid-work, so the cap graded itself again.
+    private const int MaxRoundsPerTask = 20;
 
     /// <summary>Стартовый блок теста из SSOT — дословно, добавляется к каждому кейсу.</summary>
     private const string StarterBlock =
@@ -333,7 +337,12 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
 
     private ToolResult ExecutePlainTool(IAgentTool tool, JsonElement args) =>
         tool.ExecuteAsync(
-                new AgentToolContext(new InlineAwaitableEvent(), string.Empty, Guid.Empty)
+                // Real document identity: the job spec validator rejects an empty
+                // documentId ("documentId is required"), and the first live case 5
+                // run burned 6 rounds on that harness artifact (#445) — job tools
+                // need the same context the production executor provides.
+                new AgentToolContext(
+                    new InlineAwaitableEvent(), AgentDocumentIdentity.GetDocumentId(Doc), Guid.Empty)
                 {
                     WriteApproved = true
                 },
