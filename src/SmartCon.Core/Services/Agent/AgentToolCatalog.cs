@@ -276,6 +276,16 @@ public static class AgentToolCatalog
             {
                 "удалить лист", "убрать лист", "delete sheet", "remove sheet", "почистить листы"
             }),
+            ["delete_elements"] = new("Write", true, new[]
+            {
+                "удалить элементы", "удалить элемент", "delete element", "remove element",
+                "удалить стену", "удалить объекты", "почистить элементы"
+            }),
+            ["delete_schedules"] = new("Write", true, new[]
+            {
+                "удалить спецификацию", "удалить ведомость", "убрать спецификацию",
+                "delete schedule", "remove schedule", "почистить ведомости"
+            }),
             ["delete_family_types"] = new("Write", true, new[]
             {
                 "удалить типоразмер", "удалить тип", "delete family type", "remove type"

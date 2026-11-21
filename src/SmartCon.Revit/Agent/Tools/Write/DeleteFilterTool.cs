@@ -2,6 +2,7 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent.Tools.Read;
@@ -28,12 +29,14 @@ public sealed class DeleteFilterTool : AgentWriteToolBase
         Name = "delete_filter",
         Description =
             "Deletes a parameter view filter by filterId or filterName and reports the views it " +
-            "was applied to (includeAppliedViews=false skips that scan). Deletion is destructive " +
-            "and cannot be undone by undo_last; use the Revit Undo command or a backup if the " +
-            "filter is needed again. Dry run by default.",
+            "was applied to (includeAppliedViews=false skips that scan). The dry run returns " +
+            "names[]; apply requires confirmNames equal to a FRESH dry-run names[] list (a " +
+            "model change refuses the call). Deletion is destructive and cannot be undone by " +
+            "undo_last; use the Revit Undo command or a backup if the filter is needed again. " +
+            "Dry run by default.",
         Risk = AgentToolRisk.Destructive,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""confirmNames"":{""type"":""array"",""items"":{""type"":""string""}},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -90,10 +93,20 @@ public sealed class DeleteFilterTool : AgentWriteToolBase
                                 : ".");
             outcome.Batch.Changed.Add(report);
             outcome.Data["wouldDelete"] = true;
+            outcome.Data["names"] = new List<string> { resolvedName };
             outcome.Data["appliedViewCount"] = appliedViewCount.HasValue
                 ? (object)appliedViewCount.Value
                 : "notComputed";
             outcome.Data["undoSupported"] = false;
+            return;
+        }
+
+        var confirm = AgentDeleteConfirm.Verify(
+            new[] { resolvedName },
+            AgentDeleteHelper.GetConfirmNames(args));
+        if (!confirm.Ok)
+        {
+            AgentDeleteHelper.RefuseConfirmation(outcome, confirm);
             return;
         }
 

@@ -77,8 +77,11 @@ public static class AgentToolPacks
         new()
         {
             Name = "elements",
-            Description = "Поиск, сводка и параметры элементов модели.",
-            Tools = new[] { "query_elements", "summarize_elements", "get_element_details" }
+            Description = "Поиск, сводка, параметры и удаление элементов модели.",
+            Tools = new[]
+            {
+                "query_elements", "summarize_elements", "get_element_details", "delete_elements"
+            }
         },
         new()
         {
@@ -142,8 +145,12 @@ public static class AgentToolPacks
         new()
         {
             Name = "schedules",
-            Description = "Ведомости и спецификации: список, данные и определение (поля/фильтры/сортировка).",
-            Tools = new[] { "list_schedules", "get_schedule_data", "get_schedule_definition" }
+            Description =
+                "Ведомости и спецификации: список, данные, определение (поля/фильтры/сортировка) и удаление.",
+            Tools = new[]
+            {
+                "list_schedules", "get_schedule_data", "get_schedule_definition", "delete_schedules"
+            }
         },
         new()
         {

@@ -19,7 +19,7 @@ public static partial class AgentToolPackSkills
 - `move_viewport` — переместить видовое окно: `viewportId` + новый центр `pointMmX/pointMmY`.
 - `set_sheet_number` / `rename_sheet` — номер и имя листа (лист по `sheetId`/номеру/имени).
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
-- `delete_sheets` — удаление листов, `sheetIds` ≤50.
+- `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
 
 ### Кухня Revit
 - Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип
@@ -49,7 +49,10 @@ public static partial class AgentToolPackSkills
 ### Инварианты
 - Прежде чем удалять лист, прочитайте `get_sheet_content`: размещённые виды останутся в
   проекте (удаляются только размещения), но пользователь должен это знать.
-- `delete_sheets` — необратимо (`undoSupported=false`); всегда сначала `dryRun=true`.
+- `delete_sheets` — необратимо (`undoSupported=false`); всегда сначала `dryRun=true`, а apply —
+  с `confirmNames` = `names[]` СВЕЖЕГО dry-run (формат «номер - имя»). Отказ
+  `confirm_names_required`/`confirm_names_mismatch` = модель изменилась: повтори dry-run и
+  передай его свежий names[].
 - Для «поставь вид на лист» проверяйте `isOnSheet` (`list_views`): занятый вид на второй
   лист не встанет.
 - Write-тулы: сначала `dryRun=true` (по умолчанию), покажите план, потом `dryRun=false`.
@@ -69,7 +72,8 @@ public static partial class AgentToolPackSkills
 5. «Номер выглядит нормально, но Revit говорит „занят“»: `list_sheets` →
    `hasInvisibleCharacters`/`numberCodePoints` → `sanitize_sheet_numbers(dryRun=false)`.
 6. «Удали пустые листы»: `list_sheets` (viewCount/scheduleCount) → `get_sheet_content`
-   каждого кандидата → `delete_sheets(dryRun=true)` → подтвердить список → `dryRun=false`.
+   каждого кандидата → `delete_sheets(dryRun=true)` → подтвердить список →
+   `delete_sheets(dryRun=false, confirmNames=names[])`.
 
 ### Что нельзя
 - Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.

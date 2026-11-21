@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 
@@ -8,7 +9,9 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
 /// Deletes sheets by id. The report lists how many views and schedules were
-/// placed on each sheet. Destructive: not reversible by undo_last.
+/// placed on each sheet. Destructive: not reversible by undo_last. The apply
+/// requires confirmNames equal to a fresh recomputation of the sheet names
+/// (S.5).
 /// </summary>
 public sealed class DeleteSheetsTool : AgentWriteToolBase
 {
@@ -27,12 +30,14 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
         Name = "delete_sheets",
         Description =
             "Deletes sheets by sheetId (up to 50). Reports how many views were placed on each " +
-            "sheet before deletion. Destructive: deletion cannot be undone by undo_last. " +
+            "sheet before deletion. The dry run returns names[] ('number - name' per sheet); " +
+            "apply requires confirmNames equal to a FRESH dry-run names[] list (a model change " +
+            "refuses the call). Destructive: deletion cannot be undone by undo_last. " +
             "Dry run by default.",
         Risk = AgentToolRisk.Destructive,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""sheetIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""sheetIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""sheetIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""confirmNames"":{""type"":""array"",""items"":{""type"":""string""}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""sheetIds""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -53,6 +58,7 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
 
         var deleted = 0;
         var failed = 0;
+        var targets = new List<(long Id, string Name)>();
         foreach (var sheetId in sheetIds)
         {
             ct.ThrowIfCancellationRequested();
@@ -78,14 +84,59 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
                 // The count is informational.
             }
 
-            report.Name = sheet.SheetNumber + " - " + sheet.Name;
+            var name = sheet.SheetNumber + " - " + sheet.Name;
+            report.Name = name;
             report.Detail = placedViews + " placed view(s)";
+            targets.Add((sheetId, name));
+        }
 
-            if (dryRun)
+        var names = targets.Select(target => target.Name).ToArray();
+        AgentDeleteHelper.PublishNames(outcome, names);
+
+        if (dryRun)
+        {
+            foreach (var target in targets)
             {
-                report.Reason = "Dry run: the sheet would be deleted.";
-                outcome.Batch.Changed.Add(report);
-                deleted++;
+                outcome.Batch.Changed.Add(new WriteItemReport
+                {
+                    Id = target.Id,
+                    Name = target.Name,
+                    Reason = "Dry run: the sheet would be deleted."
+                });
+            }
+
+            deleted = targets.Count;
+            outcome.AffectedCount = deleted;
+            if (failed > 0)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode ??= "partial_failure";
+                outcome.Message = deleted + " sheet(s) planned, " + failed + " failed. See failed[].";
+            }
+
+            return;
+        }
+
+        var confirm = AgentDeleteConfirm.Verify(names, AgentDeleteHelper.GetConfirmNames(args));
+        if (!confirm.Ok)
+        {
+            AgentDeleteHelper.RefuseConfirmation(outcome, confirm);
+            return;
+        }
+
+        foreach (var target in targets)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var report = new WriteItemReport { Id = target.Id, Name = target.Name };
+            var sheet = doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id))
+                as ViewSheet;
+            if (sheet is null)
+            {
+                report.ErrorCode = "sheet_not_found";
+                report.Reason = "Sheet " + target.Id + " disappeared before the deletion.";
+                outcome.Batch.Failed.Add(report);
+                failed++;
                 continue;
             }
 
@@ -114,16 +165,13 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
             outcome.Message = deleted + " sheet(s) deleted, " + failed + " failed. See failed[].";
         }
 
-        if (!dryRun)
+        if (deleted > 0)
+        {
+            AgentDeleteHelper.MarkDestructiveApplied(outcome, "sheets");
+        }
+        else
         {
             outcome.SuppressChangeSet = true;
-            if (deleted > 0)
-            {
-                outcome.Data["undoSupported"] = false;
-                outcome.Warnings.Add(
-                    "Deleted sheets cannot be restored by undo_last; use the Revit Undo command " +
-                    "or a backup if you need them back.");
-            }
         }
     }
 }

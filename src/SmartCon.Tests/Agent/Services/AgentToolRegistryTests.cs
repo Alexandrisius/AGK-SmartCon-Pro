@@ -69,7 +69,7 @@ public sealed class AgentToolRegistryTests
 
         var registry = new AgentToolRegistry(tools);
 
-        Assert.Equal(69, registry.GetDefinitions().Count);
+        Assert.Equal(71, registry.GetDefinitions().Count);
         Assert.All(registry.GetDefinitions(), definition =>
         {
             Assert.True(AgentToolCards.TryGet(definition.Name, out var card));

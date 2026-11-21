@@ -1975,6 +1975,38 @@
         "sanitize_sheet_numbers"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r245",
+      "query": "Удали эти элементы из модели по списку id",
+      "expectedTools": [
+        "delete_elements"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r246",
+      "query": "Убери лишние тестовые элементы и покажи что удалено",
+      "expectedTools": [
+        "delete_elements"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r247",
+      "query": "Удали тестовую спецификацию из проекта",
+      "expectedTools": [
+        "delete_schedules"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r248",
+      "query": "Убери ненужные ведомости, которые мы создали для проверки",
+      "expectedTools": [
+        "delete_schedules"
+      ],
+      "kind": "write"
     }
   ]
 }

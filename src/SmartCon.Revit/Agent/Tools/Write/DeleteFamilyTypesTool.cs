@@ -2,6 +2,7 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 
@@ -9,7 +10,9 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
 /// Deletes family types (FamilySymbol). A type in use is refused unless
-/// force=true, because Revit then also deletes its instances.
+/// force=true, because Revit then also deletes its instances. The apply
+/// requires confirmNames equal to a fresh recomputation of the type names
+/// (S.5).
 /// </summary>
 public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
 {
@@ -29,11 +32,13 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
         Description =
             "Deletes family types (FamilySymbol) by typeId (up to 50). A type with placed " +
             "instances is refused unless force=true; forced deletion also deletes those " +
-            "instances. Destructive: not reversible by undo_last. Dry run by default.",
+            "instances. The dry run returns names[] ('family : type'); apply requires " +
+            "confirmNames equal to a FRESH dry-run names[] list (a model change refuses the " +
+            "call). Destructive: not reversible by undo_last. Dry run by default.",
         Risk = AgentToolRisk.Destructive,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""typeIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""force"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""typeIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""typeIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""force"":{""type"":""boolean"",""default"":false},""confirmNames"":{""type"":""array"",""items"":{""type"":""string""}},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""typeIds""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -58,13 +63,13 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
 
         var deleted = 0;
         var failed = 0;
+        var targets = new List<(long Id, string Name)>();
         foreach (var typeId in typeIds)
         {
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = typeId };
-            if (doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(typeId))
-                is not FamilySymbol symbol)
+            if (doc.GetElement(ElementIdCompat.Create(typeId)) is not FamilySymbol symbol)
             {
                 report.ErrorCode = "type_not_found";
                 report.Reason = "Element " + typeId + " is not a family type.";
@@ -73,7 +78,8 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
                 continue;
             }
 
-            report.Name = (symbol.Family?.Name ?? "?") + " : " + symbol.Name;
+            var name = (symbol.Family?.Name ?? "?") + " : " + symbol.Name;
+            report.Name = name;
             instanceCounts.TryGetValue(typeId, out var instances);
             report.Detail = instances + " placed instance(s)";
 
@@ -87,12 +93,54 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
                 continue;
             }
 
-            if (dryRun)
+            targets.Add((typeId, name));
+        }
+
+        var names = targets.Select(target => target.Name).ToArray();
+        AgentDeleteHelper.PublishNames(outcome, names);
+
+        if (dryRun)
+        {
+            foreach (var target in targets)
             {
-                report.Reason = "Dry run: the type would be deleted" +
-                                (instances > 0 ? " with " + instances + " instance(s)." : ".");
-                outcome.Batch.Changed.Add(report);
-                deleted++;
+                outcome.Batch.Changed.Add(new WriteItemReport
+                {
+                    Id = target.Id,
+                    Name = target.Name,
+                    Reason = "Dry run: the type would be deleted."
+                });
+            }
+
+            deleted = targets.Count;
+            outcome.AffectedCount = deleted;
+            if (failed > 0)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode ??= "partial_failure";
+                outcome.Message = deleted + " type(s) planned, " + failed + " failed. See failed[].";
+            }
+
+            return;
+        }
+
+        var confirm = AgentDeleteConfirm.Verify(names, AgentDeleteHelper.GetConfirmNames(args));
+        if (!confirm.Ok)
+        {
+            AgentDeleteHelper.RefuseConfirmation(outcome, confirm);
+            return;
+        }
+
+        foreach (var target in targets)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var report = new WriteItemReport { Id = target.Id, Name = target.Name };
+            if (doc.GetElement(ElementIdCompat.Create(target.Id)) is not FamilySymbol symbol)
+            {
+                report.ErrorCode = "type_not_found";
+                report.Reason = "Type " + target.Id + " disappeared before the deletion.";
+                outcome.Batch.Failed.Add(report);
+                failed++;
                 continue;
             }
 
@@ -120,16 +168,13 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
             outcome.Message = deleted + " type(s) deleted, " + failed + " failed. See failed[].";
         }
 
-        if (!dryRun)
+        if (deleted > 0)
+        {
+            AgentDeleteHelper.MarkDestructiveApplied(outcome, "family types");
+        }
+        else
         {
             outcome.SuppressChangeSet = true;
-            if (deleted > 0)
-            {
-                outcome.Data["undoSupported"] = false;
-                outcome.Warnings.Add(
-                    "Deleted family types cannot be restored by undo_last; use the Revit Undo " +
-                    "command or a backup if you need them back.");
-            }
         }
     }
 

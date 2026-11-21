@@ -19,7 +19,7 @@ public static partial class AgentToolPackSkills
 - `list_views` — список видов: `types`, `levelIds`, `nameContains`, `folders`, `fields`, `limit` (≤500).
 - `get_current_view_info` — активный вид (id, тип, шаблон, масштаб) — начните с него, если пользователь говорит «этот вид».
 - `rename_views` — пакетно `items[{viewId,newName}]`, `atomic`.
-- `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false).
+- `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
 
 ### Кухня Revit
 - Имя вида уникально **в пределах своего вида/семейства видов**: «Этаж 1» может существовать
@@ -29,7 +29,8 @@ public static partial class AgentToolPackSkills
 - Шаблон вида — тоже `View`, но `IsTemplate=true`. Он не размещается на листах и не считается
   обычным видом: rename/delete отказывают (`view_is_template`) без явного флага.
 - Лист (`ViewSheet`) — не вид. `delete_views` на листе даёт `use_delete_sheets`; удаление
-  листа — пак `sheets`.
+  листа — пак `sheets`. Спецификация (`ViewSchedule`) — тоже не «обычный» вид:
+  `delete_views` откажет с `use_delete_schedules`.
 - Удаление вида каскадно: уходят его `Viewport`, аннотации вида и **зависимые виды**. Так же
   удаление уровня уносит его план, удаление камеры — 3D-вид. Предупреждайте о каскаде.
 - `list_views` отдаёт браузерную папку (`folder`), номер листа (`sheet`) и `isOnSheet` —
@@ -45,14 +46,17 @@ public static partial class AgentToolPackSkills
   `rename_views` не переименовываются (`unsupported_view_type` в `failed[]`).
 - `atomic=true` в `rename_views` откатывает весь пакет, если хоть одно имя занято (`duplicate_name`). Без него применяются только успешные элементы.
 - `delete_views` необратим (`undoSupported=false`, change set не пишется): только `dryRun=true`
-  перед применением.
+  перед применением. Apply требует `confirmNames` = `names[]` СВЕЖЕГО dry-run: отказ
+  `confirm_names_required`/`confirm_names_mismatch` означает «повтори dry-run и передай его
+  свежий names[]» — модель изменилась, и это защита, а не ошибка.
 - Все write-тулы по умолчанию `dryRun=true`: сначала план, затем повтор с `dryRun=false`.
 - Массовые переименования видов — `start_job(action:""rename_views"")`, а не цикл rename_views.
 
 ### Рецепты
 1. «Переименуй все планы по шаблону»: `list_views(types=[""FloorPlan""])` → сформировать имена → `rename_views(items, atomic=true)`.
 2. «Какой вид открыт?»: `get_current_view_info` → при необходимости `get_view_settings(viewId)`.
-3. «Удали лишние виды»: `list_views(types=[...], fields=[viewId,name])` → `delete_views(dryRun=true)` → подтверждение → `dryRun=false`.
+3. «Удали лишние виды»: `list_views(types=[...], fields=[viewId,name])` → `delete_views(dryRun=true)`
+   → подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
 
 ### Что нельзя
 - Удалять виды, размещённые на листах, без предупреждения: они пропадут с листов.

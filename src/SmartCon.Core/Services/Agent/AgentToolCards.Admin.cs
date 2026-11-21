@@ -127,7 +127,8 @@ public static partial class AgentToolCards
                 "скольких видов он удалён.",
             WhenToUse =
                 "Когда тестовый или устаревший фильтр нужно убрать из проекта; перед " +
-                "удалением видно, на скольких видах он применён.",
+                "удалением видно, на скольких видах он применён. Сначала dryRun=true (вернёт " +
+                "names[]), затем повтори с dryRun=false и confirmNames=names из ответа.",
             WhenNotToUse =
                 "Когда фильтр нужно только отключить на виде — set_view_visibility; когда " +
                 "нужно изменить правила — set_filter_rules. Удаление не откатывается undo_last.",
@@ -157,14 +158,14 @@ public static partial class AgentToolCards
             ToolName = "delete_views",
             Pack = "views",
             Purpose =
-                "Удаляет виды по id (листы — через delete_sheets, шаблоны — только с " +
-                "includeTemplates=true).",
+                "Удаляет виды по id (листы — через delete_sheets, спецификации — через " +
+                "delete_schedules, шаблоны — только с includeTemplates=true).",
             WhenToUse =
-                "Когда нужно убрать тестовые или устаревшие виды; отчёт показывает, что " +
-                "именно удалено и что не удалось.",
+                "Когда нужно убрать тестовые или устаревшие виды. Сначала dryRun=true (вернёт " +
+                "names[]), затем повтори с dryRun=false и confirmNames=names из ответа.",
             WhenNotToUse =
-                "Когда нужен лист — delete_sheets; когда нужно просто переименовать — " +
-                "rename_views. Удаление не откатывается undo_last.",
+                "Когда нужен лист — delete_sheets; спецификация — delete_schedules; когда нужно " +
+                "просто переименовать — rename_views. Удаление не откатывается undo_last.",
             Examples = new[]
             {
                 "Удали тестовый вид 72812",
@@ -180,8 +181,8 @@ public static partial class AgentToolCards
             NegativeExamples = new[]
             {
                 "Удали лист",
-                "Переименуй вид",
-                "Создай вид"
+                "Удали спецификацию",
+                "Переименуй вид"
             },
             TimeoutMs = 30000,
             Bulk = true
@@ -194,10 +195,11 @@ public static partial class AgentToolCards
                 "Удаляет листы по sheetId и показывает, сколько видов было на них размещено.",
             WhenToUse =
                 "Когда нужно убрать тестовые или устаревшие листы вместе с их экземплярами " +
-                "видов на листе.",
+                "видов на листе. Сначала dryRun=true (вернёт names[] «номер - имя»), затем " +
+                "повтори с dryRun=false и confirmNames=names из ответа.",
             WhenNotToUse =
-                "Когда нужен вид, а не лист — delete_views; изменение номера или " +
-                "размещение видов на листе пока не поддерживается (задача G.5, #347).",
+                "Когда нужен вид, а не лист — delete_views; спецификация — delete_schedules; " +
+                "изменение номера или размещение видов на листе — другие тулы пака sheets.",
             Examples = new[]
             {
                 "Удали тестовый лист",
@@ -221,6 +223,79 @@ public static partial class AgentToolCards
         },
         new AgentToolCard
         {
+            ToolName = "delete_elements",
+            Pack = "elements",
+            Purpose =
+                "Удаляет элементы модели по elementId (до 200): dry-run показывает имена, " +
+                "категории и сколько зависимых элементов уйдёт вместе с каждым.",
+            WhenToUse =
+                "Когда нужно убрать конкретные элементы (стены, трубы, оборудование) по id из " +
+                "query_elements/get_element_details. Сначала dryRun=true (вернёт names[]), " +
+                "затем повтори с dryRun=false и confirmNames=names из ответа.",
+            WhenNotToUse =
+                "Когда нужно удалить виды, листы, спецификации, фильтры или типоразмеры — для " +
+                "них есть отдельные инструменты; когда элементов сотни однотипных — " +
+                "start_job. Удаление не откатывается undo_last.",
+            Examples = new[]
+            {
+                "Удали стену 123456",
+                "Убери эти пять элементов из модели",
+                "Удали тестовые трубы по списку id",
+                "Сотри лишние колонны и покажи что удалено"
+            },
+            Synonyms = new[]
+            {
+                "удали элемент", "удалить элементы", "delete element", "remove element",
+                "удалить стену", "удалить объект", "удалить объекты", "стереть элемент",
+                "почистить элементы", "удаление элементов", "удалить по id"
+            },
+            NegativeExamples = new[]
+            {
+                "Удали вид",
+                "Удали спецификацию",
+                "Найди элементы с параметром X"
+            },
+            TimeoutMs = 60000,
+            Bulk = true
+        },
+        new AgentToolCard
+        {
+            ToolName = "delete_schedules",
+            Pack = "schedules",
+            Purpose =
+                "Удаляет спецификации (ведомости) по scheduleIds или точным именам; внутренние " +
+                "и ревизионные ведомости штампа Revit не удаляет (schedule_not_deletable).",
+            WhenToUse =
+                "Когда нужно убрать тестовые или устаревшие спецификации. Сначала dryRun=true " +
+                "(вернёт names[]), затем повтори с dryRun=false и confirmNames=names из ответа.",
+            WhenNotToUse =
+                "Когда нужно изменить структуру спецификации (агент не умеет) или прочитать " +
+                "данные — get_schedule_data/get_schedule_definition. Удаление не откатывается " +
+                "undo_last.",
+            Examples = new[]
+            {
+                "Удали тестовую спецификацию",
+                "Убери ведомость ТЕСТ из проекта",
+                "Удали спецификацию 146845",
+                "Убери ненужные ведомости по списку"
+            },
+            Synonyms = new[]
+            {
+                "удали спецификацию", "удалить спецификации", "убери ведомость",
+                "delete schedule", "remove schedule", "стереть спецификацию",
+                "почистить ведомости", "удаление ведомости", "удалить таблицу"
+            },
+            NegativeExamples = new[]
+            {
+                "Покажи строки спецификации",
+                "Создай спецификацию",
+                "Удали вид"
+            },
+            TimeoutMs = 30000,
+            Bulk = true
+        },
+        new AgentToolCard
+        {
             ToolName = "delete_family_types",
             Pack = "families",
             Purpose =
@@ -228,7 +303,8 @@ public static partial class AgentToolCards
                 "отказывается удалять без force=true.",
             WhenToUse =
                 "Когда нужно убрать тестовые или устаревшие типоразмеры; отчёт показывает " +
-                "число размещённых экземпляров.",
+                "число размещённых экземпляров. Сначала dryRun=true (вернёт names[] «семейство " +
+                ": тип»), затем повтори с dryRun=false и confirmNames=names из ответа.",
             WhenNotToUse =
                 "Когда нужно удалить всё семейство — удаляйте его типы; когда нужно изменить " +
                 "значения типа — set_family_parameter_values.",

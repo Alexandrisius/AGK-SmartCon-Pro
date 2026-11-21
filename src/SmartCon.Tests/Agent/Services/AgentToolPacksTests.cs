@@ -48,7 +48,10 @@ public sealed class AgentToolPacksTests
             },
             ["model"] = new[] { "get_project_overview", "list_categories", "get_selected_elements" },
             ["levels"] = new[] { "list_levels", "rename_levels" },
-            ["elements"] = new[] { "query_elements", "summarize_elements", "get_element_details" },
+            ["elements"] = new[]
+            {
+                "query_elements", "summarize_elements", "get_element_details", "delete_elements"
+            },
             ["params"] = new[] { "set_parameters", "remap_parameter_values" },
             ["changes"] = new[] { "undo_last", "discard_change_set" },
             ["jobs"] = new[]
@@ -64,7 +67,11 @@ public sealed class AgentToolPacksTests
                 "create_viewports", "move_viewport", "set_sheet_number", "rename_sheet",
                 "sanitize_sheet_numbers"
             },
-            ["schedules"] = new[] { "list_schedules", "get_schedule_data", "get_schedule_definition" },
+            ["schedules"] = new[]
+            {
+                "list_schedules", "get_schedule_data", "get_schedule_definition",
+                "delete_schedules"
+            },
             ["filters"] = new[]
             {
                 "list_filters", "get_filter_details", "list_filterable_parameters",
@@ -105,7 +112,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(69, placements.Length);
+        Assert.Equal(71, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

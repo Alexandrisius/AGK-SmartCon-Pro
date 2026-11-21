@@ -15,6 +15,9 @@ public static partial class AgentToolPackSkills
 - `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
 - `get_schedule_definition` — структура: поля, сортировка/группировка, фильтры.
+- `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
+  `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
+  удаление самой спецификации — `delete_schedules`.
 
 ### Кухня Revit
 - `ViewSchedule` — это вид, но **не** `ViewSheet`: он не имеет вьюпорта, на лист ставится `ScheduleSheetInstance`.
@@ -33,22 +36,33 @@ public static partial class AgentToolPackSkills
 - Значения в ячейках — отформатированный текст как в ведомости (с единицами); типизированных
   чисел в ответе нет. Для вычислений берите числа из параметров элементов (`query_elements`).
 - Структуру ведомости (поля, фильтры, сортировку) тулы только **читают** — изменить её нельзя;
-  если пользователь просит перестроить спецификацию, скажите об ограничении прямо.
-- `scheduleName` ищется по точному имени; несколько совпадений → `ambiguous_schedule`,
-  шаблон → `schedule_is_template`. Надёжнее брать `scheduleId` из `list_schedules`.
+  если пользователь просит перестроить спецификацию, скажите об ограничении прямо. Удалить —
+  можно (`delete_schedules`).
+- `scheduleName` ищется по точному имени; несколько совпадений → `ambiguous_schedule`
+  (с candidates — берите id), шаблон → `schedule_is_template`. Надёжнее брать `scheduleId`
+  из `list_schedules`.
 - Внутренние (keynote) и titleblock-revision расписания скрыты по умолчанию
-  (`includeInternal`/`includeRevision=false`).
+  (`includeInternal`/`includeRevision=false`). `delete_schedules` их удалять отказывается
+  (`schedule_not_deletable`) — ими управляет Revit.
+- `delete_schedules` необратим (`undoSupported=false`): сначала `dryRun=true` (вернёт
+  `names[]`), apply — с `confirmNames` = `names[]` СВЕЖЕГО dry-run. Отказ
+  `confirm_names_required`/`confirm_names_mismatch` = модель изменилась: повтори dry-run и
+  передай его свежий names[].
 - Расписание на листе ищется через `get_sheet_content`, а не по номеру листа в параметре.
 
 ### Рецепты
 1. «Что в спецификации дверей?»: `list_schedules(nameContains:""Двери"")` → `get_schedule_definition` → `get_schedule_data(limit=50)`.
 2. «Сколько строк в ведомости?»: `get_schedule_data(limit=1)` → `total`/`rowCount`.
 3. «Где эта спецификация стоит?»: `list_schedules(fields=[name,sheetNumbers])`.
+4. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` →
+   `delete_schedules(scheduleIds, dryRun=true)` → подтверждение →
+   `delete_schedules(scheduleIds, dryRun=false, confirmNames=names[])`.
 
 ### Что нельзя
 - Считать, что спецификация — обычный вид: у неё нет подрезки/диапазона, на лист она ставится иначе.
 - Читать тысячи строк без `limit`: ответ придёт обрезанным и с `hint`.
 - Ожидать OR в фильтрах расписания: только AND, до 8 условий.
+- Удалять спецификации через `delete_views` — он откажет с `use_delete_schedules`.
 ";
 
     private const string Filters = @"## Пак filters: фильтры видов

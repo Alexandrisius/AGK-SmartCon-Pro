@@ -84,6 +84,9 @@ public static partial class AgentToolPackSkills
 - `query_elements` — выборка: `categories`, `levelIds`, `typeIds`, `viewId`, `roomId`, `conditions[{parameter,op,value,unit}]`, `logic`, `includeTypeParameters`, `fields`, `limit` ≤200, `offset`.
 - `summarize_elements` — сводка: `groupBy: category|level|type|parameter`, `sumParameter`, `topN`, `includeZeroCount`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
+- `delete_elements` — удаление элементов по `elementIds` ≤200, `confirmNames`. Dry-run
+  показывает `names[]`, категорию и `dependentsCount`; удаление каскадно уносит зависимых
+  (`dependentsDeleted` в ответе). Необратимо (`undoSupported=false`).
 
 ### Кухня Revit
 - Быстрые фильтры (`OfCategory`, `WhereElementIsNotElementType`) работают по заголовку элемента и не раскрывают его; медленные (параметрические, геометрические) раскрывают каждый элемент. Поэтому сначала категория/класс, потом параметры — иначе на большой модели массовое раскрытие.
@@ -115,6 +118,10 @@ public static partial class AgentToolPackSkills
   единицы, `displayValue` — проектные.
 - id, полученные из `query_elements`, годятся для следующего вызова в этой же сессии; для
   сохранения между сессиями — `uniqueId`.
+- `delete_elements`: сначала `dryRun=true` (вернёт `names[]`), apply — с `confirmNames` =
+  `names[]` СВЕЖЕГО dry-run. Отказ `confirm_names_required`/`confirm_names_mismatch` =
+  модель изменилась: повтори dry-run и передай его свежий names[]. Виды, листы и
+  спецификации удаляйте профильными тулами, а не этим.
 
 ### Рецепты
 1. «Трубы диаметром больше 100 на уровне 2»: `query_elements(categories=[""OST_PipeCurves""], levelIds=[lvl], conditions:[{parameter:""Диаметр"",op:""gt"",value:100,unit:""mm""}])`.
@@ -188,7 +195,9 @@ public static partial class AgentToolPackSkills
   шаблон вида, диапазон, подрезка, видимость, включение параметров в шаблон; создание фильтра
   и его состояние; семейства (по плану операций или backup `.rfa`).
 - `undoSupported=false` возвращают: `set_filter_rules` (правила не откатываются — только
-  `previousRules`), `delete_views`, `delete_sheets`, `delete_filter`, `delete_family_types`.
+  `previousRules`), `delete_views`, `delete_sheets`, `delete_elements`, `delete_schedules`,
+  `delete_filter`, `delete_family_types` (apply всех delete-тулов требует `confirmNames`
+  = `names[]` свежего dry-run).
 - `set_view_parameters` откат **не** покрывает: его запись не попадает в известные типы
   change item. Не обещайте откат правки общих параметров вида.
 - Джобы откатываются только `rollback_job(jobId)`; `undo_last` их не видит.
