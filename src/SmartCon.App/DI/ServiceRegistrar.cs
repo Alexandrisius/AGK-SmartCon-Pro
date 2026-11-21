@@ -478,6 +478,8 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
         services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
         services.AddSingleton<IAgentTool, ListSystemTypesTool>();
+        services.AddSingleton<IAgentTool, ListMepSystemsTool>();
+        services.AddSingleton<IAgentTool, ListMaterialsTool>();
 
         // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
         services.AddSingleton<IAgentTool, RenameViewsTool>();

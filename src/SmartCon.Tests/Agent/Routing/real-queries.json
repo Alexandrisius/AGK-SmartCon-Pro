@@ -2327,6 +2327,38 @@
         "renumber_sheets"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r289",
+      "query": "Какие инженерные системы есть в проекте?",
+      "expectedTools": [
+        "list_mep_systems"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r290",
+      "query": "Покажи трубопроводные системы и их аббревиатуры",
+      "expectedTools": [
+        "list_mep_systems"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r291",
+      "query": "Какие материалы есть в модели?",
+      "expectedTools": [
+        "list_materials"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r292",
+      "query": "Найди материал по имени и покажи его цвет",
+      "expectedTools": [
+        "list_materials"
+      ],
+      "kind": "read"
     }
   ]
 }

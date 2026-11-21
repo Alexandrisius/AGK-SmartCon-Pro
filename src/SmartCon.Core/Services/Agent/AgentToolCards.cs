@@ -23,6 +23,7 @@ public static partial class AgentToolCards
             .Concat(FilterCards())
             .Concat(FamilyCards())
             .Concat(FamilyTypeOpsCards())
+            .Concat(MepCards())
             .Concat(AdminCards())
             .Concat(WriteCards())
             .Concat(JobCards())

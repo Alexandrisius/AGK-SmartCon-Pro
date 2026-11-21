@@ -97,13 +97,15 @@ public sealed class AgentToolCardsTests
         "cancel_job",
         "get_job_report",
         "rollback_job",
-        "retry_failed_items"
+        "retry_failed_items",
+        "list_mep_systems",
+        "list_materials"
     };
 
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(90, AgentToolCards.Count);
+        Assert.Equal(92, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

@@ -14,7 +14,7 @@ public sealed class AgentToolPacksTests
 
     private static readonly string[] ExpectedEmptyPacks =
     {
-        "worksets", "links", "mep", "annotations", "audit"
+        "worksets", "links", "annotations", "audit"
     };
 
     // ADR-075 §2 pins the research core; the write primitives stay in their packs so
@@ -101,7 +101,8 @@ public sealed class AgentToolPacksTests
                 "map_family_parameters", "delete_family_types", "remove_family_parameter",
                 "replace_family_parameter", "duplicate_family_type", "rename_family_type",
                 "replace_family_type", "load_family", "purge_families"
-            }
+            },
+            ["mep"] = new[] { "list_mep_systems", "list_materials" }
         };
 
     [Fact]
@@ -127,7 +128,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(90, placements.Length);
+        Assert.Equal(92, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

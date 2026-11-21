@@ -35,6 +35,7 @@ public static partial class AgentToolPackSkills
         var skills = new Dictionary<string, string>(StringComparer.Ordinal);
         Add(skills, ViewsSkills());
         Add(skills, ModelSkills());
+        Add(skills, MepSkills());
         Add(skills, PlansSkills());
         Add(skills, FamiliesSkills());
         Add(skills, SchedulesSkills());

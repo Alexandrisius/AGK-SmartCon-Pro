@@ -195,7 +195,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "mep",
-            Description = "Инженерные системы и коннекторы (задел следующих версий)."
+            Description = "Инженерные системы и материалы: списки MEP-систем (трубы, воздуховоды, цепи) и материалов.",
+            Tools = new[] { "list_mep_systems", "list_materials" }
         },
         new()
         {
@@ -246,12 +247,12 @@ public static class AgentToolPacks
     private static readonly AgentToolPack[] PopulatedPacks =
         Packs.Where(pack => pack.Tools.Count > 0).ToArray();
 
-    /// <summary>All packs in the fixed catalog order (15 populated + 5 reserved).</summary>
+    /// <summary>All packs in the fixed catalog order (16 populated + 4 reserved).</summary>
     public static IReadOnlyList<AgentToolPack> All => Packs;
 
     /// <summary>
     /// Packs the model can actually load. Reserved packs are kept in the schema
-    /// for forward compatibility but must not be advertised: listing five empty
+    /// for forward compatibility but must not be advertised: listing empty
     /// packs looks like broken discovery (stress-test #7).
     /// </summary>
     public static IReadOnlyList<AgentToolPack> Populated => PopulatedPacks;

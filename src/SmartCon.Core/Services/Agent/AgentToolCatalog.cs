@@ -36,6 +36,17 @@ public static class AgentToolCatalog
                 "системные типы", "типы стен", "тип стены", "system types", "wall types",
                 "типы воздуховодов", "типы перекрытий", "WallType", "DuctType", "FloorType"
             }),
+            ["list_mep_systems"] = new("Read", false, new[]
+            {
+                "системы", "система", "mep", "инженерные системы", "трубопровод", "трубы",
+                "воздуховоды", "электрические цепи", "аббревиатура", "systems", "piping",
+                "mechanical", "electrical", "circuits", "MEPSystem"
+            }),
+            ["list_materials"] = new("Read", false, new[]
+            {
+                "материалы", "материал", "materials", "material", "материалов", "цвет",
+                "прозрачность", "блеск", "класс материала"
+            }),
             ["get_selected_elements"] = new("Read", false, new[]
             {
                 "выделение", "выбрано", "выбранные", "selection", "selected"

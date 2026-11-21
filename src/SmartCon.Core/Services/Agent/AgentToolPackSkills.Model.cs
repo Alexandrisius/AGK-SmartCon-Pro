@@ -15,37 +15,36 @@ public static partial class AgentToolPackSkills
     private const string Model = @"## Пак model: обзор проекта
 
 ### Карта тулов
-- `get_project_overview` — паспорт модели: имя, номер, единицы, категории с количеством, уровни, счётчики видов/листов.
+- `get_project_overview` — паспорт модели: единицы, категории с количеством, уровни, счётчики видов/листов.
 - `list_categories` — категории: `usedOnly` (по умолчанию true), `limit/offset`.
 - `list_system_types` — системные типы категории (стены, трубы, воздуховоды):
   `category`, поля `typeId/name/instanceCount/canBeDuplicated`.
 - `get_selected_elements` — что выделено в Revit сейчас (id, категория, тип).
 
 ### Кухня Revit
-- Внутренние единицы Revit фиксированы (длина — футы, углы — радианы, масса — кг). `Document.GetUnits()` меняет только формат отображения, а не хранение. Поэтому «проектные единицы» — это про строки для пользователя.
-- Категория сравнивается по `BuiltInCategory`/`Category.Id` (число = enum), а не по `Category.Name`: имя локализуется и в русской Revit не совпадёт с английским. Наши тулы принимают и `OST_`-имена, и локализованные названия, и `categoryIds`.
-- `Category` есть не у всех элементов (материалы, виды, служебные объекты) — `Element.Category` может быть null.
-- Фазы: `Document.Phases` только читаются; создавать фазы через API нельзя. Новый элемент получает фазу активного вида, а в headless-сценарии — последнюю фазу документа.
-- Данные проекта (`ProjectInfo`) — это built-in параметры (имя, номер, статус, заказчик); не ищите их по локализованному имени.
+- Внутренние единицы фиксированы (длина — футы); `Document.GetUnits()` меняет только отображение, не хранение.
+- Категории сравниваются по id/`OST_`-имени, а не по `Category.Name` (он локализуется); наши тулы принимают оба и `categoryIds`.
+- `Element.Category` бывает null (материалы, виды, служебные объекты).
+- Фазы только читаются (создать через API нельзя); новый элемент берёт фазу активного вида, в headless — последнюю.
+- Данные проекта (`ProjectInfo`) — built-in параметры; не ищите их по локализованному имени.
 - Типы бывают **загружаемые** (FamilySymbol, `list_family_types`) и **системные**
-  (WallType/DuctType/..., `list_system_types`): `duplicate/rename/replace_family_type`
-  (пак `families`) принимают оба — для системных `typeName + categoryName`. `instanceCount`
-  — сколько элементов стоит на типе (у стен — сами стены).
+  (WallType/..., `list_system_types`); `duplicate/rename/replace_family_type` (пак `families`)
+  принимают оба, для системных — `typeName + categoryName`; `instanceCount` — сколько
+  элементов стоит на типе.
 
 ### Аргументы
-- `usedOnly=false` в `list_categories` — показать пустые категории (полезно, чтобы объяснить, почему в модели «нет мебели»).
-- `get_selected_elements` — быстрый путь: пользователь выделил объекты, не нужно угадывать по имени.
+- `usedOnly=false` в `list_categories` — показать и пустые категории.
+- `get_selected_elements` — быстрый путь вместо угадывания по имени.
 
 ### Инварианты
-- Идентификаторы из `get_project_overview`/`list_categories` — для последующих `query_elements`/`summarize_elements`, а не для записи.
+- Идентификаторы обзора — для последующих `query_elements`/`summarize_elements`, не для записи.
 - Количество в обзоре — это счётчик, а не список: за деталями идите в `query_elements`.
 
 ### Рецепты
 1. Первый ход в незнакомой модели: `get_project_overview` → `list_levels` → `list_categories(usedOnly=true)`.
 2. «Что я выделил?»: `get_selected_elements` → `get_element_details(elementIds)`.
 3. «Есть ли в проекте двери?»: `list_categories(usedOnly=true)` и поиск по имени/`OST_Doors`.
-4. «Какие типы стен есть?»: `list_system_types(category:""OST_Walls"")` → id годятся для
-   тулов пака `families`.
+4. «Какие типы стен есть?»: `list_system_types(category:""OST_Walls"")`.
 
 ### Что нельзя
 - Полагаться на английские имена категорий в русской Revit.
