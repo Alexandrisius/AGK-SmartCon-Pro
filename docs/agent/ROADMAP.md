@@ -67,7 +67,7 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 | ID | Задача | Issue | Почему сейчас |
 |---|---|---|---|
 | `A.8` | Tool surface job'а: eval-кейсы и приёмка | #313 | Остаток эпика A: eval + ручная приёмка |
-| `G.5` | Листы: создание, размещение видов, номера | #347 | Без write-тулов листов альбом физически не собрать (прогон 2026-11-20) |
+| `G.1–G.4` | Missing operations: удаления, спецификации, ФОП, семейства | #343–#346 | Эпик G в работе (2026-11-21): G.5 закрыт (листы + dogfood), далее P1-слой |
 | `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
 | `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Финальный гейт ночного прогона |
 
@@ -91,8 +91,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | H1/H1d закрыты; S.8–S.10 (фидбэк раунда 5) в работе. |
-| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `backlog` | #297 | 10 | S.5 для destructive; A.6 для массовых операций; G.5 поднят до P0 — без него не собрать альбом. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | H1/H1d закрыты; S.10/S.11 (batch-first discovery) закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
+| **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `in-progress` | #297 | 13 | G.5 закрыт 2026-11-21 (листы, dogfood 4/5, follow-ups #438–#440); в работе G.1–G.4. |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
@@ -216,8 +216,8 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `S.7` | copy_document/save_as_copy и регрессионный стресс-набор | P2 | `backlog` | #342 |
 | `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `in-progress` | #417 |
 | `S.9` | execute_plan: digest auto-fill, видимость family read-back, byName-пути | P1 | `in-progress` | #418 |
-| `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `in-progress` | #419 |
-| `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P2 | `backlog` | #435 |
+| `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `done` | #419 |
+| `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P1 | `done` | #435 |
 | `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
@@ -230,7 +230,10 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.2` | Запись спецификаций: поля, фильтры, сортировка, размещение | P1 | `backlog` | #344 |
 | `G.3` | Проектные общие параметры: чтение и создание | P1 | `backlog` | #345 |
 | `G.4` | Семейства: duplicate type, rename type, load, purge, replace | P1 | `backlog` | #346 |
-| `G.5` | Листы: создание, размещение видов, номера | P0 | `backlog` | #347 |
+| `G.5` | Листы: создание, размещение видов, номера | P0 | `done` | #347 |
+| `G.5a` | move_viewports: пакетное перемещение видовых окон | P2 | `backlog` | #438 |
+| `G.5b` | remove_viewport: снять вид с листа | P2 | `backlog` | #439 |
+| `G.5c` | renumber_sheets: перенумерация со сдвигом | P3 | `backlog` | #440 |
 | `G.6` | Виды: duplicate, create, delete, browser folder | P2 | `backlog` | #348 |
 | `G.7` | MEP: системы трубопроводов и материалы | P2 | `backlog` | #349 |
 | `G.8` | Browser organization: чтение и запись | P2 | `backlog` | #350 |
