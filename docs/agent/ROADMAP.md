@@ -242,7 +242,7 @@ Evidence: unit 3914/3914, `AgentProjectJobTests` 17/17 (net8 и net10), `AgentFa
 | `G.7a` | set_mep_system_type: abbreviation/name типа системы | P3 | `backlog` | #444 |
 | `G.8` | Browser organization: чтение и запись | P2 | `backlog` | #350 |
 | `G.9` | Crop-from-template, select-наборы и preview зависимых шагов | P2 | `backlog` | #351 |
-| `G.10` | Change sets list/undo_until, save_document, export, audit_model | P2 | `backlog` | #352 |
+| `G.10` | Change sets list/undo_until, save_document, export, audit_model | P2 | `done` | #352 |
 
 ### A3 — External orchestrator для >1000 .rfa и часовых прогонов
 
