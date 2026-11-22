@@ -100,5 +100,5 @@ public sealed partial class LoadToolPackTool
         "; call " + string.Join(
             ", ",
             packs.Select(pack => "load_tool_pack(pack=\"" + pack + "\")")) +
-        " before you modify anything in that area — read-only tools need no manual.";
+        " before you choose or assign values with these tools (codes, mappings) or modify anything in that area — a plain read-only lookup needs no manual.";
 }

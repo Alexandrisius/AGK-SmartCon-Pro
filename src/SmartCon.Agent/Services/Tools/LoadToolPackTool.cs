@@ -48,8 +48,9 @@ public sealed partial class LoadToolPackTool : IAgentTool
             "'skills', each sent once per conversation. Skill rule: a pack requested explicitly " +
             "(pack/packs) delivers its manual; a tool named in tools= delivers its pack's " +
             "manual only when the tool writes (risk Write or higher). Read-only tools need no " +
-            "manual — their packs are listed in skillsAvailable with a skillHint; call " +
-            "load_tool_pack(pack=...) for a pack before you modify anything in that area. " +
+            "manual for a plain lookup — their packs are listed in skillsAvailable with a " +
+            "skillHint; call load_tool_pack(pack=...) for a pack before you choose or assign " +
+            "values with its tools or modify anything in that area. " +
             "Use pack= when you need several tools of one pack. At most " +
             MaxPacksPerCall + " packs per call: load the rest in a second call. Use it after " +
             "find_tools to make the discovered tools callable.",

@@ -18,10 +18,10 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed class LoadToolPackSkillPolicyTests
 {
     private const string FamiliesHint =
-        """Operating manual(s) available for pack(s) families; call load_tool_pack(pack="families") before you modify anything in that area — read-only tools need no manual.""";
+        """Operating manual(s) available for pack(s) families; call load_tool_pack(pack="families") before you choose or assign values with these tools (codes, mappings) or modify anything in that area — a plain read-only lookup needs no manual.""";
 
     private const string MixedHint =
-        """Operating manual(s) available for pack(s) model, views; call load_tool_pack(pack="model"), load_tool_pack(pack="views") before you modify anything in that area — read-only tools need no manual.""";
+        """Operating manual(s) available for pack(s) model, views; call load_tool_pack(pack="model"), load_tool_pack(pack="views") before you choose or assign values with these tools (codes, mappings) or modify anything in that area — a plain read-only lookup needs no manual.""";
 
     private sealed class Harness
     {
