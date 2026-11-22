@@ -22,7 +22,7 @@ public sealed partial class OpenAiCompatibleLlmClient
         private readonly CancellationTokenSource _capCts;
         private readonly TimeSpan _idle;
 
-        public TimedResponse(CancellationToken ct, TimeSpan idle, TimeSpan cap)
+        public TimedResponse(TimeSpan idle, TimeSpan cap, CancellationToken ct)
         {
             _idle = idle;
             _capCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -91,7 +91,7 @@ public sealed partial class OpenAiCompatibleLlmClient
             ct.ThrowIfCancellationRequested();
 
             var payloadJson = BuildPayloadJson(request, cachePlan);
-            var timed = new TimedResponse(ct, _idleTimeout, _capTimeout);
+            var timed = new TimedResponse(_idleTimeout, _capTimeout, ct);
             HttpResponseMessage? response = null;
             try
             {

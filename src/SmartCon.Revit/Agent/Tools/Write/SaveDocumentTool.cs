@@ -52,7 +52,7 @@ public sealed class SaveDocumentTool : AgentWriteToolBase
             "SaveDocumentTool runs through ExecuteOutsideTransaction.");
 
     protected override void ExecuteOutsideTransaction(
-        Document doc,
+        Document document,
         JsonElement args,
         bool dryRun,
         WriteOutcome outcome,
@@ -63,7 +63,7 @@ public sealed class SaveDocumentTool : AgentWriteToolBase
         outcome.SuppressChangeSet = true;
         outcome.Description = "Save document";
 
-        var path = doc.PathName;
+        var path = document.PathName;
         if (string.IsNullOrWhiteSpace(path))
         {
             outcome.Success = false;
@@ -75,9 +75,9 @@ public sealed class SaveDocumentTool : AgentWriteToolBase
             return;
         }
 
-        var documentId = AgentDocumentIdentity.GetDocumentId(doc);
+        var documentId = AgentDocumentIdentity.GetDocumentId(document);
         var pending = CountPendingChangeSets(documentId, ct);
-        var isModified = doc.IsModified;
+        var isModified = document.IsModified;
 
         outcome.Data["path"] = path;
         outcome.Data["isModified"] = isModified;
@@ -104,7 +104,7 @@ public sealed class SaveDocumentTool : AgentWriteToolBase
             return;
         }
 
-        doc.Save();
+        document.Save();
 
         outcome.Batch.Changed.Add(new WriteItemReport
         {
@@ -113,7 +113,7 @@ public sealed class SaveDocumentTool : AgentWriteToolBase
         });
         outcome.AffectedCount = 1;
         outcome.Data["saved"] = true;
-        outcome.Data["isModifiedAfter"] = doc.IsModified;
+        outcome.Data["isModifiedAfter"] = document.IsModified;
     }
 
     private int CountPendingChangeSets(string documentId, CancellationToken ct)

@@ -76,7 +76,7 @@ public sealed class ListTypeParameterCandidatesTool : AgentReadToolBase
             return ToolResult.Fail(
                 "unknown_category",
                 "None of the requested categories matched: " + string.Join(", ", missed) +
-                AgentCategoryResolver.SuggestSuffix(doc, missed.First()) +
+                AgentCategoryResolver.SuggestSuffix(doc, missed[0]) +
                 ". [Action: use a category name from list_categories or an OST_* built-in name]");
         }
 
