@@ -1,5 +1,21 @@
 namespace SmartCon.Agent.Services.Llm;
 
+/// <summary>
+/// Shape of the reasoning request parameter of a provider's API format. The
+/// value is a property of the provider, never of a model name.
+/// </summary>
+public enum AgentReasoningFormat
+{
+    /// <summary>Send no reasoning parameter at all.</summary>
+    None = 0,
+
+    /// <summary>Top-level <c>reasoning_effort</c> string.</summary>
+    ReasoningEffort = 1,
+
+    /// <summary>Top-level OpenRouter-style <c>reasoning</c> object.</summary>
+    ReasoningObject = 2
+}
+
 public sealed class AgentLlmSettings
 {
     public const string DefaultOpenRouterBaseUrl = "https://openrouter.ai/api/v1";
@@ -8,6 +24,21 @@ public sealed class AgentLlmSettings
     public const string DefaultModel = "deepseek/deepseek-v4.1-flash-1017";
     public const string DefaultOpenCodeGoModel = "deepseek-v4.1-flash";
     public const string DefaultZaiModel = "glm-5.3";
+    public const string DefaultReasoningEffort = "max";
+    public const int DefaultMaxOutputTokens = 64_000;
+    public const int MinMaxOutputTokens = 256;
+    public const int MaxMaxOutputTokens = 262_144;
+    public const int DefaultMaxRequestSeconds = 1_800;
+
+    /// <summary>
+    /// Effort ladder from the strongest to the weakest value providers accept;
+    /// used both for validation and for graceful degradation on HTTP 400.
+    /// </summary>
+    public static readonly string[] ReasoningEffortLadder =
+        { "max", "xhigh", "high", "medium", "low", "minimal" };
+
+    public static readonly string[] ReasoningEffortChoices =
+        { "max", "xhigh", "high", "medium", "low", "minimal", "none" };
 
     public string Provider { get; set; } = "openrouter";
 
@@ -19,9 +50,29 @@ public sealed class AgentLlmSettings
 
     public double Temperature { get; set; } = 0.2;
 
-    public int MaxOutputTokens { get; set; } = 8192;
+    public int MaxOutputTokens { get; set; } = DefaultMaxOutputTokens;
 
+    /// <summary>
+    /// Idle timeout: the maximum gap between two data chunks of the streamed
+    /// response (and the maximum wait for the response headers). A whole
+    /// request is additionally bounded by <see cref="MaxRequestSeconds"/>.
+    /// </summary>
     public int TimeoutSeconds { get; set; } = 120;
+
+    /// <summary>Absolute per-attempt safety cap, in seconds.</summary>
+    public int MaxRequestSeconds { get; set; } = DefaultMaxRequestSeconds;
+
+    /// <summary>
+    /// Requested reasoning format; null means "auto": the provider's default
+    /// (<see cref="DefaultReasoningFormatFor"/>). Auto re-resolves whenever the
+    /// provider changes.
+    /// </summary>
+    public AgentReasoningFormat? ReasoningFormat { get; set; }
+
+    public string ReasoningEffort { get; set; } = DefaultReasoningEffort;
+
+    public AgentReasoningFormat EffectiveReasoningFormat =>
+        ReasoningFormat ?? DefaultReasoningFormatFor(Provider);
 
     /// <summary>
     /// Working context window used by the history compactor, in tokens. The model
@@ -77,6 +128,73 @@ public sealed class AgentLlmSettings
         : IsZaiProvider(provider) ? DefaultZaiBaseUrl
         : DefaultOpenRouterBaseUrl;
 
+    /// <summary>
+    /// Reasoning parameter shape of the provider's API format: OpenRouter
+    /// documents the <c>reasoning</c> object, the OpenAI-compatible endpoints
+    /// (Z.ai, OpenCode Go and unknown providers) use <c>reasoning_effort</c>.
+    /// </summary>
+    public static AgentReasoningFormat DefaultReasoningFormatFor(string? provider) =>
+        string.Equals(provider?.Trim(), "openrouter", StringComparison.OrdinalIgnoreCase)
+            ? AgentReasoningFormat.ReasoningObject
+            : AgentReasoningFormat.ReasoningEffort;
+
+    /// <summary>
+    /// Lower-cases the value and falls back to <see cref="DefaultReasoningEffort"/>
+    /// for anything the ladder and "none" do not contain.
+    /// </summary>
+    public static string NormalizeReasoningEffort(string? effort)
+    {
+        var normalized = (effort ?? string.Empty).Trim().ToLowerInvariant();
+        if (Array.IndexOf(ReasoningEffortChoices, normalized) >= 0)
+            return normalized;
+
+        SmartCon.Core.Logging.SmartConLogger.Warn(
+            "Agent reasoning effort '" + effort + "' is not one of " +
+            string.Join(", ", ReasoningEffortChoices) + "; using '" + DefaultReasoningEffort +
+            "' [Action: fix SMARTCON_LLM_REASONING_EFFORT or the agent settings]");
+        return DefaultReasoningEffort;
+    }
+
+    public static int ClampMaxOutputTokens(int value) =>
+        Math.Max(MinMaxOutputTokens, Math.Min(value, MaxMaxOutputTokens));
+
+    /// <summary>
+    /// Parses the reasoning format choice used by the env file and the settings
+    /// UI: none | reasoning_effort | reasoning | auto (null).
+    /// </summary>
+    public static AgentReasoningFormat? ParseReasoningFormatChoice(string? choice)
+    {
+        var normalized = (choice ?? string.Empty).Trim().ToLowerInvariant();
+        switch (normalized)
+        {
+            case "":
+            case "auto":
+                return null;
+            case "none":
+                return AgentReasoningFormat.None;
+            case "reasoning_effort":
+                return AgentReasoningFormat.ReasoningEffort;
+            case "reasoning":
+                return AgentReasoningFormat.ReasoningObject;
+            default:
+                SmartCon.Core.Logging.SmartConLogger.Warn(
+                    "Agent reasoning format '" + choice + "' is not one of " +
+                    "auto, none, reasoning_effort, reasoning; using auto by provider " +
+                    "[Action: fix SMARTCON_LLM_REASONING_FORMAT or the agent settings]");
+                return null;
+        }
+    }
+
+    public static string ReasoningFormatChoiceFor(AgentReasoningFormat? format) =>
+        format switch
+        {
+            null => "auto",
+            AgentReasoningFormat.None => "none",
+            AgentReasoningFormat.ReasoningEffort => "reasoning_effort",
+            AgentReasoningFormat.ReasoningObject => "reasoning",
+            _ => "auto"
+        };
+
     private static string BaseUrlEnvKey(string? provider) =>
         IsOpenCodeGoProvider(provider) ? "SMARTCON_OPENCODE_GO_BASE_URL"
         : IsZaiProvider(provider) ? "SMARTCON_ZAI_BASE_URL"
@@ -105,8 +223,18 @@ public sealed class AgentLlmSettings
             BaseUrl = baseUrl.TrimEnd('/'),
             ApiKey = apiKey,
             Temperature = ParseDouble(Get(values, "SMARTCON_LLM_TEMPERATURE"), 0.2),
-            MaxOutputTokens = ParseInt(Get(values, "SMARTCON_LLM_MAX_OUTPUT_TOKENS"), 8192),
+            MaxOutputTokens = ClampMaxOutputTokens(
+                ParseInt(Get(values, "SMARTCON_LLM_MAX_OUTPUT_TOKENS"), DefaultMaxOutputTokens)),
             TimeoutSeconds = ParseInt(Get(values, "SMARTCON_LLM_TIMEOUT_SECONDS"), 120),
+            MaxRequestSeconds = Math.Max(
+                60,
+                Math.Min(
+                    ParseInt(Get(values, "SMARTCON_LLM_MAX_REQUEST_SECONDS"), DefaultMaxRequestSeconds),
+                    7_200)),
+            ReasoningFormat = ParseReasoningFormatChoice(
+                Get(values, "SMARTCON_LLM_REASONING_FORMAT")),
+            ReasoningEffort = NormalizeReasoningEffort(
+                Get(values, "SMARTCON_LLM_REASONING_EFFORT")),
             ContextWindowTokens = Math.Max(
                 50_000,
                 Math.Min(
@@ -189,16 +317,25 @@ public sealed class AgentLlmSettings
 
     public bool Save()
     {
+        return AgentEnvFile.Save(BuildSaveValues());
+    }
+
+    /// <summary>The env-file entries of this settings instance (test seam).</summary>
+    internal IReadOnlyDictionary<string, string> BuildSaveValues()
+    {
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["SMARTCON_LLM_PROVIDER"] = Provider,
-            ["SMARTCON_LLM_MODEL"] = Model
+            ["SMARTCON_LLM_MODEL"] = Model,
+            ["SMARTCON_LLM_REASONING_FORMAT"] = ReasoningFormatChoiceFor(ReasoningFormat),
+            ["SMARTCON_LLM_REASONING_EFFORT"] = ReasoningEffort,
+            ["SMARTCON_LLM_MAX_OUTPUT_TOKENS"] = MaxOutputTokens.ToString(
+                System.Globalization.CultureInfo.InvariantCulture)
         };
 
         values[ApiKeyEnvKey(Provider)] = ApiKey;
         values[BaseUrlEnvKey(Provider)] = BaseUrl;
-
-        return AgentEnvFile.Save(values);
+        return values;
     }
 
     private static double ParseDouble(string? value, double fallback) =>

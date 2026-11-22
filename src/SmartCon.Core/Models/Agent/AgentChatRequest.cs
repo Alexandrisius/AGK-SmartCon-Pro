@@ -53,6 +53,13 @@ public sealed class AgentChatResponse
 
     public string? FinishReason { get; init; }
 
+    /// <summary>
+    /// True when the provider stopped on the output token limit
+    /// (<c>finish_reason = length</c>): the reply is incomplete and must not be
+    /// persisted or executed.
+    /// </summary>
+    public bool Truncated { get; init; }
+
     public string? Model { get; init; }
 
     public string? Provider { get; init; }
