@@ -151,6 +151,30 @@ internal sealed class ProductionAgentHost : IDisposable
             .GetResult();
     }
 
+    /// <summary>
+    /// Confirmation audit trail from the host's own temp database: (tool, result)
+    /// pairs as <see cref="SmartCon.Agent.Services.Storage.SqliteAgentAuditLog"/>
+    /// writes them, e.g. ("rename_views#auto_approved", "auto_approved:bypass").
+    /// </summary>
+    public IReadOnlyList<(string Tool, string Result)> ReadAuditEntries()
+    {
+        const string query = "SELECT tool, result FROM audit_log ORDER BY ts;";
+
+        var entries = new List<(string Tool, string Result)>();
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = query;
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                entries.Add((reader.GetString(0), reader.GetString(1)));
+        }
+
+        return entries;
+    }
+
     public IReadOnlyList<AgentToolCallRecord> ReadToolCalls(Guid conversationId)
     {
         const string query = @"

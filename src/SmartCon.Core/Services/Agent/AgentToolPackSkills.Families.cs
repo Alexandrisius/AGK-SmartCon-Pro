@@ -97,6 +97,8 @@ public static partial class AgentToolPackSkills
 - После успешной записи — read-back (`get_family_parameters(includeValues=true)`).
 
 ### Форма get_family_parameters
+- Несколько семейств — одним вызовом: `get_family_parameters(familyIds:[""…""])` (до 20),
+  ответ — `families[]` с тем же payload по каждому семейству; не перебирайте семейства по одному.
 - `parameters[]` — плоский массив: `id`, `name`, `scope` (`instance`/`type`), `isShared`,
   `guid`, `storageType`, `formula`, `canSetValue`.
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей),

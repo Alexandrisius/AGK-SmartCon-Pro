@@ -148,7 +148,10 @@ public static class AgentToolRegistration
         // activate UndoUntilTool — the hole existed since #352 and was masked
         // by the pane-registration try/catch in the application.
         services.AddSingleton<UndoLastTool>();
-        services.AddSingleton<IAgentTool, UndoLastTool>();
+        // Forward to the same concrete instance: a separate
+        // AddSingleton<IAgentTool, UndoLastTool>() would create a SECOND
+        // instance, and the catalog copy would diverge from the revert seam.
+        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<UndoLastTool>());
         services.AddSingleton<IAgentTool, UndoUntilTool>();
         services.AddSingleton<IAgentTool, SaveDocumentTool>();
         services.AddSingleton<IAgentTool, ListChangeSetsTool>();

@@ -21,7 +21,7 @@ public sealed class ListLevelsTool : AgentReadToolBase
             "and the building-story flag. Sorted by elevation.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{},""additionalProperties"":false,""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""}}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
