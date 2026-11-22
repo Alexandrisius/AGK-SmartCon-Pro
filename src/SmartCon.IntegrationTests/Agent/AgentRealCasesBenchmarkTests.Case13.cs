@@ -5,6 +5,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -133,8 +134,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case13_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -142,9 +142,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase13();
-            var run = RunCase(
-                13, Case13Title, Case13Text, config, CreateCase13Tools(),
+            SeedOnBenchBaseLive(13, Case13Title, SeedCase13);
+            var run = RunProductionCase(
+                13, Case13Title, Case13Text,
                 Case13SeedSummary(), EvaluateCase13, DumpCase13State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -163,7 +163,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase13();
+            SeedOnBenchBase("case13", SeedCase13);
             await Assert.That(_case13Items.Count).IsEqualTo(Case13ItemCount);
             await Assert.That(_case13Items.Count(item => item.InstanceId != 0))
                 .IsEqualTo(Case13ItemCount);
@@ -201,7 +201,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase13()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case13SeedError = null;
         _case13Items = new List<Case13ItemSeed>();
         _case13SharedFile = SharedParameterFileScope.Create(Application);
@@ -544,26 +544,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase13Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new AuditFillRateTool(context),
-            new ListSchedulesTool(context),
-            new GetScheduleDefinitionTool(context),
-            new GetScheduleDataTool(context),
-            new QueryElementsTool(context),
-            new SummarizeElementsTool(context),
-            new GetProjectOverviewTool(context),
-            new ListCategoriesTool(context),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     // ── Чтение истины по модели ─────────────────────────────────────────
 

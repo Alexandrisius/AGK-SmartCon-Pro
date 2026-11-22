@@ -7,6 +7,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -55,16 +56,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task LiveCase3_SectionTemplates_WorkingViewsKeepOwnRange()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase3();
-        var run = RunCase(
-            3, Case3Title, Case3Text, config, CreateCase3Tools(),
+        SeedOnBenchBaseLive(3, Case3Title, SeedCase3);
+        var run = RunProductionCase(
+            3, Case3Title, Case3Text,
             Case3SeedSummary(), EvaluateCase3, DumpCase3State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -76,7 +76,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase3()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case3Views = new List<Case3ViewSeed>();
         _case3Templates = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         _case3SeedError = null;
@@ -257,22 +257,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase3Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        return new List<IAgentTool>
-        {
-            new ListViewsTool(context),
-            new ListViewTemplatesTool(context),
-            new GetViewSettingsTool(context),
-            new GetViewTemplateDetailsTool(context),
-            new ApplyViewTemplateTool(context, _transactions!, _changeSets!),
-            new SetViewTemplateInclusionTool(context, _transactions!, _changeSets!),
-            new SetViewRangeTool(context, _transactions!, _changeSets!),
-            new SetViewParametersTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-    }
 
     // ── Вердикт ─────────────────────────────────────────────────────────
 

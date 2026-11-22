@@ -12,6 +12,7 @@ using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 using RevitFamily = Autodesk.Revit.DB.Family;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -117,19 +118,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private readonly List<FamilySeed> _case5Seeds = new();
     private List<Case5FamilySeed> _case5Families = null!;
-    private AgentDatabase? _case5Database;
     private SharedParameterFileScope? _case5SharedFile;
-    private string? _case5DatabasePath;
-    private SqliteAgentJobStore? _case5Store;
-    private JobRunner? _case5Runner;
-    private IJobAction[]? _case5JobActions;
     private string? _case5SeedError;
 
     [Test]
     public async Task LiveCase5_SharedParameterMigration_BatchJobHonestReport()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -137,9 +132,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase5();
-            var run = RunCase(
-                5, Case5Title, Case5Text, config, CreateCase5Tools(),
+            SeedOnBenchBaseLive(5, Case5Title, SeedCase5);
+            var run = RunProductionCase(
+                5, Case5Title, Case5Text,
                 Case5SeedSummary(), EvaluateCase5, DumpCase5State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -164,28 +159,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase5()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _transactions = new RevitTransactionService(new StubRevitContext(Doc));
         _changeSets = new InMemoryAgentChangeSetStore();
         _case5SeedError = null;
         _case5Families = new List<Case5FamilySeed>();
 
-        _case5DatabasePath = Path.Combine(
-            Path.GetTempPath(), "sc-case5bench-" + Guid.NewGuid().ToString("N") + ".db");
-        _case5Database = new AgentDatabase(_case5DatabasePath);
-        _case5Database.Initialize();
-        _case5Store = new SqliteAgentJobStore(_case5Database);
-        _case5JobActions = new IJobAction[]
-        {
-            new MapFamilyParametersJobAction(),
-            new ReplaceFamilyParameterJobAction(),
-            new RenameViewsJobAction(),
-            new SetParametersJobAction()
-        };
-        _case5Runner = new JobRunner(_case5Store, _case5JobActions, _transactions);
-        // The test host has no ExternalEvent pump: get_job_status drives the job
-        // forward on the same thread, mirroring the production pump handler.
-        _case5Runner.Initialize(() => _case5Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(10)));
 
         for (var index = 1; index <= Case5FamilyCount; index++)
         {
@@ -441,18 +420,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case5Seeds.Clear();
         _case5SharedFile?.Dispose();
         _case5SharedFile = null;
-        _case5Database = null;
-        _case5Store = null;
-        _case5Runner = null;
-        try
-        {
-            if (_case5DatabasePath is not null && File.Exists(_case5DatabasePath))
-                File.Delete(_case5DatabasePath);
-        }
-        catch (IOException)
-        {
-            // Temp file cleanup is best-effort.
-        }
     }
 
     // ── Сводка сида и тулы ──────────────────────────────────────────────
@@ -487,24 +454,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return lines;
     }
 
-    private List<IAgentTool> CreateCase5Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        return new List<IAgentTool>
-        {
-            new ListFamiliesTool(context),
-            new ListSharedParametersTool(context),
-            new GetFamilyParametersTool(context),
-            new GetProjectOverviewTool(context),
-            new StartJobTool(_case5Runner!, _case5Store!, context),
-            new GetJobStatusTool(_case5Store!, _case5Runner!),
-            new GetJobReportTool(
-                _case5Store!, new JobReportBuilder(_case5Store!, _case5JobActions!), context),
-            new RollbackJobTool(_case5Store!, _case5Runner!, context),
-            new MapFamilyParametersTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-    }
 
     // ── State read-back — см. AgentRealCasesBenchmarkTests.Case5.State.cs ──
 }

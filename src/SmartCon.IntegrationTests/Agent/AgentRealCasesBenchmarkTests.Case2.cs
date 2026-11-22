@@ -7,6 +7,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -70,16 +71,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task LiveCase2_FilterCleanup_InventoryAndDeleteDiscipline()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase2();
-        var run = RunCase(
-            2, Case2Title, Case2Text, config, CreateCase2Tools(),
+        SeedOnBenchBaseLive(2, Case2Title, SeedCase2);
+        var run = RunProductionCase(
+            2, Case2Title, Case2Text,
             Case2SeedSummary(), EvaluateCase2, DumpCase2State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -91,7 +91,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase2()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case2Filters = new List<Case2FilterSeed>();
         _case2ViewNames = new List<string>();
         _case2SeedError = null;
@@ -327,23 +327,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase2Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        return new List<IAgentTool>
-        {
-            new ListFiltersTool(context),
-            new GetFilterDetailsTool(context),
-            new GetViewSettingsTool(context),
-            new ListViewsTool(context),
-            new GetProjectOverviewTool(context),
-            new RenameFilterTool(context, _transactions!, _changeSets!),
-            new SetFilterRulesTool(context, _transactions!, _changeSets!),
-            new SetFilterOverridesTool(context, _transactions!, _changeSets!),
-            new DeleteFilterTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-    }
 
     // ── Вердикт ─────────────────────────────────────────────────────────
 

@@ -66,7 +66,14 @@ internal sealed class ProductionAgentHost : IDisposable
     public string DatabasePath => _database.DatabasePath;
 
     /// <summary>Same resolution as production (env first, then secrets.env) plus benchmark overrides.</summary>
-    public static ProductionAgentHost Create(Document doc)
+    public static ProductionAgentHost Create(Document doc) => Create(doc, null);
+
+    /// <summary>
+    /// <paramref name="llmClient"/> overrides the production decision client (the
+    /// last IAgentLlmClient registration wins) — used by the offline benchmark
+    /// plumbing test; null keeps the real production client.
+    /// </summary>
+    public static ProductionAgentHost Create(Document doc, IAgentLlmClient? llmClient)
     {
         var settings = AgentLlmSettings.Load();
         ApplyBenchmarkOverrides(settings);
@@ -98,6 +105,14 @@ internal sealed class ProductionAgentHost : IDisposable
             AwaitableEvent = new RevitThreadEvent(doc.Application),
             RevitContext = revitContext
         });
+        if (llmClient is not null)
+            services.AddSingleton<IAgentLlmClient>(llmClient);
+        // Headless double of the UI-bound project context provider: the
+        // production Build(object app) casts the callback to UIApplication, and
+        // the RevitAPIUI JIT corrupts the UI-less test host (FileLoadException +
+        // native AVE at Revit exit). Same document, DB-level builder.
+        services.AddSingleton<IAgentProjectContextProvider>(
+            new HeadlessProjectContextProvider(revitContext));
         services.AddSingleton<IAgentSelectionProvider>(NoSelectionProvider.Instance);
 
         var provider = services.BuildServiceProvider();
@@ -112,6 +127,29 @@ internal sealed class ProductionAgentHost : IDisposable
     public IReadOnlyList<AgentMessage> ReadConversation(Guid conversationId) =>
         _conversationStore.GetMessagesAsync(conversationId, CancellationToken.None)
             .GetAwaiter().GetResult();
+
+    /// <summary>
+    /// New conversation the way <see cref="AgentMainViewModel"/> creates one in
+    /// production: a header with the real document identity and the given title.
+    /// </summary>
+    public Guid CreateConversation(string title)
+    {
+        var document = _provider.GetRequiredService<IRevitContext>().GetDocument();
+        var header = new AgentConversationHeader
+        {
+            Title = title,
+            DocumentId = AgentDocumentIdentity.GetDocumentId(document),
+            DocumentPath = document.PathName,
+            RevitVersion = document.Application.VersionNumber,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        return _conversationStore
+            .CreateConversationAsync(header, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+    }
 
     public IReadOnlyList<AgentToolCallRecord> ReadToolCalls(Guid conversationId)
     {

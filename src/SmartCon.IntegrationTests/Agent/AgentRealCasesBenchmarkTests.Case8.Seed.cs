@@ -8,6 +8,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -31,7 +32,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase8()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case8SeedError = null;
         _case8Truth = Case8Truth();
         _case8Placements = new List<Case8Placement>();
@@ -568,35 +569,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase8Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var decisions = AgentDecisionsSettings.Load();
-        _case8Decisions = new HttpDecisionClient(decisions);
-
-        var tools = new List<IAgentTool>
-        {
-            new ListSchedulesTool(context),
-            new GetScheduleDefinitionTool(context),
-            new GetScheduleDataTool(context),
-            new ListSheetsTool(context),
-            new ListFamiliesTool(context),
-            new ListFamilyTypesTool(context),
-            new GetProjectOverviewTool(context),
-            new ListCategoriesTool(context),
-            new QueryElementsTool(context),
-            new CloneScheduleTool(context, _transactions!, _changeSets!),
-            new RenameScheduleTool(context, _transactions!, _changeSets!),
-            new RemoveScheduleFromSheetTool(context, _transactions!, _changeSets!),
-            new PlaceScheduleOnSheetTool(context, _transactions!, _changeSets!),
-            new SetScheduleFieldOrderTool(context, _transactions!, _changeSets!),
-            new SemanticMatchTool(_case8Decisions, decisions),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     private void CleanupCase8()
     {

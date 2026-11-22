@@ -147,8 +147,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case8_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -156,9 +155,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase8();
-            var run = RunCase(
-                8, Case8Title, Case8Text, config, CreateCase8Tools(),
+            SeedOnBenchBaseLive(8, Case8Title, SeedCase8);
+            var run = RunProductionCase(
+                8, Case8Title, Case8Text,
                 Case8SeedSummary(), EvaluateCase8, DumpCase8State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -176,7 +175,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase8();
+            SeedOnBenchBase("case8", SeedCase8);
             await Assert.That(_case8Truth.Length).IsEqualTo(6);
             await Assert.That(_case8Truth.Count(row => row.InstanceId != 0)).IsEqualTo(6);
 

@@ -147,7 +147,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         if (!feedbackOk)
             notes.Add("нет блока обратной связи из стартового блока (маркеров " + feedbackMarkers + ")");
 
-        if (callsPerRound.Count >= MaxRoundsPerTask && string.IsNullOrWhiteSpace(answer))
+        if (callsPerRound.Count >= BenchMaxRounds() && string.IsNullOrWhiteSpace(answer))
             notes.Add("достигнут cap раундов — финального ответа не было");
 
         var detail = "tools [" + sequence + "], rounds " + callsPerRound.Count +

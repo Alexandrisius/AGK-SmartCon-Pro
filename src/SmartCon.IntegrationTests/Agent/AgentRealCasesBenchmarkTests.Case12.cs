@@ -6,6 +6,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -74,8 +75,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case12_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -83,9 +83,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase12();
-            var run = RunCase(
-                12, Case12Title, Case12Text, config, CreateCase12Tools(),
+            SeedOnBenchBaseLive(12, Case12Title, SeedCase12);
+            var run = RunProductionCase(
+                12, Case12Title, Case12Text,
                 Case12SeedSummary(), EvaluateCase12, DumpCase12State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -103,7 +103,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase12();
+            SeedOnBenchBase("case12", SeedCase12);
             var typeCount = _case12Families.Sum(family => family.Types.Count);
             await Assert.That(_case12Families.Count).IsEqualTo(10);
             await Assert.That(typeCount).IsEqualTo(14);
@@ -137,7 +137,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase12()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case12SeedError = null;
         var spec = Case12FamilySpec();
         _case12Ranks = spec.ToDictionary(item => item.FamilyName, item => item.Rank);
@@ -369,31 +369,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase12Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new ListSchedulesTool(context),
-            new GetScheduleDefinitionTool(context),
-            new GetScheduleDataTool(context),
-            new ListTypeParameterCandidatesTool(context),
-            new ListFamiliesTool(context),
-            new ListFamilyTypesTool(context),
-            new GetProjectOverviewTool(context),
-            new ListCategoriesTool(context),
-            new CreateScheduleTool(context, _transactions!, _changeSets!),
-            new AddScheduleFieldTool(context, _transactions!, _changeSets!),
-            new SetScheduleFieldOrderTool(context, _transactions!, _changeSets!),
-            new SetScheduleSortTool(context, _transactions!, _changeSets!),
-            new SetScheduleFieldVisibilityTool(context, _transactions!, _changeSets!),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     // ── Общие локаторы основной спеки ───────────────────────────────────
 

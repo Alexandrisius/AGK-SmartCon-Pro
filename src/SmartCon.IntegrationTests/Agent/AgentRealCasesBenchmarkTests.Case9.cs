@@ -99,8 +99,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case9_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -108,9 +107,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase9();
-            var run = RunCase(
-                9, Case9Title, Case9Text, config, CreateCase9Tools(),
+            SeedOnBenchBaseLive(9, Case9Title, SeedCase9);
+            var run = RunProductionCase(
+                9, Case9Title, Case9Text,
                 Case9SeedSummary(), EvaluateCase9, DumpCase9State,
                 scriptedUserReplies: new[] { "Утверждаю: делай виды по этому списку" });
 
@@ -138,7 +137,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase9();
+            SeedOnBenchBase("case9", SeedCase9);
 
             foreach (var name in Case9AllSystemNames())
             {
@@ -541,31 +540,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return lines;
     }
 
-    private List<IAgentTool> CreateCase9Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new GetProjectOverviewTool(context),
-            new ListLevelsTool(context),
-            new ListViewsTool(context),
-            new ListMepSystemsTool(context),
-            new ListFilterableParametersTool(context),
-            new GetViewSettingsTool(context),
-            new QueryElementsTool(context),
-            new SummarizeElementsTool(context),
-            new GetElementDetailsTool(context),
-            new CreateViewsBatchTool(context, _transactions!, _changeSets!),
-            new CreateViewFilterTool(context, _transactions!, _changeSets!),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new StartJobTool(_case9Runner!, _case9Store!, context),
-            new GetJobStatusTool(_case9Store!, _case9Runner!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     private void CleanupCase9()
     {

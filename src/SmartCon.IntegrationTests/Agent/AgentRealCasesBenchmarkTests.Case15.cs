@@ -10,6 +10,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -108,16 +109,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case15_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase15();
-        var run = RunCase(
-            15, Case15Title, Case15Text, config, CreateCase15Tools(),
+        SeedOnBenchBaseLive(15, Case15Title, SeedCase15);
+        var run = RunProductionCase(
+            15, Case15Title, Case15Text,
             Case15SeedSummary(), EvaluateCase15, DumpCase15State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -129,7 +129,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case15_SeedVerifies()
     {
-        SeedCase15();
+        SeedOnBenchBase("case15", SeedCase15);
 
         await Assert.That(_case15.OfficeRoomId > 0).IsTrue();
         await Assert.That(_case15.CorridorRoomId > 0).IsTrue();
@@ -165,7 +165,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         // preferences (паттерн AgentRelationsToolsTests); окна/двери/насос —
         // из family-шаблонов, не из библиотеки .rfa.
         _document = SampleFiles.NewMepTemplateDocument(Application);
-        _document ??= Application.NewProjectDocument(UnitSystem.Metric);
+        _document ??= BenchDocuments.NewBase(Application);
         if (!ModelSeed.HasWallType(Doc) || !ModelSeed.HasPipeTypes(Doc))
         {
             Skip.Test("В шаблоне проекта нет типов стен или труб — сид кейса 15 невозможен");
@@ -454,28 +454,4 @@ public sealed partial class AgentRealCasesBenchmarkTests
         };
     }
 
-    private List<IAgentTool> CreateCase15Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new GetElementRelationsTool(context),
-            new TraceSystemChainTool(context),
-            new GetRoomContentsTool(context),
-            new QueryElementsTool(context),
-            new GetElementDetailsTool(context),
-            new SummarizeElementsTool(context),
-            new ListLevelsTool(context),
-            new ListCategoriesTool(context),
-            new ListViewsTool(context),
-            new GetProjectOverviewTool(context),
-            new GetCurrentViewInfoTool(context),
-            new GetSelectedElementsTool(context, new Case10NoSelection())
-        };
-
-        var findTools = new FindToolsTool(new RuleToolRouter());
-        findTools.Attach(new AgentToolRegistry(tools));
-        tools.Add(findTools);
-        return tools;
-    }
 }
