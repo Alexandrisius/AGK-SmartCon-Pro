@@ -129,7 +129,8 @@ public sealed class OpenModelBackgroundTool : IAgentTool
                 isActive,
                 isReadOnly = SafeFlag(openDoc, doc => doc.IsReadOnly),
                 isWorkshared = SafeFlag(openDoc, doc => doc.IsWorkshared),
-                elementCountPreview = SafeCount(openDoc)
+                elementCountPreview = SafeCount(openDoc),
+                hint = "Read tools (list_views, list_levels, list_families, get_element_details, ...) now accept documentId='" + id + "' to query THIS background model."
             });
 
             return ToolResult.Ok(
@@ -217,7 +218,8 @@ public sealed class OpenModelBackgroundTool : IAgentTool
             isActive = false,
             isReadOnly = SafeFlag(document, doc => doc.IsReadOnly),
             isWorkshared = SafeFlag(document, doc => doc.IsWorkshared),
-            elementCountPreview = SafeCount(document)
+            elementCountPreview = SafeCount(document),
+            hint = "Read tools now accept documentId='" + documentId + "' to query THIS background model."
         });
 
         return ToolResult.Ok(

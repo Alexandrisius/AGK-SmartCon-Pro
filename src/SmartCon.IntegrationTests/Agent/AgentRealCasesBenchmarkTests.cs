@@ -132,6 +132,10 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
 
         var calls = new List<BenchCall>();
         var callsPerRound = new List<int>();
+        var failureStreaks = new Dictionary<string, int>(StringComparer.Ordinal);
+        var steeredStreaks = new HashSet<string>(StringComparer.Ordinal);
+        var toolCallCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var steeredStorms = new HashSet<string>(StringComparer.Ordinal);
         var intermediateAnswers = new List<string>();
         string? answer = null;
         var requests = 0;
@@ -239,6 +243,47 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                 var resultJson = ExecuteTool(call, byName);
                 var record = BenchCall.From(call, resultJson, round);
                 calls.Add(record);
+
+                // Soft loop guard (mirrors the production LoopGuard): a tool
+                // failing four times in a row with the same error gets one
+                // steering user message instead of an endless retry storm.
+                if (!record.Success && record.ErrorCode is not null)
+                {
+                    var streakKey = call.Name + ":" + record.ErrorCode;
+                    failureStreaks[streakKey] = failureStreaks.TryGetValue(streakKey, out var s) ? s + 1 : 1;
+                    if (failureStreaks[streakKey] >= 4 && steeredStreaks.Add(streakKey))
+                    {
+                        messages.Add(new Dictionary<string, object?>
+                        {
+                            ["role"] = "user",
+                            ["content"] = "Инструмент " + call.Name + " падает с ошибкой '" +
+                                          record.ErrorCode + "' повторно. Не повторяй тот же вызов: " +
+                                          "смени подход (меньше аргументов, другой инструмент) или честно " +
+                                          "сообщи, что не получилось."
+                        });
+                        transcript.AppendLine("**Loop-guard steering injected for " + streakKey + ".**");
+                        transcript.AppendLine();
+                    }
+                }
+                else if (record.Success)
+                {
+                    failureStreaks.Clear();
+                }
+
+                toolCallCounts[call.Name] = toolCallCounts.TryGetValue(call.Name, out var c) ? c + 1 : 1;
+                if (toolCallCounts[call.Name] > 18 && steeredStorms.Add(call.Name))
+                {
+                    messages.Add(new Dictionary<string, object?>
+                    {
+                        ["role"] = "user",
+                        ["content"] = "Ты вызвал " + call.Name + " уже " +
+                                      toolCallCounts[call.Name] + " раз. Данных достаточно: " +
+                                      "переходи к применению результата и итоговому ответу, " +
+                                      "не продолжай перезапрашивать то же самое."
+                    });
+                    transcript.AppendLine("**Storm steering injected for " + call.Name + ".**");
+                    transcript.AppendLine();
+                }
 
                 transcript.AppendLine(
                     "- r" + round + " `" + call.Name + "` " + Shorten(call.ArgumentsJson, 240));
@@ -374,8 +419,13 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         }
         catch (JsonException ex)
         {
+            var truncated = ex.Message.Contains("end of string") ||
+                            ex.Message.Contains("end of data");
+            var hint = truncated
+                ? " Arguments JSON looks TRUNCATED (parallel tool calls hit the output limit): reduce the argument size, split the work, or use a compact mode (e.g. classifierPath instead of inline items)."
+                : string.Empty;
             return "{\"success\":false,\"errorCode\":\"invalid_arguments\",\"message\":\"" +
-                   ex.Message.Replace("\"", "'") + "\"}";
+                   ex.Message.Replace("\"", "'") + hint + "\"}";
         }
 
         var result = tool switch

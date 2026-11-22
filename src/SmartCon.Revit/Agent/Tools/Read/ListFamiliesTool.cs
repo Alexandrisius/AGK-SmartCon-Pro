@@ -31,7 +31,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             "instances: use list_family_types for the types of a family.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInPlace"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInPlace"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false,""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""}}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

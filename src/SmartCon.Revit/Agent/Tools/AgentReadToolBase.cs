@@ -123,6 +123,23 @@ public abstract class AgentReadToolBase : IAgentTool
                 result = result.WithMessageSuffix(AgentDocumentState.NotFoundHint(version));
             }
 
+            // In-band reminder (live case 9 v2 #466): while a background model is
+            // open, every successful read of the ACTIVE document repeats how to
+            // query the donor - models otherwise keep forgetting documentId.
+            if (result.Success && !routedToBackground)
+            {
+                var open = AgentBackgroundDocuments.ListAll();
+                if (open.Count > 0)
+                {
+                    var reminder = " " + open.Count + " background model(s) open: " +
+                                   string.Join("; ", open.Select(pair =>
+                                       System.IO.Path.GetFileNameWithoutExtension(pair.PathName ?? "?") +
+                                       " -> documentId='" + pair.DocumentId + "'")) +
+                                   ". Pass that documentId to read THAT model.";
+                    result = result.WithMessageSuffix(reminder);
+                }
+            }
+
             return result.WithDocumentVersion(version);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
