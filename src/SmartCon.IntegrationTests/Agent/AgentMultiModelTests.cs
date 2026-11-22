@@ -399,33 +399,6 @@ VALUES('j1', 'docA', 'rename_views', 0, '{}', 4,
         return document.RootElement.Clone();
     }
 
-    private sealed class RevitThreadEvent : IAgentAwaitableEvent
-    {
-        private readonly Application _application;
-
-        public RevitThreadEvent(Application application)
-        {
-            _application = application;
-        }
-
-        public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default) =>
-            Task.FromResult(funcWithApp(_application));
-
-        public Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default)
-        {
-            actionWithApp(_application);
-            return Task.CompletedTask;
-        }
-
-        public void ProcessQueue(object revitApp)
-        {
-        }
-
-        public void Initialize(Action onRaise)
-        {
-        }
-    }
-
     private sealed class DatabaseFixture : IDisposable
     {
         private readonly string _directory;

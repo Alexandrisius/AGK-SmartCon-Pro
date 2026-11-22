@@ -1,0 +1,211 @@
+using Autodesk.Revit.DB;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using SmartCon.Agent;
+using SmartCon.Agent.Services;
+using SmartCon.Agent.Services.Llm;
+using SmartCon.Agent.Services.Storage;
+using SmartCon.Agent.Services.Tools;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent;
+using SmartCon.Revit.Agent.Tools;
+using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Support;
+
+namespace SmartCon.IntegrationTests.Agent.Support;
+
+/// <summary>
+/// The production agent graph inside the integration-test host: the same
+/// shared registration methods the application DI uses
+/// (<see cref="AgentToolRegistration"/> + <see cref="AgentCoreRegistration"/>),
+/// real SQLite stores in a temp database, the production decisions client and
+/// the production auto-approve path. Only the Revit plumbing is doubled:
+/// <see cref="StubRevitContext"/> instead of the UI context, an inline
+/// <see cref="RevitThreadEvent"/> instead of the ExternalEvent pump, a
+/// stub selection provider (the test host has no UI selection) and a job
+/// runner driven to completion inline. No LLM call happens on construction.
+/// </summary>
+internal sealed class ProductionAgentHost : IDisposable
+{
+    // IServiceProvider instead of ServiceProvider: the test host sees two DI
+    // assemblies (loose Microsoft.Extensions.DependencyInjection from the TUnit
+    // stack and the ILRepack-merged SmartCon.Dependencies), so the concrete
+    // type name is ambiguous at compile time.
+    private readonly IServiceProvider _provider;
+    private readonly IAgentConversationStore _conversationStore;
+    private readonly AgentDatabase _database;
+    private bool _disposed;
+
+    private ProductionAgentHost(
+        IServiceProvider provider,
+        AgentLlmSettings settings,
+        AgentDatabase database)
+    {
+        _provider = provider;
+        _conversationStore = provider.GetRequiredService<IAgentConversationStore>();
+        _database = database;
+        Orchestrator = provider.GetRequiredService<AgentOrchestrator>();
+        Settings = settings;
+        Registry = provider.GetRequiredService<IToolRegistry>();
+        Executor = provider.GetRequiredService<IToolExecutor>();
+        Session = provider.GetRequiredService<AgentSessionContext>();
+    }
+
+    public AgentOrchestrator Orchestrator { get; }
+
+    public AgentLlmSettings Settings { get; }
+
+    public IToolRegistry Registry { get; }
+
+    public IToolExecutor Executor { get; }
+
+    public AgentSessionContext Session { get; }
+
+    public string DatabasePath => _database.DatabasePath;
+
+    /// <summary>Same resolution as production (env first, then secrets.env) plus benchmark overrides.</summary>
+    public static ProductionAgentHost Create(Document doc)
+    {
+        var settings = AgentLlmSettings.Load();
+        ApplyBenchmarkOverrides(settings);
+
+        var directory = Path.Combine(Path.GetTempPath(), "smartcon-bench");
+        Directory.CreateDirectory(directory);
+        var database = new AgentDatabase(Path.Combine(
+            directory, "agent-" + Guid.NewGuid().ToString("N") + ".db"));
+        database.Initialize();
+
+        var revitContext = new StubRevitContext(doc);
+        var services = new ServiceCollection();
+        services.AddSingleton<IRevitContext>(revitContext);
+        // App-level service the agent tools resolve in production (registered
+        // by the application outside the agent block); same implementation.
+        services.AddSingleton<ITransactionService>(new RevitTransactionService(revitContext));
+
+        var jobStore = new SqliteAgentJobStore(database);
+        var jobRunner = services.AddAgentJobEngine(revitContext, jobStore);
+        // The test host has no ExternalEvent pump: the tools drive the job
+        // forward on the same thread, mirroring the production pump handler.
+        jobRunner.Initialize(() => jobRunner.RunToCompletion(doc, TimeSpan.FromMinutes(10)));
+
+        services.AddRevitAgentTools();
+        services.AddAgentCore(new AgentCoreOptions
+        {
+            Settings = settings,
+            Database = database,
+            AwaitableEvent = new RevitThreadEvent(doc.Application),
+            RevitContext = revitContext
+        });
+        services.AddSingleton<IAgentSelectionProvider>(NoSelectionProvider.Instance);
+
+        var provider = services.BuildServiceProvider();
+        var host = new ProductionAgentHost(provider, settings, database);
+
+        // Production auto-approve path (AgentToolExecutor.Bypass): the
+        // benchmark user approves every write for the whole session.
+        host.Session.ApprovalMode = AgentApprovalMode.AutoApproveSession;
+        return host;
+    }
+
+    public IReadOnlyList<AgentMessage> ReadConversation(Guid conversationId) =>
+        _conversationStore.GetMessagesAsync(conversationId, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+    public IReadOnlyList<AgentToolCallRecord> ReadToolCalls(Guid conversationId)
+    {
+        const string query = @"
+SELECT id, session_id, tool_name, arguments_json, result_json, repairs_json,
+       status, error, duration_ms, created_at
+FROM tool_calls
+WHERE session_id = @sessionId
+ORDER BY created_at;";
+
+        var records = new List<AgentToolCallRecord>();
+        lock (_database.WriteLock)
+        {
+            using var connection = _database.CreateConnection();
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = query;
+            command.Parameters.AddWithValue("@sessionId", conversationId.ToString());
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                records.Add(new AgentToolCallRecord
+                {
+                    Id = reader.GetString(0),
+                    SessionId = reader.GetString(1),
+                    ToolName = reader.GetString(2),
+                    ArgumentsJson = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    ResultJson = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    RepairsJson = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Status = reader.GetString(6),
+                    Error = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    DurationMs = reader.GetInt64(8),
+                    CreatedAt = ParseTimestamp(reader.GetString(9))
+                });
+            }
+        }
+
+        return records;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        ((IDisposable)_provider).Dispose();
+        TryDeleteDatabase();
+    }
+
+    private void TryDeleteDatabase()
+    {
+        foreach (var suffix in new[] { "", "-wal", "-shm" })
+        {
+            try
+            {
+                var path = DatabasePath + suffix;
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (IOException)
+            {
+                // Best effort: the file is in the temp tree.
+            }
+        }
+    }
+
+    private static void ApplyBenchmarkOverrides(AgentLlmSettings settings)
+    {
+        var model = Environment.GetEnvironmentVariable("SMARTCON_AGENT_MODEL");
+        if (!string.IsNullOrWhiteSpace(model))
+            settings.Model = model;
+
+        // Same key ladder as the dogfood client; values are never logged.
+        var key = Environment.GetEnvironmentVariable("SMARTCON_AGENT_API_KEY");
+        if (string.IsNullOrWhiteSpace(key))
+            key = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        if (!string.IsNullOrWhiteSpace(key))
+            settings.ApiKey = key;
+    }
+
+    private static DateTime ParseTimestamp(string value) =>
+        DateTime.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed.ToUniversalTime()
+            : DateTime.UtcNow;
+
+    /// <summary>Test double: the TUnit host has no UI selection to read.</summary>
+    private sealed class NoSelectionProvider : IAgentSelectionProvider
+    {
+        public static readonly NoSelectionProvider Instance = new();
+
+        public IReadOnlyList<ElementId>? GetSelectedElementIds() => null;
+    }
+}
