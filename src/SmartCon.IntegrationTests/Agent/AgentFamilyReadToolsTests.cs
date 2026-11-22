@@ -157,6 +157,40 @@ public sealed class AgentFamilyReadToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task GetFamilyParameters_Batch_ReadsFamiliesInOneCall()
+    {
+        var tool = new GetFamilyParametersTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"familyIds\":[" + Seed.FamilyId + ",987654321]}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("familyCount").GetInt32()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("okCount").GetInt32()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("failedCount").GetInt32()).IsEqualTo(1);
+
+        var families = data.GetProperty("families");
+        await Assert.That(families.GetArrayLength()).IsEqualTo(2);
+
+        // The seeded entry keeps the single-family payload shape.
+        var seeded = families[0];
+        await Assert.That(seeded.GetProperty("ok").GetBoolean()).IsTrue();
+        await Assert.That(seeded.GetProperty("familyId").GetInt64()).IsEqualTo(Seed.FamilyId);
+        await Assert.That(seeded.GetProperty("typeCount").GetInt32()).IsEqualTo(2);
+        var seededWidth = FindParameter(seeded, FamilySeed.WidthParam);
+        await Assert.That(seededWidth.ValueKind).IsEqualTo(JsonValueKind.Object);
+
+        // A missing id becomes a reported entry, not a failed whole batch.
+        var missing = families[1];
+        await Assert.That(missing.GetProperty("ok").GetBoolean()).IsFalse();
+        await Assert.That(missing.GetProperty("familyId").GetInt64()).IsEqualTo(987654321);
+        await Assert.That(missing.GetProperty("error").GetString()).IsEqualTo("family_not_found");
+    }
+
+    [Test]
     public async Task RemoveFamilyParameter_BuiltIn_IsRefusedAndReportedAsBuiltIn()
     {
         // External run 6, P1: "Комментарии" was offered for removal. The listing now

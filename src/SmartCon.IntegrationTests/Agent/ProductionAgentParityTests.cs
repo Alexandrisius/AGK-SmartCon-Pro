@@ -3,6 +3,7 @@ using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Agent.Services;
+using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
@@ -89,21 +90,101 @@ public sealed class ProductionAgentParityTests : RevitApiTest
     }
 
     [Test]
-    public async Task InitialToolSet_IsAlwaysAvailableCore()
+    public async Task ToolSchemas_KeepDocumentIdInsidePropertiesAndRootKeysClosed()
     {
+        // Full production catalog guard for the schema-shape bug where
+        // documentId sat at the schema ROOT next to properties: with
+        // additionalProperties:false the validator reported it as unknown and
+        // AgentToolInputRepair DELETED it, so background-model reads silently
+        // ran against the active document. The unit-side twin
+        // (AgentToolSchemaDocumentIdTests) sees only the agent-side tools -
+        // RevitAPI is compile-time only there.
         using var host = ProductionAgentHost.Create(Doc);
 
-        // Fresh session: nothing loaded and nothing pending, so the initial set
-        // is exactly the always-available tools present in the registry (the
-        // same rule AgentOrchestrator.SelectInitialToolNames applies).
-        var session = new AgentSessionContext();
-        await Assert.That(session.LoadedToolNames.Count).IsEqualTo(0);
-        await Assert.That(session.PendingToolNames.Count).IsEqualTo(0);
+        var allowedRootKeys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "type", "properties", "required", "additionalProperties", "$schema",
+            "anyOf", "definitions"
+        };
+        var offenders = new List<string>();
+        var documentIdTools = 0;
 
-        var initial = host.Registry.GetDefinitions()
-            .Where(definition => AgentToolPacks.IsAlwaysAvailable(definition.Name))
+        foreach (var definition in host.Registry.GetDefinitions())
+        {
+            var schema = definition.InputSchemaJson;
+            using var document = JsonDocument.Parse(schema);
+
+            foreach (var member in document.RootElement.EnumerateObject())
+            {
+                if (!allowedRootKeys.Contains(member.Name))
+                {
+                    offenders.Add(
+                        definition.Name + ": unexpected root key '" + member.Name + "'");
+                }
+            }
+
+            if (!schema.Contains("documentId", StringComparison.Ordinal))
+                continue;
+
+            var declaresProperty =
+                document.RootElement.TryGetProperty("properties", out var properties)
+                && properties.ValueKind == JsonValueKind.Object
+                && properties.TryGetProperty("documentId", out _);
+            if (!declaresProperty)
+            {
+                offenders.Add(
+                    definition.Name + ": schema mentions documentId but does not " +
+                    "declare it in properties");
+                continue;
+            }
+
+            documentIdTools++;
+            using var arguments = JsonDocument.Parse("{\"documentId\":\"abc\"}");
+            var repaired = AgentToolInputRepair.Repair(schema, arguments.RootElement);
+            var kept = repaired.Arguments.ValueKind == JsonValueKind.Object
+                       && repaired.Arguments.TryGetProperty("documentId", out var value)
+                       && value.GetString() == "abc";
+            if (!kept)
+                offenders.Add(definition.Name + ": repair removed documentId");
+
+            var errors = AgentToolSchemaValidator.Validate(schema, "{\"documentId\":\"abc\"}");
+            if (errors.Any(error => error.Contains(
+                    "$.documentId", StringComparison.Ordinal)))
+            {
+                offenders.Add(
+                    definition.Name + ": validator flags documentId: " +
+                    string.Join("; ", errors));
+            }
+        }
+
+        await Assert.That(string.Join("; ", offenders)).IsEqualTo(string.Empty);
+        await Assert.That(documentIdTools).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task InitialToolSet_FirstRequestCarriesAlwaysAvailableCore()
+    {
+        // One real production turn (scripted LLM, no tool calls): the first
+        // request's tool list is what AgentOrchestrator.ResolveToolDefinitions
+        // actually froze - not a recomputation of the rule on a throw-away
+        // session.
+        var fake = new FakeAgentLlmClient();
+        fake.EnqueueAssistant("Готово.");
+        using var host = ProductionAgentHost.Create(Doc, fake);
+        var conversationId = host.CreateConversation("parity-initial-tools");
+
+        await host.Orchestrator.RunTurnAsync(
+            conversationId,
+            "Что есть в модели?",
+            Array.Empty<AgentAttachment>(),
+            progress: null,
+            CancellationToken.None);
+
+        await Assert.That(fake.Requests.Count).IsGreaterThan(0);
+        var initial = fake.Requests[0].Tools
             .Select(definition => definition.Name)
             .ToHashSet(StringComparer.Ordinal);
+        await Assert.That(initial.Count).IsGreaterThan(0);
 
         var expectedCore = new[]
         {
@@ -131,13 +212,45 @@ public sealed class ProductionAgentParityTests : RevitApiTest
     }
 
     [Test]
-    public async Task SystemPrompt_IsProductionPrompt()
+    public async Task SystemPrompt_FirstRequestUsesProductionStaticPrompt()
     {
-        using var host = ProductionAgentHost.Create(Doc);
+        // One real production turn: the captured LLM request must open with the
+        // production static prompt (built by the DI-registered prompt builder),
+        // carry the per-turn <session_context> on top of the same prefix and
+        // repeat the user text verbatim.
+        var fake = new FakeAgentLlmClient();
+        fake.EnqueueAssistant("Готово.");
+        using var host = ProductionAgentHost.Create(Doc, fake);
+        var conversationId = host.CreateConversation("parity-system-prompt");
+        const string userText = "Проверка системного промпта.";
 
-        var prompt = new AgentPromptBuilder().BuildStatic();
-        await Assert.That(prompt).IsEqualTo(AgentSystemPrompt.BuildStatic());
-        await Assert.That(prompt.Contains("## Tool catalog", StringComparison.Ordinal)).IsTrue();
+        await host.Orchestrator.RunTurnAsync(
+            conversationId,
+            userText,
+            Array.Empty<AgentAttachment>(),
+            progress: null,
+            CancellationToken.None);
+
+        await Assert.That(fake.Requests.Count).IsGreaterThan(0);
+        var messages = fake.Requests[0].Messages;
+        await Assert.That(messages.Count).IsGreaterThan(1);
+
+        var staticPrompt = AgentSystemPrompt.BuildStatic();
+
+        await Assert.That(messages[0].Role).IsEqualTo(AgentRole.System);
+        await Assert.That((messages[0].Content ?? string.Empty)
+            .StartsWith(staticPrompt, StringComparison.Ordinal)).IsTrue();
+
+        var turnContext = messages.FirstOrDefault(message =>
+            message.Role == AgentRole.System
+            && (message.Content ?? string.Empty).Contains(
+                AgentSystemPrompt.SessionContextHeader, StringComparison.Ordinal));
+        // The turn context is a separate tail message by design (cacheable
+        // static prefix + per-turn state), so it must merely exist.
+        await Assert.That(turnContext).IsNotNull();
+
+        var firstUser = messages.First(message => message.Role == AgentRole.User);
+        await Assert.That(firstUser.Content).IsEqualTo(userText);
     }
 
     [Test]
@@ -175,18 +288,47 @@ public sealed class ProductionAgentParityTests : RevitApiTest
     {
         using var host = ProductionAgentHost.Create(Doc);
 
-        // A write-path call with dryRun:false on the empty item set: the
-        // executor must pass the production bypass (AutoApproveSession) instead
-        // of rejecting the call for a missing approval.
+        // Arguments that pass schema validation (minItems:1) with a real write
+        // intent (dryRun:false): the call must reach the confirmation branch,
+        // take the production bypass (AutoApproveSession) and EXECUTE - the
+        // view_not_found verdict about the fake id is the tool's own result,
+        // not a gate rejection.
+        var arguments = Parse(new
+        {
+            items = new[] { new { viewId = 123456, newName = "parity-renamed" } },
+            dryRun = false
+        });
+
         var result = await host.Executor.ExecuteAsync(
             "rename_views",
-            Parse(new { items = Array.Empty<object>(), dryRun = false }),
+            arguments,
             CancellationToken.None);
 
         var blocked = result.ErrorCode is not null
                       && (result.ErrorCode.StartsWith("confirmation", StringComparison.Ordinal)
                           || result.ErrorCode == "read_only_mode");
         await Assert.That(blocked).IsFalse();
+
+        // Positive signal: the production audit trail recorded the bypass.
+        var audit = host.ReadAuditEntries();
+        var bypassEntry = audit.FirstOrDefault(entry =>
+            entry.Tool == "rename_views#auto_approved"
+            && entry.Result == "auto_approved:bypass");
+        await Assert.That(bypassEntry.Tool).IsEqualTo("rename_views#auto_approved");
+
+        // Negative control: the SAME call through a ConfirmWrites session is
+        // stopped by the confirmation gate (no UI subscriber in the headless
+        // host -> fail-closed rejection), proving the first run really passed
+        // a gate that is otherwise active.
+        using var confirmingHost = ProductionAgentHost.Create(Doc);
+        confirmingHost.Session.ApprovalMode = AgentApprovalMode.ConfirmWrites;
+        var gateResult = await confirmingHost.Executor.ExecuteAsync(
+            "rename_views",
+            arguments,
+            CancellationToken.None);
+
+        await Assert.That(gateResult.Success).IsFalse();
+        await Assert.That(gateResult.ErrorCode).IsEqualTo("confirmation_rejected");
     }
 
     private static JsonElement Parse(object args)

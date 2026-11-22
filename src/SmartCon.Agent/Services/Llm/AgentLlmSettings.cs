@@ -140,13 +140,17 @@ public sealed class AgentLlmSettings
 
     /// <summary>
     /// Lower-cases the value and falls back to <see cref="DefaultReasoningEffort"/>
-    /// for anything the ladder and "none" do not contain.
+    /// for anything the ladder and "none" do not contain. An unset/empty value is
+    /// the normal state (no env var, no settings override) and defaults silently.
     /// </summary>
     public static string NormalizeReasoningEffort(string? effort)
     {
         var normalized = (effort ?? string.Empty).Trim().ToLowerInvariant();
         if (Array.IndexOf(ReasoningEffortChoices, normalized) >= 0)
             return normalized;
+
+        if (normalized.Length == 0)
+            return DefaultReasoningEffort;
 
         SmartCon.Core.Logging.SmartConLogger.Warn(
             "Agent reasoning effort '" + effort + "' is not one of " +
