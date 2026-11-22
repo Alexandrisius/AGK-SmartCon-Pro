@@ -130,13 +130,19 @@ public sealed class AgentToolCardsTests
         "set_schedule_field_format",
         "set_schedule_style",
         "remove_schedule_from_sheet",
-        "clone_schedule"
+        "clone_schedule",
+        "get_titleblock_options",
+        "get_view_placement_preview",
+        "build_system_sheets",
+        "open_model_background",
+        "close_model",
+        "list_known_models"
     };
 
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(123, AgentToolCards.Count);
+        Assert.Equal(129, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

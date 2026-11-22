@@ -38,6 +38,37 @@ public abstract class AgentReadToolBase : IAgentTool
     internal ToolResult ExecuteForTests(Document doc, JsonElement args, CancellationToken ct) =>
         Execute(doc, args, ct);
 
+    /// <summary>
+    /// Resolves the document this call reads (case 9 v2 multi-model routing).
+    /// Default: the active document; when args carry an optional
+    /// <c>documentId</c> — the background document registered by
+    /// open_model_background. The session document's own id routes back to the
+    /// active document (normal path, session guard included). Returns null when
+    /// routing fails; the base class then shapes the typed error
+    /// (<c>model_not_open</c> for background misses, no_active_document
+    /// otherwise). Override to change resolution for a specific tool.
+    /// </summary>
+    protected virtual Document? ResolveDocument(Document? activeDocument, JsonElement args)
+    {
+        var routedId = AgentJson.GetString(args, "documentId");
+        if (string.IsNullOrEmpty(routedId))
+            return activeDocument;
+
+        if (AgentBackgroundDocuments.TryResolve(routedId!, out var backgroundDocument))
+            return backgroundDocument;
+
+        if (activeDocument is not null
+            && string.Equals(
+                AgentDocumentIdentity.GetDocumentId(activeDocument),
+                routedId,
+                StringComparison.Ordinal))
+        {
+            return activeDocument;
+        }
+
+        return null;
+    }
+
     private ToolResult ExecuteOnRevitThread(
         string expectedDocumentId,
         JsonElement args,
@@ -45,15 +76,31 @@ public abstract class AgentReadToolBase : IAgentTool
     {
         ct.ThrowIfCancellationRequested();
 
-        var document = _revitContext.TryGetDocument();
+        var activeDocument = _revitContext.TryGetDocument();
+        var routedToBackground = IsBackgroundRouting(activeDocument, args);
+        var document = ResolveDocument(activeDocument, args);
+
         if (document is null)
         {
+            if (routedToBackground)
+            {
+                var routedId = AgentJson.GetString(args, "documentId");
+                return ToolResult.Fail(
+                    "model_not_open",
+                    "No background model is open with documentId '" + routedId + "'. " +
+                    "Call open_model_background(path=...) first and pass the documentId " +
+                    "it returns.");
+            }
+
             return ToolResult.Fail(
                 "no_active_document",
                 "No Revit project document is open. Open a project and try again.");
         }
 
-        if (!string.IsNullOrEmpty(expectedDocumentId)
+        // A background donor never changes the user's session, so the
+        // document_changed guard applies to the active document only.
+        if (!routedToBackground
+            && !string.IsNullOrEmpty(expectedDocumentId)
             && !string.Equals(
                 AgentDocumentIdentity.GetDocumentId(document),
                 expectedDocumentId,
@@ -91,5 +138,22 @@ public abstract class AgentReadToolBase : IAgentTool
                 "tool_failed",
                 ex.GetType().Name + ": " + ex.Message);
         }
+    }
+
+    private static bool IsBackgroundRouting(Document? activeDocument, JsonElement args)
+    {
+        var routedId = AgentJson.GetString(args, "documentId");
+        if (string.IsNullOrEmpty(routedId))
+            return false;
+
+        if (activeDocument is null)
+            return true;
+
+        // The session document's own id is not background routing: it keeps
+        // the normal active-document path with the document_changed guard.
+        return !string.Equals(
+            AgentDocumentIdentity.GetDocumentId(activeDocument),
+            routedId,
+            StringComparison.Ordinal);
     }
 }

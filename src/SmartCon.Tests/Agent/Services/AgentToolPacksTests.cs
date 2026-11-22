@@ -9,7 +9,7 @@ public sealed class AgentToolPacksTests
     {
         "views", "view_settings", "view_edit", "templates", "model", "levels", "elements",
         "params", "changes", "jobs", "plans", "meta", "sheets", "families", "schedules", "filters",
-        "worksets", "links", "mep", "semantic", "relations", "annotations", "audit"
+        "worksets", "links", "mep", "semantic", "relations", "documents", "annotations", "audit"
     };
 
     private static readonly string[] ExpectedEmptyPacks =
@@ -85,7 +85,8 @@ public sealed class AgentToolPacksTests
                 "list_sheets", "get_sheet_content", "delete_sheets", "create_sheet",
                 "create_viewports", "move_viewport", "move_viewports", "remove_viewports",
                 "set_sheet_number", "renumber_sheets", "rename_sheet",
-                "sanitize_sheet_numbers"
+                "sanitize_sheet_numbers", "get_titleblock_options",
+                "get_view_placement_preview", "build_system_sheets"
             },
             ["schedules"] = new[]
             {
@@ -120,15 +121,18 @@ public sealed class AgentToolPacksTests
             ["relations"] = new[]
             {
                 "get_element_relations", "trace_system_chain", "get_room_contents"
+            },            ["documents"] = new[]
+            {
+                "open_model_background", "close_model", "list_known_models"
             },
         };
 
     [Fact]
     public void Packs_HaveFixedOrderAndCount()
     {
-        Assert.Equal(23, AgentToolPacks.All.Count);
+        Assert.Equal(24, AgentToolPacks.All.Count);
         Assert.Equal(ExpectedPackOrder, AgentToolPacks.All.Select(pack => pack.Name).ToArray());
-        Assert.Equal(23, AgentToolPacks.All.Select(pack => pack.Name).Distinct().Count());
+        Assert.Equal(24, AgentToolPacks.All.Select(pack => pack.Name).Distinct().Count());
     }
 
     [Fact]
@@ -146,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(123, placements.Length);
+        Assert.Equal(129, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

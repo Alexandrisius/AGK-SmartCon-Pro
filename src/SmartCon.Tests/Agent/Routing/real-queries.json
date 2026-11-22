@@ -2943,6 +2943,102 @@
         "set_parameters"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r8a1",
+      "query": "Какой параметр титульного блока задаёт размер листа?",
+      "expectedTools": [
+        "get_titleblock_options"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r8a2",
+      "query": "Каким номером продолжится альбом листов?",
+      "expectedTools": [
+        "get_titleblock_options"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r8b1",
+      "query": "Влезет ли этот 3D-вид на лист базового формата?",
+      "expectedTools": [
+        "get_view_placement_preview"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r8b2",
+      "query": "Оцени бумажный размер видов перед компоновкой листов",
+      "expectedTools": [
+        "get_view_placement_preview"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r8c1",
+      "query": "Собери листы под 3D-виды систем: вид слева вверху, экспликация справа, номера продолжают альбом",
+      "expectedTools": [
+        "build_system_sheets"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r8c2",
+      "query": "На каждый вид системы отдельный лист, ничего не должно торчать за границы",
+      "expectedTools": [
+        "build_system_sheets"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r9a1",
+      "query": "Посмотри в модели-эталоне, как оформлены виды, не открывая её на экране",
+      "expectedTools": [
+        "open_model_background"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r9a2",
+      "query": "Открой модель по пути в фоне и прочитай её виды",
+      "expectedTools": [
+        "open_model_background"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r9b1",
+      "query": "Закрой модель-эталон после чтения",
+      "expectedTools": [
+        "close_model"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r9c1",
+      "query": "В каких моделях на этом компьютере мы уже работали",
+      "expectedTools": [
+        "list_known_models"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r9b2",
+      "query": "Закончи работу с эталонной моделью и закрой её",
+      "expectedTools": [
+        "close_model"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r9c2",
+      "query": "Реестр моделей: где мы выполняли операции раньше",
+      "expectedTools": [
+        "list_known_models"
+      ],
+      "kind": "read"
     }
   ]
 }

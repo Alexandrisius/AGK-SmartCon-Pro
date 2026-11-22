@@ -145,7 +145,8 @@ public static class AgentToolPacks
                 "list_sheets", "get_sheet_content", "delete_sheets", "create_sheet",
                 "create_viewports", "move_viewport", "move_viewports", "remove_viewports",
                 "set_sheet_number", "renumber_sheets", "rename_sheet",
-                "sanitize_sheet_numbers"
+                "sanitize_sheet_numbers",
+                "get_titleblock_options", "get_view_placement_preview", "build_system_sheets"
             }
         },
         new()
@@ -220,6 +221,12 @@ public static class AgentToolPacks
             Name = "relations",
             Description = "Связи модели: соединения элементов, хосты, from/to помещения, состав помещений, обход цепей систем и детект разрывов.",
             Tools = new[] { "get_element_relations", "trace_system_chain", "get_room_contents" }
+        },
+        new()
+        {
+            Name = "documents",
+            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей.",
+            Tools = new[] { "open_model_background", "close_model", "list_known_models" }
         },
         new()
         {

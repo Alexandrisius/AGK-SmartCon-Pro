@@ -31,6 +31,17 @@ public static partial class AgentToolPackSkills
   undo возвращает все номера.
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
+- `get_titleblock_options` — типы титульников + их редактируемые параметры (кратность
+  размера / формат листа), по `sheetId` — параметры экземпляра титульника листа; плюс
+  `existingSheets[]` и `nextNumberHint` (продолжение альбома).
+- `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — фактический box
+  вьюпорта; план/разрез с кропом — кроп/масштаб (estimated=true); 3D без кропа — размер до
+  размещения неизвестен (API не даёт).
+- `build_system_sheets` — сборщик листов (≤20 items, одна транзакция): лист (номер задан или
+  продолжение альбома) + вид в левом верхнем углу ЦЕЛИКОМ внутри границ (размер окна узнаётся
+  только размещением: place → Regenerate → GetBoxOutline → SetBoxCenter → проверка границ;
+  торчит → warning `overflow=true`, пачка не откатывается) + спека справа от вида (`scheduleId`
+  готового клона) + `titleBlockParameters` титульника (кратность). undo_last удаляет пачку.
 
 ### Кухня Revit
 - Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип
@@ -56,6 +67,9 @@ public static partial class AgentToolPackSkills
   очистку невидимых символов.
 - Координаты `pointMmX/pointMmY` — это ЦЕНТР видового окна (не угол!), в мм от левого
   нижнего угла листа; внутренние единицы Revit — футы, конвертация только на границе.
+- Бумажный размер 3D-вида без кропа до размещения неизвестен (API не даёт extents) —
+  сборщик размещает сначала, меряет потом. Размер спеки на листе —
+  `instance.get_BoundingBox(sheet)` (включает рамку выделения ~2,1 мм вокруг таблицы).
 
 ### Инварианты
 - Прежде чем удалять лист, прочитайте `get_sheet_content`: размещённые виды останутся в
@@ -92,6 +106,12 @@ public static partial class AgentToolPackSkills
 9. «Удали пустые листы»: `list_sheets` (viewCount/scheduleCount) → `get_sheet_content`
    каждого кандидата → `delete_sheets(dryRun=true)` → подтвердить список →
    `delete_sheets(dryRun=false, confirmNames=names[])`.
+10. «Листы для 3D-видов систем» (вид слева вверху + экспликация справа, номера продолжают
+   альбом): `get_titleblock_options` (редактируемый параметр кратности размера,
+   nextNumberHint) → `get_view_placement_preview(viewIds)` (крупный вид → большее значение
+   кратности; у 3D размер узнаётся только размещением) → экспликации собрать заранее
+   `clone_schedule` (фильтр по параметру системы) → `build_system_sheets(items=[{viewId,
+   scheduleId, sheetName, titleBlockParameters:{кратность:N}}], dryRun=false)`.
 
 ### Что нельзя
 - Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.

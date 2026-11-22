@@ -30,6 +30,7 @@ public static partial class AgentToolCards
             .Concat(JobCards())
             .Concat(SemanticCards())
             .Concat(RelationsCards())
+            .Concat(DocumentsCards())
             .ToArray();
 
         CardsByName = new Dictionary<string, AgentToolCard>(Cards.Length, StringComparer.Ordinal);

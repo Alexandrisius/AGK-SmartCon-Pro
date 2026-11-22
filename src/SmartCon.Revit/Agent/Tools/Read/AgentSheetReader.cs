@@ -1,3 +1,4 @@
+using System.Globalization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -172,6 +173,101 @@ internal static class AgentSheetReader
             IsPlaceholder = sheet.IsPlaceholder
         };
     }
+
+    /// <summary>
+    /// Splits a sheet number into the leading prefix and the trailing number
+    /// ("ОВ-07" → prefix "ОВ-", value 7, digits 2). Numbers without trailing
+    /// digits return false.
+    /// </summary>
+    internal static bool TrySplitTrailingNumber(
+        string number,
+        out string prefix,
+        out int value,
+        out int digits)
+    {
+        prefix = string.Empty;
+        value = 0;
+        digits = 0;
+        if (string.IsNullOrEmpty(number))
+            return false;
+
+        var start = number!.Length;
+        while (start > 0 && char.IsDigit(number[start - 1]))
+            start--;
+
+        digits = number.Length - start;
+        if (digits == 0)
+            return false;
+
+        if (!int.TryParse(
+                number.Substring(start, digits),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out value))
+            return false;
+
+        prefix = number[..start];
+        return true;
+    }
+
+    /// <summary>
+    /// The tail of the album numbering: the prefix and zero padding of the sheet
+    /// with the highest trailing number, plus that number ("ОВ-3" → "ОВ-", 3, 1;
+    /// sheets 1..3 → "", 3, 1). False when no sheet carries a trailing number.
+    /// </summary>
+    internal static bool TryGetAlbumTail(
+        Document doc,
+        out string prefix,
+        out int maxValue,
+        out int digits)
+    {
+        prefix = string.Empty;
+        maxValue = 0;
+        digits = 1;
+        var found = false;
+        foreach (var sheet in Collect(doc, excludePlaceholders: false))
+        {
+            if (!TrySplitTrailingNumber(
+                    sheet.SheetNumber ?? string.Empty, out var sheetPrefix, out var value, out var sheetDigits))
+                continue;
+
+            if (found && value <= maxValue)
+                continue;
+
+            prefix = sheetPrefix;
+            maxValue = value;
+            digits = sheetDigits;
+            found = true;
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Formats a continued album number, keeping the zero padding of the tail
+    /// sheet ("ОВ-07" + 8 → "ОВ-08"; padding drops once the value outgrows it).
+    /// </summary>
+    internal static string FormatContinuedNumber(string prefix, int value, int digits)
+    {
+        var text = value.ToString(CultureInfo.InvariantCulture);
+        if (digits > text.Length)
+        {
+            text = value.ToString(
+                "D" + digits.ToString(CultureInfo.InvariantCulture),
+                CultureInfo.InvariantCulture);
+        }
+
+        return prefix + text;
+    }
+
+    /// <summary>
+    /// The sheet number that continues the album (build_system_sheets uses the
+    /// same algorithm when an item carries no sheetNumber).
+    /// </summary>
+    internal static string NextNumberHint(Document doc) =>
+        TryGetAlbumTail(doc, out var prefix, out var maxValue, out var digits)
+            ? FormatContinuedNumber(prefix, maxValue + 1, digits)
+            : "1";
 
     /// <summary>
     /// Finds exactly one sheet by id, number or name. Returns false with a

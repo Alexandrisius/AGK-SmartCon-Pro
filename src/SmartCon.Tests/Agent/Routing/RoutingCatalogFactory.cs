@@ -28,7 +28,7 @@ internal sealed class RoutingQueryFixture
 /// </summary>
 internal static class RoutingCatalogFactory
 {
-    public const int Packs = 23;
+    public const int Packs = 24;
     public const int CardsPerPack = 50;
     public const int SyntheticCardCount = Packs * CardsPerPack;
 
