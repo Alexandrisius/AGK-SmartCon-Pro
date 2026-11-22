@@ -136,6 +136,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         var steeredStreaks = new HashSet<string>(StringComparer.Ordinal);
         var toolCallCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         var steeredStorms = new HashSet<string>(StringComparer.Ordinal);
+        var dryStreaks = new Dictionary<string, int>(StringComparer.Ordinal);
+        var steeredDryRuns = new HashSet<string>(StringComparer.Ordinal);
         var intermediateAnswers = new List<string>();
         string? answer = null;
         var requests = 0;
@@ -283,6 +285,33 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                     });
                     transcript.AppendLine("**Storm steering injected for " + call.Name + ".**");
                     transcript.AppendLine();
+                }
+
+                // Dry-run ping-pong steering (live case 5, glm-5.3): the model
+                // re-runs a successful dry run of the same write tool without
+                // ever applying. After the second consecutive success nudge it
+                // to repeat the call with dryRun:false.
+                if (record.Success && (ContainsText(call.ArgumentsJson, "\"dryRun\":true") ||
+                                       ContainsText(call.ArgumentsJson, "\"dryRun\": true")))
+                {
+                    dryStreaks[call.Name] = dryStreaks.TryGetValue(call.Name, out var d) ? d + 1 : 1;
+                    if (dryStreaks[call.Name] >= 2 && steeredDryRuns.Add(call.Name))
+                    {
+                        messages.Add(new Dictionary<string, object?>
+                        {
+                            ["role"] = "user",
+                            ["content"] = "Прогон " + call.Name + " с dryRun:true уже успешен " +
+                                          dryStreaks[call.Name] + " раза подряд — план подтверждён. " +
+                                          "Повтори ТОТ ЖЕ вызов с dryRun:false, чтобы применить изменения."
+                        });
+                        transcript.AppendLine("**Dry-run steering injected for " + call.Name + ".**");
+                        transcript.AppendLine();
+                    }
+                }
+                else if (record.Success && (ContainsText(call.ArgumentsJson, "\"dryRun\":false") ||
+                                            ContainsText(call.ArgumentsJson, "\"dryRun\": false")))
+                {
+                    dryStreaks.Remove(call.Name);
                 }
 
                 transcript.AppendLine(
