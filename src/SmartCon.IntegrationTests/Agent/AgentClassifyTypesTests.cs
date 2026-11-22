@@ -315,6 +315,154 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         await Assert.That(DescriptionOf(_wallTypeIds[0])).IsEqualTo("Load-bearing walls");
     }
 
+    // ── Typed argument errors and filters (R10) ─────────────────────────
+
+    [Test]
+    public async Task Classify_UnknownTypeId_IsTypeNotFound()
+    {
+        await Assert.That(LoadSampleTable("classify-bad-type.txt").Success).IsTrue();
+
+        var result = await ClassifyAsync(new { typeIds = new long[] { 999999999 } });
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("type_not_found");
+        await Assert.That(result.Message).Contains("999999999");
+    }
+
+    [Test]
+    public async Task Classify_UnknownFamilyId_IsFamilyNotFound()
+    {
+        await Assert.That(LoadSampleTable("classify-bad-family.txt").Success).IsTrue();
+
+        var result = await ClassifyAsync(new { familyIds = new long[] { 999999999 } });
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("family_not_found");
+    }
+
+    [Test]
+    public async Task Classify_UnknownCategory_IsUnknownCategory()
+    {
+        await Assert.That(LoadSampleTable("classify-bad-cat.txt").Success).IsTrue();
+
+        var result = await ClassifyAsync(new { categories = new[] { "OST_NoSuchCategory" } });
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("unknown_category");
+        await Assert.That(result.Message).Contains("OST_NoSuchCategory");
+    }
+
+    [Test]
+    public async Task Classify_OutOfRangeArguments_AreInvalidArguments()
+    {
+        await Assert.That(LoadSampleTable("classify-ranges.txt").Success).IsTrue();
+        var cases = new (string Name, object Value)[]
+        {
+            ("maxTypes", 0), ("maxTypes", 2001),
+            ("maxFamilies", 0), ("maxFamilies", 601),
+            ("minScore", 1.5), ("minScore", -0.1),
+            ("candidateDepth", 1), ("candidateDepth", 16)
+        };
+        foreach (var (name, value) in cases)
+        {
+            var result = await ClassifyAsync(
+                new Dictionary<string, object> { [name] = value });
+            await Assert.That(result.Success).IsFalse();
+            await Assert.That(result.ErrorCode).IsEqualTo("invalid_arguments");
+            await Assert.That(result.Message).Contains(name);
+        }
+    }
+
+    [Test]
+    public async Task Classify_TextParameters_UnknownNameIsWarnedNotSwallowed()
+    {
+        RequireWallTypes();
+        await Assert.That(LoadSampleTable("classify-text-params.txt").Success).IsTrue();
+
+        var result = await ClassifyAsync(new
+        {
+            categories = new[] { "OST_Walls" },
+            textParameters = new[] { "ALL_MODEL_DESCRIPTION", "НетТакогоПараметра" }
+        });
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(result.Warnings.Any(warning =>
+            warning.Contains("НетТакогоПараметра") && warning.Contains("textParameters"))).IsTrue();
+        await Assert.That(result.Warnings.Any(warning => warning.Contains("ALL_MODEL_DESCRIPTION")))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task Classify_MaxFamilies_TruncatesWithSkippedCount()
+    {
+        RequireWallTypes();
+        await Assert.That(LoadSampleTable("classify-max-families.txt").Success).IsTrue();
+
+        var full = await ClassifyAsync(new { });
+        await Assert.That(full.Success).IsTrue();
+        var families = full.Data!.Value.GetProperty("summary").GetProperty("familiesProcessed").GetInt32();
+        if (families < 2)
+            Skip.Test("В шаблоне только одно семейство с кодом классификации");
+
+        var result = await ClassifyAsync(new { maxFamilies = 1 });
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        var summary = data.GetProperty("summary");
+        await Assert.That(summary.GetProperty("familiesProcessed").GetInt32()).IsEqualTo(1);
+        await Assert.That(summary.GetProperty("familiesSkipped").GetInt32()).IsEqualTo(families - 1);
+        await Assert.That(data.GetProperty("selection").GetProperty("truncated").GetBoolean())
+            .IsTrue();
+        await Assert.That(data.GetProperty("hint").GetString()).Contains("maxFamilies");
+    }
+
+    [Test]
+    public async Task Classify_SetParametersArgument_MatchesTheRealSetParametersSchema()
+    {
+        RequireWallTypes();
+        await Assert.That(LoadSampleTable("classify-schema.txt").Success).IsTrue();
+
+        var classified = await ClassifyAsync(new { categories = new[] { "OST_Walls" } });
+        await Assert.That(classified.Success).IsTrue();
+        var setParameters = classified.Data!.Value.GetProperty("setParameters");
+        await Assert.That(setParameters.ValueKind).IsEqualTo(JsonValueKind.Object);
+
+        // The schema of the REAL set_parameters tool: the argument must pass it
+        // as is (R7) - only schema keys, items of the schema shape.
+        var schemaJson = new SetParametersTool(
+                new StubRevitContext(Doc), _transactions!, _changeSets!)
+            .Definition.InputSchemaJson;
+        using var schemaDocument = JsonDocument.Parse(schemaJson);
+        var schema = schemaDocument.RootElement;
+        var allowed = schema.GetProperty("properties").EnumerateObject()
+            .Select(property => property.Name).ToHashSet(StringComparer.Ordinal);
+        foreach (var property in setParameters.EnumerateObject())
+        {
+            await Assert.That(allowed.Contains(property.Name)).IsTrue();
+        }
+
+        var itemsSchema = schema.GetProperty("properties").GetProperty("items");
+        var itemAllowed = itemsSchema.GetProperty("items").GetProperty("properties")
+            .EnumerateObject().Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var itemRequired = itemsSchema.GetProperty("items").GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+        var items = setParameters.GetProperty("items");
+        foreach (var item in items.EnumerateArray())
+        {
+            foreach (var property in item.EnumerateObject())
+            {
+                await Assert.That(itemAllowed.Contains(property.Name)).IsTrue();
+            }
+
+            foreach (var required in itemRequired)
+            {
+                await Assert.That(item.TryGetProperty(required, out _)).IsTrue();
+            }
+        }
+    }
+
     /// <summary>
     /// Deterministic stand-in for the decision model: every option is scored by
     /// the tokens it shares with the question's Match line; without any overlap

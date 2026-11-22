@@ -189,10 +189,12 @@ public static partial class AgentToolCards
                 WhenNotToUse =
                     "Когда таблица классификации не загружена (ответ " +
                     "classification_table_not_loaded — скажите пользователю, не подбирайте коды " +
-                    "по аналогии); когда код нужен одному-двум типам и вы уже знаете код — тогда " +
-                    "прямой set_parameters; когда нужно лишь ПОСМОТРЕТЬ таблицу — " +
-                    "list_classification_entries; когда пользователь сам диктует коды — " +
-                    "запишите их с allowUnverifiedClassification:true.",
+                    "по аналогии); когда decision-модель недоступна или отказала " +
+                    "(decision_unavailable/decision_call_failed) — скажите пользователю и не " +
+                    "выдавайте отказ канала за «нет кандидатов»; когда код нужен одному-двум " +
+                    "типам и вы уже знаете код — тогда прямой set_parameters; когда нужно лишь " +
+                    "ПОСМОТРЕТЬ таблицу — list_classification_entries; когда пользователь сам " +
+                    "диктует коды — запишите их с allowUnverifiedClassification:true.",
                 Examples = new[]
                 {
                     "Заполни коды классификатора у всех семейств модели",
