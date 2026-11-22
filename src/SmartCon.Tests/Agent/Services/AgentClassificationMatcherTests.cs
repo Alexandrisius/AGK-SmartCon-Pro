@@ -187,6 +187,35 @@ public sealed class AgentClassificationMatcherTests
     }
 
     [Fact]
+    public async Task Match_FamilyWithoutAnyText_IsNoCandidatesWithoutModelCalls()
+    {
+        // System families with an empty category AND family name carry no
+        // descriptive text at all: matching is meaningless, the model is not
+        // asked, the family gets an honest reason.
+        var client = new KeywordDecisionClient();
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+        var types = new List<ClassifyTypeSnapshot>
+        {
+            Type(1, "", "Moment Frame", ""),
+            Type(2, "", "Base Plate Symbol", "")
+        };
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(types), ServicesTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.Null(result.Error);
+        Assert.Empty(client.Requests);
+        Assert.All(result.Types, item =>
+        {
+            Assert.Equal(ClassifyTypeStatus.NoCandidates, item.Status);
+            Assert.Contains("nothing to match by", item.Reason ?? string.Empty, StringComparison.Ordinal);
+        });
+        Assert.Empty(result.SetParameterBatches);
+        Assert.False(result.DecisionUsed);
+    }
+
+    [Fact]
     public async Task Match_BareChoice_NeverProposedAtDefaultMinScore()
     {
         // R5: a choice without probabilities or confidence is a guess - at the

@@ -81,6 +81,17 @@ public sealed partial class AgentClassificationMatcher
         var weak = new List<ClassifyFamilyGroup>();
         foreach (var family in families)
         {
+            // A family without any descriptive text (empty category, family
+            // name and parameter values) has nothing to match by: asking the
+            // model about it would only invite a guess.
+            if (string.IsNullOrWhiteSpace(family.FamilyText))
+            {
+                run.FamilyReasons[family.Key] =
+                    "the family carries no descriptive text (empty category, family name and " +
+                    "parameter values) - there is nothing to match by";
+                continue;
+            }
+
             // Family name tokens weigh double, the rest of the family text single.
             var other = AgentSemanticLexicon.Tokenize(family.FamilyText)
                 .Where(token => !family.FamilyNameTokens.Contains(token))

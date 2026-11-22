@@ -398,13 +398,20 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         RequireWallTypes();
         await Assert.That(LoadSampleTable("classify-max-families.txt").Success).IsTrue();
 
-        var full = await ClassifyAsync(new { });
+        // Wall families only: the very first family of a bare template can be
+        // a text-less system family (honestly no_candidates), so the budget is
+        // probed inside a niche that always carries descriptive text.
+        var full = await ClassifyAsync(new { categories = new[] { "OST_Walls" } });
         await Assert.That(full.Success).IsTrue();
         var families = full.Data!.Value.GetProperty("summary").GetProperty("familiesProcessed").GetInt32();
         if (families < 2)
-            Skip.Test("В шаблоне только одно семейство с кодом классификации");
+            Skip.Test("The template has fewer than two wall families with a classification code");
 
-        var result = await ClassifyAsync(new { maxFamilies = 1 });
+        var result = await ClassifyAsync(new
+        {
+            categories = new[] { "OST_Walls" },
+            maxFamilies = 1
+        });
 
         await Assert.That(result.Success).IsTrue();
         var data = result.Data!.Value;
