@@ -16,8 +16,10 @@ public static partial class AgentToolPackSkills
   Пустые спецификации — блоком `emptySchedules` (все сразу, не потеряешь при диагностике);
   дубли по одинаковому определению (поля+фильтры+сортировка) — `duplicateGroups`.
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
-- `get_schedule_definition` — структура: поля, сортировка/группировка, фильтры
-  (фазные — в `phaseFilters` с именем фазы; фильтры-ссылки — `valueName`).
+- `get_schedule_definition` — структура: поля (у общих — `guid` + `parameterName`,
+  у built-in — имя параметра), сортировка/группировка, фильтры
+  (фазные — в `phaseFilters` с именем фазы; фильтры-ссылки — `valueName`)
+  и `placedOnSheet`/`sheetNumbers` — вынесена ли на лист.
 - `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
   (уникальное), `fields` (0..15), `itemized`.
 - `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
@@ -55,6 +57,10 @@ public static partial class AgentToolPackSkills
   через наш тул: дубль → no_changes (Revit допускает дубли, агент — нет).
 
 ### Инварианты
+- Критичное = на листе: `placedOnSheet`/`sheetNumbers` (list_schedules и
+  get_schedule_definition) отличают выдаёмую отчётность от черновых спек вне листов;
+  обязательные параметры для миграции/аудита (`audit_fill_rate` из пака elements)
+  выводятся из полей именно ЛИСТОВЫХ спек, черновые не считаются.
 - «Покажи спецификацию» — сначала `get_schedule_definition`, потом `get_schedule_data` с
   `limit`: без структуры непонятно, что за колонки.
 - Значения в ячейках — отформатированный текст как в ведомости (с единицами); типизированных

@@ -47,6 +47,8 @@ internal sealed class ScheduleCard
 
     public IReadOnlyList<string> SheetNumbers { get; set; } = Array.Empty<string>();
 
+    public bool PlacedOnSheet => SheetNumbers.Count > 0;
+
     /// <summary>Definition digest (fields/filters/sorting); "unavailable" when the definition cannot be read.</summary>
     public string? DefinitionsDigest { get; set; }
 }
@@ -149,6 +151,33 @@ internal static class AgentScheduleReader
             SheetNumbers = onSheets ?? Array.Empty<string>(),
             DefinitionsDigest = AgentScheduleDigest.Compute(schedule)
         };
+    }
+
+    /// <summary>
+    /// GUID of the shared parameter behind a schedule field, or null for
+    /// built-in and calculated fields (shared ids are positive, built-in are
+    /// negative, calculated have no parameter id — Autodesk developer guide).
+    /// </summary>
+    internal static string? DescribeParameterGuid(Document doc, ScheduleField field)
+    {
+        try
+        {
+            var parameterId = field.ParameterId;
+            if (parameterId is null
+                || parameterId == ElementId.InvalidElementId
+                || parameterId.GetValue() <= 0)
+            {
+                return null;
+            }
+
+            return doc.GetElement(parameterId) is SharedParameterElement shared
+                ? shared.GuidValue.ToString("D")
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     internal static IReadOnlyList<ScheduleColumn> ReadColumns(
@@ -430,7 +459,7 @@ internal static class AgentScheduleReader
         return value!.Trim().ToLowerInvariant().Replace("\n", " ").Replace("  ", " ");
     }
 
-    private static string? DescribeParameter(Document doc, ScheduleField field)
+    internal static string? DescribeParameter(Document doc, ScheduleField field)
     {
         try
         {

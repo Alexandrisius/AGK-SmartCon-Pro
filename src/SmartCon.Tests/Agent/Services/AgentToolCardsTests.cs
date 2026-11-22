@@ -115,13 +115,21 @@ public sealed class AgentToolCardsTests
         "rollback_job",
         "retry_failed_items",
         "list_mep_systems",
-        "list_materials"
+        "list_materials",
+        "semantic_match",
+        "read_classifier",
+        "get_element_relations",
+        "trace_system_chain",
+        "get_room_contents",
+        "group_families_by_shared_parameters",
+        "audit_fill_rate",
+        "list_type_parameter_candidates"
     };
 
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(108, AgentToolCards.Count);
+        Assert.Equal(116, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

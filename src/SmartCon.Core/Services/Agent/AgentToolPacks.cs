@@ -85,10 +85,11 @@ public static class AgentToolPacks
         new()
         {
             Name = "elements",
-            Description = "Поиск, сводка, параметры и удаление элементов модели.",
+            Description = "Поиск, сводка, связи, аудит и удаление элементов модели.",
             Tools = new[]
             {
-                "query_elements", "summarize_elements", "get_element_details", "delete_elements"
+                "query_elements", "summarize_elements", "get_element_details", "delete_elements",
+                "group_families_by_shared_parameters", "audit_fill_rate", "list_type_parameter_candidates"
             }
         },
         new()
@@ -205,6 +206,18 @@ public static class AgentToolPacks
             Name = "mep",
             Description = "Инженерные системы и материалы: списки MEP-систем (трубы, воздуховоды, цепи) и материалов, свойства типов систем.",
             Tools = new[] { "list_mep_systems", "list_materials", "set_mep_system_type" }
+        },
+        new()
+        {
+            Name = "semantic",
+            Description = "Семантический выбор топ-K из больших списков и парсинг иерархических txt-классификаторов с хлебными крошками.",
+            Tools = new[] { "semantic_match", "read_classifier" }
+        },
+        new()
+        {
+            Name = "relations",
+            Description = "Связи модели: соединения элементов, хосты, from/to помещения, состав помещений, обход цепей систем и детект разрывов.",
+            Tools = new[] { "get_element_relations", "trace_system_chain", "get_room_contents" }
         },
         new()
         {

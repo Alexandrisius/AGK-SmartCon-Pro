@@ -9,7 +9,7 @@ public sealed class AgentToolPacksTests
     {
         "views", "view_settings", "view_edit", "templates", "model", "levels", "elements",
         "params", "changes", "jobs", "plans", "meta", "sheets", "families", "schedules", "filters",
-        "worksets", "links", "mep", "annotations", "audit"
+        "worksets", "links", "mep", "semantic", "relations", "annotations", "audit"
     };
 
     private static readonly string[] ExpectedEmptyPacks =
@@ -59,7 +59,9 @@ public sealed class AgentToolPacksTests
             ["levels"] = new[] { "list_levels", "rename_levels" },
             ["elements"] = new[]
             {
-                "query_elements", "summarize_elements", "get_element_details", "delete_elements"
+                "query_elements", "summarize_elements", "get_element_details", "delete_elements",
+                "group_families_by_shared_parameters", "audit_fill_rate",
+                "list_type_parameter_candidates"
             },
             ["params"] = new[]
             {
@@ -111,15 +113,20 @@ public sealed class AgentToolPacksTests
                 "replace_family_parameter", "duplicate_family_type", "rename_family_type",
                 "replace_family_type", "load_family", "purge_families"
             },
-            ["mep"] = new[] { "list_mep_systems", "list_materials", "set_mep_system_type" }
+            ["mep"] = new[] { "list_mep_systems", "list_materials", "set_mep_system_type" },
+            ["semantic"] = new[] { "semantic_match", "read_classifier" },
+            ["relations"] = new[]
+            {
+                "get_element_relations", "trace_system_chain", "get_room_contents"
+            },
         };
 
     [Fact]
     public void Packs_HaveFixedOrderAndCount()
     {
-        Assert.Equal(21, AgentToolPacks.All.Count);
+        Assert.Equal(23, AgentToolPacks.All.Count);
         Assert.Equal(ExpectedPackOrder, AgentToolPacks.All.Select(pack => pack.Name).ToArray());
-        Assert.Equal(21, AgentToolPacks.All.Select(pack => pack.Name).Distinct().Count());
+        Assert.Equal(23, AgentToolPacks.All.Select(pack => pack.Name).Distinct().Count());
     }
 
     [Fact]
@@ -137,7 +144,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(108, placements.Length);
+        Assert.Equal(116, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

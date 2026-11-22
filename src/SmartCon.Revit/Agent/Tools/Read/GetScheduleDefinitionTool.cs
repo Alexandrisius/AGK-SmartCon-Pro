@@ -29,10 +29,12 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         Description =
             "Reads the definition of one schedule by scheduleId or exact scheduleName: " +
             "category, key-schedule/itemized flags, fields (name, heading, hidden, calculated, " +
-            "field type), filters (field, operator, value) and sorting/grouping fields. Use it " +
-            "to explain why a schedule shows zero rows or fewer rows than the model has, and " +
-            "to verify changes made by add_schedule_field / set_schedule_filter / " +
-            "set_schedule_sort.",
+            "field type, shared parameter guid and parameterName), filters (field, operator, " +
+            "value) and sorting/grouping fields, plus placedOnSheet/sheetNumbers (the sheets " +
+            "the schedule is placed on via ScheduleSheetInstance). Use it to explain why a " +
+            "schedule shows zero rows or fewer rows than the model has, to check whether a " +
+            "schedule is issued documentation (placed on a sheet) or a draft, and to verify " +
+            "changes made by add_schedule_field / set_schedule_filter / set_schedule_sort.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""}},""additionalProperties"":false}"
     };
 
@@ -101,6 +103,8 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                     ["hidden"] = field.IsHidden,
                     ["calculated"] = field.IsCalculatedField,
                     ["parameterId"] = parameterId,
+                    ["guid"] = AgentScheduleReader.DescribeParameterGuid(doc, field),
+                    ["parameterName"] = AgentScheduleReader.DescribeParameter(doc, field),
                     ["fieldType"] = field.FieldType.ToString()
                 });
             }
@@ -194,11 +198,17 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             // Sorting is optional detail.
         }
 
+        var sheetNumbers = AgentScheduleReader.MapSheetNumbers(doc);
+        sheetNumbers.TryGetValue(schedule.Id.GetValue(), out var onSheets);
+        var placedOnSheet = onSheets is { Count: > 0 };
+
         var payload = new Dictionary<string, object?>
         {
             ["scheduleId"] = schedule.Id.GetValue(),
             ["name"] = schedule.Name,
             ["isTemplate"] = schedule.IsTemplate,
+            ["placedOnSheet"] = placedOnSheet,
+            ["sheetNumbers"] = onSheets ?? Array.Empty<string>(),
             ["categoryId"] = CategoryId(definition),
             ["categoryName"] = CategoryName(doc, definition),
             ["isKeySchedule"] = SafeBool(() => definition.IsKeySchedule),
@@ -227,7 +237,10 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             "Read schedule '" + schedule.Name + "': " + fields.Count + " field(s), " +
-            filters.Count + " filter(s), " + sortFields.Count + " sort/group field(s).");
+            filters.Count + " filter(s), " + sortFields.Count + " sort/group field(s)" +
+            (placedOnSheet
+                ? ", placed on sheet(s) " + string.Join(", ", onSheets!)
+                : ", not placed on any sheet") + ".");
     }
 
     private static ViewSchedule? FindSchedule(

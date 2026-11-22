@@ -38,7 +38,8 @@ public static partial class AgentToolCards
                     "все элементы", "сотни", "по правилу", "массовая операция", "прогон",
                     "миграция", "migration", "migrate", "массовая миграция", "заменить во всех",
                     "всех семействах", "сотни семейств", "many families", "hundreds",
-                    "replace across families", "пакетная замена"
+                    "replace across families", "пакетная замена", "массовое переименование",
+                    "переименовать все виды", "переименовывать всё сразу"
                 },
                 NegativeExamples = new[]
                 {

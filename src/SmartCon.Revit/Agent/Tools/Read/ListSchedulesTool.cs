@@ -22,7 +22,9 @@ public sealed class ListSchedulesTool : AgentReadToolBase
         Name = "list_schedules",
         Description =
             "Lists schedules and specifications (ведомости, спецификации): name, category, visible " +
-            "column heading, data row count, key schedule flag, sheet numbers. Filters: " +
+            "column heading, data row count, key schedule flag, sheet numbers and the explicit " +
+            "placedOnSheet flag (true = issued documentation placed on a sheet, false = draft). " +
+            "Filters: " +
             "categories, nameContains; internal keynote, titleblock revision and template schedules " +
             "are excluded unless requested. Paged: limit (default 200, max 500), offset, returned, " +
             "nextOffset, truncated. Unknown categories are reported in unknownCategories. " +
@@ -32,7 +34,7 @@ public sealed class ListSchedulesTool : AgentReadToolBase
             "are identical (candidates for cleanup).",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isTemplate,sheetNumbers,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isTemplate,sheetNumbers,placedOnSheet,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

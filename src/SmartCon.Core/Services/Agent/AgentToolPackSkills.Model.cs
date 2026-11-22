@@ -91,6 +91,17 @@ public static partial class AgentToolPackSkills
 - `query_elements` — выборка: `categories`, `levelIds`, `typeIds`, `viewId`, `roomId`, `conditions[{parameter,op,value,unit}]`, `logic`, `includeTypeParameters`, `fields`, `limit` ≤200, `offset`.
 - `summarize_elements` — сводка: `groupBy: category|level|type|parameter`, `sumParameter`, `topN`, `includeZeroCount`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
+- `group_families_by_shared_parameters` — группы семейств по наборам GUID общих параметров
+  (`scope: type|instance|both`) + отдельный `unplacedFamilies`: инвентаризация, из каких
+  ФОПов собрана модель, перед массовой миграцией параметров.
+- `audit_fill_rate` — батч-аудит заполненности: обязательный набор = поля спек НА ЛИСТАХ
+  (или явные `scheduleIds`), сводка за один проход по модели (cap 20000 элементов):
+  filled / emptyNoValue / emptyString / missingParameter + виновники (семейство/тип/уровень);
+  черновые спеки вне листов — в `offSheetSchedules`, НЕ аудируются.
+- `list_type_parameter_candidates` — встроенные параметры типоразмера категории
+  (обязателен `categories`/`categoryIds`) с заполненностью по всем типам;
+  `recommended` = пустые записываемые String (группа `PG_IDENTITY_DATA` сверху) — выбор
+  слота под код/ключ сортировки без хардкода.
 - `delete_elements` — удаление элементов по `elementIds` ≤200, `confirmNames`. Dry-run
   показывает `names[]`, категорию и `dependentsCount`; удаление каскадно уносит зависимых
   (`dependentsDeleted` в ответе). Необратимо (`undoSupported=false`).
@@ -134,6 +145,10 @@ public static partial class AgentToolPackSkills
 1. «Трубы диаметром больше 100 на уровне 2»: `query_elements(categories=[""OST_PipeCurves""], levelIds=[lvl], conditions:[{parameter:""Диаметр"",op:""gt"",value:100,unit:""mm""}])`.
 2. «Сколько чего по категориям»: `summarize_elements(groupBy:""category"")`, детали — по конкретной категории.
 3. «Покажи параметры этого элемента»: `get_element_details(elementIds=[id], includeTypeParameters=true, onlyNonEmpty=true)`.
+4. «Аудит модели перед выдачей»: `audit_fill_rate` (без аргументов — поля листовых спек) →
+   по виновникам точечное `set_parameters`/джоба для безопасно-выводимого.
+5. «Из каких ФОПов собрана модель»: `group_families_by_shared_parameters(scope:""both"")` →
+   группы по сигнатурам GUID + `unplacedFamilies` отдельным списком.
 
 ### Что нельзя
 - Фильтровать «в памяти» огромные выборки вместо условий запроса.

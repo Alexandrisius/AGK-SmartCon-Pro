@@ -81,7 +81,7 @@ public sealed class AgentPromptBudgetTests
             "packs=" + AgentToolPacks.All.Count + " core=" +
             AgentToolPacks.CoreToolNames.Count + " schemas=" + alwaysAvailable.Count);
 
-        Assert.Equal(21, AgentToolPacks.All.Count);
+        Assert.Equal(23, AgentToolPacks.All.Count);
         Assert.Equal(11, AgentToolPacks.CoreToolNames.Count);
         Assert.Equal(3, AgentToolPacks.SystemToolNames.Count);
         Assert.True(

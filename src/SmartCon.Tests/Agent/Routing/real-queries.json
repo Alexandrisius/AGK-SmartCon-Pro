@@ -2647,6 +2647,166 @@
         "merge_duplicate_filters"
       ],
       "kind": "write"
+    },
+    {
+      "id": "rSem01",
+      "query": "Подбери код по классификатору для семейства «Кран шаровый»",
+      "expectedTools": [
+        "semantic_match"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSem02",
+      "query": "Какой параметр из ФОПа заказчика больше всего похож на наш «АДСК_Наименование»",
+      "expectedTools": [
+        "semantic_match"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSem03",
+      "query": "Выбери из 120 строк классификатора подходящие для светильника, не читай всё в контекст",
+      "expectedTools": [
+        "semantic_match"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSem04",
+      "query": "Прочитай классификатор из файла рядом с моделью",
+      "expectedTools": [
+        "read_classifier"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSem05",
+      "query": "Разбери файл классификатора на коды и названия с путями по уровням",
+      "expectedTools": [
+        "read_classifier"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSem06",
+      "query": "Покажи разделы классификатора с полными хлебными крошками",
+      "expectedTools": [
+        "read_classifier"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl01",
+      "query": "Проведи аудит модели перед выдачей заказчику: по спецификациям на листах проверь заполненность параметров и покажи виновников",
+      "expectedTools": [
+        "audit_fill_rate"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl02",
+      "query": "Сгруппируй семейства по наборам общих параметров из разных ФОПов, неразмещённые покажи отдельно",
+      "expectedTools": [
+        "group_families_by_shared_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl03",
+      "query": "Какие пустые системные параметры типоразмера группы «Группировка и идентификация» свободны под код сортировки спецификации?",
+      "expectedTools": [
+        "list_type_parameter_candidates"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl04",
+      "query": "Вынесена ли ведомость объёмов работ на лист и какие GUID у её общих параметров?",
+      "expectedTools": [
+        "get_schedule_definition"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl05",
+      "query": "Сколько элементов с пустым параметром и кто виновники по каждой колонке листовой спецификации",
+      "expectedTools": [
+        "audit_fill_rate"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r329",
+      "query": "С чем соединён шаровый кран К1? Что подходит к его входу и выходу?",
+      "expectedTools": [
+        "get_element_relations"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r330",
+      "query": "В какой стене установлено окно О1?",
+      "expectedTools": [
+        "get_element_relations"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r331",
+      "query": "Из какого помещения в какое ведёт дверь Д1?",
+      "expectedTools": [
+        "get_element_relations"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r332",
+      "query": "Пройди цепь от насоса и найди, где рвётся система Т11",
+      "expectedTools": [
+        "trace_system_chain"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r333",
+      "query": "Почему имя системы Т11 не переходит дальше по ветке?",
+      "expectedTools": [
+        "trace_system_chain"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r334",
+      "query": "Что стоит в помещении Офис 1? Перечисли состав по семействам с количеством",
+      "expectedTools": [
+        "get_room_contents"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r335",
+      "query": "Состав помещения 101 по семействам",
+      "expectedTools": [
+        "get_room_contents"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl06",
+      "query": "Разбери размещённые семейства по исходным файлам общих параметров: какие группы ФОПов есть в модели",
+      "expectedTools": [
+        "group_families_by_shared_parameters"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rEl07",
+      "query": "Найди свободный системный параметр типоразмера для кода сортировки в группе идентификации",
+      "expectedTools": [
+        "list_type_parameter_candidates"
+      ],
+      "kind": "read"
     }
   ]
 }

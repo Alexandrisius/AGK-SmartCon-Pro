@@ -51,6 +51,46 @@ public static class AgentToolCatalog
             {
                 "выделение", "выбрано", "выбранные", "selection", "selected"
             }),
+            ["semantic_match"] = new("Read", false, new[]
+            {
+                "семантический", "похожий", "подобрать", "выбор", "топ", "классификатор", "фоп",
+                "semantic", "match", "похоже", "аналог"
+            }),
+            ["read_classifier"] = new("Read", false, new[]
+            {
+                "классификатор", "файл", "txt", "коды", "иерархия", "раздел", "крошки",
+                "classifier", "прочитать", "разобрать"
+            }),
+            ["get_element_relations"] = new("Read", false, new[]
+            {
+                "связи", "соединён", "коннектор", "сосед", "хост", "стена", "помещение",
+                "relations", "connectors", "host", "joined"
+            }),
+            ["trace_system_chain"] = new("Read", false, new[]
+            {
+                "цепь", "система", "разрыв", "обрыв", "трасса", "ветка", "цепочка", "gap",
+                "chain", "break", "trace"
+            }),
+            ["get_room_contents"] = new("Read", false, new[]
+            {
+                "помещение", "состав", "комната", "что стоит", "содержимое", "офис",
+                "room", "contents", "состав помещения"
+            }),
+            ["group_families_by_shared_parameters"] = new("Read", false, new[]
+            {
+                "группировка", "семейства", "фоп", "общие параметры", "сигнатура", "группы",
+                "наборы", "guid", "grouping", "signature"
+            }),
+            ["audit_fill_rate"] = new("Read", false, new[]
+            {
+                "аудит", "заполненность", "пустые", "сводка", "виновники", "незаполненные",
+                "audit", "fill", "empty", "проверка модели"
+            }),
+            ["list_type_parameter_candidates"] = new("Read", false, new[]
+            {
+                "типоразмер", "параметры типа", "группировка идентификация", "свободные",
+                "пустые системные", "кандидаты", "type", "candidates", "identity"
+            }),
             ["query_elements"] = new("Read", false, new[]
             {
                 "найти", "найди", "поиск", "фильтр", "элементы", "стены", "трубы", "без",
@@ -521,7 +561,8 @@ public static class AgentToolCatalog
                 "все элементы", "сотни", "по правилу", "массовая операция", "прогон",
                 "миграция", "migration", "migrate", "массовая миграция", "заменить во всех",
                 "всех семействах", "сотни семейств", "many families", "hundreds",
-                "replace across families", "пакетная замена"
+                "replace across families", "пакетная замена", "массовое переименование",
+                "переименовать все", "переименовывание", "массовая правка"
             }),
             ["get_job_status"] = new("Read", true, new[]
             {

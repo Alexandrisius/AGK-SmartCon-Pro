@@ -8,6 +8,7 @@ using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Agent.Services.Tools;
+using SmartCon.Agent.Services.Tools.Semantic;
 using SmartCon.Agent.Services.UI;
 using SmartCon.Agent.ViewModels;
 using SmartCon.Agent.Views;
@@ -460,6 +461,12 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, QueryElementsTool>();
         services.AddSingleton<IAgentTool, GetElementDetailsTool>();
         services.AddSingleton<IAgentTool, SummarizeElementsTool>();
+        services.AddSingleton<IAgentTool, GroupFamiliesBySharedParametersTool>();
+        services.AddSingleton<IAgentTool, AuditFillRateTool>();
+        services.AddSingleton<IAgentTool, ListTypeParameterCandidatesTool>();
+        services.AddSingleton<IAgentTool, GetElementRelationsTool>();
+        services.AddSingleton<IAgentTool, TraceSystemChainTool>();
+        services.AddSingleton<IAgentTool, GetRoomContentsTool>();
         services.AddSingleton<IAgentTool, ListViewTemplatesTool>();
         services.AddSingleton<IAgentTool, GetViewSettingsTool>();
         services.AddSingleton<IAgentTool, GetViewTemplateDetailsTool>();
@@ -592,6 +599,10 @@ public static partial class ServiceRegistrar
             sp.GetServices<IAgentTool>(),
             sp.GetRequiredService<FindToolsTool>(),
             sp.GetRequiredService<LoadToolPackTool>()));
+        services.AddSingleton<IAgentTool>(sp => new SemanticMatchTool(
+            sp.GetRequiredService<IAgentDecisionClient>(),
+            sp.GetRequiredService<AgentDecisionsSettings>()));
+        services.AddSingleton<IAgentTool, ReadClassifierTool>();
         services.AddSingleton<IToolExecutor, AgentToolExecutor>();
         services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
         services.AddSingleton<AgentPromptBuilder>();

@@ -41,6 +41,8 @@ public static partial class AgentToolPackSkills
         Add(skills, SchedulesSkills());
         Add(skills, SheetsSkills());
         Add(skills, JobsSkills());
+        Add(skills, SemanticSkills());
+        Add(skills, RelationsSkills());
         return skills;
     }
 
