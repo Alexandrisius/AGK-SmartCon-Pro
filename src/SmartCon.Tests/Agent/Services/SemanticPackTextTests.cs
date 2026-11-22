@@ -38,10 +38,12 @@ public sealed class SemanticPackTextTests
         {
             ["skill"] = AgentToolPackSkills.TryGet("semantic")!,
             ["semantic_match"] = CardText("semantic_match"),
-            ["read_classifier"] = CardText("read_classifier")
+            ["read_classifier"] = CardText("read_classifier"),
+            ["list_classification_entries"] = CardText("list_classification_entries"),
+            ["load_classification_table"] = CardText("load_classification_table")
         };
 
-        Assert.Equal(3, texts.Count(value => !string.IsNullOrEmpty(value.Value)));
+        Assert.Equal(5, texts.Count(value => !string.IsNullOrEmpty(value.Value)));
         foreach (var (name, text) in texts)
         {
             foreach (var spoiler in BenchmarkSpoilers)
