@@ -77,7 +77,7 @@ public sealed class LoadClassificationTableTool : AgentWriteToolBase
         outcome.Description = "Load classification table " + fileName;
         outcome.Data["path"] = path;
 
-        var result = AgentClassificationLoader.Load(doc, path);
+        var result = AgentClassificationLoader.Load(doc, path!);
         if (result.Problems.Count > 0)
             outcome.Data["problems"] = result.Problems;
 
