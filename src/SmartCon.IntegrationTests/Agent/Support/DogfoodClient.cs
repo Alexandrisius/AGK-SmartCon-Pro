@@ -37,6 +37,9 @@ internal sealed class DogfoodResponse
 /// </summary>
 internal static class DogfoodClient
 {
+    private static readonly string _sessionStamp =
+        DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+
     internal static async Task<DogfoodResponse> CompleteAsync(
         HttpClient http,
         DogfoodConfig config,
@@ -72,6 +75,11 @@ internal static class DogfoodClient
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
+
+        // The opencode-go inference endpoint refuses requests without a routing
+        // session header (HTTP 400 MissingSessionID); one stable id per run.
+        if (config.BaseUrl.Contains("opencode.ai", StringComparison.OrdinalIgnoreCase))
+            request.Headers.Add("x-opencode-session", "smartcon-bench-" + _sessionStamp);
 
         HttpResponseMessage response;
         try
@@ -221,10 +229,16 @@ internal sealed class DogfoodConfig
 
         var apiKey = zai
             ? First(values, "SMARTCON_ZAI_API_KEY", "SMARTCON_AGENT_API_KEY")
-            : First(values,
-                "SMARTCON_AGENT_API_KEY",
-                "SMARTCON_OPENROUTER_API_KEY",
-                "OPENROUTER_API_KEY");
+            : openCodeGo
+                ? First(values,
+                    "SMARTCON_OPENCODE_GO_API_KEY",
+                    "SMARTCON_AGENT_API_KEY",
+                    "SMARTCON_OPENROUTER_API_KEY",
+                    "OPENROUTER_API_KEY")
+                : First(values,
+                    "SMARTCON_AGENT_API_KEY",
+                    "SMARTCON_OPENROUTER_API_KEY",
+                    "OPENROUTER_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
             return null;
 
@@ -252,7 +266,8 @@ internal sealed class DogfoodConfig
                      "SMARTCON_LLM_PROVIDER", "SMARTCON_AGENT_BASE_URL", "SMARTCON_AGENT_MODEL",
                      "SMARTCON_LLM_MODEL", "SMARTCON_OPENROUTER_BASE_URL",
                      "SMARTCON_OPENCODE_GO_BASE_URL",
-                     "SMARTCON_ZAI_API_KEY", "SMARTCON_ZAI_BASE_URL"
+                     "SMARTCON_ZAI_API_KEY", "SMARTCON_ZAI_BASE_URL",
+                     "SMARTCON_OPENCODE_GO_API_KEY"
                  })
         {
             var value = Environment.GetEnvironmentVariable(name);

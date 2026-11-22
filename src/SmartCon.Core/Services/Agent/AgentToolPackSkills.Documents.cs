@@ -5,7 +5,7 @@ public static partial class AgentToolPackSkills
     private static IEnumerable<(string Pack, string Markdown)> DocumentsSkills() =>
         new[] { ("documents", Documents) };
 
-    private const string Documents = @"## Пак documents: мульти-модельность (кейс 9)
+    private const string Documents = @"## Пак documents: мульти-модельность
 
 Скрытное чтение чужих моделей: открыть эталон в фоне → прочитать read-турами → сделать так же
 в основной модели → закрыть донор. Пользователь ничего не видит на экране.
@@ -31,7 +31,7 @@ public static partial class AgentToolPackSkills
 
 ### Рецепты
 
-Рецепт кейса 9 («посмотри как сделано там и сделай так же у меня»)
+Рецепт фоновой работы с моделью-донором («посмотри как сделано там и сделай так же у меня»)
 1. `open_model_background(path=«путь от пользователя»)` → запомнить `documentId`.
 2. Read-туры с `documentId`: `list_views(documentId=…)`, `query_elements(documentId=…)`, `get_element_details(documentId=…)` — паттерн имён видов, значения параметров эталона.
 3. Перенос в ОСНОВНУЮ модель обычными write-тулами без documentId (rename_views, set_parameters, …) — с подтверждением как обычно.

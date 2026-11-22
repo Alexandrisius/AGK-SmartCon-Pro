@@ -308,8 +308,25 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         outcome.Success = false;
         outcome.ErrorCode = "atomic_aborted";
         outcome.Message = "At least one item failed and atomic=true, so the whole batch " +
-                          "was rolled back. Nothing was changed.";
+                          "was rolled back. Nothing was changed. failed: " +
+                          DescribeFailedItems(outcome) +
+                          ". Resend the batch WITHOUT the failed items, or drop atomic — " +
+                          "repeating the same batch fails the same way.";
         return true;
+    }
+
+    private static string DescribeFailedItems(WriteOutcome outcome)
+    {
+        var parts = outcome.Batch.Failed
+            .Take(10)
+            .Select(item =>
+                (item.Id?.ToString() ?? item.Name ?? "?") +
+                (string.IsNullOrEmpty(item.ErrorCode) ? string.Empty : " " + item.ErrorCode))
+            .ToList();
+        var text = string.Join(", ", parts);
+        if (outcome.Batch.Failed.Count > 10)
+            text += " (×" + outcome.Batch.Failed.Count + ")";
+        return text;
     }
 
     private sealed class ExpandedSelection

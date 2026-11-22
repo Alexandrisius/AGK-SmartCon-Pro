@@ -81,7 +81,7 @@ public static partial class AgentToolPackSkills
    подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
 4. «Вид на каждый раздел»: `duplicate_view(newName=...)` → `set_browser_folder(viewIds, folder=раздел)`.
 5. «Планы систем на всех уровнях по образцу»: список уровней (`list_levels`) и шаблон
-   (`list_view_templates`) → `create_floor_plans(levels, templateId, namePattern=""В_Этаж {floor}_Отопление"")`
+   (`list_view_templates`) → `create_floor_plans(levels, templateId, namePattern=""План_{floor}"")`
    → dry-run → apply → read-back `list_views`.
 6. «3D-вид на каждую систему»: `create_views_batch(items:[{kind:""3d"",name,templateId}], atomic=true)`.
 
@@ -224,7 +224,7 @@ public static partial class AgentToolPackSkills
 - Снятие шаблона/галочки Include **не возвращает** прежние значения — остаётся заданное шаблоном.
 - Вид, получивший шаблон со снятым Include (viewRange/visibility/crop), **сохраняет свои значения** —
   отчёт помечает это `skippedByTemplateInclude` per-view + summary-строками `templateIncludeSkips`;
-  «шаблон применился ко всем настройкам» в этом случае неверно (кейс 3 бенчмарка).
+  «шаблон применился ко всем настройкам» в этом случае неверно .
 - Пока шаблон назначен и параметр включён, запись того же параметра в вид игнорируется Revit
   (`view_controlled_by_template` в наших тулах) — это главная причина «писал, ничего не изменилось».
 - Шаблон применим не к любому виду: `View.IsValidViewTemplate` проверяет совместимость типа.

@@ -139,10 +139,25 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             rows
         };
 
+        var hasFilters = false;
+        try
+        {
+            hasFilters = schedule.Definition.GetFilters().Count > 0;
+        }
+        catch (Exception)
+        {
+            // Best-effort probe: unreadable filters must not fail the read.
+        }
+
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             "Schedule '" + schedule.Name + "': " + total + " row(s) in " + columns.Count +
             " column(s); returned " + rows.Count + " from offset " + offset + "." +
-            (hasMore ? " The result is truncated — pass nextOffset as offset." : string.Empty));
+            (hasMore ? " The result is truncated — pass nextOffset as offset." : string.Empty) +
+            (total == 0 && hasFilters && columns.Count > 0
+                ? " 0 rows under the current filters is often the EXPECTED clean state of a " +
+                  "control/remainder schedule (nothing left unfilled) — remove a filter only " +
+                  "when the task asks to list everything."
+                : string.Empty));
     }
 }

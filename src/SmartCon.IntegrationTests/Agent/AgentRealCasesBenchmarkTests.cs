@@ -138,6 +138,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         var steeredStorms = new HashSet<string>(StringComparer.Ordinal);
         var dryStreaks = new Dictionary<string, int>(StringComparer.Ordinal);
         var steeredDryRuns = new HashSet<string>(StringComparer.Ordinal);
+        var abortedStreaks = new Dictionary<string, int>(StringComparer.Ordinal);
+        var steeredAborts = new HashSet<string>(StringComparer.Ordinal);
         var intermediateAnswers = new List<string>();
         string? answer = null;
         var requests = 0;
@@ -240,6 +242,11 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                 }).ToList()
             });
 
+            // Steering messages must never interleave with tool responses (a user
+            // message between tool answers is protocol-invalid): they are queued
+            // here and appended AFTER every tool response of the round.
+            var pendingSteering = new List<(string Text, string Label)>();
+
             foreach (var call in response.ToolCalls)
             {
                 var resultJson = ExecuteTool(call, byName);
@@ -255,16 +262,12 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                     failureStreaks[streakKey] = failureStreaks.TryGetValue(streakKey, out var s) ? s + 1 : 1;
                     if (failureStreaks[streakKey] >= 4 && steeredStreaks.Add(streakKey))
                     {
-                        messages.Add(new Dictionary<string, object?>
-                        {
-                            ["role"] = "user",
-                            ["content"] = "Инструмент " + call.Name + " падает с ошибкой '" +
-                                          record.ErrorCode + "' повторно. Не повторяй тот же вызов: " +
-                                          "смени подход (меньше аргументов, другой инструмент) или честно " +
-                                          "сообщи, что не получилось."
-                        });
-                        transcript.AppendLine("**Loop-guard steering injected for " + streakKey + ".**");
-                        transcript.AppendLine();
+                        pendingSteering.Add((
+                            "Инструмент " + call.Name + " падает с ошибкой '" +
+                            record.ErrorCode + "' повторно. Не повторяй тот же вызов: " +
+                            "смени подход (меньше аргументов, другой инструмент) или честно " +
+                            "сообщи, что не получилось.",
+                            "Loop-guard steering injected for " + streakKey + "."));
                     }
                 }
                 else if (record.Success)
@@ -273,18 +276,17 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                 }
 
                 toolCallCounts[call.Name] = toolCallCounts.TryGetValue(call.Name, out var c) ? c + 1 : 1;
-                if (toolCallCounts[call.Name] > 18 && steeredStorms.Add(call.Name))
+                // Catalog search is cheap but its storms (deepseek: 13 find_tools)
+                // burn rounds without changing the toolset — steer earlier.
+                var stormThreshold = call.Name == "find_tools" ? 8 : 18;
+                if (toolCallCounts[call.Name] > stormThreshold && steeredStorms.Add(call.Name))
                 {
-                    messages.Add(new Dictionary<string, object?>
-                    {
-                        ["role"] = "user",
-                        ["content"] = "Ты вызвал " + call.Name + " уже " +
-                                      toolCallCounts[call.Name] + " раз. Данных достаточно: " +
-                                      "переходи к применению результата и итоговому ответу, " +
-                                      "не продолжай перезапрашивать то же самое."
-                    });
-                    transcript.AppendLine("**Storm steering injected for " + call.Name + ".**");
-                    transcript.AppendLine();
+                    pendingSteering.Add((
+                        "Ты вызвал " + call.Name + " уже " +
+                        toolCallCounts[call.Name] + " раз. Данных достаточно: " +
+                        "переходи к применению результата и итоговому ответу, " +
+                        "не продолжай перезапрашивать то же самое.",
+                        "Storm steering injected for " + call.Name + "."));
                 }
 
                 // Dry-run ping-pong steering (live case 5, glm-5.3): the model
@@ -297,21 +299,32 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                     dryStreaks[call.Name] = dryStreaks.TryGetValue(call.Name, out var d) ? d + 1 : 1;
                     if (dryStreaks[call.Name] >= 2 && steeredDryRuns.Add(call.Name))
                     {
-                        messages.Add(new Dictionary<string, object?>
-                        {
-                            ["role"] = "user",
-                            ["content"] = "Прогон " + call.Name + " с dryRun:true уже успешен " +
-                                          dryStreaks[call.Name] + " раза подряд — план подтверждён. " +
-                                          "Повтори ТОТ ЖЕ вызов с dryRun:false, чтобы применить изменения."
-                        });
-                        transcript.AppendLine("**Dry-run steering injected for " + call.Name + ".**");
-                        transcript.AppendLine();
+                        pendingSteering.Add((
+                            "Прогон " + call.Name + " с dryRun:true уже успешен " +
+                            dryStreaks[call.Name] + " раза подряд — план подтверждён. " +
+                            "Повтори ТОТ ЖЕ вызов с dryRun:false, чтобы применить изменения.",
+                            "Dry-run steering injected for " + call.Name + "."));
                     }
                 }
                 else if (record.Success && (ContainsText(call.ArgumentsJson, "\"dryRun\":false") ||
                                             ContainsText(call.ArgumentsJson, "\"dryRun\": false")))
                 {
                     dryStreaks.Remove(call.Name);
+                }
+
+                // Atomic-abort steering: the model re-sends the same batch after
+                // two whole-batch rollbacks instead of dropping the failed items.
+                if (!record.Success && record.ErrorCode == "atomic_aborted")
+                {
+                    abortedStreaks[call.Name] = abortedStreaks.TryGetValue(call.Name, out var a) ? a + 1 : 1;
+                    if (abortedStreaks[call.Name] >= 2 && steeredAborts.Add(call.Name))
+                    {
+                        pendingSteering.Add((
+                            "Инструмент " + call.Name + " дважды откатил батч целиком (atomic). " +
+                            "Исключи из items элементы из failed[] последнего ответа или убери " +
+                            "atomic:true и повтори с dryRun:false — не отправляй тот же батч третий раз.",
+                            "Atomic-abort steering injected for " + call.Name + "."));
+                    }
                 }
 
                 transcript.AppendLine(
@@ -326,6 +339,17 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                     ["tool_call_id"] = call.Id,
                     ["content"] = resultJson
                 });
+            }
+
+            foreach (var steer in pendingSteering)
+            {
+                messages.Add(new Dictionary<string, object?>
+                {
+                    ["role"] = "user",
+                    ["content"] = steer.Text
+                });
+                transcript.AppendLine("**" + steer.Label + "**");
+                transcript.AppendLine();
             }
         }
 

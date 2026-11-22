@@ -103,7 +103,7 @@ public sealed partial class SemanticMatchTool : IAgentTool
             // Live case 5 round 2: the model sent 2-3 queries per call and burned
             // its round budget before applying anything. Nudge small batches to
             // combine the rest in one call.
-            var batchHint = request.Queries.Count < 5 && request.Queries.Count > 0
+            var batchHint = request.Queries.Count < 5
                 ? " Send the REST of your items as further queries in this same call (up to 20 per call) instead of re-calling with 2-3."
                 : string.Empty;
             return ToolResult.Ok(

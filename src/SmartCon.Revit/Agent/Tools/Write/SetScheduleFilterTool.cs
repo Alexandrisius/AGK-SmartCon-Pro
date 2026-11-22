@@ -154,6 +154,20 @@ public sealed class SetScheduleFilterTool : AgentWriteToolBase
                 continue;
             }
 
+            // A substring filter on an EMPTY string matches every row — it does
+            // not select empty values. Live runs kept "fixing" the useless
+            // filter by removing it; point at the op that means "only empty".
+            if (isSubstring
+                && valueElement.ValueKind == JsonValueKind.String
+                && string.IsNullOrEmpty(valueElement.GetString()))
+            {
+                outcome.Warnings.Add(
+                    "Filter '" + field + " " + op + " \"\"' matches EVERY row — it does NOT " +
+                    "select rows with an empty value. Use equals \"\" for 'only empty values' " +
+                    "(an empty result then means everything is filled). [Action: replace the op " +
+                    "with equals instead of removing the filter]");
+            }
+
             built.Add((field!, fieldId, filter!));
         }
 

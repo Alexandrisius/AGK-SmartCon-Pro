@@ -40,7 +40,7 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
             "the visited count and a truncated flag for maxElements. Then it detects BREAKS: " +
             "pairs of free connectors of DIFFERENT elements whose origins are within " +
             "gapThresholdMm of each other (a missed connection — e.g. why one physical branch " +
-            "splits into two Revit systems like «Т11»/«Т111»), each break with both element and " +
+            "splits into two Revit systems), each break with both element and " +
             "connector ids, the gap in mm and both system names. Also reports systemNameChanges " +
             "along the chain where the system name changes between neighbouring elements. " +
             "Read-only, no regeneration.",

@@ -44,7 +44,7 @@ public sealed class CreateFloorPlansTool : AgentWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""levels"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""integer""},""description"":""Level ids (list_levels); one plan per level""},""templateId"":{""type"":""integer"",""description"":""View template id (list_view_templates); must belong to the FloorPlan family""},""namePattern"":{""type"":""string"",""description"":""Name pattern with {floor} and {level} placeholders, e.g. \""В_Этаж {floor}_Отопление\""""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional FloorPlan ViewFamilyType id (default: first matching)""},""floors"":{""type"":""object"",""description"":""Explicit floor labels by level id (keys are level ids as strings), e.g. floors levelId 123 -> label 1, 124 -> 2; wins over auto-parsing of the level name"",""additionalProperties"":{""type"":""string""}},""skipExisting"":{""type"":""boolean"",""default"":true,""description"":""A view with the planned name already existing (e.g. the reference plan) is skipped untouched instead of failing the item""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""levels"",""templateId"",""namePattern""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""levels"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""integer""},""description"":""Level ids (list_levels); one plan per level""},""templateId"":{""type"":""integer"",""description"":""View template id (list_view_templates); must belong to the FloorPlan family""},""namePattern"":{""type"":""string"",""description"":""Name pattern with {floor} and {level} placeholders, e.g. \""План_{floor}\""""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional FloorPlan ViewFamilyType id (default: first matching)""},""floors"":{""type"":""object"",""description"":""Explicit floor labels by level id (keys are level ids as strings), e.g. floors levelId 123 -> label 1, 124 -> 2; wins over auto-parsing of the level name"",""additionalProperties"":{""type"":""string""}},""skipExisting"":{""type"":""boolean"",""default"":true,""description"":""A view with the planned name already existing (e.g. the reference plan) is skipped untouched instead of failing the item""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""levels"",""templateId"",""namePattern""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -75,7 +75,7 @@ public sealed class CreateFloorPlansTool : AgentWriteToolBase
 
         if (string.IsNullOrWhiteSpace(namePattern))
         {
-            Fail(outcome, "invalid_arguments", "namePattern is required, e.g. \"В_Этаж {floor}_Отопление\".");
+            Fail(outcome, "invalid_arguments", "namePattern is required, e.g. \"План_{floor}\".");
             return;
         }
 

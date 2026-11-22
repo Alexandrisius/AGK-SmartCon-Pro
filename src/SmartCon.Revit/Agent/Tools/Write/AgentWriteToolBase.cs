@@ -463,6 +463,19 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
                   outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
                   " failed.");
 
+        // Non-atomic partial dry run: the failed items are deterministic — they will
+        // fail on apply too, so tell the model to resend only the passing items.
+        if (dryRun && outcome.Success && outcome.Batch.Failed.Count > 0)
+        {
+            var failedIds = string.Join(", ", outcome.Batch.Failed
+                .Take(10)
+                .Select(item => item.Id?.ToString() ?? item.Name ?? "?"));
+            summary += " " + outcome.Batch.Failed.Count +
+                       " item(s) failed validation and will fail again: [" + failedIds +
+                       "] (max 10). Repeat the SAME call with dryRun:false WITHOUT the " +
+                       "failed items — the passing items are ready to apply.";
+        }
+
         var result = outcome.Success
             ? ToolResult.Ok(data, summary, outcome.AffectedCount, outcome.Warnings)
             : ToolResult.Fail(

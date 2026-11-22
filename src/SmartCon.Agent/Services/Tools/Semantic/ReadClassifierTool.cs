@@ -25,7 +25,7 @@ public sealed class ReadClassifierTool : IAgentTool
         "Do not pick codes by eye from this list: semantic_match with " +
         "classifierPath=<this file> (and optional codePrefix) embeds the classifier " +
         "itself — pass queries=[{id: element/type name, query: what it is}] and it " +
-        "returns the closest code per query in one call.";
+        "returns the closest code per query in one call (up to 20 queries per call).";
 
     public ReadClassifierTool()
     {
