@@ -2,14 +2,23 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Classification;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
 public sealed class SetParametersTool : AgentWriteToolBase
 {
     private const int MaxItems = 500;
+
+    /// <summary>
+    /// Change-item key of the Assembly Description: the enum id resolves on
+    /// every Revit version, a localized display name does not.
+    /// </summary>
+    private const string DescriptionBuiltInName = "ASSEMBLY_DESCRIPTION";
 
     public SetParametersTool(
         IRevitContext revitContext,
@@ -28,10 +37,14 @@ public sealed class SetParametersTool : AgentWriteToolBase
             "parameter GUID. scope: \"instance\" (default) or \"type\" (changes every instance of " +
             "the type). Numeric values REQUIRE unit: \"mm\" (or \"m\", \"ft\", \"m2\", \"m3\"), " +
             "or \"raw\" for internal Revit units. Read-only and formula parameters are refused. " +
+            "A classification code (Assembly Code) is refused unless it is present in the " +
+            "classification table loaded in the document; with no table loaded any code is " +
+            "refused. Pass allowUnverifiedClassification=true only when the user dictated the " +
+            "code explicitly. Read the table with list_classification_entries. " +
             "dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""elementId"":{""type"":""integer""},""parameter"":{""type"":""string""},""guid"":{""type"":""string""},""value"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""unit"":{""type"":""string""}},""required"":[""elementId"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""elementId"":{""type"":""integer""},""parameter"":{""type"":""string""},""guid"":{""type"":""string""},""value"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""unit"":{""type"":""string""}},""required"":[""elementId"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false},""allowUnverifiedClassification"":{""type"":""boolean"",""default"":false,""description"":""A classification code (Assembly Code) is refused unless it is present in the classification table loaded in the document; with no table loaded any code is refused. Pass true only when the user dictated the code explicitly.""}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -60,8 +73,13 @@ public sealed class SetParametersTool : AgentWriteToolBase
         }
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
+        var allowUnverified = AgentJson.GetBool(args, "allowUnverifiedClassification", false);
         outcome.Description = "Set " + items.Count + " parameter value(s)";
         var typeIds = new HashSet<long>();
+        var unverifiedCodes = new HashSet<string>(StringComparer.Ordinal);
+
+        // Read once per call, and only when an item targets the Assembly Code.
+        AgentClassificationTable? classificationTable = null;
 
         foreach (var item in items)
         {
@@ -91,6 +109,28 @@ public sealed class SetParametersTool : AgentWriteToolBase
             var parameterName = parameter.Definition?.Name ?? item.Parameter ?? item.Guid ?? "?";
             report.Name = scopeKey + parameterName;
 
+            AgentClassificationGuard.Verdict? classification = null;
+            Parameter? descriptionParameter = null;
+            var descriptionBefore = string.Empty;
+            if (AgentClassificationGuard.IsAssemblyCode(parameter))
+            {
+                classificationTable ??= AgentClassificationReader.Read(doc);
+                classification = AgentClassificationGuard.Check(
+                    classificationTable, item.Value, allowUnverified);
+                if (!classification.Ok)
+                {
+                    ApplyViewTemplateTool.Fail(
+                        outcome, report, classification.ErrorCode!, classification.Reason);
+                    if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                    continue;
+                }
+
+                descriptionParameter = parameter.Element?.get_Parameter(
+                    AgentParameterResolver.AssemblyDescriptionBuiltIn);
+                if (descriptionParameter is not null)
+                    descriptionBefore = AgentParameterWriteHelper.RawValue(descriptionParameter);
+            }
+
             var before = AgentParameterWriteHelper.Describe(parameter);
             var rawBefore = AgentParameterWriteHelper.RawValue(parameter);
 
@@ -111,8 +151,27 @@ public sealed class SetParametersTool : AgentWriteToolBase
             if (string.Equals(rawBefore, rawAfter, StringComparison.Ordinal))
             {
                 report.Reason = "The parameter already has this value (no-op).";
+                if (classification is { Unverified: true })
+                    report.Reason += " " + UnverifiedNote(classification);
+
                 outcome.Batch.Skipped.Add(report);
                 continue;
+            }
+
+            if (classification is { Unverified: true })
+            {
+                var code = (item.Value ?? string.Empty).Trim();
+                report.Reason = "Written unverified (" + classification.ErrorCode + ").";
+                if (unverifiedCodes.Add(classification.ErrorCode + "|" + code))
+                {
+                    outcome.Warnings.Add("Classification code '" + code + "' was written unverified (" +
+                                         classification.ErrorCode + "): no row of a loaded " +
+                                         "classification table backs it — confirm the code with the user.");
+                }
+            }
+            else if (classification?.Entry is { } classificationEntry)
+            {
+                report.Detail += "; " + classificationEntry.Breadcrumb;
             }
 
             outcome.Batch.Changed.Add(report);
@@ -127,6 +186,13 @@ public sealed class SetParametersTool : AgentWriteToolBase
                 ? parameter.Element
                 : element;
 
+            // undo_last reverts the change set back to front: the description item goes
+            // first so it is restored AFTER the code, whose own restore makes Revit refill it.
+            var descriptionAfter = RecordDescriptionChange(
+                descriptionParameter, descriptionBefore, owner, scopeKey, outcome);
+            if (descriptionAfter is not null)
+                report.Detail += "; description: " + descriptionAfter;
+
             outcome.Items.Add(new ChangeItem
             {
                 UniqueId = owner.UniqueId,
@@ -140,6 +206,42 @@ public sealed class SetParametersTool : AgentWriteToolBase
 
         if (typeIds.Count > 0)
             DescribeBlastRadius(doc, typeIds, outcome);
+    }
+
+    private static string UnverifiedNote(AgentClassificationGuard.Verdict verdict) =>
+        "The value is not backed by the classification table loaded in this document (" +
+        verdict.ErrorCode + ").";
+
+    /// <summary>
+    /// Revit fills the Assembly Description from the table row of a written code.
+    /// The side effect is recorded as its own change item, so undo_last restores
+    /// it together with the code. Returns the description after the write, or
+    /// null when nothing changed.
+    /// </summary>
+    private static string? RecordDescriptionChange(
+        Parameter? description,
+        string descriptionBefore,
+        Element owner,
+        string scopeKey,
+        WriteOutcome outcome)
+    {
+        if (description is null)
+            return null;
+
+        var descriptionAfter = AgentParameterWriteHelper.RawValue(description);
+        if (string.Equals(descriptionBefore, descriptionAfter, StringComparison.Ordinal))
+            return null;
+
+        outcome.Items.Add(new ChangeItem
+        {
+            UniqueId = owner.UniqueId,
+            ElementId = owner.Id.GetValue(),
+            ParameterName = scopeKey + DescriptionBuiltInName,
+            OldValue = descriptionBefore,
+            NewValue = descriptionAfter,
+            Status = ChangeStatus.Applied
+        });
+        return descriptionAfter;
     }
 
     private static void DescribeBlastRadius(

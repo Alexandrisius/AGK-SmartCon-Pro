@@ -31,8 +31,12 @@ internal static class AgentClassificationGuard
         /// <summary>The table row of the code; null when the code went through unverified.</summary>
         internal AgentClassificationEntry? Entry { get; init; }
 
-        /// <summary>True when the code is written without a loaded row behind it.</summary>
-        internal bool Unverified => Ok && Entry is null;
+        /// <summary>
+        /// True when the code goes through unverified: the opt-in overrode a
+        /// refusal. Clearing the code and non-classification parameters are not
+        /// "unverified" — nothing needed a loaded row behind them.
+        /// </summary>
+        internal bool Unverified => Ok && ErrorCode is not null;
     }
 
     internal static bool IsAssemblyCode(Parameter parameter) =>

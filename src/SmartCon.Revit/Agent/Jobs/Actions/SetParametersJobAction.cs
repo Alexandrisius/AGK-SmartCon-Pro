@@ -21,7 +21,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
 
     public override JobExpansion Expand(JobActionContext context, string specJson)
     {
-        var keyError = JobSpecKeyValidator.Validate(specJson, SpecRules);
+        var keyError = JobSpecKeyValidator.Validate(specJson, SpecRules) ?? ValidateFlagShape(specJson);
         if (keyError is not null)
             return ExpansionFail(JobErrorCodes.InvalidSpec, keyError);
 
@@ -65,6 +65,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             : spec.BuiltInParameter;
         var units = new List<JobUnit>(elements.Count);
         var missing = 0;
+        var allowUnverified = spec.AllowUnverifiedClassification ?? false;
         foreach (var element in elements)
         {
             var resolution = AgentParameterWriteHelper.Resolve(
@@ -90,7 +91,8 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                     Value = spec.Value,
                     Unit = spec.Unit,
                     ErrorCode = resolution.Ok ? null : resolution.ErrorCode,
-                    Error = resolution.Ok ? null : resolution.Reason + " " + ResolutionHint
+                    Error = resolution.Ok ? null : resolution.Reason + " " + ResolutionHint,
+                    AllowUnverifiedClassification = allowUnverified
                 })
             });
         }
@@ -99,6 +101,9 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                          "' for scope " + scope + "; those units fail in the preview");
         if (string.Equals(scope, "type", StringComparison.Ordinal) && units.Count > missing)
             warnings.Add("scope=type: each write changes the type element, so every instance of that type changes");
+        if (allowUnverified)
+            warnings.Add("allowUnverifiedClassification=true: an Assembly Code is written even when no row " +
+                         "of the classification table loaded in the document backs it");
         return new JobExpansion { Units = units, Warnings = warnings };
     }
 
@@ -106,6 +111,9 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
     {
         if (!TryPrepare(context, unit, out var args, out var parameter, out var code, out var detail))
             return Fail(code, detail);
+        var classification = CheckClassification(context, parameter, args);
+        if (!classification.Ok)
+            return Fail(classification.ErrorCode!, classification.Reason!);
         var name = NameOf(parameter, args);
         if (parameter.IsReadOnly)
             return Fail(ReadOnlyParameter, "Parameter '" + name + "' is read-only " + Hint("choose a writable parameter"));
@@ -119,7 +127,10 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             ActualJson = Value(currentRaw),
             UndoJson = Value(currentRaw),
             Label = name + ": " + AgentParameterWriteHelper.Describe(parameter) +
-                    " → " + TargetText(args.Value, args.Unit)
+                    " → " + TargetText(args.Value, args.Unit),
+            Warnings = classification.Unverified
+                ? new[] { UnverifiedWarning(classification, args.Value) }
+                : Array.Empty<string>()
         };
     }
 
@@ -132,6 +143,13 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
     {
         if (!TryPrepare(context, unit, out var args, out var parameter, out var code, out var detail))
             return ApplyFail(code, detail);
+
+        // The apply slices get their own context: the code is checked against the
+        // table as it is now, never against the one the preview saw.
+        var classification = CheckClassification(context, parameter, args);
+        if (!classification.Ok)
+            return ApplyFail(classification.ErrorCode!, classification.Reason! + " " + Hint("run the preview again"));
+
         var expectedRaw = ReadValue(preview.ExpectedJson);
         if (expectedRaw is null)
         {
