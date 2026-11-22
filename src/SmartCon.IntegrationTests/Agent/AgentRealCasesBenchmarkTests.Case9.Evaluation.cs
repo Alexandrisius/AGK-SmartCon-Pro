@@ -154,9 +154,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
     }
 
     /// <summary>
-    /// На виде есть фильтр «АДСК_ИмяСистемы = имя системы»: один из применённых
-    /// ParameterFilterElement несёт строковое правило с параметром сида,
-    /// значением имени и Equals-эvaluator (не contains).
+    /// На виде видны только элементы одной системы: один из применённых
+    /// ParameterFilterElement несёт строковое правило с параметром сида и
+    /// значением имени (Equals-эvaluator, не contains) одним из двух равнозначных
+    /// способов — «= имя» с включённой видимостью либо «≠ имя» со скрытой
+    /// видимостью (при включённом фильтре). Оценивается результат, а не путь.
     /// </summary>
     private bool Case9ViewHasSystemFilter(View3D view, string systemName)
     {
@@ -164,31 +166,45 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             if (Doc.GetElement(filterId) is not ParameterFilterElement filter)
                 continue;
-            if (Case9FilterMatches(filter.GetElementFilter(), systemName))
-                return true;
+            if (!view.GetIsFilterEnabled(filterId))
+                continue;
+
+            var negated = Case9FilterRuleIsNegated(filter.GetElementFilter(), systemName);
+            if (negated is null)
+                continue;
+            if (negated.Value == view.GetFilterVisibility(filterId))
+                continue;
+            return true;
         }
 
         return false;
     }
 
-    /// <summary>Рекурсивный обход дерева правил (and/or обёртки — механика AgentFilterRuleDescriber).</summary>
-    private bool Case9FilterMatches(ElementFilter? elementFilter, string systemName)
+    /// <summary>
+    /// Рекурсивный обход дерева правил (and/or обёртки — механика AgentFilterRuleDescriber):
+    /// true — найдено правило «≠ имя», false — «= имя», null — правило не найдено.
+    /// </summary>
+    private bool? Case9FilterRuleIsNegated(ElementFilter? elementFilter, string systemName)
     {
         if (elementFilter is null)
-            return false;
+            return null;
 
         try
         {
             if (elementFilter is ElementLogicalFilter logical)
             {
                 foreach (var child in logical.GetFilters())
-                    if (Case9FilterMatches(child, systemName))
-                        return true;
-                return false;
+                {
+                    var childResult = Case9FilterRuleIsNegated(child, systemName);
+                    if (childResult is not null)
+                        return childResult;
+                }
+
+                return null;
             }
 
             if (elementFilter is not ElementParameterFilter parameterFilter)
-                return false;
+                return null;
 
             foreach (var rule in parameterFilter.GetRules())
             {
@@ -201,14 +217,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
                     continue;
                 if (!stringRule.GetEvaluator().GetType().Name.Contains("Equals"))
                     continue;
-                return true;
+                return stringRule.GetEvaluator().GetType().Name.Contains("NotEquals");
             }
 
-            return false;
+            return null;
         }
         catch (Exception)
         {
-            return false;
+            return null;
         }
     }
 }
