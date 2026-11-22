@@ -21,6 +21,16 @@ internal static class AgentParameterResolver
         };
 
     /// <summary>
+    /// Built-in Assembly Code: renamed from UNIFORMAT_CODE to ASSEMBLY_CODE in the Revit 2026 API.
+    /// </summary>
+    private static readonly BuiltInParameter AssemblyCodeBuiltIn =
+#if REVIT2026_OR_GREATER
+        BuiltInParameter.ASSEMBLY_CODE;
+#else
+        BuiltInParameter.UNIFORMAT_CODE;
+#endif
+
+    /// <summary>
     /// Localized (RU) display names of built-ins, tried only AFTER the plain
     /// name lookups failed: LookupParameter misses some built-in labels
     /// (live case 5 #469: «Код по классификатору» on a type). Late position
@@ -29,9 +39,9 @@ internal static class AgentParameterResolver
     private static readonly Dictionary<string, BuiltInParameter> LocalizedBuiltInFallbacks =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["код по классификатору"] = BuiltInParameter.UNIFORMAT_CODE,
-            ["assembly code"] = BuiltInParameter.UNIFORMAT_CODE,
-            ["униформат"] = BuiltInParameter.UNIFORMAT_CODE,
+            ["код по классификатору"] = AssemblyCodeBuiltIn,
+            ["assembly code"] = AssemblyCodeBuiltIn,
+            ["униформат"] = AssemblyCodeBuiltIn,
             ["описание"] = BuiltInParameter.ALL_MODEL_DESCRIPTION,
             ["завод-изготовитель"] = BuiltInParameter.ALL_MODEL_MANUFACTURER,
             ["производитель"] = BuiltInParameter.ALL_MODEL_MANUFACTURER,

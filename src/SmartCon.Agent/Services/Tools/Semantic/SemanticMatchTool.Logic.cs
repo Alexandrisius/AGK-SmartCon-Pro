@@ -221,7 +221,7 @@ public sealed partial class SemanticMatchTool
             }
 
             if (!ReadClassifierTool.TryReadItems(
-                    classifierPath,
+                    classifierPath!,
                     args.TryGetProperty("codePrefix", out var prefixElement)
                     && prefixElement.ValueKind == JsonValueKind.String
                         ? prefixElement.GetString()
