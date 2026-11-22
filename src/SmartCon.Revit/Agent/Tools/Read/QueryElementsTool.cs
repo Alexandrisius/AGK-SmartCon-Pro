@@ -24,6 +24,14 @@ public sealed class QueryElementsTool : AgentReadToolBase
             "Narrow by categories (OST_... names or display names), levelIds, typeIds, viewId, roomId " +
             "and parameter conditions. Conditions support eq/neq/gt/gte/lt/lte/contains/startsWith/" +
             "endsWith/in/notIn/exists/notExists and are combined with AND or OR. " +
+            "Condition parameter: a parameter name (built-in, project or shared; add " +
+            "includeTypeParameters=true to search type parameters), a BuiltInParameter id " +
+            "(ALL_MODEL_MARK), or a structural field: name (element, family or type name), family, " +
+            "type, category (OST_ name or display name), level. Structural fields are reserved " +
+            "words checked before any parameter, support string operators only and need no " +
+            "includeTypeParameters; a project parameter with the same name is not reachable in " +
+            "conditions. A parameter missing on every scanned element returns unknown_parameter " +
+            "instead of an empty list. " +
             "String comparisons are case-insensitive. For numeric conditions pass unit (mm recommended); " +
             "without unit the project display unit for that parameter is used. " +
             "Default limit 50, max 200; use offset/nextOffset to paginate. " +
@@ -117,6 +125,11 @@ public sealed class QueryElementsTool : AgentReadToolBase
                 "Unknown categories: " + string.Join(", ", result.UnknownCategories) +
                 AgentCategoryResolver.SuggestSuffix(doc, result.UnknownCategories[0]) +
                 ". Use list_categories to see available names.");
+        }
+
+        if (result.UnknownParameterFailure() is { } unknownParameter)
+        {
+            return unknownParameter;
         }
 
         var fields = AgentJson.GetStringArray(args, "fields");

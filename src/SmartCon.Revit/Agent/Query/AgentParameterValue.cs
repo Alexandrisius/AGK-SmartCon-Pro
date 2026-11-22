@@ -245,7 +245,12 @@ internal static class AgentParameterValue
         return false;
     }
 
-    private static bool MatchesString(
+    /// <summary>
+    /// String comparison of a text against a condition; shared with the structural
+    /// fields (name, family, type, category, level), whose texts are compared
+    /// the same way as a text parameter.
+    /// </summary>
+    internal static bool MatchesString(
         string actual,
         QueryOperator op,
         JsonElement value)
