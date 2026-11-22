@@ -148,24 +148,8 @@ public static partial class LocalizationService
             "Сохранённый ключ показан точками. Введите новый, чтобы заменить его.";
         en["Agent_Settings_ApiKeyHint"] =
             "A stored key is shown as dots. Type a new one to replace it.";
-        ru["Agent_Settings_ReasoningEffort"] = "Рассуждение: усилие";
-        en["Agent_Settings_ReasoningEffort"] = "Reasoning: effort";
-        ru["Agent_Settings_ReasoningFormat"] = "Рассуждение: формат";
-        en["Agent_Settings_ReasoningFormat"] = "Reasoning: format";
-        ru["Agent_Settings_MaxOutputTokens"] = "Макс. токенов ответа";
-        en["Agent_Settings_MaxOutputTokens"] = "Max output tokens";
-        ru["Agent_Settings_FormatAuto"] = "Авто по провайдеру";
-        en["Agent_Settings_FormatAuto"] = "Auto by provider";
-        ru["Agent_Settings_FormatEffort"] = "reasoning_effort";
-        en["Agent_Settings_FormatEffort"] = "reasoning_effort";
-        ru["Agent_Settings_FormatObject"] = "reasoning { effort }";
-        en["Agent_Settings_FormatObject"] = "reasoning { effort }";
-        ru["Agent_Settings_FormatNone"] = "Не отправлять";
-        en["Agent_Settings_FormatNone"] = "Do not send";
-        ru["Agent_Settings_MaxOutputTokensInvalid"] =
-            "Макс. токенов ответа: целое число от 256 до 262144.";
-        en["Agent_Settings_MaxOutputTokensInvalid"] =
-            "Max output tokens must be an integer between 256 and 262144.";
+        ru["Agent_Settings_ReasoningEffort"] = "Уровень размышлений";
+        en["Agent_Settings_ReasoningEffort"] = "Reasoning level";
         ru["Agent_Status_OutputCutRetry"] = "Ответ обрезан лимитом вывода — повторяю…";
         en["Agent_Status_OutputCutRetry"] = "Reply cut off by the output limit — retrying…";
         ru["Agent_Settings_DecisionProvider"] = "Поиск инструментов: провайдер";

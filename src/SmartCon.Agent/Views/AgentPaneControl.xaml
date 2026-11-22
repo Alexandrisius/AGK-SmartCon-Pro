@@ -313,7 +313,7 @@
                                        Margin="2,0,0,3"/>
                             <!-- Standalone chain-of-thought line (owner feedback): never
                                  nested inside the answer bubble and never framed like a
-                                 tool card — brain icon first, chevron on the right. -->
+                                 tool card — caption first, chevron on the right, no icon. -->
                             <StackPanel Visibility="{Binding ShowReasoningBlock, Converter={StaticResource BoolToVis}}"
                                         Margin="2,0,0,6">
                                 <Button Command="{Binding ToggleReasoningCommand}"
@@ -330,21 +330,15 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <iconPacks:PackIconMaterial Kind="Brain"
-                                                                    Width="14" Height="14"
-                                                                    VerticalAlignment="Center"
-                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding ReasoningCaption}"
+                                        <TextBlock Text="{Binding ReasoningCaption}"
                                                    FontSize="10"
                                                    FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextMutedBrush}"
-                                                   Margin="6,0,6,0"
+                                                   Margin="0,0,6,0"
                                                    VerticalAlignment="Center"/>
                                         <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
-                                                                    Grid.Column="2"
+                                                                    Grid.Column="1"
                                                                     Kind="ChevronRight"
                                                                     Width="12" Height="12"
                                                                     VerticalAlignment="Center"
@@ -355,7 +349,7 @@
                                      width stays stable while the model streams. -->
                                 <Border x:Name="ReasoningBody"
                                         Visibility="Collapsed"
-                                        Margin="20,4,0,6"
+                                        Margin="2,4,0,6"
                                         Padding="8,0,0,0"
                                         BorderBrush="{DynamicResource BorderAltBrush}"
                                         BorderThickness="2,0,0,0">
@@ -1309,18 +1303,27 @@
               Panel.ZIndex="1000"
               Background="#99000000"
               Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolToVis}}">
-            <Border Width="320"
-                    MaxHeight="560"
-                    Padding="16"
-                    CornerRadius="12"
-                    Background="{DynamicResource BackgroundBrush}"
-                    BorderBrush="{DynamicResource BorderAltBrush}"
-                    BorderThickness="1"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+            <Grid x:Name="SettingsHost" Margin="0,16">
+                <Border Width="320"
+                        Height="620"
+                        MaxHeight="{Binding ActualHeight, ElementName=SettingsHost}"
+                        Padding="16"
+                        CornerRadius="12"
+                        Background="{DynamicResource BackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderAltBrush}"
+                        BorderThickness="1"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                    <!-- Fixed card: title and the action row never scroll; the fields scroll
+                         only when the pane itself is shorter than the card. -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,4">
                             <iconPacks:PackIconMaterial Kind="Cog"
                                                         Width="16" Height="16"
                                                         Margin="0,0,8,0"
@@ -1332,95 +1335,89 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
                         </StackPanel>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_Provider}" Style="{StaticResource SettingsLabel}"/>
-                        <ComboBox ItemsSource="{Binding ProviderOptions}"
-                                  SelectedItem="{Binding SettingsProvider}"
-                                  Height="28"
-                                  Style="{DynamicResource CompactComboBox}"/>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_Model}" Style="{StaticResource SettingsLabel}"/>
-                        <TextBox Text="{Binding SettingsModel, UpdateSourceTrigger=PropertyChanged}"
-                                 Height="28"
-                                 Style="{DynamicResource CompactTextBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_Provider}" Style="{StaticResource SettingsLabel}"/>
+                                <ComboBox ItemsSource="{Binding ProviderOptions}"
+                                          SelectedItem="{Binding SettingsProvider}"
+                                          Height="28"
+                                          Style="{DynamicResource CompactComboBox}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_ApiKey}" Style="{StaticResource SettingsLabel}"/>
-                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
-                                     uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Height="28"
-                                     Style="{DynamicResource CompactPasswordBox}"/>
-                        <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_Model}" Style="{StaticResource SettingsLabel}"/>
+                                <TextBox Text="{Binding SettingsModel, UpdateSourceTrigger=PropertyChanged}"
+                                         Height="28"
+                                         Style="{DynamicResource CompactTextBox}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_ReasoningEffort}" Style="{StaticResource SettingsLabel}"/>
-                        <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
-                                  SelectedItem="{Binding SettingsReasoningEffort}"
-                                  Height="28"
-                                  Style="{DynamicResource CompactComboBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_ApiKey}" Style="{StaticResource SettingsLabel}"/>
+                                <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
+                                             uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Height="28"
+                                             Style="{DynamicResource CompactPasswordBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_ReasoningFormat}" Style="{StaticResource SettingsLabel}"/>
-                        <ComboBox ItemsSource="{Binding ReasoningFormatOptions}"
-                                  SelectedValuePath="Value"
-                                  SelectedValue="{Binding SettingsReasoningFormat}"
-                                  DisplayMemberPath="Label"
-                                  Height="28"
-                                  Style="{DynamicResource CompactComboBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_ReasoningEffort}" Style="{StaticResource SettingsLabel}"/>
+                                <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                                          SelectedItem="{Binding SettingsReasoningEffort}"
+                                          Height="28"
+                                          Style="{DynamicResource CompactComboBox}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_MaxOutputTokens}" Style="{StaticResource SettingsLabel}"/>
-                        <TextBox Text="{Binding SettingsMaxOutputTokens, UpdateSourceTrigger=PropertyChanged}"
-                                 Height="28"
-                                 Style="{DynamicResource CompactTextBox}"/>
+                                <Border Height="1"
+                                        Margin="0,12,0,8"
+                                        Background="{DynamicResource BorderAltBrush}"/>
 
-                        <Border Height="1"
-                                Margin="0,12,0,8"
-                                Background="{DynamicResource BorderAltBrush}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_DecisionProvider}" Style="{StaticResource SettingsLabel}"/>
+                                <ComboBox ItemsSource="{Binding DecisionProviderOptions}"
+                                          SelectedItem="{Binding SettingsDecisionProvider}"
+                                          Height="28"
+                                          Style="{DynamicResource CompactComboBox}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionProvider}" Style="{StaticResource SettingsLabel}"/>
-                        <ComboBox ItemsSource="{Binding DecisionProviderOptions}"
-                                  SelectedItem="{Binding SettingsDecisionProvider}"
-                                  Height="28"
-                                  Style="{DynamicResource CompactComboBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_DecisionModel}" Style="{StaticResource SettingsLabel}"/>
+                                <ComboBox ItemsSource="{Binding DecisionModelOptions}"
+                                          SelectedItem="{Binding SelectedDecisionModel}"
+                                          DisplayMemberPath="Label"
+                                          Height="28"
+                                          Style="{DynamicResource CompactComboBox}"/>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionModel}" Style="{StaticResource SettingsLabel}"/>
-                        <ComboBox ItemsSource="{Binding DecisionModelOptions}"
-                                  SelectedItem="{Binding SelectedDecisionModel}"
-                                  DisplayMemberPath="Label"
-                                  Height="28"
-                                  Style="{DynamicResource CompactComboBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_DecisionApiKey}" Style="{StaticResource SettingsLabel}"/>
+                                <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
+                                             uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsDecisionApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Height="28"
+                                             Style="{DynamicResource CompactPasswordBox}"/>
+                                <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
+                            </StackPanel>
+                        </ScrollViewer>
 
-                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionApiKey}" Style="{StaticResource SettingsLabel}"/>
-                        <PasswordBox uiBehaviors:PasswordBoxBehavior.BindPassword="True"
-                                     uiBehaviors:PasswordBoxBehavior.BoundPassword="{Binding SettingsDecisionApiKeyInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Height="28"
-                                     Style="{DynamicResource CompactPasswordBox}"/>
-                        <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
+                        <StackPanel Grid.Row="2">
+                            <TextBlock Text="{Binding SettingsError}"
+                                       Visibility="{Binding HasSettingsError, Converter={StaticResource BoolToVis}}"
+                                       FontSize="10"
+                                       Foreground="{DynamicResource DangerBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="2,8,0,0"/>
 
-                        <TextBlock Text="{Binding SettingsError}"
-                                   Visibility="{Binding HasSettingsError, Converter={StaticResource BoolToVis}}"
-                                   FontSize="10"
-                                   Foreground="{DynamicResource DangerBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="2,8,0,0"/>
-
-                        <Grid Margin="0,16,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="1"
-                                    Content="{loc:Loc Agent_Settings_Cancel}"
-                                    Command="{Binding CloseSettingsCommand}"
-                                    Style="{DynamicResource SecondaryButton}"
-                                    Height="28"
-                                    Margin="0,0,8,0"/>
-                            <Button Grid.Column="2"
-                                    Content="{loc:Loc Agent_Settings_Save}"
-                                    Command="{Binding SaveSettingsCommand}"
-                                    Style="{DynamicResource PrimaryButton}"
-                                    Height="28"/>
-                        </Grid>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="1"
+                                        Content="{loc:Loc Agent_Settings_Cancel}"
+                                        Command="{Binding CloseSettingsCommand}"
+                                        Style="{DynamicResource SecondaryButton}"
+                                        Height="28"
+                                        Margin="0,0,8,0"/>
+                                <Button Grid.Column="2"
+                                        Content="{loc:Loc Agent_Settings_Save}"
+                                        Command="{Binding SaveSettingsCommand}"
+                                        Style="{DynamicResource PrimaryButton}"
+                                        Height="28"/>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- Full-size image preview -->

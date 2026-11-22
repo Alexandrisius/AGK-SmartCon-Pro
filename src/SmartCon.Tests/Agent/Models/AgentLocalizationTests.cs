@@ -24,13 +24,6 @@ public sealed class AgentLocalizationTests
     [InlineData("Agent_Settings_SaveFailed")]
     [InlineData("Agent_Decision_Off")]
     [InlineData("Agent_Settings_ReasoningEffort")]
-    [InlineData("Agent_Settings_ReasoningFormat")]
-    [InlineData("Agent_Settings_MaxOutputTokens")]
-    [InlineData("Agent_Settings_FormatAuto")]
-    [InlineData("Agent_Settings_FormatEffort")]
-    [InlineData("Agent_Settings_FormatObject")]
-    [InlineData("Agent_Settings_FormatNone")]
-    [InlineData("Agent_Settings_MaxOutputTokensInvalid")]
     [InlineData("Agent_Status_OutputCutRetry")]
     public void ApprovalAndRiskKeys_HaveRuAndEnText(string key)
     {

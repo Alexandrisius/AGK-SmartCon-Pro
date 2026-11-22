@@ -163,8 +163,9 @@ public sealed class AgentLlmSettings
         Math.Max(MinMaxOutputTokens, Math.Min(value, MaxMaxOutputTokens));
 
     /// <summary>
-    /// Parses the reasoning format choice used by the env file and the settings
-    /// UI: none | reasoning_effort | reasoning | auto (null).
+    /// Parses the reasoning format override of the environment / secrets.env
+    /// (a property of the provider API format, not a user setting):
+    /// none | reasoning_effort | reasoning | auto (null).
     /// </summary>
     public static AgentReasoningFormat? ParseReasoningFormatChoice(string? choice)
     {
