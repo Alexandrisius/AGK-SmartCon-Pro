@@ -28,20 +28,44 @@ internal sealed class ClassifierParseResult
 
 /// <summary>
 /// Parser of hierarchical txt classifiers (real-cases benchmark v2, case 5).
-/// A coded line looks like "30.20.10 Краны шаровые": the code is two-digit dot
-/// separated segments and the level equals the segment count (ОКС/UniFormat
-/// convention). Lines without a code that sit on a deeper indentation become
-/// children of the previous coded line (keynote-style files); their text
-/// enriches the parent entry but never becomes a selectable code. Breadcrumbs
-/// are stitched as "раздел › подраздел › элемент" so a leaf carries its whole
-/// path - exactly what a semantic matcher needs.
+/// A coded line starts with its code, e.g. "30.20.10 Краны шаровые" or
+/// "A1010100 Wall Foundations". Three code forms are recognised: two-digit
+/// dot separated segments (1 to 3), dot separated numeric segments of 1 to 4
+/// digits (2 or more) and a prefix of 1 to 3 ASCII letters with digits and
+/// optional dot separated groups. A dotted code takes its level from the
+/// segment count (ОКС/UniFormat convention); a letter-prefixed code without
+/// dots carries no level in the code itself, so its level comes from the
+/// indentation - one step below the nearest coded line with a smaller indent.
+/// Codes are never normalised: they are written back into the model. Lines
+/// without a code that sit on a deeper indentation become children of the
+/// previous coded line (keynote-style files); their text enriches the parent
+/// entry but never becomes a selectable code. Breadcrumbs are stitched as
+/// "раздел › подраздел › элемент" so a leaf carries its whole path - exactly
+/// what a semantic matcher needs.
 /// </summary>
 internal static class ClassifierTextParser
 {
     public const string BreadcrumbSeparator = " › ";
 
+    /// <summary>Levels the parent stack holds before it has to grow.</summary>
+    private const int InitialDepth = 16;
+
+    /// <summary>
+    /// Letter-prefixed code at line start: 1 to 3 ASCII letters, digits, then
+    /// optional dot separated groups of letters/digits (A1010, A30.160).
+    /// </summary>
+    private static readonly Regex LetterCodeRegex =
+        new(@"^[A-Za-z]{1,3}\d+(?:\.[A-Za-z\d]+)*(?![A-Za-z\d])", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Numeric code at line start: dot separated segments of 1 to 4 digits,
+    /// 2 or more of them (30.20.10.10, 23.10.05.10.11.11).
+    /// </summary>
+    private static readonly Regex NumericCodeRegex =
+        new(@"^\d{1,4}(?:\.\d{1,4})+(?!\d)", RegexOptions.Compiled);
+
     /// <summary>Code at line start: 2-digit segments, 1 to 3 of them, dot separated.</summary>
-    private static readonly Regex CodeRegex =
+    private static readonly Regex LegacyCodeRegex =
         new(@"^(\d{2}(?:\.\d{2}){0,2})(?!\d)", RegexOptions.Compiled);
 
     /// <summary>Characters allowed between the code and the name.</summary>
@@ -62,7 +86,9 @@ internal static class ClassifierTextParser
 
         // parents[level] = name of the nearest previously seen coded line of
         // that level; deeper slots reset when a shallower line arrives.
-        var parents = new string?[4];
+        // indents[level] = indentation of that line.
+        var parents = new string?[InitialDepth];
+        var indents = new int[InitialDepth];
         ClassifierItem? lastItem = null;
         var lastItemIndent = -1;
 
@@ -78,18 +104,24 @@ internal static class ClassifierTextParser
                 continue;
 
             var indent = IndentWidth(raw);
-            var match = CodeRegex.Match(trimmed);
+            var letterMatch = LetterCodeRegex.Match(trimmed);
+            var match = letterMatch.Success ? letterMatch : MatchNumericCode(trimmed);
             if (match.Success)
             {
-                var code = match.Groups[1].Value;
-                var name = trimmed.Substring(match.Length).TrimStart(Separators).Trim();
+                var code = match.Value;
+                var name = trimmed.Substring(code.Length).TrimStart(Separators).Trim();
                 if (name.Length == 0)
                 {
                     result.SkippedLines++;
                     continue;
                 }
 
-                var level = code.Split('.').Length;
+                var level = letterMatch.Success && code.IndexOf('.') < 0
+                    ? LevelByIndent(parents, indents, lastItem?.Level ?? 0, indent)
+                    : code.Split('.').Length;
+                if (level >= parents.Length)
+                    GrowParents(ref parents, ref indents, level);
+
                 var item = new ClassifierItem(
                     code, name, BuildBreadcrumb(parents, level, name), level,
                     index + 1, new List<string>());
@@ -98,6 +130,7 @@ internal static class ClassifierTextParser
                 lastItem = item;
                 lastItemIndent = indent;
                 parents[level] = name;
+                indents[level] = indent;
                 for (var deeper = level + 1; deeper < parents.Length; deeper++)
                     parents[deeper] = null;
             }
@@ -112,6 +145,43 @@ internal static class ClassifierTextParser
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Numeric code at line start. The multi-segment form is tried before the
+    /// legacy one: alone, the legacy regex cuts a longer code (30.20.10.10,
+    /// 10.10.100) short and the cut-off tail leaks into the name.
+    /// </summary>
+    private static Match MatchNumericCode(string trimmed)
+    {
+        var match = NumericCodeRegex.Match(trimmed);
+        return match.Success ? match : LegacyCodeRegex.Match(trimmed);
+    }
+
+    /// <summary>
+    /// Level of a letter-prefixed code without dots: one below the nearest
+    /// coded line with a smaller indent, or 1 when there is none. The step
+    /// width is not guessed - any deeper indent is one step.
+    /// </summary>
+    private static int LevelByIndent(string?[] parents, int[] indents, int lastLevel, int indent)
+    {
+        for (var depth = lastLevel; depth >= 1; depth--)
+        {
+            if (parents[depth] is not null && indents[depth] < indent)
+                return depth + 1;
+        }
+
+        return 1;
+    }
+
+    private static void GrowParents(ref string?[] parents, ref int[] indents, int level)
+    {
+        var capacity = parents.Length;
+        while (capacity <= level)
+            capacity *= 2;
+
+        Array.Resize(ref parents, capacity);
+        Array.Resize(ref indents, capacity);
     }
 
     private static string BuildBreadcrumb(string?[] parents, int level, string name)

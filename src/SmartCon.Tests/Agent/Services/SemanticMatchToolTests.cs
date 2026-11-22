@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using System.Text.Json;
 using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Tools.Semantic;
@@ -279,6 +281,100 @@ public sealed class SemanticMatchToolTests
 
         Assert.False(result.Success);
         Assert.Equal("invalid_arguments", result.ErrorCode);
+    }
+
+    [Theory]
+    [InlineData("A30.", "A30.160|A30.190")]
+    [InlineData("A10", "A10|A1010|A1010100")]
+    [InlineData("30.20.10.", "30.20.10.10|30.20.10.20")]
+    public async Task Match_CompactMode_CodePrefixFiltersLetterPrefixedAndDeepCodes(
+        string prefix,
+        string expectedCodes)
+    {
+        var content =
+            "A10 Foundations\n" +
+            "\tA1010 Standard Foundations\n" +
+            "\t\tA1010100 Wall Foundations\n" +
+            "A20 Basement Construction\n" +
+            "\tA2010 Basement Excavation\n" +
+            "A30.160 Кровля из металла\n" +
+            "A30.190 Кровля штучная\n" +
+            "A40.190 Вентиляция\n" +
+            "30 Инженерные системы\n" +
+            "\t30.20 Трубопроводная арматура\n" +
+            "\t\t30.20.10 Краны шаровые\n" +
+            "\t\t\t30.20.10.10 Краны шаровые муфтовые\n" +
+            "\t\t\t30.20.10.20 Краны шаровые фланцевые\n" +
+            "\t\t30.20.20 Задвижки\n";
+        var expected = expectedCodes.Split('|');
+        var client = new ScriptedDecisionClient
+        {
+            Answer = (_, _) => ChoiceAnswer(new Dictionary<string, double> { [expected[0]] = 0.9 })
+        };
+        var tool = CreateTool(client);
+
+        var result = await WithClassifier(content, path => tool.ExecuteAsync(
+            Context(),
+            Parse(new { classifierPath = path, codePrefix = prefix, query = "подходящий код" }),
+            CancellationToken.None));
+
+        Assert.True(result.Success);
+        Assert.Equal(expected.Length, result.Data!.Value.GetProperty("candidatesTotal").GetInt32());
+        var criteria = client.Requests.Single().Questions["match"].Criteria!;
+        Assert.Equal(expected.OrderBy(code => code), criteria.Keys.OrderBy(code => code));
+    }
+
+    [Fact]
+    public async Task Match_CompactMode_LetterAndDeepCodes_CarryTheirBreadcrumbs()
+    {
+        var content =
+            "A10 Foundations\n" +
+            "\tA1010 Standard Foundations\n" +
+            "30 Инженерные системы\n" +
+            "\t30.20 Трубопроводная арматура\n" +
+            "\t\t30.20.10 Краны шаровые\n" +
+            "\t\t\t30.20.10.10 Краны шаровые муфтовые\n";
+        var client = new ScriptedDecisionClient
+        {
+            Answer = (_, _) => ChoiceAnswer(new Dictionary<string, double> { ["30.20.10.10"] = 0.9 })
+        };
+        var tool = CreateTool(client);
+
+        var result = await WithClassifier(content, path => tool.ExecuteAsync(
+            Context(),
+            Parse(new { classifierPath = path, query = "кран шаровой муфтовый" }),
+            CancellationToken.None));
+
+        Assert.True(result.Success);
+        var criteria = client.Requests.Single().Questions["match"].Criteria!;
+        Assert.Equal("Foundations › Standard Foundations", criteria["A1010"]);
+        Assert.Equal(
+            "Инженерные системы › Трубопроводная арматура › Краны шаровые › Краны шаровые муфтовые",
+            criteria["30.20.10.10"]);
+        var match = Assert.Single(result.Data!.Value.GetProperty("matches").EnumerateArray());
+        Assert.Equal("30.20.10.10", match.GetProperty("id").GetString());
+    }
+
+    /// <summary>Writes the classifier to a temp file and removes it after the body ran.</summary>
+    private static async Task<ToolResult> WithClassifier(string content, Func<string, Task<ToolResult>> body)
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(), "smartcon-semantic-classifier-" + Guid.NewGuid() + ".txt");
+        File.WriteAllText(path, content, new UTF8Encoding(false));
+        try
+        {
+            return await body(path);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
+        }
     }
 
     private static AgentDecisionAnswer ChoiceAnswer(

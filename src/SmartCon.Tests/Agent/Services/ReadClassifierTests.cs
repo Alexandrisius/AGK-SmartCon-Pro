@@ -257,6 +257,48 @@ public sealed class ReadClassifierTests
         Assert.Contains(result.Warnings, warning => warning.Contains("coded lines"));
     }
 
+    [Fact]
+    public async Task Execute_LetterPrefixedAndDeepNumericCodes_BecomeReadyItems()
+    {
+        var content =
+            "A10 Foundations\n" +
+            "\tA1010 Standard Foundations\n" +
+            "\t\tA1010100 Wall Foundations\n" +
+            "30 Инженерные системы\n" +
+            "\t30.20 Трубопроводная арматура\n" +
+            "\t\t30.20.10 Краны шаровые\n" +
+            "\t\t\t30.20.10.10 Краны шаровые муфтовые\n" +
+            "\t\t\t\tКраны шаровые муфтовые латунные\n" +
+            "1000 мм\n";
+
+        using var file = TempFile.WithContent(content, Encoding.UTF8);
+
+        var result = await ExecuteAsync(new { path = file.Path });
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        Assert.Equal(7, data.GetProperty("total").GetInt32());
+        Assert.Equal(
+            new[] { 1, 2, 3, 4 },
+            data.GetProperty("parsedLevels").EnumerateArray().Select(e => e.GetInt32()));
+        Assert.Equal(1, data.GetProperty("skippedLines").GetInt32());
+
+        var items = data.GetProperty("items").EnumerateArray().ToList();
+        var wall = items.Single(item => item.GetProperty("code").GetString() == "A1010100");
+        Assert.Equal(
+            "Foundations › Standard Foundations › Wall Foundations",
+            wall.GetProperty("breadcrumb").GetString());
+
+        var valve = items.Single(item => item.GetProperty("code").GetString() == "30.20.10.10");
+        Assert.Equal(4, valve.GetProperty("level").GetInt32());
+        Assert.Equal(
+            "Инженерные системы › Трубопроводная арматура › Краны шаровые › Краны шаровые муфтовые",
+            valve.GetProperty("breadcrumb").GetString());
+        Assert.Equal(
+            "Краны шаровые муфтовые латунные",
+            Assert.Single(valve.GetProperty("children").EnumerateArray()).GetString());
+    }
+
     private sealed class TempFile : IDisposable
     {
         private TempFile(string path) => Path = path;

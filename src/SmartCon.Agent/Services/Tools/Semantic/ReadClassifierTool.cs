@@ -130,8 +130,9 @@ public sealed class ReadClassifierTool : IAgentTool
         if (result.Items.Count == 0)
         {
             warnings.Add(
-                "No coded lines (like '30.20.10 Название') were recognised. " +
-                "[Action: check the file format - codes must be two-digit dot separated segments]");
+                "No coded lines (like '30.20.10 Название' or 'A1010 Название') were recognised. " +
+                "[Action: check the file format - a line must start with its code, dot separated " +
+                "digits or a letter prefix with digits]");
         }
 
         var payload = JsonSerializer.SerializeToElement(new
@@ -267,15 +268,18 @@ public sealed class ReadClassifierTool : IAgentTool
         {
             Name = ToolName,
             Description =
-                "Parses a hierarchical txt classifier (codes like 30.20.10 with Russian " +
-                "names, tab or space indentation) into structured items: code, level, " +
+                "Parses a hierarchical txt classifier into structured items: code, level, " +
                 "name, line and the stitched breadcrumb 'раздел › подраздел › элемент'. " +
-                "The array is ready for semantic_match (id=code, text=breadcrumb) - the " +
-                "raw file text never enters the context, which is how a long " +
-                "classifier stays cheap. Lines without a code on a deeper indent become " +
-                "children of the previous coded line. Comments (# or //) and empty " +
-                "lines are skipped; encoding is auto-detected (UTF-8, else " +
-                "windows-1251). Read-only.",
+                "Accepted codes: numeric dot-separated segments of any depth (30, 30.20, " +
+                "30.20.10.10) and a letter-prefixed code of letters and digits with " +
+                "optional dots (A1010, A1010.10). The level of a dotted code is its " +
+                "segment count; a letter-prefixed code without dots takes its level from " +
+                "the tab or space indentation. The array is ready for semantic_match " +
+                "(id=code, text=breadcrumb) - the raw file text never enters the " +
+                "context, which is how a long classifier stays cheap. Lines without a " +
+                "code on a deeper indent become children of the previous coded line. " +
+                "Comments (# or //) and empty lines are skipped; encoding is " +
+                "auto-detected (UTF-8, else windows-1251). Read-only.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Read",
