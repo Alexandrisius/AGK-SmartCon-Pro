@@ -361,7 +361,7 @@ GROUP BY document_id;";
 
         static bool Contains(string? text, string fragment) =>
             !string.IsNullOrEmpty(text)
-            && text.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0;
+            && text!.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static KnownModelRow GetOrAdd(
