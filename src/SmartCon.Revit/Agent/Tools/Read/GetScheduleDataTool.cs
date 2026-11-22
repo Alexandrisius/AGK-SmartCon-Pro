@@ -140,9 +140,19 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
         };
 
         var hasFilters = false;
+        var hasEqualsEmptyFilter = false;
         try
         {
-            hasFilters = schedule.Definition.GetFilters().Count > 0;
+            foreach (var filter in schedule.Definition.GetFilters())
+            {
+                hasFilters = true;
+                if (filter.FilterType == ScheduleFilterType.Equal
+                    && filter.IsStringValue
+                    && string.IsNullOrEmpty(filter.GetStringValue()))
+                {
+                    hasEqualsEmptyFilter = true;
+                }
+            }
         }
         catch (Exception)
         {
@@ -155,9 +165,14 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             " column(s); returned " + rows.Count + " from offset " + offset + "." +
             (hasMore ? " The result is truncated — pass nextOffset as offset." : string.Empty) +
             (total == 0 && hasFilters && columns.Count > 0
-                ? " 0 rows under the current filters is often the EXPECTED clean state of a " +
-                  "control/remainder schedule (nothing left unfilled) — remove a filter only " +
-                  "when the task asks to list everything."
+                ? hasEqualsEmptyFilter
+                    ? " 0 rows means the equals-\"\" filter found NOTHING empty — the control " +
+                      "check PASSED and the schedule is complete as is. KEEP the filter: it is " +
+                      "the point of a control/remainder view; removing it to 'fix' the empty " +
+                      "table defeats the check. Report \"0 rows = всё заполнено\"."
+                    : " 0 rows under the current filters is often the EXPECTED clean state of a " +
+                      "control/remainder schedule (nothing left unfilled) — remove a filter only " +
+                      "when the task asks to list everything."
                 : string.Empty));
     }
 }
