@@ -39,8 +39,8 @@ public sealed class SemanticRankOutcome
 
     public bool Ok => Error is null && IncompleteQueryIds.Count == 0;
 
-    /// <summary>The single row of a one-request pass; empty for a many-request pass.</summary>
-    public IReadOnlyList<SemanticMatch> Single =>
+    /// <summary>The one row of a one-request pass; empty for a many-request pass.</summary>
+    public IReadOnlyList<SemanticMatch> First =>
         Matches.Count == 1 ? Matches[0] : Array.Empty<SemanticMatch>();
 
     public static SemanticRankOutcome Failed(string error, string? detail) => new()

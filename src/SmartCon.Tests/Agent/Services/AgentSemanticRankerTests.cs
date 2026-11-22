@@ -42,7 +42,7 @@ public sealed class AgentSemanticRankerTests
         var question = Assert.Single(request.Questions.Values);
         Assert.Equal(10, question.Criteria!.Count);
         Assert.Equal(AgentSemanticRanker.MatchInstructions, question.Instructions);
-        var matches = outcome.Single;
+        var matches = outcome.First;
         Assert.Equal("id-3", matches[0].Id);
         Assert.Equal(0.9, matches[0].Score, 5);
         Assert.Equal(1, matches[0].Rank);
@@ -76,7 +76,7 @@ public sealed class AgentSemanticRankerTests
         Assert.Equal(2, client.Requests.Count);
         Assert.Equal(255, client.Requests[0].Questions["match"].Criteria!.Count);
         Assert.Equal(6, client.Requests[1].Questions["match"].Criteria!.Count);
-        var matches = outcome.Single;
+        var matches = outcome.First;
         Assert.Equal("id-3", matches[0].Id);
         Assert.Equal(0.6, matches[0].Score, 5);
         Assert.Equal("id-256", matches[1].Id);
@@ -100,7 +100,7 @@ public sealed class AgentSemanticRankerTests
 
         Assert.False(outcome.Ok);
         Assert.Equal("decision_refused", outcome.Error);
-        Assert.Empty(outcome.Single);
+        Assert.Empty(outcome.First);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class AgentSemanticRankerTests
 
         Assert.False(outcome.Ok);
         Assert.NotNull(outcome.Error);
-        Assert.Empty(outcome.Single);
+        Assert.Empty(outcome.First);
     }
 
     [Fact]

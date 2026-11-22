@@ -327,7 +327,9 @@ public sealed partial class AgentClassificationMatcher
         if (string.IsNullOrWhiteSpace(instructions))
             return state;
 
-        var trimmed = instructions.Trim();
+        // net48 ref assemblies lack [NotNullWhen] on IsNullOrWhiteSpace: the
+        // guard above already proved the value non-null.
+        var trimmed = instructions!.Trim();
         if (trimmed.Length > MaxInstructionsLength)
             trimmed = trimmed.Substring(0, MaxInstructionsLength);
         return state + "\nSelection context:\n" + trimmed;
