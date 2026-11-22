@@ -14,6 +14,8 @@ public static partial class AgentToolPackSkills
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
   `find_families_with_parameter` (instance-параметры — `includeInstanceParameters=true`),
   `list_shared_parameters` (нужен активный ФОП, иначе `shared_parameter_file_missing`).
+- Инвентаризация (`list_families`): `summary=true` → фильтр `category` → компактные записи;
+  не листуйте страницы по одной — `fields`/`parameterNames` берут только нужное.
 - Запись в документ семейства: `rename_family_parameter`, `add_family_parameter`,
   `set_family_parameter_values`, `set_family_formula`, `map_family_parameters`,
   `remove_family_parameter`, `replace_family_parameter`.
