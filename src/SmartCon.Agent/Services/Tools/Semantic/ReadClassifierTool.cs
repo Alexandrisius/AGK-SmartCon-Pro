@@ -271,7 +271,7 @@ public sealed class ReadClassifierTool : IAgentTool
                 "names, tab or space indentation) into structured items: code, level, " +
                 "name, line and the stitched breadcrumb 'раздел › подраздел › элемент'. " +
                 "The array is ready for semantic_match (id=code, text=breadcrumb) - the " +
-                "raw file text never enters the context, which is how a 100-200 line " +
+                "raw file text never enters the context, which is how a long " +
                 "classifier stays cheap. Lines without a code on a deeper indent become " +
                 "children of the previous coded line. Comments (# or //) and empty " +
                 "lines are skipped; encoding is auto-detected (UTF-8, else " +

@@ -271,9 +271,10 @@ public sealed class FindToolsTool : IAgentTool
                 "cards with argument schemas. Use it when the tool you need is not in the " +
                 "current request. Discovery only: it does not change the tool set. After it, " +
                 "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable the " +
-                "chosen tools for the next round; the pack also brings its skill (markdown " +
-                "operating manual). A card with packHasSkill=true means its pack has such a " +
-                "manual — load the pack to read it. A search returns compact cards (name, pack, " +
+                "chosen tools for the next round; pack= also brings the pack's skill (markdown " +
+                "operating manual), tools=[...] brings a manual only for write tools. A card " +
+                "with packHasSkill=true means its pack has such a manual — load the pack to read " +
+                "it. A search returns compact cards (name, pack, " +
                 "packHasSkill, risk, purpose, batchAnalogue, alreadyAvailable, inputSchema); " +
                 "batchAnalogue names the start_job(action:...) batch path and appears only on " +
                 "per-element write tools that have one; pass fields to add " +
