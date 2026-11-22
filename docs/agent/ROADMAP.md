@@ -256,6 +256,9 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P1 | `done` | #435 |
 | `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
 | `S.14` | [RUN] Harness v3: бенчмарк на прод-цикле (headless-хост, единая регистрация графа), reasoning max по формату API, бюджет вывода 64k, компактная инвентаризация семейств, объективные артефакты прогона | P0 | `in-progress` | #478 |
+| `S.15` | Кейс 5: джоба классификации типоразмеров по классификатору (превью с порогом → apply → undo) | P1 | `backlog` | #480 |
+| `S.16` | Харнесс-защиты в проде: повторные чтения, стоп записи после сбоя, коуч-заметки, гейт verify-before-finish | P1 | `backlog` | #481 |
+| `S.17` | Масштаб: паки ≤10 тулов, гайд добавления тула, Tests→Revit в dependency rule, known-workarounds, validate-docs, net48 IT | P2 | `backlog` | #485 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
@@ -307,6 +310,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
 | `H2.6` | Project memory в agent.db (SQLite/FTS5), без записи в модель | P1 | `backlog` | #411 |
+| `H2.7` | Системный промпт и доменные скиллы Revit: метод работы через абстракции, контракт отчёта | P1 | `backlog` | #482 |
 | `H2.1` | Memory v1: файлы и MEMORY.md | P2 | `backlog` | #365 |
 | `H2.2` | FTS5-поиск по памяти | P2 | `backlog` | #366 |
 | `H2.3` | Skills v1: 10–20 навыков и routing | P2 | `backlog` | #367 |
@@ -337,6 +341,8 @@ P.6–P.9 (P2) — отдельной сессией.
 | `H4.3` | Dashboard/export метрик | P3 | `backlog` | #373 |
 | `H4.4` | LLM reliability: fake SSE, retry matrix, stream errors, request log | P2 | `backlog` | #386 |
 | `H4.5` | Аналитика хода и сессии в чате | P1 | `in-progress` | #422 |
+| `H4.6` | Объективность бенчмарка v2: калибровка грейдеров (null/эталон), повторы pass^k, LLM-судья отчёта, отчёт потерь из JSON | P2 | `backlog` | #483 |
+| `H4.7` | Реальный шаблон как база бенчмарка: сиды кейсов 1/2/3/9; dogfood-сьюты и EvalLlmClient на прод-цикле | P2 | `backlog` | #484 |
 
 ### H5 — UX и расширяемость: steering, timeline, MCP
 
