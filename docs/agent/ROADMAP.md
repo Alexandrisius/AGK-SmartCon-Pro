@@ -255,6 +255,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `done` | #419 |
 | `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P1 | `done` | #435 |
 | `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
+| `S.14` | [RUN] Harness v3: бенчмарк на прод-цикле (headless-хост, единая регистрация графа), reasoning max по формату API, бюджет вывода 64k, компактная инвентаризация семейств, объективные артефакты прогона | P0 | `in-progress` | #478 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
