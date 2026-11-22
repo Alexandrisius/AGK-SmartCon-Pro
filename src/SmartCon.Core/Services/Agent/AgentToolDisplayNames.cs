@@ -138,7 +138,9 @@ public static class AgentToolDisplayNames
             ["cancel_job"] = "Отменить задание",
             ["get_job_report"] = "Отчёт задания",
             ["rollback_job"] = "Откатить задание",
-            ["retry_failed_items"] = "Повторить неудачные элементы"
+            ["retry_failed_items"] = "Повторить неудачные элементы",
+            ["list_classification_entries"] = "Записи классификатора",
+            ["load_classification_table"] = "Загрузить таблицу классификации"
         };
 
     private static readonly Dictionary<string, string> En =
@@ -272,7 +274,9 @@ public static class AgentToolDisplayNames
             ["cancel_job"] = "Cancel job",
             ["get_job_report"] = "Get job report",
             ["rollback_job"] = "Rollback job",
-            ["retry_failed_items"] = "Retry failed items"
+            ["retry_failed_items"] = "Retry failed items",
+            ["list_classification_entries"] = "Classification entries",
+            ["load_classification_table"] = "Load classification table"
         };
 
     public static string Get(string? toolName)

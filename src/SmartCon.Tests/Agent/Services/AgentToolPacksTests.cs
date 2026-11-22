@@ -54,7 +54,7 @@ public sealed class AgentToolPacksTests
             ["model"] = new[]
             {
                 "get_project_overview", "list_categories", "list_system_types",
-                "get_selected_elements"
+                "get_selected_elements", "load_classification_table"
             },
             ["levels"] = new[] { "list_levels", "rename_levels" },
             ["elements"] = new[]
@@ -117,7 +117,7 @@ public sealed class AgentToolPacksTests
                 "replace_family_type", "load_family", "purge_families"
             },
             ["mep"] = new[] { "list_mep_systems", "list_materials", "set_mep_system_type" },
-            ["semantic"] = new[] { "semantic_match", "read_classifier" },
+            ["semantic"] = new[] { "semantic_match", "read_classifier", "list_classification_entries" },
             ["relations"] = new[]
             {
                 "get_element_relations", "trace_system_chain", "get_room_contents"
@@ -150,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(129, placements.Length);
+        Assert.Equal(131, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
