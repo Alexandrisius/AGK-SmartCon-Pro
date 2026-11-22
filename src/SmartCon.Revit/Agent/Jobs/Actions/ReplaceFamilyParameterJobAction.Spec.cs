@@ -149,7 +149,8 @@ public sealed partial class ReplaceFamilyParameterJobAction
     {
         public string Name { get; set; } = string.Empty;
 
-        public string? Guid { get; set; }
+        [JsonPropertyName("Guid")]
+        public string? SharedParameterGuid { get; set; }
 
         public string Scope { get; set; } = string.Empty;
 
@@ -160,7 +161,8 @@ public sealed partial class ReplaceFamilyParameterJobAction
     {
         public string Name { get; set; } = string.Empty;
 
-        public string? Guid { get; set; }
+        [JsonPropertyName("Guid")]
+        public string? SharedParameterGuid { get; set; }
     }
 
     public sealed class FamilyReplaceTypeState
@@ -177,7 +179,8 @@ public sealed partial class ReplaceFamilyParameterJobAction
     {
         public string Name { get; set; } = string.Empty;
 
-        public string? Guid { get; set; }
+        [JsonPropertyName("Guid")]
+        public string? SharedParameterGuid { get; set; }
 
         public string Scope { get; set; } = string.Empty;
 

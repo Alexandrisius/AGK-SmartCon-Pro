@@ -65,7 +65,7 @@ public static class AgentContextStatus
 
         builder.Append(" />");
         if (outputCut > 0)
-            builder.Append("\n").Append(OutputCutReminder);
+            builder.Append('\n').Append(OutputCutReminder);
         return builder.ToString();
     }
 
