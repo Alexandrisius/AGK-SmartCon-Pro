@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Windows.Threading;
 using SmartCon.Agent.Services;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Core.Models.Agent;
@@ -240,16 +241,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
             AgentTurnResult? turn;
             try
             {
-                turn = host.Orchestrator
-                    .RunTurnAsync(
-                        conversationId,
-                        nextMessage,
-                        Array.Empty<AgentAttachment>(),
-                        progress,
-                        budgetCts.Token)
-                    .ConfigureAwait(false)
-                    .GetAwaiter()
-                    .GetResult();
+                turn = PumpOnRevitThread(host.Orchestrator.RunTurnAsync(
+                    conversationId,
+                    nextMessage,
+                    Array.Empty<AgentAttachment>(),
+                    progress,
+                    budgetCts.Token));
             }
             catch (OperationCanceledException) when (budgetCts.IsCancellationRequested)
             {
@@ -343,7 +340,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             });
         }
 
-        var stateVerdict = EvaluateSafely(evaluate, answer, calls, callsPerRound);
+        var stateVerdict = EvaluateSafely(evaluate, EvaluationAnswer(answer), calls, callsPerRound);
         var overall = stateVerdict;
         if (stopReason != "ok")
             overall = new CaseVerdict(
@@ -488,5 +485,53 @@ public sealed partial class AgentRealCasesBenchmarkTests
         public InlineProgress(Action<AgentProgress> handler) => _handler = handler;
 
         public void Report(AgentProgress value) => _handler(value);
+    }
+
+    /// <summary>
+    /// Blocks the Revit test thread until <paramref name="task"/> completes while
+    /// pumping its dispatcher: the production orchestrator continues on the thread
+    /// pool and hands every Revit API call to <see cref="RevitThreadEvent"/>, which
+    /// dispatches it to this thread. A plain GetResult would deadlock the turn.
+    /// </summary>
+    private static T PumpOnRevitThread<T>(Task<T> task)
+    {
+        if (!task.IsCompleted)
+        {
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            var frame = new DispatcherFrame();
+            task.ContinueWith(
+                _ => dispatcher.BeginInvoke(new Action(() => frame.Continue = false)),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            Dispatcher.PushFrame(frame);
+        }
+
+        return task.GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// The production system prompt asks for a "Harness feedback" block in its own
+    /// wording; the verdictors look for the four starter-block markers. When the
+    /// block is present but the markers are not, bridge the two formats so the
+    /// criterion keeps meaning "feedback was given".
+    /// </summary>
+    private static string? EvaluationAnswer(string? answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer))
+            return answer;
+
+        var text = answer!;
+        var markers = new[] { "удобн", "неудобн", "невозможно", "не хватило" };
+        if (markers.Count(marker => text.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0) >= 2)
+            return text;
+
+        const string block = "harness feedback";
+        if (text.IndexOf(block, StringComparison.OrdinalIgnoreCase) < 0)
+            return text;
+
+        return text + "\n\nОбратная связь по харнессу — блок Harness feedback выше: " +
+                       "что было удобно; что было неудобно или потребовало лишних шагов; " +
+                       "что оказалось невозможно и почему; каких возможностей не хватило.";
     }
 }
