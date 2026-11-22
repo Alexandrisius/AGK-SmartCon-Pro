@@ -339,27 +339,26 @@ public sealed class AgentSemanticRanker
         Dictionary<string, double> scores,
         int topK)
     {
-        var indexes = new Dictionary<string, int>(candidates.Count, StringComparer.Ordinal);
+        // A repeated id keeps only its first position, like the tool-side
+        // parsing of semantic_match.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var rows = new List<(string Id, double Score, int Index)>(candidates.Count);
         for (var index = 0; index < candidates.Count; index++)
         {
-            if (!indexes.ContainsKey(candidates[index].Id))
-                indexes[candidates[index].Id] = index;
+            var candidate = candidates[index];
+            if (!seen.Add(candidate.Id) || !scores.TryGetValue(candidate.Id, out var score))
+                continue;
+
+            rows.Add((candidate.Id, score, index));
         }
 
-        var ranked = candidates
-            .Select(candidate => (Id: candidate.Id,
-                Score: scores.TryGetValue(candidate.Id, out var score) ? score : double.NaN,
-                Index: indexes[candidate.Id]))
-            .Where(entry => !double.IsNaN(entry.Score))
-            .OrderByDescending(entry => entry.Score)
-            .ThenBy(entry => entry.Index)
+        return rows
+            .OrderByDescending(row => row.Score)
+            .ThenBy(row => row.Index)
             .Take(topK)
-            .ToList();
-
-        return ranked
-            .Select((entry, position) => new SemanticMatch(
-                entry.Id,
-                System.Math.Round(entry.Score, 4),
+            .Select((row, position) => new SemanticMatch(
+                row.Id,
+                System.Math.Round(row.Score, 4),
                 position + 1))
             .ToArray();
     }

@@ -478,7 +478,9 @@ public sealed class AgentClassificationMatcher
             Types = results,
             Assignments = assignments,
             SetParameterBatches = batches,
-            Incomplete = incomplete,
+            // Unanswered families make the result just as incomplete as
+            // unanswered type questions: it must never pass for a full one.
+            Incomplete = incomplete || notProcessed.Count > 0,
             NotProcessed = notProcessed,
             Warnings = warnings
         };
