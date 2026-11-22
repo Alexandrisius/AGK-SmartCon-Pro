@@ -31,6 +31,17 @@ internal static class AgentParameterResolver
 #endif
 
     /// <summary>
+    /// Built-in Assembly Description: renamed from UNIFORMAT_DESCRIPTION in the
+    /// Revit 2026 API, together with the Assembly Code.
+    /// </summary>
+    internal static readonly BuiltInParameter AssemblyDescriptionBuiltIn =
+#if REVIT2026_OR_GREATER
+        BuiltInParameter.ASSEMBLY_DESCRIPTION;
+#else
+        BuiltInParameter.UNIFORMAT_DESCRIPTION;
+#endif
+
+    /// <summary>
     /// Localized (RU) display names of built-ins, tried only AFTER the plain
     /// name lookups failed: LookupParameter misses some built-in labels
     /// (live case 5 #469: «Код по классификатору» on a type). Late position
@@ -50,6 +61,21 @@ internal static class AgentParameterResolver
             ["url"] = BuiltInParameter.ALL_MODEL_URL,
             ["примечания к типу"] = BuiltInParameter.ALL_MODEL_TYPE_COMMENTS,
             ["комментарий"] = BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS
+        };
+
+    /// <summary>
+    /// Enum ids of the renamed Assembly Code / Description built-ins, so one
+    /// argument resolves on every Revit version. Tried after the enum parse and
+    /// the plain name lookups: a project or shared parameter that carries such
+    /// a name keeps winning.
+    /// </summary>
+    private static readonly Dictionary<string, BuiltInParameter> RenamedBuiltInAliases =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["uniformat_code"] = AssemblyCodeBuiltIn,
+            ["assembly_code"] = AssemblyCodeBuiltIn,
+            ["uniformat_description"] = AssemblyDescriptionBuiltIn,
+            ["assembly_description"] = AssemblyDescriptionBuiltIn
         };
 
     internal static Parameter? Find(
@@ -96,6 +122,17 @@ internal static class AgentParameterResolver
             var localTypeParameter = FindOnType(doc, element, type => type.get_Parameter(localized));
             if (localTypeParameter is not null)
                 return localTypeParameter;
+        }
+
+        if (RenamedBuiltInAliases.TryGetValue(name.Trim(), out var renamed))
+        {
+            var renamedParameter = element.get_Parameter(renamed);
+            if (renamedParameter is not null)
+                return LiftValuelessToType(doc, element, renamedParameter);
+
+            var renamedTypeParameter = FindOnType(doc, element, type => type.get_Parameter(renamed));
+            if (renamedTypeParameter is not null)
+                return renamedTypeParameter;
         }
 
         if (!includeTypeParameters)

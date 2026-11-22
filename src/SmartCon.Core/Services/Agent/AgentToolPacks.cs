@@ -70,11 +70,11 @@ public static class AgentToolPacks
         new()
         {
             Name = "model",
-            Description = "Обзор проекта, категории, системные типы и текущее выделение.",
+            Description = "Обзор проекта, категории, системные типы, текущее выделение и подключение таблицы классификации к документу.",
             Tools = new[]
             {
                 "get_project_overview", "list_categories", "list_system_types",
-                "get_selected_elements"
+                "get_selected_elements", "load_classification_table"
             }
         },
         new()
@@ -213,8 +213,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "semantic",
-            Description = "Семантический выбор топ-K из больших списков и парсинг иерархических txt-классификаторов с хлебными крошками.",
-            Tools = new[] { "semantic_match", "read_classifier" }
+            Description = "Семантический выбор топ-K из больших списков, парсинг иерархических txt-классификаторов с хлебными крошками и чтение таблицы классификации, загруженной в документ.",
+            Tools = new[] { "semantic_match", "read_classifier", "list_classification_entries" }
         },
         new()
         {

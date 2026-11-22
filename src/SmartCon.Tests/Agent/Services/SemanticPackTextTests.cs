@@ -72,19 +72,15 @@ public sealed class SemanticPackTextTests
 
         Assert.Contains("get_project_overview", card!.WhenToUse, StringComparison.Ordinal);
         Assert.Contains("загружен в документ", card.WhenToUse, StringComparison.Ordinal);
-        Assert.Contains(
-            "тул чтения таблицы классификатора документа",
-            card.WhenToUse,
-            StringComparison.Ordinal);
+        Assert.Contains("list_classification_entries", card.WhenToUse, StringComparison.Ordinal);
         Assert.Contains("Покажи классификатор, загруженный в проект", card.NegativeExamples);
     }
 
     [Fact]
     public void SemanticCards_NameOnlyTheToolsThatExist()
     {
-        // The document-table tool of the classification lane is referenced by a
-        // generic phrase: an invented snake_case name would route the model to a
-        // call that cannot succeed.
+        // An invented snake_case name would route the model to a call that
+        // cannot succeed.
         var readClassifier = NamedTools(CardText("read_classifier"));
         var semanticMatch = NamedTools(CardText("semantic_match"));
 
@@ -94,7 +90,9 @@ public sealed class SemanticPackTextTests
 
         Assert.All(
             readClassifier,
-            name => Assert.Contains(name, new[] { "get_project_overview", "semantic_match", "set_parameters" }));
+            name => Assert.Contains(
+                name,
+                new[] { "get_project_overview", "semantic_match", "set_parameters", "list_classification_entries" }));
         Assert.All(semanticMatch, name => Assert.Contains(name, new[] { "query_elements", "list_views" }));
     }
 

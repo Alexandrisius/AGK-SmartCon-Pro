@@ -3039,6 +3039,54 @@
         "list_known_models"
       ],
       "kind": "read"
+    },
+    {
+      "id": "rCls1",
+      "query": "Покажи таблицу классификации, загруженную в проект",
+      "expectedTools": [
+        "list_classification_entries"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rCls2",
+      "query": "Какие коды есть в загруженной таблице классификации документа?",
+      "expectedTools": [
+        "list_classification_entries"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rCls3",
+      "query": "Проверь по таблице классификации, существует ли такой код",
+      "expectedTools": [
+        "list_classification_entries"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rCls4",
+      "query": "Подключи классификатор из этого файла к проекту",
+      "expectedTools": [
+        "load_classification_table"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rCls5",
+      "query": "В проекте нет классификатора — подключи вот этот файл",
+      "expectedTools": [
+        "load_classification_table"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rCls6",
+      "query": "Загрузи таблицу классификации из названного файла",
+      "expectedTools": [
+        "load_classification_table"
+      ],
+      "kind": "write"
     }
   ]
 }

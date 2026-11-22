@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
@@ -15,7 +16,8 @@ public sealed partial class SetParametersJobAction
             Path = string.Empty,
             AllowedKeys = new[]
             {
-                "select", "parameter", "guid", "builtInParameter", "scope", "value", "unit"
+                "select", "parameter", "guid", "builtInParameter", "scope", "value", "unit",
+                "allowUnverifiedClassification"
             }
         },
         new()
@@ -97,6 +99,49 @@ public sealed partial class SetParametersJobAction
         return null;
     }
 
+    /// <summary>
+    /// The flag must be a JSON boolean: a string or a number would only fail
+    /// later, inside the deserializer, with a message about types instead of
+    /// the spec.
+    /// </summary>
+    private static string? ValidateFlagShape(string? specJson)
+    {
+        if (string.IsNullOrWhiteSpace(specJson))
+            return null;
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(specJson!);
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON is reported by the deserializer.
+            return null;
+        }
+
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                return null;
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!string.Equals(
+                        property.Name, "allowUnverifiedClassification", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    return null;
+
+                return "allowUnverifiedClassification must be true or false, not " +
+                       property.Value.ValueKind.ToString().ToLowerInvariant();
+            }
+        }
+
+        return null;
+    }
+
     private static string ParameterKey(SetParametersSpec spec)
     {
         if (!string.IsNullOrWhiteSpace(spec.SharedParameterGuid) && Guid.TryParse(spec.SharedParameterGuid, out var guid))
@@ -130,6 +175,12 @@ public sealed partial class SetParametersJobAction
         public string? Scope { get; set; }
         public string? Value { get; set; }
         public string? Unit { get; set; }
+
+        /// <summary>
+        /// Writes an Assembly Code that no row of the loaded classification table
+        /// backs (and any code while no table is loaded). Off by default.
+        /// </summary>
+        public bool? AllowUnverifiedClassification { get; set; }
     }
 
     public sealed class ParametersSelectSpec
@@ -172,5 +223,10 @@ public sealed partial class SetParametersJobAction
         public string? Unit { get; set; }
         public string? ErrorCode { get; set; }
         public string? Error { get; set; }
+
+        // Omitted unless true: the flag would otherwise be stored with every
+        // one of up to 5000 units.
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool? AllowUnverifiedClassification { get; set; }
     }
 }

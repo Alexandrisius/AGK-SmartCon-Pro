@@ -126,6 +126,16 @@ public static class AgentToolCatalog
                 "классификатор", "файл", "txt", "коды", "иерархия", "раздел", "крошки",
                 "classifier", "прочитать", "разобрать"
             }),
+            ["list_classification_entries"] = new("Read", false, new[]
+            {
+                "классификатор", "классификация", "код по классификатору", "таблица классификации",
+                "коды", "assembly code", "classification", "classification table"
+            }),
+            ["load_classification_table"] = new("Write", false, new[]
+            {
+                "классификатор", "классификация", "загрузить классификатор", "подключить классификатор",
+                "таблица классификации", "classification table", "classification settings"
+            }),
             ["get_element_relations"] = new("Read", false, new[]
             {
                 "связи", "соединён", "коннектор", "сосед", "хост", "стена", "помещение",

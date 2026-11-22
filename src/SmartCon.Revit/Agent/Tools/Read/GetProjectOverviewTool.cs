@@ -2,7 +2,9 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Classification;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -18,7 +20,9 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
         Name = "get_project_overview",
         Description =
             "Returns a compact overview of the active Revit project: title, path, Revit version, " +
-            "units, project information, level list, view/sheet counts and used categories with counts. " +
+            "units, project information, level list, view/sheet counts, used categories with counts " +
+            "and the state of the classification table (classification.loaded is false when no " +
+            "classifier is connected to the document). " +
             "Use it first when you need to understand the document.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
@@ -112,8 +116,55 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
         };
 
         return ToolResult.Ok(
-            AgentJson.Serialize(overview),
+            AgentJson.Serialize(WithClassification(overview, AgentClassificationReader.Read(doc))),
             "Project '" + doc.Title + "': " + levels.Count + " levels, " +
             views.Count + " views, " + sheetCount + " sheets.");
+    }
+
+    /// <summary>
+    /// The overview plus its <c>classification</c> block. The block is appended
+    /// to the serialized overview, so every other key keeps its exact shape.
+    /// </summary>
+    private static Dictionary<string, object?> WithClassification(
+        ProjectOverview overview,
+        AgentClassificationTable classification)
+    {
+        var payload = ToPayload(AgentJson.Serialize(overview));
+        payload["classification"] = new
+        {
+            loaded = classification.Loaded,
+            entries = classification.Entries.Count,
+            source = classification.Source
+        };
+        return payload;
+    }
+
+    private static Dictionary<string, object?> ToPayload(JsonElement element)
+    {
+        var payload = new Dictionary<string, object?>();
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Null)
+                payload[property.Name] = Convert(property.Value);
+        }
+
+        return payload;
+    }
+
+    private static object? Convert(JsonElement value)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Object:
+                return ToPayload(value);
+            case JsonValueKind.Array:
+                return value.EnumerateArray().Select(Convert).ToList();
+            case JsonValueKind.String:
+                return value.GetString();
+            case JsonValueKind.Number:
+                return value.TryGetInt64(out var whole) ? whole : value.GetDouble();
+            default:
+                return value.GetBoolean();
+        }
     }
 }

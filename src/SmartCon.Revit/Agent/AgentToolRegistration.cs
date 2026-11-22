@@ -157,6 +157,8 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, ListChangeSetsTool>();
         services.AddSingleton<IAgentTool, GetChangeSetDetailsTool>();
         services.AddSingleton<IAgentTool, AuditModelTool>();
+        services.AddSingleton<IAgentTool, ListClassificationEntriesTool>();
+        services.AddSingleton<IAgentTool, LoadClassificationTableTool>();
 
         // Not an IAgentTool, but Revit-side agent wiring: registered with the
         // tools so the whole Revit half of the agent graph lives here.
@@ -348,6 +350,8 @@ public static class AgentToolRegistration
         typeof(ListChangeSetsTool),
         typeof(GetChangeSetDetailsTool),
         typeof(AuditModelTool),
+        typeof(ListClassificationEntriesTool),
+        typeof(LoadClassificationTableTool),
         typeof(StartJobTool),
         typeof(GetJobStatusTool),
         typeof(CancelJobTool),

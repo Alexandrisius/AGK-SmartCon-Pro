@@ -12,6 +12,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Classification;
 using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
@@ -134,6 +135,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
             await Assert.That(_case10ClassifierLines).IsGreaterThanOrEqualTo(100);
             foreach (var code in _case10Types.Select(item => item.ExpectedCode).Distinct())
                 await Assert.That(_case10ClassifierCodes.Contains(code)).IsTrue();
+
+            await Case10AssertClassifierTable();
         }
         finally
         {
@@ -261,6 +264,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         VerifyCase10Seed();
+        Case10LoadClassifierTable();
+        if (_case10SeedError is not null)
+            Skip.Test(_case10SeedError);
     }
 
     /// <summary>Библиотечные семейства могут нести готовые Assembly Code — сид обнуляет их.</summary>
@@ -344,11 +350,20 @@ public sealed partial class AgentRealCasesBenchmarkTests
             _case10ClassifierItems = data.GetProperty("total").GetInt32();
             _case10ClassifierLines = data.GetProperty("totalLines").GetInt32();
             _case10ClassifierCodes = new HashSet<string>(StringComparer.Ordinal);
+            _case10ClassifierRows = new List<AgentClassificationEntry>();
             foreach (var item in data.GetProperty("items").EnumerateArray())
             {
                 var code = item.GetProperty("code").GetString();
-                if (code is not null)
-                    _case10ClassifierCodes.Add(code);
+                if (code is null)
+                    continue;
+
+                _case10ClassifierCodes.Add(code);
+                _case10ClassifierRows.Add(new AgentClassificationEntry
+                {
+                    Code = code,
+                    Description = item.GetProperty("name").GetString() ?? code,
+                    Level = item.GetProperty("level").GetInt32()
+                });
             }
 
             if (_case10ClassifierLines < 100)
@@ -379,6 +394,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             if (_case10ClassifierPath is not null && File.Exists(_case10ClassifierPath))
                 File.Delete(_case10ClassifierPath);
+
+            if (_case10TablePath is not null && File.Exists(_case10TablePath))
+                File.Delete(_case10TablePath);
         }
         catch (IOException)
         {
@@ -406,6 +424,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         lines.Add("Классификатор: " + _case10ClassifierPath + " (" + _case10ClassifierLines +
                   " строк, " + _case10ClassifierItems + " кодов)");
+        lines.Add("Таблица классификации документа: " + _case10TablePath + " (" + _case10TableEntries +
+                  " записей)");
         return lines;
     }
 
