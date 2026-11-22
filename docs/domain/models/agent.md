@@ -346,20 +346,26 @@ GroupTypes` — группировка типоразмеров в семейс�
 
 ## AgentClassificationMatcher
 
-Конвейер `classify_types` целиком в чистом C# (`Services/Agent/
-AgentSemanticMatch.cs`): лексический префильтр листьев таблицы, вопрос о ветви
-для слабых семейств (<5 лексических попаданий — 3 лучшие ветви первого
-уровня, затем листья под ними), этап 1 — один вопрос на семейство
-(топ-`candidateDepth` кодов), этап 2 — один вопрос на типоразмер (итоговый
-код, топ-3 для списка неуверенных). Статусы типов: `proposed`
-(score ≥ `minScore`), `low_confidence`, `no_candidates`, `already_set`
-(текущий код равен предложенному). Результат `ClassifyMatchResult` — записи
-`ClassifyTypeResult` по типам, группы `ClassifyAssignmentGroup` по
-(семейство, код) и готовые батчи `ClassifySetParameterItem` (≤500 на вызов,
-параметр `UNIFORMAT_CODE`, scope `type`); отказы decision-слоя —
-типизированные (`Error`/`Incomplete`/`NotProcessed`), частичный результат
-никогда не выдаётся за полный. Вход — снимки `ClassifyTypeSnapshot` (чистые
-DTO с потока Revit) и настройки `ClassifyOptions`.
+Конвейер `classify_types` целиком в чистом C# (партиалы `AgentClassificationMatcher
+{,.Descent,.Result}.cs`): лексический префильтр листьев таблицы; для слабых
+семейств — вопрос о ветви, лексическое сужение под выбранными ветвями, а при
+пустом лексическом колодце — семантический СПУСК по уровням (опции каждого
+уровня — CHILD предыдущего, ≤255 опций со сплитом и мержем; опция-воздержание
+«не подходит ни один вариант» честно завершает семейство как `no_candidates`;
+«первые N листьев таблицы» кандидатами НЕ бывают). Скор спуска — минимум по
+уровням (цепочка слабейшего звена); голый Choice без вероятностей/уверенности
+при дефолтном `minScore` уходит в `uncertain` (`chosen_without_confidence`), 
+никогда в `set_parameters`. Отказы decision-канала — типизированные
+(`decision_unavailable`/`decision_call_failed`/`decision_refused`) с
+`DecisionUsed`/`DecisionCalls`/`NotProcessed`; частичный результат никогда не
+выдаётся за полный. Статусы типов: `proposed`, `low_confidence`,
+`no_candidates`, `already_set`, `no_confidence`. Результат
+`ClassifyMatchResult` — записи по типам (с истинной причиной `Reason`),
+группы `ClassifyAssignmentGroup` по (семейство, код), уже-установленные типы
+(`AlreadySetItems`) и готовые батчи `ClassifySetParameterItem` (≤500 на вызов,
+параметр `UNIFORMAT_CODE`, scope `type`; `BuildSetParametersPayload` даёт форму,
+которую принимает схема `set_parameters` как есть). Вход — снимки
+`ClassifyTypeSnapshot` и настройки `ClassifyOptions`.
 
 ## AgentActionDigest
 
