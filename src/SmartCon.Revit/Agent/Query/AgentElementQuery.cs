@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -50,9 +51,15 @@ internal sealed class AgentElementQuery
         if (categoryIds.Count > 0)
             collector = collector.WherePasses(new ElementMulticategoryFilter(categoryIds));
 
+        var conditions = spec.Conditions
+            .Select((condition, index) => new AgentConditionTracker(index, condition))
+            .ToList();
+
         var kept = new List<Element>();
         var total = 0;
         var scanned = 0;
+        var candidates = 0;
+        Element? firstCandidate = null;
 
         foreach (var element in collector)
         {
@@ -65,7 +72,11 @@ internal sealed class AgentElementQuery
                 continue;
             if (!MatchesRoom(element, spec.RoomId))
                 continue;
-            if (!MatchesConditions(element, spec))
+
+            candidates++;
+            if (candidates == 1)
+                firstCandidate = element;
+            if (!MatchesConditions(element, spec, conditions))
                 continue;
 
             total++;
@@ -73,7 +84,18 @@ internal sealed class AgentElementQuery
                 kept.Add(element);
         }
 
-        return new AgentQueryResult(kept, total, unknownCategories);
+        foreach (var condition in conditions)
+        {
+            if (condition.IsUnknown(candidates))
+            {
+                condition.Suggestions = AgentQueryFields.SuggestParameterNames(
+                    _doc,
+                    firstCandidate!,
+                    condition.Parameter);
+            }
+        }
+
+        return new AgentQueryResult(kept, total, unknownCategories, candidates, conditions);
     }
 
     private static bool MatchesLevel(Element element, IReadOnlyList<long> levelIds)
@@ -81,15 +103,7 @@ internal sealed class AgentElementQuery
         if (levelIds.Count == 0)
             return true;
 
-        var levelId = element.LevelId;
-        if (levelId == ElementId.InvalidElementId)
-        {
-            var parameter = element.get_Parameter(BuiltInParameter.LEVEL_PARAM);
-            if (parameter is { StorageType: StorageType.ElementId } && parameter.HasValue)
-                levelId = parameter.AsElementId();
-        }
-
-        if (levelId == ElementId.InvalidElementId)
+        if (!AgentQueryFields.TryGetLevelId(element, out var levelId))
             return false;
 
         var value = levelId.GetValue();
@@ -151,30 +165,62 @@ internal sealed class AgentElementQuery
         return instance.Room is { } room && room.Id.GetValue() == roomId.Value;
     }
 
-    private bool MatchesConditions(Element element, QuerySpec spec)
+    private bool MatchesConditions(
+        Element element,
+        QuerySpec spec,
+        List<AgentConditionTracker> conditions)
     {
-        if (spec.Conditions.Count == 0)
+        if (conditions.Count == 0)
             return true;
 
         var requireAll = spec.Logic == QueryLogic.And;
-        foreach (var condition in spec.Conditions)
+        var decided = false;
+        var decision = false;
+        foreach (var condition in conditions)
         {
-            var parameter = AgentParameterResolver.Find(
-                _doc,
-                element,
-                condition.Parameter,
-                spec.IncludeTypeParameters);
+            // A parameter that exists nowhere must be reported even when an
+            // earlier condition already decided the element: the lookup is kept
+            // until the parameter has been seen on at least one candidate.
+            if (decided && !condition.NeedsResolution)
+                continue;
 
-            var matches = parameter is not null
-                          && AgentParameterValue.Matches(_doc, parameter, condition);
+            if (TryResolve(element, condition, spec.IncludeTypeParameters, out var target))
+                condition.MarkResolved();
 
-            if (requireAll && !matches)
-                return false;
-            if (!requireAll && matches)
-                return true;
+            if (decided)
+                continue;
+
+            var matches = target.Matches(_doc, condition.Condition);
+            if (requireAll == !matches)
+            {
+                decided = true;
+                decision = matches;
+            }
         }
 
-        return requireAll;
+        return decided ? decision : requireAll;
+    }
+
+    private bool TryResolve(
+        Element element,
+        AgentConditionTracker condition,
+        bool includeTypeParameters,
+        out AgentConditionTarget target)
+    {
+        if (condition.Field.Length > 0)
+        {
+            target = AgentConditionTarget.OfField(
+                AgentQueryFields.Read(_doc, element, condition.Field));
+            return true;
+        }
+
+        var parameter = AgentParameterResolver.Find(
+            _doc,
+            element,
+            condition.Condition.Parameter,
+            includeTypeParameters);
+        target = AgentConditionTarget.OfParameter(parameter);
+        return parameter is not null;
     }
 
     private List<ElementId> ResolveCategories(
@@ -218,11 +264,15 @@ internal sealed class AgentQueryResult
     internal AgentQueryResult(
         IReadOnlyList<Element> elements,
         int total,
-        IReadOnlyList<string> unknownCategories)
+        IReadOnlyList<string> unknownCategories,
+        int candidates = 0,
+        IReadOnlyList<AgentConditionTracker>? conditions = null)
     {
         Elements = elements;
         Total = total;
         UnknownCategories = unknownCategories;
+        Candidates = candidates;
+        Conditions = conditions ?? Array.Empty<AgentConditionTracker>();
     }
 
     internal IReadOnlyList<Element> Elements { get; }
@@ -230,4 +280,124 @@ internal sealed class AgentQueryResult
     internal int Total { get; }
 
     internal IReadOnlyList<string> UnknownCategories { get; }
+
+    /// <summary>Elements that passed the category/level/type/room filters.</summary>
+    internal int Candidates { get; }
+
+    internal IReadOnlyList<AgentConditionTracker> Conditions { get; }
+
+    /// <summary>
+    /// The typed failure for the first condition whose parameter exists on no
+    /// scanned candidate: such a condition makes every result look like "there
+    /// are no such elements". Null when every condition resolved at least once
+    /// (or is an exists/notExists check, where absence is the answer).
+    /// </summary>
+    internal ToolResult? UnknownParameterFailure()
+    {
+        var unknown = Conditions.FirstOrDefault(condition => condition.IsUnknown(Candidates));
+        if (unknown is null)
+            return null;
+
+        var others = Conditions
+            .Where(condition => condition != unknown && condition.IsUnknown(Candidates))
+            .Select(condition => "#" + condition.Index + " '" + condition.Parameter + "'")
+            .ToList();
+
+        var didYouMean = unknown.Suggestions.Count == 0
+            ? string.Empty
+            : " Did you mean " + string.Join(
+                " or ", unknown.Suggestions.Select(name => "'" + name + "'")) + "?";
+
+        var message =
+            "Condition #" + unknown.Index + ": parameter '" + unknown.Parameter +
+            "' was not found on any of the " + Candidates +
+            " scanned element(s) — an empty result would be misleading." + didYouMean +
+            " For element names use parameter:\"" + QuerySpec.NameField + "\" (also: " +
+            string.Join(
+                ", ",
+                QuerySpec.StructuralFields.Where(field => field != QuerySpec.NameField)) +
+            "). Use get_element_details(parameterNameContains=...) to find the exact name." +
+            (others.Count == 0
+                ? string.Empty
+                : " Condition" + (others.Count > 1 ? "s " : " ") + string.Join(", ", others) +
+                  " not found on any scanned element either.");
+
+        var data = JsonSerializer.SerializeToElement(new
+        {
+            index = unknown.Index,
+            parameter = unknown.Parameter,
+            suggestions = unknown.Suggestions,
+            scanned = Candidates
+        });
+        return ToolResult.Fail("unknown_parameter", message, data: data);
+    }
+}
+
+/// <summary>
+/// One condition as the scan sees it: where its parameter resolves on an element
+/// and on how many candidates it existed at all.
+/// </summary>
+internal sealed class AgentConditionTracker
+{
+    internal AgentConditionTracker(int index, QueryCondition condition)
+    {
+        Index = index;
+        Condition = condition;
+        Parameter = condition.Parameter.Trim();
+        QuerySpec.TryGetStructuralField(condition.Parameter, out var field);
+        Field = field;
+
+        // exists / notExists answer the question directly when the parameter is
+        // absent everywhere; for the other operators absence is a broken query.
+        Tracks = condition.Op != QueryOperator.Exists && condition.Op != QueryOperator.NotExists;
+    }
+
+    internal int Index { get; }
+
+    internal QueryCondition Condition { get; }
+
+    internal string Parameter { get; }
+
+    /// <summary>Canonical structural field, or empty when the condition names a Revit parameter.</summary>
+    internal string Field { get; }
+
+    internal bool Tracks { get; }
+
+    internal int Resolved { get; private set; }
+
+    internal IReadOnlyList<string> Suggestions { get; set; } = Array.Empty<string>();
+
+    internal bool NeedsResolution => Tracks && Resolved == 0;
+
+    internal bool IsUnknown(int candidates) => Tracks && candidates > 0 && Resolved == 0;
+
+    internal void MarkResolved() => Resolved++;
+}
+
+/// <summary>
+/// What a condition's parameter resolved to on one element: the Revit parameter,
+/// or the texts of a structural field (name, family, ...).
+/// </summary>
+internal readonly struct AgentConditionTarget
+{
+    private readonly Parameter? _parameter;
+
+    private readonly IReadOnlyList<string>? _texts;
+
+    private AgentConditionTarget(Parameter? parameter, IReadOnlyList<string>? texts)
+    {
+        _parameter = parameter;
+        _texts = texts;
+    }
+
+    internal static AgentConditionTarget OfParameter(Parameter? parameter) =>
+        new(parameter, null);
+
+    internal static AgentConditionTarget OfField(IReadOnlyList<string> texts) =>
+        new(null, texts);
+
+    internal bool Matches(Document doc, QueryCondition condition) =>
+        _texts is not null
+            ? AgentQueryFields.Matches(_texts, condition)
+            : _parameter is not null && AgentParameterValue.Matches(doc, _parameter, condition);
 }

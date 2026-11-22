@@ -148,7 +148,18 @@ returned/truncated/hint); broad-query guard `query_too_broad`.
 
 ## QuerySpec
 
-Структурный спецификатор запроса элементов (categories/levelIds/conditions/parameterContainsAny).
+Структурный спецификатор запроса элементов: categories/levelIds/typeIds/viewId/roomId
+и `conditions[{parameter,op,value,unit}]` с логикой and/or. `Validate()` — до скана.
+
+`conditions[].parameter` — имя параметра, `BuiltInParameter`-id или структурное поле
+(`StructuralFields`): `name` (имя элемента; для экземпляра семейства подходит также имя
+семейства или типа), `family`, `type`, `category` (OST_-имя или отображаемое имя), `level`
+(алиас — поле карточки `levelName`). Структурные поля — зарезервированные слова: они
+распознаются раньше любого параметра, сравниваются как текст (числовые операторы и `unit`
+отклоняются `Validate()`), регистр и пробелы не значимы; параметр проекта с тем же именем
+в условиях недостижим. Читает поля `AgentQueryFields` в SmartCon.Revit. Параметр, которого
+нет ни на одном элементе выборки, даёт `unknown_parameter` вместо пустого результата;
+`SuggestParameterNames` подбирает ближайшие имена по edit distance.
 
 ## RuleToolRouter
 
@@ -316,7 +327,13 @@ JSON-схемы тулов/параметров (источник для `AgentT
 
 ## ElementSummaryGroup
 
-Группа сводки элементов (`summarize_parameter_values`, topN/excludeInternal).
+Группа сводки элементов (`summarize_elements`): `key` — имя категории, уровня, типа,
+семейства или значение параметра; `count`, `sum`/`sumUnit` (`sumParameter`); topN /
+excludeInternal. Для `groupBy=type` и `groupBy=family` группа дополнительно несёт
+`family` (имя семейства), `typeId` (только `groupBy=type`) и `category` (отображаемое имя
+категории). Свойство отсутствует (null), когда у элементов нет семейства или типа либо
+когда одно имя встречается в нескольких семействах, типах или категориях — одно значение
+было бы неверным для части счётчика.
 
 ## AgentEvalTask
 

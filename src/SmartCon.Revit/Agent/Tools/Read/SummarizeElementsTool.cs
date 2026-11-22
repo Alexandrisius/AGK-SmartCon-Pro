@@ -24,15 +24,22 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Description =
-            "Counts elements matched by a QuerySpec and groups them by category, level, type or " +
-            "a parameter value. Optionally sums a numeric parameter (sumParameter) per group. " +
+            "Counts elements matched by a QuerySpec and groups them by category, level, type, " +
+            "family or a parameter value. Optionally sums a numeric parameter (sumParameter) per group. " +
             "Use it for questions like 'how many walls are on each level' or " +
-            "'total door width per fire rating'. Returns at most topN groups " +
+            "'total door width per fire rating' or 'how many elements of each family'. " +
+            "groupBy=type groups carry family, typeId and category next to key (the type name); " +
+            "groupBy=family counts per family name. " +
+            "Returns at most topN groups " +
             "(default 20, largest first); excludeInternal=true (default) drops the " +
-            "'(no category)' bucket. Query rules are the same as in query_elements. " +
+            "'(no category)' bucket. Query rules are the same as in query_elements: a condition " +
+            "parameter is a parameter name, a BuiltInParameter id or a structural field " +
+            "(name, family, type, category, level — reserved words, string operators only), and " +
+            "a parameter missing on every scanned element returns unknown_parameter instead of " +
+            "an empty list. " +
             "includeZeroCount=true adds count:0 groups for every requested category " +
             "(proves 'the category is empty' in one call).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""includeZeroCount"":{""type"":""boolean"",""default"":false},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""family"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""includeZeroCount"":{""type"":""boolean"",""default"":false},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -60,11 +67,11 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             return ToolResult.Fail("invalid_query", string.Join("; ", errors));
 
         var groupBy = (AgentJson.GetString(args, "groupBy") ?? "category").ToLowerInvariant();
-        if (groupBy is not ("category" or "level" or "type" or "parameter"))
+        if (groupBy is not ("category" or "level" or "type" or "family" or "parameter"))
         {
             return ToolResult.Fail(
                 "invalid_arguments",
-                "groupBy must be one of: category, level, type, parameter.");
+                "groupBy must be one of: category, level, type, family, parameter.");
         }
 
         var groupParameter = AgentJson.GetString(args, "parameter");
@@ -96,7 +103,13 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                 ". Use list_categories to see available names.");
         }
 
+        if (result.UnknownParameterFailure() is { } unknownParameter)
+        {
+            return unknownParameter;
+        }
+
         var groups = new Dictionary<string, GroupAccumulator>(StringComparer.OrdinalIgnoreCase);
+        var withIdentity = groupBy is "type" or "family";
         string? sumUnit = null;
         var groupParameterResolved = false;
 
@@ -119,6 +132,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             }
 
             accumulator.Count++;
+            if (withIdentity)
+            {
+                accumulator.AddIdentity(doc, element, groupBy == "type");
+            }
 
             if (!string.IsNullOrWhiteSpace(sumParameter))
             {
@@ -145,7 +162,8 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             var foundOnType = !spec.IncludeTypeParameters
                               && AgentParameterResolver.Find(
                                   doc, result.Elements[0], groupParameter!, true) is not null;
-            var suggestions = ParameterNameSuggestions(doc, result.Elements[0], groupParameter!);
+            var suggestions = AgentQueryFields.SuggestParameterNames(
+                doc, result.Elements[0], groupParameter!);
             var message = foundOnType
                 ? "Parameter '" + groupParameter + "' exists on the element type, but " +
                   "includeTypeParameters=false. Retry with includeTypeParameters=true."
@@ -204,13 +222,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         }
 
         var grouped = groups
-            .Select(pair => new ElementSummaryGroup
-            {
-                Key = pair.Key,
-                Count = pair.Value.Count,
-                Sum = pair.Value.Sum,
-                SumUnit = pair.Value.Sum.HasValue ? sumUnit : null
-            })
+            .Select(pair => pair.Value.ToGroup(pair.Key, sumUnit))
             .OrderByDescending(group => group.Count)
             .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -278,7 +290,17 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
 
                 return "(no type)";
 
+            case "family":
+                return AgentQueryFields.ReadFamily(doc, element) ?? "(no family)";
+
             case "parameter":
+                if (QuerySpec.TryGetStructuralField(groupParameter!, out var field))
+                {
+                    var texts = AgentQueryFields.Read(doc, element, field);
+                    parameterFound = texts.Count > 0;
+                    return texts.Count == 0 ? "(no " + field + ")" : texts[0];
+                }
+
                 var parameter = AgentParameterResolver.Find(
                     doc,
                     element,
@@ -313,77 +335,60 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         string.IsNullOrWhiteSpace(key)
         || string.Equals(key, "(no category)", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Closest parameter names on the element (instance and type) for an unknown
-    /// <c>groupBy=parameter</c> name, so a typo does not look like empty data.
-    /// </summary>
-    private static List<string> ParameterNameSuggestions(
-        Document doc,
-        Element element,
-        string requested)
-    {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Collect(element);
-        var typeId = element.GetTypeId();
-        if (typeId != ElementId.InvalidElementId && doc.GetElement(typeId) is Element type)
-            Collect(type);
-
-        var limit = Math.Max(2, (requested.Length + 1) / 2);
-        return names
-            // Never suggest the string the caller already passed: "Did you mean
-            // 'Классификация систем'?" for the same request is noise (A1).
-            .Where(name => !string.Equals(name, requested, StringComparison.OrdinalIgnoreCase))
-            .Select(name => (
-                Name: name,
-                Distance: Distance(requested.ToLowerInvariant(), name.ToLowerInvariant())))
-            .Where(pair => pair.Distance <= limit)
-            .OrderBy(pair => pair.Distance)
-            .ThenBy(pair => pair.Name, StringComparer.Ordinal)
-            .Take(3)
-            .Select(pair => pair.Name)
-            .ToList();
-
-        void Collect(Element source)
-        {
-            foreach (Parameter parameter in source.Parameters)
-            {
-                var name = parameter.Definition?.Name;
-                if (!string.IsNullOrWhiteSpace(name))
-                    names.Add(name!);
-            }
-        }
-    }
-
-    private static int Distance(string left, string right)
-    {
-        var previous = new int[right.Length + 1];
-        var current = new int[right.Length + 1];
-        for (var index = 0; index <= right.Length; index++)
-            previous[index] = index;
-
-        for (var row = 1; row <= left.Length; row++)
-        {
-            current[0] = row;
-            for (var column = 1; column <= right.Length; column++)
-            {
-                var cost = left[row - 1] == right[column - 1] ? 0 : 1;
-                current[column] = Math.Min(
-                    Math.Min(current[column - 1] + 1, previous[column] + 1),
-                    previous[column - 1] + cost);
-            }
-
-            var swap = previous;
-            previous = current;
-            current = swap;
-        }
-
-        return previous[right.Length];
-    }
-
     private sealed class GroupAccumulator
     {
+        private bool _typeMixed;
+
+        private bool _familyMixed;
+
+        private bool _categoryMixed;
+
         public int Count { get; set; }
 
         public double? Sum { get; set; }
+
+        public long? TypeId { get; private set; }
+
+        public string? Family { get; private set; }
+
+        public string? Category { get; private set; }
+
+        /// <summary>
+        /// Family, type and category of the group's elements, for groupBy=type
+        /// and groupBy=family. The key is a name: the same type or family name
+        /// in two places lands in one group, and one identity would then be
+        /// wrong for part of the count — such a field is reported as unknown.
+        /// </summary>
+        public void AddIdentity(Document doc, Element element, bool withType)
+        {
+            var family = AgentQueryFields.ReadFamily(doc, element);
+            var typeId = element.GetTypeId();
+            var typeIdValue = typeId == ElementId.InvalidElementId ? (long?)null : typeId.GetValue();
+            var category = element.Category?.Name;
+
+            if (Count == 1)
+            {
+                Family = family;
+                TypeId = withType ? typeIdValue : null;
+                Category = category;
+                return;
+            }
+
+            _familyMixed |= !string.Equals(Family, family, StringComparison.OrdinalIgnoreCase);
+            _categoryMixed |= !string.Equals(Category, category, StringComparison.OrdinalIgnoreCase);
+            if (withType)
+                _typeMixed |= TypeId != typeIdValue;
+        }
+
+        public ElementSummaryGroup ToGroup(string key, string? sumUnit) => new()
+        {
+            Key = key,
+            Count = Count,
+            Sum = Sum,
+            SumUnit = Sum.HasValue ? sumUnit : null,
+            Family = _familyMixed ? null : Family,
+            TypeId = _typeMixed ? null : TypeId,
+            Category = _categoryMixed ? null : Category
+        };
     }
 }
