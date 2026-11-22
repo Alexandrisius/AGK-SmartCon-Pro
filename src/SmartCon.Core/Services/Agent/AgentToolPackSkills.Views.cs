@@ -23,6 +23,13 @@ public static partial class AgentToolPackSkills
 - `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
 - `duplicate_view` — копия одного вида (`viewId|viewName`, `newName`, `option`).
 - `create_view` — новый вид (`kind: plan|section|3d|legend`, `name`, план/разрез — `levelId`).
+- `create_floor_plans` — пачка планов по уровням (1..200) + НАЗНАЧЕНИЕ шаблона за один вызов:
+  `levels[]`, `templateId` (семейство FloorPlan), `namePattern` с `{floor}` (карта `floors` по
+  levelId → последнее число в имени уровня → отметка в целых метрах) и `{level}`. Оба шага
+  ручной работы (создать + применить шаблон) делает тул; `undo_last` уносит всю пачку.
+- `create_views_batch` — разнородная пачка до 100 видов: `items[{kind:""plan""|""3d"",name,levelId?
+  (plan),templateId?,viewFamilyTypeId?,scale?}]`, одна транзакция; каждому виду можно сразу
+  назначить шаблон (`templateId` → ViewTemplateId).
 - `set_browser_folder` — подпапка браузера: `viewIds|viewNames|sheetIds` (1..100) + `folder`.
 - `get_browser_organization` — схемы организации браузера (`target: views|sheets`): список,
   текущая, параметр сортировки, путь папок типового элемента.
@@ -41,6 +48,11 @@ public static partial class AgentToolPackSkills
   `dependent` (зависимый план). Отказы `view_not_duplicatable`, `dependent_not_supported`.
 - **Легенды API не создаёт**: `create_view(kind:""legend"")` дублирует существующую; нет
   легенд → `legend_source_missing`.
+- Пакетные тулы видов назначают шаблон с перезаписью дефолтного: новый вид получает
+  `DefaultTemplateId` своего ViewFamilyType — явный `templateId` обязан его заменить, иначе
+  «создал и применил» распадается на два шага. `scale` пишется ПОСЛЕ шаблона: назначение шаблона пере-применяет все
+  контролируемые им параметры (вкл. VIEW_SCALE; если масштабом управляет шаблон —
+  тул честно предупреждает). `view_name_taken` ловит и дубли внутри пачки.
 - Папка браузера — не параметр вида: её задаёт **параметр группировки текущей организации
   браузера** (напр. «Раздел»). Группировка по read-only свойству →
   `browser_folder_parameter_read_only` (перестройте схему). Виды и листы — разные схемы.
@@ -68,6 +80,10 @@ public static partial class AgentToolPackSkills
 3. «Удали лишние виды»: `list_views(fields=[viewId,name])` → `delete_views(dryRun=true)` →
    подтверждение → `delete_views(dryRun=false, confirmNames=names[])`.
 4. «Вид на каждый раздел»: `duplicate_view(newName=...)` → `set_browser_folder(viewIds, folder=раздел)`.
+5. «Планы систем на всех уровнях по образцу»: список уровней (`list_levels`) и шаблон
+   (`list_view_templates`) → `create_floor_plans(levels, templateId, namePattern=""В_Этаж {floor}_Отопление"")`
+   → dry-run → apply → read-back `list_views`.
+6. «3D-вид на каждую систему»: `create_views_batch(items:[{kind:""3d"",name,templateId}], atomic=true)`.
 
 ### Что нельзя
 - Удалять виды, размещённые на листах, без предупреждения: они пропадут с листов.

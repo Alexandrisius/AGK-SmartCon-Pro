@@ -37,7 +37,8 @@ public static class AgentToolPacks
             Tools = new[]
             {
                 "list_views", "get_current_view_info", "rename_views", "delete_views",
-                "duplicate_view", "create_view", "set_browser_folder", "get_browser_organization"
+                "duplicate_view", "create_view", "set_browser_folder", "get_browser_organization",
+                "create_floor_plans", "create_views_batch"
             }
         },
         new()
@@ -173,7 +174,8 @@ public static class AgentToolPacks
                 "create_schedule", "add_schedule_field", "remove_schedule_field",
                 "set_schedule_field_order", "set_schedule_field_visibility", "set_schedule_totals",
                 "set_schedule_filter", "set_schedule_sort", "place_schedule_on_sheet",
-                "move_schedule_on_sheet"
+                "move_schedule_on_sheet", "rename_schedule", "set_schedule_field_format",
+                "set_schedule_style", "remove_schedule_from_sheet", "clone_schedule"
             }
         },
         new()

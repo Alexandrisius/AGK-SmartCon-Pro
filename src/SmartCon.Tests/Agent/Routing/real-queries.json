@@ -2807,6 +2807,142 @@
         "list_type_parameter_candidates"
       ],
       "kind": "read"
+    },
+    {
+      "id": "rW2a1",
+      "query": "Создай планы этажей для систем Отопление/Канализация на уровнях 1-5 по образцу В_Этаж 1_Отопление",
+      "expectedTools": [
+        "create_floor_plans"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2a2",
+      "query": "На каждом уровне сделай план вентиляции с шаблоном и именами как у эталона",
+      "expectedTools": [
+        "create_floor_plans"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2a3",
+      "query": "Создай 3D-виды Т1, Т2 и Т1.11 с общим шаблоном 3D-вида",
+      "expectedTools": [
+        "create_views_batch"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2a4",
+      "query": "Сделай план на уровне 3 и изометрию Обзор одной операцией",
+      "expectedTools": [
+        "create_views_batch"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b1",
+      "query": "Переведи все ведомости на параметры ФОП заказчика, оформление перенеси один-в-один",
+      "expectedTools": [
+        "clone_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b2",
+      "query": "Собери точный аналог этой спецификации на новых полях, старую в архив",
+      "expectedTools": [
+        "clone_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b3",
+      "query": "Пересобери ведомость, заменив поля по маппингу",
+      "expectedTools": [
+        "clone_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b4",
+      "query": "Старые спецификации переименуй с пометкой Архив",
+      "expectedTools": [
+        "rename_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b5",
+      "query": "Смени имя ведомости труб",
+      "expectedTools": [
+        "rename_schedule"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b6",
+      "query": "Поставь заголовки и ширины колонок как в оригинале",
+      "expectedTools": [
+        "set_schedule_field_format"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b7",
+      "query": "Задай колонке ширину 60 мм и заголовок Наименование",
+      "expectedTools": [
+        "set_schedule_field_format"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b8",
+      "query": "Включи полосатые строки в спецификации и на листах",
+      "expectedTools": [
+        "set_schedule_style"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b9",
+      "query": "Перенеси стиль таблицы в новую ведомость",
+      "expectedTools": [
+        "set_schedule_style"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b10",
+      "query": "Сними архивную спецификацию с листа",
+      "expectedTools": [
+        "remove_schedule_from_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2b11",
+      "query": "Убери старую ведомость с листа, новую поставь на её место",
+      "expectedTools": [
+        "remove_schedule_from_sheet"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2c1",
+      "query": "Заполни имя системы всем элементам включая фланцы",
+      "expectedTools": [
+        "set_parameters"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rW2c2",
+      "query": "Проставь параметр элементам системы Т1",
+      "expectedTools": [
+        "set_parameters"
+      ],
+      "kind": "write"
     }
   ]
 }

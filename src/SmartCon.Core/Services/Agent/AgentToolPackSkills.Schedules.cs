@@ -17,9 +17,11 @@ public static partial class AgentToolPackSkills
   дубли по одинаковому определению (поля+фильтры+сортировка) — `duplicateGroups`.
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
 - `get_schedule_definition` — структура: поля (у общих — `guid` + `parameterName`,
-  у built-in — имя параметра), сортировка/группировка, фильтры
-  (фазные — в `phaseFilters` с именем фазы; фильтры-ссылки — `valueName`)
-  и `placedOnSheet`/`sheetNumbers` — вынесена ли на лист.
+  у built-in — имя параметра; у каждого — `heading`, `columnWidthMm`, `totalsDisplay`,
+  `hidden`), сортировка/группировка с флагами, фильтры (фазные — в `phaseFilters`
+  с именем фазы; фильтры-ссылки — `valueName`), стиль таблицы (`stripedRows`,
+  текстовые стили, `showTitle`) и `placements[]` (лист/точка/поворот каждого выноса)
+  + `placedOnSheet`/`sheetNumbers` — вынесена ли на лист.
 - `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
   (уникальное), `fields` (0..15), `itemized`.
 - `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
@@ -30,23 +32,37 @@ public static partial class AgentToolPackSkills
   + `grandTotal`/`grandTotalCount`/`grandTotalTitle`.
 - `set_schedule_filter` — заменить фильтры (0..8, только AND; `[]` — очистить). Dry-run
   сразу показывает эффект: `estimatedRowsAfter` + `estimatedSampleNames` (до 5 имён).
-- `set_schedule_sort` — заменить сортировку (0..4) и `itemized`.
-- `place_schedule_on_sheet` — разместить на листе: координаты левого верхнего угла в мм.
-- `move_schedule_on_sheet` — переместить размещённую таблицу (`instanceId|лист+спецификация`, мм).
+- `set_schedule_sort` — заменить сортировку (0..4) и `itemized`; у каждой группы флаги
+  `showHeader/showFooter/showBlankLine` (заголовок группы, итоги группы, пустая строка).
+- `set_schedule_field_format` — заголовки и ширины колонок: `fields[{field,heading?,widthMm?}]`
+  (мм; ширины недоступны вычисляемым колонкам — `field_not_formatable`).
+- `set_schedule_style` — стиль таблицы: полосатые строки (`stripedRows`,
+  `useStripedRowsOnSheets`, Revit 2021+) и текстовые стили body/header/title.
+- `rename_schedule` — переименовать (шаг архива: «… (Архив)»); новое имя должно быть свободно.
+- `place_schedule_on_sheet` — разместить на листе: координаты левого верхнего угла в мм,
+  опционально `rotation: none|cw90|ccw90` (Revit умеет только ±90°).
+- `move_schedule_on_sheet` — переместить размещённую таблицу (`instanceId|лист+спецификация`,
+  мм) и/или повернуть (`rotation`).
+- `remove_schedule_from_sheet` — снять вынос с листа (спецификация остаётся в проекте);
+  undo возвращает вынос с точкой и поворотом.
+- `clone_schedule` — точный аналог ведомости на других параметрах (ФОП заказчика):
+  `fieldMapping[{sourceField,targetGuid|targetField}]` (guid полей — из `get_schedule_definition`),
+  переносит порядок/заголовки/ширины/скрытость колонок, фильтры, сортировку с флагами,
+  итоги и стиль; колонки без аналога — в `skippedFields` отчёта. Одна спека за вызов.
 - `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
   `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
   удаление самой спецификации — `delete_schedules`.
 
 ### Кухня Revit
-- `ViewSchedule` — это вид, но **не** `ViewSheet`: он не имеет вьюпорта, на лист ставится `ScheduleSheetInstance`.
-- `ViewSchedule.CreateSchedule(doc, categoryId)` создаёт пустое расписание без полей; `ElementId.InvalidElementId` вместо категории — мультикатегорийное; key schedule и material takeoff создаются отдельными фабриками. Всё — внутри транзакции.
+- `ViewSchedule` — вид, но не `ViewSheet`: без вьюпорта, на лист ставится `ScheduleSheetInstance`.
+- `ViewSchedule.CreateSchedule(doc, categoryId)` — пустое, без полей; InvalidElementId — мультикатегорийное; key/material — отдельные фабрики; внутри транзакции.
 - Копия существующего расписания со всей структурой — `View.Duplicate(ViewDuplicateOption)`, а не «создать и настроить заново».
 - `GetSchedulableFields()` отдаёт только допустимые не-вычисляемые поля; `AddField` всегда добавляет в конец (порядок меняется `SetFieldOrder`), повторное поле — `ArgumentException`.
 - `ScheduleField.IsHidden=true` скрывает колонку, но поле продолжает работать в фильтрах, сортировке и группировке. Служебные поля (уровень, маркер) прячут, а не удаляют.
 - Итоги колонки — `ScheduleField.DisplayType` (Totals/Min/Max, гвард `CanTotal()`); строка «Итого» — `ShowGrandTotal*` на определении. Разбиение таблицы на части на листе — только UI (`ViewSchedule.Split`, Revit 2022.1+), тула нет.
-- Фильтры расписания объединяются **только по AND**, лимит — 8. Подстрочные фильтры (`contains`, `beginswith`, `endswith`) применимы только к строковым полям: `CanFilterBySubstring`.
-- Изменённый объект `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
-- Данные тела читаются `GetTableData()` → `GetCellText(row, col)`; полный обход большого расписания — секунды, поэтому `limit/offset` в наших тулах обязательны.
+- Фильтры — только AND, лимит 8; подстрочные (`contains`/`beginswith`/`endswith`) — только строковым полям (`CanFilterBySubstring`).
+- Изменённый `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
+- Тело читается `GetTableData()` → `GetCellText(row, col)`; обход большого расписания — секунды: `limit/offset` обязательны.
 - Группировка: при `IsItemized=false` строки с одинаковыми группирующими значениями сливаются; итоги — `ShowFooter*`.
 - Фильтровать и сортировать можно только по полям-колонкам спецификации: Revit требует
   `ScheduleFieldId`, а не имя параметра. Нет колонки → `field_not_in_schedule` →
@@ -55,6 +71,9 @@ public static partial class AgentToolPackSkills
   угол** таблицы (не центр, как у Viewport). `instance.Point` возвращает ту же точку —
   `get_sheet_content` показывает её как `xMm/yMm`. Один ScheduleSheetInstance на лист
   через наш тул: дубль → no_changes (Revit допускает дубли, агент — нет).
+- Поворот выноса — `instance.Rotation` (ViewportRotation): только `none`/`cw90`/`ccw90`
+  (±90°); 180° API не умеет. Полосатые строки и ширины колонок (мм) — API 2021/2022+,
+  на старых версиях тулы отвечают честной ошибкой.
 
 ### Инварианты
 - Критичное = на листе: `placedOnSheet`/`sheetNumbers` (list_schedules и
@@ -93,12 +112,17 @@ public static partial class AgentToolPackSkills
    `create_schedule(category=""OST_Pipes"", name=""Спецификация труб"", fields=[...])` →
    `set_schedule_filter` → `set_schedule_sort` → `create_sheet`/`list_sheets` →
    `place_schedule_on_sheet(pointMmX=..., pointMmY=...)` → `get_sheet_content` (проверка).
-5. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` →
-   `delete_schedules(scheduleIds, dryRun=true)` → подтверждение →
-   `delete_schedules(scheduleIds, dryRun=false, confirmNames=names[])`.
+5. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` → `delete_schedules(dryRun=true)` → подтверждение → `delete_schedules(dryRun=false, confirmNames=names[])`.
+6. «Переведи ведомость на ФОП заказчика» (замена на месте): `get_schedule_definition`
+   (взять `guid` полей и `placements[]` с точкой выноса) → `clone_schedule(sourceScheduleId,
+   name=имя старой, fieldMapping: старое поле → targetGuid нового)` → `rename_schedule`
+   старой в «… (Архив)» → `remove_schedule_from_sheet` старой с листа →
+   `place_schedule_on_sheet` новой на её точку (та же `xMm/yMm` из placements, при
+   необходимости `rotation`). Колонки без аналога — `skippedFields` из отчёта клона,
+   показать пользователю списком.
 
 ### Что нельзя
-- Считать, что спецификация — обычный вид: у неё нет подрезки/диапазона, на лист она ставится иначе.
+- Считать спецификацию обычным видом: нет подрезки/диапазона, на лист ставится иначе.
 - Читать тысячи строк без `limit`: ответ придёт обрезанным и с `hint`.
 - Ожидать OR в фильтрах расписания: только AND, до 8 условий.
 - Фильтровать/сортировать по полю, которого нет в колонках: сначала `add_schedule_field`.

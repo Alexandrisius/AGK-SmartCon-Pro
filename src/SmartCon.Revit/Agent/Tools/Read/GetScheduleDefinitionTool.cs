@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -29,12 +30,16 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         Description =
             "Reads the definition of one schedule by scheduleId or exact scheduleName: " +
             "category, key-schedule/itemized flags, fields (name, heading, hidden, calculated, " +
-            "field type, shared parameter guid and parameterName), filters (field, operator, " +
-            "value) and sorting/grouping fields, plus placedOnSheet/sheetNumbers (the sheets " +
-            "the schedule is placed on via ScheduleSheetInstance). Use it to explain why a " +
+            "field type, shared parameter guid and parameterName, columnWidthMm and the " +
+            "totalsDisplay mode), filters (field, operator, value), sorting/grouping fields " +
+            "with the group decoration flags, the table style (stripedRows, " +
+            "useStripedRowsOnSheets, body/header/title text type names, showTitle) and " +
+            "placements[] (sheetId, sheetNumber, xMm, yMm, rotation of every " +
+            "ScheduleSheetInstance), plus placedOnSheet/sheetNumbers. Use it to explain why a " +
             "schedule shows zero rows or fewer rows than the model has, to check whether a " +
             "schedule is issued documentation (placed on a sheet) or a draft, and to verify " +
-            "changes made by add_schedule_field / set_schedule_filter / set_schedule_sort.",
+            "changes made by the schedule write tools (add_schedule_field, set_schedule_filter, " +
+            "set_schedule_sort, set_schedule_field_format, set_schedule_style, clone_schedule).",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""}},""additionalProperties"":false}"
     };
 
@@ -105,7 +110,10 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                     ["parameterId"] = parameterId,
                     ["guid"] = AgentScheduleReader.DescribeParameterGuid(doc, field),
                     ["parameterName"] = AgentScheduleReader.DescribeParameter(doc, field),
-                    ["fieldType"] = field.FieldType.ToString()
+                    ["fieldType"] = field.FieldType.ToString(),
+                    ["columnWidthMm"] = AgentScheduleWriteHelper.GetColumnWidthMm(field),
+                    ["totalsDisplay"] = SafeText(() =>
+                        AgentScheduleWriteHelper.ModeName(field.DisplayType))
                 });
             }
         }
@@ -201,6 +209,16 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         var sheetNumbers = AgentScheduleReader.MapSheetNumbers(doc);
         sheetNumbers.TryGetValue(schedule.Id.GetValue(), out var onSheets);
         var placedOnSheet = onSheets is { Count: > 0 };
+        var placements = ReadPlacements(doc, schedule.Id, ct);
+
+#if REVIT2021_OR_GREATER
+        var stripedRows = SafeBoolOrNull(() => schedule.HasStripedRows);
+        var stripedRowsOnSheets = SafeBoolOrNull(() => schedule.UseStripedRowsOnSheets);
+#else
+        // Striped rows exist only since the Revit 2021 API (R19/R20: null).
+        bool? stripedRows = null;
+        bool? stripedRowsOnSheets = null;
+#endif
 
         var payload = new Dictionary<string, object?>
         {
@@ -209,6 +227,7 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             ["isTemplate"] = schedule.IsTemplate,
             ["placedOnSheet"] = placedOnSheet,
             ["sheetNumbers"] = onSheets ?? Array.Empty<string>(),
+            ["placements"] = placements,
             ["categoryId"] = CategoryId(definition),
             ["categoryName"] = CategoryName(doc, definition),
             ["isKeySchedule"] = SafeBool(() => definition.IsKeySchedule),
@@ -217,6 +236,15 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             ["includeLinkedFiles"] = SafeBool(() => definition.IncludeLinkedFiles),
             ["hasEmbeddedSchedule"] = SafeBool(() => definition.HasEmbeddedSchedule),
             ["showGrandTotal"] = SafeBool(() => definition.ShowGrandTotal),
+            ["showTitle"] = SafeBool(() => definition.ShowTitle),
+            ["stripedRows"] = stripedRows,
+            ["useStripedRowsOnSheets"] = stripedRowsOnSheets,
+            ["bodyTextTypeId"] = SafeLong(() => schedule.BodyTextTypeId.GetValue()),
+            ["headerTextTypeId"] = SafeLong(() => schedule.HeaderTextTypeId.GetValue()),
+            ["titleTextTypeId"] = SafeLong(() => schedule.TitleTextTypeId.GetValue()),
+            ["bodyTextTypeName"] = TextTypeName(doc, schedule.BodyTextTypeId),
+            ["headerTextTypeName"] = TextTypeName(doc, schedule.HeaderTextTypeId),
+            ["titleTextTypeName"] = TextTypeName(doc, schedule.TitleTextTypeId),
             ["fieldCount"] = fields.Count,
             ["fields"] = fields,
             ["fieldsTruncated"] = fields.Count >= MaxFields,
@@ -380,6 +408,101 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         {
             return false;
         }
+    }
+
+    private static bool? SafeBoolOrNull(Func<bool> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static long? SafeLong(Func<long> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? TextTypeName(Document doc, ElementId? textTypeId)
+    {
+        try
+        {
+            return textTypeId is null || textTypeId == ElementId.InvalidElementId
+                ? null
+                : doc.GetElement(textTypeId)?.Name;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// All sheet placements of the schedule: sheet, top-left point in millimetres
+    /// and the table rotation (the data remove_schedule_from_sheet undo and the
+    /// rebuild flow place at the same point need).
+    /// </summary>
+    private static List<object> ReadPlacements(Document doc, ElementId scheduleId, CancellationToken ct)
+    {
+        var placements = new List<object>();
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(ScheduleSheetInstance)))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (element is not ScheduleSheetInstance instance)
+                continue;
+            if (instance.ScheduleId != scheduleId)
+                continue;
+
+            double? pointX = null;
+            double? pointY = null;
+            string? rotation = null;
+            try
+            {
+                var point = instance.Point;
+                if (point is not null)
+                {
+                    pointX = AgentUnitsFormat.ToMillimeters(point.X);
+                    pointY = AgentUnitsFormat.ToMillimeters(point.Y);
+                }
+            }
+            catch (Exception)
+            {
+                // Revision schedules may not expose a point.
+            }
+
+            try
+            {
+                rotation = AgentScheduleWriteHelper.RotationName(instance.Rotation);
+            }
+            catch (Exception)
+            {
+                rotation = null;
+            }
+
+            var sheet = doc.GetElement(instance.OwnerViewId) as ViewSheet;
+            placements.Add(new
+            {
+                instanceId = instance.Id.GetValue(),
+                sheetId = instance.OwnerViewId.GetValue(),
+                sheetNumber = sheet?.SheetNumber,
+                xMm = pointX,
+                yMm = pointY,
+                rotation
+            });
+        }
+
+        return placements;
     }
 
     private static string? SafeText(Func<string?> read)

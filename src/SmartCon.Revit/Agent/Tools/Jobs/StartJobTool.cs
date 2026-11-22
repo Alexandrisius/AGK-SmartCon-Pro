@@ -81,6 +81,9 @@ public sealed class StartJobTool : IAgentTool
             },
             "logic": { "type": "string", "enum": ["and", "or"] },
             "includeTypeParameters": { "type": "boolean" },
+            "systemName": { "type": "string", "description": "set_parameters only: exact MEP system name (see list_mep_systems); the selection becomes the members of that system — terminal elements + base equipment, plus pipes and fittings for piping systems / ducts and fittings for mechanical systems" },
+            "systemDomain": { "type": "string", "enum": ["piping", "mechanical", "electrical"], "description": "set_parameters only: optional domain filter for systemName" },
+            "includeSubComponents": { "type": "boolean", "default": false, "description": "set_parameters only: recursively add nested sub-components (shared nested family instances like flanges) of every selected element, up to depth 3, so they receive the parameter too" },
             "limit": { "type": "integer", "minimum": 1 }
           }
         },

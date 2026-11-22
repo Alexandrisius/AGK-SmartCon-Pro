@@ -38,7 +38,7 @@ public sealed class AgentToolPacksTests
             {
                 "list_views", "get_current_view_info", "rename_views", "delete_views",
                 "duplicate_view", "create_view", "set_browser_folder",
-                "get_browser_organization"
+                "get_browser_organization", "create_floor_plans", "create_views_batch"
             },
             ["view_settings"] = new[]
             {
@@ -94,7 +94,9 @@ public sealed class AgentToolPacksTests
                 "remove_schedule_field", "set_schedule_field_order",
                 "set_schedule_field_visibility", "set_schedule_totals",
                 "set_schedule_filter", "set_schedule_sort", "place_schedule_on_sheet",
-                "move_schedule_on_sheet"
+                "move_schedule_on_sheet",
+                "rename_schedule", "set_schedule_field_format",
+                "set_schedule_style", "remove_schedule_from_sheet", "clone_schedule"
             },
             ["filters"] = new[]
             {
@@ -144,7 +146,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(116, placements.Length);
+        Assert.Equal(123, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

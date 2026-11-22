@@ -32,13 +32,15 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
             "scheduleId/scheduleName. pointMmX/pointMmY are the new sheet coordinates " +
             "of the TOP-LEFT corner of the schedule table in millimetres from the sheet " +
             "bottom-left corner; the actual point is read back as actualMmX/actualMmY. " +
-            "The same point is a no-op; a schedule not placed on the sheet fails with " +
+            "Optional rotation none|cw90|ccw90 turns the table (Revit supports only ±90°; " +
+            "pinned placements and revision schedules are refused by Revit). The same " +
+            "point and rotation is a no-op; a schedule not placed on the sheet fails with " +
             "schedule_not_on_sheet; revision schedules in titleblocks are refused " +
-            "(schedule_not_movable). undo_last restores the previous position. " +
-            "Dry run defaults to true.",
+            "(schedule_not_movable). undo_last restores the previous position and " +
+            "rotation. Dry run defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""instanceId"":{""type"":""integer""},""sheetId"":{""type"":""integer""},""sheetNumber"":{""type"":""string""},""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""pointMmX"":{""type"":""number""},""pointMmY"":{""type"":""number""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""pointMmX"",""pointMmY""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""instanceId"":{""type"":""integer""},""sheetId"":{""type"":""integer""},""sheetNumber"":{""type"":""string""},""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""pointMmX"":{""type"":""number""},""pointMmY"":{""type"":""number""},""rotation"":{""type"":""string"",""enum"":[""none"",""cw90"",""ccw90""],""description"":""New rotation of the table: 90° clockwise or counterclockwise""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""pointMmX"",""pointMmY""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -55,6 +57,19 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
             outcome.ErrorCode = "invalid_arguments";
             outcome.Message = "Pass pointMmX and pointMmY (top-left corner of the schedule " +
                               "table, sheet millimetres).";
+            return;
+        }
+
+        var hasRotation = args.TryGetProperty("rotation", out var rotationElement)
+                          && rotationElement.ValueKind == JsonValueKind.String;
+        ViewportRotation requestedRotation = ViewportRotation.None;
+        if (hasRotation
+            && !AgentScheduleWriteHelper.TryParseRotation(
+                rotationElement.GetString(), out requestedRotation, out var rotationReason))
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = "invalid_arguments";
+            outcome.Message = rotationReason!;
             return;
         }
 
@@ -130,16 +145,39 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
             return;
         }
 
+        var oldRotation = ViewportRotation.None;
+        var rotationReadable = true;
+        try
+        {
+            oldRotation = instance.Rotation;
+        }
+        catch (Exception)
+        {
+            rotationReadable = false;
+        }
+
         outcome.Description = "Move schedule placement " + instance.Id.GetValue() + " to " +
                               AgentSheetWriteHelper.CenterText(pointMmX, pointMmY) + " mm";
+        var rotationChanges = hasRotation && rotationReadable && oldRotation != requestedRotation;
 
-        if (Math.Abs(oldMmX - pointMmX) < 0.5 && Math.Abs(oldMmY - pointMmY) < 0.5)
+        if (Math.Abs(oldMmX - pointMmX) < 0.5 && Math.Abs(oldMmY - pointMmY) < 0.5
+            && !rotationChanges)
         {
             outcome.SuppressChangeSet = true;
             outcome.Data["instanceId"] = instance.Id.GetValue();
             outcome.Data["actualMmX"] = oldMmX;
             outcome.Data["actualMmY"] = oldMmY;
-            outcome.Message = "The schedule is already at this point (no-op).";
+            if (hasRotation && !rotationReadable)
+            {
+                outcome.Message = "The schedule is already at this point; its rotation is " +
+                                  "unreadable, so it was not changed.";
+            }
+            else
+            {
+                outcome.Data["rotation"] = AgentScheduleWriteHelper.RotationName(oldRotation);
+                outcome.Message = "The schedule is already at this point and rotation (no-op).";
+            }
+
             return;
         }
 
@@ -157,6 +195,24 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
             outcome.Message = "Revit refused the new position: " +
                               ex.GetType().Name + ": " + ex.Message;
             return;
+        }
+
+        if (rotationChanges)
+        {
+            try
+            {
+                instance.Rotation = requestedRotation;
+                doc.Regenerate();
+            }
+            catch (Exception ex)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode = "set_failed";
+                outcome.Message = "The point was moved, but Revit refused the rotation " +
+                                  "(pinned placements and revision schedules cannot be " +
+                                  "rotated): " + ex.GetType().Name + ": " + ex.Message;
+                return;
+            }
         }
 
         double actualMmX = pointMmX;
@@ -190,6 +246,19 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
             NewValue = AgentSheetWriteHelper.CenterText(actualMmX, actualMmY),
             Status = ChangeStatus.Applied
         });
+        if (rotationChanges)
+        {
+            outcome.Items.Add(new ChangeItem
+            {
+                UniqueId = instance.UniqueId,
+                ElementId = instance.Id.GetValue(),
+                ParameterName = "schedule_rotated",
+                OldValue = AgentScheduleWriteHelper.RotationName(oldRotation),
+                NewValue = AgentScheduleWriteHelper.RotationName(requestedRotation),
+                Status = ChangeStatus.Applied
+            });
+        }
+
         outcome.Data["instanceId"] = instance.Id.GetValue();
         outcome.Data["scheduleId"] = instance.ScheduleId.GetValue();
         outcome.Data["sheetId"] = instance.OwnerViewId.GetValue();
@@ -197,6 +266,19 @@ public sealed class MoveScheduleOnSheetTool : AgentWriteToolBase
         outcome.Data["requestedMmY"] = pointMmY;
         outcome.Data["actualMmX"] = actualMmX;
         outcome.Data["actualMmY"] = actualMmY;
+        outcome.Data["rotation"] = SafeRotationName(instance);
+    }
+
+    private static string SafeRotationName(ScheduleSheetInstance instance)
+    {
+        try
+        {
+            return AgentScheduleWriteHelper.RotationName(instance.Rotation);
+        }
+        catch (Exception)
+        {
+            return "none";
+        }
     }
 
     private static ScheduleSheetInstance? FindPlacement(

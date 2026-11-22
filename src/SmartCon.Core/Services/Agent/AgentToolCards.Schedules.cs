@@ -1,3 +1,4 @@
+using System.Linq;
 using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Core.Services.Agent;
@@ -5,6 +6,11 @@ namespace SmartCon.Core.Services.Agent;
 public static partial class AgentToolCards
 {
     private static AgentToolCard[] ScheduleCards() =>
+        ScheduleBaseCards()
+            .Concat(ScheduleRebuildCards())
+            .ToArray();
+
+    private static AgentToolCard[] ScheduleBaseCards() =>
         new[]
         {
             new AgentToolCard
@@ -216,11 +222,14 @@ public static partial class AgentToolCards
                 Pack = "schedules",
                 Purpose =
                     "Заменяет сортировку/группировку спецификации (до 4 уровней; пустой список " +
-                    "убирает сортировку) и флаг «каждый элемент отдельной строкой» (itemized).",
+                    "убирает сортировку), флаги оформления групп (showHeader/showFooter/" +
+                    "showBlankLine — заголовок группы, строка итогов группы, пустая строка " +
+                    "между группами) и флаг «каждый элемент отдельной строкой» (itemized).",
                 WhenToUse =
                     "Когда строки в неправильном порядке или сгруппированы: «отсортируй " +
-                    "ведомость по диаметру по возрастанию», «сгруппируй по уровню», «сделай " +
-                    "каждый элемент отдельной строкой».",
+                    "ведомость по диаметру по возрастанию», «сгруппируй по уровню с итогами " +
+                    "групп и пустой строкой между ними», «сделай каждый элемент отдельной " +
+                    "строкой».",
                 WhenNotToUse =
                     "Когда нужно ограничить состав строк — set_schedule_filter; когда поле " +
                     "не в спецификации — add_schedule_field; для просмотра сортировки — " +
@@ -229,6 +238,7 @@ public static partial class AgentToolCards
                 {
                     "Отсортируй спецификацию труб по диаметру по возрастанию",
                     "Сгруппируй ведомость стен по уровню",
+                    "Сгруппируй по типоразмеру с итогами группы и пустой строкой между группами",
                     "Сделай каждый элемент отдельной строкой",
                     "Убери сортировку из ведомости дверей"
                 },
@@ -345,7 +355,8 @@ public static partial class AgentToolCards
                 {
                     "Переставь колонку марка в начало ведомости",
                     "Поменяй порядок полей в спецификации труб",
-                    "Сделай тип последней колонкой"
+                    "Сделай тип последней колонкой",
+                    "Повтори порядок колонок как у оригинальной ведомости"
                 },
                 Synonyms = new[]
                 {

@@ -26,15 +26,18 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
         Name = "set_schedule_sort",
         Description =
             "Replaces the sorting/grouping of a schedule by scheduleId or exact scheduleName. " +
-            "sortGroups (0..4; [] removes sorting) — each {field, order: asc|desc}; the field " +
-            "must already be a column of the schedule (add_schedule_field first) — otherwise " +
-            "field_not_in_schedule. itemized (optional bool) sets whether every element gets " +
-            "its own row (true) or grouped rows are combined (false). Read the result back " +
-            "with get_schedule_definition (sortGroupFields, isItemized). Dry run defaults " +
+            "sortGroups (0..4; [] removes sorting) — each {field, order: asc|desc, " +
+            "showHeader?, showFooter?, showBlankLine?}; the group decoration flags add a " +
+            "header row before each group, a footer row (with the enabled column totals) " +
+            "after it and a blank line between groups. The field must already be a column " +
+            "of the schedule (add_schedule_field first) — otherwise field_not_in_schedule. " +
+            "itemized (optional bool) sets whether every element gets its own row (true) " +
+            "or grouped rows are combined (false). Read the result back with " +
+            "get_schedule_definition (sortGroupFields, isItemized). Dry run defaults " +
             "to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""sortGroups"":{""type"":""array"",""maxItems"":4,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string""},""order"":{""type"":""string"",""enum"":[""asc"",""desc""],""default"":""asc""}},""required"":[""field""],""additionalProperties"":false}},""itemized"":{""type"":""boolean""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""sortGroups"":{""type"":""array"",""maxItems"":4,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string""},""order"":{""type"":""string"",""enum"":[""asc"",""desc""],""default"":""asc""},""showHeader"":{""type"":""boolean""},""showFooter"":{""type"":""boolean""},""showBlankLine"":{""type"":""boolean""}},""required"":[""field""],""additionalProperties"":false}},""itemized"":{""type"":""boolean""},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -79,7 +82,8 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
         var requestedItemized = hasItemized && itemizedElement.ValueKind == JsonValueKind.True;
         outcome.Description = "Set sorting on schedule " + schedule.Name;
 
-        var built = new List<(string Field, ScheduleFieldId FieldId, ScheduleSortOrder Order)>();
+        var built = new List<(string Field, ScheduleFieldId FieldId, ScheduleSortOrder Order,
+            bool? ShowHeader, bool? ShowFooter, bool? ShowBlankLine)>();
         foreach (var groupElement in groupsElement.EnumerateArray())
         {
             ct.ThrowIfCancellationRequested();
@@ -92,6 +96,9 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
                             orderElement.ValueKind == JsonValueKind.String
                 ? orderElement.GetString()
                 : "asc";
+            var showHeader = ReadOptionalFlag(groupElement, "showHeader");
+            var showFooter = ReadOptionalFlag(groupElement, "showFooter");
+            var showBlankLine = ReadOptionalFlag(groupElement, "showBlankLine");
 
             var report = new WriteItemReport
             {
@@ -129,7 +136,10 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
                 fieldId,
                 string.Equals(orderText, "desc", StringComparison.OrdinalIgnoreCase)
                     ? ScheduleSortOrder.Descending
-                    : ScheduleSortOrder.Ascending));
+                    : ScheduleSortOrder.Ascending,
+                showHeader,
+                showFooter,
+                showBlankLine));
         }
 
         if (outcome.Batch.Failed.Count > 0)
@@ -142,11 +152,18 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
 
         var oldJson = AgentScheduleWriteHelper.SerializeSort(definition);
         definition.ClearSortGroupFields();
-        foreach (var (_, fieldId, order) in built)
+        foreach (var (_, fieldId, order, showHeader, showFooter, showBlankLine) in built)
         {
             try
             {
-                definition.AddSortGroupField(new ScheduleSortGroupField(fieldId, order));
+                var sortGroupField = new ScheduleSortGroupField(fieldId, order);
+                if (showHeader.HasValue)
+                    sortGroupField.ShowHeader = showHeader.Value;
+                if (showFooter.HasValue)
+                    sortGroupField.ShowFooter = showFooter.Value;
+                if (showBlankLine.HasValue)
+                    sortGroupField.ShowBlankLine = showBlankLine.Value;
+                definition.AddSortGroupField(sortGroupField);
             }
             catch (Exception ex)
             {
@@ -211,6 +228,12 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
             outcome.Data["itemizedChanged"] = true;
     }
 
+    private static bool? ReadOptionalFlag(JsonElement groupElement, string name) =>
+        groupElement.TryGetProperty(name, out var element)
+        && element.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? element.ValueKind == JsonValueKind.True
+            : null;
+
     private static bool CanSortByField(ScheduleDefinition definition, ScheduleFieldId fieldId)
     {
         try
@@ -248,11 +271,18 @@ public sealed class SetScheduleSortTool : AgentWriteToolBase
             if (fieldId is null)
                 continue;
 
-            definition.AddSortGroupField(new ScheduleSortGroupField(
+            var sortGroupField = new ScheduleSortGroupField(
                 fieldId,
                 string.Equals(group.Order, "desc", StringComparison.OrdinalIgnoreCase)
                     ? ScheduleSortOrder.Descending
-                    : ScheduleSortOrder.Ascending));
+                    : ScheduleSortOrder.Ascending);
+            if (group.ShowHeader.HasValue)
+                sortGroupField.ShowHeader = group.ShowHeader.Value;
+            if (group.ShowFooter.HasValue)
+                sortGroupField.ShowFooter = group.ShowFooter.Value;
+            if (group.ShowBlankLine.HasValue)
+                sortGroupField.ShowBlankLine = group.ShowBlankLine.Value;
+            definition.AddSortGroupField(sortGroupField);
         }
 
         try

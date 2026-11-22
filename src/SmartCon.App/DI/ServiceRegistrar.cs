@@ -512,6 +512,8 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, DeleteViewsTool>();
         services.AddSingleton<IAgentTool, DuplicateViewTool>();
         services.AddSingleton<IAgentTool, CreateViewTool>();
+        services.AddSingleton<IAgentTool, CreateFloorPlansTool>();
+        services.AddSingleton<IAgentTool, CreateViewsBatchTool>();
         services.AddSingleton<IAgentTool, SetBrowserFolderTool>();
         services.AddSingleton<IAgentTool, DeleteSheetsTool>();
         services.AddSingleton<IAgentTool, DeleteElementsTool>();
@@ -526,6 +528,11 @@ public static partial class ServiceRegistrar
         services.AddSingleton<IAgentTool, SetScheduleFieldVisibilityTool>();
         services.AddSingleton<IAgentTool, SetScheduleTotalsTool>();
         services.AddSingleton<IAgentTool, MoveScheduleOnSheetTool>();
+        services.AddSingleton<IAgentTool, RenameScheduleTool>();
+        services.AddSingleton<IAgentTool, SetScheduleFieldFormatTool>();
+        services.AddSingleton<IAgentTool, SetScheduleStyleTool>();
+        services.AddSingleton<IAgentTool, RemoveScheduleFromSheetTool>();
+        services.AddSingleton<IAgentTool, CloneScheduleTool>();
         services.AddSingleton<IAgentTool, SetMepSystemTypeTool>();
         services.AddSingleton<IAgentTool, CreateSheetTool>();
         services.AddSingleton<IAgentTool, CreateViewportsTool>();

@@ -1,0 +1,306 @@
+using System.Text.Json;
+using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Interfaces;
+using SmartCon.Core.Services.Interfaces.Agent;
+
+namespace SmartCon.Revit.Agent.Tools.Write;
+
+/// <summary>
+/// Mixed batch view creation (real-cases v2 case 4 and the generic case): one
+/// call creates up to 100 views of kind plan (ViewPlan.Create, levelId
+/// required) or 3d (View3D.CreateIsometric), names each, optionally assigns a
+/// view template (ViewTemplateId) and scale — in a single transaction.
+/// undo_last deletes the whole batch.
+/// </summary>
+public sealed class CreateViewsBatchTool : AgentWriteToolBase
+{
+    private const int MaxItems = 100;
+
+    public CreateViewsBatchTool(
+        IRevitContext revitContext,
+        ITransactionService transactions,
+        IAgentChangeSetStore changeSets)
+        : base(revitContext, transactions, changeSets)
+    {
+    }
+
+    public override AgentToolDefinition Definition { get; } = new()
+    {
+        Name = "create_views_batch",
+        Description =
+            "Creates several views in one call and one transaction: items with kind=plan " +
+            "(ViewPlan.Create, levelId required) or kind=3d (isometric). Every item gets its " +
+            "own name, optional templateId (assigned as ViewTemplateId — real assignment, not " +
+            "a settings copy), optional viewFamilyTypeId and scale. Guards: level_not_found, " +
+            "template_not_found, template_view_type_mismatch (plan items need a FloorPlan " +
+            "family template, 3d items a ThreeDimensional one), view_family_type_missing, " +
+            "view_name_taken (against the whole document AND duplicates inside the batch). " +
+            "undo_last deletes the whole batch. Dry run by default.",
+        Risk = AgentToolRisk.Write,
+        SupportsDryRun = true,
+        SupportsBulk = true,
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""object"",""properties"":{""kind"":{""type"":""string"",""enum"":[""plan"",""3d""],""description"":""Kind of the view to create""},""name"":{""type"":""string"",""description"":""Name of the new view""},""levelId"":{""type"":""integer"",""description"":""plan: level (list_levels), required for kind=plan""},""templateId"":{""type"":""integer"",""description"":""Optional view template id assigned to the created view""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional ViewFamilyType id matching the kind""},""scale"":{""type"":""integer"",""description"":""Optional view scale (e.g. 100)""}},""required"":[""kind"",""name""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+    };
+
+    protected override void Apply(
+        Document doc,
+        JsonElement args,
+        WriteOutcome outcome,
+        bool dryRun,
+        CancellationToken ct)
+    {
+        var request = AgentJson.Deserialize<CreateViewsBatchRequest>(args);
+        var items = request?.Items;
+        if (items is null || items.Count == 0)
+        {
+            Fail(outcome, "invalid_arguments", "Pass items: 1.." + MaxItems +
+                                              " view descriptions ({kind, name, ...}).");
+            return;
+        }
+
+        if (items.Count > MaxItems)
+        {
+            Fail(outcome, "limit_exceeded",
+                "At most " + MaxItems + " items per call are allowed; split the list.");
+            return;
+        }
+
+        var atomic = AgentJson.GetBool(args, "atomic", false);
+        outcome.Description = "Created " + items.Count + " view(s)";
+
+        var usedNames = new HashSet<string>(
+            AgentViewWriteHelper.CollectViewNamesByName(doc).Keys, StringComparer.OrdinalIgnoreCase);
+        var created = new List<object>();
+
+        foreach (var item in items)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var report = new WriteItemReport { Name = item.Name };
+            var kind = (item.Kind ?? string.Empty).Trim().ToLowerInvariant();
+            if (kind is not ("plan" or "3d"))
+            {
+                ApplyViewTemplateTool.Fail(
+                    outcome, report, "invalid_arguments",
+                    "Item '" + item.Name + "': kind must be one of: plan, 3d.");
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            var nameError = AgentViewWriteHelper.ValidateName(item.Name);
+            if (nameError is not null)
+            {
+                ApplyViewTemplateTool.Fail(outcome, report, "invalid_name", nameError);
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            if (usedNames.Contains(item.Name!))
+            {
+                ApplyViewTemplateTool.Fail(
+                    outcome, report, "view_name_taken",
+                    "The name '" + item.Name + "' is already used by a view/sheet (in the " +
+                    "document or in this batch).");
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            Level? level = null;
+            if (kind == "plan")
+            {
+                if (item.LevelId is null)
+                {
+                    ApplyViewTemplateTool.Fail(
+                        outcome, report, "invalid_arguments",
+                        "Item '" + item.Name + "': kind=plan requires levelId (list_levels).");
+                    if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                    continue;
+                }
+
+                if (!AgentViewWriteHelper.TryGetLevel(doc, item.LevelId.Value, out level, out var levelReason))
+                {
+                    ApplyViewTemplateTool.Fail(outcome, report, "level_not_found", levelReason);
+                    if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                    continue;
+                }
+            }
+
+            var family = kind == "plan" ? ViewFamily.FloorPlan : ViewFamily.ThreeDimensional;
+            var familyType = ResolveFamilyType(doc, item.ViewFamilyTypeId, family);
+            if (familyType is null)
+            {
+                ApplyViewTemplateTool.Fail(
+                    outcome, report, "view_family_type_missing",
+                    "Item '" + item.Name + "': no ViewFamilyType of family " + family +
+                    (item.ViewFamilyTypeId.HasValue
+                        ? " (element " + item.ViewFamilyTypeId.Value + " does not match)"
+                        : " in the document") + ".");
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            if (item.TemplateId is not null)
+            {
+                var templateError = TemplateGuardError(
+                    doc, item.TemplateId.Value, family, out var templateReason);
+                if (templateError is not null)
+                {
+                    ApplyViewTemplateTool.Fail(outcome, report, templateError, templateReason);
+                    if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                    continue;
+                }
+            }
+
+            var view = AgentViewCreateHelper.CreateNamedView(
+                doc, familyType, level, item.Name!, item.TemplateId, item.Scale,
+                outcome.Warnings, out var code, out var reason);
+            if (view is null)
+            {
+                ApplyViewTemplateTool.Fail(outcome, report, code!, reason!);
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            usedNames.Add(item.Name!);
+            var genLevelId = (view as ViewPlan)?.GenLevel?.Id.GetValue();
+            var appliedTemplateId = view.ViewTemplateId == ElementId.InvalidElementId
+                ? (long?)null
+                : view.ViewTemplateId.GetValue();
+
+            if (dryRun)
+            {
+                report.Id = null;
+                report.NewValue = item.Name;
+                report.Reason = "Dry run: the " + kind + " view would be created as '" +
+                                item.Name + "'" +
+                                (appliedTemplateId.HasValue
+                                    ? " with template " + appliedTemplateId.Value
+                                    : string.Empty) + ".";
+                outcome.Batch.Changed.Add(report);
+                outcome.AffectedCount++;
+                created.Add(new
+                {
+                    viewId = (long?)null,
+                    kind,
+                    name = item.Name,
+                    levelId = item.LevelId,
+                    templateId = appliedTemplateId,
+                    genLevelId
+                });
+                continue;
+            }
+
+            report.Id = view.Id.GetValue();
+            report.Name = view.Name;
+            report.NewValue = view.Name;
+            report.Detail = kind + (appliedTemplateId.HasValue
+                ? ", template " + appliedTemplateId.Value
+                : string.Empty);
+            outcome.Batch.Changed.Add(report);
+            outcome.AffectedCount++;
+            outcome.Items.Add(new ChangeItem
+            {
+                UniqueId = view.UniqueId,
+                ElementId = view.Id.GetValue(),
+                ParameterName = "view_created",
+                NewValue = view.Name,
+                Status = ChangeStatus.Applied
+            });
+            created.Add(new
+            {
+                viewId = view.Id.GetValue(),
+                kind,
+                name = view.Name,
+                levelId = item.LevelId,
+                templateId = appliedTemplateId,
+                genLevelId
+            });
+        }
+
+        outcome.Data["created"] = created;
+        outcome.Data["createdCount"] = created.Count;
+    }
+
+    /// <summary>
+    /// Pre-create template guard per item: template_not_found for a missing or
+    /// non-template id, template_view_type_mismatch when the template view type
+    /// does not match the item kind (direct ViewType check — the ViewFamilyType
+    /// of a template is not always resolvable via GetTypeId). Null when the
+    /// template is applicable.
+    /// </summary>
+    private static string? TemplateGuardError(
+        Document doc,
+        long templateId,
+        ViewFamily family,
+        out string reason)
+    {
+        if (doc.GetElement(ElementIdCompat.Create(templateId)) is not View template
+            || !template.IsTemplate)
+        {
+            reason = "Item template " + templateId +
+                     " is not a view template (list_view_templates).";
+            return "template_not_found";
+        }
+
+        var expectedType = family == ViewFamily.FloorPlan ? ViewType.FloorPlan : ViewType.ThreeD;
+        if (template.ViewType != expectedType)
+        {
+            reason = "Template '" + template.Name + "' is " + template.ViewType +
+                     " and cannot be assigned to a " + expectedType + " view.";
+            return "template_view_type_mismatch";
+        }
+
+        reason = string.Empty;
+        return null;
+    }
+
+    private static ViewFamilyType? ResolveFamilyType(
+        Document doc,
+        long? requestedId,
+        ViewFamily family)
+    {
+        if (requestedId.HasValue
+            && doc.GetElement(ElementIdCompat.Create(requestedId.Value)) is ViewFamilyType requested
+            && requested.ViewFamily == family)
+        {
+            return requested;
+        }
+
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(ViewFamilyType)))
+        {
+            if (element is ViewFamilyType candidate && candidate.ViewFamily == family)
+                return candidate;
+        }
+
+        return null;
+    }
+
+    private static void Fail(WriteOutcome outcome, string errorCode, string message)
+    {
+        outcome.Success = false;
+        outcome.ErrorCode = errorCode;
+        outcome.Message = message;
+    }
+
+    private sealed class CreateViewsBatchRequest
+    {
+        public List<CreateViewsBatchItem>? Items { get; set; }
+    }
+
+    private sealed class CreateViewsBatchItem
+    {
+        public string? Kind { get; set; }
+
+        public string? Name { get; set; }
+
+        public long? LevelId { get; set; }
+
+        public long? TemplateId { get; set; }
+
+        public long? ViewFamilyTypeId { get; set; }
+
+        public int? Scale { get; set; }
+    }
+}

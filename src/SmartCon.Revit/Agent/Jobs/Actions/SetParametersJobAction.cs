@@ -1,10 +1,8 @@
-﻿using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
+﻿using System.Globalization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
-using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Jobs.Actions;
@@ -34,10 +32,19 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         var select = spec!.Select!;
         if (!TryResolveCategories(context.Document, select, out var categoryIds, out var categoryError))
             return ExpansionFail(JobErrorCodes.InvalidSpec, categoryError!);
+        HashSet<long>? systemMemberIds = null;
+        if (!string.IsNullOrWhiteSpace(select.SystemName))
+        {
+            if (!TrySelectSystemMembers(
+                    context.Document, select, context.CancellationToken, out systemMemberIds, out var systemError))
+                return ExpansionFail("system_not_found", systemError!);
+        }
         var limit = select.Limit ?? int.MaxValue;
         var cap = Math.Min(limit, MaxUnits);
         var warnings = new List<string>();
-        var elements = Select(context, select, categoryIds, cap + 1, warnings);
+        var elements = Select(context, select, categoryIds, systemMemberIds, cap + 1, warnings);
+        if (select.IncludeSubComponents == true)
+            ExpandWithSubComponents(context.Document, elements, cap + 1, warnings, context.CancellationToken);
         if (elements.Count > cap)
         {
             if (limit > MaxUnits)
@@ -48,7 +55,8 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         }
         if (elements.Count == 0)
             return ExpansionFail(JobErrorCodes.SelectorEmpty,
-                "The selector matched no elements; check the ids, level ids and category names");
+                "The selector matched no elements; check the ids, level ids, category names and the " +
+                "system/condition filters");
         elements.Sort((left, right) => left.Id.GetValue().CompareTo(right.Id.GetValue()));
         var scope = string.Equals(spec.Scope, "type", StringComparison.OrdinalIgnoreCase) ? "type" : "instance";
         var parameterKey = ParameterKey(spec);
@@ -304,190 +312,6 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
             return false;
         return !double.IsNaN(actualNumber) && !double.IsNaN(expectedNumber) &&
                Math.Abs(actualNumber - expectedNumber) <= Math.Max(1e-12, Math.Abs(expectedNumber) * 1e-9);
-    }
-
-    private static List<Element> Select(
-        JobActionContext context,
-        ParametersSelectSpec select,
-        List<ElementId> categoryIds,
-        int maxCount,
-        List<string> warnings)
-    {
-        var document = context.Document;
-        var levels = new HashSet<long>(select.LevelIds ?? new List<long>());
-        var categories = new HashSet<long>(categoryIds.ConvertAll(id => id.GetValue()));
-        var result = new List<Element>();
-        if (select.ElementIds is { Count: > 0 })
-        {
-            var skipped = 0;
-            foreach (var id in new HashSet<long>(select.ElementIds))
-            {
-                var element = document.GetElement(ElementIdCompat.Create(id));
-                if (element is null || element is ElementType ||
-                    !Matches(document, element, select, levels, categories))
-                {
-                    skipped++;
-                    continue;
-                }
-                result.Add(element);
-                if (result.Count >= maxCount)
-                    break;
-            }
-            if (skipped > 0)
-                warnings.Add(skipped + " explicit element id(s) are missing or point to a type; skipped");
-            return result;
-        }
-        FilteredElementCollector collector = new FilteredElementCollector(document);
-        collector = collector.WhereElementIsNotElementType();
-        if (categories.Count > 0)
-            collector = collector.WherePasses(new ElementMulticategoryFilter(categoryIds));
-        if (!string.IsNullOrWhiteSpace(select.FamilyName))
-            collector = collector.OfClass(typeof(FamilyInstance));
-        var scanned = 0;
-        foreach (var element in collector)
-        {
-            if (++scanned % 500 == 0)
-                context.CancellationToken.ThrowIfCancellationRequested();
-            if (!Matches(document, element, select, levels, categories))
-                continue;
-            result.Add(element);
-            if (result.Count >= maxCount)
-                break;
-        }
-        return result;
-    }
-
-    private static bool Matches(
-        Document document,
-        Element element,
-        ParametersSelectSpec select,
-        HashSet<long> levelIds,
-        HashSet<long> categoryIds)
-    {
-        var categoryId = element.Category?.Id;
-        if (categoryIds.Count > 0 && (categoryId is null || !categoryIds.Contains(categoryId.GetValue())))
-            return false;
-        if (levelIds.Count > 0 && !MatchesLevel(element, levelIds))
-            return false;
-        if (select.TypeIds is { Count: > 0 })
-        {
-            var typeId = element.GetTypeId();
-            if (typeId == ElementId.InvalidElementId || !select.TypeIds.Contains(typeId.GetValue()))
-                return false;
-        }
-
-        var (familyName, typeName) = ReadFamilyAndType(document, element);
-        if (!string.IsNullOrWhiteSpace(select.FamilyName) &&
-            !string.Equals(familyName, select.FamilyName, StringComparison.OrdinalIgnoreCase))
-            return false;
-        if (!string.IsNullOrWhiteSpace(select.TypeName) &&
-            !string.Equals(typeName, select.TypeName, StringComparison.OrdinalIgnoreCase))
-            return false;
-        if (!string.IsNullOrWhiteSpace(select.NameContains) &&
-            (element.Name ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0 &&
-            (typeName ?? string.Empty).IndexOf(select.NameContains!, StringComparison.OrdinalIgnoreCase) < 0)
-            return false;
-        return MatchesConditions(document, element, select);
-    }
-
-    private static bool MatchesConditions(
-        Document document,
-        Element element,
-        ParametersSelectSpec select)
-    {
-        if (select.Conditions is not { Count: > 0 })
-            return true;
-
-        var requireAll = select.Logic != QueryLogic.Or;
-        foreach (var condition in select.Conditions)
-        {
-            var parameter = AgentParameterResolver.Find(
-                document,
-                element,
-                condition.Parameter,
-                select.IncludeTypeParameters ?? false);
-            var matches = parameter is not null &&
-                          AgentParameterValue.Matches(document, parameter, condition);
-
-            if (requireAll && !matches)
-                return false;
-            if (!requireAll && matches)
-                return true;
-        }
-
-        return requireAll;
-    }
-
-    private static bool MatchesLevel(Element element, HashSet<long> levelIds)
-    {
-        var levelId = element.LevelId;
-        if (levelId == ElementId.InvalidElementId)
-        {
-            var parameter = element.get_Parameter(BuiltInParameter.LEVEL_PARAM);
-            if (parameter is { StorageType: StorageType.ElementId } && parameter.HasValue)
-                levelId = parameter.AsElementId();
-        }
-        return levelId != ElementId.InvalidElementId && levelIds.Contains(levelId.GetValue());
-    }
-
-    private static (string? Family, string? Type) ReadFamilyAndType(Document document, Element element)
-    {
-        if (element is FamilyInstance instance)
-            return (instance.Symbol?.Family?.Name, instance.Symbol?.Name);
-        var typeId = element.GetTypeId();
-        return typeId == ElementId.InvalidElementId
-            ? (null, null)
-            : (null, document.GetElement(typeId)?.Name);
-    }
-
-    private static bool TryResolveCategories(
-        Document document,
-        ParametersSelectSpec select,
-        out List<ElementId> categoryIds,
-        out string? error)
-    {
-        var resolved = new List<ElementId>();
-        categoryIds = resolved;
-        error = null;
-        var seen = new HashSet<long>();
-        var unknown = new List<string>();
-        void Add(ElementId id)
-        {
-            if (seen.Add(id.GetValue()))
-                resolved.Add(id);
-        }
-        try
-        {
-            foreach (var id in select.CategoryIds ?? new List<long>())
-                Add(ElementIdCompat.Create(id));
-        }
-        catch (InvalidOperationException ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-        foreach (var name in select.CategoryNames ?? new List<string>())
-        {
-            if (string.IsNullOrWhiteSpace(name))
-                continue;
-            if (Enum.TryParse<BuiltInCategory>(name, true, out var builtIn))
-            {
-                Add(new ElementId(builtIn));
-                continue;
-            }
-            var match = document.Settings.Categories
-                .Cast<Category>()
-                .FirstOrDefault(category => string.Equals(category.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-                unknown.Add(name);
-            else
-                Add(match.Id);
-        }
-        if (unknown.Count == 0)
-            return true;
-        error = "Unknown category name(s): " + string.Join(", ", unknown) + " " +
-                Hint("pass a BuiltInCategory id (OST_...) or an exact category name from the model");
-        return false;
     }
 
 }

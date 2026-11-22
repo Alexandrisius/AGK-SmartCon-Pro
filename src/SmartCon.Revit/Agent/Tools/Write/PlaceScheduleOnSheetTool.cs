@@ -32,12 +32,13 @@ public sealed class PlaceScheduleOnSheetTool : AgentWriteToolBase
             "sheetId/sheetNumber. pointMmX/pointMmY are the sheet coordinates of the " +
             "TOP-LEFT corner of the schedule table in millimetres from the sheet bottom-left " +
             "corner (get_sheet_content reports the same point as xMm/yMm); the actual point " +
-            "is read back as actualMmX/actualMmY. A schedule already placed on this sheet " +
-            "is skipped (no-op). Schedules have no viewport — they are placed as " +
-            "ScheduleSheetInstance. Dry run defaults to true.",
+            "is read back as actualMmX/actualMmY. Optional rotation none|cw90|ccw90 turns " +
+            "the placed table (Revit supports only ±90° for schedule placements). A " +
+            "schedule already placed on this sheet is skipped (no-op). Schedules have no " +
+            "viewport — they are placed as ScheduleSheetInstance. Dry run defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""sheetId"":{""type"":""integer""},""sheetNumber"":{""type"":""string""},""pointMmX"":{""type"":""number"",""description"":""Top-left corner X in mm from the sheet bottom-left corner""},""pointMmY"":{""type"":""number"",""description"":""Top-left corner Y in mm from the sheet bottom-left corner""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""pointMmX"",""pointMmY""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""},""sheetId"":{""type"":""integer""},""sheetNumber"":{""type"":""string""},""pointMmX"":{""type"":""number"",""description"":""Top-left corner X in mm from the sheet bottom-left corner""},""pointMmY"":{""type"":""number"",""description"":""Top-left corner Y in mm from the sheet bottom-left corner""},""rotation"":{""type"":""string"",""enum"":[""none"",""cw90"",""ccw90""],""default"":""none"",""description"":""Rotation of the placed table: 90° clockwise or counterclockwise""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""pointMmX"",""pointMmY""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -84,6 +85,19 @@ public sealed class PlaceScheduleOnSheetTool : AgentWriteToolBase
             return;
         }
 
+        var hasRotation = args.TryGetProperty("rotation", out var rotationElement)
+                          && rotationElement.ValueKind == JsonValueKind.String;
+        ViewportRotation rotation = ViewportRotation.None;
+        if (hasRotation
+            && !AgentScheduleWriteHelper.TryParseRotation(
+                rotationElement.GetString(), out rotation, out var rotationReason))
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = "invalid_arguments";
+            outcome.Message = rotationReason!;
+            return;
+        }
+
         outcome.Description = "Place schedule " + schedule.Name + " on sheet " +
                               sheet!.SheetNumber;
 
@@ -108,13 +122,19 @@ public sealed class PlaceScheduleOnSheetTool : AgentWriteToolBase
             doc.Regenerate();
             instance = ScheduleSheetInstance.Create(
                 doc, sheet.Id, schedule.Id, new XYZ(pointX, pointY, 0));
+            if (rotation != ViewportRotation.None)
+                instance.Rotation = rotation;
             doc.Regenerate();
         }
         catch (Exception ex)
         {
             report.ErrorCode = "schedule_not_placeable";
             report.Reason = "Revit refused to place '" + schedule.Name + "' on sheet '" +
-                            sheet.SheetNumber + "': " + ex.Message;
+                            sheet.SheetNumber + "'" +
+                            (rotation != ViewportRotation.None
+                                ? " with rotation " + AgentScheduleWriteHelper.RotationName(rotation)
+                                : string.Empty) +
+                            ": " + ex.Message;
             outcome.Batch.Failed.Add(report);
             outcome.Success = false;
             outcome.Message = report.Reason;
@@ -154,6 +174,19 @@ public sealed class PlaceScheduleOnSheetTool : AgentWriteToolBase
         outcome.Data["requestedMmY"] = pointMmY;
         outcome.Data["actualMmX"] = actualMmX;
         outcome.Data["actualMmY"] = actualMmY;
+        outcome.Data["rotation"] = SafeRotationName(instance);
+    }
+
+    private static string SafeRotationName(ScheduleSheetInstance instance)
+    {
+        try
+        {
+            return AgentScheduleWriteHelper.RotationName(instance.Rotation);
+        }
+        catch (Exception)
+        {
+            return "none";
+        }
     }
 
     private static bool IsPlacedOnSheet(Document doc, ElementId sheetId, ElementId scheduleId)

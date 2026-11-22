@@ -46,6 +46,13 @@ internal sealed class ScheduleSortFieldRecord
     public long FieldId { get; set; }
 
     public string Order { get; set; } = "asc";
+
+    /// <summary>Group decoration flags; null = not recorded (leave as-is on restore).</summary>
+    public bool? ShowHeader { get; set; }
+
+    public bool? ShowFooter { get; set; }
+
+    public bool? ShowBlankLine { get; set; }
 }
 
 /// <summary>
@@ -481,7 +488,10 @@ internal static partial class AgentScheduleWriteHelper
                 {
                     Field = fieldName ?? fieldId.ToString(CultureInfo.InvariantCulture),
                     FieldId = fieldId,
-                    Order = sort.SortOrder == ScheduleSortOrder.Descending ? "desc" : "asc"
+                    Order = sort.SortOrder == ScheduleSortOrder.Descending ? "desc" : "asc",
+                    ShowHeader = SafeSortFlag(() => sort.ShowHeader),
+                    ShowFooter = SafeSortFlag(() => sort.ShowFooter),
+                    ShowBlankLine = SafeSortFlag(() => sort.ShowBlankLine)
                 });
             }
         }
@@ -495,4 +505,16 @@ internal static partial class AgentScheduleWriteHelper
 
     internal static string SerializeFieldNames(ScheduleDefinition definition) =>
         JsonSerializer.Serialize(CurrentFieldNames(definition));
+
+    private static bool? SafeSortFlag(Func<bool> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 }

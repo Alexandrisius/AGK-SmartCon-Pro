@@ -221,11 +221,14 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             }
 
             // Schedule changes are reverted by UndoLastTool.Schedules.cs: created
-            // schedules and placements are deleted, placements are moved back, and
-            // the fields/totals/filters/sorting snapshots are restored.
+            // schedules and placements are deleted, removed placements are
+            // re-created, placements are moved back or rotated back, renames are
+            // reverted and the fields/format/style/totals/filters/sorting
+            // snapshots are restored.
             if (key is "schedule_created" or "schedule_placed" or "schedule_fields"
                 or "schedule_filters" or "schedule_sort" or "schedule_moved"
-                or "schedule_totals")
+                or "schedule_totals" or "schedule_renamed" or "schedule_unplaced"
+                or "schedule_field_format" or "schedule_style" or "schedule_rotated")
             {
                 var report = CreateReport(item);
                 var element = ResolveElement(doc, item);

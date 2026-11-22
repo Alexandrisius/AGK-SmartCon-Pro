@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
@@ -19,6 +20,11 @@ public sealed partial class UndoLastTool
         string key,
         bool force)
     {
+        // A removed placement no longer exists by design — it is re-created from
+        // the data recorded in OldValue.
+        if (key == "schedule_unplaced")
+            return RevertScheduleUnplaced(doc, element, item, force);
+
         if (element is null)
         {
             return key is "schedule_created" or "schedule_placed"
@@ -47,9 +53,18 @@ public sealed partial class UndoLastTool
                     : (false, "unsupported_element",
                         "Element " + item.ElementId + " is not a schedule placement.");
 
+            if (key == "schedule_rotated")
+                return element is ScheduleSheetInstance rotatedInstance
+                    ? RevertScheduleRotation(rotatedInstance, item, force)
+                    : (false, "unsupported_element",
+                        "Element " + item.ElementId + " is not a schedule placement.");
+
             if (element is not ViewSchedule schedule)
                 return (false, "unsupported_element",
                     "Element " + item.ElementId + " is not a schedule.");
+
+            if (key == "schedule_renamed")
+                return RevertScheduleRename(schedule, item, force);
 
             var definition = schedule.Definition;
             return key switch
@@ -58,8 +73,210 @@ public sealed partial class UndoLastTool
                 "schedule_totals" => RevertScheduleTotals(definition, item, force),
                 "schedule_filters" => RevertScheduleFilters(definition, item, force),
                 "schedule_sort" => RevertScheduleSortState(definition, item, force),
+                "schedule_field_format" => RevertScheduleFieldFormat(definition, item, force),
+                "schedule_style" => RevertScheduleStyle(schedule, item, force),
                 _ => (false, null, "Unknown change item type '" + key + "' — skipped.")
             };
+        }
+        catch (Exception ex)
+        {
+            return (false, "revert_failed", ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private static (bool, string?, string?) RevertScheduleRename(
+        ViewSchedule schedule,
+        ChangeItem item,
+        bool force)
+    {
+        if (string.IsNullOrWhiteSpace(item.OldValue))
+            return (false, "invalid_change_item", "The recorded previous name is empty.");
+
+        if (string.Equals(schedule.Name, item.OldValue, StringComparison.Ordinal))
+            return (false, null, "The schedule already has the previous name (no-op).");
+
+        if (!force && !string.Equals(schedule.Name, item.NewValue, StringComparison.Ordinal))
+            return (false, "undo_conflict",
+                "The schedule is named '" + schedule.Name + "' instead of the recorded '" +
+                item.NewValue + " — it was renamed again after the operation (conflict).");
+
+        schedule.Name = item.OldValue!;
+        return (true, null, null);
+    }
+
+    /// <summary>
+    /// Re-creates a removed placement: the schedule goes back on the recorded
+    /// sheet at the recorded point with the recorded rotation. A placement that
+    /// exists again in the meantime is a conflict, not something to undo
+    /// silently (Revit tolerates duplicate placements, the agent does not).
+    /// </summary>
+    private static (bool, string?, string?) RevertScheduleUnplaced(
+        Document doc,
+        Element? element,
+        ChangeItem item,
+        bool force)
+    {
+        if (!AgentScheduleWriteHelper.TryParseSchedulePlacement(
+                item.OldValue, out var scheduleId, out var sheetId,
+                out var mmX, out var mmY, out var rotation))
+            return (false, "invalid_change_item",
+                "The recorded placement is not 'scheduleId;sheetId;x;y;rotation'.");
+
+        if (element is ScheduleSheetInstance existing)
+        {
+            if (existing.ScheduleId.GetValue() == scheduleId
+                && existing.OwnerViewId.GetValue() == sheetId)
+                return (false, null, "The schedule is already placed on the recorded sheet " +
+                                     "(no-op).");
+
+            return (false, "undo_conflict",
+                "Element " + item.ElementId + " exists again as another schedule placement " +
+                "(conflict).");
+        }
+
+        if (doc.GetElement(ElementIdCompat.Create(scheduleId)) is not ViewSchedule schedule)
+            return (false, "element_not_found",
+                "The schedule " + scheduleId + " no longer exists in the document.");
+
+        if (doc.GetElement(ElementIdCompat.Create(sheetId)) is not ViewSheet sheet)
+            return (false, "sheet_not_found",
+                "The sheet " + sheetId + " no longer exists in the document.");
+
+        foreach (var candidate in new FilteredElementCollector(doc).OfClass(typeof(ScheduleSheetInstance)))
+        {
+            if (candidate is ScheduleSheetInstance instance
+                && instance.OwnerViewId.GetValue() == sheetId
+                && instance.ScheduleId.GetValue() == scheduleId)
+                return (false, null,
+                    "The schedule is already placed on the recorded sheet (no-op).");
+        }
+
+        try
+        {
+            doc.Regenerate();
+            var pointX = AgentSheetWriteHelper.MillimetersToInternal(mmX);
+            var pointY = AgentSheetWriteHelper.MillimetersToInternal(mmY);
+            var restored = ScheduleSheetInstance.Create(
+                doc, sheet.Id, schedule.Id, new XYZ(pointX, pointY, 0));
+            if (rotation != ViewportRotation.None)
+                restored.Rotation = rotation;
+            return (true, null, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, "revert_failed", ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private static (bool, string?, string?) RevertScheduleRotation(
+        ScheduleSheetInstance instance,
+        ChangeItem item,
+        bool force)
+    {
+        if (!AgentScheduleWriteHelper.TryParseRotation(item.OldValue, out var oldRotation, out _)
+            || !AgentScheduleWriteHelper.TryParseRotation(item.NewValue, out var newRotation, out _))
+            return (false, "invalid_change_item",
+                "The recorded rotations are not none/cw90/ccw90.");
+
+        ViewportRotation current;
+        try
+        {
+            current = instance.Rotation;
+        }
+        catch (Exception ex)
+        {
+            return (false, "revert_failed", "The rotation is unreadable: " + ex.Message);
+        }
+
+        if (current == oldRotation)
+            return (false, null, "The placement already has the previous rotation (no-op).");
+
+        if (!force && current != newRotation)
+            return (false, "undo_conflict",
+                "The rotation is " + AgentScheduleWriteHelper.RotationName(current) +
+                " instead of the recorded " + item.NewValue + " (conflict).");
+
+        instance.Rotation = oldRotation;
+        return (true, null, null);
+    }
+
+    private static (bool, string?, string?) RevertScheduleFieldFormat(
+        ScheduleDefinition definition,
+        ChangeItem item,
+        bool force)
+    {
+        var oldFormats = AgentScheduleWriteHelper.DeserializeFieldFormats(item.OldValue);
+        if (oldFormats is null || AgentScheduleWriteHelper.DeserializeFieldFormats(item.NewValue) is null)
+            return (false, "invalid_change_item",
+                "The recorded field format snapshot is not the expected JSON.");
+
+        var currentJson = AgentScheduleWriteHelper.SerializeFieldFormats(definition);
+        if (currentJson == item.OldValue)
+            return (false, null, "The schedule already has the previous formats (no-op).");
+
+        if (!force && currentJson != item.NewValue)
+            return (false, "undo_conflict",
+                "The column formats changed after the operation (conflict).");
+
+        foreach (var format in oldFormats)
+        {
+            var fieldId = AgentScheduleWriteHelper.FindFieldIdByName(definition, format.Name);
+            var field = fieldId is null
+                ? null
+                : AgentScheduleWriteHelper.SafeGetField(definition, fieldId);
+            if (field is null)
+                continue;
+
+            try
+            {
+                field.ColumnHeading = format.Heading ?? string.Empty;
+            }
+            catch (Exception)
+            {
+                // A heading Revit refuses keeps its current text.
+            }
+
+            if (format.WidthMm.HasValue && !field.IsCalculatedField)
+                AgentScheduleWriteHelper.TrySetColumnWidthMm(field, format.WidthMm.Value, out _);
+        }
+
+        return (true, null, null);
+    }
+
+    private static (bool, string?, string?) RevertScheduleStyle(
+        ViewSchedule schedule,
+        ChangeItem item,
+        bool force)
+    {
+        var oldStyle = AgentScheduleWriteHelper.DeserializeStyle(item.OldValue);
+        if (oldStyle is null || AgentScheduleWriteHelper.DeserializeStyle(item.NewValue) is null)
+            return (false, "invalid_change_item",
+                "The recorded style snapshot is not the expected JSON.");
+
+        var currentJson = AgentScheduleWriteHelper.SerializeStyle(schedule);
+        if (currentJson == item.OldValue)
+            return (false, null, "The schedule already has the previous style (no-op).");
+
+        if (!force && currentJson != item.NewValue)
+            return (false, "undo_conflict",
+                "The schedule style changed after the operation (conflict).");
+
+        try
+        {
+#if REVIT2021_OR_GREATER
+            if (oldStyle.StripedRows.HasValue)
+                schedule.HasStripedRows = oldStyle.StripedRows.Value;
+            if (oldStyle.UseStripedRowsOnSheets.HasValue)
+                schedule.UseStripedRowsOnSheets = oldStyle.UseStripedRowsOnSheets.Value;
+#endif
+            if (oldStyle.BodyTextTypeId.HasValue)
+                schedule.BodyTextTypeId = ElementIdCompat.Create(oldStyle.BodyTextTypeId.Value);
+            if (oldStyle.HeaderTextTypeId.HasValue)
+                schedule.HeaderTextTypeId = ElementIdCompat.Create(oldStyle.HeaderTextTypeId.Value);
+            if (oldStyle.TitleTextTypeId.HasValue)
+                schedule.TitleTextTypeId = ElementIdCompat.Create(oldStyle.TitleTextTypeId.Value);
+
+            return (true, null, null);
         }
         catch (Exception ex)
         {

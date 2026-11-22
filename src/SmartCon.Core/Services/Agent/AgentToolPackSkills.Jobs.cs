@@ -34,6 +34,7 @@ public static partial class AgentToolPackSkills
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (≤100), `createTarget:true` — цель создать из ФОП (definition в файле не откатывается).
 - `spec.replacements` — `replace_family_parameter`: `{source:{name|guid}, target:{name|guid}}` (≤50); цель — существующий definition из ФОП, scope/значения/формулы сохраняются.
 - `spec.parameter/guid/builtInParameter/scope/value/unit` — запись параметра (`value` — строка, `""` очищает).
+- `set_parameters` + `select.systemName` (точное имя из list_mep_systems, опционально `systemDomain`) — члены MEP-системы: Elements + BaseEquipment + Piping/DuctNetwork; `includeSubComponents:true` добирает вложенные shared-семейства (фланцы, глубина ≤3) — паттерн «АДСК_ИмяСистемы», чтобы фильтр вида показал и субкомпоненты.
 - `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never` (**по умолчанию never**: джоба не перезаписывает .rvt — файл сохраняет пользователь; не включайте автосейв без явной просьбы).
 - Потолок единиц: `rename_views`/`set_parameters` — 5000, family-action'ы (`map`/`replace_family_parameter`) — 200 **жёстко**: `allowLargeJobs` не поднимает, большие миграции дробятся на несколько джоб.
 

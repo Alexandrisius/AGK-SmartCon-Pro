@@ -25,7 +25,8 @@ public sealed partial class SetParametersJobAction
             {
                 "elementIds", "categoryIds", "categoryNames", "levelIds", "typeIds",
                 "familyName", "typeName", "nameContains", "conditions", "logic",
-                "includeTypeParameters", "limit"
+                "includeTypeParameters", "limit", "systemName", "systemDomain",
+                "includeSubComponents"
             }
         },
         new()
@@ -34,6 +35,11 @@ public sealed partial class SetParametersJobAction
             AllowedKeys = new[] { "parameter", "op", "value", "unit" }
         }
     };
+
+    private static bool IsKnownSystemDomain(string? domain) =>
+        string.Equals(domain, "piping", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(domain, "mechanical", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(domain, "electrical", StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateSpec(SetParametersSpec? spec)
     {
@@ -44,13 +50,22 @@ public sealed partial class SetParametersJobAction
             select.CategoryNames is not { Count: > 0 } && select.LevelIds is not { Count: > 0 } &&
             select.TypeIds is not { Count: > 0 } && select.Conditions is not { Count: > 0 } &&
             string.IsNullOrWhiteSpace(select.FamilyName) && string.IsNullOrWhiteSpace(select.TypeName) &&
-            string.IsNullOrWhiteSpace(select.NameContains))
+            string.IsNullOrWhiteSpace(select.NameContains) && string.IsNullOrWhiteSpace(select.SystemName))
         {
             return "select must contain at least one of elementIds, categoryIds, categoryNames, levelIds, " +
-                   "typeIds, conditions, familyName, typeName or nameContains; an empty selector is refused";
+                   "typeIds, conditions, familyName, typeName, nameContains or systemName; " +
+                   "an empty selector is refused";
         }
         if (select.Limit is < 1)
             return "select.limit must be a positive number";
+        if (!string.IsNullOrWhiteSpace(select.SystemDomain))
+        {
+            if (!IsKnownSystemDomain(select.SystemDomain))
+                return "select.systemDomain must be \"piping\", \"mechanical\" or \"electrical\", not '" +
+                       select.SystemDomain + "'";
+            if (string.IsNullOrWhiteSpace(select.SystemName))
+                return "select.systemDomain requires select.systemName";
+        }
 
         for (var index = 0; index < (select.Conditions?.Count ?? 0); index++)
         {
@@ -131,6 +146,15 @@ public sealed partial class SetParametersJobAction
         public QueryLogic? Logic { get; set; }
         public bool? IncludeTypeParameters { get; set; }
         public int? Limit { get; set; }
+
+        /// <summary>Exact MEP system name: the selection becomes the system members.</summary>
+        public string? SystemName { get; set; }
+
+        /// <summary>Optional domain filter for <see cref="SystemName"/>: piping|mechanical|electrical.</summary>
+        public string? SystemDomain { get; set; }
+
+        /// <summary>Recursively add nested sub-components (shared nested families), depth 3.</summary>
+        public bool? IncludeSubComponents { get; set; }
     }
 
     public sealed class SetParameterUnitArgs

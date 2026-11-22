@@ -70,7 +70,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         List<int> CallsPerRound,
         int Requests,
         int PromptTokens,
-        int CompletionTokens);
+        int CompletionTokens,
+        IReadOnlyList<string> IntermediateAnswers);
 
     private sealed record CaseVerdict(
         bool Passed,
@@ -90,7 +91,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         IReadOnlyList<IAgentTool> tools,
         IReadOnlyList<string> seedSummary,
         Func<string?, List<BenchCall>, List<int>, CaseVerdict> evaluate,
-        Func<string> dumpState)
+        Func<string> dumpState,
+        IReadOnlyList<string>? scriptedUserReplies = null)
     {
         var definitions = tools.Select(tool => tool.Definition).ToList();
         var byName = tools.ToDictionary(tool => tool.Definition.Name, StringComparer.Ordinal);
@@ -130,10 +132,12 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
 
         var calls = new List<BenchCall>();
         var callsPerRound = new List<int>();
+        var intermediateAnswers = new List<string>();
         string? answer = null;
         var requests = 0;
         var promptTokens = 0;
         var completionTokens = 0;
+        var scriptedReplyIndex = 0;
 
         transcript.AppendLine("## Dialog");
         transcript.AppendLine();
@@ -159,6 +163,35 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
 
             if (response.ToolCalls.Count == 0)
             {
+                // Two-step cases (v2 case 4): the model first shows a list for
+                // approval (a reply with no tool calls). When a scripted user
+                // reply is still unused, the harness plays the user, keeps the
+                // intermediate answer and lets the model continue the work.
+                if (scriptedUserReplies is { Count: > 0 } && scriptedReplyIndex < scriptedUserReplies.Count)
+                {
+                    var reply = scriptedUserReplies[scriptedReplyIndex];
+                    scriptedReplyIndex++;
+
+                    intermediateAnswers.Add(response.Content ?? string.Empty);
+                    messages.Add(new Dictionary<string, object?>
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = response.Content
+                    });
+                    messages.Add(new Dictionary<string, object?>
+                    {
+                        ["role"] = "user",
+                        ["content"] = reply
+                    });
+
+                    transcript.AppendLine("**Intermediate answer " + scriptedReplyIndex + ":** " +
+                                          Shorten(response.Content ?? string.Empty, 600));
+                    transcript.AppendLine();
+                    transcript.AppendLine("**Scripted user reply " + scriptedReplyIndex + ":** " + reply);
+                    transcript.AppendLine();
+                    continue;
+                }
+
                 answer = response.Content;
                 break;
             }
@@ -240,6 +273,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                               string.Join(" → ", calls.Select(c =>
                                   c.ToolName + (c.Success ? string.Empty : "(!" + c.ErrorCode + ")"))) + ")");
         transcript.AppendLine("- Final answer: " + (string.IsNullOrWhiteSpace(answer) ? "no" : "yes"));
+        transcript.AppendLine("- Intermediate answers: " + intermediateAnswers.Count +
+                              " (scripted user replies: " + scriptedReplyIndex + ")");
         transcript.AppendLine("- LLM requests: " + requests);
         transcript.AppendLine("- Tokens: prompt " + promptTokens + ", completion " + completionTokens);
         transcript.AppendLine("- Finished: " + DateTime.Now.ToString("O"));
@@ -247,7 +282,8 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         WriteTranscript(caseNumber, transcript.ToString());
 
         return new CaseRun(
-            verdict, answer, calls, callsPerRound, requests, promptTokens, completionTokens);
+            verdict, answer, calls, callsPerRound, requests, promptTokens, completionTokens,
+            intermediateAnswers);
     }
 
     private static void WriteTranscript(int caseNumber, string content)
