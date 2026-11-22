@@ -16,13 +16,7 @@ internal static class AgentClassificationReader
     internal static AgentClassificationTable Read(Document doc)
     {
         var table = AssemblyCodeTable.GetAssemblyCodeTable(doc);
-
-        string? source;
-        using (var reference = table.GetExternalResourceReference(
-            ExternalResourceTypes.BuiltInExternalResourceTypes.AssemblyCodeTable))
-        {
-            source = reference.InSessionPath;
-        }
+        var source = SourceOf(doc, table);
 
         var rows = new List<AgentClassificationEntry>();
         using var entries = table.GetKeyBasedTreeEntries();
@@ -45,5 +39,20 @@ internal static class AgentClassificationReader
         }
 
         return AgentClassificationTable.Build(rows, source);
+    }
+
+    /// <summary>
+    /// Display path of the file the table is loaded from, without reading the
+    /// rows; null when no classifier is assigned to the document.
+    /// </summary>
+    internal static string? SourceOf(Document doc) =>
+        SourceOf(doc, AssemblyCodeTable.GetAssemblyCodeTable(doc));
+
+    private static string? SourceOf(Document doc, AssemblyCodeTable table)
+    {
+        using var reference = table.GetExternalResourceReference(
+            ExternalResourceTypes.BuiltInExternalResourceTypes.AssemblyCodeTable);
+        var path = reference.InSessionPath;
+        return string.IsNullOrWhiteSpace(path) ? null : path;
     }
 }

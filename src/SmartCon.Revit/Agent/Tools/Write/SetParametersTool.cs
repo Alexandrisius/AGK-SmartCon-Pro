@@ -14,12 +14,6 @@ public sealed class SetParametersTool : AgentWriteToolBase
 {
     private const int MaxItems = 500;
 
-    /// <summary>
-    /// Change-item key of the Assembly Description: the enum id resolves on
-    /// every Revit version, a localized display name does not.
-    /// </summary>
-    private const string DescriptionBuiltInName = "ASSEMBLY_DESCRIPTION";
-
     public SetParametersTool(
         IRevitContext revitContext,
         ITransactionService transactions,
@@ -110,8 +104,6 @@ public sealed class SetParametersTool : AgentWriteToolBase
             report.Name = scopeKey + parameterName;
 
             AgentClassificationGuard.Verdict? classification = null;
-            Parameter? descriptionParameter = null;
-            var descriptionBefore = string.Empty;
             if (AgentClassificationGuard.IsAssemblyCode(parameter))
             {
                 classificationTable ??= AgentClassificationReader.Read(doc);
@@ -124,11 +116,6 @@ public sealed class SetParametersTool : AgentWriteToolBase
                     if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
                     continue;
                 }
-
-                descriptionParameter = parameter.Element?.get_Parameter(
-                    AgentParameterResolver.AssemblyDescriptionBuiltIn);
-                if (descriptionParameter is not null)
-                    descriptionBefore = AgentParameterWriteHelper.RawValue(descriptionParameter);
             }
 
             var before = AgentParameterWriteHelper.Describe(parameter);
@@ -186,12 +173,17 @@ public sealed class SetParametersTool : AgentWriteToolBase
                 ? parameter.Element
                 : element;
 
-            // undo_last reverts the change set back to front: the description item goes
-            // first so it is restored AFTER the code, whose own restore makes Revit refill it.
-            var descriptionAfter = RecordDescriptionChange(
-                descriptionParameter, descriptionBefore, owner, scopeKey, outcome);
-            if (descriptionAfter is not null)
-                report.Detail += "; description: " + descriptionAfter;
+            // Revit fills the Assembly Description from the table row of the code and
+            // empties it for a code the table does not know; the parameter is read-only,
+            // so there is nothing to record for undo_last — it follows the restored code.
+            var description = parameter.Element?.get_Parameter(
+                AgentParameterResolver.AssemblyDescriptionBuiltIn);
+            if (classification is not null && description is { HasValue: true })
+            {
+                var descriptionText = description.AsString();
+                if (!string.IsNullOrEmpty(descriptionText))
+                    report.Detail += "; description: " + descriptionText;
+            }
 
             outcome.Items.Add(new ChangeItem
             {
@@ -211,38 +203,6 @@ public sealed class SetParametersTool : AgentWriteToolBase
     private static string UnverifiedNote(AgentClassificationGuard.Verdict verdict) =>
         "The value is not backed by the classification table loaded in this document (" +
         verdict.ErrorCode + ").";
-
-    /// <summary>
-    /// Revit fills the Assembly Description from the table row of a written code.
-    /// The side effect is recorded as its own change item, so undo_last restores
-    /// it together with the code. Returns the description after the write, or
-    /// null when nothing changed.
-    /// </summary>
-    private static string? RecordDescriptionChange(
-        Parameter? description,
-        string descriptionBefore,
-        Element owner,
-        string scopeKey,
-        WriteOutcome outcome)
-    {
-        if (description is null)
-            return null;
-
-        var descriptionAfter = AgentParameterWriteHelper.RawValue(description);
-        if (string.Equals(descriptionBefore, descriptionAfter, StringComparison.Ordinal))
-            return null;
-
-        outcome.Items.Add(new ChangeItem
-        {
-            UniqueId = owner.UniqueId,
-            ElementId = owner.Id.GetValue(),
-            ParameterName = scopeKey + DescriptionBuiltInName,
-            OldValue = descriptionBefore,
-            NewValue = descriptionAfter,
-            Status = ChangeStatus.Applied
-        });
-        return descriptionAfter;
-    }
 
     private static void DescribeBlastRadius(
         Document doc,

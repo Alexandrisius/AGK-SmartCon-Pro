@@ -101,6 +101,22 @@ internal static class AgentParameterWriteHelper
         var onType = element is ElementType
                      || (parameter.Element is not null
                          && parameter.Element.Id.GetValue() != element.Id.GetValue());
+        if (!onType && typeScope
+            && parameter.Definition is InternalDefinition { BuiltInParameter: { } instanceBuiltIn } instanceDefinition
+            && instanceDefinition.BuiltInParameter != BuiltInParameter.INVALID)
+        {
+            // An instance also exposes a view of a type-bound built-in such as the
+            // Assembly Code; the view holds no value of its own. An explicit
+            // scope=type asks for the parameter of the type.
+            var ownerTypeId = element.GetTypeId();
+            if (ownerTypeId != ElementId.InvalidElementId
+                && doc.GetElement(ownerTypeId) is Element ownerType
+                && ownerType.get_Parameter(instanceBuiltIn) is { } ownerParameter)
+            {
+                return new Resolution { Parameter = ownerParameter, IsTypeScope = true };
+            }
+        }
+
         if (onType && !typeScope)
         {
             return new Resolution
