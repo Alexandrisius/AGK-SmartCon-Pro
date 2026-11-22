@@ -1,15 +1,10 @@
-﻿using Autodesk.Revit.UI;
+using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
 #if REVIT2023_OR_GREATER
 using SmartCon.Agent;
 using SmartCon.Agent.Events;
-using SmartCon.Agent.Services;
-using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Agent.Services.Storage;
-using SmartCon.Agent.Services.Tools;
-using SmartCon.Agent.Services.Tools.Read;
-using SmartCon.Agent.Services.Tools.Semantic;
 using SmartCon.Agent.Services.UI;
 using SmartCon.Agent.ViewModels;
 using SmartCon.Agent.Views;
@@ -18,7 +13,6 @@ using SmartCon.App.Events;
 using SmartCon.Core.Logging;
 using SmartCon.App.Services;
 using SmartCon.Core.Models.Agent;
-using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Core.Math.FormulaEngine.Solver;
 using SmartCon.Core.Services.Implementation;
@@ -39,12 +33,7 @@ using SmartCon.ProjectManagement.Views;
 #if REVIT2023_OR_GREATER
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Jobs;
-using SmartCon.Revit.Agent.Jobs.Actions;
 using SmartCon.Revit.Agent.Tools;
-using SmartCon.Revit.Agent.Tools.Families;
-using SmartCon.Revit.Agent.Tools.Jobs;
-using SmartCon.Revit.Agent.Tools.Read;
-using SmartCon.Revit.Agent.Tools.Write;
 #endif
 using SmartCon.Revit.Context;
 using SmartCon.Revit.Events;
@@ -415,17 +404,12 @@ public static partial class ServiceRegistrar
         // IExternalEventHandler adapter lives in SmartCon.App so that
         // SmartCon.Agent never loads RevitAPIUI at type-init time.
         var agentAwaitable = new AgentAwaitableEvent(revitContext);
-        services.AddSingleton(agentAwaitable);
-        services.AddSingleton<IAgentAwaitableEvent>(agentAwaitable);
 
         var agentHandler = new RevitAgentAwaitableEvent(agentAwaitable);
         var agentEvent = ExternalEvent.Create(agentHandler);
         agentAwaitable.Initialize(() => agentEvent.Raise());
 
         var agentSettings = AgentLlmSettings.Load();
-        services.AddSingleton(agentSettings);
-        services.AddSingleton<IAgentLlmClient>(sp =>
-            new OpenAiCompatibleLlmClient(sp.GetRequiredService<AgentLlmSettings>()));
 
         var agentDatabase = new AgentDatabase();
         try
@@ -440,194 +424,28 @@ public static partial class ServiceRegistrar
                 "agent history and change sets will be unavailable]");
         }
 
-        services.AddSingleton(agentDatabase);
-        services.AddSingleton<IAgentConversationStore, SqliteAgentConversationStore>();
-        services.AddSingleton<IAgentAuditLog, SqliteAgentAuditLog>();
-        services.AddSingleton<IAgentChangeSetStore, SqliteAgentChangeSetStore>();
-        services.AddSingleton<IAgentToolCallStore, SqliteAgentToolCallStore>();
-        services.AddSingleton<IAgentUsageStore, SqliteAgentUsageStore>();
-        services.AddSingleton<IAgentWorkingStateStore, SqliteAgentWorkingStateStore>();
-        services.AddSingleton<IAgentToolResultBlobStore, SqliteAgentToolResultBlobStore>();
-        services.AddSingleton<IAgentCompactionStore, SqliteAgentCompactionStore>();
-        services.AddSingleton<IAgentFilterQuarantineStore, SqliteAgentFilterQuarantineStore>();
-        services.AddSingleton<IAgentRuntimeInfo, AgentRuntimeInfo>();
+        // Shared production wiring (AgentToolRegistration/AgentCoreRegistration);
+        // the integration-test production agent host composes the same graph.
+        // The pump stays in the application: it owns the ExternalEvent.
+        var jobStore = new SqliteAgentJobStore(agentDatabase);
+        var jobRunner = services.AddAgentJobEngine(revitContext, jobStore);
+        var jobPumpHandler = new JobPumpEventHandler(jobRunner);
+        var jobPumpEvent = ExternalEvent.Create(jobPumpHandler);
+        jobPumpHandler.Attach(jobPumpEvent);
+        jobRunner.Initialize(() => jobPumpEvent.Raise());
+        services.AddSingleton(jobPumpHandler);
 
-        RegisterJobEngine(services, revitContext, agentDatabase);
         services.AddSingleton<IAgentSelectionProvider, RevitAgentSelectionProvider>();
-        services.AddSingleton<IAgentTool, GetProjectOverviewTool>();
-        services.AddSingleton<IAgentTool, ListViewsTool>();
-        services.AddSingleton<IAgentTool, ListLevelsTool>();
-        services.AddSingleton<IAgentTool, ListCategoriesTool>();
-        services.AddSingleton<IAgentTool, GetSelectedElementsTool>();
-        services.AddSingleton<IAgentTool, QueryElementsTool>();
-        services.AddSingleton<IAgentTool, GetElementDetailsTool>();
-        services.AddSingleton<IAgentTool, SummarizeElementsTool>();
-        services.AddSingleton<IAgentTool, GroupFamiliesBySharedParametersTool>();
-        services.AddSingleton<IAgentTool, AuditFillRateTool>();
-        services.AddSingleton<IAgentTool, ListTypeParameterCandidatesTool>();
-        services.AddSingleton<IAgentTool, GetElementRelationsTool>();
-        services.AddSingleton<IAgentTool, TraceSystemChainTool>();
-        services.AddSingleton<IAgentTool, GetRoomContentsTool>();
-        services.AddSingleton<IAgentTool, ListViewTemplatesTool>();
-        services.AddSingleton<IAgentTool, GetViewSettingsTool>();
-        services.AddSingleton<IAgentTool, GetViewTemplateDetailsTool>();
-        services.AddSingleton<IAgentTool, GetCurrentViewInfoTool>();
-        services.AddSingleton<IAgentTool, ListSheetsTool>();
-        services.AddSingleton<IAgentTool, GetSheetContentTool>();
-        services.AddSingleton<IAgentTool, ListSchedulesTool>();
-        services.AddSingleton<IAgentTool, GetScheduleDataTool>();
-        services.AddSingleton<IAgentTool, GetScheduleDefinitionTool>();
-        services.AddSingleton<IAgentTool, ListFamiliesTool>();
-        services.AddSingleton<IAgentTool, ListFamilyTypesTool>();
-        services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
-        services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
-        services.AddSingleton<IAgentTool, ListSharedParametersTool>();
-        services.AddSingleton<IAgentTool, ListProjectParametersTool>();
-        services.AddSingleton<IAgentTool, ListFiltersTool>();
-        services.AddSingleton<IAgentTool, GetFilterDetailsTool>();
-        services.AddSingleton<IAgentTool, ListFilterableParametersTool>();
-        services.AddSingleton<IAgentTool, ListSystemTypesTool>();
-        services.AddSingleton<IAgentTool, ListMepSystemsTool>();
-        services.AddSingleton<IAgentTool, GetBrowserOrganizationTool>();
-        services.AddSingleton<IAgentTool, ListMaterialsTool>();
-        services.AddSingleton<IAgentTool, ListScopeBoxesTool>();
-
-        // --- Agent write layer (Phase 2): dry-run by default, change sets, undo ---
-        services.AddSingleton<IAgentTool, RenameViewsTool>();
-        services.AddSingleton<IAgentTool, RenameLevelsTool>();
-        services.AddSingleton<IAgentTool, ApplyViewTemplateTool>();
-        services.AddSingleton<IAgentTool, SetViewTemplateInclusionTool>();
-        services.AddSingleton<IAgentTool, SetViewRangeTool>();
-        services.AddSingleton<IAgentTool, SetViewCropTool>();
-        services.AddSingleton<IAgentTool, SetViewVisibilityTool>();
-        services.AddSingleton<IAgentTool, ConfigureViewsTool>();
-        services.AddSingleton<IAgentTool, CopyViewSettingsTool>();
-        services.AddSingleton<IAgentTool, CopyCropFromViewTool>();
-        services.AddSingleton<IAgentTool, AssignScopeBoxTool>();
-        services.AddSingleton<IAgentTool, CreateViewFilterTool>();
-        services.AddSingleton<IAgentTool, SetFilterRulesTool>();
-        services.AddSingleton<IAgentTool, RenameFilterTool>();
-        services.AddSingleton<IAgentTool, DeleteFilterTool>();
-        services.AddSingleton<IAgentTool, MergeDuplicateFiltersTool>();
-        services.AddSingleton<IAgentTool, SetViewParametersTool>();
-        services.AddSingleton<IAgentTool, DeleteViewsTool>();
-        services.AddSingleton<IAgentTool, DuplicateViewTool>();
-        services.AddSingleton<IAgentTool, CreateViewTool>();
-        services.AddSingleton<IAgentTool, CreateFloorPlansTool>();
-        services.AddSingleton<IAgentTool, CreateViewsBatchTool>();
-        services.AddSingleton<IAgentTool, SetBrowserFolderTool>();
-        services.AddSingleton<IAgentTool, DeleteSheetsTool>();
-        services.AddSingleton<IAgentTool, DeleteElementsTool>();
-        services.AddSingleton<IAgentTool, DeleteSchedulesTool>();
-        services.AddSingleton<IAgentTool, CreateScheduleTool>();
-        services.AddSingleton<IAgentTool, AddScheduleFieldTool>();
-        services.AddSingleton<IAgentTool, SetScheduleFilterTool>();
-        services.AddSingleton<IAgentTool, SetScheduleSortTool>();
-        services.AddSingleton<IAgentTool, PlaceScheduleOnSheetTool>();
-        services.AddSingleton<IAgentTool, RemoveScheduleFieldTool>();
-        services.AddSingleton<IAgentTool, SetScheduleFieldOrderTool>();
-        services.AddSingleton<IAgentTool, SetScheduleFieldVisibilityTool>();
-        services.AddSingleton<IAgentTool, SetScheduleTotalsTool>();
-        services.AddSingleton<IAgentTool, MoveScheduleOnSheetTool>();
-        services.AddSingleton<IAgentTool, RenameScheduleTool>();
-        services.AddSingleton<IAgentTool, SetScheduleFieldFormatTool>();
-        services.AddSingleton<IAgentTool, SetScheduleStyleTool>();
-        services.AddSingleton<IAgentTool, RemoveScheduleFromSheetTool>();
-        services.AddSingleton<IAgentTool, CloneScheduleTool>();
-        services.AddSingleton<IAgentTool, GetTitleblockOptionsTool>();
-        services.AddSingleton<IAgentTool, GetViewPlacementPreviewTool>();
-        services.AddSingleton<IAgentTool, BuildSystemSheetsTool>();
-        services.AddSingleton<IAgentTool, OpenModelBackgroundTool>();
-        services.AddSingleton<IAgentTool, CloseModelTool>();
-        services.AddSingleton<IAgentTool, ListKnownModelsTool>();
-        services.AddSingleton<IAgentTool, SetMepSystemTypeTool>();
-        services.AddSingleton<IAgentTool, CreateSheetTool>();
-        services.AddSingleton<IAgentTool, CreateViewportsTool>();
-        services.AddSingleton<IAgentTool, MoveViewportTool>();
-        services.AddSingleton<IAgentTool, MoveViewportsTool>();
-        services.AddSingleton<IAgentTool, RemoveViewportsTool>();
-        services.AddSingleton<IAgentTool, SetSheetNumberTool>();
-        services.AddSingleton<IAgentTool, RenumberSheetsTool>();
-        services.AddSingleton<IAgentTool, RenameSheetTool>();
-        services.AddSingleton<IAgentTool, SanitizeSheetNumbersTool>();
-        services.AddSingleton<IAgentTool, DeleteFamilyTypesTool>();
-        services.AddSingleton<IAgentTool, RemoveFamilyParameterTool>();
-        services.AddSingleton<IAgentTool, ReplaceFamilyParameterTool>();
-        services.AddSingleton<IAgentTool, SetFilterOverridesTool>();
-        services.AddSingleton<IAgentTool, SetParametersTool>();
-        services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
-        services.AddSingleton<IAgentTool, AddProjectSharedParameterTool>();
-        services.AddSingleton<IAgentTool, RenameFamilyParameterTool>();
-        services.AddSingleton<IAgentTool, AddFamilyParameterTool>();
-        services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();
-        services.AddSingleton<IAgentTool, SetFamilyFormulaTool>();
-        services.AddSingleton<IAgentTool, MapFamilyParametersTool>();
-        services.AddSingleton<IAgentTool, DuplicateFamilyTypeTool>();
-        services.AddSingleton<IAgentTool, RenameFamilyTypeTool>();
-        services.AddSingleton<IAgentTool, ReplaceFamilyTypeTool>();
-        services.AddSingleton<IAgentTool, LoadFamilyTool>();
-        services.AddSingleton<IAgentTool, PurgeFamiliesTool>();
-        services.AddSingleton<IAgentTool, DiscardChangeSetTool>();
-        services.AddSingleton<IAgentTool, UndoLastTool>();
-        services.AddSingleton<IAgentTool, UndoUntilTool>();
-        services.AddSingleton<IAgentTool, SaveDocumentTool>();
-        services.AddSingleton<IAgentTool, ListChangeSetsTool>();
-        services.AddSingleton<IAgentTool, GetChangeSetDetailsTool>();
-        services.AddSingleton<IAgentTool, AuditModelTool>();
-        services.AddSingleton<IAgentTool>(sp => new ExecutePlanTool(
-            () => sp.GetRequiredService<IToolRegistry>(),
-            sp.GetRequiredService<IAgentAwaitableEvent>(),
-            sp.GetRequiredService<IAgentAuditLog>(),
-            sp.GetRequiredService<AgentSessionContext>()));
-
-        services.AddSingleton<AgentConfirmationService>();
-        services.AddSingleton<IAgentConfirmationService>(
-            sp => sp.GetRequiredService<AgentConfirmationService>());
-
-        services.AddSingleton<AgentSessionContext>();
-        services.AddSingleton<FindToolsTool>();
-        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<FindToolsTool>());
-        services.AddSingleton<LoadToolPackTool>();
-        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<LoadToolPackTool>());
-        services.AddSingleton<ReadToolResultTool>();
-        services.AddSingleton<IAgentTool>(sp => sp.GetRequiredService<ReadToolResultTool>());
-
-        var decisionsSettings = AgentDecisionsSettings.Load();
-        services.AddSingleton(decisionsSettings);
-        services.AddSingleton<DecisionCostTracker>();
-        services.AddSingleton<IAgentDecisionClient>(sp =>
-            new HttpDecisionClient(
-                sp.GetRequiredService<AgentDecisionsSettings>(),
-                costTracker: sp.GetRequiredService<DecisionCostTracker>()));
-        services.AddSingleton(sp =>
+        services.AddRevitAgentTools();
+        services.AddAgentCore(new AgentCoreOptions
         {
-            // Always wrapped: the decision router falls back to BM25 when the
-            // decision layer is disabled at startup, and picks the model chosen in
-            // the settings UI immediately (no restart).
-            return new DecisionsToolRouter(
-                new RuleToolRouter(), sp.GetRequiredService<IAgentDecisionClient>());
+            Settings = agentSettings,
+            Database = agentDatabase,
+            AwaitableEvent = agentAwaitable,
+            RevitContext = revitContext
         });
-        services.AddSingleton<IToolRouter>(sp => sp.GetRequiredService<DecisionsToolRouter>());
 
-        services.AddSingleton<IToolRegistry>(sp => new AgentToolRegistry(
-            sp.GetServices<IAgentTool>(),
-            sp.GetRequiredService<FindToolsTool>(),
-            sp.GetRequiredService<LoadToolPackTool>()));
-        services.AddSingleton<IAgentTool>(sp => new SemanticMatchTool(
-            sp.GetRequiredService<IAgentDecisionClient>(),
-            sp.GetRequiredService<AgentDecisionsSettings>()));
-        services.AddSingleton<IAgentTool, ReadClassifierTool>();
-        services.AddSingleton<IToolExecutor, AgentToolExecutor>();
-        services.AddSingleton<IAgentProjectContextProvider, AgentProjectContextProvider>();
-        services.AddSingleton<AgentPromptBuilder>();
-        services.AddSingleton<IAgentSummarizer>(sp => new LlmAgentSummarizer(
-            sp.GetRequiredService<IAgentLlmClient>(),
-            sp.GetRequiredService<AgentLlmSettings>()));
-        services.AddSingleton<IAgentContextCompactor>(sp => new AgentContextCompactor(
-            sp.GetRequiredService<IAgentSummarizer>(),
-            sp.GetRequiredService<AgentLlmSettings>(),
-            sp.GetRequiredService<IAgentCompactionStore>()));
-        services.AddSingleton<AgentOrchestrator>();
+        // UI-only agent registrations (WPF/RevitAPIUI): application layer.
         services.AddSingleton<IAgentFilePicker, WpfAgentFilePicker>();
         services.AddSingleton<IAgentClipboardService, WpfAgentClipboardService>();
         services.AddSingleton<AgentMainViewModel>();

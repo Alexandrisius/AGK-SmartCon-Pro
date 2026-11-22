@@ -16,6 +16,7 @@ using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 using RevitFamily = Autodesk.Revit.DB.Family;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -49,7 +50,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase7()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case7SeedError = null;
         _case7ViewsOnSheet = false;
         _case7Truth = Case7Truth();
@@ -535,41 +536,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase7Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var decisions = AgentDecisionsSettings.Load();
-        _case7Decisions = new HttpDecisionClient(decisions);
-
-        var tools = new List<IAgentTool>
-        {
-            new GroupFamiliesBySharedParametersTool(context),
-            new ListSchedulesTool(context),
-            new GetScheduleDefinitionTool(context),
-            new GetScheduleDataTool(context),
-            new ListFamiliesTool(context),
-            new ListFamilyTypesTool(context),
-            new GetFamilyParametersTool(context),
-            new ListSharedParametersTool(context),
-            new GetProjectOverviewTool(context),
-            new ListCategoriesTool(context),
-            new StartJobTool(_case7Runner!, _case7Store!, context),
-            new GetJobStatusTool(_case7Store!, _case7Runner!),
-            new GetJobReportTool(
-                _case7Store!, new JobReportBuilder(_case7Store!, _case7JobActions!), context),
-            new RollbackJobTool(_case7Store!, _case7Runner!, context),
-            new MapFamilyParametersTool(context, _transactions!, _changeSets!),
-            new CreateScheduleTool(context, _transactions!, _changeSets!),
-            new AddScheduleFieldTool(context, _transactions!, _changeSets!),
-            new SetScheduleFilterTool(context, _transactions!, _changeSets!),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new SemanticMatchTool(_case7Decisions, decisions),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     private void CleanupCase7()
     {

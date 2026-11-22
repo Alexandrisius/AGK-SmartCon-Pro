@@ -7,6 +7,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -69,16 +70,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case6_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase6();
-        var run = RunCase(
-            6, Case6Title, Case6Text, config, CreateCase6Tools(),
+        SeedOnBenchBaseLive(6, Case6Title, SeedCase6);
+        var run = RunProductionCase(
+            6, Case6Title, Case6Text,
             Case6SeedSummary(), EvaluateCase6, DumpCase6State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -90,7 +90,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case6_SeedVerifies()
     {
-        SeedCase6();
+        SeedOnBenchBase("case6", SeedCase6);
 
         await Assert.That(_case6.LevelIds.Count).IsEqualTo(Case6LevelCount);
         await Assert.That(_case6.TemplateIds.Count).IsEqualTo(2);
@@ -140,7 +140,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase6()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case6 = new Case6SeedState();
         _case6SeedError = null;
         if (!ModelSeed.HasFloorPlanViewType(Doc))
@@ -362,29 +362,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return lines;
     }
 
-    private List<IAgentTool> CreateCase6Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new GetProjectOverviewTool(context),
-            new ListLevelsTool(context),
-            new ListViewsTool(context),
-            new ListViewTemplatesTool(context),
-            new GetViewSettingsTool(context),
-            new GetCurrentViewInfoTool(context),
-            new QueryElementsTool(context),
-            new SummarizeElementsTool(context),
-            new CreateFloorPlansTool(context, _transactions!, _changeSets!),
-            new CreateViewsBatchTool(context, _transactions!, _changeSets!),
-            new ApplyViewTemplateTool(context, _transactions!, _changeSets!),
-            new RenameViewsTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     // ── Локаторы планов/шаблонов ────────────────────────────────────────
 

@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -110,8 +111,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case14_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -119,12 +119,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase14();
+            SeedOnBenchBaseLive(14, Case14Title, SeedCase14);
             // Appendix-строка харнесса: конкретный путь temp-донора (контекст
             // харнесса; текст кейса из SSOT не меняется).
             var caseText = Case14Text + "\n\n(Модель-эталон: " + _case14DonorPath + ")";
-            var run = RunCase(
-                14, Case14Title, caseText, config, CreateCase14Tools(),
+            var run = RunProductionCase(
+                14, Case14Title, caseText,
                 Case14SeedSummary(), EvaluateCase14, DumpCase14State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -143,7 +143,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase14();
+            SeedOnBenchBase("case14", SeedCase14);
 
             await Assert.That(File.Exists(_case14DonorPath)).IsTrue();
             await Assert.That(_case14DonorStamp!.Length).IsGreaterThan(0);
@@ -239,7 +239,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case14DonorStamp = new FileInfo(_case14DonorPath);
 
         // Основная модель: те же семейства (те же имена) с пустой маркой.
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         if (!ModelSeed.HasFloorPlanViewType(Doc))
         {
             Skip.Test("В шаблоне проекта по умолчанию нет ViewFamilyType для плана этажа");

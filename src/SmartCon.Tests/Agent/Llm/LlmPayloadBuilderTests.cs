@@ -61,6 +61,95 @@ public sealed class LlmPayloadBuilderTests
             .GetProperty("parameters").GetProperty("type").GetString());
     }
 
+    [Fact]
+    public void Build_ReasoningEffortFormat_EmitsTopLevelEffort()
+    {
+        var request = Request();
+
+        var payload = LlmPayloadBuilder.Build(
+            request,
+            reasoning: new AgentReasoningOptions(
+                AgentReasoningFormat.ReasoningEffort, "max"));
+        var json = JsonSerializer.Serialize(payload);
+
+        Assert.Contains("\"reasoning_effort\":\"max\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reasoning\":{\"effort\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_ReasoningObjectFormat_EmitsEffortObject()
+    {
+        var request = Request();
+
+        var payload = LlmPayloadBuilder.Build(
+            request,
+            reasoning: new AgentReasoningOptions(
+                AgentReasoningFormat.ReasoningObject, "max"));
+        var json = JsonSerializer.Serialize(payload);
+
+        Assert.Contains("\"reasoning\":{\"effort\":\"max\"}", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reasoning_effort\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_WithoutReasoningOptions_EmitsNoReasoningFields()
+    {
+        var request = Request();
+
+        var json = JsonSerializer.Serialize(LlmPayloadBuilder.Build(request));
+
+        Assert.DoesNotContain("\"reasoning_effort\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reasoning\":", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_ReasoningSitsAfterMaxTokensAndBeforeCacheFields()
+    {
+        var request = Request();
+        request = new AgentChatRequest
+        {
+            Model = request.Model,
+            Messages = request.Messages,
+            Tools = request.Tools,
+            Temperature = request.Temperature,
+            MaxOutputTokens = 64_000,
+            ConversationId = Guid.NewGuid()
+        };
+        var plan = AgentProviderCachePolicy.Resolve(
+            "openai", "gpt-5.5", 0.2, Guid.NewGuid());
+
+        var json = JsonSerializer.Serialize(LlmPayloadBuilder.Build(
+            request, plan,
+            reasoning: new AgentReasoningOptions(
+                AgentReasoningFormat.ReasoningEffort, "max")));
+
+        var maxTokensAt = json.IndexOf("\"max_tokens\"", StringComparison.Ordinal);
+        var reasoningAt = json.IndexOf("\"reasoning_effort\"", StringComparison.Ordinal);
+        var cacheKeyAt = json.IndexOf("\"prompt_cache_key\"", StringComparison.Ordinal);
+
+        Assert.True(maxTokensAt >= 0, "max_tokens expected");
+        Assert.True(reasoningAt > maxTokensAt, "reasoning_effort must follow max_tokens");
+        if (cacheKeyAt >= 0)
+            Assert.True(reasoningAt < cacheKeyAt, "reasoning_effort must precede cache fields");
+    }
+
+    [Fact]
+    public void Build_BudgetOverride_ReplacesOrOmitsMaxTokens()
+    {
+        var baseRequest = new AgentChatRequest
+        {
+            Model = "m",
+            Messages = new[] { AgentMessage.User("hi") },
+            MaxOutputTokens = 64_000
+        };
+
+        var halved = LlmPayloadBuilder.Build(baseRequest, maxOutputTokens: 32_000);
+        Assert.Equal(32_000, halved["max_tokens"]);
+
+        var omitted = LlmPayloadBuilder.Build(baseRequest, omitMaxOutputTokens: true);
+        Assert.False(omitted.ContainsKey("max_tokens"));
+    }
+
     private static AgentChatRequest Request() => new()
     {
         Model = "test-model",

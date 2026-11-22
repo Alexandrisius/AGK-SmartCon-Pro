@@ -16,6 +16,7 @@ using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -87,8 +88,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case10_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -96,12 +96,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase10();
+            SeedOnBenchBaseLive(10, Case10Title, SeedCase10);
             // Appendix-строка харнесса: путь к temp-файлу классификатора, созданному
             // сидом (контекст харнесса, не изменение текста кейса из SSOT).
             var caseText = Case10Text + "\n\n(Файл классификатора: " + _case10ClassifierPath + ")";
-            var run = RunCase(
-                10, Case10Title, caseText, config, CreateCase10Tools(),
+            var run = RunProductionCase(
+                10, Case10Title, caseText,
                 Case10SeedSummary(), EvaluateCase10, DumpCase10State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -120,7 +120,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase10();
+            SeedOnBenchBase("case10", SeedCase10);
 
             await Assert.That(_case10FamilyNames.Count).IsEqualTo(Case10FamilySpecs().Length);
             await Assert.That(_case10BallValveTypes).IsGreaterThanOrEqualTo(2);
@@ -148,7 +148,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         // MEP-шаблон установки: нужны PipeType/PipingSystemType для системной
         // трубы (паттерн AgentRelationsToolsTests). Отсутствие — только скип.
         _document = SampleFiles.NewMepTemplateDocument(Application);
-        _document ??= Application.NewProjectDocument(UnitSystem.Metric);
+        _document ??= BenchDocuments.NewBase(Application);
         if (!ModelSeed.HasPipeTypes(Doc))
         {
             Skip.Test("В шаблоне проекта нет типов труб — сид кейса 10 невозможен");
@@ -409,37 +409,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return lines;
     }
 
-    private List<IAgentTool> CreateCase10Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var decisions = AgentDecisionsSettings.Load();
-        _case10Decisions = new HttpDecisionClient(decisions);
-
-        var tools = new List<IAgentTool>
-        {
-            new ListFamiliesTool(context),
-            new ListFamilyTypesTool(context),
-            new GetElementDetailsTool(context),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new ReadClassifierTool(),
-            new SemanticMatchTool(_case10Decisions, decisions),
-            new QueryElementsTool(context),
-            new SummarizeElementsTool(context),
-            new UndoLastTool(context, _transactions!, _changeSets!),
-            new ListViewsTool(context),
-            new ListLevelsTool(context),
-            new ListCategoriesTool(context),
-            new GetProjectOverviewTool(context),
-            new GetCurrentViewInfoTool(context),
-            new GetViewSettingsTool(context),
-            new GetSelectedElementsTool(context, new Case10NoSelection())
-        };
-
-        var findTools = new FindToolsTool(new RuleToolRouter());
-        findTools.Attach(new AgentToolRegistry(tools));
-        tools.Add(findTools);
-        return tools;
-    }
 
     private sealed class Case10NoSelection : IAgentSelectionProvider
     {
@@ -576,5 +545,27 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return new CaseVerdict(false, 0.5, detail, redFlags);
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
+    }
+    /// <summary>Синхронный awaitable-event для сида (read_classifier в Case10ParseClassifier).</summary>
+    private sealed class InlineAwaitableEvent : IAgentAwaitableEvent
+    {
+        private static readonly object App = new();
+
+        public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default) =>
+            Task.FromResult(funcWithApp(App));
+
+        public Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default)
+        {
+            actionWithApp(App);
+            return Task.CompletedTask;
+        }
+
+        public void ProcessQueue(object revitApp)
+        {
+        }
+
+        public void Initialize(Action onRaise)
+        {
+        }
     }
 }

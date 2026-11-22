@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -88,7 +89,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// </summary>
     private void OpenCase1DocumentOrSkip()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         if (Case1OrganizationWritable())
             return;
 

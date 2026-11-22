@@ -145,7 +145,10 @@ public sealed partial class AgentOrchestratorTests
             // 500k window this ~57k history stays verbatim (by design). A small
             // window puts it above the gate and exercises the projection path.
             ContextWindowTokens = 80_000,
-            ContextThreshold = 0.7
+            ContextThreshold = 0.7,
+            // The trigger subtracts the output budget from the window; pin the
+            // legacy value so this test exercises masking, not hard shrink.
+            MaxOutputTokens = 8_192
         };
         var orchestrator = CreateOrchestrator(
             llm,

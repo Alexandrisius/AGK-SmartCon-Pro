@@ -73,7 +73,9 @@ public static class AgentProviderCachePolicy
         string? model,
         double? temperature,
         Guid? conversationId,
-        string? cacheKey = null)
+        string? cacheKey = null,
+        string? reasoningEffort = null,
+        AgentReasoningFormat reasoningFormat = AgentReasoningFormat.None)
     {
         var normalizedProvider = provider?.Trim().ToLowerInvariant() ?? string.Empty;
         var normalizedModel = model?.Trim() ?? string.Empty;
@@ -88,7 +90,9 @@ public static class AgentProviderCachePolicy
         return new AgentCachePlan
         {
             Kind = kind,
-            Namespace = BuildNamespace(normalizedProvider, normalizedModel, temperature),
+            Namespace = BuildNamespace(
+                normalizedProvider, normalizedModel, temperature,
+                reasoningEffort, reasoningFormat),
             OpenCodeSession = family == ProviderFamily.OpenCodeGo && key.Length > 0
                 ? "ses_" + key
                 : null,
@@ -100,11 +104,36 @@ public static class AgentProviderCachePolicy
         };
     }
 
-    /// <summary>Provider|model|effort tuple; a change means a different cache.</summary>
-    public static string BuildNamespace(string? provider, string? model, double? temperature) =>
-        (provider ?? string.Empty).Trim().ToLowerInvariant() +
-        "|" + (model ?? string.Empty).Trim() +
-        "|t=" + (temperature?.ToString("F2", CultureInfo.InvariantCulture) ?? "-");
+    /// <summary>
+    /// Provider|model|temperature tuple plus the effective reasoning effort and
+    /// format when a reasoning parameter is sent; a change means a different cache.
+    /// </summary>
+    public static string BuildNamespace(
+        string? provider,
+        string? model,
+        double? temperature,
+        string? reasoningEffort = null,
+        AgentReasoningFormat reasoningFormat = AgentReasoningFormat.None)
+    {
+        var value = (provider ?? string.Empty).Trim().ToLowerInvariant()
+            + "|" + (model ?? string.Empty).Trim()
+            + "|t=" + (temperature?.ToString("F2", CultureInfo.InvariantCulture) ?? "-");
+
+        if (reasoningFormat != AgentReasoningFormat.None)
+        {
+            value += "|e=" + (reasoningEffort ?? "-")
+                + "|rf=" + FormatToken(reasoningFormat);
+        }
+
+        return value;
+    }
+
+    private static string FormatToken(AgentReasoningFormat format) => format switch
+    {
+        AgentReasoningFormat.ReasoningEffort => "reasoning_effort",
+        AgentReasoningFormat.ReasoningObject => "reasoning",
+        _ => "none"
+    };
 
     /// <summary>
     /// Log line when the cache namespace of the client changes (model or effort

@@ -228,6 +228,154 @@ public sealed class AgentLlmSettingsTests : IDisposable
         Assert.False(plan.UseAnthropicBreakpoints);
     }
 
+    [Fact]
+    public void Defaults_ReasoningAndBudget_FitEffortMax()
+    {
+        var settings = new AgentLlmSettings();
+
+        Assert.Equal(AgentLlmSettings.DefaultReasoningEffort, settings.ReasoningEffort);
+        Assert.Equal("max", settings.ReasoningEffort);
+        Assert.Null(settings.ReasoningFormat);
+        Assert.Equal(64_000, settings.MaxOutputTokens);
+        Assert.Equal(1_800, settings.MaxRequestSeconds);
+        Assert.Equal(120, settings.TimeoutSeconds);
+    }
+
+    [Theory]
+    [InlineData("openrouter", AgentReasoningFormat.ReasoningObject)]
+    [InlineData("zai-glm", AgentReasoningFormat.ReasoningEffort)]
+    [InlineData("opencode-go", AgentReasoningFormat.ReasoningEffort)]
+    [InlineData("mystery", AgentReasoningFormat.ReasoningEffort)]
+    public void EffectiveReasoningFormat_AutoFollowsTheProvider(
+        string provider,
+        AgentReasoningFormat expected)
+    {
+        var settings = new AgentLlmSettings
+        {
+            Provider = provider,
+            ReasoningFormat = null
+        };
+
+        Assert.Equal(expected, settings.EffectiveReasoningFormat);
+
+        // An explicit choice wins over the provider default.
+        settings.ReasoningFormat = AgentReasoningFormat.None;
+        Assert.Equal(AgentReasoningFormat.None, settings.EffectiveReasoningFormat);
+    }
+
+    [Fact]
+    public void Load_ReadsReasoningSettingsAndClampsBudget()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_PROVIDER"] = "zai-glm",
+                ["SMARTCON_LLM_REASONING_FORMAT"] = "reasoning",
+                ["SMARTCON_LLM_REASONING_EFFORT"] = "XHigh ",
+                ["SMARTCON_LLM_MAX_OUTPUT_TOKENS"] = "1",
+                ["SMARTCON_LLM_MAX_REQUEST_SECONDS"] = "10"
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.Equal(AgentReasoningFormat.ReasoningObject, settings.ReasoningFormat);
+                Assert.Equal("xhigh", settings.ReasoningEffort);
+                Assert.Equal(AgentLlmSettings.MinMaxOutputTokens, settings.MaxOutputTokens);
+                Assert.Equal(60, settings.MaxRequestSeconds);
+            });
+    }
+
+    [Fact]
+    public void Load_UnknownEffortAndFormat_FallBackWithWarnings()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_REASONING_FORMAT"] = "bogus",
+                ["SMARTCON_LLM_REASONING_EFFORT"] = "ultra"
+            },
+            () =>
+            {
+                var settings = AgentLlmSettings.Load();
+
+                Assert.Null(settings.ReasoningFormat);
+                Assert.Equal("max", settings.ReasoningEffort);
+            });
+    }
+
+    [Fact]
+    public void Load_AutoFormatChoice_StaysAuto()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_REASONING_FORMAT"] = "auto"
+            },
+            () =>
+            {
+                Assert.Null(AgentLlmSettings.Load().ReasoningFormat);
+            });
+    }
+
+    [Fact]
+    public void Load_MaxOutputTokensAboveCap_IsClamped()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_MAX_OUTPUT_TOKENS"] = "999000"
+            },
+            () =>
+            {
+                Assert.Equal(
+                    AgentLlmSettings.MaxMaxOutputTokens,
+                    AgentLlmSettings.Load().MaxOutputTokens);
+            });
+    }
+
+    [Fact]
+    public void SaveValues_RoundTripThroughLoad()
+    {
+        WithEnvironment(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["SMARTCON_LLM_PROVIDER"] = null,
+                ["SMARTCON_LLM_MODEL"] = null,
+                ["SMARTCON_LLM_REASONING_FORMAT"] = null,
+                ["SMARTCON_LLM_REASONING_EFFORT"] = null,
+                ["SMARTCON_LLM_MAX_OUTPUT_TOKENS"] = null,
+                ["SMARTCON_ZAI_API_KEY"] = null,
+                ["SMARTCON_ZAI_BASE_URL"] = null
+            },
+            () =>
+            {
+                var original = new AgentLlmSettings
+                {
+                    Provider = "zai-glm",
+                    Model = "glm-5.3",
+                    ApiKey = "sk-x",
+                    BaseUrl = AgentLlmSettings.DefaultZaiBaseUrl,
+                    ReasoningFormat = AgentReasoningFormat.ReasoningEffort,
+                    ReasoningEffort = "high",
+                    MaxOutputTokens = 123_456
+                };
+
+                var saved = original.BuildSaveValues();
+                Assert.Equal("reasoning_effort", saved["SMARTCON_LLM_REASONING_FORMAT"]);
+                Assert.Equal("high", saved["SMARTCON_LLM_REASONING_EFFORT"]);
+                Assert.Equal("123456", saved["SMARTCON_LLM_MAX_OUTPUT_TOKENS"]);
+
+                AgentLlmSettings.EnvValuesProvider = () => saved;
+                var loaded = AgentLlmSettings.Load();
+
+                Assert.Equal("zai-glm", loaded.Provider);
+                Assert.Equal(AgentReasoningFormat.ReasoningEffort, loaded.ReasoningFormat);
+                Assert.Equal("high", loaded.ReasoningEffort);
+                Assert.Equal(123_456, loaded.MaxOutputTokens);
+            });
+    }
+
     private static void WithEnvironment(
         IReadOnlyDictionary<string, string?> values,
         Action action,

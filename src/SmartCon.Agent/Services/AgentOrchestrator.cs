@@ -305,6 +305,7 @@ public sealed partial class AgentOrchestrator
                     round, elapsedMinutes, contextTokens, contextLimit, lastCompaction));
                 progress?.Report(AgentProgress.ContextUsage(
                     contextTokens, contextLimit, lastCompaction));
+                var roundCompaction = lastCompaction;
                 lastCompaction = null;
 
                 var requestedWorkingCount = working.Count;
@@ -323,74 +324,28 @@ public sealed partial class AgentOrchestrator
                         ? LanguageManager.GetString("Agent_Status_Thinking") ?? "Thinking…"
                         : LanguageManager.GetString("Agent_Status_Continuing") ?? "Continuing…"));
 
-                var request = new AgentChatRequest
+                var roundResult = await RequestRoundCompletionAsync(
+                    messages,
+                    definitions,
+                    conversationId,
+                    round,
+                    elapsedMinutes,
+                    contextTokens,
+                    contextLimit,
+                    roundCompaction,
+                    estimatedPrompt,
+                    staticHash,
+                    toolSetHash,
+                    progress,
+                    ct).ConfigureAwait(false);
+
+                var completion = roundResult.Completion;
+                usage = Add(usage, roundResult.Usage);
+                lastRequestId = roundResult.RequestId ?? lastRequestId;
+                if (roundResult.HasActualPromptTokens)
                 {
-                    Model = _settings.Model,
-                    Messages = messages,
-                    Tools = definitions,
-                    Temperature = _settings.Temperature,
-                    MaxOutputTokens = _settings.MaxOutputTokens,
-                    ConversationId = conversationId,
-                    CacheKey = conversationId.ToString("N")
-                };
-
-                AgentChatResponse? completion = null;
-                await foreach (var streamEvent in _llm.StreamAsync(request, ct).ConfigureAwait(false))
-                {
-                    switch (streamEvent.Kind)
-                    {
-                        case LlmStreamEventKind.TextDelta:
-                            if (!string.IsNullOrEmpty(streamEvent.Text))
-                                progress?.Report(AgentProgress.TextDelta(streamEvent.Text!));
-                            break;
-
-                        case LlmStreamEventKind.ReasoningDelta:
-                            if (!string.IsNullOrEmpty(streamEvent.Text))
-                                progress?.Report(AgentProgress.ReasoningDelta(streamEvent.Text!));
-                            break;
-
-                        case LlmStreamEventKind.ToolCallStarted:
-                            progress?.Report(new AgentProgress
-                            {
-                                Kind = AgentProgressKind.ToolStarted,
-                                ToolCallId = streamEvent.ToolCallId,
-                                ToolName = streamEvent.ToolName
-                            });
-                            break;
-
-                        case LlmStreamEventKind.Error:
-                            throw new AgentLlmException(
-                                streamEvent.Error ?? "Unknown LLM stream error.");
-
-                        case LlmStreamEventKind.Completed:
-                            completion = streamEvent.Completion;
-                            break;
-                    }
-                }
-
-                if (completion is null)
-                    throw new AgentLlmException("LLM stream ended without a completion event.");
-
-                usage = Add(usage, completion.Usage);
-                lastRequestId = completion.RequestId ?? lastRequestId;
-                SmartConLogger.Info(AgentCacheLog.Build(
-                    round, completion.RequestId, completion.Usage, staticHash, toolSetHash));
-                if (completion.Usage.PromptTokens > 0)
-                {
-                    lastActualPromptTokens = completion.Usage.PromptTokens;
+                    lastActualPromptTokens = roundResult.PromptTokens;
                     lastRequestedWorkingCount = requestedWorkingCount;
-
-                    _sessionContext.TokenCalibration.Observe(
-                        estimatedPrompt, completion.Usage.PromptTokens);
-
-                    var deviationPercent =
-                        (completion.Usage.PromptTokens - estimatedPrompt) * 100.0
-                        / completion.Usage.PromptTokens;
-                    SmartConLogger.Debug(
-                        "Agent prompt estimate deviation: estimated=" + estimatedPrompt +
-                        ", actual=" + completion.Usage.PromptTokens +
-                        ", deviation=" + deviationPercent.ToString(
-                            "F1", System.Globalization.CultureInfo.InvariantCulture) + "%");
                 }
                 else
                 {

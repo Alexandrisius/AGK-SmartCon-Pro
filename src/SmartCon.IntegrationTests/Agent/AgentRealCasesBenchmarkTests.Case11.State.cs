@@ -76,32 +76,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return builder.ToString();
     }
 
-    private List<IAgentTool> CreateCase11Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        var tools = new List<IAgentTool>
-        {
-            new ListViewsTool(context),
-            new ListSchedulesTool(context),
-            new GetScheduleDefinitionTool(context),
-            new GetScheduleDataTool(context),
-            new GetTitleblockOptionsTool(context),
-            new GetViewPlacementPreviewTool(context),
-            new QueryElementsTool(context),
-            new GetProjectOverviewTool(context),
-            new ListCategoriesTool(context),
-            new CloneScheduleTool(context, _transactions!, _changeSets!),
-            new SetScheduleFilterTool(context, _transactions!, _changeSets!),
-            new RemoveScheduleFieldTool(context, _transactions!, _changeSets!),
-            new SetScheduleFieldVisibilityTool(context, _transactions!, _changeSets!),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new BuildSystemSheetsTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     // ── Поддержка сида: определения ФОП, трассы, заполнение, верификация ──
 

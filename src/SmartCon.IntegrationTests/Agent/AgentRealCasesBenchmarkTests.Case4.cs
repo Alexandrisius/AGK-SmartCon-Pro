@@ -6,6 +6,7 @@ using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -76,16 +77,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task LiveCase4_EmptySchedules_DiagnosedFromModelData()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase4();
-        var run = RunCase(
-            4, Case4Title, Case4Text, config, CreateCase4Tools(),
+        SeedOnBenchBaseLive(4, Case4Title, SeedCase4);
+        var run = RunProductionCase(
+            4, Case4Title, Case4Text,
             Case4SeedSummary(), EvaluateCase4, DumpCase4State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -97,7 +97,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase4()
     {
-        _document = Application.NewProjectDocument(UnitSystem.Metric);
+        _document = BenchDocuments.NewBase(Application);
         _case4Schedules = new List<Case4ScheduleSeed>();
         _case4SeedError = null;
         if (!ModelSeed.HasWallType(Doc))
@@ -299,21 +299,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase4Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        return new List<IAgentTool>
-        {
-            new ListSchedulesTool(context),
-            new GetScheduleDataTool(context),
-            new GetScheduleDefinitionTool(context),
-            new SummarizeElementsTool(context),
-            new ListCategoriesTool(context),
-            new QueryElementsTool(context),
-            new GetProjectOverviewTool(context),
-            new ListViewsTool(context)
-        };
-    }
 
     // ── Вердикт ─────────────────────────────────────────────────────────
 

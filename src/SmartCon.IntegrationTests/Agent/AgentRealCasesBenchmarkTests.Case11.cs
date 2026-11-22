@@ -7,6 +7,7 @@ using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -112,8 +113,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task Case11_Live()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
@@ -121,9 +121,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         try
         {
-            SeedCase11();
-            var run = RunCase(
-                11, Case11Title, Case11Text, config, CreateCase11Tools(),
+            SeedOnBenchBaseLive(11, Case11Title, SeedCase11);
+            var run = RunProductionCase(
+                11, Case11Title, Case11Text,
                 Case11SeedSummary(), EvaluateCase11, DumpCase11State);
 
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -215,7 +215,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         try
         {
-            SeedCase11();
+            SeedOnBenchBase("case11", SeedCase11);
 
             await Assert.That(_case11Systems.Count).IsEqualTo(3);
             foreach (var system in _case11Systems)
@@ -276,7 +276,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         // MEP-шаблон установки: нужны PipeType/PipingSystemType (паттерн кейса 10/15).
         _document = SampleFiles.NewMepTemplateDocument(Application);
-        _document ??= Application.NewProjectDocument(UnitSystem.Metric);
+        _document ??= BenchDocuments.NewBase(Application);
         if (!ModelSeed.HasPipeTypes(Doc))
         {
             Skip.Test("В шаблоне проекта нет типов труб — сид кейса 11 невозможен");

@@ -88,6 +88,21 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
+  <!-- The TUnit stack flows loose Microsoft.Extensions.DependencyInjection
+       (Abstractions) transitively, while the agent graph compiles against the
+       ILRepack-merged SmartCon.Dependencies copy (production identity, ADR-051);
+       ExcludeAssets on a direct item does not trim the transitive edge, so the
+       loose DLLs are dropped from compile references here. Runtime copies stay
+       in the output for the TUnit host itself. -->
+  <Target Name="RemoveLooseDiCompileReferences" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferencePath Remove="@(ReferencePath)"
+                     Condition="'%(Filename)' == 'Microsoft.Extensions.DependencyInjection'" />
+      <ReferencePath Remove="@(ReferencePath)"
+                     Condition="'%(Filename)' == 'Microsoft.Extensions.DependencyInjection.Abstractions'" />
+    </ItemGroup>
+  </Target>
+
   <!-- net48: the Agent suite is net8-only. On net48 the Agent APIs expose
        System.Text.Json.JsonElement from the ILRepack-merged System.Text.Json (inside
        SmartCon.Dependencies, ADR-051), while the test host must reference the real

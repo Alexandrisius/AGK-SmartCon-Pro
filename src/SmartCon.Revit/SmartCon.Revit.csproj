@@ -135,4 +135,13 @@
     <ProjectReference Include="..\SmartCon.Core\SmartCon.Core.csproj" />
   </ItemGroup>
 
+  <!-- Agent registration extensions use IServiceCollection. net8: the types come
+       from the ILRepack-merged SmartCon.Dependencies (Abstractions is merged there,
+       and Directory.Build.targets strips the loose package's compile assets).
+       net48: Abstractions is NOT merged (ADR-051 loose list) — the signed original
+       is required for compilation; PrivateAssets keeps consumer graphs unchanged. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" PrivateAssets="all" />
+  </ItemGroup>
+
 </Project>

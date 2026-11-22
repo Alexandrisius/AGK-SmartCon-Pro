@@ -15,26 +15,13 @@ namespace SmartCon.IntegrationTests.Agent;
 /// and 13): generic model families with exact type names (FamilySeed pattern,
 /// but WITHOUT extra parameters, so list_type_parameter_candidates and the
 /// audit see a deterministic parameter landscape), the placement of one
-/// instance per type, schedulable-field lookups for the schedule seeds, and
-/// the find_tools wiring shared by both toolsets. Family loading runs OUTSIDE
-/// any project transaction (LoadFamily on a modifiable document throws —
-/// verified API trap, AgentFillAuditToolsTests).
+/// instance per type and schedulable-field lookups for the schedule seeds.
+/// Family loading runs OUTSIDE any project transaction (LoadFamily on a
+/// modifiable document throws — verified API trap, AgentFillAuditToolsTests).
 /// Partial of <see cref="AgentRealCasesBenchmarkTests"/>.
 /// </summary>
 public sealed partial class AgentRealCasesBenchmarkTests
 {
-    /// <summary>
-    /// Добавляет find_tools с каталогом текущего набора (RuleToolRouter — без
-    /// decision-модели; реестр валидирует схемы и подключает каталог). Мутирует
-    /// список: тул добавляется в конец.
-    /// </summary>
-    private static void AddCaseFindTools(List<IAgentTool> tools)
-    {
-        var findTools = new FindToolsTool(new RuleToolRouter());
-        tools.Add(findTools);
-        _ = new AgentToolRegistry(tools, findTools);
-    }
-
     // Ни одного Revit-типа в свойствах (rule 1 интеграционных тестов).
     private sealed class CaseGenericTypeSeed
     {

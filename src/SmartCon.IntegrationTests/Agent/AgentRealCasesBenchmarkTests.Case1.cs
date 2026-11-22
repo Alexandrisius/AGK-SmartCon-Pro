@@ -79,16 +79,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
     [Test]
     public async Task LiveCase1_UnifiedBrowserFolders_EveryViewFiled()
     {
-        var config = DogfoodConfig.TryLoad();
-        if (config is null)
+        if (!LiveConfigured())
         {
             Skip.Test("SMARTCON_AGENT_LIVE != 1 или не настроен API-ключ");
             return;
         }
 
-        SeedCase1();
-        var run = RunCase(
-            1, Case1Title, Case1Text, config, CreateCase1Tools(),
+        SeedOnBenchBaseLive(1, Case1Title, SeedCase1);
+        var run = RunProductionCase(
+            1, Case1Title, Case1Text,
             Case1SeedSummary(), EvaluateCase1, DumpCase1State);
 
         // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
@@ -406,21 +405,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Тулы ────────────────────────────────────────────────────────────
 
-    private List<IAgentTool> CreateCase1Tools()
-    {
-        var context = new StubRevitContext(Doc);
-        return new List<IAgentTool>
-        {
-            new ListViewsTool(context),
-            new GetBrowserOrganizationTool(context),
-            new ListSchedulesTool(context),
-            new GetProjectOverviewTool(context),
-            new SetBrowserFolderTool(context, _transactions!, _changeSets!),
-            new SetViewParametersTool(context, _transactions!, _changeSets!),
-            new RenameViewsTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-    }
 
     // ── Вердикт ─────────────────────────────────────────────────────────
 

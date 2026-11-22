@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace>SmartCon.Tests</RootNamespace>
@@ -54,6 +54,9 @@
     <ProjectReference Include="..\SmartCon.ProjectManagement\SmartCon.ProjectManagement.csproj" />
     <ProjectReference Include="..\SmartCon.FamilyManager\SmartCon.FamilyManager.csproj" />
     <ProjectReference Include="..\SmartCon.Agent\SmartCon.Agent.csproj" />
+    <!-- Registration-coverage guard (AgentToolRegistrationCoverageTests): the
+         shared production registrations live in SmartCon.Revit/Agent. -->
+    <ProjectReference Include="..\SmartCon.Revit\SmartCon.Revit.csproj" />
     <ProjectReference Include="..\SmartCon.Updater\SmartCon.Updater.csproj" />
   </ItemGroup>
 

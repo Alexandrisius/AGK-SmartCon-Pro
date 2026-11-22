@@ -7,7 +7,10 @@ internal static class LlmPayloadBuilder
 {
     internal static Dictionary<string, object?> Build(
         AgentChatRequest request,
-        AgentCachePlan? cache = null)
+        AgentCachePlan? cache = null,
+        AgentReasoningOptions? reasoning = null,
+        int? maxOutputTokens = null,
+        bool omitMaxOutputTokens = false)
     {
         var messages = request.Messages.Select(BuildMessage).ToList();
         var payload = new Dictionary<string, object?>
@@ -31,8 +34,22 @@ internal static class LlmPayloadBuilder
         if (request.Temperature.HasValue)
             payload["temperature"] = request.Temperature.Value;
 
-        if (request.MaxOutputTokens.HasValue)
+        if (omitMaxOutputTokens)
+        {
+            // The provider rejected the budget parameter: send no max_tokens.
+        }
+        else if (maxOutputTokens.HasValue)
+            payload["max_tokens"] = maxOutputTokens.Value;
+        else if (request.MaxOutputTokens.HasValue)
             payload["max_tokens"] = request.MaxOutputTokens.Value;
+
+        if (reasoning is not null)
+        {
+            if (reasoning.Format == AgentReasoningFormat.ReasoningEffort)
+                payload["reasoning_effort"] = reasoning.Effort;
+            else if (reasoning.Format == AgentReasoningFormat.ReasoningObject)
+                payload["reasoning"] = new Dictionary<string, object?> { ["effort"] = reasoning.Effort };
+        }
 
         if (cache is not null)
         {

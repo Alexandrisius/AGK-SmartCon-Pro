@@ -119,33 +119,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return builder.ToString();
     }
 
-    private List<IAgentTool> CreateCase14Tools()
-    {
-        var context = new StubRevitContext(Doc);
-
-        // Read-туры — через адаптер: production-путь ExecuteAsync с documentId-роутингом
-        // (ExecuteForTests харнесса роутинг обходит — см. кейс 9 v2).
-        IAgentTool Routed(IAgentTool readTool) => new Case14RoutedTool(readTool);
-
-        var tools = new List<IAgentTool>
-        {
-            Routed(new ListViewsTool(context)),
-            Routed(new ListFamiliesTool(context)),
-            Routed(new ListFamilyTypesTool(context)),
-            Routed(new GetElementDetailsTool(context)),
-            Routed(new ListLevelsTool(context)),
-            Routed(new GetProjectOverviewTool(context)),
-            Routed(new ListCategoriesTool(context)),
-            new OpenModelBackgroundTool(context),
-            new CloseModelTool(context),
-            new SetParametersTool(context, _transactions!, _changeSets!),
-            new RenameViewsTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
-        };
-
-        AddCaseFindTools(tools);
-        return tools;
-    }
 
     /// <summary>
     /// Загружает .rfa семейств в документ ВНУТРИ открытой транзакции. Строчный

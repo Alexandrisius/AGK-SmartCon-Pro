@@ -114,6 +114,38 @@ public sealed class AgentProviderCachePolicyTests
     }
 
     [Fact]
+    public void Namespace_AppendsReasoningEffortAndFormat()
+    {
+        var withoutReasoning = AgentProviderCachePolicy.BuildNamespace("zai-glm", "glm-5.3", 0.2);
+        var withEffort = AgentProviderCachePolicy.BuildNamespace(
+            "zai-glm", "glm-5.3", 0.2, "max", AgentReasoningFormat.ReasoningEffort);
+        var withObject = AgentProviderCachePolicy.BuildNamespace(
+            "openrouter", "glm-5.3", 0.2, "max", AgentReasoningFormat.ReasoningObject);
+
+        Assert.DoesNotContain("|e=", withoutReasoning, StringComparison.Ordinal);
+        Assert.EndsWith("|e=max|rf=reasoning_effort", withEffort, StringComparison.Ordinal);
+        Assert.EndsWith("|e=max|rf=reasoning", withObject, StringComparison.Ordinal);
+        Assert.NotEqual(withEffort, withObject);
+
+        // Format None (or no reasoning at all) keeps the legacy namespace.
+        Assert.Equal(
+            withoutReasoning,
+            AgentProviderCachePolicy.BuildNamespace(
+                "zai-glm", "glm-5.3", 0.2, "max", AgentReasoningFormat.None));
+    }
+
+    [Fact]
+    public void Resolve_PassesTheReasoningFieldsIntoTheNamespace()
+    {
+        var plan = AgentProviderCachePolicy.Resolve(
+            "zai-glm", "glm-5.3", 0.2, ConversationId,
+            reasoningEffort: "high",
+            reasoningFormat: AgentReasoningFormat.ReasoningEffort);
+
+        Assert.EndsWith("|e=high|rf=reasoning_effort", plan.Namespace, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NamespaceChange_IsLoggedOnlyWhenTheNamespaceDiffers()
     {
         var first = AgentProviderCachePolicy.BuildNamespace("openrouter", "deepseek/x", 0.2);
