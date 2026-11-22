@@ -56,17 +56,16 @@ public static partial class AgentToolPackSkills
 ### Кухня Revit
 - `ViewSchedule` — вид, но не `ViewSheet`: без вьюпорта, на лист ставится `ScheduleSheetInstance`.
 - `ViewSchedule.CreateSchedule(doc, categoryId)` — пустое, без полей; InvalidElementId — мультикатегорийное; key/material — отдельные фабрики; внутри транзакции.
-- Копия существующего расписания со всей структурой — `View.Duplicate(ViewDuplicateOption)`, а не «создать и настроить заново».
+- Копия расписания — `View.Duplicate(ViewDuplicateOption)`, не «создать заново».
 - `GetSchedulableFields()` отдаёт только допустимые не-вычисляемые поля; `AddField` всегда добавляет в конец (порядок меняется `SetFieldOrder`), повторное поле — `ArgumentException`.
 - `ScheduleField.IsHidden=true` скрывает колонку, но поле продолжает работать в фильтрах, сортировке и группировке. Служебные поля (уровень, маркер) прячут, а не удаляют.
-- Итоги колонки — `ScheduleField.DisplayType` (Totals/Min/Max, гвард `CanTotal()`); строка «Итого» — `ShowGrandTotal*` на определении. Разбиение таблицы на части на листе — только UI (`ViewSchedule.Split`, Revit 2022.1+), тула нет.
+- Итоги колонки — `ScheduleField.DisplayType` (Totals/Min/Max, гвард `CanTotal()`); «Итого» — `ShowGrandTotal*`. Split на листе — только UI.
 - Фильтры — только AND, лимит 8; подстрочные (`contains`/`beginswith`/`endswith`) — только строковым полям (`CanFilterBySubstring`).
 - Изменённый `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
 - Тело читается `GetTableData()` → `GetCellText(row, col)`; обход большого расписания — секунды: `limit/offset` обязательны.
-- Группировка: при `IsItemized=false` строки с одинаковыми группирующими значениями сливаются; итоги — `ShowFooter*`.
-- Фильтровать и сортировать можно только по полям-колонкам спецификации: Revit требует
-  `ScheduleFieldId`, а не имя параметра. Нет колонки → `field_not_in_schedule` →
-  сначала `add_schedule_field`.
+- Группировка: `IsItemized=false` сливает одинаковые строки; итоги — `ShowFooter*`.
+- Фильтровать/сортировать можно только по колонкам спеки (`ScheduleFieldId`, не имя
+  параметра). Нет колонки → `field_not_in_schedule` → сначала `add_schedule_field`.
 - `ScheduleSheetInstance.Create(doc, sheetId, scheduleId, XYZ)` — точка это **левый верхний
   угол** таблицы (не центр, как у Viewport). `instance.Point` возвращает ту же точку —
   `get_sheet_content` показывает её как `xMm/yMm`. Один ScheduleSheetInstance на лист
@@ -120,6 +119,10 @@ public static partial class AgentToolPackSkills
    `place_schedule_on_sheet` новой на её точку (та же `xMm/yMm` из placements, при
    необходимости `rotation`). Колонки без аналога — `skippedFields` из отчёта клона,
    показать пользователю списком.
+
+### Кухня: порядок групп
+«Инженерный порядок» без явного списка — шкала значимости: 10 Оборудование →
+20 Арматура → 30 Трубопроводы → 40 Фитинги → 50 Материалы (шаг 10; массивнее — выше).
 
 ### Что нельзя
 - Считать спецификацию обычным видом: нет подрезки/диапазона, на лист ставится иначе.

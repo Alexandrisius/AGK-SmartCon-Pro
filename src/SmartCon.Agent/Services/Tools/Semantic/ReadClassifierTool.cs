@@ -165,7 +165,7 @@ public sealed class ReadClassifierTool : IAgentTool
     /// strict UTF-8 decode throws on the broken byte sequences a 1251 file is
     /// full of, which is exactly the detection signal. BOMs win outright.
     /// </summary>
-    private static string DecodeText(byte[] bytes, string? encodingName)
+    internal static string DecodeText(byte[] bytes, string? encodingName)
     {
         if (!string.IsNullOrWhiteSpace(encodingName))
             return Encoding.GetEncoding(encodingName).GetString(bytes);
@@ -194,6 +194,61 @@ public sealed class ReadClassifierTool : IAgentTool
         {
             return Encoding.GetEncoding("windows-1251").GetString(bytes);
         }
+    }
+
+    /// <summary>
+    /// Compact mode of semantic_match (#470): parse the classifier file and
+    /// filter rows by code prefix without shipping the array through the
+    /// model's tool arguments.
+    /// </summary>
+    internal static bool TryReadItems(
+        string path,
+        string? codePrefix,
+        int maxItems,
+        out List<(string Id, string Text)> items,
+        out string? error)
+    {
+        items = new List<(string, string)>();
+        error = null;
+
+        string content;
+        try
+        {
+            if (!File.Exists(path))
+            {
+                error = "file_not_found: " + path;
+                return false;
+            }
+
+            content = DecodeText(File.ReadAllBytes(path), null);
+        }
+        catch (Exception ex)
+        {
+            error = "file_read_failed: " + ex.GetType().Name + ": " + ex.Message;
+            return false;
+        }
+
+        var parsed = ClassifierTextParser.Parse(content, 50000);
+        var prefix = codePrefix?.Trim();
+        foreach (var item in parsed.Items)
+        {
+            if (items.Count >= maxItems)
+                break;
+
+            if (!string.IsNullOrEmpty(prefix)
+                && (item.Code is null
+                    || !item.Code.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            items.Add((item.Code ?? item.Line.ToString(), item.Breadcrumb));
+        }
+
+        if (items.Count == 0)
+            error = "no_rows_matched: the filter matched no classifier rows.";
+
+        return items.Count > 0;
     }
 
     private static AgentToolDefinition BuildDefinition()

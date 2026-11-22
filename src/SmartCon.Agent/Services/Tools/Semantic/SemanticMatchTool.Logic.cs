@@ -194,27 +194,70 @@ public sealed partial class SemanticMatchTool
     {
         error = null;
 
-        if (args.ValueKind != JsonValueKind.Object
-            || !args.TryGetProperty("items", out var itemsElement)
-            || itemsElement.ValueKind != JsonValueKind.Array
-            || itemsElement.GetArrayLength() == 0)
-        {
-            error = "items must be a non-empty array of {id, text} objects.";
-            return null;
-        }
-
-        if (itemsElement.GetArrayLength() > MaxItems)
-        {
-            error = "items must contain at most " + MaxItems + " entries, got " +
-                    itemsElement.GetArrayLength() + ".";
-            return null;
-        }
-
+        List<MatchItem> items;
         var request = new SemanticMatchRequest();
-        var items = new List<MatchItem>(itemsElement.GetArrayLength());
-        var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var entry in itemsElement.EnumerateArray())
+        if (args.ValueKind != JsonValueKind.Object)
+        {
+            error = "Arguments must be an object.";
+            return null;
+        }
+
+        // Compact mode (#470): the classifier file is parsed server-side and
+        // filtered by code prefix, so the model does not have to inline the
+        // whole items array (live case 5 lost one parallel call to argument
+        // truncation mid-JSON).
+        if (args.TryGetProperty("classifierPath", out var classifierPathElement)
+            && classifierPathElement.ValueKind == JsonValueKind.String)
+        {
+            var classifierPath = classifierPathElement.GetString();
+            if (string.IsNullOrWhiteSpace(classifierPath))
+            {
+                error = "classifierPath must be a non-empty string.";
+                return null;
+            }
+
+            if (!ReadClassifierTool.TryReadItems(
+                    classifierPath,
+                    args.TryGetProperty("codePrefix", out var prefixElement)
+                    && prefixElement.ValueKind == JsonValueKind.String
+                        ? prefixElement.GetString()
+                        : null,
+                    MaxItems,
+                    out var classifierRows,
+                    out var classifierError))
+            {
+                error = classifierError;
+                return null;
+            }
+
+            items = classifierRows
+                .Select((row, index) => new MatchItem(row.Id, Truncate(row.Text), index))
+                .ToList();
+
+            request.Warnings.Add(
+                "Items were loaded from the classifier file (" + items.Count + " row(s)" +
+                (args.TryGetProperty("codePrefix", out var p)
+                && p.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(p.GetString())
+                    ? ", prefix '" + p.GetString() + "'"
+                    : string.Empty) + ").");
+        }
+        else if (args.TryGetProperty("items", out var itemsElement)
+                 && itemsElement.ValueKind == JsonValueKind.Array
+                 && itemsElement.GetArrayLength() > 0)
+        {
+            if (itemsElement.GetArrayLength() > MaxItems)
+            {
+                error = "items must contain at most " + MaxItems + " entries, got " +
+                        itemsElement.GetArrayLength() + ".";
+                return null;
+            }
+
+            items = new List<MatchItem>(itemsElement.GetArrayLength());
+            var seenIds = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var entry in itemsElement.EnumerateArray())
         {
             if (entry.ValueKind != JsonValueKind.Object
                 || !TryGetString(entry, "id", out var id)
@@ -232,11 +275,23 @@ public sealed partial class SemanticMatchTool
             }
 
             items.Add(new MatchItem(id, Truncate(text), items.Count));
+            }
+
+            if (items.Count == 0)
+            {
+                error = "items must contain at least one entry with a unique id.";
+                return null;
+            }
+        }
+        else
+        {
+            error = "Pass either items (array of {id, text}) or classifierPath (#470).";
+            return null;
         }
 
         if (items.Count == 0)
         {
-            error = "items must contain at least one entry with a unique id.";
+            error = "No classifier rows matched the filter.";
             return null;
         }
 

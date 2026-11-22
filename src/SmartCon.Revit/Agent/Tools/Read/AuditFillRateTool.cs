@@ -463,24 +463,35 @@ public sealed class AuditFillRateTool : AgentReadToolBase
             var parameter = _guid is not null
                 ? element.get_Parameter(_guid.Value)
                 : element.get_Parameter(_builtIn!.Value);
-            if (parameter is not null)
+            if (parameter is not null && parameter.HasValue)
                 return parameter;
 
             if (!includeTypeParameters)
-                return null;
+                return parameter;
 
+            // Type-bound shared parameters expose a NON-NULL but EMPTY view on
+            // instances (live case 8 #468): fall through to the type whenever
+            // the instance view carries no value.
             var typeId = element.GetTypeId();
             if (typeId is null || typeId == ElementId.InvalidElementId)
-                return null;
+                return parameter;
 
             var typeElement = doc.GetElement(typeId);
             if (typeElement is null)
-                return null;
+                return parameter;
 
-            owner = typeElement;
-            return _guid is not null
+            var typeParameter = _guid is not null
                 ? typeElement.get_Parameter(_guid.Value)
                 : typeElement.get_Parameter(_builtIn!.Value);
+            if (typeParameter is not null && typeParameter.HasValue)
+            {
+                owner = typeElement;
+                return typeParameter;
+            }
+
+            // Honest empties: keep the instance view so real holes (both empty)
+            // and instance-bound parameters still count on the element itself.
+            return parameter ?? typeParameter;
         }
 
         private static string? ReadText(Parameter parameter)

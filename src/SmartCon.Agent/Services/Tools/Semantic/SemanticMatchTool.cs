@@ -98,8 +98,12 @@ public sealed partial class SemanticMatchTool : IAgentTool
             @"""description"":""How many best matches to return""}," +
             @"""minScore"":{""type"":""number"",""minimum"":0,""maximum"":1,""default"":0.08," +
             @"""description"":""Discard candidates scored below this probability""}," +
-            @"""instructions"":{""type"":""string"",""description"":""Extra selection context, max 500 chars""}}," +
-            @"""required"":[""items"",""query""],""additionalProperties"":false}";
+            @"""instructions"":{""type"":""string"",""description"":""Extra selection context, max 500 chars""}," +
+            @"""classifierPath"":{""type"":""string""," +
+            @"""description"":""Compact mode: parse this classifier txt instead of passing items (id=code, text=breadcrumb)""}," +
+            @"""codePrefix"":{""type"":""string""," +
+            @"""description"":""With classifierPath: keep only rows whose code starts with this prefix, e.g. 30. or 10.20""}}," +
+            @"""required"":[""query""],""additionalProperties"":false}";
 
         return new AgentToolDefinition
         {
@@ -108,7 +112,9 @@ public sealed partial class SemanticMatchTool : IAgentTool
                 "Ranks a list of short strings (up to 500) by semantic similarity to a query " +
                 "using the small decision model and returns only the top-K matches with " +
                 "scores - the whole list never enters the chat context. Input: " +
-                "items=[{id,text}] plus query (and optional instructions). Typical lists: " +
+                "items=[{id,text}] plus query (and optional instructions); or the compact " +
+                "mode: classifierPath (+codePrefix filter) reads the txt itself, so the " +
+                "argument stays tiny (parallel calls never truncate #470). Typical lists: " +
                 "classifier entries with breadcrumbs from read_classifier, a ФОП/shared " +
                 "parameter name column, long name lists. Batches of 255 options are asked " +
                 "as Choice questions and merged. Fail-soft: when the decision layer is off " +
