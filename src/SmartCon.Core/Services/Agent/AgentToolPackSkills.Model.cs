@@ -89,7 +89,11 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `query_elements` — выборка: `categories`, `levelIds`, `typeIds`, `viewId`, `roomId`, `conditions[{parameter,op,value,unit}]`, `logic`, `includeTypeParameters`, `fields`, `limit` ≤200, `offset`.
-- `summarize_elements` — сводка: `groupBy: category|level|type|parameter`, `sumParameter`, `topN`, `includeZeroCount`.
+  `parameter` в условии — имя параметра, BuiltInParameter id или структурное поле карточки:
+  `name` (имя элемента; для экземпляра семейства — также имя семейства или типа), `family`,
+  `type`, `category`, `level`. Структурные поля — зарезервированные слова, для них только
+  строковые операторы; числовой оператор с ними → `invalid_query`.
+- `summarize_elements` — сводка: `groupBy: category|level|type|family|parameter`, `sumParameter`, `topN`, `includeZeroCount`; группы типов несут `family`, `typeId`, `category`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
 - `group_families_by_shared_parameters` — группы семейств по наборам GUID общих параметров
   (`scope: type|instance|both`) + отдельный `unplacedFamilies`: инвентаризация, из каких
@@ -123,6 +127,9 @@ public static partial class AgentToolPackSkills
 - `notExists` находит элементы, **где параметр есть, но пуст**; элемент, у которого параметра
   нет вовсе, под это условие не попадёт. Для «без параметра» проверяйте `exists` и берите
   остаток.
+- Параметр, которого нет ни у одного элемента выборки, — это `unknown_parameter` с подсказками
+  (ближайшие имена), а не пустой список: исправьте имя или ищите по структурному полю.
+  Пустой список при успешном ответе означает «таких элементов нет».
 - Без категорий/уровней/типов/условий/вида запрос с `limit > 50` отклоняется
   (`query_too_broad`): сначала сузьте выборку или снимите лимит до 50.
 - `limit` ≤200, `offset` — пагинация; `total` считается по всем совпадениям. Для обзора —
@@ -144,10 +151,11 @@ public static partial class AgentToolPackSkills
 ### Рецепты
 1. «Трубы диаметром больше 100 на уровне 2»: `query_elements(categories=[""OST_PipeCurves""], levelIds=[lvl], conditions:[{parameter:""Диаметр"",op:""gt"",value:100,unit:""mm""}])`.
 2. «Сколько чего по категориям»: `summarize_elements(groupBy:""category"")`, детали — по конкретной категории.
-3. «Покажи параметры этого элемента»: `get_element_details(elementIds=[id], includeTypeParameters=true, onlyNonEmpty=true)`.
-4. «Аудит модели перед выдачей»: `audit_fill_rate` (без аргументов — поля листовых спек) →
+3. «Найди элементы по имени / семейству»: `query_elements(categories=[...], conditions:[{parameter:""name"", op:""contains"", value:""<часть имени>""}])` — `family` или `type`, когда нужно точное поле; «сколько элементов у каждого семейства» — `summarize_elements(groupBy:""family"")`.
+4. «Покажи параметры этого элемента»: `get_element_details(elementIds=[id], includeTypeParameters=true, onlyNonEmpty=true)`.
+5. «Аудит модели перед выдачей»: `audit_fill_rate` (без аргументов — поля листовых спек) →
    по виновникам точечное `set_parameters`/джоба для безопасно-выводимого.
-5. «Из каких ФОПов собрана модель»: `group_families_by_shared_parameters(scope:""both"")` →
+6. «Из каких ФОПов собрана модель»: `group_families_by_shared_parameters(scope:""both"")` →
    группы по сигнатурам GUID + `unplacedFamilies` отдельным списком.
 
 ### Что нельзя

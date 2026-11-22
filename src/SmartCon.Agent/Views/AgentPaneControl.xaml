@@ -1305,7 +1305,6 @@
               Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolToVis}}">
             <Grid x:Name="SettingsHost" Margin="0,16">
                 <Border Width="320"
-                        Height="620"
                         MaxHeight="{Binding ActualHeight, ElementName=SettingsHost}"
                         Padding="16"
                         CornerRadius="12"
@@ -1314,16 +1313,11 @@
                         BorderThickness="1"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center">
-                    <!-- Fixed card: title and the action row never scroll; the fields scroll
-                         only when the pane itself is shorter than the card. -->
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,4">
+                    <!-- Card hugs its content; the title and the action row are docked and
+                         never scroll, the fields scroll only when the pane itself is
+                         shorter than the content. -->
+                    <DockPanel LastChildFill="True">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,4">
                             <iconPacks:PackIconMaterial Kind="Cog"
                                                         Width="16" Height="16"
                                                         Margin="0,0,8,0"
@@ -1335,7 +1329,36 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"/>
                         </StackPanel>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+
+
+                        <StackPanel DockPanel.Dock="Bottom">
+                            <TextBlock Text="{Binding SettingsError}"
+                                       Visibility="{Binding HasSettingsError, Converter={StaticResource BoolToVis}}"
+                                       FontSize="10"
+                                       Foreground="{DynamicResource DangerBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="2,8,0,0"/>
+
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="1"
+                                        Content="{loc:Loc Agent_Settings_Cancel}"
+                                        Command="{Binding CloseSettingsCommand}"
+                                        Style="{DynamicResource SecondaryButton}"
+                                        Height="28"
+                                        Margin="0,0,8,0"/>
+                                <Button Grid.Column="2"
+                                        Content="{loc:Loc Agent_Settings_Save}"
+                                        Command="{Binding SaveSettingsCommand}"
+                                        Style="{DynamicResource PrimaryButton}"
+                                        Height="28"/>
+                            </Grid>
+                        </StackPanel>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <StackPanel>
 
                                 <TextBlock Text="{loc:Loc Agent_Settings_Provider}" Style="{StaticResource SettingsLabel}"/>
@@ -1387,35 +1410,7 @@
                                 <TextBlock Text="{loc:Loc Agent_Settings_DecisionHint}" Style="{StaticResource SettingsHint}"/>
                             </StackPanel>
                         </ScrollViewer>
-
-                        <StackPanel Grid.Row="2">
-                            <TextBlock Text="{Binding SettingsError}"
-                                       Visibility="{Binding HasSettingsError, Converter={StaticResource BoolToVis}}"
-                                       FontSize="10"
-                                       Foreground="{DynamicResource DangerBrush}"
-                                       TextWrapping="Wrap"
-                                       Margin="2,8,0,0"/>
-
-                            <Grid Margin="0,16,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Button Grid.Column="1"
-                                        Content="{loc:Loc Agent_Settings_Cancel}"
-                                        Command="{Binding CloseSettingsCommand}"
-                                        Style="{DynamicResource SecondaryButton}"
-                                        Height="28"
-                                        Margin="0,0,8,0"/>
-                                <Button Grid.Column="2"
-                                        Content="{loc:Loc Agent_Settings_Save}"
-                                        Command="{Binding SaveSettingsCommand}"
-                                        Style="{DynamicResource PrimaryButton}"
-                                        Height="28"/>
-                            </Grid>
-                        </StackPanel>
-                    </Grid>
+                    </DockPanel>
                 </Border>
             </Grid>
         </Grid>

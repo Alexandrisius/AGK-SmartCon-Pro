@@ -46,6 +46,14 @@ public static class AgentClassificationFile
             var bigEndian = bytes[0] == 0xFE;
             var body = new byte[bytes.Length - 2];
             Array.Copy(bytes, 2, body, 0, body.Length);
+            // GetString does not refuse an odd number of bytes: on .NET 8 it
+            // silently pads the last one with a zero byte.
+            if (body.Length % 2 != 0)
+            {
+                error = "the file is marked as UTF-16 but has an odd number of bytes: it is cut or damaged";
+                return null;
+            }
+
             return new UnicodeEncoding(bigEndian, byteOrderMark: false).GetString(body);
         }
 
@@ -80,7 +88,7 @@ public static class AgentClassificationFile
         if (string.IsNullOrEmpty(text))
             return new ParseResult(rows, errors, 0);
 
-        var lines = text.Split('\n');
+        var lines = text!.Split('\n');
         for (var index = 0; index < lines.Length; index++)
         {
             var line = lines[index];

@@ -9,9 +9,10 @@ namespace SmartCon.Agent.Services.Tools;
 /// <summary>
 /// Meta-tool of the v2 catalog: enables a whole pack or explicit tools for the
 /// next round. It never executes the loaded tools itself and the current round
-/// keeps the tool set it started with (runbook §7.2).
+/// keeps the tool set it started with (runbook §7.2). The skill half of its
+/// result is decided by <c>ResolveSkillDelivery</c> (LoadToolPackTool.Skills.cs).
 /// </summary>
-public sealed class LoadToolPackTool : IAgentTool
+public sealed partial class LoadToolPackTool : IAgentTool
 {
     public const string ToolName = "load_tool_pack";
 
@@ -44,8 +45,13 @@ public sealed class LoadToolPackTool : IAgentTool
             "Enables a tool pack or explicit tools for the next round; the current round keeps " +
             "its tool set. Returns the input schemas of the tools it enabled and, for packs " +
             "that have one, the pack skill (markdown operating manual) — one entry per pack in " +
-            "'skills', each sent once per conversation. Loading a single tool also delivers " +
-            "the skill of its pack; prefer pack= to get the sibling tools too. At most " +
+            "'skills', each sent once per conversation. Skill rule: a pack requested explicitly " +
+            "(pack/packs) delivers its manual; a tool named in tools= delivers its pack's " +
+            "manual only when the tool writes (risk Write or higher). Read-only tools need no " +
+            "manual for a plain lookup — their packs are listed in skillsAvailable with a " +
+            "skillHint; call load_tool_pack(pack=...) for a pack before you choose or assign " +
+            "values with its tools or modify anything in that area. " +
+            "Use pack= when you need several tools of one pack. At most " +
             MaxPacksPerCall + " packs per call: load the rest in a second call. Use it after " +
             "find_tools to make the discovered tools callable.",
         Risk = AgentToolRisk.Read,
@@ -157,43 +163,11 @@ public sealed class LoadToolPackTool : IAgentTool
                 data: payload));
         }
 
-        // A skill belongs to a pack, but the model may load a single tool by name.
-        // Deliver the manual of every pack the loaded tools belong to: loading one
-        // tool must not skip the knowledge of its pack (#400). The skill channel
-        // is capped at MaxPacksPerCall like the pack list (#453): a tools= call
-        // spanning many packs attaches at most five manuals — the tools still
-        // load, only the skill delivery is bounded. Explicitly requested packs
-        // keep their slots; owner packs fill the rest in name order, so the
-        // choice is deterministic.
-        var skillPacks = new List<string>(distinctPacks);
-        var additionalOwners = new List<string>();
-        foreach (var name in requested)
-        {
-            var owner = AgentToolPacks.PackOfTool(name);
-            if (owner is null
-                || skillPacks.Contains(owner.Name, StringComparer.Ordinal)
-                || additionalOwners.Contains(owner.Name, StringComparer.Ordinal))
-            {
-                continue;
-            }
-
-            additionalOwners.Add(owner.Name);
-        }
-
-        var totalSkillPacks = skillPacks.Count + additionalOwners.Count;
-        string? skillPackNote = null;
-        foreach (var owner in additionalOwners.OrderBy(name => name, StringComparer.Ordinal))
-        {
-            if (skillPacks.Count < MaxPacksPerCall)
-            {
-                skillPacks.Add(owner);
-                continue;
-            }
-
-            skillPackNote = "Skills attached for " + skillPacks.Count + " of " +
-                totalSkillPacks + " packs; call load_tool_pack for the rest.";
-            break;
-        }
+        // A skill is an operating manual for risky work: it is delivered for the
+        // requested packs and for the owner packs of write tools, while read-only
+        // tools only get their pack announced — one read-only lookup must not
+        // inline a whole manual.
+        var skillDelivery = ResolveSkillDelivery(distinctPacks, requested, registry);
 
         // "Loaded" must mean "callable right now", not "remembered for this
         // session": a request carries only a bounded slice of the catalog, so a
@@ -270,7 +244,7 @@ public sealed class LoadToolPackTool : IAgentTool
             })
             .ToList();
 
-        // Pack skills (#400): the operating manual of every requested pack, in
+        // Pack skills (#400): the operating manual of every pack due a skill, in
         // markdown. Each skill is sent once per conversation — a repeated
         // load_tool_pack reports it as already sent instead of duplicating the
         // text in the prompt. Every pack gets its own entry: dropping the second
@@ -278,7 +252,7 @@ public sealed class LoadToolPackTool : IAgentTool
         // the whole conversation.
         var skills = new List<object>();
         var skillAlreadySent = new List<string>();
-        foreach (var name in skillPacks.Distinct(StringComparer.Ordinal))
+        foreach (var name in skillDelivery.Inline.Distinct(StringComparer.Ordinal))
         {
             if (!AgentToolPackSkills.TryGet(name, out var markdown) || markdown is null)
                 continue;
@@ -291,6 +265,18 @@ public sealed class LoadToolPackTool : IAgentTool
 
             _sessionContext.SentPackSkills.Add(name);
             skills.Add(new { pack = name, markdown });
+        }
+
+        // The manual of a read-only owner pack is announced, not sent: nothing is
+        // marked as sent here, so a later pack= request or the first write of a
+        // pack tool still delivers it once.
+        var skillsAvailable = new List<string>();
+        foreach (var name in skillDelivery.Available)
+        {
+            if (_sessionContext.SentPackSkills.Contains(name))
+                skillAlreadySent.Add(name);
+            else
+                skillsAvailable.Add(name);
         }
 
         var result = new
@@ -307,7 +293,9 @@ public sealed class LoadToolPackTool : IAgentTool
             remainingByPack,
             skills = skills.Count == 0 ? null : skills,
             skillAlreadySent = skillAlreadySent.Count == 0 ? null : skillAlreadySent,
-            skillPackNote,
+            skillPackNote = skillDelivery.PackNote,
+            skillsAvailable = skillsAvailable.Count == 0 ? null : skillsAvailable,
+            skillHint = skillsAvailable.Count == 0 ? null : ComposeSkillHint(skillsAvailable),
             // Legacy field: tools enabled in this conversation, including pack names
             // that the registry does not know (should not happen in production).
             totalTools = _sessionContext.LoadedToolNames.Count,
@@ -326,6 +314,8 @@ public sealed class LoadToolPackTool : IAgentTool
             (packNames.Count == 0 ? "-" : string.Join(",", packNames)) +
             ", loaded=" + loaded.Count +
             ", alreadyLoaded=" + alreadyLoaded.Count +
+            ", skills=" + skills.Count +
+            ", skillsAvailable=" + skillsAvailable.Count +
             ", total=" + _sessionContext.LoadedToolNames.Count);
 
         return Task.FromResult(ToolResult.Ok(

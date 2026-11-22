@@ -233,11 +233,13 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
 
         if (dryRun)
         {
-            _transactions.RunAndRollback(name, doc =>
+            var applied = false;
+            var ran = _transactions.RunAndRollback(name, doc =>
             {
                 try
                 {
                     Apply(doc, args, outcome, dryRun: true, ct);
+                    applied = true;
                 }
                 catch (Exception ex)
                 {
@@ -246,7 +248,29 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             });
 
             outcome.ModelChanged = false;
-            if (failure is not null)
+            if (!ran)
+            {
+                // RunAndRollback reports false in two different situations (#479): the
+                // transaction never started (Apply did not run, "0 planned" would be a
+                // lie) or the rollback did not complete (a change may have stayed).
+                // Document.IsModifiable is no pre-check: it is false in a headless
+                // host where transactions do start.
+                outcome.Success = false;
+                if (applied)
+                {
+                    outcome.ErrorCode = "dry_run_rollback_failed";
+                    outcome.Message =
+                        "The dry run could not be rolled back: a change may have stayed in the " +
+                        "model. Check the model before repeating the call; undo_last reverts it.";
+                    outcome.ModelChanged = true;
+                }
+                else
+                {
+                    outcome.ErrorCode = NotModifiable().ErrorCode;
+                    outcome.Message = NotModifiable().Message;
+                }
+            }
+            else if (failure is not null)
             {
                 outcome.Success = false;
                 outcome.ErrorCode = "dry_run_failed";
@@ -312,6 +336,14 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
 
         outcome.ModelChanged = outcome.AffectedCount > 0;
     }
+
+    private static WriteOutcome NotModifiable() =>
+        WriteOutcome.Fail(
+            "document_not_modifiable",
+            "The active document cannot be modified right now: it is read-only, a modal " +
+            "dialog, an edit mode or another transaction is open. Nothing was checked or changed.",
+            "Close the dialog, finish the edit mode or open the document for editing, " +
+            "then repeat the call.");
 
     private static void MarkItemsRolledBack(WriteOutcome outcome)
     {
