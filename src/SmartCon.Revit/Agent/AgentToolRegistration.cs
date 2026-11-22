@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Classification;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
@@ -159,6 +162,11 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, AuditModelTool>();
         services.AddSingleton<IAgentTool, ListClassificationEntriesTool>();
         services.AddSingleton<IAgentTool, LoadClassificationTableTool>();
+        // The factory resolves the decision client lazily: AddAgentCore has
+        // registered it by the time the Revit tool graph is composed.
+        services.AddSingleton<IAgentTool>(sp => new ClassifyTypesTool(
+            sp.GetRequiredService<IRevitContext>(),
+            new AgentSemanticRanker(sp.GetRequiredService<IAgentDecisionClient>())));
 
         // Not an IAgentTool, but Revit-side agent wiring: registered with the
         // tools so the whole Revit half of the agent graph lives here.
@@ -352,6 +360,7 @@ public static class AgentToolRegistration
         typeof(AuditModelTool),
         typeof(ListClassificationEntriesTool),
         typeof(LoadClassificationTableTool),
+        typeof(ClassifyTypesTool),
         typeof(StartJobTool),
         typeof(GetJobStatusTool),
         typeof(CancelJobTool),

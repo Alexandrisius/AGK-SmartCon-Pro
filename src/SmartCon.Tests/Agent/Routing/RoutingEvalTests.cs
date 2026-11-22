@@ -38,7 +38,7 @@ public sealed class RoutingEvalTests
 
         Assert.Equal(RealQueryCount, real.Count);
         Assert.Equal(SyntheticQueryCount, synthetic.Count);
-        Assert.Equal(131, RealCatalog.Count);
+        Assert.Equal(132, RealCatalog.Count);
 
         var realNames = RealCatalog.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var query in real)

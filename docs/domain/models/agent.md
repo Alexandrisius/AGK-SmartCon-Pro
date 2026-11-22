@@ -300,6 +300,56 @@ JSON-схемы тулов/параметров (источник для `AgentT
 Применяет `AgentClassificationLoader` (SmartCon.Revit) перед загрузкой и 
 после неё; кодировки `HasUtf8Bom` / `HasUtf16Bom`.
 
+## AgentSemanticMatch
+
+`Services/Agent/AgentSemanticMatch.cs` — домен классификации типоразмеров:
+снимки `ClassifyTypeSnapshot`, группы `ClassifyFamilyGroup`, статусы
+`ClassifyTypeStatus` (`proposed` / `low_confidence` / `no_candidates` /
+`already_set`), альтернативы `ClassifyCodeCandidate`, результат типа
+`ClassifyTypeResult`, группы отчёта `ClassifyAssignmentGroup`, готовые
+элементы записи `ClassifySetParameterItem`, настройки `ClassifyOptions` и
+агрегат `ClassifyMatchResult`. Конвейер (`AgentClassificationMatcher`) —
+ниже.
+
+## AgentSemanticRanker
+
+Ядро семантического ранжирования над `IAgentDecisionClient` (`Services/Agent/
+AgentSemanticRanker.cs`): пакует запросы подбора в Choice-вопросы (≤255 опций,
+≤20 вопросов на вызов, id `q0, q1, …`), мержит ответы по максимальной
+вероятности (голый `Choice` = `Confidence ?? 0.5`) и возвращает топ-K на запрос
+в порядке «скор, затем исходный индекс». Один запрос против одного списка при
+отказе падает целиком (семантика `semantic_match`); режим многих запросов
+сохраняет отвеченные и честно перечисляет нерешённые (`IncompleteQueryIds`).
+`RankAsync` — один запрос, `RankQueriesAsync` — много запросов со своими
+списками кандидатов в одном вызове. `ChoiceQuestion`/`MergeChoice` — общие
+статические хелперы, `semantic_match` строит свои вопросы через них. Записи:
+`SemanticCandidate(Id, Text)`, `SemanticMatch(Id, Score, Rank)`, исход
+`SemanticRankOutcome { Matches, Error, ErrorDetail, IncompleteQueryIds }`
+(коды ошибок: `decision_unavailable`, `decision_call_failed`,
+`decision_refused`). В том же файле `AgentSemanticLexicon` — токенизация
+(нижний регистр, `ё`→`е`, разбиение по не-буквам/цифрам) и лексический
+префильтр `LexicalTop` (совпадение токенов — равенство или префикс с коротким
+≥5 символов; токены имени семейства весят 2), `AgentClassificationTexts.
+GroupTypes` — группировка типоразмеров в семейства и компоновка текстов (текст
+семейства и запросы типоразмеров с отличающимися значениями).
+
+## AgentClassificationMatcher
+
+Конвейер `classify_types` целиком в чистом C# (`Services/Agent/
+AgentSemanticMatch.cs`): лексический префильтр листьев таблицы, вопрос о ветви
+для слабых семейств (<5 лексических попаданий — 3 лучшие ветви первого
+уровня, затем листья под ними), этап 1 — один вопрос на семейство
+(топ-`candidateDepth` кодов), этап 2 — один вопрос на типоразмер (итоговый
+код, топ-3 для списка неуверенных). Статусы типов: `proposed`
+(score ≥ `minScore`), `low_confidence`, `no_candidates`, `already_set`
+(текущий код равен предложенному). Результат `ClassifyMatchResult` — записи
+`ClassifyTypeResult` по типам, группы `ClassifyAssignmentGroup` по
+(семейство, код) и готовые батчи `ClassifySetParameterItem` (≤500 на вызов,
+параметр `UNIFORMAT_CODE`, scope `type`); отказы decision-слоя —
+типизированные (`Error`/`Incomplete`/`NotProcessed`), частичный результат
+никогда не выдаётся за полный. Вход — снимки `ClassifyTypeSnapshot` (чистые
+DTO с потока Revit) и настройки `ClassifyOptions`.
+
 ## AgentActionDigest
 
 Дайджест действия агента для компакции истории.

@@ -136,6 +136,16 @@ public static class AgentToolCatalog
                 "классификатор", "классификация", "загрузить классификатор", "подключить классификатор",
                 "таблица классификации", "classification table", "classification settings"
             }),
+            ["classify_types"] = new("Read", true, new[]
+            {
+                "заполнить коды классификатора", "проставь коды по классификатору",
+                "подбери коды для всех семейств", "классификация модели",
+                "присвой коды классификатора", "автоматическая классификация",
+                "код по классификатору всем типам", "классифицируй типы",
+                "проставь коды классификатора по таблице", "заполни assembly code",
+                "fill classification codes", "classify types", "assign assembly codes",
+                "suggest classification codes"
+            }),
             ["get_element_relations"] = new("Read", false, new[]
             {
                 "связи", "соединён", "коннектор", "сосед", "хост", "стена", "помещение",

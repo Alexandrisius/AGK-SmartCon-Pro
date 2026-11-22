@@ -213,8 +213,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "semantic",
-            Description = "Семантический выбор топ-K из больших списков, парсинг иерархических txt-классификаторов с хлебными крошками и чтение таблицы классификации, загруженной в документ.",
-            Tools = new[] { "semantic_match", "read_classifier", "list_classification_entries" }
+            Description = "Семантический выбор топ-K из больших списков, парсинг иерархических txt-классификаторов с хлебными крошками, чтение таблицы классификации, загруженной в документ, и подбор кодов классификатора для типоразмеров одним вызовом.",
+            Tools = new[] { "semantic_match", "read_classifier", "list_classification_entries", "classify_types" }
         },
         new()
         {
