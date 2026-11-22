@@ -34,7 +34,7 @@ internal static class AgentElementCardFactory
         }
 
         var level = TryGetLevel(doc, element);
-        var (family, typeName) = ReadFamilyAndType(element);
+        var (family, typeName) = ReadFamilyAndType(doc, element);
         var (typeId, familyId, familyUniqueId) = ReadTypeIdentity(element);
 
         return new ElementCard
@@ -206,7 +206,7 @@ internal static class AgentElementCardFactory
             : (typeId.GetValue(), null, null);
     }
 
-    private static (string? Family, string? Type) ReadFamilyAndType(Element element)
+    private static (string? Family, string? Type) ReadFamilyAndType(Document doc, Element element)
     {
         if (element is FamilyInstance instance)
             return (instance.Symbol?.Family?.Name, instance.Symbol?.Name);
@@ -216,6 +216,22 @@ internal static class AgentElementCardFactory
 
         var familyName = element.get_Parameter(BuiltInParameter.ALL_MODEL_FAMILY_NAME)?.AsString();
         var typeName = element.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME)?.AsString();
+
+        // The instance parameters carry no value for system-family elements
+        // (walls, pipes, ducts); the type is the source there, as in AgentQueryFields.
+        if (string.IsNullOrWhiteSpace(familyName) || string.IsNullOrWhiteSpace(typeName))
+        {
+            var typeId = element.GetTypeId();
+            if (typeId != ElementId.InvalidElementId && doc.GetElement(typeId) is ElementType type)
+            {
+                if (string.IsNullOrWhiteSpace(familyName))
+                    familyName = type.FamilyName;
+
+                if (string.IsNullOrWhiteSpace(typeName))
+                    typeName = type.Name;
+            }
+        }
+
         return (familyName, typeName);
     }
 }
