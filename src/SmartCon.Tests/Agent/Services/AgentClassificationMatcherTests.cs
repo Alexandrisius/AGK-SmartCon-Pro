@@ -306,6 +306,90 @@ public sealed class AgentClassificationMatcherTests
         Assert.Equal("Family; Type B", group.TypeQueries[1]);
     }
 
+    // ── D1: a failed decision channel is never dressed up as no_candidates ──
+
+    /// <summary>
+    /// Two Russian families against an English table: zero lexical overlap, so
+    /// the whole run depends on the decision channel - the D1 probe scenario.
+    /// </summary>
+    private static List<ClassifyTypeSnapshot> RussianFamilies() => new()
+    {
+        Type(1, "Вентиль шаровый", "Вентиль Ду15", "Арматура"),
+        Type(2, "Труба стальная", "Труба Ду25", "Трубопроводы")
+    };
+
+    [Fact]
+    public async Task Match_AllWeak_ChannelException_IsTypedFailureNotNoCandidates()
+    {
+        var client = new KeywordDecisionClient
+        {
+            Throw = new InvalidOperationException("HTTP 503")
+        };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(RussianFamilies()), ServicesTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.NotNull(result.Error);
+        Assert.Equal("decision_call_failed", result.Error);
+        Assert.Contains("503", result.ErrorDetail);
+    }
+
+    [Fact]
+    public async Task Match_AllWeak_EmptyAnswers_IsTypedFailureNotNoCandidates()
+    {
+        var client = new KeywordDecisionClient { EmptyAnswers = true };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(RussianFamilies()), ServicesTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.NotNull(result.Error);
+        Assert.NotEmpty(result.NotProcessed);
+    }
+
+    [Fact]
+    public async Task Match_AllWeak_Refusal_IsTypedFailureNotNoCandidates()
+    {
+        var client = new KeywordDecisionClient
+        {
+            FailWhen = (_, _) => true
+        };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(RussianFamilies()), ServicesTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task Match_TypeStageFullyFailed_KeepsTypedError()
+    {
+        var calls = 0;
+        var client = new KeywordDecisionClient
+        {
+            BeforeAsk = () =>
+            {
+                calls++;
+                if (calls >= 2)
+                    throw new InvalidOperationException("flaky type stage");
+            }
+        };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+        var types = new List<ClassifyTypeSnapshot> { Type(1, "Walls family", "Walls type A", "Стены") };
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(types), WallTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.NotNull(result.Error);
+        Assert.Equal("decision_call_failed", result.Error);
+    }
+
     /// <summary>
     /// Deterministic stand-in for the decision model: every option is scored by
     /// the tokens it shares with the question's Match line (equal or ≥5-char
@@ -318,6 +402,14 @@ public sealed class AgentClassificationMatcherTests
         public bool Enabled { get; set; } = true;
 
         public Func<string, string, bool>? FailWhen { get; set; }
+
+        /// <summary>Transport failure of every call (D1 probe: HTTP 503).</summary>
+        public Exception? Throw { get; set; }
+
+        /// <summary>Every call returns an EMPTY answer dictionary (D1 probe).</summary>
+        public bool EmptyAnswers { get; set; }
+
+        public Action? BeforeAsk { get; set; }
 
         public List<IReadOnlyDictionary<string, AgentDecisionQuestion>> Requests { get; } = new();
 
@@ -332,7 +424,17 @@ public sealed class AgentClassificationMatcherTests
             IReadOnlyDictionary<string, AgentDecisionQuestion> questions,
             CancellationToken ct)
         {
+            BeforeAsk?.Invoke();
+            if (Throw is not null)
+                throw Throw;
+
             Requests.Add(questions);
+            if (EmptyAnswers)
+            {
+                return Task.FromResult<IReadOnlyDictionary<string, AgentDecisionAnswer>>(
+                    new Dictionary<string, AgentDecisionAnswer>(StringComparer.Ordinal));
+            }
+
             var answers = new Dictionary<string, AgentDecisionAnswer>(StringComparer.Ordinal);
             foreach (var pair in questions)
             {
@@ -380,7 +482,11 @@ public sealed class AgentClassificationMatcherTests
                 probabilities[ranked[0].Id] = Score;
             }
 
-            return new AgentDecisionAnswer { Type = "choice", Probabilities = probabilities };
+            return new AgentDecisionAnswer
+            {
+                Type = "choice",
+                Probabilities = probabilities
+            };
         }
     }
 }

@@ -104,6 +104,20 @@ public sealed class AgentSemanticRankerTests
     }
 
     [Fact]
+    public async Task Rank_NullAnswerDictionary_DoesNotThrowAndFailsTyped()
+    {
+        var client = new ScriptedClient { NullAnswers = true };
+        var ranker = new AgentSemanticRanker(client);
+
+        var outcome = await ranker.RankAsync(
+            "state", new[] { Candidate(1) }, "q", 3, CancellationToken.None);
+
+        Assert.False(outcome.Ok);
+        Assert.NotNull(outcome.Error);
+        Assert.Empty(outcome.Single);
+    }
+
+    [Fact]
     public async Task Rank_DisabledClient_ReturnsDecisionUnavailableWithoutCalls()
     {
         var client = new ScriptedClient { Enabled = false };
@@ -254,6 +268,9 @@ public sealed class AgentSemanticRankerTests
 
         public Exception? Throw { get; set; }
 
+        /// <summary>A broken client: AskAsync returns a null dictionary.</summary>
+        public bool NullAnswers { get; set; }
+
         public List<(string State, IReadOnlyDictionary<string, AgentDecisionQuestion> Questions)> Requests
         {
             get;
@@ -273,6 +290,9 @@ public sealed class AgentSemanticRankerTests
             BeforeAsk?.Invoke();
             if (Throw is not null)
                 throw Throw;
+
+            if (NullAnswers)
+                return Task.FromResult<IReadOnlyDictionary<string, AgentDecisionAnswer>>(null!);
 
             Requests.Add((state, questions));
             return Task.FromResult(Answer(state, questions));

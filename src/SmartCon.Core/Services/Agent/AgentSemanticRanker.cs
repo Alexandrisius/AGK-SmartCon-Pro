@@ -8,7 +8,14 @@ namespace SmartCon.Core.Services.Agent;
 public sealed record SemanticCandidate(string Id, string Text);
 
 /// <summary>One ranked candidate: its id, the merged score and the 1-based rank.</summary>
-public sealed record SemanticMatch(string Id, double Score, int Rank);
+public sealed record SemanticMatch(string Id, double Score, int Rank)
+{
+    /// <summary>
+    /// True when the score is the fabricated 0.5 of a bare Choice without
+    /// probabilities or confidence - a guess, not a scored answer.
+    /// </summary>
+    public bool BareChoice { get; init; }
+}
 
 /// <summary>
 /// Outcome of a semantic ranking pass: one top-K row per request, aligned with
@@ -99,6 +106,7 @@ public sealed class AgentSemanticRanker
         var decisionState = string.IsNullOrWhiteSpace(state) ? query : state;
 
         var scores = new Dictionary<string, double>(StringComparer.Ordinal);
+        var bareChoices = new HashSet<string>(StringComparer.Ordinal);
         for (var start = 0; start < candidates.Count; start += MaxChoiceOptions)
         {
             var batch = candidates.Skip(start).Take(MaxChoiceOptions).ToList();
@@ -122,15 +130,28 @@ public sealed class AgentSemanticRanker
                 return CallFailed(ex);
             }
 
+            // A broken client can hand back a null or empty dictionary; that is
+            // an unusable channel, not an empty ranking.
+            if (answers is null || answers.Count == 0)
+            {
+                return SemanticRankOutcome.Failed(
+                    "decision_unavailable",
+                    "The decision client returned no answers");
+            }
+
             if (!answers.TryGetValue("match", out var answer) || !IsUsable(answer))
                 return Refused();
 
-            MergeChoice(answer, batch.Select(candidate => candidate.Id).ToArray(), scores);
+            MergeChoice(
+                answer, batch.Select(candidate => candidate.Id).ToArray(), scores, bareChoices);
         }
 
         return new SemanticRankOutcome
         {
-            Matches = new[] { RankTop(candidates, scores, System.Math.Max(1, topK)) }
+            Matches = new[]
+            {
+                RankTop(candidates, scores, System.Math.Max(1, topK), bareChoices)
+            }
         };
     }
 
@@ -164,8 +185,12 @@ public sealed class AgentSemanticRanker
         }
 
         var scores = new Dictionary<string, double>[queries.Count];
+        var bare = new HashSet<string>[queries.Count];
         for (var index = 0; index < scores.Length; index++)
+        {
             scores[index] = new Dictionary<string, double>(StringComparer.Ordinal);
+            bare[index] = new HashSet<string>(StringComparer.Ordinal);
+        }
 
         var incomplete = new SortedSet<int>();
         string? error = null;
@@ -209,6 +234,20 @@ public sealed class AgentSemanticRanker
                 continue;
             }
 
+            // A broken client can hand back a null or empty dictionary; the
+            // questions of the call count as unanswered, not as empty rankings.
+            if (answers is null || answers.Count == 0)
+            {
+                error ??= "decision_unavailable";
+                errorDetail ??= "The decision client returned no answers";
+                SmartConLogger.Warn(
+                    "The decision client returned no answers for " + questions.Count + " question(s)" +
+                    " [Action: fall back to reading the source lines yourself or ask the user]");
+                foreach (var unit in callUnits)
+                    incomplete.Add(unit.QueryIndex);
+                continue;
+            }
+
             foreach (var pair in byQuestion)
             {
                 if (!answers.TryGetValue(pair.Key, out var answer) || !IsUsable(answer))
@@ -220,14 +259,15 @@ public sealed class AgentSemanticRanker
                 MergeChoice(
                     answer,
                     pair.Value.Batch.Select(candidate => candidate.Id).ToArray(),
-                    scores[pair.Value.QueryIndex]);
+                    scores[pair.Value.QueryIndex],
+                    bare[pair.Value.QueryIndex]);
             }
         }
 
         var take = System.Math.Max(1, topK);
         var matches = new IReadOnlyList<SemanticMatch>[queries.Count];
         for (var index = 0; index < queries.Count; index++)
-            matches[index] = RankTop(queries[index].Candidates, scores[index], take);
+            matches[index] = RankTop(queries[index].Candidates, scores[index], take, bare[index]);
 
         return new SemanticRankOutcome
         {
@@ -258,7 +298,20 @@ public sealed class AgentSemanticRanker
     public static void MergeChoice(
         AgentDecisionAnswer answer,
         IReadOnlyCollection<string> batchIds,
-        Dictionary<string, double> scores)
+        Dictionary<string, double> scores) =>
+        MergeChoice(answer, batchIds, scores, null);
+
+    /// <summary>
+    /// The merge with bare-choice bookkeeping: <paramref name="bareChoices"/>
+    /// (when given) collects the ids whose score is the fabricated
+    /// <c>Confidence ?? 0.5</c> of a choice without probabilities, so callers
+    /// can tell a confident answer from a guess.
+    /// </summary>
+    internal static void MergeChoice(
+        AgentDecisionAnswer answer,
+        IReadOnlyCollection<string> batchIds,
+        Dictionary<string, double> scores,
+        HashSet<string>? bareChoices)
     {
         var known = new HashSet<string>(batchIds, StringComparer.Ordinal);
         if (answer.Probabilities is not null)
@@ -278,6 +331,8 @@ public sealed class AgentSemanticRanker
             && !scores.ContainsKey(answer.Choice!))
         {
             scores[answer.Choice!] = answer.Confidence ?? 0.5;
+            if (answer.Confidence is null)
+                bareChoices?.Add(answer.Choice!);
         }
     }
 
@@ -337,7 +392,8 @@ public sealed class AgentSemanticRanker
     private static IReadOnlyList<SemanticMatch> RankTop(
         IReadOnlyList<SemanticCandidate> candidates,
         Dictionary<string, double> scores,
-        int topK)
+        int topK,
+        HashSet<string>? bareChoices)
     {
         // A repeated id keeps only its first position, like the tool-side
         // parsing of semantic_match.
@@ -359,206 +415,12 @@ public sealed class AgentSemanticRanker
             .Select((row, position) => new SemanticMatch(
                 row.Id,
                 System.Math.Round(row.Score, 4),
-                position + 1))
+                position + 1)
+            {
+                BareChoice = bareChoices is not null && bareChoices.Contains(row.Id)
+            })
             .ToArray();
     }
 
     private sealed record QueryUnit(int QueryIndex, IReadOnlyList<SemanticCandidate> Batch);
-}
-
-/// <summary>
-/// The deterministic half of semantic matching: tokenization and the lexical
-/// prefilter that narrows a big candidate list before any model call.
-/// </summary>
-internal static class AgentSemanticLexicon
-{
-    private const int MinPrefixLength = 5;
-
-    /// <summary>
-    /// Scores every leaf by the tokens it shares with the family text. Two
-    /// tokens match when equal, or one is a prefix of the other while the
-    /// shorter is at least 5 chars. Family-name tokens weigh 2, the rest 1. The
-    /// best <paramref name="take"/> leaves with a score above zero survive,
-    /// score first then code order.
-    /// </summary>
-    internal static IReadOnlyList<AgentClassificationEntry> LexicalTop(
-        IReadOnlyList<string> nameTokens,
-        IReadOnlyList<string> otherTokens,
-        IReadOnlyList<AgentClassificationEntry> leaves,
-        Dictionary<string, HashSet<string>> leafTokens,
-        int take)
-    {
-        var weighted = nameTokens
-            .Select(token => (Token: token, Weight: 2))
-            .Concat(otherTokens
-                .Where(token => !nameTokens.Contains(token))
-                .Select(token => (Token: token, Weight: 1)))
-            .ToList();
-        if (weighted.Count == 0)
-            return Array.Empty<AgentClassificationEntry>();
-
-        var scored = new List<(AgentClassificationEntry Leaf, int Score)>();
-        foreach (var leaf in leaves)
-        {
-            if (!leafTokens.TryGetValue(leaf.Code, out var tokens))
-                continue;
-
-            var score = weighted.Sum(pair =>
-                tokens.Any(leafToken => TokensMatch(pair.Token, leafToken)) ? pair.Weight : 0);
-            if (score > 0)
-                scored.Add((leaf, score));
-        }
-
-        return scored
-            .OrderByDescending(pair => pair.Score)
-            .ThenBy(pair => pair.Leaf.Code, AgentClassificationTable.CodeComparer)
-            .Take(take)
-            .Select(pair => pair.Leaf)
-            .ToArray();
-    }
-
-    internal static bool TokensMatch(string left, string right)
-    {
-        if (string.Equals(left, right, StringComparison.Ordinal))
-            return true;
-
-        if (left.Length < MinPrefixLength || right.Length < MinPrefixLength)
-            return false;
-
-        return left.Length < right.Length
-            ? right.StartsWith(left, StringComparison.Ordinal)
-            : left.StartsWith(right, StringComparison.Ordinal);
-    }
-
-    /// <summary>Lower-case tokens, ё folded to е, split on every non-letter/digit.</summary>
-    internal static string[] Tokenize(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return Array.Empty<string>();
-
-        var tokens = new List<string>();
-        var builder = new System.Text.StringBuilder();
-        foreach (var character in text!)
-        {
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(character);
-                continue;
-            }
-
-            Flush(builder, tokens);
-        }
-
-        Flush(builder, tokens);
-        return tokens.ToArray();
-    }
-
-    private static void Flush(System.Text.StringBuilder builder, List<string> tokens)
-    {
-        if (builder.Length == 0)
-            return;
-
-        var token = builder.ToString().ToLowerInvariant().Replace('ё', 'е');
-        if (!tokens.Contains(token))
-            tokens.Add(token);
-        builder.Clear();
-    }
-}
-
-/// <summary>
-/// Text preparation of classify_types: groups the selected type snapshots into
-/// families and composes the matching texts - the family text (stage 1) and the
-/// per-type queries (stage 2, the type name plus the values that differ between
-/// the family's types).
-/// </summary>
-internal static class AgentClassificationTexts
-{
-    private const int MaxFamilyTextLength = 600;
-
-    internal static IReadOnlyList<ClassifyFamilyGroup> GroupTypes(
-        IReadOnlyList<ClassifyTypeSnapshot> types)
-    {
-        var groups = new List<ClassifyFamilyGroup>();
-        var byKey = new Dictionary<string, (ClassifyFamilyGroup Group, List<string> Values, HashSet<string> Common)>(
-            StringComparer.Ordinal);
-        foreach (var type in types)
-        {
-            var key = type.FamilyId is { } familyId
-                ? "f" + familyId.ToString(CultureInfo.InvariantCulture)
-                : "sys:" + type.Category + "|" + type.FamilyName;
-            if (!byKey.TryGetValue(key, out var entry))
-            {
-                entry = (
-                    new ClassifyFamilyGroup
-                    {
-                        Key = key,
-                        Category = type.Category,
-                        FamilyName = type.FamilyName,
-                        FamilyId = type.FamilyId
-                    },
-                    new List<string>(),
-                    new HashSet<string>(type.Values, StringComparer.OrdinalIgnoreCase));
-                byKey[key] = entry;
-                groups.Add(entry.Group);
-            }
-            else
-            {
-                entry.Common.IntersectWith(new HashSet<string>(
-                    type.Values, StringComparer.OrdinalIgnoreCase));
-            }
-
-            entry.Group.Types = entry.Group.Types.Append(type).ToArray();
-            foreach (var value in type.Values)
-            {
-                if (!entry.Values.Contains(value, StringComparer.OrdinalIgnoreCase))
-                    entry.Values.Add(value);
-            }
-        }
-
-        foreach (var entry in byKey.Values)
-        {
-            var group = entry.Group;
-            var familyParts = new List<string> { group.Category, group.FamilyName };
-            familyParts.AddRange(entry.Values);
-            var familyText = JoinParts(familyParts);
-            group.FamilyText = familyText.Length > MaxFamilyTextLength
-                ? familyText.Substring(0, MaxFamilyTextLength)
-                : familyText;
-            group.FamilyNameTokens = AgentSemanticLexicon.Tokenize(group.FamilyName);
-            group.TypeQueries = group.Types.Select(type =>
-                {
-                    var parts = new List<string>();
-                    if (group.Types.Count == 1)
-                    {
-                        parts.Add(type.Category);
-                        parts.Add(type.FamilyName);
-                        parts.Add(type.TypeName);
-                        parts.AddRange(type.Values);
-                    }
-                    else
-                    {
-                        parts.Add(type.FamilyName);
-                        parts.Add(type.TypeName);
-                        parts.AddRange(type.Values.Where(value => !entry.Common.Contains(value)));
-                    }
-
-                    return JoinParts(parts);
-                })
-                .ToArray();
-        }
-
-        return groups;
-    }
-
-    private static string JoinParts(IReadOnlyList<string> parts)
-    {
-        var flat = new List<string>();
-        foreach (var part in parts)
-        {
-            if (!string.IsNullOrWhiteSpace(part) && !flat.Contains(part))
-                flat.Add(part);
-        }
-
-        return string.Join("; ", flat);
-    }
 }
