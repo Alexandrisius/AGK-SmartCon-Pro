@@ -367,6 +367,33 @@ GroupTypes` — группировка типоразмеров в семейс�
 которую принимает схема `set_parameters` как есть). Вход — снимки
 `ClassifyTypeSnapshot` и настройки `ClassifyOptions`.
 
+## AgentSemanticLexicon
+
+`Services/Agent/AgentSemanticLexicon.cs` — детерминированная половина
+семантического сопоставления: `Tokenize` (нижний регистр, `ё`→`е`, разбиение
+по не-буквам/цифрам) и `TokensMatch` (равенство или префикс с коротким ≥5
+символов).
+
+## AgentClassificationTexts
+
+`Services/Agent/AgentClassificationTexts.cs` — подготовка текстов
+classify_types: `GroupTypes` группирует снимки типоразмеров в семейства и
+компонует текст семейства и запросы типоразмеров (имя + отличающиеся значения).
+
+## AgentClassificationMatcher.Descent
+
+Партиал `AgentClassificationMatcher` (`Services/Agent/
+AgentClassificationMatcher.Descent.cs`): вопрос о ветви, лексическое сужение
+под выбранными ветвями и семантический спуск по уровням для семейств без
+лексических попаданий (опции — CHILD предыдущего уровня, опция-воздержание).
+
+## AgentClassificationMatcher.Result
+
+Партиал `AgentClassificationMatcher` (`Services/Agent/
+AgentClassificationMatcher.Result.cs`): сборка исхода — статусы типов (включая
+`no_confidence` для голого Choice), группы assignments, батчи
+set_parameters, типизированные отказы и предупреждения с истинными причинами.
+
 ## AgentActionDigest
 
 Дайджест действия агента для компакции истории.
