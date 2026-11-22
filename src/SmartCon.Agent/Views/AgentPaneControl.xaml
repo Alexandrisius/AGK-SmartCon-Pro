@@ -1350,6 +1350,25 @@
                                      Style="{DynamicResource CompactPasswordBox}"/>
                         <TextBlock Text="{loc:Loc Agent_Settings_ApiKeyHint}" Style="{StaticResource SettingsHint}"/>
 
+                        <TextBlock Text="{loc:Loc Agent_Settings_ReasoningEffort}" Style="{StaticResource SettingsLabel}"/>
+                        <ComboBox ItemsSource="{Binding ReasoningEffortOptions}"
+                                  SelectedItem="{Binding SettingsReasoningEffort}"
+                                  Height="28"
+                                  Style="{DynamicResource CompactComboBox}"/>
+
+                        <TextBlock Text="{loc:Loc Agent_Settings_ReasoningFormat}" Style="{StaticResource SettingsLabel}"/>
+                        <ComboBox ItemsSource="{Binding ReasoningFormatOptions}"
+                                  SelectedValuePath="Value"
+                                  SelectedValue="{Binding SettingsReasoningFormat}"
+                                  DisplayMemberPath="Label"
+                                  Height="28"
+                                  Style="{DynamicResource CompactComboBox}"/>
+
+                        <TextBlock Text="{loc:Loc Agent_Settings_MaxOutputTokens}" Style="{StaticResource SettingsLabel}"/>
+                        <TextBox Text="{Binding SettingsMaxOutputTokens, UpdateSourceTrigger=PropertyChanged}"
+                                 Height="28"
+                                 Style="{DynamicResource CompactTextBox}"/>
+
                         <Border Height="1"
                                 Margin="0,12,0,8"
                                 Background="{DynamicResource BorderAltBrush}"/>

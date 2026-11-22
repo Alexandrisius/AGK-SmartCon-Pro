@@ -85,6 +85,7 @@ internal sealed class LlmResponseAccumulator
         }
 
         var finishReason = _finishReason;
+        var truncated = false;
         if (finishReason is { Length: > 0 }
             && !string.Equals(finishReason, "stop", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(finishReason, "tool_calls", StringComparison.OrdinalIgnoreCase)
@@ -97,15 +98,10 @@ internal sealed class LlmResponseAccumulator
                     "[Action: rephrase the request or choose another model]");
             }
 
-            if (string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new AgentLlmException(
-                    "The response was cut off by the output token limit" +
-                    (named.Count > 0
-                        ? " before the tool call arguments were complete; executing them could write partial data."
-                        : ".") +
-                    " [Action: raise the output limit in the agent settings, or ask for a smaller step]");
-            }
+            // finish_reason "length": the reply (or the reasoning before it) hit
+            // the output token budget. The completion is marked truncated; the
+            // orchestrator discards it and re-requests the round.
+            truncated = string.Equals(finishReason, "length", StringComparison.OrdinalIgnoreCase);
         }
 
         var message = new AgentMessage
@@ -121,6 +117,7 @@ internal sealed class LlmResponseAccumulator
             Message = message,
             Usage = _usage,
             FinishReason = _finishReason,
+            Truncated = truncated,
             Model = model,
             Provider = provider,
             RequestId = _requestId

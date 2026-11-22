@@ -12,12 +12,22 @@ public static class AgentContextStatus
 {
     public const int EstimatedTokens = 96;
 
+    /// <summary>
+    /// Reminder appended after the tag when the previous answer of this round
+    /// was discarded because the provider stopped at the output token limit.
+    /// </summary>
+    private const string OutputCutReminder =
+        "Your previous reply was cut off by the output token limit before it was complete " +
+        "(reasoning tokens count toward the limit). Send it again: at most 3 tool calls, " +
+        "compact arguments, do not restate tool results.";
+
     public static string Build(
         int round,
         int elapsedMinutes,
         int contextTokens,
         int contextLimit,
-        AgentCompactionResult? compaction)
+        AgentCompactionResult? compaction,
+        int outputCut = 0)
     {
         var builder = new StringBuilder(256);
         builder.Append("<context_status round=\"")
@@ -50,7 +60,12 @@ public static class AgentContextStatus
                 .Append('"');
         }
 
+        if (outputCut > 0)
+            builder.Append(" output_cut=\"").Append(outputCut).Append('"');
+
         builder.Append(" />");
+        if (outputCut > 0)
+            builder.Append("\n").Append(OutputCutReminder);
         return builder.ToString();
     }
 
@@ -59,6 +74,8 @@ public static class AgentContextStatus
         int elapsedMinutes,
         int contextTokens,
         int contextLimit,
-        AgentCompactionResult? compaction) =>
-        AgentMessage.System(Build(round, elapsedMinutes, contextTokens, contextLimit, compaction));
+        AgentCompactionResult? compaction,
+        int outputCut = 0) =>
+        AgentMessage.System(Build(
+            round, elapsedMinutes, contextTokens, contextLimit, compaction, outputCut));
 }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SmartCon.Agent.Services.Decisions;
@@ -31,6 +32,21 @@ public sealed partial class AgentMainViewModel
     public IReadOnlyList<string> ProviderOptions { get; } =
         new[] { "openrouter", "opencode-go", "zai-glm" };
 
+    public IReadOnlyList<string> ReasoningEffortOptions { get; } =
+        AgentLlmSettings.ReasoningEffortChoices;
+
+    public IReadOnlyList<AgentSettingChoice> ReasoningFormatOptions { get; } = new[]
+    {
+        new AgentSettingChoice("auto", S("Agent_Settings_FormatAuto", "Auto by provider")),
+        new AgentSettingChoice(
+            "reasoning_effort",
+            S("Agent_Settings_FormatEffort", "reasoning_effort")),
+        new AgentSettingChoice(
+            "reasoning",
+            S("Agent_Settings_FormatObject", "reasoning { effort }")),
+        new AgentSettingChoice("none", S("Agent_Settings_FormatNone", "Do not send"))
+    };
+
     public IReadOnlyList<string> DecisionProviderOptions { get; } =
         AgentDecisionsSettings.Providers;
 
@@ -49,6 +65,16 @@ public sealed partial class AgentMainViewModel
 
     [ObservableProperty]
     private string _settingsApiKeyInput = string.Empty;
+
+    [ObservableProperty]
+    private string _settingsReasoningEffort = AgentLlmSettings.DefaultReasoningEffort;
+
+    [ObservableProperty]
+    private string _settingsReasoningFormat = "auto";
+
+    [ObservableProperty]
+    private string _settingsMaxOutputTokens =
+        AgentLlmSettings.DefaultMaxOutputTokens.ToString(CultureInfo.InvariantCulture);
 
     [ObservableProperty]
     private string _settingsDecisionProvider = "openrouter";
@@ -76,6 +102,12 @@ public sealed partial class AgentMainViewModel
         SettingsModel = _settings.Model;
         SettingsApiKeyInput = _settings.ApiKey;
         _chatKeyDrafts[NormalizeChatProvider(SettingsProvider)] = SettingsApiKeyInput;
+
+        SettingsReasoningEffort = _settings.ReasoningEffort;
+        SettingsReasoningFormat = AgentLlmSettings.ReasoningFormatChoiceFor(
+            _settings.ReasoningFormat);
+        SettingsMaxOutputTokens = _settings.MaxOutputTokens.ToString(
+            CultureInfo.InvariantCulture);
 
         SettingsDecisionProvider = _decisionsSettings.Provider;
         RebuildDecisionOptions();
@@ -131,6 +163,30 @@ public sealed partial class AgentMainViewModel
             return;
         }
 
+        if (!int.TryParse(
+                SettingsMaxOutputTokens,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var maxOutputTokens)
+            || maxOutputTokens < AgentLlmSettings.MinMaxOutputTokens
+            || maxOutputTokens > AgentLlmSettings.MaxMaxOutputTokens)
+        {
+            SettingsError = S(
+                "Agent_Settings_MaxOutputTokensInvalid",
+                "Макс. токенов ответа: целое число от 256 до 262144.");
+            SmartConLogger.Warn(
+                "Agent settings save blocked: max output tokens '" + SettingsMaxOutputTokens +
+                "' is not in [" + AgentLlmSettings.MinMaxOutputTokens + ", " +
+                AgentLlmSettings.MaxMaxOutputTokens + "] " +
+                "[Action: enter a valid token budget in the agent settings]");
+            return;
+        }
+
+        _settings.ReasoningEffort = AgentLlmSettings.NormalizeReasoningEffort(
+            SettingsReasoningEffort);
+        _settings.ReasoningFormat = AgentLlmSettings.ParseReasoningFormatChoice(
+            SettingsReasoningFormat);
+        _settings.MaxOutputTokens = maxOutputTokens;
         _settings.Apply(chatProvider, SettingsModel, chatKey);
         if (!_settings.Save())
         {
@@ -170,6 +226,9 @@ public sealed partial class AgentMainViewModel
             "Agent settings saved: provider=" + _settings.Provider +
             ", model=" + _settings.Model +
             ", hasChatKey=" + _settings.HasApiKey +
+            ", reasoning=" + _settings.EffectiveReasoningFormat +
+            "/" + _settings.ReasoningEffort +
+            ", maxOutputTokens=" + _settings.MaxOutputTokens +
             ", decisionEnabled=" + _decisionsSettings.Enabled +
             ", hasDecisionKey=" + _decisionsSettings.HasApiKey);
     }
@@ -222,6 +281,8 @@ public sealed partial class AgentMainViewModel
     }
 
     partial void OnSettingsApiKeyInputChanged(string value) => SettingsError = string.Empty;
+
+    partial void OnSettingsMaxOutputTokensChanged(string value) => SettingsError = string.Empty;
 
     partial void OnSettingsDecisionApiKeyInputChanged(string value) =>
         SettingsError = string.Empty;
@@ -288,3 +349,5 @@ public sealed partial class AgentMainViewModel
 }
 
 public sealed record AgentDecisionModelOption(string? Value, string Label);
+
+public sealed record AgentSettingChoice(string Value, string Label);
