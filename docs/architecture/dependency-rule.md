@@ -28,11 +28,14 @@
 | **PipeConnect** | да | — | да | — | — | — | — | — |
 | **ProjectManagement** | да | — | да | — | — | — | — | — |
 | **FamilyManager** | да | — | да | — | — | — | — | — |
-| **Tests** | да | — | да | — | да | да | да | да |
+| **Tests** | да | да** | да | — | да | да | да | да |
 | **IntegrationTests** | да | да | — | — | — | — | да* | — |
 
 \* IntegrationTests → FamilyManager: только для оркестрационных тестов
 internal stale-сервисов в реальном Revit (2026-08); WPF-типы модуля запрещены.
+
+\** Tests → Revit: только метаданные production-регистрации тулов агента
+(2026-11, #478/#485) — см. «SmartCon.Tests → SmartCon.Revit (только метаданные)».
 
 ## Карта проектов
 
@@ -50,7 +53,7 @@ internal stale-сервисов в реальном Revit (2026-08); WPF-тип�
 | **SmartCon.ProjectManagement** | Модуль Share Project (ISO 19650): та же структура папок | Core, UI |
 | **SmartCon.FamilyManager** | Модуль FamilyManager (dockable panel, SQLite-каталог): Commands / Events / ViewModels / Views / Behaviors / Services (`LocalCatalog/`, `Stale/`, `Actualization/`, `Routing/`, `Geometry/`, `Import/`, `Migrations/`, `Validation/`) | Core, UI |
 | **SmartCon.Dependencies** | net48-only ILRepack-хост сторонних зависимостей (ADR-051), листовой | — (только NuGet) |
-| **SmartCon.Tests** | Unit + ViewModel тесты (xUnit + Moq), пиннут на net8.0-windows | Core, модули |
+| **SmartCon.Tests** | Unit + ViewModel тесты (xUnit + Moq), пиннут на net8.0-windows | Core, модули, Agent, Revit (только метаданные) |
 | **SmartCon.IntegrationTests** | TUnit-тесты внутри реального Revit (net48 / net8 / net10) | Core, Revit, FamilyManager (оркестрационные) |
 | **SmartCon.Updater** | Standalone .NET 8 updater: применяет pending update при закрытии Revit | — |
 
@@ -70,9 +73,9 @@ internal stale-сервисов в реальном Revit (2026-08); WPF-тип�
 
 ### SmartCon.IntegrationTests (особая роль)
 
-`SmartCon.IntegrationTests` — единственный проект, которому **разрешена** ссылка
-на `SmartCon.Revit`: его назначение — тестировать границу SmartCon ↔ Revit API
-внутри реального процесса Revit (Nice3point.TUnit.Revit, см.
+`SmartCon.IntegrationTests` — единственный проект, которому **разрешено
+исполнять** код границы SmartCon ↔ Revit API: его назначение — тестировать эту
+границу внутри реального процесса Revit (Nice3point.TUnit.Revit, см.
 `.agents/skills/smartcon-testing/references/integration-testing.md`).
 Ограничения: без UI/App/модулей-ViewModels; типы RevitAPIUI в тестах
 запрещены (тест-хост без UI-сессии — FileLoadException дестабилизирует сессию).
@@ -81,6 +84,30 @@ internal stale-сервисов в реальном Revit (2026-08); WPF-тип�
 `StaleCheckContentFallbackTests`) прогоняют настоящие internal-сервисы модуля
 (`StaleFamilyUpdater`, `StaleDetector`) внутри реального Revit; WPF-типы
 модуля по-прежнему запрещены (тот же краш-хост риск).
+
+### SmartCon.Tests → SmartCon.Revit (только метаданные)
+
+`SmartCon.Tests` ссылается на `SmartCon.Revit` с 2026-11 (#478) ровно для
+одного класса проверок — **метаданные production-регистрации тулов агента**:
+`AgentToolRegistrationCoverageTests` (обход типов сборки: каждый `IAgentTool`
+зарегистрирован, `ToolTypes` без самозванцев и дублей) и
+`AgentToolSchemaDocumentIdTests` (схемы `Definition` Agent-side тулов).
+Границы исключения:
+- **Только метаданные.** Читаются `Type`, дескрипторы `ServiceCollection` и
+  `IAgentTool.Definition`; ни один тест не вызывает Revit API и не строит
+  `Document` — это работа `SmartCon.IntegrationTests`.
+- **Никаких типов, производных от Revit API.** В unit-хосте нет рантайма
+  RevitAPI (`ExcludeAssets=runtime`), поэтому такой тест падает сразу с
+  `FileNotFoundException`, а не проходит ложно; тулы агента наследуются только
+  от Core-типов.
+- **Обход типов живёт здесь и только здесь.** `Assembly.GetTypes()` сборки
+  `SmartCon.Revit` в headless-хосте интеграционных тестов подгружает типы,
+  производные от Revit API UI, и роняет Revit (AccessViolation, проверено
+  2026-11-22); проверка самого реестра (`реестр == ToolTypes`) — в
+  `AgentToolRegistrationCoverageTests` проекта `SmartCon.IntegrationTests`.
+- Новые тесты в `SmartCon.Tests`, которым нужен `SmartCon.Revit`, допустимы
+  только в этих границах; всё, что исполняет Revit API, — в
+  `SmartCon.IntegrationTests`.
 
 ### SmartCon.Dependencies (net48 only, ADR-051)
 

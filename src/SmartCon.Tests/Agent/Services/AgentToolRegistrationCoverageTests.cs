@@ -27,7 +27,9 @@ public class AgentToolRegistrationCoverageTests
     {
         foreach (var type in assemblies.SelectMany(GetLoadableTypes))
         {
-            if (type.IsAbstract || type.IsGenericTypeDefinition || !type.IsPublic)
+            if (type.IsAbstract || type.IsGenericTypeDefinition)
+                continue;
+            if (!(type.IsPublic || type.IsNestedPublic))
                 continue;
             if (toolInterface.IsAssignableFrom(type))
                 yield return type;
@@ -38,9 +40,12 @@ public class AgentToolRegistrationCoverageTests
     /// The unit host has no RevitAPI runtime (ExcludeAssets=runtime), so types
     /// deriving from Revit API bases cannot load here. Agent tools never do:
     /// their inheritance chain is Core-only, so every IAgentTool implementer
-    /// is among the loadable types and the guard still sees all of them (the
-    /// integration parity test additionally resolves the full catalog inside
-    /// a real Revit process).
+    /// is among the loadable types and the guard still sees all of them. This
+    /// scan is the reason SmartCon.Tests may reference SmartCon.Revit (metadata
+    /// only, dependency rule): the same GetTypes() inside the Revit test host
+    /// loads Revit-API-UI-derived types and crashes it, so it cannot live in
+    /// the integration project. The registry itself is checked there
+    /// (AgentToolRegistrationCoverageTests in SmartCon.IntegrationTests).
     /// </summary>
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
     {
@@ -108,6 +113,10 @@ public class AgentToolRegistrationCoverageTests
             string.Join(Environment.NewLine, uncovered.Select(type =>
                 "IAgentTool '" + type.Name + "' is registered by AddRevitAgentTools but missing from ToolTypes")));
     }
+
+    // The inverse — a declared type whose registration line was deleted — needs
+    // the factory registrations resolved, i.e. the real graph: it is guarded by
+    // AgentToolRegistrationCoverageTests in SmartCon.IntegrationTests.
 
     [Fact]
     public void ToolTypes_HaveNoDuplicates()

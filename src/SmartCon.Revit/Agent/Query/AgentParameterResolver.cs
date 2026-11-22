@@ -23,7 +23,7 @@ internal static class AgentParameterResolver
     /// <summary>
     /// Built-in Assembly Code: renamed from UNIFORMAT_CODE to ASSEMBLY_CODE in the Revit 2026 API.
     /// </summary>
-    private static readonly BuiltInParameter AssemblyCodeBuiltIn =
+    internal static readonly BuiltInParameter AssemblyCodeBuiltIn =
 #if REVIT2026_OR_GREATER
         BuiltInParameter.ASSEMBLY_CODE;
 #else
