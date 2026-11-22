@@ -3,6 +3,9 @@ using System.Text;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
+using SmartCon.Revit.Agent.Classification;
 using RevitFamily = Autodesk.Revit.DB.Family;
 
 namespace SmartCon.IntegrationTests.Agent;
@@ -263,6 +266,86 @@ public sealed partial class AgentRealCasesBenchmarkTests
             .OfClass(type)
             .WhereElementIsElementType()
             .FirstElementId() is { } id && !id.Equals(ElementId.InvalidElementId) ? id : null;
+
+    // ── Case10: the same classifier as the table of the document ─────────
+
+    private const string Case10TableFileName = "classifier-table.txt";
+
+    private List<AgentClassificationEntry> _case10ClassifierRows = null!;
+
+    private int _case10TableEntries;
+
+    private string? _case10TablePath;
+
+    /// <summary>
+    /// Гейт сида без LLM: таблица документа несёт весь классификатор — по
+    /// строке на код (строке таблицы нужен код) и с читаемыми названиями.
+    /// </summary>
+    private async Task Case10AssertClassifierTable()
+    {
+        var table = AgentClassificationReader.Read(Doc);
+        await Assert.That(table.Loaded).IsTrue();
+        await Assert.That(table.Entries.Count).IsGreaterThanOrEqualTo(50);
+        await Assert.That(table.Entries.Count).IsEqualTo(_case10ClassifierCodes.Count);
+        await Assert.That(table.Source).IsEqualTo(_case10TablePath);
+        foreach (var row in _case10ClassifierRows)
+        {
+            var loaded = table.Find(row.Code);
+            await Assert.That(loaded).IsNotNull();
+            await Assert.That(loaded!.Description).IsEqualTo(row.Description);
+        }
+
+        foreach (var code in _case10Types.Select(item => item.ExpectedCode).Distinct())
+        {
+            await Assert.That(table.Find(code)).IsNotNull();
+            await Assert.That(table.Find(code)!.IsLeaf).IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// Loads the seed classifier into the document as its classification
+    /// table — the state of a real project, where the classifier is connected
+    /// to the model and the «Код по классификатору» picker shows it. The rows
+    /// come from the classifier the seed already parsed; the file is the table
+    /// format of Revit's own export: four tab-separated columns, UTF-16 (this
+    /// Revit reads the Russian names only in that encoding).
+    /// </summary>
+    private void Case10LoadClassifierTable()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Path.GetDirectoryName(_case10ClassifierPath!)!, Case10TableFileName);
+            File.WriteAllBytes(
+                path,
+                AgentClassificationFile.EncodeUtf16(AgentClassificationFile.Format(_case10ClassifierRows)));
+
+            AgentClassificationLoader.Result? result = null;
+            _transactions!.RunInTransaction(Doc, "Seed case 10 (classification table)", doc =>
+            {
+                result = AgentClassificationLoader.Load(doc, path);
+            });
+
+            var table = AgentClassificationReader.Read(Doc);
+            _case10TablePath = path;
+            _case10TableEntries = table.Entries.Count;
+            if (result is null
+                || result.Status is not (AgentClassificationLoader.Status.Loaded
+                                          or AgentClassificationLoader.Status.AlreadyCurrent)
+                || table.Entries.Count != _case10ClassifierCodes.Count)
+            {
+                _case10SeedError = "Таблица классификации не загрузилась в документ сида (" +
+                                   (result is null ? "нет результата" : result.Status.ToString()) + ": " +
+                                   string.Join("; ", result?.Problems ?? Array.Empty<string>()) +
+                                   "; записей " + table.Entries.Count + " из " + _case10ClassifierCodes.Count + ")";
+            }
+        }
+        catch (Exception ex)
+        {
+            _case10SeedError = "Не удалось загрузить таблицу классификации: " +
+                               ex.GetType().Name + ": " + ex.Message;
+        }
+    }
 
     private static FamilySymbol? BenchFirstSymbolOf(RevitFamily family, Document doc)
     {
