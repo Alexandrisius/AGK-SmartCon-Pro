@@ -138,6 +138,7 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
         var promptTokens = 0;
         var completionTokens = 0;
         var scriptedReplyIndex = 0;
+        var emptyAnswers = 0;
 
         transcript.AppendLine("## Dialog");
         transcript.AppendLine();
@@ -192,10 +193,29 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
                     continue;
                 }
 
+                // An EMPTY no-tool response is an LLM glitch (observed after a
+                // heavy parallel fan-out, live case 5 rerun), not a final
+                // answer: keep the (valid, possibly empty) assistant message
+                // and let the model continue. Give up after 3 in a row.
+                if (string.IsNullOrWhiteSpace(response.Content) && emptyAnswers < 3)
+                {
+                    emptyAnswers++;
+                    transcript.AppendLine("**Empty response " + emptyAnswers +
+                                          "/3 — treating as transient and continuing.**");
+                    transcript.AppendLine();
+                    messages.Add(new Dictionary<string, object?>
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = response.Content
+                    });
+                    continue;
+                }
+
                 answer = response.Content;
                 break;
             }
 
+            emptyAnswers = 0;
             callsPerRound.Add(response.ToolCalls.Count);
 
             messages.Add(new Dictionary<string, object?>
