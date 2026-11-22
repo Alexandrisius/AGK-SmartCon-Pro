@@ -132,14 +132,14 @@ public sealed partial class ReplaceFamilyParameterJobAction
                 Source = new FamilyReplaceSourceState
                 {
                     Name = sourceName,
-                    Guid = sourceGuid?.ToString("D"),
+                    SharedParameterGuid = sourceGuid?.ToString("D"),
                     Scope = ParameterScope(source),
                     IsShared = source.IsShared
                 },
                 Target = new FamilyReplaceTargetState
                 {
                     Name = entry.TargetName,
-                    Guid = target.GUID.ToString("D")
+                    SharedParameterGuid = target.GUID.ToString("D")
                 },
                 FormulasAffected = entry.FormulaDependents.ToList(),
                 AlreadyOnTarget = alreadyOnTarget,
@@ -153,7 +153,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
             plan.Actual.Add(new FamilyReplaceActualState
             {
                 Name = sourceName,
-                Guid = sourceGuid?.ToString("D"),
+                SharedParameterGuid = sourceGuid?.ToString("D"),
                 Scope = ParameterScope(source),
                 IsShared = source.IsShared
             });

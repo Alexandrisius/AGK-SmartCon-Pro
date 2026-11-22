@@ -51,7 +51,8 @@ public sealed class LoadToolPackSkillPolicyTests
                 Guid.NewGuid(), "задача", Array.Empty<AgentAttachment>(), null,
                 CancellationToken.None);
 
-            return Llm.Requests.Last()
+            var last = Llm.Requests[Llm.Requests.Count - 1];
+            return last
                 .Messages
                 .Where(message => message.Role == AgentRole.Tool)
                 .Select(message => Parse(message.Content))

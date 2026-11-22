@@ -168,11 +168,14 @@ public sealed partial class CloneScheduleTool : AgentWriteToolBase
         var mappingBySource = new Dictionary<string, MappingEntry>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in mapping)
         {
-            if (!mappingBySource.ContainsKey(entry.SourceField))
-                mappingBySource.Add(entry.SourceField, entry);
-            else
+            if (mappingBySource.TryGetValue(entry.SourceField, out _))
+            {
                 warnings.Add("Duplicate fieldMapping entry for '" + entry.SourceField +
                              "'; the first one wins.");
+                continue;
+            }
+
+            mappingBySource.Add(entry.SourceField, entry);
         }
 
         // 2. Create the clone and add the mapped fields in the source order.
