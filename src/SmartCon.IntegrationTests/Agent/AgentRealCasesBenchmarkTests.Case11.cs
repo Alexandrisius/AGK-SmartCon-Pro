@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Core.Compatibility;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Tools.Read;
+using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 
 namespace SmartCon.IntegrationTests.Agent;
@@ -127,6 +129,79 @@ public sealed partial class AgentRealCasesBenchmarkTests
             // Мягкий ассерт: прогон вообще состоялся (есть ответ модели или вызовы).
             var runHappened = run.Calls.Count > 0 || !string.IsNullOrWhiteSpace(run.Answer);
             await Assert.That(runHappened).IsTrue();
+        }
+        finally
+        {
+            _case11SharedFile?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Механика экспликации без LLM: дословный повтор вызовов живого прогона
+    /// 2026-11-22 (dry-run 3 items → real 3 items) на сидированном мире —
+    /// репродукция «фильтров: 0» из вердикта Case11_Live.
+    /// </summary>
+    [Test]
+    public async Task Case11_ExplicationMechanics()
+    {
+        try
+        {
+            SeedCase11();
+            if (_case11SeedError is not null)
+            {
+                Skip.Test(_case11SeedError);
+                return;
+            }
+
+            var context = new StubRevitContext(Doc);
+            var tool = new BuildSystemSheetsTool(context, _transactions!, _changeSets!);
+
+            var items = new List<string>();
+            foreach (var system in _case11Systems)
+            {
+                items.Add(
+                    "{\"viewId\":" + system.ViewId +
+                    ",\"sheetName\":\"Аксонометрия " + system.Name + "\"," +
+                    "\"explication\":{\"sourceScheduleId\":" + _case11MainScheduleId +
+                    ",\"keepFields\":[\"Наименование\",\"Единица измерения\",\"Количество\"]," +
+                    "\"filterField\":\"АДСК_ИмяСистемы\",\"filterValue\":\"" +
+                    system.Name + "\"}}");
+            }
+
+            var payload = "\"items\":[" + string.Join(",", items) + "]";
+            JsonElement ParseCase(string json)
+            {
+                using var document = JsonDocument.Parse(json);
+                return document.RootElement.Clone();
+            }
+
+            var dry = tool.ExecuteForTests(
+                ParseCase("{" + payload + ",\"dryRun\":true}"), approved: true, CancellationToken.None);
+            await Assert.That(dry.Success).IsTrue();
+
+            var real = tool.ExecuteForTests(
+                ParseCase("{" + payload + ",\"dryRun\":false}"), approved: true, CancellationToken.None);
+            await Assert.That(real.Success).IsTrue();
+
+            foreach (var system in _case11Systems)
+            {
+                var sheet = Case11AllSheets()
+                    .FirstOrDefault(candidate => candidate.Name == "Аксонометрия " + system.Name);
+                await Assert.That(sheet).IsNotNull();
+                var instance = Case11ScheduleOnSheet(sheet!);
+                await Assert.That(instance).IsNotNull();
+                var clone = sheet!.Document.GetElement(instance!.ScheduleId) as ViewSchedule;
+                await Assert.That(clone).IsNotNull();
+
+                var filters = clone!.Definition.GetFilters();
+                await Assert.That(filters.Count).IsEqualTo(1);
+                await Assert.That(filters[0].IsStringValue).IsTrue();
+                await Assert.That(filters[0].GetStringValue()).IsEqualTo(system.Name);
+
+                var filterFieldNames = string.Join("|", filters.Select(
+                    f => clone.Definition.GetField(f.FieldId)?.GetName()));
+                await Assert.That(filterFieldNames).IsEqualTo("АДСК_ИмяСистемы");
+            }
         }
         finally
         {

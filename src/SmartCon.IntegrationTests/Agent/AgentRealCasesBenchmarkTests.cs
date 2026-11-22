@@ -38,7 +38,7 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
     // (2026-11-21): a 12-family migration spends 3–4 rounds on reads plus 5+ on
     // the job lifecycle, and both live runs hit 10 before the final report —
     // the model was mid-work, so the cap graded itself again.
-    private const int MaxRoundsPerTask = 20;
+    private const int MaxRoundsPerTask = 32;
 
     /// <summary>Стартовый блок теста из SSOT — дословно, добавляется к каждому кейсу.</summary>
     private const string StarterBlock =

@@ -187,6 +187,10 @@ public sealed class ListFamilyTypesTool : AgentReadToolBase
             ? subject + " has no types (empty family)."
             : subject + ": " + reports.Count + " of " + types.Count +
               " type(s)" + (nextOffset < types.Count ? ", next offset " + nextOffset : string.Empty) + ".";
+        // Live case 5 round 2: reading families one-per-call burned the round
+        // budget; nudge the batch parameter for the rest of the list.
+        if (families.Count == 1 && !args.TryGetProperty("familyIds", out _))
+            messageText += " Reading several families? Pass familyIds:[...] — up to 50 in one call.";
 
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
     }

@@ -112,11 +112,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
             await Assert.That(template.ViewType).IsEqualTo(ViewType.FloorPlan);
         }
 
-        // Эталон: на последнем уровне, имя эталона, шаблон «Отопление» назначен.
+        // Эталон: на уровне 1 (его имя — «этаж 1»), имя эталона, шаблон «Отопление» назначен.
         var reference = Case6FindPlan(Case6ReferenceName);
         await Assert.That(reference is not null).IsTrue();
         await Assert.That(reference!.GenLevel?.Id.GetValue())
-            .IsEqualTo(_case6.LevelIds[Case6LevelCount]);
+            .IsEqualTo(_case6.LevelIds[1]);
         await Assert.That(reference.ViewTemplateId.GetValue())
             .IsEqualTo(_case6.TemplateIds[Case6FirstSystem]);
 
@@ -213,8 +213,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         // Эталон = источник шаблона «Отопление»: CreateViewTemplate копирует
         // настройки вида (доказанный паттерн AgentBatchViewToolsTests), затем
-        // шаблон назначается эталону по-настоящему (ViewTemplateId).
-        var reference = ModelSeed.CreateViewPlanChecked(doc, topLevelId, Case6ReferenceName);
+        // шаблон назначается эталону по-настоящему (ViewTemplateId). Эталон живёт
+        // на УРОВНЕ 1 — его имя должно быть согласовано с уровнем, иначе модель
+        // видит «ошибку проекта» и исправляет её переименованием (live 2026-11-22).
+        var reference = ModelSeed.CreateViewPlanChecked(
+            doc, ElementIdCompat.Create(_case6.LevelIds[1]), Case6ReferenceName);
         var heating = reference.CreateViewTemplate();
         if (heating is null)
         {
@@ -317,9 +320,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
         if (reference is null ||
             reference.Id.GetValue() != _case6.ReferenceViewId ||
             reference.GenLevel is null ||
-            reference.GenLevel.Id.GetValue() != _case6.LevelIds[Case6LevelCount])
+            reference.GenLevel.Id.GetValue() != _case6.LevelIds[1])
         {
-            Skip.Test("Эталон «" + Case6ReferenceName + "» не на последнем уровне — сид кейса 6 некорректен");
+            Skip.Test("Эталон «" + Case6ReferenceName + "» не на уровне 1 — сид кейса 6 некорректен");
             return;
         }
 
@@ -348,7 +351,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             _case6.TemplateIds[Case6FirstSystem] + "), «" + Case6Systems()[1] + "\" (id " +
             _case6.TemplateIds[Case6Systems()[1]] + ")",
             "эталон имени «" + Case6ReferenceName + "\" (id " + _case6.ReferenceViewId +
-            ") на уровне «" + Case6LevelPrefix + Case6LevelCount + "\", шаблон назначен (ViewTemplateId)",
+            ") на уровне «" + Case6LevelPrefix + "1\", шаблон назначен (ViewTemplateId)",
             "других планов нет; ожидается " + Case6LevelCount + "×2 планов с именами «В_Этаж N_<система>» " +
             "(N — номер из имени уровня) и НАЗНАЧЕННЫМ ViewTemplateId своего шаблона",
             "эталон имени даётся кейсом (у каждого проекта свой) — паттерн тулы не хардкодят"
@@ -464,9 +467,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 call.ToolName + (call.Success ? string.Empty : "(!" + call.ErrorCode + ")")));
 
         // (1) Матрица 5×2: имя есть + шаблон верный + этаж имени = уровню вида.
-        // Эталон закрывает строку (этаж 1, Отопление): его GenLevel — сид-артефакт
-        // (создан на последнем уровне), поэтому GenLevel проверяется только у видов,
-        // созданных моделью.
+        // Эталон закрывает строку (этаж 1, Отопление): он сидирован на уровне 1,
+        // так что GenLevel проверяется у всех десяти планов одинаково.
         var rowsOk = 0;
         var rowsExisting = 0;
         var missing = new List<string>();
@@ -491,9 +493,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 if (!templateOk)
                     wrongTemplate.Add(expected);
 
-                var isReference = view.Id.GetValue() == _case6.ReferenceViewId;
-                var levelOk = isReference ||
-                              view.GenLevel?.Id.GetValue() == _case6.LevelIds[floor];
+                var levelOk = view.GenLevel?.Id.GetValue() == _case6.LevelIds[floor];
                 if (!levelOk)
                     wrongLevel.Add(expected);
 

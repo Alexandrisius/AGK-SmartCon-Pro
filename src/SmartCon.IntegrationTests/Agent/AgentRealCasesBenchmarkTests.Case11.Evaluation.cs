@@ -92,7 +92,27 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 {
                     var filter = Case11AdskFilterOf(schedule);
                     if (filter is null)
-                        problems.Add("фильтр по «АДСК_ИмяСистемы» не найден");
+                    {
+                        var filterCount = 0;
+                        var filterFieldNames = new List<string>();
+                        try
+                        {
+                            foreach (var f in schedule.Definition.GetFilters())
+                            {
+                                filterCount++;
+                                filterFieldNames.Add(
+                                    schedule.Definition.GetField(f.FieldId)?.GetName() ?? "(null)");
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // диагностика недоступна
+                        }
+
+                        problems.Add("фильтр по «АДСК_ИмяСистемы» не найден (фильтров: " +
+                                     filterCount + ", поля: " +
+                                     string.Join("|", filterFieldNames) + ")");
+                    }
                     else if (!ContainsText(filter.OpName, "equal") ||
                              !string.Equals(filter.Value, system, StringComparison.Ordinal))
                         problems.Add("фильтр «" + filter.Field + "» " + filter.OpName +
@@ -287,7 +307,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
         new FilteredElementCollector(sheet.Document)
             .OfClass(typeof(ScheduleSheetInstance))
             .Cast<ScheduleSheetInstance>()
-            .FirstOrDefault(instance => instance.OwnerViewId == sheet.Id);
+            .Where(instance => instance.OwnerViewId == sheet.Id)
+            // Лист несёт собственный <Revision Schedule> титула — это не экспликация.
+            .FirstOrDefault(instance =>
+                sheet.Document.GetElement(instance.ScheduleId) is ViewSchedule candidate &&
+                !candidate.IsTitleblockRevisionSchedule);
 
     private static bool Case11ScheduleRightOfView(ViewSheet sheet, ScheduleSheetInstance instance)
     {

@@ -15,6 +15,9 @@ public sealed partial class SemanticMatchTool
 
         public string Query = string.Empty;
 
+        public IReadOnlyList<(string Id, string Query, string? Instructions)> Queries =
+            Array.Empty<(string, string, string?)>();
+
         public string? Instructions;
 
         public int TopK = DefaultTopK;
@@ -295,14 +298,55 @@ public sealed partial class SemanticMatchTool
             return null;
         }
 
-        if (!TryGetString(args, "query", out var query))
+        if (args.TryGetProperty("queries", out var queriesElement)
+            && queriesElement.ValueKind == JsonValueKind.Array
+            && queriesElement.GetArrayLength() > 0)
         {
-            error = "query is required and must be a non-empty string.";
+            if (queriesElement.GetArrayLength() > 20)
+            {
+                error = "queries must contain at most 20 entries, got " +
+                        queriesElement.GetArrayLength() + ".";
+                return null;
+            }
+
+            var queries = new List<(string, string, string?)>();
+            var seenQueryIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in queriesElement.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object
+                    || !TryGetString(entry, "id", out var queryId)
+                    || !TryGetString(entry, "query", out var queryText))
+                {
+                    error = "Every queries entry must be an object with non-empty string id and query.";
+                    return null;
+                }
+
+                if (!seenQueryIds.Add(queryId))
+                {
+                    error = "Duplicate queries id '" + queryId + "'.";
+                    return null;
+                }
+
+                queries.Add((queryId, Truncate(queryText),
+                    TryGetString(entry, "instructions", out var entryInstructions)
+                        ? Truncate(entryInstructions)
+                        : null));
+            }
+
+            request.Queries = queries;
+            request.Query = queries[0].Item2;
+        }
+        else if (!TryGetString(args, "query", out var query))
+        {
+            error = "query (or a non-empty queries array) is required.";
             return null;
+        }
+        else
+        {
+            request.Query = Truncate(query);
         }
 
         request.Items = items;
-        request.Query = Truncate(query);
         request.Instructions = TryGetString(args, "instructions", out var instructions)
             ? Truncate(instructions)
             : null;

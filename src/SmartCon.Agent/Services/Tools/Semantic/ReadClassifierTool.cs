@@ -22,8 +22,10 @@ public sealed class ReadClassifierTool : IAgentTool
     private const int MaxLinesCap = 50000;
 
     private const string UsageHint =
-        "Feed the items to semantic_match: items=[{id: code, text: breadcrumb}], " +
-        "query = what you are classifying";
+        "Do not pick codes by eye from this list: semantic_match with " +
+        "classifierPath=<this file> (and optional codePrefix) embeds the classifier " +
+        "itself — pass queries=[{id: element/type name, query: what it is}] and it " +
+        "returns the closest code per query in one call.";
 
     public ReadClassifierTool()
     {
@@ -155,7 +157,7 @@ public sealed class ReadClassifierTool : IAgentTool
         return ToolResult.Ok(
             payload,
             "Parsed " + result.Items.Count + " classifier entries (" +
-            result.ParsedLevels.Count + " level(s)) from " + path + ".",
+            result.ParsedLevels.Count + " level(s)) from " + path + ". " + UsageHint,
             affectedCount: result.Items.Count,
             warnings: warnings.Count == 0 ? null : warnings);
     }

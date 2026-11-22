@@ -44,6 +44,8 @@ public static partial class AgentToolPackSkills
   типизированы (`file_not_found`, `file_read_failed`), ничего не пишет в модель.
 
 ### Рецепты
+- МНОГО запросов — ОДИН вызов: `semantic_match(queries=[{id:ключ, query:описание}, ...], items/classifierPath)` —
+  не вызывай тул по одному запросу на семейство (шторм вызовов губит задачу, #470).
 - Классификатор (кейс «код по классификатору»): `semantic_match(classifierPath=..., codePrefix=""30."")`
   — компактный режим, файл читается сам, аргумент ~100 байт. НЕ собирай items вручную по read_classifier:
   инлайн-массив в каждом параллельном вызове раздувает аргументы и обрезается LLM (#470).

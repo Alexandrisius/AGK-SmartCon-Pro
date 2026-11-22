@@ -44,7 +44,7 @@ public sealed class CreateFloorPlansTool : AgentWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""levels"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""integer""},""description"":""Level ids (list_levels); one plan per level""},""templateId"":{""type"":""integer"",""description"":""View template id (list_view_templates); must belong to the FloorPlan family""},""namePattern"":{""type"":""string"",""description"":""Name pattern with {floor} and {level} placeholders, e.g. \""В_Этаж {floor}_Отопление\""""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional FloorPlan ViewFamilyType id (default: first matching)""},""floors"":{""type"":""object"",""description"":""Explicit floor labels by level id (keys are level ids as strings), e.g. floors levelId 123 -> label 1, 124 -> 2; wins over auto-parsing of the level name"",""additionalProperties"":{""type"":""string""}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""levels"",""templateId"",""namePattern""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""levels"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""integer""},""description"":""Level ids (list_levels); one plan per level""},""templateId"":{""type"":""integer"",""description"":""View template id (list_view_templates); must belong to the FloorPlan family""},""namePattern"":{""type"":""string"",""description"":""Name pattern with {floor} and {level} placeholders, e.g. \""В_Этаж {floor}_Отопление\""""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional FloorPlan ViewFamilyType id (default: first matching)""},""floors"":{""type"":""object"",""description"":""Explicit floor labels by level id (keys are level ids as strings), e.g. floors levelId 123 -> label 1, 124 -> 2; wins over auto-parsing of the level name"",""additionalProperties"":{""type"":""string""}},""skipExisting"":{""type"":""boolean"",""default"":true,""description"":""A view with the planned name already existing (e.g. the reference plan) is skipped untouched instead of failing the item""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""levels"",""templateId"",""namePattern""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -100,13 +100,16 @@ public sealed class CreateFloorPlansTool : AgentWriteToolBase
         }
 
         var atomic = AgentJson.GetBool(args, "atomic", false);
+        // Existing view with the planned name is a no-op skip by default (the
+        // reference plan of the pattern stays untouched), see the card.
+        var skipExisting = AgentJson.GetBool(args, "skipExisting", true);
         outcome.Description = "Created " + levels.Count + " floor plan(s) from '" + namePattern + "'";
 
         // Names are unique across the document for views (conservative check,
         // same as create_view); the set grows with every view created in this
         // batch so in-batch duplicates are caught too.
-        var usedNames = new HashSet<string>(
-            AgentViewWriteHelper.CollectViewNamesByName(doc).Keys, StringComparer.OrdinalIgnoreCase);
+        var viewsByName = AgentViewWriteHelper.CollectViewNamesByName(doc);
+        var usedNames = new HashSet<string>(viewsByName.Keys, StringComparer.OrdinalIgnoreCase);
         var created = new List<object>();
         var floorLabels = new Dictionary<long, string>();
         foreach (var pair in floors)
@@ -137,10 +140,24 @@ public sealed class CreateFloorPlansTool : AgentWriteToolBase
 
             if (usedNames.Contains(name!))
             {
+                viewsByName.TryGetValue(name!, out var holderId);
+                var holderText = holderId > 0
+                    ? "view id " + holderId
+                    : "a view/sheet in this batch";
+                if (skipExisting && holderId > 0)
+                {
+                    report.Reason = "Name '" + name + "' already exists (" + holderText +
+                                    "); left untouched, only the missing plans were created.";
+                    outcome.Batch.Skipped.Add(report);
+                    continue;
+                }
+
                 ApplyViewTemplateTool.Fail(
                     outcome, report, "view_name_taken",
-                    "The name '" + name + "' is already used by a view/sheet (in the document or " +
-                    "in this batch). Change namePattern or the floors labels.");
+                    "The name '" + name + "' is already used by " + holderText +
+                    " (or in this batch). Change namePattern or the floors labels, or pass " +
+                    "skipExisting=true to keep the existing view (e.g. the reference plan) " +
+                    "and create only the missing ones.");
                 if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
                 continue;
             }

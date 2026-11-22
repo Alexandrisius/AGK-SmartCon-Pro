@@ -131,11 +131,17 @@ public abstract class AgentReadToolBase : IAgentTool
                 var open = AgentBackgroundDocuments.ListAll();
                 if (open.Count > 0)
                 {
-                    var reminder = " " + open.Count + " background model(s) open: " +
-                                   string.Join("; ", open.Select(pair =>
-                                       System.IO.Path.GetFileNameWithoutExtension(pair.PathName ?? "?") +
-                                       " -> documentId='" + pair.DocumentId + "'")) +
-                                   ". Pass that documentId to read THAT model.";
+                    var first = open[0];
+                    var reminder = open.Count == 1
+                        ? " NOTE: this is the ACTIVE document. A background model is open (" +
+                          System.IO.Path.GetFileNameWithoutExtension(first.PathName ?? "?") +
+                          "). To read IT instead, repeat this call with documentId='" +
+                          first.DocumentId + "'."
+                        : " " + open.Count + " background models open: " +
+                          string.Join("; ", open.Select(pair =>
+                              System.IO.Path.GetFileNameWithoutExtension(pair.PathName ?? "?") +
+                              " -> documentId='" + pair.DocumentId + "'")) +
+                          ". Pass one to read THAT model.";
                     result = result.WithMessageSuffix(reminder);
                 }
             }

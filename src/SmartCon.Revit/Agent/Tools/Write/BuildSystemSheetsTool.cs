@@ -36,10 +36,15 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "Assembles sheets in one batch (up to 20 items; one transaction, one change set). " +
             "Per item: a new sheet (sheetNumber or the album continuation — the same next " +
             "number get_titleblock_options hints), the view placed with its viewport box in " +
-            "the TOP-LEFT corner inside the sheet border (marginMm, default 10), and an " +
-            "optional scheduleId placed to the right of the view at the view's top edge " +
-            "(the schedule is NOT cloned here — prepare a filtered copy with clone_schedule " +
-            "first). The viewport box is unknown before placement (especially for 3D views), " +
+            "the TOP-LEFT corner inside the sheet border (marginMm, default 10), and either " +
+            "an optional scheduleId placed to the right of the view at the view's top edge " +
+            "(a ready clone — this tool does not clone it) or an optional explication block " +
+            "built in place: a narrow clone of sourceScheduleId with only the keepFields " +
+            "columns visible (a missing column is a warning + skip), an equals filter " +
+            "filterField=filterValue (e.g. АДСК_ИмяСистемы = the system name; the filter " +
+            "field is added as a HIDDEN column when it is not a kept one), the clone named " +
+            "'Экспликация <sheetName>' and placed to the right of the view. scheduleId and " +
+            "explication together are invalid_arguments. The viewport box is unknown before placement (especially for 3D views), " +
             "so the tool places at a provisional point, regenerates, measures GetBoxOutline, " +
             "recenters with SetBoxCenter and verifies the box against ViewSheet.Outline " +
             "(tolerance 1 mm): overflow is reported as a per-item warning with overflow=true " +
@@ -49,12 +54,15 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "double parameters are written as raw internal values. Guards per item: " +
             "view_not_placeable, view_already_placed, sheet_number_taken, " +
             "titleblock_not_found, titleblock_parameter_not_found (a failed parameter is a " +
-            "warning — the sheet stays). atomic=true aborts the whole batch when any item " +
-            "fails validation. undo_last deletes the batch. Dry run defaults to true.",
+            "warning — the sheet stays); for explication also schedule_not_found, " +
+            "schedule_is_template, schedule_not_cloneable, filter_field_not_schedulable, " +
+            "schedule_name_taken. atomic=true aborts the whole batch when any item " +
+            "fails validation. undo_last deletes the batch (sheet, viewport, the " +
+            "explication clone and its placement). Dry run defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer"",""description"":""View to place (the system 3D view)""},""scheduleId"":{""type"":""integer"",""description"":""Schedule to place to the right of the view (a ready clone — this tool does not clone)""},""sheetName"":{""type"":""string"",""description"":""Sheet name, e.g. Axonometric T1""},""sheetNumber"":{""type"":""string"",""description"":""Unique sheet number; omit to continue the album numbering""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Title block type; default: first loaded""},""titleBlockParameters"":{""type"":""object"",""description"":""Instance parameters of the sheet's title block: {parameter name: value} (e.g. size multiplicity)""},""viewportCorner"":{""type"":""string"",""enum"":[""top-left""],""default"":""top-left""},""marginMm"":{""type"":""number"",""default"":10,""description"":""Gap between the sheet border and the viewport box""}},""required"":[""viewId"",""sheetName""],""additionalProperties"":false}},""atomic"":{""type"":""boolean"",""default"":false,""description"":""Abort the whole batch when any item fails validation""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer"",""description"":""View to place (the system 3D view)""},""scheduleId"":{""type"":""integer"",""description"":""Schedule to place to the right of the view (a ready clone — this tool does not clone)""},""explication"":{""type"":""object"",""description"":""Build the explication right of the view instead of placing a ready scheduleId: a narrow clone of sourceScheduleId — visible keepFields columns only, an equals filter filterField=filterValue, the filter field added as a hidden column when it is not kept. Cannot be combined with scheduleId."",""properties"":{""sourceScheduleId"":{""type"":""integer"",""description"":""The common project specification to clone (see list_schedules)""},""keepFields"":{""type"":""array"",""minItems"":1,""maxItems"":15,""items"":{""type"":""string""},""description"":""Visible columns of the explication by display name, e.g. Наименование/Единица измерения/Количество""},""filterField"":{""type"":""string"",""description"":""Filter field, e.g. АДСК_ИмяСистемы""},""filterValue"":{""type"":""string"",""description"":""Filter value: the system name of this sheet""}},""required"":[""sourceScheduleId"",""keepFields"",""filterField"",""filterValue""],""additionalProperties"":false},""sheetName"":{""type"":""string"",""description"":""Sheet name, e.g. Axonometric T1""},""sheetNumber"":{""type"":""string"",""description"":""Unique sheet number; omit to continue the album numbering""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Title block type; default: first loaded""},""titleBlockParameters"":{""type"":""object"",""description"":""Instance parameters of the sheet's title block: {parameter name: value} (e.g. size multiplicity)""},""viewportCorner"":{""type"":""string"",""enum"":[""top-left""],""default"":""top-left""},""marginMm"":{""type"":""number"",""default"":10,""description"":""Gap between the sheet border and the viewport box""}},""required"":[""viewId"",""sheetName""],""additionalProperties"":false}},""atomic"":{""type"":""boolean"",""default"":false,""description"":""Abort the whole batch when any item fails validation""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -114,6 +122,14 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         var nextValue = albumMaxValue + 1;
         var usedNumbers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Explication clone names must not collide with existing/planned ones.
+        var usedScheduleNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (items.Any(item => item.Explication is not null))
+        {
+            foreach (var existing in AgentScheduleReader.Collect(doc))
+                usedScheduleNames.Add(existing.Name);
+        }
+
         var rows = new List<object>(items.Count);
         var planned = new List<PlannedItem>();
 
@@ -124,7 +140,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             var report = new WriteItemReport { Id = item.ViewId };
             var plannedItem = ValidateItem(
                 doc, outcome, item, report, viewportOwners, defaultTitleBlockId,
-                numberPrefix, ref nextValue, numberDigits, usedNumbers);
+                numberPrefix, ref nextValue, numberDigits, usedNumbers, usedScheduleNames);
             if (plannedItem is null)
             {
                 rows.Add(new
@@ -175,7 +191,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         string numberPrefix,
         ref int nextValue,
         int numberDigits,
-        HashSet<string> usedNumbers)
+        HashSet<string> usedNumbers,
+        HashSet<string> usedScheduleNames)
     {
         if (doc.GetElement(ElementIdCompat.Create(item.ViewId)) is not View view)
         {
@@ -298,6 +315,11 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         }
 
         usedNumbers.Add(number);
+        var explication = ValidateExplication(
+            doc, outcome, item, report, number, usedScheduleNames);
+        if (explication is null && item.Explication is not null)
+            return null;
+
         return new PlannedItem
         {
             View = view,
@@ -306,7 +328,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             SheetName = item.SheetName!.Trim(),
             TitleBlockTypeId = titleBlockId,
             MarginMm = marginMm,
-            TitleBlockParameters = item.TitleBlockParameters
+            TitleBlockParameters = item.TitleBlockParameters,
+            Explication = explication
         };
     }
 
@@ -346,7 +369,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             if (entry.Schedule is not null)
             {
                 var schedulePlacement = PlaceScheduleRightOfView(
-                    doc, sheet, entry, placement);
+                    doc, sheet, entry.Schedule!, entry.MarginMm, placement);
                 scheduleInstance = schedulePlacement.Instance;
                 schedulePlacement.Warnings.ForEach(warning =>
                 {
@@ -357,6 +380,20 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 scheduleInfo = schedulePlacement.Info;
             }
 
+            // Same transaction/change set; a refusal throws → the sheet is discarded below.
+            ExplicationPlacement? explication = null;
+            if (entry.Explication is not null)
+            {
+                var explicationWarnings = new List<string>();
+                explication = BuildAndPlaceExplication(
+                    doc, sheet, entry, placement, explicationWarnings);
+                explicationWarnings.ForEach(warning =>
+                {
+                    itemWarnings.Add(warning);
+                    outcome.Warnings.Add(warning);
+                });
+            }
+
             report.NewValue = entry.Number;
             report.Detail = "Viewport " +
                             (placement.InsideSheet
@@ -365,7 +402,10 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                             + "; view '" + entry.View.Name + "'"
                             + (scheduleInstance is null
                                 ? string.Empty
-                                : "; schedule '" + entry.Schedule!.Name + "' placed");
+                                : "; schedule '" + entry.Schedule!.Name + "' placed")
+                            + (explication is null
+                                ? string.Empty
+                                : "; explication '" + explication.Schedule!.Name + "' built");
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
             outcome.Items.Add(new ChangeItem
@@ -396,6 +436,31 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 });
             }
 
+            // Undo (reverse order): the clone is deleted first, the cascaded
+            // placement is then skipped as already removed.
+            if (explication is not null)
+            {
+                outcome.Items.Add(new ChangeItem
+                {
+                    UniqueId = explication.Schedule!.UniqueId,
+                    ElementId = explication.Schedule.Id.GetValue(),
+                    ParameterName = "schedule_created",
+                    NewValue = explication.Schedule.Name,
+                    Status = ChangeStatus.Applied
+                });
+                if (explication.Instance is not null)
+                {
+                    outcome.Items.Add(new ChangeItem
+                    {
+                        UniqueId = explication.Instance.UniqueId,
+                        ElementId = explication.Instance.Id.GetValue(),
+                        ParameterName = "schedule_placed",
+                        NewValue = explication.Schedule.Name,
+                        Status = ChangeStatus.Applied
+                    });
+                }
+            }
+
             rows.Add(new
             {
                 viewId = entry.View.Id.GetValue(),
@@ -411,6 +476,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 insideSheet = placement.InsideSheet,
                 overflow = !placement.InsideSheet,
                 schedule = scheduleInfo,
+                explication = explication?.Info,
                 titleBlockParameters = parameterResults,
                 warnings = itemWarnings.Count == 0 ? null : itemWarnings
             });
@@ -497,6 +563,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
 
         public long? ScheduleId { get; set; }
 
+        public ExplicationRequest? Explication { get; set; }
+
         public string? SheetName { get; set; }
 
         public string? SheetNumber { get; set; }
@@ -515,6 +583,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         public required View View { get; init; }
 
         public ViewSchedule? Schedule { get; init; }
+
+        public PlannedExplication? Explication { get; init; }
 
         public required string Number { get; init; }
 

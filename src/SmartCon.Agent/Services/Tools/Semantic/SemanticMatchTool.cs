@@ -64,6 +64,55 @@ public sealed partial class SemanticMatchTool : IAgentTool
             return Unavailable(detail, request);
         }
 
+        // Batch mode (#470): one call answers MANY queries against the same
+        // item list - live case 5 burned 12-70 single-query calls and never
+        // reached the apply step.
+        if (request.Queries.Count > 0)
+        {
+            var results = new List<object>(request.Queries.Count);
+            for (var index = 0; index < request.Queries.Count; index++)
+            {
+                var query = request.Queries[index];
+                var single = new SemanticMatchRequest
+                {
+                    Items = request.Items,
+                    Query = query.Query,
+                    Instructions = query.Instructions ?? request.Instructions,
+                    TopK = request.TopK,
+                    MinScore = request.MinScore,
+                    Warnings = request.Warnings
+                };
+
+                var singleResult = await MatchAsync(single, ct).ConfigureAwait(false);
+                if (!singleResult.Success)
+                    return singleResult;
+
+                results.Add(new
+                {
+                    id = query.Id,
+                    matches = singleResult.Data
+                });
+            }
+
+            var payload = System.Text.Json.JsonSerializer.SerializeToElement(new
+            {
+                results,
+                queries = request.Queries.Count,
+                decisionUsed = true
+            });
+            // Live case 5 round 2: the model sent 2-3 queries per call and burned
+            // its round budget before applying anything. Nudge small batches to
+            // combine the rest in one call.
+            var batchHint = request.Queries.Count < 5 && request.Queries.Count > 0
+                ? " Send the REST of your items as further queries in this same call (up to 20 per call) instead of re-calling with 2-3."
+                : string.Empty;
+            return ToolResult.Ok(
+                payload,
+                "Matched " + request.Queries.Count + " quer" +
+                (request.Queries.Count == 1 ? "y" : "ies") +
+                " against " + request.Items.Count + " candidate(s)." + batchHint);
+        }
+
         return await MatchAsync(request, ct).ConfigureAwait(false);
     }
 
@@ -102,8 +151,13 @@ public sealed partial class SemanticMatchTool : IAgentTool
             @"""classifierPath"":{""type"":""string""," +
             @"""description"":""Compact mode: parse this classifier txt instead of passing items (id=code, text=breadcrumb)""}," +
             @"""codePrefix"":{""type"":""string""," +
-            @"""description"":""With classifierPath: keep only rows whose code starts with this prefix, e.g. 30. or 10.20""}}," +
-            @"""required"":[""query""],""additionalProperties"":false}";
+            @"""description"":""With classifierPath: keep only rows whose code starts with this prefix, e.g. 30. or 10.20""}," +
+            @"""queries"":{""type"":""array"",""minItems"":1,""maxItems"":20," +
+            @"""description"":""Batch mode: match MANY queries against the same items in ONE call (id = e.g. family/type key)""," +
+            @"""items"":{""type"":""object"",""properties"":{""id"":{""type"":""string""}," +
+            @"""query"":{""type"":""string""},""instructions"":{""type"":""string""}}," +
+            @"""required"":[""id"",""query""],""additionalProperties"":false}}}," +
+            @"""additionalProperties"":false}";
 
         return new AgentToolDefinition
         {
@@ -112,7 +166,8 @@ public sealed partial class SemanticMatchTool : IAgentTool
                 "Ranks a list of short strings (up to 500) by semantic similarity to a query " +
                 "using the small decision model and returns only the top-K matches with " +
                 "scores - the whole list never enters the chat context. Input: " +
-                "items=[{id,text}] plus query (and optional instructions); or the compact " +
+                "items=[{id,text}] plus ONE query - or the batch mode queries=[{id,query}] " +
+                "(many lookups in ONE call - use it whenever several families/types need codes, #470); or the compact " +
                 "mode: classifierPath (+codePrefix filter) reads the txt itself, so the " +
                 "argument stays tiny (parallel calls never truncate #470). Typical lists: " +
                 "classifier entries with breadcrumbs from read_classifier, a ФОП/shared " +

@@ -242,6 +242,245 @@ public sealed class AgentSystemSheetsTests : RevitApiTest
     }
 
     [Test]
+    public async Task BuildSystemSheets_Explication_BuildsNarrowFilteredClone()
+    {
+        if (!_albumCreated)
+            Skip.Test("В шаблоне проекта нет Title Block — лист не создать");
+
+        // Source specification: the Mark column filters, three dynamic columns
+        // stay visible (display names are locale-dependent — pick any three).
+        long sourceId = 0;
+        var keepNames = new List<string>();
+        var filterName = string.Empty;
+        _transactions!.RunInTransaction(Doc, "Seed explication source schedule", doc =>
+        {
+            var source = ModelSeed.CreateScheduleChecked(doc);
+            source.Name = "SC_Экспликация_Источник";
+            sourceId = source.Id.GetValue();
+            var definition = source.Definition;
+
+            var mark = FindSchedulableMark(definition);
+            if (mark is null)
+                return;
+
+            try
+            {
+                filterName = mark.GetName(doc) ?? string.Empty;
+                definition.AddField(mark);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            foreach (var candidate in definition.GetSchedulableFields())
+            {
+                if (keepNames.Count >= 3)
+                    break;
+
+                if (SafeParameterId(candidate) == (long)BuiltInParameter.ALL_MODEL_MARK)
+                    continue;
+
+                string displayName;
+                try
+                {
+                    displayName = candidate.GetName(doc) ?? string.Empty;
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                if (displayName.Length == 0 || keepNames.Contains(displayName))
+                    continue;
+
+                try
+                {
+                    definition.AddField(candidate);
+                    keepNames.Add(displayName);
+                }
+                catch (Exception)
+                {
+                    // A field Revit refuses is not a keep candidate.
+                }
+            }
+        });
+
+        if (sourceId == 0 || keepNames.Count < 3 || filterName.Length == 0)
+            Skip.Test("В категории стен недостаточно полей для экспликации");
+
+        var tool = new BuildSystemSheetsTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var keepJson = string.Join(
+            ",", keepNames.Select(name => "\"" + name + "\""));
+        var result = tool.ExecuteForTests(
+            Parse("{\"items\":[{\"viewId\":" + _planAId + ",\"sheetName\":\"Схема Т1\"," +
+                  "\"explication\":{\"sourceScheduleId\":" + sourceId +
+                  ",\"keepFields\":[" + keepJson + "]," +
+                  "\"filterField\":\"" + filterName + "\",\"filterValue\":\"SC-Т1\"}}]," +
+                  "\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var rows = result.Data!.Value.GetProperty("items").EnumerateArray().ToList();
+        await Assert.That(rows[0].GetProperty("status").GetString()).IsEqualTo("built");
+        await Assert.That(rows[0].GetProperty("explication").GetProperty("scheduleId")
+            .GetInt64()).IsGreaterThan(0);
+
+        // Sheet 4 + the narrow clone: 3 visible columns, 1 hidden filter column,
+        // one equals filter on the system value.
+        var sheet = FindSheet("4");
+        await Assert.That(sheet).IsNotNull();
+        var clone = FindScheduleByName("Экспликация Схема Т1");
+        await Assert.That(clone).IsNotNull();
+
+        var definition2 = clone!.Definition;
+        var visibleNames = new List<string>();
+        var hiddenNames = new List<string>();
+        foreach (var fieldId in definition2.GetFieldOrder())
+        {
+            var field = definition2.GetField(fieldId);
+            if (field.IsHidden)
+                hiddenNames.Add(field.GetName() ?? string.Empty);
+            else
+                visibleNames.Add(field.GetName() ?? string.Empty);
+        }
+
+        await Assert.That(visibleNames.Count).IsEqualTo(3);
+        await Assert.That(hiddenNames.Count).IsEqualTo(1);
+        await Assert.That(hiddenNames[0]).IsEqualTo(filterName);
+
+        var filters = definition2.GetFilters();
+        await Assert.That(filters.Count).IsEqualTo(1);
+        await Assert.That(filters[0].FilterType).IsEqualTo(ScheduleFilterType.Equal);
+        await Assert.That(filters[0].IsStringValue).IsTrue();
+        await Assert.That(filters[0].GetStringValue()).IsEqualTo("SC-Т1");
+
+        // The instance sits right of the viewport box.
+        var instance = FindScheduleOnSheet(sheet!);
+        await Assert.That(instance).IsNotNull();
+        var viewportBox = GetOnlyViewportBox(sheet!);
+        await Assert.That(
+            FeetToMm(instance!.Point.X) >
+            FeetToMm(viewportBox.MaximumPoint.X) - 0.5).IsTrue();
+
+        // The clone belongs to the sheet_created batch: undo removes the
+        // sheet, the viewport, the clone and its placement; the source stays.
+        var set = _changeSets!.Last!;
+        var keys = set.Items.Select(item => item.ParameterName).ToList();
+        await Assert.That(keys.Count(item => item == "sheet_created")).IsEqualTo(1);
+        await Assert.That(keys.Count(item => item == "viewport_created")).IsEqualTo(1);
+        await Assert.That(keys.Count(item => item == "schedule_created")).IsEqualTo(1);
+        await Assert.That(keys.Count(item => item == "schedule_placed")).IsEqualTo(1);
+
+        var undoTool = new UndoLastTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var undo = undoTool.ExecuteForTests(
+            Parse("""{"dryRun":false}"""),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(undo.Success).IsTrue();
+        await Assert.That(FindSheet("4")).IsNull();
+        await Assert.That(FindScheduleByName("Экспликация Схема Т1")).IsNull();
+        await Assert.That(Doc.GetElement(ElementIdCompat.Create(sourceId))).IsNotNull();
+    }
+
+    /// <summary>
+    /// Repro of the live case-11 failure: a MULTI-CATEGORY source schedule with
+    /// shared-parameter columns (InvalidElementId category) — the explication
+    /// clone must keep its equals filter after the transaction commits. The
+    /// walls+built-in-Mark variant above is green; this one mirrors the live
+    /// world where the verdictor saw GetFilters() == 0.
+    /// </summary>
+    [Test]
+    public async Task ExplicationRepro_MultiCategorySharedParamFilter()
+    {
+        if (!_albumCreated)
+            Skip.Test("В шаблоне проекта нет Title Block — лист не создать");
+
+        using var sharedScope = SharedParameterFileScope.Create(Application);
+        var guids = new[]
+        {
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()
+        };
+        long sourceId = 0;
+        string? seedError = null;
+        _transactions!.RunInTransaction(Doc, "Seed multi-cat shared source", doc =>
+        {
+            var file = Application.OpenSharedParameterFile();
+            var group = file!.Groups.Create("SC_ЭксплРепро");
+            ExternalDefinition Create(string name, Guid guid) =>
+                (ExternalDefinition)group.Definitions.Create(
+                    new ExternalDefinitionCreationOptions(name, SpecTypeId.String.Text)
+                    {
+                        GUID = guid
+                    });
+
+            var names = new[] { "SC_Имя", "SC_Ед", "SC_Кол", "SC_Система" };
+            var app = doc.Application;
+            var set = app.Create.NewCategorySet();
+            set.Insert(Category.GetCategory(doc, BuiltInCategory.OST_PipeCurves));
+            set.Insert(Category.GetCategory(doc, BuiltInCategory.OST_PipeFitting));
+            var binding = app.Create.NewInstanceBinding(set);
+            for (var i = 0; i < names.Length; i++)
+            {
+                if (!doc.ParameterBindings.Insert(Create(names[i], guids[i]), binding))
+                {
+                    seedError = "Общий параметр репро не привязался: " + names[i];
+                    return;
+                }
+            }
+
+            var source = ViewSchedule.CreateSchedule(doc, ElementId.InvalidElementId);
+            source.Name = "SC_ЭксплРепро_Источник";
+            var definition = source.Definition;
+            for (var i = 0; i < guids.Length; i++)
+            {
+                var shared = SharedParameterElement.Lookup(doc, guids[i]);
+                var schedulable = definition.GetSchedulableFields()
+                    .FirstOrDefault(field => field.ParameterId == shared!.Id);
+                if (schedulable is null)
+                {
+                    seedError = "Поле мультикатегорийной спеки не нашлось: " + names[i];
+                    return;
+                }
+
+                definition.AddField(schedulable);
+            }
+
+            sourceId = source.Id.GetValue();
+        });
+
+        if (seedError is not null || sourceId == 0)
+            Skip.Test(seedError ?? "Мультикатегорийный источник репро не создался");
+
+        var tool = new BuildSystemSheetsTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = tool.ExecuteForTests(
+            Parse("{\"items\":[{\"viewId\":" + _planAId + ",\"sheetName\":\"Схема Т1\"," +
+                  "\"explication\":{\"sourceScheduleId\":" + sourceId +
+                  ",\"keepFields\":[\"SC_Имя\",\"SC_Ед\",\"SC_Кол\"]," +
+                  "\"filterField\":\"SC_Система\",\"filterValue\":\"Т1\"}}]," +
+                  "\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var rows = result.Data!.Value.GetProperty("items").EnumerateArray().ToList();
+        await Assert.That(rows[0].GetProperty("status").GetString()).IsEqualTo("built");
+
+        var clone = FindScheduleByName("Экспликация Схема Т1");
+        await Assert.That(clone).IsNotNull();
+
+        var filters = clone!.Definition.GetFilters();
+        await Assert.That(filters.Count).IsEqualTo(1);
+        await Assert.That(filters[0].IsStringValue).IsTrue();
+        await Assert.That(filters[0].GetStringValue()).IsEqualTo("Т1");
+    }
+
+    [Test]
     public async Task GetTitleblockOptions_ListsTypesAlbumAndHint()
     {
         if (!_albumCreated)
@@ -339,6 +578,18 @@ public sealed class AgentSystemSheetsTests : RevitApiTest
         }
 
         throw new InvalidOperationException("Лист " + sheet.SheetNumber + " без видовых окон");
+    }
+
+    private ViewSchedule? FindScheduleByName(string name)
+    {
+        foreach (var element in new FilteredElementCollector(Doc).OfClass(typeof(ViewSchedule)))
+        {
+            if (element is ViewSchedule schedule &&
+                string.Equals(schedule.Name, name, StringComparison.Ordinal))
+                return schedule;
+        }
+
+        return null;
     }
 
     private ScheduleSheetInstance? FindScheduleOnSheet(ViewSheet sheet)

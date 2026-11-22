@@ -140,16 +140,17 @@ public sealed partial class BuildSystemSheetsTool
     /// <summary>
     /// Places the schedule at the top edge of the view, to its right. The
     /// actual size is read back through the instance bounding box (it includes
-    /// Revit's fixed ~2.1 mm selection margin around the table).
+    /// Revit's fixed ~2.1 mm selection margin around the table). Used both for
+    /// the ready scheduleId path and for the explication clone.
     /// </summary>
     private static SchedulePlacement PlaceScheduleRightOfView(
         Document doc,
         ViewSheet sheet,
-        PlannedItem entry,
+        ViewSchedule schedule,
+        double marginMm,
         ViewportPlacement placement)
     {
-        var schedule = entry.Schedule!;
-        var margin = AgentSheetWriteHelper.MillimetersToInternal(entry.MarginMm);
+        var margin = AgentSheetWriteHelper.MillimetersToInternal(marginMm);
         var point = new XYZ(placement.BoxMaxXFeet + margin, placement.BoxMaxYFeet, 0);
 
         doc.Regenerate();

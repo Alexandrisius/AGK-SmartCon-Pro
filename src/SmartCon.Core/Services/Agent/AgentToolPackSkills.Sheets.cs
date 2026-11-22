@@ -40,8 +40,13 @@ public static partial class AgentToolPackSkills
 - `build_system_sheets` — сборщик листов (≤20 items, одна транзакция): лист (номер задан или
   продолжение альбома) + вид в левом верхнем углу ЦЕЛИКОМ внутри границ (размер окна узнаётся
   только размещением: place → Regenerate → GetBoxOutline → SetBoxCenter → проверка границ;
-  торчит → warning `overflow=true`, пачка не откатывается) + спека справа от вида (`scheduleId`
-  готового клона) + `titleBlockParameters` титульника (кратность). undo_last удаляет пачку.
+  торчит → warning `overflow=true`, пачка не откатывается) + справа от вида ЛИБО спека по
+  `scheduleId` (готовый клон), ЛИБО блок `explication {sourceScheduleId, keepFields[],
+  filterField, filterValue}` — тул сам клонирует общую спецификацию в узкую таблицу: видимые
+  только keepFields-колонки (отсутствующая → warning + skip), фильтр equals filterField=
+  filterValue, поле фильтра — скрытая колонка; клон «Экспликация <имя листа>» (два пути
+  одновременно — invalid_arguments) + `titleBlockParameters` титульника (кратность).
+  undo_last удаляет пачку (лист, вид, клон, выноску).
 
 ### Кухня Revit
 - Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип
@@ -109,9 +114,13 @@ public static partial class AgentToolPackSkills
 10. «Листы для 3D-видов систем» (вид слева вверху + экспликация справа, номера продолжают
    альбом): `get_titleblock_options` (редактируемый параметр кратности размера,
    nextNumberHint) → `get_view_placement_preview(viewIds)` (крупный вид → большее значение
-   кратности; у 3D размер узнаётся только размещением) → экспликации собрать заранее
-   `clone_schedule` (фильтр по параметру системы) → `build_system_sheets(items=[{viewId,
-   scheduleId, sheetName, titleBlockParameters:{кратность:N}}], dryRun=false)`.
+   кратности; у 3D размер узнаётся только размещением) → `build_system_sheets(items=[{viewId,
+   sheetName, explication:{sourceScheduleId, keepFields:[""Наименование"",""Единица
+   измерения"",""Количество""], filterField:""АДСК_ИмяСистемы"", filterValue:имя_системы},
+   titleBlockParameters:{кратность:N}}], dryRun=false)` — экспликация соберётся сама (узкий
+   клон + фильтр equals + скрытая колонка фильтра). Готовый клон из `clone_schedule` — только
+   когда нужна нестандартная обработка (маппинг полей ФОП): тогда вместо explication
+   передай `scheduleId`.
 
 ### Что нельзя
 - Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.

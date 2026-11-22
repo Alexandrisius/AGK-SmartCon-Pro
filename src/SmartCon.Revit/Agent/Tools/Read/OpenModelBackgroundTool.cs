@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
@@ -130,7 +131,9 @@ public sealed class OpenModelBackgroundTool : IAgentTool
                 isReadOnly = SafeFlag(openDoc, doc => doc.IsReadOnly),
                 isWorkshared = SafeFlag(openDoc, doc => doc.IsWorkshared),
                 elementCountPreview = SafeCount(openDoc),
-                hint = "Read tools (list_views, list_levels, list_families, get_element_details, ...) now accept documentId='" + id + "' to query THIS background model."
+                viewsPreview = BuildViewsPreview(openDoc),
+                familiesPreview = BuildFamiliesPreview(openDoc),
+                hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + id + "'}) — without it every read returns the ACTIVE document."
             });
 
             return ToolResult.Ok(
@@ -219,7 +222,9 @@ public sealed class OpenModelBackgroundTool : IAgentTool
             isReadOnly = SafeFlag(document, doc => doc.IsReadOnly),
             isWorkshared = SafeFlag(document, doc => doc.IsWorkshared),
             elementCountPreview = SafeCount(document),
-            hint = "Read tools now accept documentId='" + documentId + "' to query THIS background model."
+            viewsPreview = BuildViewsPreview(document),
+            familiesPreview = BuildFamiliesPreview(document),
+            hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + documentId + "'}) — without it every read returns the ACTIVE document."
         });
 
         return ToolResult.Ok(
@@ -265,6 +270,80 @@ public sealed class OpenModelBackgroundTool : IAgentTool
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// First-look preview (#477): the most common reason to open a donor is to
+    /// see how it is organised, so the open result carries the view names and
+    /// the placed families with a best-effort "mark"-like shared value. This
+    /// keeps the model from needing documentId routing for the basic look.
+    /// </summary>
+    private static object BuildViewsPreview(Document doc)
+    {
+        try
+        {
+            var names = new List<string>();
+            foreach (var view in new FilteredElementCollector(doc)
+                         .OfClass(typeof(View))
+                         .Cast<View>()
+                         .Where(view => !view.IsTemplate && view.ViewType != ViewType.Undefined && !(view is ViewSheet))
+                         .Take(20))
+            {
+                names.Add(view.Name);
+            }
+
+            return names;
+        }
+        catch (Exception)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static object BuildFamiliesPreview(Document doc)
+    {
+        try
+        {
+            var rows = new List<object>();
+            foreach (var family in new FilteredElementCollector(doc)
+                         .OfClass(typeof(Autodesk.Revit.DB.Family))
+                         .Cast<Autodesk.Revit.DB.Family>()
+                         .Where(family => family.GetFamilySymbolIds().Count > 0)
+                         .Take(15))
+            {
+                string? mark = null;
+                var typeId = family.GetFamilySymbolIds().First();
+                if (doc.GetElement(typeId) is ElementType symbol)
+                {
+                    foreach (Parameter parameter in symbol.Parameters)
+                    {
+                        if (!parameter.IsShared || !parameter.HasValue)
+                            continue;
+
+                        var definitionName = parameter.Definition?.Name ?? string.Empty;
+                        if (definitionName.IndexOf("марка", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            definitionName.IndexOf("mark", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            mark = parameter.AsString();
+                            break;
+                        }
+                    }
+                }
+
+                rows.Add(new
+                {
+                    family = family.Name,
+                    type = (doc.GetElement(typeId) as ElementType)?.Name,
+                    mark
+                });
+            }
+
+            return rows;
+        }
+        catch (Exception)
+        {
+            return Array.Empty<object>();
         }
     }
 
