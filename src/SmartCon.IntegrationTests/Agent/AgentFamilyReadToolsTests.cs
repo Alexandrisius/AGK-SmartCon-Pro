@@ -15,7 +15,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// Read side of the family editing pack (H1d): list_families, list_family_types,
 /// get_family_parameters, find_families_with_parameter.
 /// </summary>
-public sealed class AgentFamilyReadToolsTests : RevitApiTest
+public sealed partial class AgentFamilyReadToolsTests : RevitApiTest
 {
     private Document? _document;
     private FamilySeed? _seed;
@@ -45,7 +45,8 @@ public sealed class AgentFamilyReadToolsTests : RevitApiTest
     {
         var tool = new ListFamiliesTool(new StubRevitContext(Doc));
 
-        var result = tool.ExecuteForTests(Doc, Parse("{}"), CancellationToken.None);
+        var result = tool.ExecuteForTests(
+            Doc, Parse("{\"compact\":false}"), CancellationToken.None);
 
         await Assert.That(result.Success).IsTrue();
         var family = FindFamily(Data(result), Seed.FamilyId);
@@ -79,7 +80,7 @@ public sealed class AgentFamilyReadToolsTests : RevitApiTest
 
         var result = tool.ExecuteForTests(
             Doc,
-            Parse("{\"familyId\":" + Seed.FamilyId + ",\"parameterLimit\":100}"),
+            Parse("{\"familyId\":" + Seed.FamilyId + ",\"parameterLimit\":100,\"compact\":false}"),
             CancellationToken.None);
 
         await Assert.That(result.Success).IsTrue();
