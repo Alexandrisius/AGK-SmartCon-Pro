@@ -319,6 +319,22 @@ public sealed class AgentLlmSettingsTests : IDisposable
     }
 
     [Fact]
+    public void NormalizeReasoningEffort_UnsetOrEmpty_DefaultsSilently()
+    {
+        // SMARTCON_LLM_REASONING_EFFORT unset is the normal state: no warning
+        // (only a set-but-invalid value warns, see Load_UnknownEffortAndFormat).
+        Assert.Equal(
+            AgentLlmSettings.DefaultReasoningEffort,
+            AgentLlmSettings.NormalizeReasoningEffort(null));
+        Assert.Equal(
+            AgentLlmSettings.DefaultReasoningEffort,
+            AgentLlmSettings.NormalizeReasoningEffort(string.Empty));
+        Assert.Equal(
+            AgentLlmSettings.DefaultReasoningEffort,
+            AgentLlmSettings.NormalizeReasoningEffort("   "));
+    }
+
+    [Fact]
     public void Load_MaxOutputTokensAboveCap_IsClamped()
     {
         WithEnvironment(

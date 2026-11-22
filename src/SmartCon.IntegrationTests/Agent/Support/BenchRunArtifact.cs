@@ -167,7 +167,7 @@ public static class BenchRunArtifactWriter
 
         File.WriteAllText(markdownPath, transcriptMarkdown, System.Text.Encoding.UTF8);
         artifact.TranscriptPath = markdownPath;
-        File.WriteAllText(jsonPath, JsonSerializer.Serialize(artifact, JsonOptions), System.Text.Encoding.UTF8);
+        File.WriteAllText(jsonPath, JsonSerializer.Serialize(artifact, JsonOptions), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         Console.WriteLine("Benchmark artifact (case " + artifact.CaseNumber + "): " + jsonPath);
         Console.WriteLine("Benchmark transcript (case " + artifact.CaseNumber + "): " + markdownPath);

@@ -361,6 +361,8 @@ GROUP BY document_id;";
 
         static bool Contains(string? text, string fragment) =>
             !string.IsNullOrEmpty(text)
+            // net48 ref assemblies lack [NotNullWhen] on IsNullOrEmpty, so the
+            // guard above does not flow: the forgiveness is net8-verified.
             && text!.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 

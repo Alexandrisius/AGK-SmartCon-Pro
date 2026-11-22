@@ -1,4 +1,4 @@
-using Autodesk.Revit.UI;
+﻿using Autodesk.Revit.UI;
 using Microsoft.Extensions.DependencyInjection;
 #if REVIT2023_OR_GREATER
 using SmartCon.Agent;
@@ -404,6 +404,7 @@ public static partial class ServiceRegistrar
         // IExternalEventHandler adapter lives in SmartCon.App so that
         // SmartCon.Agent never loads RevitAPIUI at type-init time.
         var agentAwaitable = new AgentAwaitableEvent(revitContext);
+        services.AddSingleton(agentAwaitable);
 
         var agentHandler = new RevitAgentAwaitableEvent(agentAwaitable);
         var agentEvent = ExternalEvent.Create(agentHandler);

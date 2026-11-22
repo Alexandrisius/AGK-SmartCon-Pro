@@ -221,6 +221,8 @@ public sealed partial class SemanticMatchTool
             }
 
             if (!ReadClassifierTool.TryReadItems(
+                    // net48 ref assemblies lack [NotNullWhen] on
+                    // IsNullOrWhiteSpace: the guard above is net8-verified.
                     classifierPath!,
                     args.TryGetProperty("codePrefix", out var prefixElement)
                     && prefixElement.ValueKind == JsonValueKind.String

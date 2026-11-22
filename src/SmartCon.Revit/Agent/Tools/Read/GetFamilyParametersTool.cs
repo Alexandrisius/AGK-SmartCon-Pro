@@ -10,7 +10,9 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 /// <summary>
 /// Reads the parameters of a family document with type scope: definition
 /// metadata (instance/type, shared GUID, storage, formula, lookup tables,
-/// canSetValue/canSetFormula) and values per family type.
+/// canSetValue/canSetFormula) and values per family type. The batch form
+/// (<c>familyIds</c>, up to 20) reads several families in one call - the
+/// benchmark kept losing rounds to one-by-one calls over family lists.
 /// </summary>
 public sealed class GetFamilyParametersTool : AgentReadToolBase
 {
@@ -18,6 +20,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     private const int MaxLimit = 500;
     private const int DefaultMaxValues = 20;
     private const int MaxValues = 100;
+    private const int LargeResultHintChars = 20000;
 
     public GetFamilyParametersTool(IRevitContext revitContext) : base(revitContext)
     {
@@ -34,14 +37,21 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "the paging total of the filtered set. parameters[] is flat: address a row with " +
             "parameters.byId[id] or parameters.byName[name], a type value with " +
             "valuesByType.byName[typeName]. " +
+            "familyIds (array, up to 20) reads several families in ONE call and returns " +
+            "families[] with the same per-family payload (nameContains/scope/limits apply " +
+            "to every family). " +
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":20,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
+        var batchIds = TryGetIntArray(args, "familyIds");
+        if (batchIds is { Count: > 0 })
+            return ExecuteBatch(doc, args, batchIds, ct);
+
         var family = AgentFamilyReader.ResolveFamily(
             doc,
             TryGetLong(args, "familyId"),
@@ -52,6 +62,90 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         if (family is null)
             return ToolResult.Fail(errorCode ?? "family_not_found", message ?? "Family not found.");
 
+        var (payload, familyMessage, failure) = ReadFamily(doc, args, family, ct);
+        if (payload is null)
+            return ToolResult.Fail(
+                failure ?? "family_open_failed", familyMessage);
+
+        var json = AgentJson.Serialize(payload);
+
+        // One gentle nudge when the single-family result is large: the model
+        // that keeps calling this per family should switch to the batch form.
+        if (json.GetRawText().Length > LargeResultHintChars
+            && familyMessage.IndexOf("familyIds", StringComparison.Ordinal) < 0)
+        {
+            familyMessage += " NOTE: reading several families? Pass familyIds (up to 20) " +
+                             "to read them all in one call.";
+        }
+
+        return ToolResult.Ok(json, familyMessage);
+    }
+
+    private ToolResult ExecuteBatch(
+        Document doc,
+        JsonElement args,
+        IReadOnlyList<long> familyIds,
+        CancellationToken ct)
+    {
+        var families = new List<object?>(familyIds.Count);
+        var okCount = 0;
+        foreach (var id in familyIds)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var family = AgentFamilyReader.ResolveFamily(
+                doc, id, null, null, out var errorCode, out var message);
+            if (family is null)
+            {
+                families.Add(new Dictionary<string, object?>
+                {
+                    ["familyId"] = id,
+                    ["ok"] = false,
+                    ["error"] = errorCode ?? "family_not_found",
+                    ["message"] = message ?? "Family not found."
+                });
+                continue;
+            }
+
+            var (payload, familyMessage, failure) = ReadFamily(doc, args, family, ct);
+            if (payload is null)
+            {
+                families.Add(new Dictionary<string, object?>
+                {
+                    ["familyId"] = id,
+                    ["ok"] = false,
+                    ["error"] = failure ?? "family_open_failed",
+                    ["message"] = familyMessage
+                });
+                continue;
+            }
+
+            payload["ok"] = true;
+            families.Add(payload);
+            okCount++;
+        }
+
+        var failedCount = familyIds.Count - okCount;
+        var batchPayload = new Dictionary<string, object?>
+        {
+            ["families"] = families,
+            ["familyCount"] = familyIds.Count,
+            ["okCount"] = okCount,
+            ["failedCount"] = failedCount
+        };
+
+        return ToolResult.Ok(
+            AgentJson.Serialize(batchPayload),
+            "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
+            (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty) + ".");
+    }
+
+    private (Dictionary<string, object?>? Payload, string Message, string? ErrorCode) ReadFamily(
+        Document doc,
+        JsonElement args,
+        Autodesk.Revit.DB.Family family,
+        CancellationToken ct)
+    {
         var scopeText = AgentJson.GetString(args, "scope");
         bool? wantInstance = null;
         if (!string.IsNullOrWhiteSpace(scopeText)
@@ -59,11 +153,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         {
             wantInstance = AgentFamilyReader.ParseScope(scopeText, out var scopeMessage);
             if (wantInstance is null)
-            {
-                return ToolResult.Fail(
-                    "invalid_arguments",
-                    scopeMessage ?? "scope must be all, instance or type.");
-            }
+                return (null, scopeMessage ?? "scope must be all, instance or type.",
+                    "invalid_arguments");
         }
 
         var nameContains = AgentJson.GetString(args, "nameContains");
@@ -85,9 +176,9 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 out var openErrorCode,
                 out var openMessage))
         {
-            return ToolResult.Fail(
-                openErrorCode ?? "family_open_failed",
-                openMessage ?? "The family document could not be opened.");
+            return (null,
+                openMessage ?? "The family document could not be opened.",
+                openErrorCode ?? "family_open_failed");
         }
 
         try
@@ -154,13 +245,13 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["maxValuesPerParameter"] = maxValues
             };
 
-            return ToolResult.Ok(
-                AgentJson.Serialize(payload),
-                "Family '" + family.Name + "': " + reports.Count + " of " + filtered.Count +
-                " matched parameter(s) of " + manager.GetParameters().Count +
-                " in the family, " + types.Count + " type(s)" +
-                (nextOffset < filtered.Count ? ", next offset " + nextOffset : string.Empty) +
-                (types.Count == 0 ? ". The family has no types (empty family)." : "."));
+            var message = "Family '" + family.Name + "': " + reports.Count + " of " +
+                          filtered.Count + " matched parameter(s) of " +
+                          manager.GetParameters().Count + " in the family, " + types.Count +
+                          " type(s)" +
+                          (nextOffset < filtered.Count ? ", next offset " + nextOffset : string.Empty) +
+                          (types.Count == 0 ? ". The family has no types (empty family)." : ".");
+            return (payload, message, null);
         }
         finally
         {
@@ -186,5 +277,27 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         }
 
         return result;
+    }
+
+    private static IReadOnlyList<long>? TryGetIntArray(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var ids = new List<long>();
+        foreach (var item in value.EnumerateArray())
+        {
+            // Non-integer entries never reach the tool in production (schema
+            // validation); a malformed direct call falls back to the single path.
+            if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt64(out var id))
+                return null;
+            ids.Add(id);
+        }
+
+        return ids;
     }
 }
