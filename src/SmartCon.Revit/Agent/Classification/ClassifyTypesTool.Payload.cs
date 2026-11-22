@@ -98,8 +98,8 @@ public sealed partial class ClassifyTypesTool
             note = snapshot.SkippedAlreadySet > 0
                 ? "Nothing to classify: every selected type already has a classification code " +
                   "(pass onlyEmpty=false to re-classify them; their current codes are reported)."
-                : "No element type with the Assembly Code parameter matches the selection " +
-                  "filters. Loosen categories/familyIds/typeIds/nameContains.";
+                : "Nothing to classify: no element type with the Assembly Code parameter " +
+                  "matches the selection filters. Loosen categories/familyIds/typeIds/nameContains.";
             payload["note"] = note;
         }
 

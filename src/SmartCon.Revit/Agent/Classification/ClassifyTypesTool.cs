@@ -220,8 +220,8 @@ public sealed partial class ClassifyTypesTool : IAgentTool
         const string schema = @"{""type"":""object"",""properties"":{" +
             @"""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""}," +
             @"""categories"":{""type"":""array"",""items"":{""type"":""string""},""description"":""OST_ enum names or localized display names; only types of these categories""}," +
-            @"""familyIds"":{""type"":""array"",""items"":{""integer""},""description"":""Only types of these (loadable) families""}," +
-            @"""typeIds"":{""type"":""array"",""items"":{""integer""},""description"":""Only these element type ids""}," +
+            @"""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""Only types of these (loadable) families""}," +
+            @"""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""Only these element type ids""}," +
             @"""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family or type name""}," +
             @"""onlyEmpty"":{""type"":""boolean"",""default"":true,""description"":""true: only types whose Assembly Code is empty; false: also types that already have a code (reported as current)""}," +
             @"""maxTypes"":{""type"":""integer"",""default"":400,""maximum"":2000,""description"":""At most this many types per call""}," +
