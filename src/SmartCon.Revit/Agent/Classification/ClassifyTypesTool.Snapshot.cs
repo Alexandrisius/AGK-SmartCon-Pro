@@ -165,6 +165,7 @@ public sealed partial class ClassifyTypesTool
         }
 
         var types = new List<SmartCon.Core.Services.Agent.ClassifyTypeSnapshot>(selected.Count);
+        var resolvedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (type, current) in selected)
         {
             types.Add(new SmartCon.Core.Services.Agent.ClassifyTypeSnapshot(
@@ -176,7 +177,21 @@ public sealed partial class ClassifyTypesTool
                     : null,
                 type.Name,
                 string.IsNullOrEmpty(current) ? null : current,
-                TextValuesOf(doc, type, parsed.TextParameters, ct)));
+                TextValuesOf(doc, type, parsed.TextParameters, resolvedNames, ct)));
+        }
+
+        // A textParameters name that resolved on no selected type is reported,
+        // not silently ignored.
+        var warnings = new List<string>();
+        foreach (var name in parsed.TextParameters)
+        {
+            if (!resolvedNames.Contains(name))
+            {
+                warnings.Add(
+                    "Parameter '" + name + "' (textParameters) was not found on any selected " +
+                    "type and was skipped. [Action: check the spelling with " +
+                    "get_family_parameters or drop it from textParameters]");
+            }
         }
 
         return new ClassifySnapshot
@@ -186,7 +201,8 @@ public sealed partial class ClassifyTypesTool
             Types = types,
             TypesTotal = typesTotal,
             SkippedAlreadySet = skippedAlreadySet,
-            Truncated = truncated
+            Truncated = truncated,
+            Warnings = warnings
         };
     }
 
@@ -227,6 +243,7 @@ public sealed partial class ClassifyTypesTool
         Document doc,
         ElementType type,
         IReadOnlyList<string> extraNames,
+        HashSet<string> resolvedNames,
         CancellationToken ct)
     {
         var values = new List<string>();
@@ -237,7 +254,10 @@ public sealed partial class ClassifyTypesTool
         foreach (var name in extraNames)
         {
             ct.ThrowIfCancellationRequested();
-            AddValue(values, ValueOf(AgentParameterResolver.Find(doc, type, name, true)));
+            var found = AgentParameterResolver.Find(doc, type, name, true);
+            if (found is not null)
+                resolvedNames.Add(name);
+            AddValue(values, ValueOf(found));
         }
 
         return values;
@@ -394,6 +414,9 @@ internal sealed class ClassifySnapshot
     public int SkippedAlreadySet { get; internal set; }
 
     public bool Truncated { get; internal set; }
+
+    /// <summary>Collection-time warnings (unknown textParameters names, …).</summary>
+    public List<string> Warnings { get; internal set; } = new();
 
     public string? DocumentVersion { get; set; }
 

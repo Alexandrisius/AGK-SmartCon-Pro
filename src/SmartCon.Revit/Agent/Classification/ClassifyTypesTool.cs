@@ -84,11 +84,21 @@ public sealed partial class ClassifyTypesTool : IAgentTool
         // prefix keeps the cost bounded and the payload honest.
         var groups = AgentClassificationTexts.GroupTypes(snapshot.Types).ToList();
         var truncated = snapshot.Truncated;
+        var familiesSkipped = 0;
         if (groups.Count > snapshot.Args.MaxFamilies)
         {
+            familiesSkipped = groups.Count - snapshot.Args.MaxFamilies;
             groups = groups.Take(snapshot.Args.MaxFamilies).ToList();
             truncated = true;
         }
+
+        // Progress logging without a long-lived scope: the matching awaits the
+        // decision channel for minutes (C15), so only short state lines.
+        SmartConLogger.Debug(
+            "classify_types snapshot: " + snapshot.Types.Count + " type(s), " + groups.Count +
+            " famil" + (groups.Count == 1 ? "y" : "ies") + ", table " +
+            snapshot.Table.Entries.Count + " row(s)" +
+            (truncated ? ", truncated (familiesSkipped=" + familiesSkipped + ")" : string.Empty));
 
         var result = await _matcher
             .MatchAsync(groups, snapshot.Table, options, ct)
@@ -96,13 +106,22 @@ public sealed partial class ClassifyTypesTool : IAgentTool
         if (result.Error is not null)
             return DecisionFailed(result);
 
-        var payload = BuildPayload(snapshot, groups, result, truncated);
+        SmartConLogger.Debug(
+            "classify_types done: proposed " + CountOf(result, ClassifyTypeStatus.Proposed) +
+            ", uncertain " + (CountOf(result, ClassifyTypeStatus.LowConfidence) +
+                              CountOf(result, ClassifyTypeStatus.NoConfidence) +
+                              CountOf(result, ClassifyTypeStatus.NoCandidates)) +
+            ", decisionCalls " + result.DecisionCalls +
+            (result.Incomplete ? ", INCOMPLETE" : string.Empty));
+
+        var warnings = result.Warnings.Concat(snapshot.Warnings).ToList();
+        var payload = BuildPayload(snapshot, groups, result, truncated, familiesSkipped);
         var message = payload.Message;
         return ToolResult.Ok(
                 payload.Data,
                 message,
                 affectedCount: payload.AffectedCount,
-                warnings: result.Warnings.Count == 0 ? null : result.Warnings)
+                warnings: warnings.Count == 0 ? null : warnings)
             .WithDocumentVersion(snapshot.DocumentVersion);
     }
 
@@ -111,10 +130,14 @@ public sealed partial class ClassifyTypesTool : IAgentTool
         var detail = string.IsNullOrEmpty(result.ErrorDetail)
             ? string.Empty
             : " " + result.ErrorDetail + ".";
+        SmartConLogger.Warn(
+            "classify_types: the decision layer failed (" + result.Error + detail + "). " +
+            "[Action: " + AgentClassificationMatcher.DecisionHint + "]");
         return ToolResult.Fail(
             result.Error!,
             result.Error + ": the decision layer did not answer." + detail + " " +
             DecisionUnavailableHint + ".",
+            warnings: result.Warnings.Count == 0 ? null : result.Warnings,
             data: AgentJson.Serialize(new
             {
                 decisionUsed = false,

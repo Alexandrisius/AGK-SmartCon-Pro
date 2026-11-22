@@ -14,14 +14,18 @@ public sealed partial class ClassifyTypesTool
         ClassifySnapshot snapshot,
         IReadOnlyList<ClassifyFamilyGroup> groups,
         ClassifyMatchResult result,
-        bool truncated)
+        bool truncated,
+        int familiesSkipped)
     {
         var proposed = CountOf(result, ClassifyTypeStatus.Proposed);
         var lowConfidence = CountOf(result, ClassifyTypeStatus.LowConfidence);
+        var noConfidence = CountOf(result, ClassifyTypeStatus.NoConfidence);
         var noCandidates = CountOf(result, ClassifyTypeStatus.NoCandidates);
         var alreadySet = CountOf(result, ClassifyTypeStatus.AlreadySet);
 
-        var setParameters = SetParametersOf(result);
+        // EXACTLY the set_parameters schema shape: {items} or {batches}; the
+        // explanatory note travels NEXT TO the argument, not inside it.
+        var setParameters = result.BuildSetParametersPayload();
         var payload = new Dictionary<string, object?>
         {
             ["source"] = new
@@ -41,10 +45,20 @@ public sealed partial class ClassifyTypesTool
             {
                 proposed,
                 lowConfidence,
+                noConfidence,
                 noCandidates,
                 alreadySet,
-                familiesProcessed = groups.Count
+                familiesProcessed = result.FamiliesProcessed,
+                familiesSkipped,
+                decisionCalls = result.DecisionCalls
             },
+            ["alreadySet"] = result.AlreadySetItems.Select(item => new
+            {
+                typeId = item.Type.ElementId,
+                family = item.Type.FamilyName,
+                type = item.Type.TypeName,
+                currentCode = item.Type.CurrentCode
+            }).ToList(),
             ["assignments"] = result.Assignments.Select(group => new
             {
                 familyId = group.FamilyId,
@@ -59,19 +73,18 @@ public sealed partial class ClassifyTypesTool
             }).ToList(),
             ["uncertain"] = result.Types
                 .Where(item => item.Status is ClassifyTypeStatus.LowConfidence
+                    or ClassifyTypeStatus.NoConfidence
                     or ClassifyTypeStatus.NoCandidates)
                 .Select(item => new Dictionary<string, object?>
                 {
                     ["typeId"] = item.Type.ElementId,
                     ["family"] = item.Type.FamilyName,
                     ["type"] = item.Type.TypeName,
-                    ["reason"] = item.Status == ClassifyTypeStatus.LowConfidence
-                        ? "low_confidence"
-                        : "no_candidates",
+                    ["reason"] = item.Reason ?? ReasonOf(item.Status),
                     ["current"] = item.Type.CurrentCode,
-                    ["score"] = item.Status == ClassifyTypeStatus.LowConfidence
-                        ? System.Math.Round(item.Score, 4)
-                        : null,
+                    ["score"] = item.Status == ClassifyTypeStatus.NoCandidates
+                        ? null
+                        : System.Math.Round(item.Score, 4),
                     ["candidates"] = item.Candidates
                         .Select(candidate => new
                         {
@@ -83,7 +96,14 @@ public sealed partial class ClassifyTypesTool
                 })
                 .ToList(),
             ["setParameters"] = setParameters,
-            ["decisionUsed"] = true
+            ["setParametersNote"] = setParameters is null
+                ? null
+                : SetParametersNote +
+                  (result.SetParameterBatches.Count > 1
+                      ? " Spread across " + result.SetParameterBatches.Count +
+                        " calls of at most 500 items."
+                      : string.Empty),
+            ["decisionUsed"] = result.DecisionUsed
         };
 
         if (truncated)
@@ -109,7 +129,7 @@ public sealed partial class ClassifyTypesTool
             payload["notProcessed"] = result.NotProcessed;
         }
 
-        var uncertain = lowConfidence + noCandidates;
+        var uncertain = lowConfidence + noConfidence + noCandidates;
         var message = "Proposed a code for " + proposed + " of " + snapshot.Types.Count +
                       " selected type(s) across " + groups.Count +
                       (groups.Count == 1 ? " family" : " families") + "; " + uncertain +
@@ -136,39 +156,12 @@ public sealed partial class ClassifyTypesTool
             proposed);
     }
 
-    private static object? SetParametersOf(ClassifyMatchResult result)
+    private static string ReasonOf(ClassifyTypeStatus status) => status switch
     {
-        if (result.SetParameterBatches.Count == 0)
-            return null;
-
-        if (result.SetParameterBatches.Count == 1)
-        {
-            return new
-            {
-                items = ItemsOf(result.SetParameterBatches[0]),
-                batches = 1,
-                note = SetParametersNote
-            };
-        }
-
-        return new
-        {
-            batches = result.SetParameterBatches
-                .Select(batch => new { items = ItemsOf(batch) })
-                .ToList(),
-            note = SetParametersNote + " Spread across " + result.SetParameterBatches.Count +
-                   " calls of at most 500 items."
-        };
-    }
-
-    private static List<object> ItemsOf(IReadOnlyList<ClassifySetParameterItem> batch) =>
-        batch.Select(item => new
-        {
-            elementId = item.ElementId,
-            parameter = item.Parameter,
-            value = item.Value,
-            scope = item.Scope
-        }).ToList<object>();
+        ClassifyTypeStatus.LowConfidence => "low_confidence",
+        ClassifyTypeStatus.NoConfidence => "chosen_without_confidence",
+        _ => "no_candidates"
+    };
 
     private static int CountOf(ClassifyMatchResult result, ClassifyTypeStatus status) =>
         result.Types.Count(item => item.Status == status);

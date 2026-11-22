@@ -187,6 +187,27 @@ public sealed class AgentClassificationMatcherTests
     }
 
     [Fact]
+    public async Task Match_BareChoice_NeverProposedAtDefaultMinScore()
+    {
+        // R5: a choice without probabilities or confidence is a guess - at the
+        // default minScore it lands in uncertain, never in set_parameters.
+        var client = new KeywordDecisionClient { BareChoices = true };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+        var types = new List<ClassifyTypeSnapshot> { Type(1, "Walls family", "Walls type A", "Стены") };
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(types), WallTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        var item = Assert.Single(result.Types);
+        Assert.Equal(ClassifyTypeStatus.NoConfidence, item.Status);
+        Assert.Equal("chosen without a confidence", item.Reason);
+        Assert.Equal("10.10.10", item.Code);
+        Assert.Empty(result.SetParameterBatches);
+        Assert.Empty(result.Assignments);
+    }
+
+    [Fact]
     public async Task Match_TwoFamilies_GroupsAssignmentsAndBatchesItems()
     {
         var client = new KeywordDecisionClient();
@@ -406,6 +427,9 @@ public sealed class AgentClassificationMatcherTests
         /// <summary>Transport failure of every call (D1 probe: HTTP 503).</summary>
         public Exception? Throw { get; set; }
 
+        /// <summary>Answer with a bare Choice, without probabilities (R5).</summary>
+        public bool BareChoices { get; set; }
+
         /// <summary>Every call returns an EMPTY answer dictionary (D1 probe).</summary>
         public bool EmptyAnswers { get; set; }
 
@@ -466,6 +490,16 @@ public sealed class AgentClassificationMatcherTests
                 .OrderByDescending(pair => pair.Overlap)
                 .ThenBy(pair => pair.Id, StringComparer.Ordinal)
                 .ToList();
+
+            if (BareChoices)
+            {
+                return new AgentDecisionAnswer
+                {
+                    Type = "choice",
+                    Choice = ranked[0].Id,
+                    Probabilities = null
+                };
+            }
 
             var probabilities = new Dictionary<string, double>(StringComparer.Ordinal);
             var rank = 0;
