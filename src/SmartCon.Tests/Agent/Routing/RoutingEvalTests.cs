@@ -17,7 +17,7 @@ namespace SmartCon.Tests.Agent.Routing;
 /// </summary>
 public sealed class RoutingEvalTests
 {
-    private const int RealQueryCount = 383;
+    private const int RealQueryCount = 386;
     private const int SyntheticQueryCount = 100;
     private const double Top1Gate = 0.80;
     private const double Top5Gate = 0.95;
