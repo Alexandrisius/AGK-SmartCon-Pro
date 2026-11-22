@@ -1,4 +1,4 @@
-using Autodesk.Revit.DB;
+﻿using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 
 namespace SmartCon.IntegrationTests.Agent;
@@ -52,7 +52,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
             }
 
             notes.Add("вид «" + name + "»: шаблон " + (templateOk ? "да" : "НЕТ") +
-                      ", фильтр «" + Case9ParamName + "=" + name + "» " + (filterOk ? "да" : "НЕТ"));
+                      ", фильтр «" + Case9ParamName + "=" + name + "» " + (filterOk ? "да" : "НЕТ") +
+                      (filterOk || _case9FilterNotes.Count == 0
+                          ? string.Empty
+                          : " [" + string.Join(" | ", _case9FilterNotes) + "]"));
         }
 
         // (б) Заполнение общего параметра у ВСЕХ членов чистых систем.
@@ -153,6 +156,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return null;
     }
 
+    private readonly List<string> _case9FilterNotes = new();
+
     /// <summary>
     /// На виде видны только элементы одной системы: один из применённых
     /// ParameterFilterElement несёт строковое правило с параметром сида и
@@ -162,22 +167,56 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// </summary>
     private bool Case9ViewHasSystemFilter(View3D view, string systemName)
     {
+        _case9FilterNotes.Clear();
         foreach (var filterId in view.GetFilters())
         {
             if (Doc.GetElement(filterId) is not ParameterFilterElement filter)
                 continue;
-            if (!view.GetIsFilterEnabled(filterId))
-                continue;
 
+            var enabled = view.GetIsFilterEnabled(filterId);
+            var visible = view.GetFilterVisibility(filterId);
             var negated = Case9FilterRuleIsNegated(filter.GetElementFilter(), systemName);
-            if (negated is null)
-                continue;
-            if (negated.Value == view.GetFilterVisibility(filterId))
+            _case9FilterNotes.Add(
+                filter.Name + ": enabled=" + enabled + ", visible=" + visible +
+                ", rule=" + (negated is null ? "none" : negated.Value ? "neq" : "eq") +
+                ", tree=" + Case9DescribeRules(filter.GetElementFilter()));
+            if (!enabled || negated is null || negated.Value == visible)
                 continue;
             return true;
         }
 
         return false;
+    }
+
+    private string Case9DescribeRules(ElementFilter? elementFilter)
+    {
+        try
+        {
+            if (elementFilter is null)
+                return "null";
+            if (elementFilter is ElementLogicalFilter logical)
+                return logical.GetFilters().Select(Case9DescribeRules).Aggregate((a, b) => a + " & " + b);
+            if (elementFilter is not ElementParameterFilter parameterFilter)
+                return elementFilter.GetType().Name;
+
+            var parts = new List<string>();
+            foreach (var rule in parameterFilter.GetRules())
+            {
+                var parameter = rule.GetRuleParameter();
+                parts.Add(
+                    rule.GetType().Name + "/" + (Case9UnwrapInverse(rule, out _) is FilterStringRule innerRule ? innerRule.GetEvaluator().GetType().Name : rule.GetType().Name) + "/'" +
+                    (Case9UnwrapInverse(rule, out _) is FilterStringRule describedRule ? describedRule.RuleString : "?") + "'/param=" +
+                    (parameter is null ? "null" : parameter.GetValue().ToString(
+                        System.Globalization.CultureInfo.InvariantCulture)) +
+                    (parameter is not null && parameter.GetValue() == _case9ParamElementId ? "=seed" : "≠seed"));
+            }
+
+            return string.Join(",", parts);
+        }
+        catch (Exception ex)
+        {
+            return "describe-failed:" + ex.GetType().Name;
+        }
     }
 
     /// <summary>
@@ -208,16 +247,21 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
             foreach (var rule in parameterFilter.GetRules())
             {
-                var ruleParameter = rule.GetRuleParameter();
+                // «≠ значение» приходит из ParameterFilterRuleFactory как обёртка
+                // FilterInverseRule вокруг «= значение» (см. AgentFilterRuleBuilder).
+                var unwrapped = Case9UnwrapInverse(rule, out var inverted);
+                if (unwrapped is null)
+                    continue;
+                var ruleParameter = unwrapped.GetRuleParameter();
                 if (ruleParameter is null || ruleParameter.GetValue() != _case9ParamElementId)
                     continue;
-                if (rule is not FilterStringRule stringRule)
+                if (unwrapped is not FilterStringRule stringRule)
                     continue;
                 if (!string.Equals(stringRule.RuleString, systemName, StringComparison.Ordinal))
                     continue;
                 if (!stringRule.GetEvaluator().GetType().Name.Contains("Equals"))
                     continue;
-                return stringRule.GetEvaluator().GetType().Name.Contains("NotEquals");
+                return stringRule.GetEvaluator().GetType().Name.Contains("NotEquals") != inverted;
             }
 
             return null;
@@ -226,5 +270,22 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Снимает обёртки FilterInverseRule (класса нет в API 2019–2021, поэтому по имени
+    /// и через рефлексию, чтобы файл собирался под все TFM). Возвращает внутреннее правило.
+    /// </summary>
+    private static FilterRule? Case9UnwrapInverse(FilterRule rule, out bool inverted)
+    {
+        inverted = false;
+        var current = rule;
+        while (current is not null && string.Equals(current.GetType().Name, "FilterInverseRule", StringComparison.Ordinal))
+        {
+            inverted = !inverted;
+            current = current.GetType().GetMethod("GetInnerRule")?.Invoke(current, null) as FilterRule;
+        }
+
+        return current;
     }
 }
