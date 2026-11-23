@@ -93,10 +93,12 @@ public sealed class SemanticPackTextTests
         Assert.True(AgentToolCards.TryGet("set_parameters", out var setParameters));
         Assert.Contains("parameter_not_supported", setParameters!.Purpose, StringComparison.Ordinal);
 
-        Assert.True(AgentToolCards.TryGet("get_element_details", out var details));
-        Assert.Contains("includeTypeParameters", details!.Purpose, StringComparison.Ordinal);
-        Assert.Contains("parameterNames", details.Purpose, StringComparison.Ordinal);
-        Assert.Contains("UNIFORMAT_CODE", details.Purpose, StringComparison.Ordinal);
+        // The details contract (parameterNames accepts BuiltInParameter enum ids
+        // such as UNIFORMAT_CODE) moved from the always-on card into the elements
+        // skill with the prompt-budget handoff — see PromptBudgetSkillHandoffTests.
+        var elementsSkill = AgentToolPackSkills.TryGet("elements")!;
+        Assert.Contains("UNIFORMAT_CODE", elementsSkill, StringComparison.Ordinal);
+        Assert.Contains("enum-id `BuiltInParameter`", elementsSkill, StringComparison.Ordinal);
     }
 
     [Fact]

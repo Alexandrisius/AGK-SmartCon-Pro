@@ -6,12 +6,14 @@ using Xunit;
 namespace SmartCon.Tests.Agent.Services;
 
 /// <summary>
-/// Text pins of the plans skill, the execute_plan card and description: the
-/// texts the model receives must state exactly what the code does — the step
+/// Text pins of the plans skill and the execute_plan description: the texts
+/// the model receives must state exactly what the code does — the step
 /// skeleton (C4-06), the dependsOn rule (C1-02), the read-back path forms and
 /// outcomes (C1-03, review r1 #2), the expectedChanges counter after the
 /// created/changed dedupe (C7-04/ORCH-7, review r1 #5) and the scope of the
-/// preview-id prefix (C7-05, review r1 #4).
+/// preview-id prefix (C7-05, review r1 #4). The step-contract facts live in
+/// the skill and the static prompt (Plan validation); the always-on card
+/// carries only the plan identity (PromptBudgetSkillHandoffTests).
 /// </summary>
 public sealed class PlansSkillTextTests
 {
@@ -33,17 +35,6 @@ public sealed class PlansSkillTextTests
         Assert.Contains(
             "{\"stepId\":\"s1\",\"toolName\":\"set_view_template\",\"arguments\":",
             Skill, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ExecutePlanCard_IncludesMinimalStepSkeleton()
-    {
-        Assert.Contains(
-            "{\"stepId\":\"s1\",\"toolName\":\"set_view_template\",\"arguments\":",
-            Card.Purpose, StringComparison.Ordinal);
-        Assert.True(Card.Purpose.IndexOf("toolName", StringComparison.Ordinal)
-                    < Card.Purpose.IndexOf("arguments", StringComparison.Ordinal),
-            "toolName must come before arguments in the skeleton");
     }
 
     [Fact]
@@ -81,15 +72,6 @@ public sealed class PlansSkillTextTests
         Assert.Contains("steps[].changed", Skill, StringComparison.Ordinal);
         Assert.Contains("duplicatesInCreated", Skill, StringComparison.Ordinal);
         Assert.DoesNotContain("это длина", Skill, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ExecutePlanCard_DocumentsExpectedChangesCounter_AfterTheDedupe()
-    {
-        Assert.Contains("steps[].changed", Card.Purpose, StringComparison.Ordinal);
-        Assert.Contains("duplicatesInCreated", Card.Purpose, StringComparison.Ordinal);
-        Assert.Contains("не задавай наугад", Card.Purpose, StringComparison.Ordinal);
-        Assert.DoesNotContain("длина", Card.Purpose, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -137,7 +119,9 @@ public sealed class PlansSkillTextTests
     public void ExecutePlanCard_StaysWithinItsPromptBudget()
     {
         // The card Purpose is part of every request (AgentPromptBudgetTests,
-        // 8000-token gate with ~200 tokens of headroom): it must not grow.
-        Assert.InRange(Card.Purpose.Length, 300, 439);
+        // 8000-token gate): the step-contract details moved to the skill and the
+        // static prompt (see PromptBudgetSkillHandoffTests), so the card keeps
+        // only the plan identity and must neither regrow nor shrink away.
+        Assert.InRange(Card.Purpose.Length, 85, 160);
     }
 }

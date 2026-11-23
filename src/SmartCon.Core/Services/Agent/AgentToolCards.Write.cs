@@ -282,11 +282,7 @@ public static partial class AgentToolCards
                 Pack = "plans",
                 Purpose =
                     "Валидация и выполнение плана из 1–20 шагов как одного reviewable unit " +
-                    "с dryRun и planDigest. Скелет шага: " +
-                    "{\"stepId\":\"s1\",\"toolName\":\"set_view_template\",\"arguments\":{...}} " +
-                    "(toolName обязателен). dependsOn — только если шаг читает результат " +
-                    "предыдущего. expectedChanges необязателен: возьми steps[].changed превью " +
-                    "шага (items.changed[] + duplicatesInCreated), не задавай наугад.",
+                    "с dryRun и planDigest.",
                 WhenToUse =
                     "Когда задача требует нескольких инструментов и нужен общий предпросмотр " +
                     "и применение по шагам.",

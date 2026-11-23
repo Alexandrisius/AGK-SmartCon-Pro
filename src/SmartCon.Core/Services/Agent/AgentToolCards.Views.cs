@@ -13,8 +13,7 @@ public static partial class AgentToolCards
                 Pack = "views",
                 Purpose =
                     "Список видов с фильтрами по типу, уровню, имени и папке браузера; " +
-                    "summaryOnly возвращает счётчики вместо карточек. isOnSheet/sheetNumber " +
-                    "учитывают и спецификации (размещения — ScheduleSheetInstance).",
+                    "summaryOnly — счётчики вместо карточек.",
                 WhenToUse =
                     "Когда нужны ID или имена видов, состав папок браузера либо проверка " +
                     "перед переименованием и настройкой.",

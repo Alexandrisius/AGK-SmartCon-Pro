@@ -43,7 +43,8 @@ public static partial class AgentToolPackSkills
   `use_delete_schedules`.
 - Удаление каскадно: уходят `Viewport`, аннотации и **зависимые виды**; уровень уносит свой
   план, камера — 3D-вид. Предупреждайте.
-- `list_views` отдаёт `folder` (браузер), `sheet`, `isOnSheet` — не гадайте, где живёт вид.
+- `list_views` отдаёт `folder` (браузер), `sheet`, `isOnSheet` — не гадайте, где живёт вид;
+  `isOnSheet`/`sheetNumber` учитывают и спецификации (размещения — `ScheduleSheetInstance`).
 - `View.Duplicate`: `with_detailing` (с аннотациями), `without_detailing` (модель),
   `dependent` (зависимый план). Отказы `view_not_duplicatable`, `dependent_not_supported`.
 - **Легенды API не создаёт**: `create_view(kind:""legend"")` дублирует существующую; нет
@@ -95,6 +96,8 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`; `viewIds` (≤200) и `fields`.
+  `discipline=null` у видов без свойства (спеки, легенды) — вид пропускается, батч не падает.
+  `controlledParameters`/`nonControlledParameters` вида с шаблоном — состав управления ЕГО шаблона.
 - `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?,section?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны (`section` — точное значение параметра «Раздел»).
 - `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[…]}`.
 - `set_view_parameters` — `parameters:[{name|parameterId,value,unit}]` для общих свойств вида.

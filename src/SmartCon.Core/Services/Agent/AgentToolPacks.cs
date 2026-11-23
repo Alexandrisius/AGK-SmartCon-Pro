@@ -227,7 +227,7 @@ public static class AgentToolPacks
         new()
         {
             Name = "documents",
-            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей; статус документа.",
+            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр моделей; статус документа.",
             Tools = new[] { "open_model_background", "close_model", "list_known_models", "get_document_status" }
         },
         new()

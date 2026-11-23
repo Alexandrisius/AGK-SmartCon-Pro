@@ -151,7 +151,10 @@ public static partial class AgentToolPackSkills
   ответ упирается в бюджет и приходит с `truncated`.
 - `get_element_details` — не более 10 id; по умолчанию отдаёт `system` и `shared` параметры,
   family-параметры только считает (`familyParametersOmitted`). Числовое `value` — внутренние
-  единицы, `displayValue` — проектные.
+  единицы, `displayValue` — проектные. `parameterNames` принимает и enum-id `BuiltInParameter`
+  (например UNIFORMAT_CODE), а не только отображаемое имя; `typeId` в `elementIds` возвращает
+  собственные параметры типа и без `includeTypeParameters`; каждый тип — один раз в `types[]`
+  со своими параметрами.
 - id, полученные из `query_elements`, годятся для следующего вызова в этой же сессии; для
   сохранения между сессиями — `uniqueId`.
 - `get_element_bounds`: все координаты в мм (`units:""mm""`), как originMm коннекторов и отметки
