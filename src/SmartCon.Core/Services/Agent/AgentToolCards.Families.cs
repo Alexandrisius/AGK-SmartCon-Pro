@@ -287,7 +287,7 @@ public static partial class AgentToolCards
                 "именем built-in («Код по классификатору»), отклоняется (parameter_name_taken) " +
                 "— пиши сам built-in. createDefinition=true требует подключённого ФОП " +
                 "(иначе shared_parameter_file_missing — сначала " +
-                "set_shared_parameter_file или попросите пользователя).",
+                "set_shared_parameter_file пака params или попросите пользователя).",
             WhenToUse =
                 "Когда в семейство нужно добавить параметр заказчика (обычный или общий), " +
                 "включая параметры экземпляра и типа, перед переносом значений.",
