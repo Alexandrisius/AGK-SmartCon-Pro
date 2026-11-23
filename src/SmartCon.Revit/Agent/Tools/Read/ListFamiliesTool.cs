@@ -18,10 +18,13 @@ public sealed class ListFamiliesTool : AgentReadToolBase
     private const int DefaultLimit = 200;
     private const int MaxLimit = 1000;
 
+    /// <summary>Record field with the number of the family's own placed instances.</summary>
+    private const string PlacedField = "placedInstanceCount";
+
     private static readonly string[] AvailableFields =
     {
         "familyId", "uniqueId", "name", "category", "categoryId",
-        "typeCount", "placedInstanceCount", "isEditable", "isInPlace", "isParametric"
+        "typeCount", PlacedField, "isEditable", "isInPlace", "isParametric"
     };
 
     private static readonly string[] DefaultFields = { "familyId", "name", "category", "typeCount" };
@@ -46,8 +49,9 @@ public sealed class ListFamiliesTool : AgentReadToolBase
         Description =
             "Lists the families loaded in the project, filtered by name and category. " +
             "Records are compact by default (familyId, name, category, typeCount): fields " +
-            "selects other record fields (placedInstanceCount tells placed-in-the-model " +
-            "families from template-library ones: 0 = loaded but never placed), " +
+            "selects other record fields (placedInstanceCount = instances of the family " +
+            "placed in the model; 0 means it has no instance of its own - a nested or " +
+            "profile family may still be in use, so 0 does not mean unused), " +
             "compact=false returns all ten, summary=true adds counts over the whole " +
             "filtered set (totalFamilies, totalTypes, byCategory, placed, unplaced). " +
             "Families are not types and not instances: use list_family_types for the types " +
@@ -55,7 +59,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             "listed here: their types come from list_system_types.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all ten fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without placed instances).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all ten fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without an instance of their own in the model; unplaced does not mean unused - nested and profile families have no instance of their own).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -78,9 +82,12 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             DefaultLimit,
             MaxLimit);
 
+        // The placed-instance scan is a full pass over the model: only a call
+        // that shows the counts anywhere pays for it.
+        var needsPlaced = NeedsPlacedCounts(compact, withSummary, selection.Fields);
+        Dictionary<long, int>? placedCounts = null;
         var families = new List<Dictionary<string, object?>>();
         var summary = new InventorySummary();
-        var placedCounts = PlacedInstanceCounts(doc);
         foreach (var family in AgentFamilyReader.LoadableFamilies(doc))
         {
             ct.ThrowIfCancellationRequested();
@@ -100,7 +107,13 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             var inWindow = ++summary.Total > offset && families.Count < limit;
             var categoryName = family.FamilyCategory?.Name;
             var typeCount = family.GetFamilySymbolIds().Count;
-            placedCounts.TryGetValue(family.Id.GetValue(), out var placedInstanceCount);
+            var placedInstanceCount = 0;
+            if (needsPlaced)
+            {
+                placedCounts ??= PlacedInstanceCounts(doc);
+                placedCounts.TryGetValue(family.Id.GetValue(), out placedInstanceCount);
+            }
+
             summary.Add(categoryName, typeCount, family.IsInPlace, family.IsParametric,
                 placedInstanceCount > 0);
             if (!inWindow)
@@ -209,9 +222,19 @@ public sealed class ListFamiliesTool : AgentReadToolBase
     }
 
     /// <summary>
+    /// Whether the call shows the placed counts anywhere: the field itself,
+    /// every field (compact=false) or the summary with its placed/unplaced.
+    /// </summary>
+    internal static bool NeedsPlacedCounts(bool compact, bool withSummary, IReadOnlyList<string> fields) =>
+        !compact || withSummary || fields.Any(field =>
+            string.Equals(field, PlacedField, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
     /// One collector over the placed family instances: familyId -> instance
-    /// count. Cheap (a single pass) and enough to tell the families the model
-    /// really uses from the template-library ones that are only loaded.
+    /// count. It counts the instances of a family's OWN - a nested or a profile
+    /// family has none and stays at 0, which says nothing about being in use.
+    /// A full pass over the model, so the callers that do not show the counts
+    /// never ask for it (<see cref="NeedsPlacedCounts"/>).
     /// </summary>
     private static Dictionary<long, int> PlacedInstanceCounts(Document doc)
     {
