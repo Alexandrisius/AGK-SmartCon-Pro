@@ -100,6 +100,24 @@ public sealed class AgentToolSchemaJsonTests
     }
 
     [Fact]
+    public void ViewSettingsSchema_DisciplineNull_IsHonestAboutTheRow()
+    {
+        // S1-R4: a view without a Discipline property is NOT skipped — its row
+        // comes back with discipline=null and the batch survives. The schema
+        // must say exactly that.
+        using var metadata = new CatalogMetadata();
+        var schema = metadata.ReadSchemaLiteral(typeof(GetViewSettingsTool), out var status);
+
+        Assert.Equal(SchemaReadStatus.Literal, status);
+        Assert.NotNull(schema);
+        Assert.Contains(
+            "the field is returned null, the view row stays and the batch does not fail",
+            schema!,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("the view is skipped", schema, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrailingComma_TheShapeOfTheRegression_IsRejectedByTheSameCheck()
     {
         // get_project_overview as committed in 721dbd8c: the shared documentId

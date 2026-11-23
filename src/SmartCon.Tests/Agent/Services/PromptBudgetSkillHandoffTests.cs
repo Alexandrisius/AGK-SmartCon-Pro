@@ -28,10 +28,10 @@ public sealed class PromptBudgetSkillHandoffTests
     [Fact]
     public void ViewSettingsSkill_DocumentsDisciplineNullAndTemplateControlSet()
     {
-        // N-ds-1: views without the discipline property (schedules, legends) are
-        // skipped by the batch instead of failing it.
+        // N-ds-1: views without the discipline property (schedules, legends) get
+        // discipline=null in their row instead of failing the batch.
         Assert.Contains(
-            "`discipline=null` у видов без свойства (спеки, легенды) — вид пропускается, батч не падает",
+            "`discipline=null` у видов без свойства (спеки, легенды) — поле возвращается null, строка вида остаётся, батч не падает",
             Skill("view_settings"), StringComparison.Ordinal);
         // N-ds-2: controlled/nonControlled of a templated view describe ITS template.
         Assert.Contains(
