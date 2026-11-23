@@ -280,12 +280,16 @@ public sealed partial class CloneScheduleTool
         if (record is null)
             return;
 
+        // C4-14: a source with the grand total row off has nothing to transfer —
+        // touching the sub-flag setters anyway makes them throw and produced a
+        // false "grand total row was not transferred" warning on every clone.
+        if (!record.GrandTotal && !record.GrandTotalCount && !record.ShowGrandTotalTitle)
+            return;
+
         try
         {
             // The sub-flags require the grand total row to be on first.
-            var needsRow = record.GrandTotal || record.GrandTotalCount || record.ShowGrandTotalTitle;
-            if (needsRow)
-                cloneDefinition.ShowGrandTotal = true;
+            cloneDefinition.ShowGrandTotal = true;
             cloneDefinition.ShowGrandTotalCount = record.GrandTotalCount;
             cloneDefinition.ShowGrandTotalTitle = record.ShowGrandTotalTitle;
             if (record.ShowGrandTotalTitle && record.GrandTotalTitle is not null)

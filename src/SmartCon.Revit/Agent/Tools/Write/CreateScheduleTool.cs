@@ -33,8 +33,12 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             "name must be unique (a duplicate fails with schedule_name_taken). fields (0..15) " +
             "are schedulable field display names as get_schedule_definition reports them; an " +
             "unknown field fails per item with field_not_available and availableFields[]. " +
-            "itemized=true (default) shows each element on its own row. Returns the new " +
-            "scheduleId and the read-back field list. Not idempotent; dry run defaults to true.",
+            "itemized=true (default) shows each element on its own row. Returns " +
+            "created{scheduleId, name} and the read-back field list; in a dry run the " +
+            "scheduleId is PROVISIONAL — the schedule was built inside the rolled-back " +
+            "transaction and does not exist, so do not reference it (re-run with " +
+            "dryRun:false and read the real id from the result). Not idempotent; dry run " +
+            "defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""category"":{""type"":""string"",""description"":""Category: OST_Pipes, localized name or see categoryId""},""categoryId"":{""type"":""integer"",""description"":""Numeric category id from list_categories""},""name"":{""type"":""string"",""description"":""Unique schedule name, e.g. Спецификация труб""},""fields"":{""type"":""array"",""maxItems"":15,""items"":{""type"":""string""},""description"":""Initial field display names (as in get_schedule_definition)""},""itemized"":{""type"":""boolean"",""default"":true},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name""],""additionalProperties"":false}"
@@ -176,16 +180,26 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             NewValue = appliedName,
             Status = ChangeStatus.Applied
         });
+        // created{scheduleId, name} is the honest provisional-id marker (C7-05):
+        // the execute_plan preview renames it to previewScheduleId, and the
+        // dry-run warning below keeps direct calls honest too.
+        outcome.Data["created"] = new { scheduleId, name = appliedName };
         outcome.Data["schedule"] = new
         {
-            scheduleId,
-            name = appliedName,
             categoryId = categoryId.GetValue(),
             categoryName = CategoryLabel(doc, definition),
             itemized = SafeItemized(definition),
             fields = readBackFields
         };
         outcome.Data["addedFields"] = addedFields;
+        if (dryRun)
+        {
+            outcome.Warnings.Add(
+                "dryRun: the schedule was created inside the rolled-back transaction; " +
+                "created.scheduleId " + scheduleId + " is PROVISIONAL and will not exist " +
+                "after this call. [Action: re-run with dryRun:false and read the real " +
+                "scheduleId from the result before referencing it]");
+        }
     }
 
     private static string? CategoryLabel(Document doc, ScheduleDefinition definition)
