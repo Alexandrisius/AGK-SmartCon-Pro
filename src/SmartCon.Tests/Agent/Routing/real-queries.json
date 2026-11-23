@@ -3087,6 +3087,30 @@
         "load_classification_table"
       ],
       "kind": "write"
+    },
+    {
+      "id": "rCls7",
+      "query": "Модель без кодов классификации — проставь их по таблице, которая уже подключена к проекту",
+      "expectedTools": [
+        "classify_types"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rCls8",
+      "query": "Нужно заполнить колонку кодов классификатора сразу по всем семействам, по одному не спрашивай",
+      "expectedTools": [
+        "classify_types"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rCls9",
+      "query": "Разбери модель и назначь коды классификации типам, где они пустые",
+      "expectedTools": [
+        "classify_types"
+      ],
+      "kind": "read"
     }
   ]
 }

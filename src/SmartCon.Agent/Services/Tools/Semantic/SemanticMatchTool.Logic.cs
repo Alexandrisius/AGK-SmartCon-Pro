@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Agent.Services.Tools.Semantic;
 
@@ -94,9 +95,7 @@ public sealed partial class SemanticMatchTool
 
         var questions = new Dictionary<string, AgentDecisionQuestion>(StringComparer.Ordinal)
         {
-            ["match"] = AgentDecisionQuestion.Choice(
-                "Which item is the best match for the request?",
-                criteria)
+            ["match"] = AgentSemanticRanker.ChoiceQuestion(criteria)
         };
 
         return await _decisionClient
@@ -107,33 +106,11 @@ public sealed partial class SemanticMatchTool
     private static void MergeBatch(
         AgentDecisionAnswer answer,
         IReadOnlyList<MatchItem> batch,
-        Dictionary<string, double> scores)
-    {
-        var batchIds = new HashSet<string>(
-            batch.Select(item => item.Id), StringComparer.Ordinal);
-
-        if (answer.Probabilities is not null)
-        {
-            foreach (var pair in answer.Probabilities)
-            {
-                if (!batchIds.Contains(pair.Key))
-                    continue;
-
-                if (!scores.TryGetValue(pair.Key, out var existing) || pair.Value > existing)
-                    scores[pair.Key] = pair.Value;
-            }
-        }
-
-        // A choice without probabilities is still a strong signal: the model
-        // picked it outright. Confidence (when present) becomes its score; a
-        // plain pick lands above the default 0.08 cutoff.
-        if (!string.IsNullOrEmpty(answer.Choice)
-            && batchIds.Contains(answer.Choice!)
-            && !scores.ContainsKey(answer.Choice!))
-        {
-            scores[answer.Choice!] = answer.Confidence ?? 0.5;
-        }
-    }
+        Dictionary<string, double> scores) =>
+        AgentSemanticRanker.MergeChoice(
+            answer,
+            batch.Select(item => item.Id).ToArray(),
+            scores);
 
     private ToolResult BuildResult(
         SemanticMatchRequest request,

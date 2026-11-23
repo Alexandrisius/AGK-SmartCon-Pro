@@ -40,10 +40,11 @@ public sealed class SemanticPackTextTests
             ["semantic_match"] = CardText("semantic_match"),
             ["read_classifier"] = CardText("read_classifier"),
             ["list_classification_entries"] = CardText("list_classification_entries"),
-            ["load_classification_table"] = CardText("load_classification_table")
+            ["load_classification_table"] = CardText("load_classification_table"),
+            ["classify_types"] = CardText("classify_types")
         };
 
-        Assert.Equal(5, texts.Count(value => !string.IsNullOrEmpty(value.Value)));
+        Assert.Equal(6, texts.Count(value => !string.IsNullOrEmpty(value.Value)));
         foreach (var (name, text) in texts)
         {
             foreach (var spoiler in BenchmarkSpoilers)
