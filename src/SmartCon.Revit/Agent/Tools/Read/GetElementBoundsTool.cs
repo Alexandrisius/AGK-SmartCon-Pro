@@ -144,6 +144,22 @@ public sealed class GetElementBoundsTool : AgentReadToolBase
             if (box is not null)
                 withBox++;
 
+            // An RVT link instance is a placed model element, not a view, sheet
+            // or datum: its geometry belongs to the linked document and is not
+            // queried here (live probe, night run 2 - the generic note below
+            // called it a view or a schedule).
+            if (element is RevitLinkInstance && location is null && box is null)
+            {
+                notApplicable++;
+                rows.Add(Row(
+                    id, category, false, false, "no_placement",
+                    "The element is an RVT link instance: the linked model is placed in " +
+                    "this document, but its geometry belongs to the linked file and is not " +
+                    "reported by this tool.",
+                    null, null, null));
+                continue;
+            }
+
             if (location is null && box is null)
             {
                 notApplicable++;

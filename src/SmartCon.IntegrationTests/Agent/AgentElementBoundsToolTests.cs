@@ -62,6 +62,18 @@ public sealed class AgentElementBoundsToolTests : RevitApiTest
         {
             // The document may already be closed by a test scenario.
         }
+
+        // The link donor files are disposable once the host document is closed.
+        try
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "SmartConAgentElementBounds");
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception)
+        {
+            // The donor directory is best-effort cleanup.
+        }
     }
 
     [Test]
@@ -139,6 +151,27 @@ public sealed class AgentElementBoundsToolTests : RevitApiTest
     }
 
     [Test]
+    public async Task LinkInstance_IsNamedAsALink_NotAsAViewOrSchedule()
+    {
+        // N1 review P3: an RVT link instance has neither a location nor a model
+        // box of its own, but it is a placed model element - the generic
+        // no-placement note called it a view, sheet or schedule, which misleads.
+        var linkPath = CreateLinkedDocument();
+        var linkInstanceId = SeedLinkInstance(linkPath);
+        if (linkInstanceId == 0)
+            Skip.Test("Не удалось создать экземпляр связи в тестовом документе");
+
+        var result = await Run(new { elementIds = new[] { linkInstanceId } });
+
+        await Assert.That(result.Success).IsTrue();
+        var element = FirstElement(result);
+        await Assert.That(element.GetProperty("applicable").GetBoolean()).IsFalse();
+        await Assert.That(element.GetProperty("reason").GetString()).IsEqualTo("no_placement");
+        await Assert.That(element.GetProperty("note").GetString() ?? string.Empty)
+            .Contains("RVT link instance", StringComparison.Ordinal);
+    }
+
+    [Test]
     public async Task UnknownId_LandsInMissingAlongsideValidElements()
     {
         RequireWall();
@@ -160,6 +193,54 @@ public sealed class AgentElementBoundsToolTests : RevitApiTest
     {
         if (!_hasWall)
             Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+    }
+
+    /// <summary>
+    /// A minimal project document saved next to nothing and closed: the file a
+    /// test link references. The path is cleaned up by the test itself.
+    /// </summary>
+    private static string CreateLinkedDocument()
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            "SmartConAgentElementBounds",
+            "link-donor-" + Guid.NewGuid().ToString("N") + ".rvt");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var donor = Application.NewProjectDocument(UnitSystem.Metric);
+        donor.SaveAs(path);
+        donor.Close(false);
+        return path;
+    }
+
+    /// <summary>
+    /// A reference to the donor file placed as a link instance: RevitLinkType.
+    /// Create creates the type AND loads the linked document, then the instance
+    /// is placed at the origin.
+    /// </summary>
+    private long SeedLinkInstance(string linkPath)
+    {
+        long linkInstanceId = 0;
+        var committed = RunInTransactionWithResult("Seed a link instance", doc =>
+        {
+            var modelPath = ModelPathUtils.ConvertUserVisiblePathToModelPath(linkPath);
+            var options = new RevitLinkOptions(false);
+            LinkLoadResult result = RevitLinkType.Create(doc, modelPath, options);
+            linkInstanceId = RevitLinkInstance.Create(doc, result.ElementId).Id.GetValue();
+        });
+        return committed ? linkInstanceId : 0;
+    }
+
+    private bool RunInTransactionWithResult(string name, Action<Document> body)
+    {
+        try
+        {
+            RunInTransaction(name, body);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private long EnsurePlacedInstance()
