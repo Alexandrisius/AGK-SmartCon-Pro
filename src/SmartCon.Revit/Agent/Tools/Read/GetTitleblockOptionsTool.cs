@@ -191,13 +191,21 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
     private const int MaxSizeMapValues = 8;
 
     /// <summary>
+    /// One note per sizeMap block (S1-R6): repeating it on every parameter row
+    /// cost up to ~720 characters per title block type for the same fact.
+    /// </summary>
+    private const string SizeMapNote =
+        "Sizes observed on the existing sheets of this album; values not listed were " +
+        "never used here — test them on a draft sheet.";
+
+    /// <summary>
     /// C6-08: the multiplicity → paper size table derived from the album. For
     /// every editable non-built-in instance parameter of the title block type
     /// whose distinct values map to DIFFERENT observed sheet sizes, the value →
     /// size pairs. A value the album never used is honestly absent: the family
     /// formula decides it, not the tool.
     /// </summary>
-    private static List<object> BuildSizeMap(
+    private static List<SizeMapEntry> BuildSizeMap(
         Document doc,
         List<FamilyInstance> instances,
         long typeId)
@@ -256,11 +264,21 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             }
         }
 
-        var result = new List<object>();
+        return SelectSizeDriving(observed, sizes);
+    }
+
+    /// <summary>
+    /// The size-driving filter of the sizeMap: only parameters whose distinct
+    /// values have produced at least two distinct widths in this album. Pure
+    /// selection over the observed data (unit-tested without a Revit host).
+    /// </summary>
+    internal static List<SizeMapEntry> SelectSizeDriving(
+        Dictionary<string, Dictionary<string, (int Count, string SizeKey)>> observed,
+        Dictionary<string, (double Width, double Height)> sizes)
+    {
+        var result = new List<SizeMapEntry>();
         foreach (var pair in observed)
         {
-            // Only size-driving parameters: the distinct values must have
-            // produced at least two distinct widths in this album.
             var distinctWidths = pair.Value.Values
                 .Select(entry => sizes[entry.SizeKey].Width)
                 .Distinct()
@@ -271,22 +289,14 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             var valueRows = pair.Value
                 .OrderBy(entry => entry.Key, StringComparer.Ordinal)
                 .Take(MaxSizeMapValues)
-                .Select(entry => new
-                {
-                    value = entry.Key,
-                    sheetCount = entry.Value.Count,
-                    widthMm = Math.Round(sizes[entry.Value.SizeKey].Width, 1),
-                    heightMm = Math.Round(sizes[entry.Value.SizeKey].Height, 1)
-                })
+                .Select(entry => new SizeMapValue(
+                    entry.Key,
+                    entry.Value.Count,
+                    Math.Round(sizes[entry.Value.SizeKey].Width, 1),
+                    Math.Round(sizes[entry.Value.SizeKey].Height, 1)))
                 .ToList();
 
-            result.Add(new
-            {
-                parameter = pair.Key,
-                values = valueRows,
-                note = "Sizes observed on the existing sheets of this album; values not " +
-                       "listed were never used here — test them on a draft sheet."
-            });
+            result.Add(new SizeMapEntry(pair.Key, valueRows));
 
             if (result.Count >= MaxSizeMapParameters)
                 break;
@@ -294,6 +304,12 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
 
         return result;
     }
+
+    /// <summary>One size-driving parameter of the sizeMap (C6-08).</summary>
+    internal sealed record SizeMapEntry(string Parameter, List<SizeMapValue> Values);
+
+    /// <summary>One observed value → paper size pair of the sizeMap.</summary>
+    internal sealed record SizeMapValue(string Value, int SheetCount, double WidthMm, double HeightMm);
 
     private static int CountSheetsOfType(
         List<FamilyInstance> instances,
@@ -393,7 +409,7 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
 
         public List<object>? InstanceParameters { get; set; }
 
-        public List<object> SizeMap { get; set; } = new();
+        public List<SizeMapEntry> SizeMap { get; set; } = new();
 
         public object ToPayload() => new
         {
@@ -403,7 +419,8 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             sheetCount = SheetCount,
             typeParameters = TypeParameters,
             instanceParameters = InstanceParameters,
-            sizeMap = SizeMap
+            sizeMap = SizeMap,
+            sizeMapNote = SizeMap.Count > 0 ? SizeMapNote : null
         };
     }
 }

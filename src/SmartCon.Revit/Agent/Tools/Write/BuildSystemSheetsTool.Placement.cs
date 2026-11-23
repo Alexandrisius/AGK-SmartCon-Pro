@@ -287,25 +287,69 @@ public sealed partial class BuildSystemSheetsTool
                 "parameter storage type " + parameter.StorageType + "]");
         }
 
+        results.AddRange(ApplyInheritedTitleBlockValues(
+            instance, inherited, parameters, sheet.SheetNumber, warnings));
+
+        return results;
+    }
+
+    /// <summary>
+    /// Writes the album-inherited values (C6-11) the item did not set
+    /// explicitly. A value that cannot be written is NEVER silent (S1-R5): the
+    /// parameter missing on this title block or rejected by the setter adds a
+    /// failed row plus a warning with an [Action], so the model sees the
+    /// inheritance did not happen instead of trusting the card's promise.
+    /// </summary>
+    internal static List<object> ApplyInheritedTitleBlockValues(
+        FamilyInstance instance,
+        Dictionary<string, string>? inherited,
+        Dictionary<string, JsonElement>? explicitParameters,
+        string sheetNumber,
+        List<string> warnings)
+    {
+        var results = new List<object>();
         foreach (var pair in inherited ?? new Dictionary<string, string>())
         {
-            if (parameters is not null && parameters.ContainsKey(pair.Key))
+            if (explicitParameters is not null && explicitParameters.ContainsKey(pair.Key))
                 continue;
 
             var parameter = FindInstanceParameter(instance, pair.Key);
             if (parameter is null)
+            {
+                results.Add(new
+                {
+                    name = pair.Key,
+                    status = "failed",
+                    errorCode = "titleblock_parameter_not_found"
+                });
+                warnings.Add(
+                    "Sheet " + sheetNumber + ": the album-inherited title block parameter '" +
+                    pair.Key + "' was not found on this sheet's title block. [Action: check " +
+                    "the parameter and the title block type via get_titleblock_options and " +
+                    "pass the value explicitly in titleBlockParameters if it matters]");
                 continue;
+            }
 
             var unit = parameter.StorageType == StorageType.Double
                 ? "raw"
                 : null;
-            if (AgentParameterWriteHelper.TrySet(parameter, pair.Value, unit, out _, out _))
+            if (AgentParameterWriteHelper.TrySet(parameter, pair.Value, unit, out var errorCode, out var reason))
+            {
                 results.Add(new
                 {
                     name = pair.Key,
                     status = "inherited",
                     value = pair.Value
                 });
+                continue;
+            }
+
+            results.Add(new { name = pair.Key, status = "failed", errorCode, reason });
+            warnings.Add(
+                "Sheet " + sheetNumber + ": the album value '" + pair.Value + "' of title " +
+                "block parameter '" + pair.Key + "' was not set (" + reason + "). " +
+                "[Action: pass the parameter explicitly in titleBlockParameters with a " +
+                "value matching its storage type " + parameter.StorageType + "]");
         }
 
         return results;
