@@ -240,7 +240,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 }
             };
 
-            if (outcome.Data["delta"] is not List<object> deltaList)
+            // The indexer getter would throw KeyNotFoundException before the
+            // first delta row exists; the catch below would swallow the whole
+            // delta silently.
+            if (!outcome.Data.TryGetValue("delta", out var storedDelta)
+                || storedDelta is not List<object> deltaList)
             {
                 deltaList = new List<object>();
                 outcome.Data["delta"] = deltaList;

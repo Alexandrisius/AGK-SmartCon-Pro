@@ -78,13 +78,21 @@ internal static class AgentViewSettingsWriter
                 Describe(lost) + " — they are replaced by the filter list of the assigned template." +
                 " " + AgentTemplateFilterImpact.OrderHint(change.ReplacedByTemplateId.Value));
 
-            if (outcome.Data["ownFiltersReplaced"] is not List<object> replaced)
+            // The first takeover creates the key: the indexer getter would throw
+            // KeyNotFoundException on a view that has no entry yet.
+            List<object> replacedList;
+            if (outcome.Data.TryGetValue("ownFiltersReplaced", out var stored)
+                && stored is List<object> existing)
             {
-                replaced = new List<object>();
-                outcome.Data["ownFiltersReplaced"] = replaced;
+                replacedList = existing;
+            }
+            else
+            {
+                replacedList = new List<object>();
+                outcome.Data["ownFiltersReplaced"] = replacedList;
             }
 
-            replaced.Add(new
+            replacedList.Add(new
             {
                 viewId = view.Id.GetValue(),
                 viewName = view.Name,

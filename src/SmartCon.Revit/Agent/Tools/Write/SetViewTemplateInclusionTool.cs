@@ -188,8 +188,9 @@ public sealed partial class SetViewTemplateInclusionTool : AgentWriteToolBase
 
         // Turning "V/G Overrides Filters" on hands every view's own filter list to
         // the template. Read the own filters BEFORE the write: afterwards they
-        // are gone and nothing in the model remembers them.
-        var filtersIncluded = newIds.Contains(FiltersParameterId()) && !current.Contains(FiltersParameterId());
+        // are gone and nothing in the model remembers them. "On" means the
+        // parameter LEFT the non-controlled set: current had it, desired no longer does.
+        var filtersIncluded = current.Contains(FiltersParameterId()) && !newIds.Contains(FiltersParameterId());
         var losingViews = filtersIncluded
             ? AgentTemplateFilterImpact.ViewsLosingOwnFilters(doc, template)
             : new List<(long ViewId, string ViewName, List<string> Filters)>();
