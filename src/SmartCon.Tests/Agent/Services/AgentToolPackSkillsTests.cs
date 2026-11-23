@@ -68,6 +68,19 @@ public sealed class AgentToolPackSkillsTests
     }
 
     [Fact]
+    public void EverySkill_CarriesLineFeedsOnly()
+    {
+        // The bodies are verbatim strings: without the normalization a CRLF
+        // checkout hands out a longer text than an LF one - and the budget
+        // gate above would depend on the checkout, not on the manual.
+        foreach (var pack in AgentToolPacks.Populated)
+        {
+            var skill = AgentToolPackSkills.TryGet(pack.Name)!;
+            Assert.DoesNotContain("\r", skill);
+        }
+    }
+
+    [Fact]
     public void EverySkill_MentionsTheToolsItDocuments()
     {
         foreach (var pack in AgentToolPacks.Populated)
