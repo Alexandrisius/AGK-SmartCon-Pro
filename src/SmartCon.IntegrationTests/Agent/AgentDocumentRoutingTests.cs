@@ -363,7 +363,7 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
     private static string CanonicalDocumentIdDescription()
     {
         using var document = JsonDocument.Parse(
-            "{" + AgentReadToolBase.DocumentIdPropertyJson.TrimEnd(',') + "}");
+            "{" + AgentReadToolBase.DocumentIdPropertyJsonLast + "}");
         return document.RootElement.GetProperty("documentId").GetProperty("description").GetString()!;
     }
 
