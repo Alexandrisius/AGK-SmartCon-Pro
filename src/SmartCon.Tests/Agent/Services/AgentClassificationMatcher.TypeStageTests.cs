@@ -314,7 +314,9 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
         Assert.Contains("'Семейство Х' (typeIds 101, 102)", warning, StringComparison.Ordinal);
         Assert.Contains(
             "[Action: accept the family codes, or to tell their types apart re-run classify_types " +
-            "with typeIds set to the listed ids and onlyEmpty=false when their codes are already written]",
+            "over ALL types of the named families - familyIds for a listed loadable family, its " +
+            "name via nameContains for a system family - and pass onlyEmpty=false when their codes " +
+            "are already written; a re-run with only the listed typeIds asks nothing]",
             warning, StringComparison.Ordinal);
     }
 
@@ -354,7 +356,9 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
         var warning = Assert.Single(result.Warnings);
         Assert.Contains("400 type(s) of 1 family stay with the family code", warning, StringComparison.Ordinal);
         Assert.Contains("(typeIds 101, 102, 103", warning, StringComparison.Ordinal);
-        Assert.Contains(", …); and 200 more type(s) not listed - select them by the categories or familyIds", warning, StringComparison.Ordinal);
+        Assert.Contains(
+            ", …); and 200 more type(s) not listed - select them by the familyIds of the families named above",
+            warning, StringComparison.Ordinal);
         Assert.True(warning.Length < 3000, "the warning must stay a warning, not a dump: " + warning.Length);
     }
 
@@ -419,7 +423,10 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
         BareSibling,
         Mixed,
         Empty,
-        Throw
+        Throw,
+        EmptyProbabilities,
+        BareFamily,
+        FamilyDiluted
     }
 
     /// <summary>
@@ -431,7 +438,7 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
     /// <see cref="PerTypeMode"/>; the honest none is never picked by token
     /// overlap - a real model does not choose "none" because of shared words.
     /// </summary>
-    private sealed class Script : IAgentDecisionClient
+    private sealed partial class Script : IAgentDecisionClient
     {
         public double ChainScore { get; set; } = 0.9;
 
@@ -471,6 +478,8 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
             CancellationToken ct)
         {
             Calls++;
+            if (Calls == FailCall)
+                throw new InvalidOperationException("HttpClient timeout");
             var perType = state.Contains("SIBLING", StringComparison.Ordinal);
             States.Add(perType ? "per-type" : state);
             var answers = new Dictionary<string, AgentDecisionAnswer>(StringComparer.Ordinal);
@@ -499,6 +508,9 @@ public sealed partial class AgentClassificationMatcherTypeStageTests
 
         private AgentDecisionAnswer PerTypeAnswer(AgentDecisionQuestion question, int ordinal)
         {
+            if (GuardAnswer(question) is { } guarded)
+                return guarded;
+
             switch (Mode)
             {
                 case PerTypeMode.None:

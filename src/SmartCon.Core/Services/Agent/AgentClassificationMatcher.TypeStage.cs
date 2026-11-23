@@ -36,8 +36,10 @@ public sealed partial class AgentClassificationMatcher
 
     private const string LeftoverAction =
         "[Action: accept the family codes, or to tell their types apart re-run " +
-        "classify_types with typeIds set to the listed ids and onlyEmpty=false when " +
-        "their codes are already written]";
+        "classify_types over ALL types of the named families - familyIds for a listed " +
+        "loadable family, its name via nameContains for a system family - and pass " +
+        "onlyEmpty=false when their codes are already written; a re-run with only the " +
+        "listed typeIds asks nothing]";
 
     /// <summary>
     /// Asks the differentiation questions and maps every type that got a usable
@@ -204,15 +206,128 @@ public sealed partial class AgentClassificationMatcher
                 tokens.Add(token);
     }
 
+    /// <summary>Longer than this, a token with a digit is an article or a GUID, not a mark.</summary>
+    private const int ArticleTokenLength = 8;
+
+    /// <summary>Longer than this, a token of hex letters only is a GUID segment.</summary>
+    private const int HexLetterSegmentLength = 6;
+
+    /// <summary>At most this many letters follow the digits of a unit number (200mm, 25мм).</summary>
+    private const int UnitSuffixLength = 4;
+
+    /// <summary>Dimension ratings: a rating prefix says which size, not what (DN100, PN16, Ду25).</summary>
+    private static readonly string[] DimensionPrefixes = { "dn", "pn", "ду", "du" };
+
     /// <summary>
-    /// A token with a digit in it is a size or an article number (DN100, 200mm,
-    /// 100x100, a grade or a GUID segment): it says which size, not what.
+    /// A token that only says WHICH SIZE, rating or article copy of the family
+    /// this type is: a pure number (50), a number with a short unit (200mm,
+    /// 25мм), a size row (100x100), a dimension rating (DN100, PN16, Ду25 - and
+    /// the bare prefix of the spaced «DN 50»), a hex GUID segment (98fc,
+    /// deadbeef) or a long article code. A SHORT mark that mixes letters and
+    /// digits in any other way («EI30», «В25», «15кч18п») names the essence of
+    /// the type and is NOT a size.
     /// </summary>
     private static bool IsSizeToken(string token)
+    {
+        if (token.Length == 0)
+            return false;
+        if (token.Length >= ArticleTokenLength && HasDigit(token))
+            return true;
+        if (IsHexSegment(token))
+            return true;
+        return IsUnitNumber(token) || IsSizeRow(token) || IsDimensionRating(token);
+    }
+
+    private static bool HasDigit(string token)
     {
         foreach (var character in token)
         {
             if (char.IsDigit(character))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A segment of a GUID or a hex code: hex letters with a digit (98fc, 40de)
+    /// or, when long enough, hex letters alone (deadbeef) - a word made of a-f
+    /// letters shorter than that stays significant.
+    /// </summary>
+    private static bool IsHexSegment(string token)
+    {
+        var digits = 0;
+        foreach (var character in token)
+        {
+            if (character >= '0' && character <= '9')
+            {
+                digits++;
+                continue;
+            }
+
+            if (character < 'a' || character > 'f')
+                return false;
+        }
+
+        return digits > 0 || token.Length >= HexLetterSegmentLength;
+    }
+
+    /// <summary>A pure number or a number with a short unit tail: 50, 200mm, 25мм.</summary>
+    private static bool IsUnitNumber(string token)
+    {
+        var digits = 0;
+        while (digits < token.Length && char.IsDigit(token[digits]))
+            digits++;
+        if (digits == 0)
+            return false;
+        if (digits == token.Length)
+            return true;
+        if (token.Length - digits > UnitSuffixLength)
+            return false;
+        for (var index = digits; index < token.Length; index++)
+        {
+            if (!char.IsLetter(token[index]))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>A size row: digits around dimension separators (100x100, 600x400x200).</summary>
+    private static bool IsSizeRow(string token)
+    {
+        var index = 0;
+        while (index < token.Length && char.IsDigit(token[index]))
+            index++;
+        if (index == 0)
+            return false;
+
+        var separators = 0;
+        while (index < token.Length)
+        {
+            if (token[index] is not ('x' or 'х' or '*' or '×'))
+                return false;
+            separators++;
+            index++;
+            var start = index;
+            while (index < token.Length && char.IsDigit(token[index]))
+                index++;
+            if (index == start)
+                return false;
+        }
+
+        return separators > 0;
+    }
+
+    /// <summary>A dimension rating: a known prefix with a number, or the bare prefix of a spaced one.</summary>
+    private static bool IsDimensionRating(string token)
+    {
+        foreach (var prefix in DimensionPrefixes)
+        {
+            if (!token.StartsWith(prefix, StringComparison.Ordinal))
+                continue;
+            var rest = token.Substring(prefix.Length);
+            if (rest.Length == 0 || rest.All(char.IsDigit))
                 return true;
         }
 
@@ -299,45 +414,88 @@ public sealed partial class AgentClassificationMatcher
         var bucket = leftout.Find(item =>
             string.Equals(item.Key, family.Key, StringComparison.Ordinal));
         if (bucket is null)
-            leftout.Add(bucket = new LeftoverFamily(family.Key, family.FamilyName));
+        {
+            bucket = new LeftoverFamily(family.Key, family.FamilyName)
+            {
+                FamilyId = family.FamilyId,
+                Category = family.Category
+            };
+            leftout.Add(bucket);
+        }
+
         foreach (var index in indexes)
             bucket.TypeIds.Add(family.Types[index].ElementId);
     }
 
     /// <summary>
-    /// Names the types that stay with the family code and why, with the ids a
-    /// re-run needs - bounded, so a huge leftover cannot flood the payload.
+    /// Names the types that stay with the family code and why, with the handles
+    /// a re-run needs - the familyIds of the named families (a partial leftover
+    /// re-run with the listed ids alone would ask nothing) and the categories of
+    /// the families the warning does not name - bounded, so a huge leftover
+    /// cannot flood the payload.
     /// </summary>
     private static string LeftoverWarning(string cause, List<LeftoverFamily> leftout)
     {
         var parts = new List<string>();
         var listedTypes = 0;
+        var listedFamilies = 0;
         var idsLeft = LeftoverIdsInWarning;
-        foreach (var family in leftout.Take(LeftoverFamiliesInWarning))
+        foreach (var family in leftout)
         {
-            if (idsLeft <= 0)
+            if (listedFamilies >= LeftoverFamiliesInWarning || idsLeft <= 0)
                 break;
 
             var ids = family.TypeIds.Take(idsLeft).ToList();
             idsLeft -= ids.Count;
             listedTypes += ids.Count;
-            parts.Add("'" + family.Name + "' (typeIds " +
+            listedFamilies++;
+            parts.Add("'" + family.Name + "' (" +
+                      (family.FamilyId is { } familyId
+                          ? "familyId " + familyId.ToString(CultureInfo.InvariantCulture) + "; "
+                          : string.Empty) +
+                      "typeIds " +
                       string.Join(", ", ids.Select(id => id.ToString(CultureInfo.InvariantCulture))) +
                       (ids.Count < family.TypeIds.Count ? ", …" : string.Empty) + ")");
         }
 
         var typeCount = leftout.Sum(item => item.TypeIds.Count);
         var rest = typeCount - listedTypes;
+        var unnamed = leftout.Count - listedFamilies;
         return typeCount + " type(s) of " + leftout.Count +
                (leftout.Count == 1 ? " family" : " families") +
                " stay with the family code - " + cause + ": " +
                string.Join(", ", parts) +
-               (rest > 0
-                   ? "; and " + rest + " more type(s) not listed - select them by the " +
-                     "categories or familyIds of their families"
-                   : string.Empty) +
+               RestClauseOf(rest, unnamed, leftout.Skip(listedFamilies)) +
                ". " + LeftoverAction;
     }
+
+    /// <summary>
+    /// How to reach the types the warning did not list: the families beyond the
+    /// listing cap are unnamed, so their categories are the way to select them;
+    /// the types cut off a listed family are reached by its familyId.
+    /// </summary>
+    private static string RestClauseOf(int rest, int unnamed, IEnumerable<LeftoverFamily> unnamedFamilies)
+    {
+        if (rest <= 0)
+            return string.Empty;
+
+        if (unnamed <= 0)
+            return "; and " + rest + " more type(s) not listed - select them by the " +
+                   "familyIds of the families named above";
+
+        var categories = CategoriesOf(unnamedFamilies);
+        return "; and " + rest + " more type(s) not listed - select the " + unnamed +
+               " unnamed famil" + (unnamed == 1 ? "y" : "ies") + " by their categories" +
+               (categories.Length > 0 ? " (" + categories + ")" : string.Empty) +
+               " and the named ones by their familyIds";
+    }
+
+    private static string CategoriesOf(IEnumerable<LeftoverFamily> families) =>
+        string.Join(", ", families
+            .Select(family => family.Category)
+            .Where(category => !string.IsNullOrEmpty(category))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6));
 
     /// <summary>The answer one group of types received, shared by every type of the group.</summary>
     private sealed record TypeStageAnswer(
@@ -390,6 +548,12 @@ public sealed partial class AgentClassificationMatcher
         public string Key { get; }
 
         public string Name { get; }
+
+        /// <summary>Id of the family when it is a loadable one; null for a system family.</summary>
+        public long? FamilyId { get; init; }
+
+        /// <summary>The category of the family - the handle a re-run selects system families by.</summary>
+        public string Category { get; init; } = string.Empty;
 
         public List<long> TypeIds { get; } = new();
     }

@@ -89,6 +89,10 @@ public sealed class SemanticPackTextTests
         Assert.Contains("skippedNotWritable", classifyTypes!.Purpose, StringComparison.Ordinal);
         Assert.Contains("TRUNCATED", classifyTypes.Purpose, StringComparison.Ordinal);
         Assert.Contains("notProcessed.familyNames", classifyTypes.Purpose, StringComparison.Ordinal);
+        // The card addresses the cut families the way the tool and the skill do.
+        Assert.Contains(
+            "(адреса — familyIds, systemTypeIds)",
+            classifyTypes.Purpose, StringComparison.Ordinal);
 
         Assert.True(AgentToolCards.TryGet("set_parameters", out var setParameters));
         Assert.Contains("parameter_not_supported", setParameters!.Purpose, StringComparison.Ordinal);

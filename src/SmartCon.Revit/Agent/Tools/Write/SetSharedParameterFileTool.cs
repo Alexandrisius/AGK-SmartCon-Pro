@@ -97,10 +97,13 @@ public sealed partial class SetSharedParameterFileTool : IAgentTool
         var application = ResolveApplication(app);
         if (application is null)
         {
+            // Not a document problem: the operation is an application-level
+            // setting and needs no open document at all (N1 review P3).
             return ToolResult.Fail(
-                "no_active_document",
-                "The Revit application is not available in this session. Open a project " +
-                "and try again.");
+                "revit_application_unavailable",
+                "The Revit application object is not available in this session, so the " +
+                "shared parameter file cannot be set. [Action: restart Revit and retry; " +
+                "the operation needs no open document]");
         }
 
         var path = request.FullPath;

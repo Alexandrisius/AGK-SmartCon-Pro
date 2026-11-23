@@ -186,8 +186,8 @@ public static partial class AgentToolCards
                     "только типы, способные хранить код: марки, типы видов и стили остаются за " +
                     "подбором и считаются в selection.skippedNotWritable. Лимиты по умолчанию " +
                     "равны максимуму, семейства не режутся; при TRUNCATED оставшиеся семейства " +
-                    "названы в notProcessed.familyNames — вызови тул ещё раз по их категориям " +
-                    "или typeIds. Read-only: " +
+                    "названы в notProcessed.familyNames (адреса — familyIds, systemTypeIds) — " +
+                    "вызови тул ещё раз с ними. Read-only: " +
                     "сам ничего не пишет. Большой результат хранится под resultHandle: " +
                     "items для set_parameters передаются по ссылке, без вычитания.",
                 WhenToUse =

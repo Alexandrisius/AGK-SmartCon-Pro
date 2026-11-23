@@ -173,14 +173,15 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         await Assert.That(first.GetProperty("candidates").GetArrayLength()).IsGreaterThan(0);
         await Assert.That(first.GetProperty("typeIds").GetArrayLength()).IsGreaterThan(0);
 
-        await Assert.That(summary.GetProperty("uncertainFamilies").GetInt32())
+        await Assert.That(summary.GetProperty("uncertainGroups").GetInt32())
             .IsEqualTo(uncertain.GetArrayLength());
         await Assert.That(summary.GetProperty("uncertainTypes").GetInt32())
             .IsEqualTo(summary.GetProperty("lowConfidence").GetInt32()
                        + summary.GetProperty("noConfidence").GetInt32()
                        + summary.GetProperty("noCandidates").GetInt32());
         await Assert.That(result.Message).Contains("uncertain type(s) in");
-        await Assert.That(result.Message).Contains("uncertain is grouped by family");
+        await Assert.That(result.Message).Contains(
+            "uncertain is grouped by family and the candidate the model ranked first");
 
         await Assert.That(data.GetProperty("setParameters").ValueKind).IsEqualTo(JsonValueKind.Null);
     }

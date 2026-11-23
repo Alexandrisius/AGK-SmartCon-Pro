@@ -3,6 +3,7 @@ using Autodesk.Revit.ApplicationServices;
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Agent.Support;
 using SmartCon.IntegrationTests.Support;
@@ -191,6 +192,23 @@ public sealed class AgentSharedParameterFileToolTests : RevitApiTest
         }
     }
 
+    [Test]
+    public async Task MissingRevitApplication_FailsWithTheApplicationErrorNotNoActiveDocument()
+    {
+        // N1 review P3: the tool is an application-level setting - without the
+        // Application object the error must not claim a document problem the
+        // operation does not have.
+        var tool = new SetSharedParameterFileTool(new NullDocumentContext());
+        var context = new AgentToolContext(new RawAppEvent(), "doc", Guid.Empty);
+
+        var result = await tool.ExecuteAsync(
+            context, Parse(new { path = TempPath("no-app.txt") }), CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("revit_application_unavailable");
+        await Assert.That(result.Message ?? string.Empty).Contains("[Action:", StringComparison.Ordinal);
+    }
+
     // ── Support ────────────────────────────────────────────────────────
 
     private async Task<ToolResult> Run(IAgentTool tool, object args, bool writeApproved)
@@ -271,6 +289,45 @@ public sealed class AgentSharedParameterFileToolTests : RevitApiTest
         catch (Exception)
         {
             // Temp cleanup is best-effort.
+        }
+    }
+
+    /// <summary>
+    /// A session without any document: the application-level tool must not
+    /// answer with a document error when the application object is missing.
+    /// </summary>
+    private sealed class NullDocumentContext : IRevitContext
+    {
+        public Document GetDocument() => throw new InvalidOperationException("no document");
+
+        public Document? TryGetDocument() => null;
+
+        public string GetRevitVersion() => "test";
+
+        public string GetUsername() => "test";
+    }
+
+    /// <summary>
+    /// Hands the tool a plain object instead of the Revit Application: the
+    /// branch the tool guards against a malformed awaitable event.
+    /// </summary>
+    private sealed class RawAppEvent : IAgentAwaitableEvent
+    {
+        public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default) =>
+            Task.FromResult(funcWithApp(new object()));
+
+        public Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default)
+        {
+            actionWithApp(new object());
+            return Task.CompletedTask;
+        }
+
+        public void ProcessQueue(object revitApp)
+        {
+        }
+
+        public void Initialize(Action onRaise)
+        {
         }
     }
 }
