@@ -333,8 +333,10 @@ public sealed partial class AgentClassificationMatcher
             "Task: descend the classification table for the building element described in " +
             "each question. The options are the CHILDREN of the row chosen on the previous " +
             "level - the code and the full path of each child. Pick the child row the " +
-            "element belongs to. Choose the option '" + AbstainText + "' when no option " +
-            "fits: an honest none is better than a wrong code.";
+            "element belongs to. The selection context, when present, is binding: a child of " +
+            "another discipline is wrong even when it is the closest textually. Choose the " +
+            "option '" + AbstainText + "' when no option fits: an honest none is better than " +
+            "a wrong code.";
         return AppendInstructions(state, options.Instructions);
     }
 

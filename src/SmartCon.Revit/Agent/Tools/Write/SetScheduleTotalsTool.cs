@@ -30,7 +30,9 @@ public sealed class SetScheduleTotalsTool : AgentWriteToolBase
             "{name, mode} where mode is standard (no totals), totals (sum/count), min, " +
             "max or minmax — a field that cannot total fails per item with " +
             "field_cannot_total. grandTotal (bool) shows the grand total row at the " +
-            "bottom; grandTotalCount adds the element count; grandTotalTitle adds a " +
+            "bottom; false turns it off and clears the dependent count/title flags with it " +
+            "(turning the row off never fails), and a count or a title alone switches the row " +
+            "on. grandTotalCount adds the element count; grandTotalTitle adds a " +
             "title row with the given text. Totals need a non-itemized schedule to " +
             "display per group. Returns the read-back totals state; undo_last restores " +
             "it. Dry run defaults to true.",
@@ -191,28 +193,63 @@ public sealed class SetScheduleTotalsTool : AgentWriteToolBase
         try
         {
             var initial = AgentScheduleWriteHelper.SerializeTotals(definition);
-            var targetRow = TryGetBool(args, "grandTotal", definition.ShowGrandTotal);
-            var targetCount = TryGetBool(args, "grandTotalCount", definition.ShowGrandTotalCount);
-            var targetTitleShown = definition.ShowGrandTotalTitle;
-            string? targetTitle = definition.GrandTotalTitle;
-            if (args.TryGetProperty("grandTotalTitle", out var titleElement))
-            {
-                targetTitle = titleElement.ValueKind == JsonValueKind.String
-                    ? titleElement.GetString()
-                    : null;
-                targetTitleShown = !string.IsNullOrEmpty(targetTitle);
-            }
 
-            // The sub-flags may only be touched while the row is on ("Display of a
-            // grand total row is not enabled") — enable the row first, then the
-            // sub-flags, then drop the row when the target state has it off.
-            if (targetRow || targetCount || targetTitleShown)
-                definition.ShowGrandTotal = true;
-            definition.ShowGrandTotalCount = targetCount;
-            definition.ShowGrandTotalTitle = targetTitleShown;
-            if (targetTitleShown)
-                definition.GrandTotalTitle = targetTitle;
-            definition.ShowGrandTotal = targetRow;
+            var rowSpecified = args.TryGetProperty("grandTotal", out var rowElement)
+                && rowElement.ValueKind is JsonValueKind.True or JsonValueKind.False;
+            var countSpecified = args.TryGetProperty("grandTotalCount", out var countElement)
+                && countElement.ValueKind is JsonValueKind.True or JsonValueKind.False;
+            var countValue = countSpecified && countElement.GetBoolean();
+            var titleSpecified = args.TryGetProperty("grandTotalTitle", out var titleElement);
+            var titleText = titleSpecified && titleElement.ValueKind == JsonValueKind.String
+                ? titleElement.GetString()
+                : null;
+            var titleOn = titleSpecified
+                ? !string.IsNullOrEmpty(titleText)
+                : definition.ShowGrandTotalTitle;
+
+            // An explicit grandTotal is the answer. Without it a count or a title
+            // switches the row on (asking for the count of a row that is off is
+            // still a request for the row), and grandTotal:false alone switches
+            // it off - the call that used to fail with "grand total row is not
+            // enabled" after the column totals had already been applied.
+            var rowOn = rowSpecified
+                ? rowElement.GetBoolean()
+                : definition.ShowGrandTotal
+                  || (countSpecified && countValue)
+                  || (titleSpecified && titleOn);
+
+            if (rowOn)
+            {
+                if (!definition.ShowGrandTotal)
+                    definition.ShowGrandTotal = true;
+
+                var targetCount = countSpecified ? countValue : definition.ShowGrandTotalCount;
+                if (definition.ShowGrandTotalCount != targetCount)
+                    definition.ShowGrandTotalCount = targetCount;
+
+                if (titleSpecified)
+                {
+                    // The flag goes first: Revit resets the title text while the
+                    // title row is off, so a title written first reads back as
+                    // the built-in default.
+                    if (definition.ShowGrandTotalTitle != titleOn)
+                        definition.ShowGrandTotalTitle = titleOn;
+                    if (!string.Equals(definition.GrandTotalTitle, titleText, StringComparison.Ordinal))
+                        definition.GrandTotalTitle = titleText;
+                }
+            }
+            else
+            {
+                // The dependent flags cannot outlive the row: Revit throws while
+                // they are set and the row is off, so clear them first and drop
+                // the row last.
+                if (definition.ShowGrandTotalCount)
+                    definition.ShowGrandTotalCount = false;
+                if (definition.ShowGrandTotalTitle)
+                    definition.ShowGrandTotalTitle = false;
+                if (definition.ShowGrandTotal)
+                    definition.ShowGrandTotal = false;
+            }
 
             touched = AgentScheduleWriteHelper.SerializeTotals(definition) != initial;
         }
@@ -237,13 +274,5 @@ public sealed class SetScheduleTotalsTool : AgentWriteToolBase
         }
 
         return touched;
-    }
-
-    private static bool TryGetBool(JsonElement args, string name, bool fallback)
-    {
-        return args.TryGetProperty(name, out var element)
-               && element.ValueKind is JsonValueKind.True or JsonValueKind.False
-            ? element.GetBoolean()
-            : fallback;
     }
 }

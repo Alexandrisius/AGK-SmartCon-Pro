@@ -398,6 +398,35 @@ public sealed class FindToolsNoMatchTests
         Assert.Contains(invented.Tools, tool => tool.Name == "rename_views");
     }
 
+    /// <summary>
+    /// Owner feedback 2026-11-24: a descriptive family-parameter request reached
+    /// only "closest"; the family write trio is the answer such a request always
+    /// has, so the wording floor must not turn it into "no match".
+    /// </summary>
+    [Fact]
+    public async Task Search_DescriptiveFamilyParameterRequest_ReturnsTheFamilyWriteTrio()
+    {
+        var catalog = new IAgentTool[]
+        {
+            new ScriptedTool("add_family_parameter"),
+            new ScriptedTool("map_family_parameters"),
+            new ScriptedTool("set_family_formula"),
+            new ScriptedTool("rename_views")
+        };
+
+        var data = await SearchAsync(
+            RuleTool(catalog),
+            "{\"query\":\"перенести значения параметров в семействе на ФОП заказчика\"}");
+
+        Assert.False(data.TryGetProperty("noMatch", out _));
+        var names = data.GetProperty("tools").EnumerateArray()
+            .Select(card => card.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("map_family_parameters", names);
+        Assert.Contains("add_family_parameter", names);
+        Assert.Contains("set_family_formula", names);
+    }
+
     private static AgentToolDefinition Definition(string name, string text) => new()
     {
         Name = name,

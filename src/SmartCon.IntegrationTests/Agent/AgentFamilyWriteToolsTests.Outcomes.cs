@@ -142,6 +142,59 @@ public sealed partial class AgentFamilyWriteToolsTests
             .IsEqualTo(guid.ToString("D"));
     }
 
+    [Test]
+    public async Task AddParameterBatch_Apply_AddsAllInOneReload()
+    {
+        // Owner feedback 2026-11-24: N parameters used to cost N family opens,
+        // N backups and N reloads (familyId changed every time).
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"items\":[" +
+            "{\"name\":\"Заказчик_1\",\"storageType\":\"text\",\"group\":\"PG_DATA\"}," +
+            "{\"name\":\"Заказчик_2\",\"storageType\":\"integer\",\"group\":\"PG_DATA\"}," +
+            "{\"name\":\"Заказчик_3\",\"storageType\":\"text\"}],\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(3);
+        await Assert.That(data.GetProperty("failed").GetArrayLength()).IsEqualTo(0);
+        await Assert.That(data.GetProperty("backupPath").GetString()).IsNotNull();
+        await Assert.That(_changeSets!.All.Count).IsEqualTo(1);
+
+        var parameters = await ReadParameters();
+        foreach (var name in new[] { "Заказчик_1", "Заказчик_2", "Заказчик_3" })
+        {
+            var parameter = FindParameterOrNull(parameters, name);
+            await Assert.That(parameter is not null).IsTrue();
+            await Assert.That(parameter!.Value.GetProperty("scope").GetString())
+                .IsEqualTo("type");
+        }
+    }
+
+    [Test]
+    public async Task AddParameterBatch_DuplicateInsideBatch_FailsPerItem()
+    {
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"items\":[" +
+            "{\"name\":\"Заказчик_Первый\",\"storageType\":\"text\"}," +
+            "{\"name\":\"Заказчик_Второй\",\"storageType\":\"text\"}," +
+            "{\"name\":\"Заказчик_Первый\",\"storageType\":\"text\"}],\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("partial_failure");
+        var data = Data(result);
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(2);
+        await Assert.That(data.GetProperty("failed").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("failed")[0].GetProperty("errorCode").GetString())
+            .IsEqualTo("parameter_exists");
+
+        // The two good parameters reached the project in the same reload.
+        var parameters = await ReadParameters();
+        await Assert.That(FindParameterOrNull(parameters, "Заказчик_Первый") is not null).IsTrue();
+        await Assert.That(FindParameterOrNull(parameters, "Заказчик_Второй") is not null).IsTrue();
+    }
+
     private long FindFirstTypeId(string familyName)
     {
         var symbols = new FilteredElementCollector(Doc).OfClass(typeof(FamilySymbol));

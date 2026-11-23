@@ -280,6 +280,10 @@ public sealed partial class ClassifyTypesTool : IAgentTool
                 "(family -> code + breadcrumb + typeIds), uncertain items and a READY setParameters " +
                 "argument (items with elementId=TYPE id, parameter=UNIFORMAT_CODE, " +
                 "scope=type) - then call set_parameters with it (dryRun first). " +
+                "A proposed code whose top-level branch shares no word with the family name " +
+                "while another branch does is demoted to uncertain (branch guard): the family " +
+                "name is the textual evidence the run owns, and a code of another discipline " +
+                "never reaches setParameters. " +
                 "classification_table_not_loaded means the document has no classifier: " +
                 "tell the user instead of guessing a code. Read-only: writes nothing itself.",
             Risk = AgentToolRisk.Read,

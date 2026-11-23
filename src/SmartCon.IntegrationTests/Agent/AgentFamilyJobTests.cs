@@ -352,6 +352,76 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
     }
 
     [Test]
+    public async Task FamilyJob_CreateTargetWithFormula_CreatesAndCopiesFormula()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+        const string targetName = "Площадь_новая";
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + FamilySeed.AreaParam + "\"},\"target\":{\"name\":\"" +
+            targetName + "\"},\"mode\":\"formula\",\"createTarget\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.FailedCount).IsEqualTo(0);
+        // One family unit carries the creation and the formula together.
+        await Assert.That(previewData.WillChangeCount).IsEqualTo(1);
+
+        var previewItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        using var expected = System.Text.Json.JsonDocument.Parse(previewItems[0].ExpectedJson!);
+        var creates = expected.RootElement.GetProperty("wouldCreateTargets");
+        await Assert.That(creates.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(creates[0].GetProperty("name").GetString()).IsEqualTo(targetName);
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(applyItems.Count(item => item.State == JobItemState.Done)).IsEqualTo(1);
+
+        var seed = _seeds[0];
+        var created = seed.GetProjectParameter(FamilySeed.Type1, targetName);
+        var area = seed.GetProjectParameter(FamilySeed.Type1, FamilySeed.AreaParam);
+        await Assert.That(created).IsNotNull();
+        await Assert.That(area).IsNotNull();
+        await Assert.That(System.Math.Abs(created!.AsDouble() - area!.AsDouble()) < 1e-9).IsTrue();
+    }
+
+    [Test]
     public async Task FamilyJob_CreateTargetFalse_FailsPreviewWithHint()
     {
         if (!SeedFamilies(1))

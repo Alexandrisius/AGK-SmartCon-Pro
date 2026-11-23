@@ -31,10 +31,12 @@ public sealed partial class MapFamilyParametersTool : AgentFamilyWriteToolBase
     {
         Name = "map_family_parameters",
         Description =
-            "Maps a source family parameter to a target parameter: mode='values' copies the " +
-            "value of every family type (clearing a target formula first), mode='formula' " +
-            "copies the source formula. Detects instance/type scope conflicts and spec " +
-            "mismatches; reports per parameter and per type. Dry run by default.",
+            "Transfers (maps) a source family parameter to a target parameter inside a family: " +
+            "mode='values' copies the value of every family type (clearing a target formula " +
+            "first), mode='formula' copies the source formula. This is the family-level path for " +
+            "moving a family to customer shared parameters (ФОП/KRTRS) so values and formulas " +
+            "survive a reload. Detects instance/type scope conflicts and spec mismatches; " +
+            "reports per parameter and per type. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,

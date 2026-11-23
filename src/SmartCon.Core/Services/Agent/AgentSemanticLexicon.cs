@@ -67,6 +67,32 @@ internal static class AgentSemanticLexicon
     }
 
     /// <summary>
+    /// Same word under a different ending: equal, a prefix match (as
+    /// <see cref="TokensMatch"/>), or a shared prefix of at least
+    /// <see cref="MinPrefixLength"/> characters whose remainders are at most
+    /// three characters each ("отопление"/"отопления", "системы"/"система").
+    /// The branch-evidence guard needs it because Russian endings differ where
+    /// the stem does not.
+    /// </summary>
+    internal static bool SharesStem(string left, string right)
+    {
+        if (TokensMatch(left, right))
+            return true;
+
+        var shorter = System.Math.Min(left.Length, right.Length);
+        if (shorter < MinPrefixLength)
+            return false;
+
+        var common = 0;
+        while (common < shorter && left[common] == right[common])
+            common++;
+
+        return common >= MinPrefixLength
+               && left.Length - common <= 3
+               && right.Length - common <= 3;
+    }
+
+    /// <summary>
     /// Lower-case tokens, ё folded to е, split on every non-letter/digit. A pure
     /// number is dropped: a diameter or a size says nothing about what the
     /// element is, and matching on it would turn a weak family into a strong

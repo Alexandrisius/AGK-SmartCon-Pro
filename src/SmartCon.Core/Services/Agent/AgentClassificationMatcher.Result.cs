@@ -119,6 +119,7 @@ public sealed partial class AgentClassificationMatcher
                 "or match those entries manually]");
         }
 
+        DemoteBranchConflicts(results, table);
         AddReasonWarnings(run, families);
 
         var proposed = results.Where(result => result.Status == ClassifyTypeStatus.Proposed).ToList();
@@ -273,6 +274,89 @@ public sealed partial class AgentClassificationMatcher
                 pair.Match.Id, pair.Match.Score, pair.Entry!.Breadcrumb))
             .ToArray();
 
+    /// <summary>
+    /// Branch-evidence guard: the top level of the table is a discipline split,
+    /// and the family name is the one piece of textual evidence the run owns.
+    /// When a proposed code sits under a branch that shares no word with the
+    /// family name while another branch does, the choice contradicts that
+    /// evidence (a heating manifold landing in a conveying branch). Such a code
+    /// is demoted to uncertain with both branches named, so a wrong discipline
+    /// never reaches set_parameters.
+    /// </summary>
+    private static void DemoteBranchConflicts(
+        List<ClassifyTypeResult> results,
+        AgentClassificationTable table)
+    {
+        var roots = table.Entries.Where(entry => entry.Level == 1).ToList();
+        if (roots.Count < 2)
+            return;
+
+        var rootTokens = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+            rootTokens[root.Code] = AgentSemanticLexicon.Tokenize(root.Description);
+        if (rootTokens.Values.All(tokens => tokens.Length == 0))
+            return;
+
+        for (var index = 0; index < results.Count; index++)
+        {
+            var result = results[index];
+            if (result.Status != ClassifyTypeStatus.Proposed || result.Code is null)
+                continue;
+
+            var entry = table.Find(result.Code);
+            if (entry is null)
+                continue;
+
+            var nameTokens = AgentSemanticLexicon.Tokenize(result.Type.FamilyName);
+            if (nameTokens.Length == 0)
+                continue;
+
+            var rootCode = RootOf(table, entry);
+            var root = rootCode is null ? null : table.Find(rootCode);
+            if (root is null
+                || !rootTokens.TryGetValue(root.Code, out var chosenTokens)
+                || chosenTokens.Length == 0)
+            {
+                continue;
+            }
+
+            // The chosen branch carries the family's own wording: nothing to
+            // argue with, whatever the score says.
+            if (SharesAny(nameTokens, chosenTokens))
+                continue;
+
+            var counter = roots.FirstOrDefault(candidate =>
+                !string.Equals(candidate.Code, root.Code, StringComparison.OrdinalIgnoreCase)
+                && rootTokens.TryGetValue(candidate.Code, out var tokens)
+                && tokens.Length > 0
+                && SharesAny(nameTokens, tokens));
+            if (counter is null)
+                continue;
+
+            results[index] = result with
+            {
+                Status = ClassifyTypeStatus.LowConfidence,
+                Reason = "the chosen code sits under '" + root.Description + "', which shares no " +
+                         "word with the family name, while '" + counter.Description + "' does - " +
+                         "the code belongs to another discipline; confirm it before applying"
+            };
+        }
+    }
+
+    private static bool SharesAny(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        foreach (var outer in left)
+        {
+            foreach (var inner in right)
+            {
+                if (AgentSemanticLexicon.SharesStem(outer, inner))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     private static void AddReasonWarnings(RunState run, IReadOnlyList<ClassifyFamilyGroup> families)
     {
         if (run.FamilyReasons.Count == 0)
@@ -416,7 +500,9 @@ public sealed partial class AgentClassificationMatcher
         AppendInstructions(
             task +
             " Options are rows of the classification table loaded in the document, " +
-            "formatted 'breadcrumb (code)'." + PickInstructions,
+            "formatted 'breadcrumb (code)'. A candidate from another discipline than the one " +
+            "the element belongs to is wrong even when it is the closest textually." +
+            PickInstructions,
             options.Instructions);
 
     private static string AppendInstructions(string state, string? instructions)

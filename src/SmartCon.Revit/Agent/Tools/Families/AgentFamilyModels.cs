@@ -41,7 +41,7 @@ internal sealed class RenameFamilyParameterRequest
     public string? Guid { get; set; }
 }
 
-internal sealed class AddFamilyParameterRequest
+internal class AddFamilyParameterRequest
 {
     public long? FamilyId { get; set; }
 
@@ -70,6 +70,16 @@ internal sealed class AddFamilyParameterRequest
     public string? InitialValue { get; set; }
 
     public string? Unit { get; set; }
+}
+
+/// <summary>
+/// add_family_parameter request: the flat fields describe ONE parameter, items[]
+/// describes a batch that costs one family open, one transaction and one
+/// load-back instead of one per parameter.
+/// </summary>
+internal sealed class AddFamilyParameterBatchRequest : AddFamilyParameterRequest
+{
+    public List<AddFamilyParameterRequest>? Items { get; set; }
 }
 
 internal sealed class FamilyValueItem

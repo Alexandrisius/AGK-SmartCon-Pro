@@ -297,6 +297,17 @@ public sealed partial class MapFamilyParametersJobAction
                 if (entry.Mode == "formula")
                 {
                     var formulaTarget = FindParameter(manager, entry.Target);
+                    if (formulaTarget is null && entry.CreateTarget)
+                    {
+                        // createTarget + formula is one job: the parameter is
+                        // created here, then the source formula is copied to it.
+                        var createError = EnsureSharedTargetParameter(manager, projectDoc, entry, warnings);
+                        if (createError is not null)
+                            return createError;
+
+                        formulaTarget = FindParameter(manager, entry.Target);
+                    }
+
                     if (formulaTarget is null)
                     {
                         return ItemFailed(MissingTargetError(entry.TargetName));

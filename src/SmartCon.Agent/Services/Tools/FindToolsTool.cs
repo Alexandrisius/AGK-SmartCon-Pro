@@ -39,6 +39,29 @@ public sealed partial class FindToolsTool : IAgentTool
         "hundreds", "сотни", "массов", "пакетн", "миграц", "во всех", "всех семейств"
     };
 
+    /// <summary>
+    /// Family-parameter intent: a descriptive request ("переведи семейство на
+    /// параметры заказчика", "формула в семействе") must reach the family write
+    /// tools even when the decision router answers "no match" - they used to
+    /// surface only in <c>closest</c> (owner feedback, 2026-11-24).
+    /// </summary>
+    private static readonly string[] FamilyIntentMarkers =
+    {
+        "семейств", "типоразмер", "family", "families", "rfa"
+    };
+
+    private static readonly string[] FamilyParameterIntentMarkers =
+    {
+        "параметр", "parameter", "формул", "formula", "значени", "value", "перенес",
+        "перенос", "перевест", "transfer", "map", "migrat", "миграц", "фоп", "shared",
+        "общим", "общий", "созда", "добав", "зада", "присво", "замен", "create", "add"
+    };
+
+    private static readonly string[] FamilyParameterTools =
+    {
+        "add_family_parameter", "map_family_parameters", "set_family_formula"
+    };
+
     private readonly IToolRouter _router;
 
     private IToolRegistry? _registry;
@@ -139,7 +162,8 @@ public sealed partial class FindToolsTool : IAgentTool
             : new List<AgentToolDefinition>();
 
         var reportsVerdict = RouterReportsOwnVerdict;
-        if (RoutingIsWordingOnly && noSignal)
+        var familyIntent = HasFamilyParameterIntent(state);
+        if (RoutingIsWordingOnly && noSignal && !familyIntent)
             return NoMatchResult(lexical);
 
         var chosen = new List<AgentToolDefinition>(6);
@@ -150,13 +174,15 @@ public sealed partial class FindToolsTool : IAgentTool
                 .ConfigureAwait(false);
 
             // The decision model answering that nothing in the catalog fits is
-            // the answer, unless the query spells out a tool name (C10-03).
-            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0)
+            // the answer, unless the query spells out a tool name (C10-03) or
+            // carries a family-parameter intent (the family write trio is the
+            // answer such a query always has).
+            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0 && !familyIntent)
                 return NoMatchResult(lexical);
 
             // Without a pick of its own the decision router relays wording
             // ranking, which takes the same floor as when it routes alone.
-            if (reportsVerdict && decision.Picked.Count == 0 && noSignal)
+            if (reportsVerdict && decision.Picked.Count == 0 && noSignal && !familyIntent)
                 return NoMatchResult(lexical);
 
             var picked = reportsVerdict ? new HashSet<string>(decision.Picked, StringComparer.Ordinal) : null;
@@ -192,6 +218,17 @@ public sealed partial class FindToolsTool : IAgentTool
                 string.Equals(definition.Name, StartJobName, StringComparison.Ordinal));
             if (startJob is not null)
                 Add(startJob);
+        }
+
+        if (string.IsNullOrWhiteSpace(packName) && familyIntent)
+        {
+            foreach (var toolName in FamilyParameterTools)
+            {
+                var familyTool = candidates.FirstOrDefault(definition =>
+                    string.Equals(definition.Name, toolName, StringComparison.Ordinal));
+                if (familyTool is not null)
+                    Add(familyTool);
+            }
         }
 
         foreach (var definition in covered)
@@ -361,6 +398,35 @@ public sealed partial class FindToolsTool : IAgentTool
     private static bool HasBulkIntent(string state)
     {
         foreach (var marker in BulkIntentMarkers)
+        {
+            if (state.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when the request is about family parameters: a family word and a
+    /// parameter/action word. Then the family write trio is a legitimate answer
+    /// even without a wording match, so find_tools never reports "no match".
+    /// </summary>
+    private static bool HasFamilyParameterIntent(string state)
+    {
+        var family = false;
+        foreach (var marker in FamilyIntentMarkers)
+        {
+            if (state.IndexOf(marker, StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            family = true;
+            break;
+        }
+
+        if (!family)
+            return false;
+
+        foreach (var marker in FamilyParameterIntentMarkers)
         {
             if (state.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;

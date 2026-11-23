@@ -144,7 +144,7 @@ public sealed partial class SemanticMatchTool : IAgentTool
             @"""required"":[""id"",""text""],""additionalProperties"":false}}," +
             @"""query"":{""type"":""string"",""description"":""What to match against the items (max 500 chars)""}," +
             @"""topK"":{""type"":""integer"",""minimum"":1,""maximum"":10,""default"":3," +
-            @"""description"":""How many best matches to return""}," +
+            @"""description"":""How many best matches to return; an upper bound only - minScore drops the rest""}," +
             @"""minScore"":{""type"":""number"",""minimum"":0,""maximum"":1,""default"":0.08," +
             @"""description"":""Discard candidates scored below this probability""}," +
             @"""instructions"":{""type"":""string"",""description"":""Extra selection context, max 500 chars""}," +

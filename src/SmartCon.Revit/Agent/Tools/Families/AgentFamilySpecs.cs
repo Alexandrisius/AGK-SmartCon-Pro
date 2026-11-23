@@ -396,7 +396,7 @@ internal static class AgentFamilySpecs
         if (GroupTypeId.Electrical.Equals(group)) return "PG_ELECTRICAL";
         if (GroupTypeId.Mechanical.Equals(group)) return "PG_MECHANICAL";
         if (GroupTypeId.Plumbing.Equals(group)) return "PG_PLUMBING";
-        return group.TypeId ?? "unknown";
+        return string.IsNullOrEmpty(group.TypeId) ? "unknown" : group.TypeId;
     }
 
     internal static string SpecName(Definition definition)

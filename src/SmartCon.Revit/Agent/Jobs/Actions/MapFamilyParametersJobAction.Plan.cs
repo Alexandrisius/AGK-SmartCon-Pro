@@ -87,6 +87,7 @@ public sealed partial class MapFamilyParametersJobAction
 
                 error = PlanCreateTarget(
                     mapping,
+                    familyDoc,
                     source,
                     manager,
                     allTypes,
@@ -271,11 +272,14 @@ public sealed partial class MapFamilyParametersJobAction
     /// <summary>
     /// Plans a createTarget mapping (#431): the target parameter does not exist, so
     /// the apply will create it from a shared definition with the source spec/group
-    /// and then map the per-type values. Nothing is written here — the preview stays
-    /// read-only and never touches the shared parameter file.
+    /// and then map the per-type values or copy the source formula (#431: the
+    /// formula mode is planned together with the creation instead of being
+    /// rejected, so one job does both). Nothing is written here — the preview
+    /// stays read-only and never touches the shared parameter file.
     /// </summary>
     private static string? PlanCreateTarget(
         MapFamilyMappingSpec mapping,
+        Document familyDoc,
         FamilyParameter source,
         RevitFamilyManager manager,
         IReadOnlyList<FamilyType> allTypes,
@@ -290,10 +294,21 @@ public sealed partial class MapFamilyParametersJobAction
         var mode = string.IsNullOrWhiteSpace(mapping.Mode)
             ? "values"
             : mapping.Mode!.Trim().ToLowerInvariant();
+        var formula = mode == "formula" ? source.Formula : null;
         if (mode == "formula")
         {
-            return label + "createTarget supports mode=values only. [Action: create the target with values " +
-                           "first, then map the formula in a second job]";
+            if (string.IsNullOrWhiteSpace(formula))
+            {
+                return label + "the source parameter has no formula, so mode=formula has nothing " +
+                       "to copy. [Action: use mode=values to transfer the per-type values instead]";
+            }
+
+            if (!AgentFamilyReader.TryFindMissingLookupTables(familyDoc, formula, out var missing))
+            {
+                return label + "the source formula references lookup table(s) missing from the " +
+                       "family: " + string.Join(", ", missing) +
+                       ". [Action: load the lookup tables or map values instead]";
+            }
         }
 
         var targetRef = mapping.Target!;
@@ -361,6 +376,20 @@ public sealed partial class MapFamilyParametersJobAction
             Scope = targetScope
         });
 
+        if (mode == "formula")
+        {
+            // The created target starts without a formula: clearing it back to
+            // null is the undo of this step, and the formula is one change for
+            // every type at once.
+            plan.UndoOps.Add(new FamilyUndoOperation
+            {
+                Kind = "formula",
+                Parameter = targetName,
+                Scope = targetScope,
+                Formula = null
+            });
+        }
+
         plan.Entries.Add(new MapPlanEntry
         {
             Source = mapping.Source!,
@@ -369,7 +398,8 @@ public sealed partial class MapFamilyParametersJobAction
             TargetName = targetName,
             Scope = targetScope,
             Storage = storage,
-            Mode = "values",
+            Mode = mode,
+            FormulaToApply = formula,
             TypeNames = TypeNameSet(types),
             CreateTarget = true,
             TargetIsInstance = targetIsInstance
@@ -383,8 +413,11 @@ public sealed partial class MapFamilyParametersJobAction
         });
 
         // Creating the parameter is itself a change, so the unit can never preview
-        // as skipped; the per-type writes are counted on top of it.
+        // as skipped; the per-type writes (values) or the formula are counted on top.
         plan.ChangeCount++;
+        if (mode == "formula")
+            plan.ChangeCount++;
+
         foreach (var type in types)
         {
             ct.ThrowIfCancellationRequested();
@@ -398,7 +431,8 @@ public sealed partial class MapFamilyParametersJobAction
                 storage,
                 "target parameter will be created");
 
-            if (source.StorageType != StorageType.String || !string.IsNullOrEmpty(sourceValue))
+            if (mode == "values"
+                && (source.StorageType != StorageType.String || !string.IsNullOrEmpty(sourceValue)))
             {
                 plan.ChangeCount++;
             }

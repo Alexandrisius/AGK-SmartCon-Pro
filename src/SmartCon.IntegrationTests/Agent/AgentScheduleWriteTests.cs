@@ -11,7 +11,7 @@ using SmartCon.Revit.Transactions;
 
 namespace SmartCon.IntegrationTests.Agent;
 
-public sealed class AgentScheduleWriteTests : RevitApiTest
+public sealed partial class AgentScheduleWriteTests : RevitApiTest
 {
     private const string LevelName = "SC_SchWrite_Level";
     private const string ScheduleName = "SC_SchWrite_Walls";

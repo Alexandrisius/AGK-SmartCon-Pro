@@ -26,10 +26,11 @@ public sealed class SetFamilyFormulaTool : AgentFamilyWriteToolBase
     {
         Name = "set_family_formula",
         Description =
-            "Sets or clears the formula of a family parameter. Only parameters that accept a " +
-            "formula are modified (formula_not_allowed otherwise); size_lookup tables must " +
-            "exist (lookup_table_missing). Dry run reports «было → станет» for every family " +
-            "type.",
+            "Sets or clears the formula of a family parameter - the calculated-parameter path " +
+            "(width = height * 2, size_lookup / lookup-table driven numbers and text). Only " +
+            "parameters that accept a formula are modified (formula_not_allowed otherwise); " +
+            "size_lookup tables must exist (lookup_table_missing). Text parameters can carry " +
+            "formulas too. Dry run reports «было → станет» for every family type.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""parameter"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""guid"":{""type"":""string""},""formula"":{""type"":[""string"",""null""]},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""parameter""],""additionalProperties"":false}"

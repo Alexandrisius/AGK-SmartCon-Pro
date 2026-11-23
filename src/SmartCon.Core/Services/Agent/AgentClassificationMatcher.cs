@@ -16,7 +16,9 @@ public sealed partial class AgentClassificationMatcher
     public const string PickInstructions =
         "Pick the single most specific classification entry that describes the element. " +
         "Prefer an entry of the same discipline. If nothing fits well, choose the closest " +
-        "anyway - the score will show the doubt.";
+        "anyway - the score will show the doubt. The selection context, when present, is " +
+        "binding: when it names a discipline, system or category, an entry of another " +
+        "branch is a wrong answer even if it looks textually close.";
 
     /// <summary>Leaves the lexical prefilter keeps per family.</summary>
     public const int LexicalTopCount = 30;
