@@ -47,7 +47,7 @@ public sealed partial class AgentRealCasesBenchmarkTests : RevitApiTest
     }
 
     /// <summary>Один вызов тула в порядке исполнения (из tool_calls продакшн-стора).</summary>
-    private sealed record BenchCall(
+    internal sealed record BenchCall(
         string ToolName,
         string ArgumentsJson,
         string ResultJson,

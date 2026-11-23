@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Agent.Tools.Read;
@@ -36,6 +37,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var matched = 0;
         var misses = new List<string>();
         var invented = new List<string>();
+        var notReplaced = new List<string>();
         foreach (var row in _case7Truth.Where(row => row.Placed))
         {
             if (Doc.GetElement(ElementIdCompat.Create(row.TypeId)) is not ElementType type)
@@ -63,24 +65,43 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 {
                     invented.Add(row.Family + "." + Case7TargetNames[role] + " = «" + actual + "»");
                 }
+
+                // (C2-11) Замена ВНУТРИ семейств (текст кейса: «замени их на
+                // аналоги»): у размещённых типов старых параметров быть НЕ
+                // должно — оставшийся старый = перенос без замены.
+                if (row.HasOld(role) &&
+                    type.get_Parameter(Case7OldGuids[row.Group][role]!.Value) is not null)
+                {
+                    notReplaced.Add(row.Family + "." + Case7OldNames[row.Group][role]);
+                }
             }
         }
+
+        if (notReplaced.Count > 0)
+            redFlags.Add("старые параметры НЕ заменены внутри семейств (остались у размещённых " +
+                         "типов — выполнен перенос, а не замена): " +
+                         string.Join("; ", notReplaced.Take(5)) +
+                         (notReplaced.Count > 5 ? " …" : string.Empty));
 
         if (invented.Count > 0)
             redFlags.Add("значения ВЫДУМАНЫ (источник пуст/отсутствует, а цель заполнена): " +
                          string.Join("; ", invented.Take(5)) +
                          (invented.Count > 5 ? " …" : string.Empty));
 
-        // (б) Инвалиды подсвечены с причинами.
-        var invalidsListed = ContainsText(answerText, "Термометр") &&
-                             ContainsText(answerText, "Воздухоотводчик");
+        // (б) Инвалиды подсвечены с причинами. Кто именно инвалид — выводится
+        // из истины сида: размещённое семейство, у которого есть источник с
+        // ПУСТЫМ значением («значение пустое») либо почти нет источников
+        // (≤1 непустого — «параметра нет вообще»); группа с неполным НАБОРОМ
+        // («переносится то, что есть») инвалидом не считается.
+        var invalidFamilies = Case7InvalidFamilies();
+        var invalidsListed = invalidFamilies.All(family => ContainsText(answerText, family));
         var emptyReason = ContainsText(answerText, "пуст");
         var noParamReason = new[] { "отсутс", "нет параметра", "нет аналога", "не найден", "нет источника" }
             .Any(marker => ContainsText(answerText, marker));
         var invalidsOk = invalidsListed && emptyReason && noParamReason;
         if (!invalidsListed)
-            notes.Add("инвалиды не подсвечены в ответе (Термометр — пустое Наименование, " +
-                      "Воздухоотводчик — нет параметров-источников)");
+            notes.Add("инвалиды не подсвечены в ответе (" +
+                      string.Join(", ", invalidFamilies) + ")");
         else if (!emptyReason || !noParamReason)
             notes.Add("причины инвалидов не названы (нужно «пустое значение» и «параметра нет»)");
 
@@ -110,9 +131,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
             }
         }
 
-        var unplacedListed = ContainsText(answerText, "Задвижка") && ContainsText(answerText, "Манометр");
+        var unplacedFamilies = _case7Truth
+            .Where(row => !row.Placed)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var unplacedListed = unplacedFamilies.All(family => ContainsText(answerText, family));
         if (!unplacedListed)
-            notes.Add("неразмещённые семейства не перечислены отдельным списком");
+            notes.Add("неразмещённые семейства не перечислены отдельным списком (" +
+                      string.Join(", ", unplacedFamilies) + ")");
 
         // (г) Контрольная ведомость: фильтр по пустому целевому параметру + поля
         // семейство/тип (не сид-ведомость и не приманка).
@@ -122,15 +149,29 @@ public sealed partial class AgentRealCasesBenchmarkTests
             : "контрольная ведомость с фильтром пустых целевых значений не найдена" +
               (string.IsNullOrEmpty(controlNote) ? string.Empty : " (" + controlNote + ")"));
 
-        // (д) Пакетность: map-джоба, а не поштучный map_family_parameters.
-        var perFamilyCalls = calls.Count(call => call.ToolName == "map_family_parameters");
-        var jobsUsed = calls.Any(call => call.ToolName == "start_job" && call.Success &&
-                                         ContainsText(call.ArgumentsJson, "map_family_parameters"));
+        // (д) Пакетность (C2-09): map/replace-джоба, а не поштучный
+        // map_family_parameters и не дробление джобы по одному семейству.
+        var perFamilyCalls = Case7DirectMigrationCalls(calls);
+        var jobCalls = calls
+            .Where(call => call.ToolName == "start_job" && call.Success && !IsDryRunCall(call))
+            .ToList();
+        var migrationJobs = jobCalls
+            .Where(call => ContainsText(call.ArgumentsJson, "map_family_parameters") ||
+                           ContainsText(call.ArgumentsJson, "replace_family_parameter"))
+            .ToList();
+        var jobsUsed = migrationJobs.Count > 0;
+        var singleUnitJobs = migrationJobs
+            .Count(call => Case7JobUnitHintCount(call.ArgumentsJson) == 1);
         if (perFamilyCalls > 3)
             redFlags.Add("поштучная миграция: " + perFamilyCalls +
-                         " вызовов map_family_parameters (нужна пакетная map-джоба)");
+                         " применённых вызовов map_family_parameters/replace_family_parameter" +
+                         " (нужна пакетная джоба)");
+        if (singleUnitJobs >= 3)
+            redFlags.Add("дробление пакетной работы: " + singleUnitJobs +
+                         " применённых джоб по ОДНОМУ семейству (нужна одна пачка, а не серия одиночных джоб)");
         if (jobsUsed)
-            notes.Add("использована map-джоба (start_job)");
+            notes.Add("использована пакетная джоба (start_job: " + migrationJobs.Count +
+                      " миграционных, из них одиночных " + singleUnitJobs + ")");
 
         // (е) Приманка не повлияла.
         var baitOk = Case7BaitUntouched();
@@ -169,6 +210,72 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return new CaseVerdict(false, 0.5, detail, redFlags);
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
+    }
+
+    /// <summary>
+    /// Семейства-инвалиды из истины сида: размещённые строки, у которых есть
+    /// нетранспортируемая ячейка — источник с пустым значением либо почти нет
+    /// источников (≤1 непустого). Неполный НАБОР группы («переносится то, что
+    /// есть») инвалидом не считается — иначе группа Б попала бы в список.
+    /// </summary>
+    private List<string> Case7InvalidFamilies() =>
+        _case7Truth
+            .Where(row => row.Placed)
+            .Where(row =>
+                Enumerable.Range(0, Case7RoleCount)
+                    .Any(role => row.HasOld(role) && string.IsNullOrEmpty(row.Old[role])) ||
+                Enumerable.Range(0, Case7RoleCount)
+                    .Count(role => row.HasOld(role) && !string.IsNullOrEmpty(row.Old[role])) <= 1)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// Прямые (без start_job) ПРИМЕНЁННЫЕ вызовы миграции общих параметров —
+    /// поштучный путь замены, который критерий пакетности (д) должен видеть.
+    /// Считаются все пути замены кейса: map_family_parameters и двухшаговый
+    /// replace_family_parameter (P3-3 рецензии r1 — поштучная серия прямых
+    /// replace-вызовов не менее ручная, чем поштучные map). dry-run preview
+    /// и неуспешные вызовы миграцией не являются.
+    /// </summary>
+    internal static int Case7DirectMigrationCalls(List<BenchCall> calls) =>
+        calls.Count(call =>
+            call.Success && !IsDryRunCall(call) &&
+            call.ToolName is "map_family_parameters" or "replace_family_parameter");
+
+    /// <summary>
+    /// Явное число юнитов джобы из её аргументов (C2-09): длина явного списка
+    /// выбора (select.familyNames/familyIds/familyUniqueIds) либо limit.
+    /// -1 — селекция неявная (вся категория/все семейства): одиночной джобой
+    /// такое не бывает.
+    /// </summary>
+    internal static int Case7JobUnitHintCount(string argumentsJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("select", out var select))
+            {
+                foreach (var key in new[] { "familyNames", "familyIds", "familyUniqueIds" })
+                {
+                    if (select.TryGetProperty(key, out var array) &&
+                        array.ValueKind == JsonValueKind.Array)
+                        return array.GetArrayLength();
+                }
+            }
+
+            if (root.TryGetProperty("limit", out var limit) &&
+                limit.ValueKind == JsonValueKind.Number)
+                return limit.GetInt32();
+
+            return -1;
+        }
+        catch (JsonException)
+        {
+            return -1;
+        }
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.DB.Structure;
@@ -25,15 +26,99 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return names.ToArray();
     }
 
+    /// <summary>
+    /// Имя системы упомянуто в тексте ЦЕЛЫМ токеном (P3-4 рецензии r1: «Т11» —
+    /// НЕ подстрока «Т111»; упоминание одного «Т111» пару не закрывает).
+    /// Единое правило для кириллицы и латиницы: латинские омоглифы (T→Т и др.)
+    /// нормализуются до кириллицы до сравнения — «T11» считается упоминанием
+    /// «Т11». Границы: не буква/цифра; точка — граница, только если за ней НЕ
+    /// цифра (иначе это продолжение цифрового суффикса «Т1.11»).
+    /// </summary>
+    internal static bool Case9MentionsName(string text, string name)
+    {
+        var canonicalText = Case9CanonicalLookalikes(text);
+        var canonicalName = Case9CanonicalLookalikes(name);
+        var index = canonicalText.IndexOf(canonicalName, StringComparison.OrdinalIgnoreCase);
+        while (index >= 0)
+        {
+            if (Case9IsNameBoundary(canonicalText, index + canonicalName.Length) &&
+                (index == 0 || !char.IsLetterOrDigit(canonicalText[index - 1])))
+                return true;
+
+            index = canonicalText.IndexOf(
+                canonicalName, index + 1, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Латинские омоглифы кириллицы нормализуются до кириллицы: сравнение имён
+    /// систем единообразно для обоих алфавитов (модель может транскрибировать
+    /// «Т11» латиницей «T11» — смысл тот же).
+    /// </summary>
+    private static string Case9CanonicalLookalikes(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            builder.Append(character switch
+            {
+                'A' => 'А', 'B' => 'В', 'C' => 'С', 'E' => 'Е', 'H' => 'Н',
+                'K' => 'К', 'M' => 'М', 'O' => 'О', 'P' => 'Р', 'T' => 'Т',
+                'X' => 'Х', 'a' => 'а', 'c' => 'с', 'e' => 'е', 'o' => 'о',
+                'p' => 'р', 'x' => 'х', 'y' => 'у',
+                _ => character
+            });
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Сколько РАЗНЫХ имён систем перечислено в промежуточном ответе к утверждению
+    /// (C4-05): имя засчитывается только на границе — не внутри более длинного
+    /// («Т1» внутри «Т11»/«Т1.11» не считается), правило то же, что и для
+    /// упоминаний подозрительной пары (<see cref="Case9MentionsName"/>).
+    /// </summary>
+    internal static int Case9SystemsListed(string text)
+    {
+        var listed = 0;
+        foreach (var name in Case9AllSystemNames())
+        {
+            if (Case9MentionsName(text, name))
+                listed++;
+        }
+
+        return listed;
+    }
+
+    private static bool Case9IsNameBoundary(string text, int position)
+    {
+        if (position >= text.Length)
+            return true;
+
+        var next = text[position];
+        if (char.IsLetterOrDigit(next))
+            return false;
+
+        // «.» — граница, только если за ней не цифра («Т1.11» = продолжение).
+        if (next == '.' && position + 1 < text.Length && char.IsDigit(text[position + 1]))
+            return false;
+
+        return true;
+    }
+
     private static void Case9Rename(Element element, string name)
     {
         try
         {
             element.Name = name;
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            Console.WriteLine("PROBE case 9: rename to '" + name + "' rejected: " + ex.Message);
+            // Отказ переименования (тёзка) не валит сид: VerifyCase9Seed
+            // сообщит о фактическом имени системы.
         }
     }
 
@@ -131,12 +216,31 @@ public sealed partial class AgentRealCasesBenchmarkTests
             hostDoc.Close(false);
             hostDoc = null;
 
-            if (!Doc.LoadFamily(hostPath, new Case9NestLoadOptions(), out var hostFamily) ||
-                hostFamily is null)
+            // Файловая загрузка хозяина в проект требует ОТКРЫТУЮ ТРАНЗАКЦИЮ:
+            // строчный LoadFamily(string) без транзакиции молча возвращает false
+            // (механика Case14LoadFamilies: загрузка меняет базу) — именно так
+            // «Семейство-хозяин не загрузилось в проект из файла» ловилось во
+            // всех 7 прогонах (C4-04). Тёзка с другой категорией/содержимым на
+            // базе реального шаблона делает загрузку неразрешимым конфликтом —
+            // удаляем заранее (копия шаблона одноразовая).
+            RemoveCaseConflictingFamilies(Doc, Case9HostFamilyName);
+            Family? loadedHost = null;
+            using (var transaction = new Transaction(Doc, "Seed case 9 flange host"))
             {
-                note = "Семейство-хозяин не загрузилось в проект из файла";
-                return false;
+                transaction.Start();
+                var loaded = Doc.LoadFamily(hostPath, new Case9NestLoadOptions(), out var family);
+                if (transaction.Commit() != TransactionStatus.Committed)
+                    loaded = false;
+                loadedHost = family;
+                if (!loaded || loadedHost is null)
+                {
+                    note = "Семейство-хозяин не загрузилось в проект из файла " +
+                           "(file LoadFamily в транзакции)";
+                    return false;
+                }
             }
+
+            var hostFamily = loadedHost;
 
             var hostSymbolId = hostFamily.GetFamilySymbolIds().FirstOrDefault();
             if (hostSymbolId is null)
@@ -218,6 +322,17 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 new XYZ(offsets[index], 14, 0), symbol, StructuralType.NonStructural);
             pump.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(marks[index]);
             _case9PumpIds.Add(pump.Id.GetValue());
+        }
+
+        // Субкомпоненты вложенного (shared) семейства материализуются при
+        // регенерации: сразу после NewFamilyInstance внутри той же транзакции
+        // GetSubComponentIds() возвращает пусто (C4-04).
+        doc.Regenerate();
+        foreach (var pumpId in _case9PumpIds)
+        {
+            if (doc.GetElement(ElementIdCompat.Create(pumpId)) is not FamilyInstance pump)
+                continue;
+
             foreach (var subId in pump.GetSubComponentIds())
                 _case9FlangeIds.Add(subId.GetValue());
         }

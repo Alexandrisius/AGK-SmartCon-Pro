@@ -149,10 +149,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
                     {
                         doc.Delete(conflict);
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        Console.WriteLine("PROBE case14: template family '" + familyName +
-                                          "' not removed: " + ex.GetType().Name + ": " + ex.Message);
+                        // Не удалился — последующая LoadFamily сообщит о
+                        // конфликте ошибкой сида.
                     }
                 }
 
@@ -160,8 +160,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 _case14LoadReport.Add(
                     Path.GetFileName(path) + ": " + (loaded ? "ok" : "FALSE") +
                     " → «" + (family?.Name ?? "?") + "»");
-                Console.WriteLine("PROBE case14 LoadFamily '" + path + "' loaded=" +
-                                  loaded + " family='" + (family?.Name ?? "?") + "'");
                 if (!loaded)
                 {
                     _case14SeedError = "LoadFamily молча вернул false (нет транзакции?): " + path;

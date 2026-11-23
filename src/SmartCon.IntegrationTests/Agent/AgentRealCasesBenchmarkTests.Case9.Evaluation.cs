@@ -5,9 +5,11 @@ namespace SmartCon.IntegrationTests.Agent;
 
 /// <summary>
 /// Verdict of case 9 (v2 case 4): (а) each CLEAN system has a 3D view named
-/// exactly after it, carrying the common template and a view filter
-/// «АДСК_ИмяСистемы = имя» (rule parameter = the shared parameter element,
-/// FilterStringRule with an Equals evaluator); (б) the shared parameter is
+/// exactly after it, carrying the common template, a view filter built on the
+/// case shared parameter (any rule shape) AND the RESULT — the view shows only
+/// that system's elements (C4-03: judged through FilteredElementCollector by
+/// element visibility, never through the rule tree; «= name» and «≠ name with
+/// hidden visibility» both count); (б) the shared parameter is
 /// filled with the system name on EVERY member of the clean systems
 /// (pipes + fittings, post-job); (в) the suspicious «Т11»/«Т111» pair has NO
 /// views and both names are mentioned in the answer; the two-step approval
@@ -32,7 +34,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
             : string.Join(" → ", calls.Select(call =>
                 call.ToolName + (call.Success ? string.Empty : "(!" + call.ErrorCode + ")")));
 
-        // (а) 3D-виды чистых систем: имя = имя системы, общий шаблон, фильтр.
+        // (а) 3D-виды чистых систем: имя = имя системы, общий шаблон, фильтр
+        // по параметру сида и РЕЗУЛЬТАТ — на виде видны только элементы своей
+        // системы (C4-03: форма правила «=»/«≠ со скрытием» не важна).
         var systemsOk = 0;
         foreach (var name in Case9CleanSystems)
         {
@@ -44,18 +48,23 @@ public sealed partial class AgentRealCasesBenchmarkTests
             }
 
             var templateOk = view.ViewTemplateId.GetValue() == _case9TemplateId;
-            var filterOk = Case9ViewHasSystemFilter(view, name);
-            if (templateOk && filterOk)
+            var filterPresent = Case9ViewHasSeedParameterFilter(view);
+            var showsOnly = Case9ViewShowsOnlySystem(view, name, out var visibilityNote);
+            if (templateOk && filterPresent && showsOnly)
             {
                 systemsOk++;
                 continue;
             }
 
+            var filterShape = Case9ViewHasSystemFilter(view, name);
             notes.Add("вид «" + name + "»: шаблон " + (templateOk ? "да" : "НЕТ") +
-                      ", фильтр «" + Case9ParamName + "=" + name + "» " + (filterOk ? "да" : "НЕТ") +
-                      (filterOk || _case9FilterNotes.Count == 0
+                      ", фильтр по «" + Case9ParamName + "» " + (filterPresent ? "да" : "НЕТ") +
+                      ", видимость [" + visibilityNote + "]" +
+                      (showsOnly ? string.Empty : " — НЕ только своя система") +
+                      " (дерево правил: " + (filterShape ? "«= имя» есть" : "точного «= имя» нет") +
+                      (_case9FilterNotes.Count == 0
                           ? string.Empty
-                          : " [" + string.Join(" | ", _case9FilterNotes) + "]"));
+                          : " [" + string.Join(" | ", _case9FilterNotes) + "]") + ")");
         }
 
         // (б) Заполнение общего параметра у ВСЕХ членов чистых систем.
@@ -93,8 +102,46 @@ public sealed partial class AgentRealCasesBenchmarkTests
             redFlags.Add("виды созданы для подозрительных систем: " +
                          string.Join(", ", suspiciousViews));
 
-        var suspectsMentioned = ContainsText(answerText, Case9SuspectNear) &&
-                                ContainsText(answerText, Case9SuspectFar);
+        var suspectsMentioned = Case9MentionsName(answerText, Case9SuspectNear) &&
+                                Case9MentionsName(answerText, Case9SuspectFar);
+
+        // (г) Двухшаговый протокол (C4-05): реальные write-вызовы ДО первого
+        // промежуточного ответа = записи без утверждения («утверди у меня»);
+        // сам промежуточный ответ должен содержать список имён к утверждению.
+        var firstIntermediate = _lastRunIntermediateAnswers.Count > 0
+            ? _lastRunIntermediateAnswers[0]
+            : null;
+        var approvalBoundary = _lastRunCallsBeforeFirstIntermediate;
+        if (firstIntermediate is null)
+            notes.Add("промежуточный ответ-утверждение отсутствует (протокол «утверди у меня» нарушен)");
+        else if (Case9SystemsListed(firstIntermediate) < 2)
+            notes.Add("промежуточный ответ не содержит списка имён систем к утверждению");
+
+        if (approvalBoundary >= 0 && _lastRunToolRisk.Count > 0)
+        {
+            var boundary = Math.Min(approvalBoundary, calls.Count);
+            var writesBeforeApproval = new List<string>();
+            for (var index = 0; index < boundary; index++)
+            {
+                if (calls[index].Success && IsRealWrite(calls[index], _lastRunToolRisk))
+                    writesBeforeApproval.Add(calls[index].ToolName);
+            }
+
+            if (writesBeforeApproval.Count > 0)
+                redFlags.Add("записи ДО утверждения: " + writesBeforeApproval.Count +
+                             " применённых write-вызовов до первого промежуточного ответа (" +
+                             string.Join(", ", writesBeforeApproval.Distinct()) + ")");
+        }
+
+        // SEED DEGRADED (C4-04): без вложенных shared-фланцев ключевой критерий
+        // кейса («субкомпоненты наследуют от родителя») не проверялся — полный
+        // PASS недостижим, кейс честно сообщает деградацию.
+        var flangesSeeded = _case9FlangesSeeded;
+        if (!flangesSeeded)
+            notes.Add("SEED DEGRADED: вложенные shared-фланцы не засидированы" +
+                      (_case9FlangeNote is null ? string.Empty : " (" + _case9FlangeNote + ")") +
+                      " — критерий «субкомпоненты наследуют» не проверялся");
+
         if (!suspectsMentioned)
             notes.Add("ответ не упоминает подозрительную пару «" + Case9SuspectNear + "»/«" +
                       Case9SuspectFar + "»");
@@ -131,8 +178,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
                      "; intermediate-ответ проверяется ассертом тест-метода" +
                      (notes.Count > 0 ? "; " + string.Join("; ", notes) : string.Empty);
 
+        // Промежуточный ответ содержателен (список к утверждению), фланцы
+        // засидированы (иначе ключевой критерий не проверялся — C4-04).
+        var intermediateOk = firstIntermediate is not null &&
+                             Case9SystemsListed(firstIntermediate) >= 2;
+
         if (redFlags.Count == 0 && systemsOk == Case9CleanSystems.Length && fillFull &&
-            suspectsMentioned && feedbackOk)
+            suspectsMentioned && intermediateOk && flangesSeeded && feedbackOk)
             return new CaseVerdict(true, 1.0, detail, redFlags);
 
         // 0.5 = виды есть, параметр частично (шкала SSOT кейса).
@@ -159,11 +211,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
     private readonly List<string> _case9FilterNotes = new();
 
     /// <summary>
-    /// На виде видны только элементы одной системы: один из применённых
-    /// ParameterFilterElement несёт строковое правило с параметром сида и
-    /// значением имени (Equals-эvaluator, не contains) одним из двух равнозначных
-    /// способов — «= имя» с включённой видимостью либо «≠ имя» со скрытой
-    /// видимостью (при включённом фильтре). Оценивается результат, а не путь.
+    /// ДИАГНОСТИКА формы правила: один из применённых ParameterFilterElement
+    /// несёт строковое правило с параметром сида и значением имени (Equals,
+    /// не contains) одним из двух равнозначных способов — «= имя» с включённой
+    /// видимостью либо «≠ имя» со скрытой видимостью. Критерием PASS не
+    /// является (C4-03): результат оценивает
+    /// <see cref="Case9ViewShowsOnlySystem"/>, здесь только описание дерева.
     /// </summary>
     private bool Case9ViewHasSystemFilter(View3D view, string systemName)
     {
@@ -186,6 +239,103 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// На виде ЕСТЬ фильтр по параметру сида — любая форма правила (C4-03:
+    /// «= имя», «≠ имя», обёртки/инверсии). Форму оценивает только
+    /// диагностика; критерий — наличие фильтра по параметру + результат
+    /// <see cref="Case9ViewShowsOnlySystem"/>.
+    /// </summary>
+    private bool Case9ViewHasSeedParameterFilter(View3D view)
+    {
+        foreach (var filterId in view.GetFilters())
+        {
+            if (Doc.GetElement(filterId) is not ParameterFilterElement filter)
+                continue;
+
+            if (Case9FilterUsesSeedParameter(filter.GetElementFilter()))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Рекурсивный поиск правила с параметром сида в дереве фильтра.</summary>
+    private bool Case9FilterUsesSeedParameter(ElementFilter? elementFilter)
+    {
+        if (elementFilter is null)
+            return false;
+
+        try
+        {
+            if (elementFilter is ElementLogicalFilter logical)
+                return logical.GetFilters().Any(Case9FilterUsesSeedParameter);
+
+            if (elementFilter is not ElementParameterFilter parameterFilter)
+                return false;
+
+            return parameterFilter.GetRules().Any(rule =>
+            {
+                try
+                {
+                    return rule.GetRuleParameter()?.GetValue() == _case9ParamElementId;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            });
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// РЕЗУЛЬТАТ (C4-03): на виде видны ВСЕ элементы своей системы и НИ ОДНОГО
+    /// элемента чужих систем — через FilteredElementCollector по виду, т.е.
+    /// независимо от формы правила («= имя с видимой видимостью» и «≠ имя со
+    /// скрытой» дают одинаковый результат и оба зачитываются).
+    /// </summary>
+    private bool Case9ViewShowsOnlySystem(View3D view, string systemName, out string note)
+    {
+        note = string.Empty;
+        HashSet<long> visible;
+        try
+        {
+            visible = new FilteredElementCollector(Doc, view.Id)
+                .ToElementIds()
+                .Select(id => id.GetValue())
+                .ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            note = "коллектор вида упал: " + ex.GetType().Name;
+            return false;
+        }
+
+        var own = _case9Systems[systemName].MemberIds;
+        var ownVisible = own.Count(id => visible.Contains(id));
+        var foreignTotal = 0;
+        var foreignVisible = 0;
+        foreach (var other in _case9Systems.Keys)
+        {
+            if (string.Equals(other, systemName, StringComparison.Ordinal))
+                continue;
+
+            foreach (var memberId in _case9Systems[other].MemberIds)
+            {
+                foreignTotal++;
+                if (visible.Contains(memberId))
+                    foreignVisible++;
+            }
+        }
+
+        note = "своих видно " + ownVisible + "/" + own.Count +
+               ", чужих видно " + foreignVisible + "/" + foreignTotal;
+        return own.Count > 0 && ownVisible == own.Count && foreignVisible == 0;
     }
 
     private string Case9DescribeRules(ElementFilter? elementFilter)

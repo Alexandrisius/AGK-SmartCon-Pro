@@ -182,10 +182,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 .Select(family => family.Id)
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case-families: template family '" + familyName +
-                              "' not scanned: " + ex.GetType().Name + ": " + ex.Message);
+            // Best-effort: если скан не удался, последующая LoadFamily
+            // сообщит о конфликте ошибкой сида.
             return;
         }
 
@@ -199,14 +199,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
             transaction.Start();
             foreach (var id in conflicts)
                 doc.Delete(id);
-            if (transaction.Commit() != TransactionStatus.Committed)
-                Console.WriteLine("PROBE case-families: template family '" + familyName +
-                                  "' not removed: commit rolled back");
+            // Незакоммиченное удаление не фатально: LoadFamily назовёт конфликт.
+            transaction.Commit();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case-families: template family '" + familyName +
-                              "' not removed: " + ex.GetType().Name + ": " + ex.Message);
+            // Best-effort — см. выше.
         }
     }
 
@@ -284,6 +282,93 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         return null;
+    }
+
+    // ── Устойчивое создание определений ФОП (SEED-8) ─────────────────────
+
+    /// <summary>
+    /// Форсирует перечитывание файла общих параметров повторным присваиванием
+    /// <see cref="Application.SharedParametersFilename"/>: нативные обёртки
+    /// DefinitionFile/DefinitionGroup, протухшие после перечитывания ФОП самим
+    /// Revit (SEHException в Groups.Create/Definitions.Create — точечный сбой
+    /// 2026-11-23 на базе реального шаблона), после этого живут заново.
+    /// </summary>
+    private bool ReloadCaseSharedParameterFile()
+    {
+        try
+        {
+            var path = Application.SharedParametersFilename;
+            Application.SharedParametersFilename = path;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("SEED shared definitions: ФОП reload failed: " +
+                              ex.GetType().Name + ": " + ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Создаёт (или возвращает уже созданное — идемпотентно для повторов)
+    /// определение общего параметра в ФОП, переживая нативный сбой Revit при
+    /// работе с файлом общих параметров: каждая попытка начинается с форс-
+    /// перечитывания ФОП и свежей обёртки файла, при SEHException/протухшей
+    /// обёртке — повтор с логом причины (не глушится: после 3 неудач — ошибка
+    /// сида с последней причиной). Группа ищется по имени до Create
+    /// (Groups.Create бросает пустой InvalidOperationException на существующей).
+    /// </summary>
+    private (ExternalDefinition? Definition, string? Error) EnsureCaseSharedDefinition(
+        string groupName, string parameterName, Guid guid)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                ReloadCaseSharedParameterFile();
+                var file = Application.OpenSharedParameterFile();
+                if (file is null)
+                    return (null, "Временный ФОП не открылся");
+
+                // Идемпотентность: после частично прошедшей прошлой попытки
+                // определение уже существует — вернуть его. Поиск ниже сам
+                // касается file.Groups нативно: протухшая обёртка файла
+                // бросит и уйдёт в повтор с перечитыванием ФОП.
+                var existing = FindCaseSharedDefinition(groupName, parameterName);
+                if (existing is not null)
+                    return (existing, null);
+
+                DefinitionGroup? group = null;
+                foreach (DefinitionGroup candidate in file.Groups)
+                {
+                    if (string.Equals(candidate.Name, groupName, StringComparison.Ordinal))
+                    {
+                        group = candidate;
+                        break;
+                    }
+                }
+
+                group ??= file.Groups.Create(groupName);
+                var created = (ExternalDefinition)group.Definitions.Create(
+                    new ExternalDefinitionCreationOptions(parameterName, SpecTypeId.String.Text)
+                    {
+                        GUID = guid
+                    });
+                return (created, null);
+            }
+            catch (Exception ex) when (attempt < 3)
+            {
+                Console.WriteLine("SEED shared definitions: «" + parameterName + "» attempt " +
+                                  attempt + " failed: " + ex.GetType().Name + ": " + ex.Message +
+                                  " — ФОП перечитывается, повтор");
+            }
+            catch (Exception ex)
+            {
+                return (null, "Не удалось создать определение ФОП «" + parameterName +
+                              "» (3 попытки с перечитыванием ФОП): " +
+                              ex.GetType().Name + ": " + ex.Message);
+            }
+        }
     }
 
     /// <summary>Размещает по одному экземпляру каждого типа (сетка 8 колонок).</summary>

@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Compatibility;
+using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent.Jobs;
@@ -81,6 +82,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private Dictionary<string, Case9SystemSeed> _case9Systems = null!;
 
+    // Контекст двухшагового протокола последнего RunProductionCase-прогона
+    // (C4-05): промежуточные ответы («утверди у меня») и число тул-вызовов,
+    // исполненных ДО первого промежуточного ответа (-1 — шага не было).
+    // Заполняется харнессом перед вызовом вердиктора.
+    private IReadOnlyList<string> _lastRunIntermediateAnswers = Array.Empty<string>();
+
+    private int _lastRunCallsBeforeFirstIntermediate = -1;
+
+    /// <summary>Риски тулов каталога последнего RunProductionCase-прогона
+    /// (для IsRealWrite в вердикторах, C4-05).</summary>
+    private IReadOnlyDictionary<string, AgentToolRisk> _lastRunToolRisk =
+        new Dictionary<string, AgentToolRisk>();
+
     private readonly List<long> _case9PumpIds = new();
     private readonly List<long> _case9FlangeIds = new();
     private readonly List<string> _case9TempFamilyPaths = new();
@@ -121,9 +135,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
             // модели без тулов; харнесс отвечает согласием (scriptedUserReplies) и
             // сохраняет промежуточный ответ. Модель, проигнорировавшая шаг
             // утверждения («утверди у меня» в тексте кейса), валит ассерт сознательно.
+            // C4-05: ассерт не должен выполняться любым текстом — промежуточный
+            // ответ обязан содержать список имён систем (к утверждению).
             await Assert.That(run.IntermediateAnswers.Count).IsGreaterThanOrEqualTo(1);
             if (run.IntermediateAnswers.Count > 0)
-                await Assert.That(run.IntermediateAnswers[0].Length).IsGreaterThanOrEqualTo(1);
+            {
+                var listed = Case9SystemsListed(run.IntermediateAnswers[0]);
+                await Assert.That(listed).IsGreaterThanOrEqualTo(2);
+            }
         }
         finally
         {
@@ -172,6 +191,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 .OfClass(typeof(View)).Cast<View>()
                 .Count(view => view.IsTemplate && view.ViewType == ViewType.ThreeD);
             await Assert.That(threeDTemplates).IsEqualTo(1);
+
+            // C4-04: файловая загрузка хозяина в проект теперь в транзакции —
+            // вложенные shared-фланцы обязаны засидиться (раньше LoadFamily
+            // молча возвращал false, ключевой критерий кейса не проверялся).
+            await Assert.That(_case9FlangesSeeded).IsTrue();
+            await Assert.That(_case9FlangeIds.Count).IsGreaterThanOrEqualTo(2);
         }
         finally
         {

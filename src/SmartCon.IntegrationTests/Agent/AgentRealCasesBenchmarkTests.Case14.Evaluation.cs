@@ -137,6 +137,25 @@ public sealed partial class AgentRealCasesBenchmarkTests
             redFlags.Add("имена/марки изменены без чтения эталона " +
                          "(open_model_background не вызван) — значения взяты не из донора");
 
+        // (C9-06) Донор читали по-настоящему ИМЕННО через documentId-роутинг:
+        // симметричный сид позволяет вывести истину дедукцией из превью —
+        // ≥1 успешного read-вызова с documentId донора обязателен для PASS.
+        var donorDocumentId = calls
+            .Where(call => call.ToolName == "open_model_background" && call.Success &&
+                           Case14ArgsReferenceDonor(call.ArgumentsJson))
+            .Select(call => Case14DocumentIdOfResult(call.ResultJson))
+            .FirstOrDefault(id => id is not null);
+        var donorReadCalls = donorDocumentId is null
+            ? 0
+            : calls.Count(call => call.Success &&
+                                  call.ToolName != "open_model_background" &&
+                                  call.ToolName != "close_model_background" &&
+                                  Case14ArgsRouteToDocument(call.ArgumentsJson, donorDocumentId));
+        var donorReadUsed = donorReadCalls > 0;
+        if (donorOpened && !donorReadUsed)
+            notes.Add("донор открыт, но НИ ОДИН read-вызов не прошёл с documentId донора " +
+                      "(истина могла быть выведена дедукцией из превью — PASS невозможен)");
+
         var feedbackMarkers = new[] { "удобн", "неудобн", "невозможно", "не хватило" }
             .Count(marker => ContainsText(answerText, marker));
         var feedbackOk = feedbackMarkers >= 2;
@@ -149,33 +168,102 @@ public sealed partial class AgentRealCasesBenchmarkTests
                      ", марки " + marksOk + "/" + _case14Types.Count +
                      ", донор: файл цел " + (donorUntouched ? "да" : "НЕТ") +
                      ", читался " + (donorOpened ? "да" : "нет") +
+                     ", через documentId " + donorReadCalls + " read-вызовов" +
                      ", закрыт " + (donorClosed ? "да" : "нет") +
                      ", активная модель стабильна " + (activeStable ? "да" : "нет") +
                      (notes.Count > 0 ? "; " + string.Join("; ", notes) : string.Empty);
 
         if (redFlags.Count == 0 && namesOk && marksAll && donorUntouched &&
-            activeStable && donorClosed && feedbackOk)
+            activeStable && donorClosed && donorReadUsed && feedbackOk)
             return new CaseVerdict(true, 1.0, detail, redFlags);
 
         // 0.5 = имена ИЛИ марки (шкала SSOT кейса), донор при этом цел.
-        if (redFlags.Count == 0 && donorUntouched && (namesOk || marksAll))
+        // Без documentId-чтения донора (C9-06) выше PARTIAL не подняться.
+        if (redFlags.Count == 0 && donorUntouched && donorReadUsed && (namesOk || marksAll))
             return new CaseVerdict(false, 0.5, detail, redFlags);
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
     }
 
     /// <summary>
-    /// Этаж имени «В_Этаж N_…» совпадает с уровнем вида (живой GenLevel или
-    /// уровень сида — вид мог быть пересоздан агентом с тем же паттерном).
+    /// documentId фонового документа из результата open_model_background
+    /// (data.documentId); null — не найден (C9-06).
+    /// </summary>
+    internal static string? Case14DocumentIdOfResult(string? resultJson)
+    {
+        if (string.IsNullOrWhiteSpace(resultJson))
+            return null;
+
+        try
+        {
+            using var document = JsonDocument.Parse(resultJson);
+            return document.RootElement.TryGetProperty("data", out var data) &&
+                   data.TryGetProperty("documentId", out var id) &&
+                   id.ValueKind == JsonValueKind.String
+                ? id.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Аргументы вызова адресуют ровно этот фоновый документ (documentId
+    /// совпадает строкой — C9-06).
+    /// </summary>
+    internal static bool Case14ArgsRouteToDocument(string argumentsJson, string documentId)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+            return document.RootElement.TryGetProperty("documentId", out var id) &&
+                   id.ValueKind == JsonValueKind.String &&
+                   string.Equals(id.GetString(), documentId, StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Префикс паттерна имён донора («В_Этаж …») — часть первого донорского
+    /// имени до первой цифры; выводится из сида, не литерал вердиктора.
+    /// </summary>
+    private static string Case14NamePrefix()
+    {
+        foreach (var donorName in Case14DonorViews)
+        {
+            var digitIndex = donorName.IndexOfAny(
+                new[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' });
+            if (digitIndex > 0)
+                return donorName[..digitIndex];
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Этаж имени «&lt;префикс&gt;N_…» совпадает с уровнем вида (живой
+    /// GenLevel или уровень сида — вид мог быть пересоздан агентом с тем же
+    /// паттерном); эталонные уровни — константы сида.
     /// </summary>
     private static bool Case14FloorMatches(View? view, string name, string seedLevelName)
     {
-        const string prefix = "В_Этаж ";
-        if (view is null || !name.StartsWith(prefix, StringComparison.Ordinal))
+        var prefix = Case14NamePrefix();
+        if (view is null || prefix.Length == 0 ||
+            !name.StartsWith(prefix, StringComparison.Ordinal))
             return false;
 
         var floor = name.Substring(prefix.Length).Split('_')[0].Trim();
-        var expectedLevel = "Этаж " + floor;
+        var expectedLevel = new[] { Case14Level1, Case14Level2 }
+            .FirstOrDefault(level => level.EndsWith(" " + floor, StringComparison.Ordinal));
+        if (expectedLevel is null)
+            return false;
+
         return string.Equals(Case14LevelNameOf(view), expectedLevel, StringComparison.Ordinal) ||
                string.Equals(seedLevelName, expectedLevel, StringComparison.Ordinal);
     }

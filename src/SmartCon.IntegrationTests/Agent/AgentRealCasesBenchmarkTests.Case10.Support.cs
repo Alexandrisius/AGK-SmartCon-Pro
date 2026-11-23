@@ -240,11 +240,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
             familyDoc.SaveAs(rfaPath, new SaveAsOptions { OverwriteExistingFile = true });
             return doc.LoadFamily(rfaPath, out var family) ? family : null;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine(
-                "PROBE bench family template load failed for '" + familyName + "': " +
-                ex.GetType().Name + ": " + ex.Message);
+            // null вернётся вызывающему: сид сообщит о недостающем семействе
+            // своим Skip.Test/ошибкой сида.
             return null;
         }
         finally

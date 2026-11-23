@@ -149,66 +149,47 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private Case7Definitions? SeedCase7Definitions()
     {
-        try
+        // SEED-8 (тот же нативный сбой ФОП, что у кейса 8): определения
+        // создаются устойчивым хелпером с форс-перечитыванием ФОП и ретраем
+        // по причине (см. EnsureCaseSharedDefinition).
+        var targets = new ExternalDefinition[Case7RoleCount];
+        for (var role = 0; role < Case7RoleCount; role++)
         {
-            var file = Application.OpenSharedParameterFile();
-            if (file is null)
+            var (definition, error) = EnsureCaseSharedDefinition(
+                Case7TargetGroupName, Case7TargetNames[role], Case7TargetGuids[role]);
+            if (error is not null)
             {
-                _case7SeedError = "Временный ФОП кейса 7 не открылся";
+                _case7SeedError = "Не удалось засидировать определения ФОП кейса 7: " + error;
                 return null;
             }
 
-            // Groups.Create throws an empty InvalidOperationException when the
-            // group already exists: create each group once and reuse it.
-            var groupsByName = new Dictionary<string, DefinitionGroup>(
-                StringComparer.OrdinalIgnoreCase);
-            DefinitionGroup GroupOf(string groupName)
-            {
-                if (groupsByName.TryGetValue(groupName, out var existing))
-                    return existing;
-
-                var created = file.Groups.Create(groupName);
-                groupsByName[groupName] = created;
-                return created;
-            }
-
-            ExternalDefinition Create(string groupName, string name, Guid guid)
-            {
-                var group = GroupOf(groupName);
-                return (ExternalDefinition)group.Definitions.Create(
-                    new ExternalDefinitionCreationOptions(name, SpecTypeId.String.Text)
-                    {
-                        GUID = guid
-                    });
-            }
-
-            var targets = new ExternalDefinition[Case7RoleCount];
-            for (var role = 0; role < Case7RoleCount; role++)
-                targets[role] = Create(
-                    Case7TargetGroupName, Case7TargetNames[role], Case7TargetGuids[role]);
-
-            var old = new ExternalDefinition?[4][];
-            for (var group = 0; group < 4; group++)
-            {
-                old[group] = new ExternalDefinition?[Case7RoleCount];
-                for (var role = 0; role < Case7RoleCount; role++)
-                {
-                    var name = Case7OldNames[group][role];
-                    var guid = Case7OldGuids[group][role];
-                    if (name is not null && guid is not null)
-                        old[group][role] = Create(
-                            Case7OldGroupNames[group], name, guid.Value);
-                }
-            }
-
-            return new Case7Definitions(targets, old);
+            targets[role] = definition!;
         }
-        catch (Exception ex)
+
+        var old = new ExternalDefinition?[4][];
+        for (var group = 0; group < 4; group++)
         {
-            _case7SeedError = "Не удалось засидировать определения ФОП кейса 7: " +
-                               ex.GetType().Name + ": " + ex.Message;
-            return null;
+            old[group] = new ExternalDefinition?[Case7RoleCount];
+            for (var role = 0; role < Case7RoleCount; role++)
+            {
+                var name = Case7OldNames[group][role];
+                var guid = Case7OldGuids[group][role];
+                if (name is null || guid is null)
+                    continue;
+
+                var (definition, error) = EnsureCaseSharedDefinition(
+                    Case7OldGroupNames[group], name, guid.Value);
+                if (error is not null)
+                {
+                    _case7SeedError = "Не удалось засидировать определения ФОП кейса 7: " + error;
+                    return null;
+                }
+
+                old[group][role] = definition;
+            }
         }
+
+        return new Case7Definitions(targets, old);
     }
 
     private void BindCase7Targets(Document doc, Case7Definitions definitions)

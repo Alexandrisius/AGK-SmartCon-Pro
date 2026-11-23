@@ -176,7 +176,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase6World(Document doc)
     {
-        Console.WriteLine("PROBE case 6 seed: clearing default world");
         Case6ClearDefaultWorld(doc);
 
         for (var floor = 1; floor <= Case6LevelCount; floor++)
@@ -185,8 +184,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
             level.Name = Case6LevelPrefix + floor.ToString(CultureInfo.InvariantCulture);
             _case6.LevelIds[floor] = level.Id.GetValue();
         }
-
-        Console.WriteLine("PROBE case 6 seed: levels created");
 
         // Выжившие дефолтные уровни нейтрализуем: имя вне паттерна «Уровень N»
         // (дубликаты имён уровней Revit разрешает, но похожее имя собьёт модель
@@ -203,10 +200,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
             {
                 level.Name = Case6NeutralLevelName;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine("PROBE case 6: level '" + oldName + "' not neutralized: " +
-                                  ex.GetType().Name + ": " + ex.Message);
+                // Не нейтрализовался — VerifyCase6Seed скипнет по постороннему
+                // имени уровня.
             }
 
             _case6.LeftoverLevelNames.Add(oldName + " → " + level.Name);
@@ -214,7 +211,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         doc.Regenerate();
         var topLevelId = ElementIdCompat.Create(_case6.LevelIds[Case6LevelCount]);
-        Console.WriteLine("PROBE case 6 seed: creating reference plan");
 
         // Эталон = источник шаблона «Отопление»: CreateViewTemplate копирует
         // настройки вида (доказанный паттерн AgentBatchViewToolsTests), затем
@@ -245,12 +241,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
         drainage.Name = Case6Systems()[1];
 
         // Id фиксируются ДО удаления источника: каскад doc.Delete может тронуть
-        // созданные из вида объекты (PROBE печатает состав каскада).
+        // созданные из вида объекты.
         _case6.TemplateIds[Case6FirstSystem] = heating.Id.GetValue();
         _case6.TemplateIds[Case6Systems()[1]] = drainage.Id.GetValue();
         _case6.ReferenceViewId = reference.Id.GetValue();
-        var cascade = doc.Delete(source.Id);
-        Console.WriteLine("PROBE case 6 seed: source view deleted, cascade=" + cascade.Count);
+        doc.Delete(source.Id);
 
         doc.Regenerate();
         foreach (var view in new FilteredElementCollector(doc)
@@ -264,8 +259,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// list_levels покажет модели мусор). Порядок обязателен: сначала ВСЕ виды
     /// ВКЛЮЧАЯ шаблоны (view range шаблона плана держит уровень — живой прогон
     /// 2026-11-22 поймал выживший уровень), потом уровни ДВУМЯ проходами с
-    /// регенерацией (ссылки очищаются не сразу). Отказы логируются зондом
-    /// PROBE; выжившие уровни нейтрализует SeedCase6World переименованием.
+    /// регенерацией (ссылки очищаются не сразу). Выжившие уровни нейтрализует
+    /// SeedCase6World переименованием.
     /// </summary>
     private static void Case6ClearDefaultWorld(Document doc)
     {
@@ -301,10 +296,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             doc.Delete(id);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case 6: " + what + " not deleted: " +
-                              ex.GetType().Name + ": " + ex.Message);
+            // Не удалился — VerifyCase6Seed сообщит о постороннем элементе.
         }
     }
 
@@ -319,7 +313,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             if (level.Name.StartsWith(Case6LevelPrefix, StringComparison.Ordinal))
             {
                 Skip.Test("Дефолтный уровень «" + level.Name + "» не удалился и не " +
-                          "нейтрализовался — сид кейса 6 некорректен (см. PROBE в логе)");
+                          "нейтрализовался — сид кейса 6 некорректен");
                 return;
             }
         }

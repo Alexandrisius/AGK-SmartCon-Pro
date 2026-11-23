@@ -109,58 +109,47 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private Case8Definitions? SeedCase8Definitions()
     {
-        try
+        // SEED-8: определения создаются устойчивым хелпером — каждая попытка
+        // форс-перечитывает ФОП и берёт свежую обёртку файла, SEHException на
+        // протухшей обёртке ретраится с логом причины (см.
+        // EnsureCaseSharedDefinition), а не валит весь сид.
+        var targets = new ExternalDefinition[Case7RoleCount];
+        for (var role = 0; role < Case7RoleCount; role++)
         {
-            var file = Application.OpenSharedParameterFile();
-            if (file is null)
+            var (definition, error) = EnsureCaseSharedDefinition(
+                Case7TargetGroupName, Case7TargetNames[role], Case7TargetGuids[role]);
+            if (error is not null)
             {
-                _case8SeedError = "Временный ФОП кейса 8 не открылся";
+                _case8SeedError = "Не удалось засидировать определения ФОП кейса 8: " + error;
                 return null;
             }
 
-            // Groups.Create throws an empty InvalidOperationException when the
-            // group already exists: create each group once and reuse it.
-            var groupsByName = new Dictionary<string, DefinitionGroup>(
-                StringComparer.OrdinalIgnoreCase);
-            DefinitionGroup GroupOf(string groupName)
-            {
-                if (groupsByName.TryGetValue(groupName, out var existing))
-                    return existing;
-
-                var created = file.Groups.Create(groupName);
-                groupsByName[groupName] = created;
-                return created;
-            }
-
-            ExternalDefinition Create(string groupName, string name, Guid guid)
-            {
-                var group = GroupOf(groupName);
-                return (ExternalDefinition)group.Definitions.Create(
-                    new ExternalDefinitionCreationOptions(name, SpecTypeId.String.Text)
-                    {
-                        GUID = guid
-                    });
-            }
-
-            var targets = new ExternalDefinition[Case7RoleCount];
-            for (var role = 0; role < Case7RoleCount; role++)
-                targets[role] = Create(
-                    Case7TargetGroupName, Case7TargetNames[role], Case7TargetGuids[role]);
-
-            var old = new ExternalDefinition[Case7RoleCount];
-            for (var role = 0; role < Case7RoleCount; role++)
-                old[role] = Create(
-                    Case8OldGroupName, Case7OldNames[0][role]!, Case7OldGuids[0][role]!.Value);
-
-            var note = Create(Case8OldGroupName, Case8NoteName, Case8NoteGuid);
-            return new Case8Definitions(targets, old, note);
+            targets[role] = definition!;
         }
-        catch (Exception ex)
+
+        var old = new ExternalDefinition[Case7RoleCount];
+        for (var role = 0; role < Case7RoleCount; role++)
         {
-            _case8SeedError = "Не удалось засидировать определения ФОП кейса 8: " +
-                               ex.GetType().Name + ": " + ex.Message;
+            var (definition, error) = EnsureCaseSharedDefinition(
+                Case8OldGroupName, Case7OldNames[0][role]!, Case7OldGuids[0][role]!.Value);
+            if (error is not null)
+            {
+                _case8SeedError = "Не удалось засидировать определения ФОП кейса 8: " + error;
+                return null;
+            }
+
+            old[role] = definition!;
+        }
+
+        var (noteDefinition, noteError) = EnsureCaseSharedDefinition(
+            Case8OldGroupName, Case8NoteName, Case8NoteGuid);
+        if (noteError is not null)
+        {
+            _case8SeedError = "Не удалось засидировать определения ФОП кейса 8: " + noteError;
             return null;
         }
+
+        return new Case8Definitions(targets, old, noteDefinition!);
     }
 
     private void BindCase8Parameters(Document doc, Case8Definitions definitions)

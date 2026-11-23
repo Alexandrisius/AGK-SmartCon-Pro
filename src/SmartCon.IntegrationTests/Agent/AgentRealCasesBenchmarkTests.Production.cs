@@ -82,75 +82,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return int.TryParse(raw, out var value) ? Math.Clamp(value, 60, 7200) : 900;
     }
 
-    // ── Сид на базе бенчмарка ───────────────────────────────────────────
-
-    /// <summary>
-    /// Seed gate for the non-live SeedVerifies runs: on the SMARTCON_BENCH_TEMPLATE
-    /// base a seed failure is a FAIL with the collision named (readiness matrix);
-    /// on the synthetic base the original skip semantics stay.
-    /// </summary>
-    private static void SeedOnBenchBase(string caseName, Action seed)
-    {
-        try
-        {
-            seed();
-        }
-        catch (Exception ex) when (BenchDocuments.TemplatePath() is not null)
-        {
-            throw new InvalidOperationException(
-                caseName + ": сид не встал на базу SMARTCON_BENCH_TEMPLATE (" +
-                BenchDocuments.TemplatePath() + "): " + ex.Message, ex);
-        }
-    }
-
-    /// <summary>Seed gate for the live runs: a failed seed still writes a seed_failed artifact.</summary>
-    private static void SeedOnBenchBaseLive(int caseNumber, string title, Action seed)
-    {
-        try
-        {
-            seed();
-        }
-        catch (Exception ex)
-        {
-            WriteSeedFailedArtifact(caseNumber, title, ex);
-            throw;
-        }
-    }
-
-    private static void WriteSeedFailedArtifact(int caseNumber, string title, Exception ex)
-    {
-        try
-        {
-            var settings = AgentLlmSettings.Load();
-            var artifact = new BenchRunArtifact
-            {
-                CaseNumber = caseNumber,
-                CaseKey = "case" + caseNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                Title = title,
-                Base = BenchRunArtifactWriter.BaseLabel(),
-                Provider = settings.Provider,
-                Model = settings.Model,
-                Reasoning = settings.ReasoningEffort + "/" + settings.EffectiveReasoningFormat,
-                MaxOutputTokens = settings.MaxOutputTokens,
-                MaxRounds = BenchMaxRounds(),
-                StartedUtc = DateTime.UtcNow,
-                EndedUtc = DateTime.UtcNow,
-                StopReason = "seed_failed",
-                Error = ex.GetType().Name + ": " + ex.Message,
-                Answer = null,
-                Verdict = new BenchVerdictArtifact { Label = "FAIL", Score = 0, Detail = "seed failed" }
-            };
-            BenchRunArtifactWriter.Write(
-                artifact,
-                "# SmartCon production-loop benchmark, кейс " + caseNumber + " — SEED FAILED\n\n" +
-                title + "\n\n" + artifact.Error + "\n");
-        }
-        catch (Exception artifactError)
-        {
-            Console.WriteLine("Seed-failed artifact write failed: " + artifactError.Message);
-        }
-    }
-
     // ── Продакшн-цикл одного кейса ──────────────────────────────────────
 
     private ProductionCaseRun RunProductionCase(
@@ -160,12 +91,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
         IReadOnlyList<string> seedSummary,
         Func<string?, List<BenchCall>, List<int>, CaseVerdict> evaluate,
         Func<string> dumpState,
-        IReadOnlyList<string>? scriptedUserReplies = null)
+        IReadOnlyList<string>? scriptedUserReplies = null,
+        IAgentLlmClient? llmClient = null)
     {
         var startedUtc = DateTime.UtcNow;
         var maxRounds = BenchMaxRounds();
         var maxSeconds = BenchMaxSeconds();
-        using var host = ProductionAgentHost.Create(Doc);
+        var roundSteerAt = SteeringRoundThreshold(maxRounds);
+        var timeSteerSeconds = SteeringTimeThresholdSeconds(maxSeconds);
+        using var host = ProductionAgentHost.Create(Doc, llmClient);
         var conversationId = host.CreateConversation(title);
 
         // Inline progress: Report runs on the orchestrator thread, so the round
@@ -177,12 +111,34 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var notes = new List<string>();
         var budgetGate = new object();
         using var budgetCts = new CancellationTokenSource();
+        // Steering (C7-03/C2-02): при ~80% раундов / ~75% времени turn
+        // останавливается мягко и модель получает предупреждение «заверши
+        // работу» как сообщение пользователя ПОСЛЕ tool-ответов раунда
+        // (между tool-вызовами сообщение вставить нельзя). Оба порога
+        // срабатывают ТОЛЬКО на границе раунда (ContextUsage — момент прямо
+        // перед LLM-запросом, где оркестратор первым делом проверяет токен):
+        // ни один LLM-запрос не отправляется впустую, ни один tool не рвётся
+        // посреди исполнения.
+        var steeringSent = false;
+        string? steeringReason = null;
+        var finalCallUsed = false;
+
+        // Таймер 75% времени только СТАВИТ флаг; отменяет граница раунда.
+        var timeSteeringPending = false;
+
+        // Отмена ТЕКУЩЕГО turn'а ради steering: источник живёт один turn.
+        // Общий источник на все turn'ы оставался отменённым после первого
+        // steering, и каждый следующий turn падал мгновенно (busy-loop до
+        // жёсткого time budget — поймано оффлайн-тестом Budget_*).
+        CancellationTokenSource? turnSteerSource = null;
+        var turnSteered = false;
         var progress = new InlineProgress(p =>
         {
             if (p.Kind != AgentProgressKind.ContextUsage)
                 return;
 
             var cancel = false;
+            var steer = false;
             lock (budgetGate)
             {
                 llmRounds++;
@@ -192,12 +148,46 @@ public sealed partial class AgentRealCasesBenchmarkTests
                     cancel = true;
                     notes.Add("Round budget " + maxRounds + " превышен — цикл остановлен харнессом.");
                 }
+                else if (stopReason == "ok" && !steeringSent &&
+                         (llmRounds >= roundSteerAt || timeSteeringPending))
+                {
+                    steeringSent = true;
+                    // При одновременном срабатывании честнее называть время:
+                    // до жёсткого стопа по нему остаётся ~25% бюджета.
+                    steeringReason = timeSteeringPending ? "time" : "rounds";
+                    steer = true;
+                    // Этот ContextUsage не привёл к LLM-запросу (оркестратор
+                    // проверяет токен раньше): раунд не израсходован.
+                    llmRounds--;
+                    notes.Add(timeSteeringPending
+                        ? "Steering по времени: " + timeSteerSeconds + "/" + maxSeconds +
+                          " s (перед раундом " + (llmRounds + 1) + "/" + maxRounds + ")"
+                        : "Steering по раундам: перед раундом " + (llmRounds + 1) + "/" +
+                          maxRounds + " (порог " + roundSteerAt + ")");
+                }
             }
 
             if (cancel)
                 budgetCts.Cancel();
+            if (steer)
+            {
+                turnSteered = true;
+                try
+                {
+                    turnSteerSource?.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Turn уже завершился и освободил источник.
+                }
+                catch (AggregateException)
+                {
+                    // Callback отмены бросил — сам turn всё равно отменён.
+                }
+            }
         });
         System.Threading.Timer? timeBudgetTimer = null;
+        System.Threading.Timer? steeringTimer = null;
 
         var intermediateAnswers = new List<string>();
         var turnResults = new List<AgentTurnResult>();
@@ -205,12 +195,27 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var nextMessage = caseText;
         string? answer = null;
 
+        // Двухшаговый протокол (C4-05): число тул-вызовов, исполненных ДО
+        // первого промежуточного ответа (граница «утверди у меня»), — вердиктор
+        // кейса 9 штрафует реальные write-вызовы за этой чертой.
+        var callsBeforeFirstIntermediate = -1;
+
         while (true)
         {
             // Wall-clock budget: armed at the first RunTurnAsync; fires into the
             // same cancellation source as the round cap (stopReason = time_budget).
             if (timeBudgetTimer is null)
             {
+                // Steering-таймер: 75% времени — предупреждение модели (C7-03).
+                steeringTimer = new System.Threading.Timer(_ =>
+                {
+                    lock (budgetGate)
+                    {
+                        if (stopReason == "ok" && !steeringSent && !timeSteeringPending)
+                            timeSteeringPending = true;
+                    }
+                }, null, TimeSpan.FromSeconds(timeSteerSeconds), System.Threading.Timeout.InfiniteTimeSpan);
+
                 timeBudgetTimer = new System.Threading.Timer(_ =>
                 {
                     var cancel = false;
@@ -238,6 +243,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 }, null, TimeSpan.FromSeconds(maxSeconds), System.Threading.Timeout.InfiniteTimeSpan);
             }
 
+            // Своя отмена на каждый turn (освобождается в конце итерации).
+            using var turnSteerCts = new CancellationTokenSource();
+            turnSteerSource = turnSteerCts;
+            turnSteered = false;
+            using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(
+                budgetCts.Token, turnSteerCts.Token);
+
             AgentTurnResult? turn;
             try
             {
@@ -246,11 +258,31 @@ public sealed partial class AgentRealCasesBenchmarkTests
                     nextMessage,
                     Array.Empty<AgentAttachment>(),
                     progress,
-                    budgetCts.Token));
+                    turnCts.Token));
             }
             catch (OperationCanceledException) when (budgetCts.IsCancellationRequested)
             {
-                break; // stopReason already "round_budget"
+                // Бюджет исчерпан: turn отменён. Один финальный вызов БЕЗ
+                // инструментов (C2-02): финальный ответ и Harness feedback не
+                // теряются; stopReason остаётся round_budget|time_budget —
+                // вердикт не выше PARTIAL, как и раньше.
+                if (!finalCallUsed)
+                {
+                    finalCallUsed = true;
+                    notes.Add("Бюджет исчерпан (" + stopReason +
+                              ") — финальный вызов без инструментов за финальным ответом.");
+                    answer = RunBudgetFinalAnswerTurn(host, conversationId, turnResults, notes);
+                }
+
+                break;
+            }
+            catch (OperationCanceledException) when (turnSteered)
+            {
+                // Steering: работа не отменяется — модель продолжает в том же
+                // разговоре с предупреждением о закрывающемся бюджете; следующий
+                // turn получает свежий (не отменённый) токен.
+                nextMessage = steeringReason == "time" ? SteeringTimeText : SteeringRoundsText;
+                continue;
             }
             catch (OperationCanceledException)
             {
@@ -273,6 +305,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 // Two-step case: the finished turn is the approval request — the
                 // harness plays the user and the model continues in the same chat.
                 intermediateAnswers.Add(turn.FinalText);
+                if (callsBeforeFirstIntermediate < 0)
+                {
+                    // Из постоянного store (а не из вернувшихся turn'ов): turn,
+                    // прерванный steering'ом, в turnResults не попадает.
+                    callsBeforeFirstIntermediate = host.ReadToolCalls(conversationId).Count;
+                }
                 nextMessage = pendingReplies.Dequeue();
                 notes.Add("Scripted user reply: " + nextMessage);
                 continue;
@@ -283,6 +321,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         timeBudgetTimer?.Dispose();
+        steeringTimer?.Dispose();
         var messages = host.ReadConversation(conversationId);
         var toolRecords = host.ReadToolCalls(conversationId);
         var provider = host.Settings.Provider;
@@ -293,6 +332,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var revitVersion = Doc.Application.VersionNumber;
         var toolRisk = host.Registry.GetDefinitions()
             .ToDictionary(definition => definition.Name, definition => definition.Risk, StringComparer.Ordinal);
+
+        // Число LLM-запросов кейса — факт из истории (сохранённые assistant-
+        // сообщения), без финального вызова: счётчик бюджета считает и запрос,
+        // отменённый на границе (при round_budget он на 1 больше факта).
+        var llmRequests = Math.Max(0,
+            messages.Count(message => message.Role == AgentRole.Assistant) - (finalCallUsed ? 1 : 0));
 
         // Rounds from the persisted conversation: every assistant message with
         // tool calls is one LLM round; its ToolCalls ids map records to rounds.
@@ -315,6 +360,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         var calls = new List<BenchCall>();
         var artifactCalls = new List<BenchCallArtifact>();
+        var oversized = new List<(string RelativePath, string Text)>();
+        var artifactStamp = "r" + startedUtc.ToString(
+            "yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
         var seq = 0;
         foreach (var record in toolRecords)
         {
@@ -327,18 +375,36 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 success,
                 record.Error,
                 callRound));
+
+            // C2-13: значения до предела — целиком; длиннее — валидная
+            // обёртка/маркер + ПОЛНЫЙ текст файлом рядом с артефактом.
+            var callNumber = ++seq;
+            var argsField = ArtifactJsonField(
+                record.ArgumentsJson ?? string.Empty,
+                OversizedFieldPath(artifactStamp, callNumber, "args.json"),
+                oversized);
+            var messageField = ArtifactTextField(
+                ResultMessage(record.ResultJson),
+                OversizedFieldPath(artifactStamp, callNumber, "message.txt"),
+                oversized);
             artifactCalls.Add(new BenchCallArtifact
             {
                 Round = callRound,
-                Seq = ++seq,
+                Seq = callNumber,
                 Tool = record.ToolName,
-                Args = Shorten(record.ArgumentsJson ?? string.Empty, 2000),
+                Args = argsField,
                 Success = success,
                 ErrorCode = record.Error,
-                Message = ResultMessage(record.ResultJson),
+                Message = messageField,
                 DurationMs = record.DurationMs
             });
         }
+
+        // Контекст двухшагового протокола для вердикторов (C4-05): вердиктор
+        // видит промежуточные ответы и черту «до одобрения».
+        _lastRunIntermediateAnswers = intermediateAnswers;
+        _lastRunCallsBeforeFirstIntermediate = callsBeforeFirstIntermediate;
+        _lastRunToolRisk = toolRisk;
 
         var stateVerdict = EvaluateSafely(evaluate, EvaluationAnswer(answer), calls, callsPerRound);
         var overall = stateVerdict;
@@ -349,17 +415,30 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 stateVerdict.Detail + " [stop: " + stopReason + "]",
                 stateVerdict.RedFlags);
 
-        var promptTokens = turnResults.Sum(result => result.Usage.PromptTokens);
-        var completionTokens = turnResults.Sum(result => result.Usage.CompletionTokens);
-        var reasoningTokens = turnResults.Sum(result => result.Usage.ReasoningTokens);
-        var cachedTokens = turnResults.Sum(result => result.Usage.CachedTokens);
+        // Токены (C2-12): сумма по ВСЕМ завершённым LLM-вызовам из сессионной
+        // базы (оркестратор пишет usage и отменённому по бюджету turn'у), не
+        // только по вернувшимся turn'ам — иначе стоп по бюджету обнулял usage.
+        var (usageFound, storePrompt, storeCompletion, storeReasoning, storeCached) =
+            ReadTokenUsage(host.DatabasePath, conversationId.ToString());
+        var promptTokens = usageFound
+            ? storePrompt
+            : turnResults.Sum(result => result.Usage.PromptTokens);
+        var completionTokens = usageFound
+            ? storeCompletion
+            : turnResults.Sum(result => result.Usage.CompletionTokens);
+        var reasoningTokens = usageFound
+            ? storeReasoning
+            : turnResults.Sum(result => result.Usage.ReasoningTokens);
+        var cachedTokens = usageFound
+            ? storeCached
+            : turnResults.Sum(result => result.Usage.CachedTokens);
         var endedUtc = DateTime.UtcNow;
 
         var transcript = BuildProductionTranscript(
             caseNumber, title, caseText, seedSummary, provider, model, reasoning,
             maxOutputTokens, maxRounds, maxSeconds, catalogSize, revitVersion, assistantTextByRound,
             artifactCalls, notes, answer, overall, stateVerdict, DumpStateSafely(dumpState),
-            llmRounds, calls, promptTokens, completionTokens, startedUtc, endedUtc, stopReason, error);
+            llmRequests, calls, promptTokens, completionTokens, startedUtc, endedUtc, stopReason, error);
 
         var artifact = new BenchRunArtifact
         {
@@ -376,7 +455,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             StartedUtc = startedUtc,
             EndedUtc = endedUtc,
             DurationSeconds = (endedUtc - startedUtc).TotalSeconds,
-            Rounds = llmRounds,
+            Rounds = llmRequests,
             ToolCalls = calls.Count,
             ToolCallsByName = calls.GroupBy(call => call.ToolName)
                 .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal),
@@ -390,6 +469,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
             ReasoningTokens = reasoningTokens,
             CachedTokens = cachedTokens,
             StopReason = stopReason,
+            SteeringReason = steeringReason,
+            BudgetFinalCall = finalCallUsed,
+            UsageFromStore = usageFound,
             Error = error,
             Verdict = ToArtifactVerdict(overall),
             StateVerdict = ToArtifactVerdict(stateVerdict),
@@ -402,138 +484,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
         };
 
         var (jsonPath, markdownPath) = BenchRunArtifactWriter.Write(artifact, transcript);
+        WriteOversizedCallFields(jsonPath, oversized);
         // On dispose the session database lands next to the artifact (r<stamp>.db).
         host.ArtifactJsonPath = jsonPath;
 
         return new ProductionCaseRun(
-            overall, stateVerdict, answer, calls, callsPerRound, llmRounds, llmRounds,
+            overall, stateVerdict, answer, calls, callsPerRound, llmRequests, llmRequests,
             promptTokens, completionTokens, intermediateAnswers, stopReason, error,
             jsonPath, markdownPath);
     }
 
-    private static CaseVerdict EvaluateSafely(
-        Func<string?, List<BenchCall>, List<int>, CaseVerdict> evaluate,
-        string? answer,
-        List<BenchCall> calls,
-        List<int> callsPerRound)
-    {
-        try
-        {
-            return evaluate(answer, calls, callsPerRound);
-        }
-        catch (Exception ex)
-        {
-            return new CaseVerdict(false, 0.0, "вердиктор упал: " + ex.GetType().Name + ": " + ex.Message,
-                new[] { "verdict error" });
-        }
-    }
-
-    private static string DumpStateSafely(Func<string> dumpState)
-    {
-        try
-        {
-            return dumpState();
-        }
-        catch (Exception ex)
-        {
-            return "state read-back упал: " + ex.GetType().Name + ": " + ex.Message;
-        }
-    }
-
-    private static BenchVerdictArtifact ToArtifactVerdict(CaseVerdict verdict) =>
-        new()
-        {
-            Label = verdict.Label,
-            Score = verdict.Score,
-            Detail = verdict.Detail,
-            RedFlags = verdict.RedFlags
-        };
-
-    /// <summary>A non-dryRun call of a tool whose risk is not Read.</summary>
-    private static bool IsRealWrite(BenchCall call, IReadOnlyDictionary<string, AgentToolRisk> toolRisk) =>
-        IsNonReadTool(call, toolRisk) && !IsDryRunCall(call);
-
-    private static bool IsNonReadTool(BenchCall call, IReadOnlyDictionary<string, AgentToolRisk> toolRisk) =>
-        toolRisk.TryGetValue(call.ToolName, out var risk) && risk != AgentToolRisk.Read;
-
-    private static bool VerifiedAfterLastWrite(List<BenchCall> calls, IReadOnlyDictionary<string, AgentToolRisk> toolRisk)
-    {
-        var lastWrite = -1;
-        for (var index = 0; index < calls.Count; index++)
-        {
-            if (calls[index].Success && IsRealWrite(calls[index], toolRisk))
-                lastWrite = index;
-        }
-
-        if (lastWrite < 0)
-            return false;
-
-        for (var index = lastWrite + 1; index < calls.Count; index++)
-        {
-            if (calls[index].Success &&
-                toolRisk.TryGetValue(calls[index].ToolName, out var risk) &&
-                risk == AgentToolRisk.Read)
-                return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>Progress, выполняющий обработчик синхронно в потоке оркестратора.</summary>
-    private sealed class InlineProgress : IProgress<AgentProgress>
-    {
-        private readonly Action<AgentProgress> _handler;
-
-        public InlineProgress(Action<AgentProgress> handler) => _handler = handler;
-
-        public void Report(AgentProgress value) => _handler(value);
-    }
-
-    /// <summary>
-    /// Blocks the Revit test thread until <paramref name="task"/> completes while
-    /// pumping its dispatcher: the production orchestrator continues on the thread
-    /// pool and hands every Revit API call to <see cref="RevitThreadEvent"/>, which
-    /// dispatches it to this thread. A plain GetResult would deadlock the turn.
-    /// </summary>
-    private static T PumpOnRevitThread<T>(Task<T> task)
-    {
-        if (!task.IsCompleted)
-        {
-            var dispatcher = Dispatcher.CurrentDispatcher;
-            var frame = new DispatcherFrame();
-            task.ContinueWith(
-                _ => dispatcher.BeginInvoke(new Action(() => frame.Continue = false)),
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default);
-            Dispatcher.PushFrame(frame);
-        }
-
-        return task.GetAwaiter().GetResult();
-    }
-
-    /// <summary>
-    /// The production system prompt asks for a "Harness feedback" block in its own
-    /// wording; the verdictors look for the four starter-block markers. When the
-    /// block is present but the markers are not, bridge the two formats so the
-    /// criterion keeps meaning "feedback was given".
-    /// </summary>
-    private static string? EvaluationAnswer(string? answer)
-    {
-        if (string.IsNullOrWhiteSpace(answer))
-            return answer;
-
-        var text = answer!;
-        var markers = new[] { "удобн", "неудобн", "невозможно", "не хватило" };
-        if (markers.Count(marker => text.IndexOf(marker, StringComparison.OrdinalIgnoreCase) >= 0) >= 2)
-            return text;
-
-        const string block = "harness feedback";
-        if (text.IndexOf(block, StringComparison.OrdinalIgnoreCase) < 0)
-            return text;
-
-        return text + "\n\nОбратная связь по харнессу — блок Harness feedback выше: " +
-                       "что было удобно; что было неудобно или потребовало лишних шагов; " +
-                       "что оказалось невозможно и почему; каких возможностей не хватило.";
-    }
 }
