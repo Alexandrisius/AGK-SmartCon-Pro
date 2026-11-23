@@ -53,7 +53,12 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "and NEVER rolls the batch back. titleBlockParameters writes instance parameters " +
             "of the new sheet's title block — e.g. a size multiplicity switching the paper " +
             "format (find editable names via get_titleblock_options); numeric values for " +
-            "double parameters are written as raw internal values. Guards per item: " +
+            "double parameters are written as raw internal values. Parameters NOT passed " +
+            "explicitly are inherited from the album: every editable non-built-in instance " +
+            "parameter that holds the same value on ALL existing sheets of the same title " +
+            "block type is copied to the new sheet (status \"inherited\" in the result), so " +
+            "the size multiplicity keeps the album value instead of resetting to 0. " +
+            "Guards per item: " +
             "view_not_placeable, view_already_placed, sheet_number_taken, " +
             "titleblock_not_found, titleblock_parameter_not_found (a failed parameter is a " +
             "warning — the sheet stays); for explication also schedule_not_found, " +
@@ -135,6 +140,10 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         var rows = new List<object>(items.Count);
         var planned = new List<PlannedItem>();
 
+        // Album inheritance (C6-11): one scan per title block type, shared by
+        // every item of the batch.
+        var inheritedCache = new Dictionary<long, Dictionary<string, string>?>();
+
         foreach (var item in items)
         {
             ct.ThrowIfCancellationRequested();
@@ -142,7 +151,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             var report = new WriteItemReport { Id = item.ViewId };
             var plannedItem = ValidateItem(
                 doc, outcome, item, report, viewportOwners, defaultTitleBlockId,
-                numberPrefix, ref nextValue, numberDigits, usedNumbers, usedScheduleNames);
+                numberPrefix, ref nextValue, numberDigits, usedNumbers, usedScheduleNames,
+                inheritedCache);
             if (plannedItem is null)
             {
                 rows.Add(new
@@ -194,7 +204,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         ref int nextValue,
         int numberDigits,
         HashSet<string> usedNumbers,
-        HashSet<string> usedScheduleNames)
+        HashSet<string> usedScheduleNames,
+        Dictionary<long, Dictionary<string, string>?> inheritedCache)
     {
         if (doc.GetElement(ElementIdCompat.Create(item.ViewId)) is not View view)
         {
@@ -317,6 +328,15 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         }
 
         usedNumbers.Add(number);
+
+        // C6-11: without an explicit value the album's common title block
+        // parameters (e.g. the size multiplicity) are inherited, not left 0.
+        if (!inheritedCache.TryGetValue(titleBlockId.GetValue(), out var inherited))
+        {
+            inherited = InheritedTitleBlockValues(doc, titleBlockId);
+            inheritedCache.Add(titleBlockId.GetValue(), inherited);
+        }
+
         var explication = ValidateExplication(
             doc, outcome, item, report, number, usedScheduleNames);
         if (explication is null && item.Explication is not null)
@@ -331,6 +351,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             TitleBlockTypeId = titleBlockId,
             MarginMm = marginMm,
             TitleBlockParameters = item.TitleBlockParameters,
+            InheritedTitleBlockValues = inherited,
             Explication = explication
         };
     }
@@ -356,7 +377,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
 
             var itemWarnings = new List<string>();
             var parameterResults = ApplyTitleBlockParameters(
-                doc, sheet, entry.TitleBlockParameters, itemWarnings);
+                doc, sheet, entry.TitleBlockParameters,
+                entry.InheritedTitleBlockValues, itemWarnings);
             itemWarnings.ForEach(outcome.Warnings.Add);
 
             var placement = PlaceViewportTopLeft(doc, sheet, entry);
@@ -575,5 +597,8 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         public double MarginMm { get; init; }
 
         public Dictionary<string, JsonElement>? TitleBlockParameters { get; init; }
+
+        /// <summary>Album-inherited title block values (C6-11), null = no donor sheet.</summary>
+        public Dictionary<string, string>? InheritedTitleBlockValues { get; init; }
     }
 }

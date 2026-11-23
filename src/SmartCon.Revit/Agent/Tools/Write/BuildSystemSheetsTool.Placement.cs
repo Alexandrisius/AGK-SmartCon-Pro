@@ -211,15 +211,21 @@ public sealed partial class BuildSystemSheetsTool
     /// Writes titleBlockParameters to the title block INSTANCE of the new
     /// sheet. A missing or rejected parameter is a warning (titleblock_
     /// parameter_not_found / the setter reason) — the sheet itself stays.
+    /// After the explicit values, the album-inherited ones (C6-11) are written
+    /// for every parameter the item did not set explicitly: the common values
+    /// of the existing sheets of the same title block type, so a sheet built
+    /// without titleBlockParameters keeps the album's size multiplicity
+    /// instead of resetting it to 0.
     /// </summary>
     private static List<object> ApplyTitleBlockParameters(
         Document doc,
         ViewSheet sheet,
         Dictionary<string, JsonElement>? parameters,
+        Dictionary<string, string>? inherited,
         List<string> warnings)
     {
         var results = new List<object>();
-        if (parameters is null || parameters.Count == 0)
+        if ((parameters is null || parameters.Count == 0) && inherited is not { Count: > 0 })
             return results;
 
         var instance = FindTitleBlockInstance(doc, sheet);
@@ -229,20 +235,23 @@ public sealed partial class BuildSystemSheetsTool
                 "Sheet " + sheet.SheetNumber + " has no title block instance; " +
                 "titleBlockParameters were not applied. [Action: check the title block " +
                 "family of the sheet type]");
-            foreach (var name in parameters.Keys)
+            if (parameters is not null)
             {
-                results.Add(new
+                foreach (var name in parameters.Keys)
                 {
-                    name,
-                    status = "failed",
-                    errorCode = "titleblock_not_found"
-                });
+                    results.Add(new
+                    {
+                        name,
+                        status = "failed",
+                        errorCode = "titleblock_not_found"
+                    });
+                }
             }
 
             return results;
         }
 
-        foreach (var pair in parameters)
+        foreach (var pair in parameters ?? new Dictionary<string, JsonElement>())
         {
             var parameter = FindInstanceParameter(instance, pair.Key);
             if (parameter is null)
@@ -276,6 +285,27 @@ public sealed partial class BuildSystemSheetsTool
                 "Sheet " + sheet.SheetNumber + ": title block parameter '" + pair.Key +
                 "' was not set (" + reason + "). [Action: pass a value matching the " +
                 "parameter storage type " + parameter.StorageType + "]");
+        }
+
+        foreach (var pair in inherited ?? new Dictionary<string, string>())
+        {
+            if (parameters is not null && parameters.ContainsKey(pair.Key))
+                continue;
+
+            var parameter = FindInstanceParameter(instance, pair.Key);
+            if (parameter is null)
+                continue;
+
+            var unit = parameter.StorageType == StorageType.Double
+                ? "raw"
+                : null;
+            if (AgentParameterWriteHelper.TrySet(parameter, pair.Value, unit, out _, out _))
+                results.Add(new
+                {
+                    name = pair.Key,
+                    status = "inherited",
+                    value = pair.Value
+                });
         }
 
         return results;
