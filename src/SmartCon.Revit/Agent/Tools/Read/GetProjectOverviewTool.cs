@@ -86,6 +86,8 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
 
             categories.Add(new CategoryCard
             {
+                // ORCH-8: the id was never set — every category reported 0.
+                CategoryId = id,
                 Name = AgentElementCardFactory.GetCategoryName(category) ?? category.Name,
                 DisplayName = category.Name,
                 ElementCount = count,

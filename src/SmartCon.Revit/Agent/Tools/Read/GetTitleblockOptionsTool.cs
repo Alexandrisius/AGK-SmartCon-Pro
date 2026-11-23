@@ -29,7 +29,13 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             "size multiplicity that switches the paper format live here. Pass sheetId of an " +
             "existing sheet to also read the editable INSTANCE parameters of that sheet's " +
             "title block (the values build_system_sheets writes through titleBlockParameters). " +
-            "Pass titleBlockTypeId to inspect one type. Also returns existingSheets[] with " +
+            "Pass titleBlockTypeId to inspect one type. sizeMap[] answers 'which paper size " +
+            "does Кратность N give': for every editable instance parameter whose values " +
+            "correlate with DIFFERENT sheet sizes on the existing sheets of the type, the " +
+            "observed value → widthMm/heightMm pairs (derived from the album; a value never " +
+            "used in the album is unknown — test it on a draft sheet with " +
+            "build_system_sheets + titleBlockParameters and undo_last, or read the family). " +
+            "Also returns existingSheets[] with " +
             "sizes and nextNumberHint — the number that continues the album (build_system_sheets " +
             "auto-numbers the same way). When the project has no title block type the tool " +
             "returns title_block_missing.",
@@ -102,7 +108,8 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
                 FamilyName = symbol.FamilyName,
                 TypeName = symbol.Name,
                 SheetCount = CountSheetsOfType(instancesByType, typeId),
-                TypeParameters = DescribeEditableParameters(symbol, sampleInstance)
+                TypeParameters = DescribeEditableParameters(symbol, sampleInstance),
+                SizeMap = BuildSizeMap(doc, instancesByType, typeId)
             };
 
             if (sourceInstance is not null
@@ -178,6 +185,114 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
         }
 
         return instances;
+    }
+
+    private const int MaxSizeMapParameters = 6;
+    private const int MaxSizeMapValues = 8;
+
+    /// <summary>
+    /// C6-08: the multiplicity → paper size table derived from the album. For
+    /// every editable non-built-in instance parameter of the title block type
+    /// whose distinct values map to DIFFERENT observed sheet sizes, the value →
+    /// size pairs. A value the album never used is honestly absent: the family
+    /// formula decides it, not the tool.
+    /// </summary>
+    private static List<object> BuildSizeMap(
+        Document doc,
+        List<FamilyInstance> instances,
+        long typeId)
+    {
+        // parameter name -> (value -> (sheetCount, first observed size))
+        var observed = new Dictionary<string, Dictionary<string, (int Count, string SizeKey)>>(
+            StringComparer.Ordinal);
+        var sizes = new Dictionary<string, (double Width, double Height)>(StringComparer.Ordinal);
+
+        foreach (var instance in instances)
+        {
+            if (instance.GetTypeId().GetValue() != typeId)
+                continue;
+
+            if (doc.GetElement(instance.OwnerViewId) is not ViewSheet sheet)
+                continue;
+
+            string sizeKey;
+            try
+            {
+                var outline = sheet.Outline;
+                var widthMm = AgentUnitsFormat.ToMillimeters(outline.Max.U - outline.Min.U);
+                var heightMm = AgentUnitsFormat.ToMillimeters(outline.Max.V - outline.Min.V);
+                sizeKey = widthMm.ToString("0.#", CultureInfo.InvariantCulture) + "x" +
+                          heightMm.ToString("0.#", CultureInfo.InvariantCulture);
+                sizes[sizeKey] = (widthMm, heightMm);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            foreach (Parameter parameter in instance.Parameters)
+            {
+                var name = parameter.Definition?.Name;
+                if (string.IsNullOrEmpty(name) || parameter.IsReadOnly)
+                    continue;
+                if (parameter.Definition is InternalDefinition
+                        { BuiltInParameter: not BuiltInParameter.INVALID })
+                    continue;
+                if (parameter.StorageType == StorageType.ElementId)
+                    continue;
+
+                var value = Describe(parameter);
+                if (string.IsNullOrEmpty(value))
+                    continue;
+
+                if (!observed.TryGetValue(name!, out var byValue))
+                {
+                    byValue = new Dictionary<string, (int, string)>(StringComparer.Ordinal);
+                    observed.Add(name!, byValue);
+                }
+
+                byValue.TryGetValue(value!, out var seen);
+                byValue[value!] = (seen.Count + 1, seen.SizeKey ?? sizeKey);
+            }
+        }
+
+        var result = new List<object>();
+        foreach (var pair in observed)
+        {
+            // Only size-driving parameters: the distinct values must have
+            // produced at least two distinct widths in this album.
+            var distinctWidths = pair.Value.Values
+                .Select(entry => sizes[entry.SizeKey].Width)
+                .Distinct()
+                .ToList();
+            if (distinctWidths.Count < 2)
+                continue;
+
+            var valueRows = pair.Value
+                .OrderBy(entry => entry.Key, StringComparer.Ordinal)
+                .Take(MaxSizeMapValues)
+                .Select(entry => new
+                {
+                    value = entry.Key,
+                    sheetCount = entry.Value.Count,
+                    widthMm = Math.Round(sizes[entry.Value.SizeKey].Width, 1),
+                    heightMm = Math.Round(sizes[entry.Value.SizeKey].Height, 1)
+                })
+                .ToList();
+
+            result.Add(new
+            {
+                parameter = pair.Key,
+                values = valueRows,
+                note = "Sizes observed on the existing sheets of this album; values not " +
+                       "listed were never used here — test them on a draft sheet."
+            });
+
+            if (result.Count >= MaxSizeMapParameters)
+                break;
+        }
+
+        return result;
     }
 
     private static int CountSheetsOfType(
@@ -278,6 +393,8 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
 
         public List<object>? InstanceParameters { get; set; }
 
+        public List<object> SizeMap { get; set; } = new();
+
         public object ToPayload() => new
         {
             titleBlockTypeId = TitleBlockTypeId,
@@ -285,7 +402,8 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             typeName = TypeName,
             sheetCount = SheetCount,
             typeParameters = TypeParameters,
-            instanceParameters = InstanceParameters
+            instanceParameters = InstanceParameters,
+            sizeMap = SizeMap
         };
     }
 }
