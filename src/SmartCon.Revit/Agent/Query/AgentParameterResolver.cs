@@ -183,15 +183,17 @@ internal static class AgentParameterResolver
 
     /// <summary>
     /// Type-bound shared/built-in parameters expose a NON-NULL but valueless
-    /// view on instances (live cases 5/8 #468/#469). When the instance view
-    /// carries no value and the SAME parameter on the element's type has one,
-    /// return the type-side parameter: reads see the real value, writes land
-    /// where the parameter actually lives. Genuinely empty both sides keep the
+    /// view on instances (live cases 5/8 #468/#469); a string view may also be
+    /// HasValue with an EMPTY string while the value lives on the type (live
+    /// case 5, C5-05: Assembly Code on a wall). When the instance view carries
+    /// no value and the SAME parameter on the element's type has one, return
+    /// the type-side parameter: reads see the real value, writes land where
+    /// the parameter actually lives. Genuinely empty both sides keep the
     /// instance view (honest holes stay holes).
     /// </summary>
     private static Parameter? LiftValuelessToType(Document doc, Element element, Parameter candidate)
     {
-        if (candidate.HasValue)
+        if (!CarriesNoValue(candidate))
             return candidate;
 
         var typeId = element.GetTypeId();
@@ -215,7 +217,28 @@ internal static class AgentParameterResolver
             return candidate;
         }
 
-        return onType is not null && onType.HasValue ? onType : candidate;
+        return onType is not null && !CarriesNoValue(onType) ? onType : candidate;
+    }
+
+    /// <summary>
+    /// True when the parameter has no usable value: no value at all, or a blank
+    /// string. Such an instance view of a type-bound parameter must not shadow
+    /// the real value stored on the type.
+    /// </summary>
+    private static bool CarriesNoValue(Parameter parameter)
+    {
+        if (!parameter.HasValue)
+            return true;
+
+        try
+        {
+            return parameter.StorageType == StorageType.String
+                   && string.IsNullOrWhiteSpace(parameter.AsString());
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static Parameter? FindOnType(

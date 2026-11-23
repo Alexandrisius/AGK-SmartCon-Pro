@@ -2,6 +2,7 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Revit.Agent.Tools;
 
 namespace SmartCon.Revit.Agent.Query;
 
@@ -28,7 +29,7 @@ internal sealed class AgentElementQuery
         CancellationToken ct)
     {
         var unknownCategories = new List<string>();
-        var categoryIds = ResolveCategories(spec.Categories, unknownCategories);
+        var categoryIds = AgentCategoryResolver.Resolve(_doc, spec.Categories, unknownCategories);
         if (unknownCategories.Count > 0)
             return new AgentQueryResult(Array.Empty<Element>(), 0, unknownCategories);
 
@@ -49,7 +50,7 @@ internal sealed class AgentElementQuery
         collector = collector.WhereElementIsNotElementType();
 
         if (categoryIds.Count > 0)
-            collector = collector.WherePasses(new ElementMulticategoryFilter(categoryIds));
+            collector = collector.WherePasses(new ElementMulticategoryFilter(categoryIds.ToList()));
 
         var conditions = spec.Conditions
             .Select((condition, index) => new AgentConditionTracker(index, condition))
@@ -95,7 +96,13 @@ internal sealed class AgentElementQuery
             }
         }
 
-        return new AgentQueryResult(kept, total, unknownCategories, candidates, conditions);
+        return new AgentQueryResult(
+            kept,
+            total,
+            unknownCategories,
+            candidates,
+            conditions,
+            firstCandidateId: firstCandidate?.Id.GetValue());
     }
 
     private static bool MatchesLevel(Element element, IReadOnlyList<long> levelIds)
@@ -222,41 +229,6 @@ internal sealed class AgentElementQuery
         target = AgentConditionTarget.OfParameter(parameter);
         return parameter is not null;
     }
-
-    private List<ElementId> ResolveCategories(
-        IReadOnlyList<string> names,
-        List<string> unknown)
-    {
-        var ids = new List<ElementId>(names.Count);
-        foreach (var name in names)
-        {
-            if (Enum.TryParse<BuiltInCategory>(name, ignoreCase: true, out var builtIn))
-            {
-                ids.Add(new ElementId(builtIn));
-                continue;
-            }
-
-            Category? match = null;
-            foreach (Category category in _doc.Settings.Categories)
-            {
-                if (string.Equals(category.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    match = category;
-                    break;
-                }
-            }
-
-            if (match is null)
-            {
-                unknown.Add(name);
-                continue;
-            }
-
-            ids.Add(match.Id);
-        }
-
-        return ids;
-    }
 }
 
 internal sealed class AgentQueryResult
@@ -266,13 +238,15 @@ internal sealed class AgentQueryResult
         int total,
         IReadOnlyList<string> unknownCategories,
         int candidates = 0,
-        IReadOnlyList<AgentConditionTracker>? conditions = null)
+        IReadOnlyList<AgentConditionTracker>? conditions = null,
+        long? firstCandidateId = null)
     {
         Elements = elements;
         Total = total;
         UnknownCategories = unknownCategories;
         Candidates = candidates;
         Conditions = conditions ?? Array.Empty<AgentConditionTracker>();
+        FirstCandidateId = firstCandidateId;
     }
 
     internal IReadOnlyList<Element> Elements { get; }
@@ -285,6 +259,12 @@ internal sealed class AgentQueryResult
     internal int Candidates { get; }
 
     internal IReadOnlyList<AgentConditionTracker> Conditions { get; }
+
+    /// <summary>
+    /// Id (I-05: value only) of the first scanned candidate, for post-query
+    /// diagnostics that need a representative element.
+    /// </summary>
+    internal long? FirstCandidateId { get; }
 
     /// <summary>
     /// The typed failure for the first condition whose parameter exists on no

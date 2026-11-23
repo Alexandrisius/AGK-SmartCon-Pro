@@ -237,6 +237,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
         }
 
         var topN = Math.Max(1, Math.Min(AgentJson.GetInt(args, "topN", DefaultTopGroups), MaxGroups));
+        var typeBound = AgentQueryTypeHint.Describe(doc, spec, result);
         var payload = new
         {
             total = result.Total,
@@ -248,6 +249,9 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             zeroCountIncluded = includeZeroCount,
             zeroCountUnknown = zeroCountUnknown.Count > 0 ? zeroCountUnknown : null,
             groupsTruncated = grouped.Count > topN,
+            typeBoundParameter = typeBound is null
+                ? null
+                : new { parameter = typeBound.Parameter, types = typeBound.TypeCount },
             groups = grouped.Take(topN).ToList()
         };
 
@@ -256,7 +260,8 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             "Summarized " + result.Total + " element(s) into " + grouped.Count + " group(s)." +
             (grouped.Count > topN
                 ? " Showing top " + topN + " of " + grouped.Count + " groups."
-                : string.Empty));
+                : string.Empty) +
+            (typeBound is null ? string.Empty : " " + typeBound.Message));
     }
 
     private static string ReadGroupKey(
