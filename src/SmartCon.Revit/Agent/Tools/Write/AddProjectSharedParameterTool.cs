@@ -124,7 +124,9 @@ public sealed class AddProjectSharedParameterTool : AgentWriteToolBase
         {
             Fail(outcome, "shared_parameter_file_missing",
                 "The active shared parameter file could not be opened: " + ex.Message,
-                "[Action: configure a shared parameter file in Manage > Shared Parameters]");
+                "[Action: call set_shared_parameter_file(path=<absolute path of the .txt file>, " +
+                "dryRun=true) to attach an existing file - createIfMissing=true creates a new " +
+                "empty file - then retry; in the Revit UI: Manage > Shared Parameters]");
             return;
         }
 
@@ -132,7 +134,10 @@ public sealed class AddProjectSharedParameterTool : AgentWriteToolBase
         {
             Fail(outcome, "shared_parameter_file_missing",
                 "No active shared parameter file is configured.",
-                "[Action: Manage > Shared Parameters > Create/Browse, then retry]");
+                "[Action: call set_shared_parameter_file(path=<absolute .txt path>, " +
+                "createIfMissing=true, dryRun=true) to create a new shared parameter file or " +
+                "attach the existing one, then retry; in the Revit UI: Manage > Shared " +
+                "Parameters > Create/Browse]");
             return;
         }
 

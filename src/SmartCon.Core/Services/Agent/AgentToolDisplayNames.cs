@@ -141,7 +141,10 @@ public static class AgentToolDisplayNames
             ["retry_failed_items"] = "Повторить неудачные элементы",
             ["list_classification_entries"] = "Записи классификатора",
             ["load_classification_table"] = "Загрузить таблицу классификации",
-            ["classify_types"] = "Подобрать коды классификатора"
+            ["classify_types"] = "Подобрать коды классификатора",
+            ["get_document_status"] = "Статус документа",
+            ["get_element_bounds"] = "Габариты элемента",
+            ["set_shared_parameter_file"] = "Подключить файл общих параметров"
         };
 
     private static readonly Dictionary<string, string> En =
@@ -278,7 +281,10 @@ public static class AgentToolDisplayNames
             ["retry_failed_items"] = "Retry failed items",
             ["list_classification_entries"] = "Classification entries",
             ["load_classification_table"] = "Load classification table",
-            ["classify_types"] = "Suggest classification codes"
+            ["classify_types"] = "Suggest classification codes",
+            ["get_document_status"] = "Document status",
+            ["get_element_bounds"] = "Element bounds",
+            ["set_shared_parameter_file"] = "Set shared parameter file"
         };
 
     public static string Get(string? toolName)

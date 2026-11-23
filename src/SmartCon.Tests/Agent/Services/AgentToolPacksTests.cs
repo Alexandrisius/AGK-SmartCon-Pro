@@ -61,12 +61,12 @@ public sealed class AgentToolPacksTests
             {
                 "query_elements", "summarize_elements", "get_element_details", "delete_elements",
                 "group_families_by_shared_parameters", "audit_fill_rate",
-                "list_type_parameter_candidates"
+                "list_type_parameter_candidates", "get_element_bounds"
             },
             ["params"] = new[]
             {
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
-                "add_project_shared_parameter"
+                "add_project_shared_parameter", "set_shared_parameter_file"
             },
             ["changes"] = new[]
             {
@@ -123,7 +123,7 @@ public sealed class AgentToolPacksTests
                 "get_element_relations", "trace_system_chain", "get_room_contents"
             },            ["documents"] = new[]
             {
-                "open_model_background", "close_model", "list_known_models"
+                "open_model_background", "close_model", "list_known_models", "get_document_status"
             },
         };
 
@@ -150,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(132, placements.Length);
+        Assert.Equal(135, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

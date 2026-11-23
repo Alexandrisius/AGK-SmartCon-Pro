@@ -98,6 +98,9 @@ public static partial class AgentToolPackSkills
   строковые операторы; числовой оператор с ними → `invalid_query`.
 - `summarize_elements` — сводка: `groupBy: category|level|type|family|parameter`, `sumParameter`, `topN`, `includeZeroCount`; группы типов несут `family`, `typeId`, `category`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
+- `get_element_bounds` — координаты и габариты ≤50 элементов в мм (координаты модели): `location`
+  (точка вставки либо start/end/mid/lengthMm кривой размещения), `boundingBox` (min/max/size/center);
+  `viewId` — боксы в контексте вида. Типы — `applicable=false` (`element_type`).
 - `group_families_by_shared_parameters` — группы семейств по наборам GUID общих параметров
   (`scope: type|instance|both`) + отдельный `unplacedFamilies`: инвентаризация, из каких
   ФОПов собрана модель, перед массовой миграцией параметров.
@@ -151,6 +154,10 @@ public static partial class AgentToolPackSkills
   единицы, `displayValue` — проектные.
 - id, полученные из `query_elements`, годятся для следующего вызова в этой же сессии; для
   сохранения между сессиями — `uniqueId`.
+- `get_element_bounds`: все координаты в мм (`units:""mm""`), как originMm коннекторов и отметки
+  `list_levels`. Бокс выровнен по осям модели и включает невидимую геометрию семейства (flip
+  controls): для зазоров между элементами сравнивайте `location` (концы кривых, точки вставки),
+  а не только боксы; точный зазор системы даёт `trace_system_chain` (пак relations).
 - `delete_elements`: сначала `dryRun=true` (вернёт `names[]`), apply — с `confirmNames` =
   `names[]` СВЕЖЕГО dry-run. Отказ `confirm_names_required`/`confirm_names_mismatch` =
   модель изменилась: повтори dry-run и передай его свежий names[]. Виды, листы и
@@ -165,11 +172,14 @@ public static partial class AgentToolPackSkills
    по виновникам точечное `set_parameters`/джоба для безопасно-выводимого.
 6. «Из каких ФОПов собрана модель»: `group_families_by_shared_parameters(scope:""both"")` →
    группы по сигнатурам GUID + `unplacedFamilies` отдельным списком.
+7. «Где стоят элементы / как далеко друг от друга»: `query_elements` (id) →
+   `get_element_bounds(elementIds=[...])` → точки вставки и концы кривых в мм.
 
 ### Что нельзя
 - Фильтровать «в памяти» огромные выборки вместо условий запроса.
 - Считать null от `get_Parameter` доказательством отсутствия параметра: проверьте тип.
 - Использовать `AsValueString` для вычислений и записи.
+- Искать элементы по координатам через `get_element_bounds`: тул читает координаты уже известных id.
 ";
 
     private const string Params = @"## Пак params: запись и перенос значений
@@ -179,6 +189,8 @@ public static partial class AgentToolPackSkills
 - `remap_parameter_values` — перенос: `mapping[{source{name,guid,scope}, target{name,guid,scope}}]` ≤20, `filter{categories,levelIds,typeIds,limit}` ≤500.
 - `list_project_parameters` — проектные биндинги: имя, isShared, GUID, bindingType, категории.
 - `add_project_shared_parameter` — привязка определения из ФОП к категориям.
+- `set_shared_parameter_file` — подключить существующий ФОП по абсолютному `path` или создать новый
+  пустой файл (`createIfMissing:true`) и сделать его активным; `dryRun` по умолчанию.
 
 ### Кухня Revit
 - У параметра четыре `StorageType`: String, Double, Integer, ElementId. `Parameter.Set` имеет типизированные перегрузки, и перегрузка не по тому типу просто не запишет значение.
@@ -190,6 +202,7 @@ public static partial class AgentToolPackSkills
 - `LookupParameter(name)` берёт первый параметр с таким именем: shared/проектный может перекрыть built-in. Для built-in — `get_Parameter(BuiltInParameter)`, для shared — по `guid`.
 - Запись возможна только внутри транзакции; в SmartCon — только через `ITransactionService`.
 - `Set` вернул true — ещё не доказательство: читайте значение после коммита (наши тулы делают read-back).
+- Файл общих параметров (ФОП) — настройка **пользователя** Revit (Управление > Общие параметры), а не документа; по умолчанию его нет. Без ФОП `list_shared_parameters` и `add_project_shared_parameter(createDefinition:true)` отвечают `shared_parameter_file_missing`.
 
 ### Инварианты
 - `dryRun=true` по умолчанию. `atomic=true` откатывает весь пакет при первом отказе.
@@ -206,17 +219,24 @@ public static partial class AgentToolPackSkills
   свой следующий шаг.
 - В `remap_parameter_values` ошибки резолва **source/target** попадают в `failed[]` (если не разрешилась хотя бы одна из сторон, элемент не переносится); ошибки конверсии — в `warnings[]`. Если у всех элементов не разрешилась пара, ответ `success=false` с `parameter_not_found`, а не «нет изменений».
 - Для переноса значений между параметрами разной размерности сверяйте единицы: `remap_parameter_values` копирует значения, а не конвертирует смысл.
+- `set_shared_parameter_file`: `dryRun=true` ничего не меняет; `dryRun=false` — после подтверждения.
+  Существующий файл не перезаписывается; новый создаётся только по `createIfMissing:true` и только
+  по пути, который назвал пользователь. `undo_last` настройку не откатывает — прежний файл
+  возвращается повторным вызовом с `revertPath` из ответа.
 
 ### Рецепты
 1. Проставить «Этаж» 300 стенам: `query_elements` → `set_parameters(items, scope:""instance"")` → read-back по 2–3 элементам.
 2. Изменить типовой параметр у типа трубы: `set_parameters([{elementId:typeId, parameter:""Диаметр"", value:""100"", unit:""mm"", scope:""type""}])`.
 3. Перенести «Наименование» в «Марку»: `remap_parameter_values(mapping:[{source:{name:""Наименование""}, target:{name:""Марка""}}])`.
 4. Новый общий параметр: `list_shared_parameters` → `add_project_shared_parameter` → `list_project_parameters`.
+   Ответ `shared_parameter_file_missing` — ФОП не подключён: спросите у пользователя путь и вызовите
+   `set_shared_parameter_file(path, dryRun:true)` → после подтверждения `dryRun:false` → повторите шаг.
 
 ### Что нельзя
 - Писать числовое значение без единиц и удивляться масштабу.
 - Считать `Set == true` доказательством записи без read-back.
 - Писать типовой параметр по экземплярам в цикле.
+- Подключать или создавать ФОП по пути, которого пользователь не называл.
 ";
 
     private const string Changes = @"## Пак changes: наборы изменений, откат, сохранение, аудит

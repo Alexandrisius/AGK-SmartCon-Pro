@@ -65,6 +65,13 @@ public static class AgentToolCatalog
                 "известные модели", "реестр моделей", "в какой модели", "где делали",
                 "known models", "список моделей"
             }),
+            ["get_document_status"] = new("Read", false, new[]
+            {
+                "статус документа", "только для чтения", "read-only", "можно ли писать",
+                "можно ли изменять", "редактор семейства", "открытые документы",
+                "совместный доступ", "document status", "writable", "permission denied",
+                "документ заблокирован"
+            }),
             ["get_titleblock_options"] = new("Read", false, new[]
             {
                 "титульный блок", "основная надпись", "штамп", "формат листа", "кратность размера",
@@ -186,6 +193,12 @@ public static class AgentToolCatalog
                 "детали", "параметры", "элемент", "details", "parameters", "element",
                 "прочитать", "read", "тип", "семейство", "typeId", "familyId", "essence"
             }),
+            ["get_element_bounds"] = new("Read", false, new[]
+            {
+                "координаты", "координаты элемента", "точка вставки", "габариты",
+                "габаритный бокс", "bounding box", "bbox", "позиция элемента", "где стоит",
+                "расстояние", "element bounds", "центр элемента", "размеры элемента"
+            }),
             ["summarize_elements"] = new("Read", false, new[]
             {
                 "количество", "сколько", "сумма", "длина", "сводка", "группы",
@@ -297,6 +310,12 @@ public static class AgentToolCatalog
                 "создать общий параметр в проекте", "добавить проектный параметр",
                 "привязать общий параметр", "забиндить параметр на категорию",
                 "add project shared parameter", "bind shared parameter", "новый параметр проекта"
+            }),
+            ["set_shared_parameter_file"] = new("Write", false, new[]
+            {
+                "файл общих параметров", "подключить ФОП", "создать ФОП", "настроить ФОП",
+                "общие параметры", "ФОП", "нет ФОП", "путь к ФОП", "shared parameter file",
+                "set shared parameter file", "shared_parameter_file_missing"
             }),
             ["undo_last"] = new("Write", false, new[]
             {

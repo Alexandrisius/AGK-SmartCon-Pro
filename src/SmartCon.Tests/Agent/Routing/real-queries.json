@@ -3111,6 +3111,78 @@
         "classify_types"
       ],
       "kind": "read"
+    },
+    {
+      "id": "rN1a",
+      "query": "Подключи файл общих параметров D:\\Проект\\ФОП\\shared.txt к проекту",
+      "expectedTools": [
+        "set_shared_parameter_file"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rN1b",
+      "query": "Создай новый файл общих параметров по пути C:\\Params\\shared.txt и сделай его активным",
+      "expectedTools": [
+        "set_shared_parameter_file"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rN1c",
+      "query": "add_project_shared_parameter ответил shared_parameter_file_missing — настрой ФОП",
+      "expectedTools": [
+        "set_shared_parameter_file"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rN2a",
+      "query": "Почему правка не проходит — можно ли сейчас писать в проект или он только для чтения?",
+      "expectedTools": [
+        "get_document_status"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rN2b",
+      "query": "Открыт ли редактор семейства и какие документы сейчас открыты в Revit?",
+      "expectedTools": [
+        "get_document_status"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rN2c",
+      "query": "Статус документа: есть несохранённые изменения и кто владеет активным рабочим набором?",
+      "expectedTools": [
+        "get_document_status"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rN3a",
+      "query": "Покажи точку вставки и габаритный бокс элементов 123456 и 123457 в мм",
+      "expectedTools": [
+        "get_element_bounds"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rN3b",
+      "query": "Где начало и конец трубы 456789 и какова её длина размещения?",
+      "expectedTools": [
+        "get_element_bounds"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rN3c",
+      "query": "Насколько далеко друг от друга стоят эти два элемента и в какой точке разрыв?",
+      "expectedTools": [
+        "get_element_bounds"
+      ],
+      "kind": "read"
     }
   ]
 }

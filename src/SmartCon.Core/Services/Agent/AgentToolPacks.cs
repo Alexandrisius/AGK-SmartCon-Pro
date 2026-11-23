@@ -86,21 +86,23 @@ public static class AgentToolPacks
         new()
         {
             Name = "elements",
-            Description = "Поиск, сводка, связи, аудит и удаление элементов модели.",
+            Description = "Поиск, сводка, связи, координаты и габариты, аудит и удаление элементов модели.",
             Tools = new[]
             {
-                "query_elements", "summarize_elements", "get_element_details", "delete_elements",
-                "group_families_by_shared_parameters", "audit_fill_rate", "list_type_parameter_candidates"
+                "query_elements", "summarize_elements", "get_element_details", "get_element_bounds",
+                "delete_elements", "group_families_by_shared_parameters", "audit_fill_rate",
+                "list_type_parameter_candidates"
             }
         },
         new()
         {
             Name = "params",
-            Description = "Запись и перенос значений параметров; проектные общие параметры.",
+            Description =
+                "Запись и перенос значений параметров; проектные общие параметры; подключение и создание файла общих параметров (ФОП).",
             Tools = new[]
             {
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
-                "add_project_shared_parameter"
+                "add_project_shared_parameter", "set_shared_parameter_file"
             }
         },
         new()
@@ -225,8 +227,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "documents",
-            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей.",
-            Tools = new[] { "open_model_background", "close_model", "list_known_models" }
+            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей; статус документа (можно ли писать, что мешает).",
+            Tools = new[] { "open_model_background", "close_model", "list_known_models", "get_document_status" }
         },
         new()
         {

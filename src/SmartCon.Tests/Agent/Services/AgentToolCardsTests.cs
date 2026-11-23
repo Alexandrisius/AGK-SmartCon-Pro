@@ -139,13 +139,16 @@ public sealed class AgentToolCardsTests
         "list_known_models",
         "list_classification_entries",
         "load_classification_table",
-        "classify_types"
+        "classify_types",
+        "set_shared_parameter_file",
+        "get_document_status",
+        "get_element_bounds"
     };
 
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(132, AgentToolCards.Count);
+        Assert.Equal(135, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)
