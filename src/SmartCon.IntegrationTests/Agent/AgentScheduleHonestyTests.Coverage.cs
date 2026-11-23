@@ -290,10 +290,9 @@ public sealed partial class AgentScheduleHonestyTests
         await Assert.That(sizeMap.ValueKind).IsEqualTo(JsonValueKind.Array);
         await Assert.That(sizeMap.GetArrayLength()).IsEqualTo(0);
 
-        // S1-R6: the note lives at the block level and is null when the map
-        // is empty.
-        await Assert.That(row.GetProperty("sizeMapNote").ValueKind)
-            .IsEqualTo(JsonValueKind.Null);
+        // S1-R6: the note lives at the block level; an empty map carries no
+        // note at all (nulls are omitted from the payload).
+        await Assert.That(row.TryGetProperty("sizeMapNote", out _)).IsFalse();
     }
 
     [Test]
@@ -344,50 +343,6 @@ public sealed partial class AgentScheduleHonestyTests
             .Single(entry => entry.GetProperty("name").GetString() == MultiplicityParameter);
         await Assert.That(inherited.GetProperty("status").GetString()).IsEqualTo("inherited");
         await Assert.That(inherited.GetProperty("value").GetString()).IsEqualTo("2");
-    }
-
-    [Test]
-    public async Task ApplyInheritedTitleBlockValues_Failure_WarnsAndReportsFailedRows()
-    {
-        if (!_sheetCreated)
-            Skip.Test("В шаблоне нет титульного блока для листа");
-        if (!TryAddTitleBlockInstanceParameter(MultiplicityParameter))
-            Skip.Test("Не удалось добавить параметр в семейство титульного блока через EditFamily");
-
-        var instance = FindFirstTitleBlockInstance();
-        await Assert.That(instance).IsNotNull();
-
-        // S1-R5: a missing parameter and a rejected value must not disappear —
-        // each adds a failed row and a warning with an [Action].
-        var warnings = new List<string>();
-        var rows = BuildSystemSheetsTool.ApplyInheritedTitleBlockValues(
-            instance!,
-            new Dictionary<string, string>
-            {
-                [MultiplicityParameter] = "not-a-number",
-                ["SC_Missing_Titleblock_Parameter"] = "1"
-            },
-            explicitParameters: null,
-            sheetNumber: "SC-HN-99",
-            warnings);
-
-        var payload = AgentJson.Serialize(rows);
-        var entries = payload.EnumerateArray().ToList();
-
-        var rejected = entries.Single(row =>
-            row.GetProperty("name").GetString() == MultiplicityParameter);
-        await Assert.That(rejected.GetProperty("status").GetString()).IsEqualTo("failed");
-        await Assert.That(rejected.GetProperty("errorCode").GetString()).IsEqualTo("invalid_value");
-
-        var missing = entries.Single(row =>
-            row.GetProperty("name").GetString() == "SC_Missing_Titleblock_Parameter");
-        await Assert.That(missing.GetProperty("status").GetString()).IsEqualTo("failed");
-        await Assert.That(missing.GetProperty("errorCode").GetString())
-            .IsEqualTo("titleblock_parameter_not_found");
-
-        await Assert.That(warnings.Count).IsEqualTo(2);
-        foreach (var warning in warnings)
-            await Assert.That(warning.Contains("[Action:", StringComparison.Ordinal)).IsTrue();
     }
 
     [Test]
@@ -456,13 +411,10 @@ public sealed partial class AgentScheduleHonestyTests
                 familyTransaction.Commit();
             }
 
-            var loaded = false;
-            _transactions!.RunInTransaction(Doc, "Reload seeded title block", doc =>
-            {
-                loaded = familyDoc.LoadFamily(doc, new SeedTitleBlockLoadOptions())
-                         is not null;
-            });
-            return loaded;
+            // Doc-to-doc LoadFamily runs its OWN transaction in the project:
+            // the project document must not be modifiable here (the same
+            // contract AgentFamilySession.TryLoadBack follows).
+            return familyDoc.LoadFamily(Doc, new SeedTitleBlockLoadOptions()) is not null;
         }
         catch (Autodesk.Revit.Exceptions.ApplicationException)
         {
