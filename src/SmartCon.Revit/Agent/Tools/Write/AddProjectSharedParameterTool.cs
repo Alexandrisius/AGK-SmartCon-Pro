@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Project;
 
@@ -66,6 +67,25 @@ public sealed class AddProjectSharedParameterTool : AgentWriteToolBase
         if (string.IsNullOrWhiteSpace(name))
         {
             Fail(outcome, "invalid_arguments", "Pass name (the parameter name).");
+            return;
+        }
+
+        // C5-01: a project parameter named like a built-in (e.g. the localized
+        // 'Код по классификатору' = UNIFORMAT_CODE/ASSEMBLY_CODE) binds happily,
+        // but every write meant for the built-in parameter keeps missing it and
+        // the read-back of the new parameter stays empty.
+        var collision = AgentParameterResolver.BuiltInNameCollision(name);
+        if (collision is not null)
+        {
+            Fail(
+                outcome,
+                "parameter_name_taken",
+                "The name '" + name + "' is the display name of the built-in parameter " +
+                collision.Value + ": a project parameter with this name shadows nothing, and " +
+                "writes meant for the built-in parameter keep going to the built-in one.",
+                "Write the built-in parameter instead — set_parameters accepts the name '" +
+                name + "' or the enum id '" + collision.Value +
+                "'. If a separate parameter is really needed, use a different name.");
             return;
         }
 

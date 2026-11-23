@@ -110,6 +110,33 @@ internal static class AgentParameterResolver
         return builtIns;
     }
 
+    /// <summary>
+    /// The built-in parameter a NEW parameter's name collides with (C5-01): the
+    /// enum id itself, an English alias or a localized (RU) display name. Revit
+    /// accepts creating such a parameter, it shadows nothing and read-backs stay
+    /// green while the built-in stays empty, so parameter creation tools refuse
+    /// the name instead. Null when the name is free of built-in collisions.
+    /// </summary>
+    internal static BuiltInParameter? BuiltInNameCollision(string name)
+    {
+        var trimmed = name.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return null;
+
+        if (Enum.TryParse<BuiltInParameter>(trimmed, ignoreCase: true, out var parsed)
+            && Enum.IsDefined(typeof(BuiltInParameter), parsed))
+            return parsed;
+
+        if (BuiltInAliases.TryGetValue(trimmed, out var alias))
+            return alias;
+        if (LocalizedBuiltInFallbacks.TryGetValue(trimmed, out var localized))
+            return localized;
+        if (RenamedBuiltInAliases.TryGetValue(trimmed, out var renamed))
+            return renamed;
+
+        return null;
+    }
+
     internal static Parameter? Find(
         Document doc,
         Element element,
