@@ -19,10 +19,19 @@ module: agent-interfaces
 
 Предполётная проверка тула (валидация входа, risk, confirmation requirement).
 
-## IDynamicToolRanker
+## IAgentFilterQuarantineStore
 
-Ранжирование не-core каталога под конкретный запрос для turn-start набора тулов
-(decision-модель); при отключении/сбое вызывающий откатывается на BM25 по карточкам.
+Карантин удалённых view-фильтров (S.26): полный снимок каждого фильтра
+(правила, категории, применённые виды с overrides — `AgentFilterSnapshot`)
+персистится в agent.db до удаления, потому что удалённый фильтр не
+восстановить `undo_last`. `SaveAsync`/`GetAsync`; `CleanupAsync` удаляет
+снимки старше cutoff и возвращает число удалённых строк (чистка на записи —
+после 90 дней); восстановление — ручная задача по сохранённому JSON.
+Реализация — `SqliteAgentFilterQuarantineStore` (SmartCon.Agent); пишут
+`DeleteFilterTool`/`MergeDuplicateFiltersTool` через `AgentFilterQuarantine`
+(SmartCon.Revit).
+
+**Файл:** `Services/Interfaces/Agent/IAgentFilterQuarantineStore.cs`
 
 ## IAgentLlmClient
 
