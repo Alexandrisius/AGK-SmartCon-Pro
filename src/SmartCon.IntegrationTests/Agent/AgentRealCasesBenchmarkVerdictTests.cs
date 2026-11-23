@@ -93,6 +93,37 @@ public sealed class AgentRealCasesBenchmarkVerdictTests
     }
 
     [Test]
+    public async Task Case13_SummaryQualifierEdgeForms_Accepted()
+    {
+        // Квалификатор привязывается к паре пословно: скобочная приписка с
+        // числом («2 из 12 (заполнено 10)») не перехватывает пару — голая
+        // пара читается как пустые; «не заполнено N из M» называет пустых;
+        // тире после «заполнено» не отвязывает число заполненных.
+        var (total, nameEmpty, markEmpty, unitEmpty) = AgentRealCasesBenchmarkTests.Case13TruthShape();
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(
+                "Наименование: " + nameEmpty + " из " + total +
+                " (заполнено " + (total - nameEmpty) + ")\n" +
+                "Марка: " + markEmpty + " из " + total + "\n" +
+                "Единица измерения: " + unitEmpty + " из " + total + "\n" +
+                "Количество: 0 из " + total))
+            .IsTrue();
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(
+                "Наименование: не заполнено " + nameEmpty + " из " + total + "\n" +
+                "Марка: " + markEmpty + " из " + total + "\n" +
+                "Единица измерения: " + unitEmpty + " из " + total + "\n" +
+                "Количество: 0 из " + total))
+            .IsTrue();
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(
+                "Наименование: заполнено — " + (total - nameEmpty) + " из " + total + "\n" +
+                "Марка: заполнено — " + (total - markEmpty) + " из " + total + "\n" +
+                "Единица измерения: заполнено — " + (total - unitEmpty) + " из " + total + "\n" +
+                "Количество: заполнено — " + total + " из " + total))
+            .IsTrue();
+    }
+
+    [Test]
     public async Task Case13_CulpritsExactSet_DumpOfAllFamiliesRejected()
     {
         // P3-2: дамп ВСЕХ семейств модели как «виновников» не проходит —
@@ -106,12 +137,12 @@ public sealed class AgentRealCasesBenchmarkVerdictTests
             AgentRealCasesBenchmarkTests.Case13TruthCulpritFamilies().Length);
 
         var dump = "Виновники: " + string.Join(", ", families);
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(dump))
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(dump))
             .IsFalse();
 
         var exact = "Виновники: " + string.Join(", ",
             AgentRealCasesBenchmarkTests.Case13TruthCulpritFamilies());
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(exact))
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(exact))
             .IsTrue();
     }
 
@@ -124,7 +155,7 @@ public sealed class AgentRealCasesBenchmarkVerdictTests
             .Select(row => row.Family)
             .Distinct(StringComparer.Ordinal)
             .First(family => !culprits.Contains(family));
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(
                 "Виновники: " + string.Join(", ", culprits) + "; без проблем: " + innocent))
             .IsFalse();
     }
@@ -157,8 +188,9 @@ public sealed class AgentRealCasesBenchmarkVerdictTests
         {
             new("map_family_parameters", "{\"dryRun\":true}", "{}", true, null, 0),
             new("map_family_parameters", "{\"dryRun\":false}", "{}", false, "not_found", 0),
-            new("replace_family_parameter", "{}", "{}", true, null, 0),
-            new("start_job", "{\"action\":\"map_family_parameters\",\"dryRun\":false}", "{}", true, null, 0)
+            new("replace_family_parameter", "{\"dryRun\":true}", "{}", true, null, 0),
+            new("start_job", "{\"action\":\"map_family_parameters\",\"dryRun\":false}", "{}", true, null, 0),
+            new("replace_family_parameter", "{\"dryRun\":false}", "{}", true, null, 0)
         };
         await Assert.That(AgentRealCasesBenchmarkTests.Case7DirectMigrationCalls(calls))
             .IsEqualTo(1);

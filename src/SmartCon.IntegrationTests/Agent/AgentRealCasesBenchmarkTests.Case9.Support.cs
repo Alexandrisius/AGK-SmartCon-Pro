@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.DB.Structure;
@@ -33,32 +34,60 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// «Т11». Границы: не буква/цифра; точка — граница, только если за ней НЕ
     /// цифра (иначе это продолжение цифрового суффикса «Т1.11»).
     /// </summary>
-    internal static bool Case9MentionsName(string text, string name) =>
-        ContainsText(text, name);
+    internal static bool Case9MentionsName(string text, string name)
+    {
+        var canonicalText = Case9CanonicalLookalikes(text);
+        var canonicalName = Case9CanonicalLookalikes(name);
+        var index = canonicalText.IndexOf(canonicalName, StringComparison.OrdinalIgnoreCase);
+        while (index >= 0)
+        {
+            if (Case9IsNameBoundary(canonicalText, index + canonicalName.Length) &&
+                (index == 0 || !char.IsLetterOrDigit(canonicalText[index - 1])))
+                return true;
+
+            index = canonicalText.IndexOf(
+                canonicalName, index + 1, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Латинские омоглифы кириллицы нормализуются до кириллицы: сравнение имён
+    /// систем единообразно для обоих алфавитов (модель может транскрибировать
+    /// «Т11» латиницей «T11» — смысл тот же).
+    /// </summary>
+    private static string Case9CanonicalLookalikes(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            builder.Append(character switch
+            {
+                'A' => 'А', 'B' => 'В', 'C' => 'С', 'E' => 'Е', 'H' => 'Н',
+                'K' => 'К', 'M' => 'М', 'O' => 'О', 'P' => 'Р', 'T' => 'Т',
+                'X' => 'Х', 'a' => 'а', 'c' => 'с', 'e' => 'е', 'o' => 'о',
+                'p' => 'р', 'x' => 'х', 'y' => 'у',
+                _ => character
+            });
+        }
+
+        return builder.ToString();
+    }
 
     /// <summary>
     /// Сколько РАЗНЫХ имён систем перечислено в промежуточном ответе к утверждению
     /// (C4-05): имя засчитывается только на границе — не внутри более длинного
-    /// («Т1» внутри «Т11»/«Т1.11» не считается). Точка после имени — граница,
-    /// только если за ней НЕ цифра (иначе это продолжение цифрового суффикса
-    /// «Т1.11»).
+    /// («Т1» внутри «Т11»/«Т1.11» не считается), правило то же, что и для
+    /// упоминаний подозрительной пары (<see cref="Case9MentionsName"/>).
     /// </summary>
     internal static int Case9SystemsListed(string text)
     {
         var listed = 0;
         foreach (var name in Case9AllSystemNames())
         {
-            var index = text.IndexOf(name, StringComparison.Ordinal);
-            while (index >= 0)
-            {
-                if (Case9IsNameBoundary(text, index + name.Length))
-                {
-                    listed++;
-                    break;
-                }
-
-                index = text.IndexOf(name, index + 1, StringComparison.Ordinal);
-            }
+            if (Case9MentionsName(text, name))
+                listed++;
         }
 
         return listed;

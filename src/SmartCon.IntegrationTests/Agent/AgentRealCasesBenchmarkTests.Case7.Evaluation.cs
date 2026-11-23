@@ -164,7 +164,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
             .Count(call => Case7JobUnitHintCount(call.ArgumentsJson) == 1);
         if (perFamilyCalls > 3)
             redFlags.Add("поштучная миграция: " + perFamilyCalls +
-                         " вызовов map_family_parameters (нужна пакетная map-джоба)");
+                         " применённых вызовов map_family_parameters/replace_family_parameter" +
+                         " (нужна пакетная джоба)");
         if (singleUnitJobs >= 3)
             redFlags.Add("дробление пакетной работы: " + singleUnitJobs +
                          " применённых джоб по ОДНОМУ семейству (нужна одна пачка, а не серия одиночных джоб)");
@@ -230,14 +231,17 @@ public sealed partial class AgentRealCasesBenchmarkTests
             .ToList();
 
     /// <summary>
-    /// Прямые (без start_job) вызовы миграции общих параметров — поштучный
-    /// путь замены, который критерий пакетности (д) должен видеть. Считаются
-    /// все пути замены кейса: map_family_parameters и двухшаговый
-    /// replace_family_parameter (P3-3 рецензии r1); dry-run preview и
-    /// неуспешные вызовы миграцией не являются.
+    /// Прямые (без start_job) ПРИМЕНЁННЫЕ вызовы миграции общих параметров —
+    /// поштучный путь замены, который критерий пакетности (д) должен видеть.
+    /// Считаются все пути замены кейса: map_family_parameters и двухшаговый
+    /// replace_family_parameter (P3-3 рецензии r1 — поштучная серия прямых
+    /// replace-вызовов не менее ручная, чем поштучные map). dry-run preview
+    /// и неуспешные вызовы миграцией не являются.
     /// </summary>
     internal static int Case7DirectMigrationCalls(List<BenchCall> calls) =>
-        calls.Count(call => call.ToolName == "map_family_parameters");
+        calls.Count(call =>
+            call.Success && !IsDryRunCall(call) &&
+            call.ToolName is "map_family_parameters" or "replace_family_parameter");
 
     /// <summary>
     /// Явное число юнитов джобы из её аргументов (C2-09): длина явного списка

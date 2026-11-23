@@ -228,13 +228,13 @@ public sealed class AgentRealCasesBenchmarkMechanicsTests
         await Assert.That(culprits.Length).IsGreaterThanOrEqualTo(4);
 
         var full = "Виновники: " + string.Join(", ", culprits);
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(full))
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(full))
             .IsTrue();
 
         var missingOne = string.Join(", ", culprits.Skip(1));
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(missingOne))
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(missingOne))
             .IsFalse();
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesExactCulprits(
                 "Нашёл дырки у " + culprits[0]))
             .IsFalse();
     }

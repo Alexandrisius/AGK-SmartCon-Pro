@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -15,7 +14,8 @@ namespace SmartCon.IntegrationTests.Agent;
 /// etalons were touched. Red flags: per-element read loops instead of the
 /// batch audit, writes into meaningful parameters. All truth numbers and
 /// culprit names are DERIVED from the seed truth table, never hardcoded and
-/// never matched as raw substrings of the case text (ORCH-4).
+/// never matched as raw substrings of the case text (ORCH-4). Разбор текста
+/// ответа (сводка с квалификаторами/виновники) — в партиале Case13.Parse.
 /// Partial of <see cref="AgentRealCasesBenchmarkTests"/>.
 /// </summary>
 public sealed partial class AgentRealCasesBenchmarkTests
@@ -98,7 +98,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
                               Case13TruthCulpritsOf(Case13UnitGuid)) &&
                           Case13SameFamilies(Case13RowOf(bestAudit, Case13MarkGuid),
                               Case13TruthCulpritsOf(Case13MarkGuid))) ||
-                         Case13AnswerNamesAllCulprits(responseText);
+                         Case13AnswerNamesExactCulprits(responseText);
 
         // (г) Безопасные дырки заполнены (ед.изм. фитингов), с объяснением в
         // ответе; ожидаемое значение — единицы equipment-строк истины сида.
@@ -248,119 +248,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
     private static Case13AuditRow? Case13RowOf(List<Case13AuditRow> rows, Guid guid) =>
         rows.FirstOrDefault(row => string.Equals(
             row.Guid, guid.ToString("D"), StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>
-    /// Стемы-псевдонимы параметров сида для атрибуции строк сводки
-    /// (словарные основы русских названий; канонические имена — константы
-    /// сида Case13*Parameter).
-    /// </summary>
-    private static readonly (Guid Guid, string[] Stems)[] Case13SummaryStems =
-    {
-        (Case13NameGuid, new[] { "наименован" }),
-        (Case13MarkGuid, new[] { "марк", "марок" }),
-        (Case13UnitGuid, new[] { "единиц", "ед.изм", "ед. изм" }),
-        (Case13CountGuid, new[] { "количеств" })
-    };
-
-    /// <summary>
-    /// Сводка в ответе модели совпадает с истиной сида (ORCH-4: ручная сводка
-    /// без audit_fill_rate). Строгий разбор: текст делится на строки, строки —
-    /// на сегменты (, ; |), сегмент засчитывается, если называет РОВНО ОДИН
-    /// параметр и несёт пару «N из M» / «N/M» с M = размеру истины; N — число
-    /// пустых. «12 из 12» — это 12, а не «2 из 12» подстрокой. По истины сида:
-    /// Name = имя дырок, Mark = марки дырок, Unit = единицы дырок (или 0 после
-    /// безопасного заполнения), Count = 0.
-    /// </summary>
-    internal static bool Case13AnswerSummaryMatchesTruth(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-
-        var (total, nameEmpty, markEmpty, unitEmpty) = Case13TruthShape();
-        var counts = new Dictionary<Guid, int>();
-        foreach (var rawLine in text.Split('\n'))
-        {
-            foreach (var rawSegment in rawLine.Split(',', ';'))
-            {
-                var segment = rawSegment.Trim();
-                if (segment.Length == 0)
-                    continue;
-
-                var parameter = Case13SegmentParameter(segment);
-                if (parameter is null)
-                    continue;
-
-                var empty = Case13SegmentEmptyCount(segment, total);
-                if (empty is not null)
-                    counts[parameter.Value] = empty.Value;
-            }
-        }
-
-        return counts.TryGetValue(Case13NameGuid, out var name) && name == nameEmpty &&
-               counts.TryGetValue(Case13MarkGuid, out var mark) && mark == markEmpty &&
-               counts.TryGetValue(Case13UnitGuid, out var unit) &&
-               (unit == unitEmpty || unit == 0) &&
-               counts.TryGetValue(Case13CountGuid, out var count) && count == 0;
-    }
-
-    /// <summary>
-    /// Параметр сида, названный в сегменте; null — не назван или названо
-    /// несколько (неоднозначный сегмент не засчитывается).
-    /// </summary>
-    private static Guid? Case13SegmentParameter(string segment)
-    {
-        Guid? found = null;
-        foreach (var (guid, stems) in Case13SummaryStems)
-        {
-            if (!stems.Any(stem => ContainsText(segment, stem)))
-                continue;
-
-            if (found is not null && found != guid)
-                return null;
-
-            found = guid;
-        }
-
-        return found;
-    }
-
-    /// <summary>
-    /// Первая пара «N из M» / «N/M» (лат. of тоже принимается) сегмента, где
-    /// M = размеру истины; N — число пустых. Числа берутся целыми токенами:
-    /// «12 из 12» даёт N=12, а не 2.
-    /// </summary>
-    private static int? Case13SegmentEmptyCount(string segment, int total)
-    {
-        foreach (Match match in Regex.Matches(
-                     segment,
-                     @"(\d+)\s*(?:из|/|of)\s*(\d+)",
-                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
-        {
-            if (!int.TryParse(match.Groups[1].Value, out var empty) ||
-                !int.TryParse(match.Groups[2].Value, out var of) ||
-                of != total)
-                continue;
-
-            return empty;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Ответ называет ВСЕХ виновников дырок истины сида (ORCH-4: семейства
-    /// выводятся из таблицы истины, не из литералов вердиктора).
-    /// </summary>
-    internal static bool Case13AnswerNamesAllCulprits(string text)
-    {
-        foreach (var family in Case13TruthCulpritFamilies())
-        {
-            if (!ContainsText(text, family))
-                return false;
-        }
-
-        return true;
-    }
 
     /// <summary>
     /// Семейства-виновники дырок КОНКРЕТНОГО параметра (guid) из истины сида.

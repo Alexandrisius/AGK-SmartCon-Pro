@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Agent.Tools.Read;
@@ -298,15 +299,37 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// <summary>
     /// Обоснование базового формата в ответе (текст кейса: «либо обоснование,
     /// почему влезло в базовый»). Осмысленное обоснование несёт конкретику
-    /// размера — число-кратность («кратность 1», «кратность = 2») и/или
+    /// размера — число-кратность («кратность 1», «Кратность размера = 2») и/или
     /// размер листа (формат серии А токеном, мм-габариты «594×420»);
     /// голое слово «кратн»/«влез» обоснованием не считается (P3-5 рецензии r1).
     /// </summary>
-    internal static bool Case11AnswerJustifiesFormat(string text) =>
-        ContainsText(text, "кратн") ||
-        ContainsText(text, "влез") ||
-        ContainsText(text, "умеща") ||
-        ContainsText(text, "достаточн");
+    internal static bool Case11AnswerJustifiesFormat(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        // Число-кратность рядом со словом «кратн…» (до 14 нецифровых
+        // символов, без перехода на новую строку): «кратность 1»,
+        // «Кратность размера = 2». «Кратность не трогал» — числа нет.
+        if (Regex.IsMatch(
+                text,
+                @"кратн\p{Ll}*[^\d\n]{0,14}\d",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            return true;
+
+        // Размер листа: формат серии А (А0…А5) целым токеном.
+        if (Regex.IsMatch(
+                text,
+                @"(?<![\p{L}\p{N}])[АA][0-5](?![\p{N}])",
+                RegexOptions.CultureInvariant))
+            return true;
+
+        // Размер листа в мм: «594×420», «297 x 210» (лат./кир. иксы).
+        return Regex.IsMatch(
+            text,
+            @"\d{3,4}\s*[×xXхХ]\s*\d{3,4}",
+            RegexOptions.CultureInvariant);
+    }
 
     /// <summary>
     /// Система в тексте: имя системы сида — ТОКЕН на границах (ORCH-5: наивный
