@@ -216,7 +216,11 @@ internal static class AgentParameterResolver
     /// no value and the SAME parameter on the element's type has one, return
     /// the type-side parameter: reads see the real value, writes land where
     /// the parameter actually lives. Genuinely empty both sides keep the
-    /// instance view (honest holes stay holes).
+    /// instance view (honest holes stay holes). A parameter the element stores
+    /// ITSELF (a two-sided built-in such as IFC GUID) never lifts: its blank
+    /// is the instance's own value, not a window onto the type (#478 review).
+    /// The storage check runs only when a lift would actually change the
+    /// result, so blank-both reads pay nothing extra.
     /// </summary>
     private static Parameter? LiftValuelessToType(Document doc, Element element, Parameter candidate)
     {
@@ -244,7 +248,45 @@ internal static class AgentParameterResolver
             return candidate;
         }
 
-        return onType is not null && !CarriesNoValue(onType) ? onType : candidate;
+        if (onType is null || CarriesNoValue(onType))
+            return candidate;
+
+        // A parameter the element stores ITSELF (a two-sided built-in such as
+        // IFC GUID) keeps its blank as its own value — the instance's state,
+        // not a window onto the type-side value; lifting it would misdirect
+        // writes and notExists onto the type. Only a view the element does not
+        // own (the Assembly Code) may lift.
+        if (IsStoredOnElement(element, candidate))
+            return candidate;
+
+        return onType;
+    }
+
+    /// <summary>
+    /// Whether the element lists the parameter among its OWN parameters. A
+    /// parameter handed to an instance while the value actually lives on its
+    /// type is absent from element.Parameters (Autodesk forum, "Assembly Code
+    /// instance/type parameter bug": the parameter is in exactly one of
+    /// element.Parameters / type.Parameters). The write path relies on the
+    /// same membership test (IsExposed) for its not_supported verdicts.
+    /// </summary>
+    private static bool IsStoredOnElement(Element element, Parameter candidate)
+    {
+        try
+        {
+            var id = candidate.Id;
+            foreach (Parameter parameter in element.Parameters)
+            {
+                if (parameter.Id == id)
+                    return true;
+            }
+
+            return false;
+        }
+        catch (Exception)
+        {
+            return true; // Cannot tell: keep the honest hole, never misdirect a write.
+        }
     }
 
     /// <summary>

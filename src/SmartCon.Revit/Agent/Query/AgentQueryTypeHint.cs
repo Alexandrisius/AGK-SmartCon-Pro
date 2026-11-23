@@ -8,9 +8,12 @@ namespace SmartCon.Revit.Agent.Query;
 /// <summary>
 /// Post-query hint for an empty result whose condition names a parameter that
 /// lives on element TYPES in this project (a type binding or a type-only
-/// built-in / family parameter). Elements of the query do not carry the
-/// type-level value, so the honest answer points at the type-level tools
-/// instead of leaving "Matched 0" unexplained (live case 9, C9-03).
+/// built-in / family parameter). The query reads such a parameter from each
+/// element's type, so an empty result means no type value matched — the honest
+/// answer says where the value lives and points at the type-level tools
+/// (live case 9, C9-03). The hint only speaks for values the query itself
+/// evaluated: for a query without includeTypeParameters a parameter reachable
+/// only through the by-name type lookup stays unhinted.
 /// </summary>
 internal static class AgentQueryTypeHint
 {
@@ -53,6 +56,18 @@ internal static class AgentQueryTypeHint
             if (parameter is null || !IsTypeBound(doc, candidate, parameter))
                 continue;
 
+            // The hint may only describe what the query itself evaluated. A
+            // parameter reachable ONLY through the by-name type lookup was
+            // invisible to a flagless query; claiming type-level facts there
+            // would be a guess, not an explanation.
+            if (!spec.IncludeTypeParameters)
+            {
+                var flagless = AgentParameterResolver.Find(
+                    doc, candidate, condition.Parameter, includeTypeParameters: false);
+                if (flagless is null || flagless.Id != parameter.Id)
+                    continue;
+            }
+
             var typeCount = CountTypesCarryingParameter(doc, categoryIds, condition.Parameter);
             if (typeCount == 0)
                 continue;
@@ -63,8 +78,9 @@ internal static class AgentQueryTypeHint
                 TypeCount = typeCount,
                 Message =
                     "Parameter '" + condition.Parameter + "' is bound to element types (" +
-                    typeCount + " type(s)); type-level values are not carried by elements " +
-                    "of this query — use find_families_with_parameter / list_family_types."
+                    typeCount + " type(s) carry it): the value lives on the element type and " +
+                    "none of the scanned elements matched — use find_families_with_parameter / " +
+                    "list_family_types to see the type-level values."
             };
         }
 

@@ -230,6 +230,144 @@ public sealed class AgentQueryTypeParameterTests : RevitApiTest
     }
 
     [Test]
+    public async Task SetParameters_BlankOwnTwoSidedBuiltIn_InstanceScope_WritesTheInstance()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+        if (!BlankOwnIfcGuid())
+            Skip.Test("Revit не принял пустой IFC GUID экземпляра в этом шаблоне");
+
+        var typeGuidBefore = TypeIfcGuid();
+
+        // The blank IFC GUID is the instance's own value: a write by name must
+        // land on the instance, not answer a false scope_mismatch pointing at
+        // the type (the type carries a different, non-empty IFC GUID).
+        var write = WriteParameter(
+            "{\"elementId\":" + _wallId + ",\"parameter\":\"IFC_GUID\",\"value\":\"SC-Q1-FIX-INST\"}");
+
+        await Assert.That(write.Success).IsTrue();
+        var own = Doc.GetElement(ElementIdCompat.Create(_wallId))!
+            .get_Parameter(BuiltInParameter.IFC_GUID)!;
+        await Assert.That(own.AsString()).IsEqualTo("SC-Q1-FIX-INST");
+        await Assert.That(TypeIfcGuid()).IsEqualTo(typeGuidBefore);
+    }
+
+    [Test]
+    public async Task QueryElements_BlankOwnTwoSidedBuiltIn_NotExistsSeesTheBlankInstance()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+        if (!BlankOwnIfcGuid())
+            Skip.Test("Revit не принял пустой IFC GUID экземпляра в этом шаблоне");
+
+        // The blank instance value is a real value: notExists must see the
+        // element even though its type carries a non-empty IFC GUID.
+        var result = Query(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":\"IFC_GUID\"," +
+            "\"op\":\"notExists\"}],\"limit\":10}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Total(result)).IsGreaterThanOrEqualTo(1);
+        await Assert.That(HasTypeBoundHint(result)).IsFalse();
+    }
+
+    [Test]
+    public async Task QueryElements_BlankOwnTwoSidedBuiltIn_Miss_DoesNotHintTypeBound()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+        if (!BlankOwnIfcGuid())
+            Skip.Test("Revit не принял пустой IFC GUID экземпляра в этом шаблоне");
+
+        var result = Query(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":\"IFC_GUID\"," +
+            "\"op\":\"eq\",\"value\":\"zz-no-such\"}],\"limit\":10}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Total(result)).IsEqualTo(0);
+        // The parameter is stored on the instance: a type-bound hint would send
+        // the model to write the whole type's IFC GUID.
+        await Assert.That(HasTypeBoundHint(result)).IsFalse();
+    }
+
+    [Test]
+    public async Task QueryElements_LiftedTypeValue_MatchesWithoutIncludeTypeParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        const string code = "32.10.15";
+        var write = WriteParameter(
+            "{\"elementId\":" + _wallId + ",\"parameter\":\"" +
+            AgentParameterResolver.AssemblyCodeBuiltIn +
+            "\",\"value\":\"" + code + "\",\"scope\":\"type\"}",
+            ",\"allowUnverifiedClassification\":true");
+        await Assert.That(write.Success).IsTrue();
+
+        var displayName = Doc.GetElement(ElementIdCompat.Create(_wallTypeId))!
+            .get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn)!
+            .Definition!.Name;
+
+        // The blank instance view of the type-bound built-in lifts to the type
+        // WITHOUT the flag: type-level values are reachable by a plain query.
+        var result = Query(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":" + Json(displayName) +
+            ",\"op\":\"eq\",\"value\":\"" + code + "\"}],\"limit\":10}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Total(result)).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task QueryElements_NotExistsOnEmptyTypeBuiltIn_NoFlag_FindsTheHole()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        // The enum id reaches the type-side parameter without the flag: an
+        // empty type parameter is seen by notExists even flagless.
+        var result = Query(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":\"ALL_MODEL_TYPE_COMMENTS\"," +
+            "\"op\":\"notExists\"}],\"limit\":10}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Total(result)).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task QueryElements_NoMatchesOnTypeBoundParameter_NoFlag_ExplainsTypeBindingHonestly()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        const string code = "33.20.10";
+        var write = WriteParameter(
+            "{\"elementId\":" + _wallId + ",\"parameter\":\"" +
+            AgentParameterResolver.AssemblyCodeBuiltIn +
+            "\",\"value\":\"" + code + "\",\"scope\":\"type\"}",
+            ",\"allowUnverifiedClassification\":true");
+        await Assert.That(write.Success).IsTrue();
+
+        var displayName = Doc.GetElement(ElementIdCompat.Create(_wallTypeId))!
+            .get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn)!
+            .Definition!.Name;
+
+        // Flagless, the query still evaluates the lifted type value, so the
+        // miss may be explained — but the explanation must not claim that
+        // type-level values are unreachable: this very query just read one.
+        var result = Query(
+            "{\"categories\":[\"OST_Walls\"],\"conditions\":[{\"parameter\":" + Json(displayName) +
+            ",\"op\":\"eq\",\"value\":\"zz-no-such\"}],\"limit\":10}");
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Total(result)).IsEqualTo(0);
+        await Assert.That(HasTypeBoundHint(result)).IsTrue();
+        await Assert.That(ContainsText(result, "is bound to element types")).IsTrue();
+        await Assert.That(ContainsText(result, "find_families_with_parameter")).IsTrue();
+        await Assert.That(ContainsText(result, "are not carried")).IsFalse();
+    }
+
+    [Test]
     public async Task SummarizeElements_NoMatchesOnTypeBoundParameter_ExplainsTypeBinding()
     {
         if (!_wallCreated)
@@ -253,6 +391,31 @@ public sealed class AgentQueryTypeParameterTests : RevitApiTest
 
     private static bool ContainsText(ToolResult result, string fragment) =>
         (result.Message ?? string.Empty).Contains(fragment, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Blanks the instance's OWN IFC GUID (a two-sided built-in: the element and
+    /// its type each store their own value) so the blank is the instance's real
+    /// state, the way an element looks before any IFC export. Returns false when
+    /// Revit refuses the blank (no reproducible scenario in this template).
+    /// </summary>
+    private bool BlankOwnIfcGuid()
+    {
+        var blanked = false;
+        _transactions!.RunInTransaction(Doc, "Blank own IFC GUID", doc =>
+        {
+            blanked = doc.GetElement(ElementIdCompat.Create(_wallId))
+                ?.get_Parameter(BuiltInParameter.IFC_GUID)?.Set(string.Empty) == true;
+        });
+        return blanked;
+    }
+
+    private string TypeIfcGuid() =>
+        Doc.GetElement(ElementIdCompat.Create(_wallTypeId))!
+            .get_Parameter(BuiltInParameter.IFC_GUID)!.AsString() ?? string.Empty;
+
+    private static bool HasTypeBoundHint(ToolResult result) =>
+        result.Data!.Value.TryGetProperty("typeBoundParameter", out var hint)
+        && hint.ValueKind == JsonValueKind.Object;
 
     private ToolResult WriteParameter(string itemJson, string extraArgs = "") =>
         new SetParametersTool(new StubRevitContext(Doc), _transactions!, new InMemoryAgentChangeSetStore())
