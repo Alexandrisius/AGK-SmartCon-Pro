@@ -160,7 +160,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
             }
             catch (Exception ex)
             {
-                _case6SeedError = "Сид кейса 6: " + ex.GetType().Name + ": " + ex.Message;
+                _case6SeedError = "Сид кейса 6: " + ex.GetType().Name + ": " + ex.Message +
+                                   " @ " + ex.StackTrace;
             }
         });
 
@@ -175,6 +176,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private void SeedCase6World(Document doc)
     {
+        Console.WriteLine("PROBE case 6 seed: clearing default world");
         Case6ClearDefaultWorld(doc);
 
         for (var floor = 1; floor <= Case6LevelCount; floor++)
@@ -183,6 +185,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
             level.Name = Case6LevelPrefix + floor.ToString(CultureInfo.InvariantCulture);
             _case6.LevelIds[floor] = level.Id.GetValue();
         }
+
+        Console.WriteLine("PROBE case 6 seed: levels created");
 
         // Выжившие дефолтные уровни нейтрализуем: имя вне паттерна «Уровень N»
         // (дубликаты имён уровней Revit разрешает, но похожее имя собьёт модель
@@ -210,6 +214,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         doc.Regenerate();
         var topLevelId = ElementIdCompat.Create(_case6.LevelIds[Case6LevelCount]);
+        Console.WriteLine("PROBE case 6 seed: creating reference plan");
 
         // Эталон = источник шаблона «Отопление»: CreateViewTemplate копирует
         // настройки вида (доказанный паттерн AgentBatchViewToolsTests), затем
@@ -238,11 +243,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         drainage.Name = Case6Systems()[1];
-        doc.Delete(source.Id);
 
+        // Id фиксируются ДО удаления источника: каскад doc.Delete может тронуть
+        // созданные из вида объекты (PROBE печатает состав каскада).
         _case6.TemplateIds[Case6FirstSystem] = heating.Id.GetValue();
         _case6.TemplateIds[Case6Systems()[1]] = drainage.Id.GetValue();
         _case6.ReferenceViewId = reference.Id.GetValue();
+        var cascade = doc.Delete(source.Id);
+        Console.WriteLine("PROBE case 6 seed: source view deleted, cascade=" + cascade.Count);
 
         doc.Regenerate();
         foreach (var view in new FilteredElementCollector(doc)
@@ -261,8 +269,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
     /// </summary>
     private static void Case6ClearDefaultWorld(Document doc)
     {
-        foreach (var view in new FilteredElementCollector(doc)
-                     .OfClass(typeof(View)).Cast<View>().ToList())
+        // Имена фиксируются ДО удалений: doc.Delete каскадно удаляет связанные
+        // виды (шаблон владельца: 134 вида), и обращение к .Name мёртвой
+        // обёртки в цикле даёт InvalidObjectException (точечный прогон 2026-11-23).
+        var views = new FilteredElementCollector(doc)
+            .OfClass(typeof(View)).Cast<View>()
+            .Select(view => (Name: view.Name, Id: view.Id))
+            .ToList();
+        foreach (var view in views)
             Case6TryDelete(doc, "view/template '" + view.Name + "'", view.Id);
 
         Case6DeleteLevelsPass(doc);
@@ -273,8 +287,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private static void Case6DeleteLevelsPass(Document doc)
     {
-        foreach (var level in new FilteredElementCollector(doc)
-                     .OfClass(typeof(Level)).Cast<Level>().ToList())
+        var levels = new FilteredElementCollector(doc)
+            .OfClass(typeof(Level)).Cast<Level>()
+            .Select(level => (Name: level.Name, Id: level.Id))
+            .ToList();
+        foreach (var level in levels)
             Case6TryDelete(doc, "level '" + level.Name + "'", level.Id);
     }
 

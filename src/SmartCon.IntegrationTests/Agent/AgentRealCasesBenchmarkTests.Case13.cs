@@ -205,12 +205,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case13SeedError = null;
         _case13Items = new List<Case13ItemSeed>();
         _case13SharedFile = SharedParameterFileScope.Create(Application);
-        var definitions = SeedCase13Definitions();
-        if (_case13SeedError is not null)
-        {
-            Skip.Test(_case13SeedError);
-            return;
-        }
 
         var truth = Case13Truth();
         var kinds = Case13Kinds();
@@ -225,6 +219,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return;
         }
 
+        // Определения ФОП создаются ПОСЛЕ загрузки семейств: перезапись тёзок
+        // шаблона владельца заставляет Revit перечитывать ФОП, и обёртки,
+        // полученные раньше, протухают (InvalidObjectExceptionProxy в Insert).
+        var definitions = SeedCase13Definitions();
+        if (_case13SeedError is not null)
+        {
+            Skip.Test(_case13SeedError);
+            return;
+        }
+
         _case13Families = families;
         _transactions = new RevitTransactionService(new StubRevitContext(Doc));
         _changeSets = new InMemoryAgentChangeSetStore();
@@ -234,7 +238,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         // той же транзакции вернёт null и значения молча потеряются.
         _transactions.RunInTransaction(Doc, "Seed case 13 (bind)", doc =>
         {
-            BindCase13Parameters(doc, definitions!);
+            definitions = BindCase13Parameters(doc, definitions!);
             if (_case13SeedError is not null)
                 return;
 
@@ -251,7 +255,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _transactions.RunInTransaction(Doc, "Seed case 13 (audit)", doc =>
         {
 
-            SeedCase13Items(doc, families, truth, kinds, definitions!);
+            SeedCase13Items(doc, families, truth, kinds);
             if (_case13SeedError is not null)
                 return;
 
@@ -303,7 +307,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
     }
 
     /// <summary>4 общих параметра — type binding; приманка «Комментарий» — instance.</summary>
-    private void BindCase13Parameters(Document doc, Case13Definitions definitions)
+    private Case13Definitions BindCase13Parameters(Document doc, Case13Definitions definitions)
     {
         try
         {
@@ -314,30 +318,54 @@ public sealed partial class AgentRealCasesBenchmarkTests
             var typeBinding = app.Create.NewTypeBinding(categorySet);
             var instanceBinding = app.Create.NewInstanceBinding(categorySet);
             var map = doc.ParameterBindings;
-            foreach (var definition in new[]
+
+            // Обёртка резолвится в момент КАЖДОГО Insert: между двумя Insert
+            // Revit может перечитывать ФОП — см. док-комментарий
+            // FindCaseSharedDefinition.
+            foreach (var parameterName in new[]
                      {
-                         definitions.Name, definitions.Mark, definitions.Unit, definitions.Count
+                         Case13NameParameter, Case13MarkParameter,
+                         Case13UnitParameter, Case13CountParameter
                      })
             {
+                var definition = FindCaseSharedDefinition(Case13SharedGroup, parameterName);
+                if (definition is null)
+                {
+                    _case13SeedError = "Общий параметр «" + parameterName +
+                                       "» не найден в ФОП перед привязкой (обёртка протухла)";
+                    return definitions;
+                }
+
                 if (!map.Insert(definition, typeBinding))
                 {
                     _case13SeedError = "Не удалось привязать общий параметр «" +
                                        definition.Name + "» (type) к категории";
-                    return;
+                    return definitions;
                 }
             }
 
-            if (!map.Insert(definitions.Bait, instanceBinding))
+            var bait = FindCaseSharedDefinition(Case13SharedGroup, Case13BaitParameter);
+            if (bait is null)
+            {
+                _case13SeedError = "Приманка «" + Case13BaitParameter +
+                                   "» не найдена в ФОП перед привязкой (обёртка протухла)";
+                return definitions;
+            }
+
+            definitions = definitions with { Bait = bait };
+            if (!map.Insert(bait, instanceBinding))
             {
                 _case13SeedError = "Не удалось привязать приманку «" +
-                                   definitions.Bait.Name + "» (instance)";
+                                   bait.Name + "» (instance)";
             }
         }
         catch (Exception ex)
         {
             _case13SeedError = "Привязка общих параметров кейса 13: " +
-                               ex.GetType().Name + ": " + ex.Message;
+                               ex.GetType().Name + ": " + ex.Message + " @ " + ex.StackTrace;
         }
+
+        return definitions;
     }
 
     /// <summary>
@@ -351,8 +379,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         Document doc,
         List<CaseGenericFamilySeed> families,
         (string Family, string Type, string? Name, string? Mark, string? Unit)[] truth,
-        Dictionary<string, string> kinds,
-        Case13Definitions definitions)
+        Dictionary<string, string> kinds)
     {
         var truthByKey = new Dictionary<
             string,
@@ -390,11 +417,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 if (doc.GetElement(ElementIdCompat.Create(type.TypeId)) is not ElementType typeElement)
                     continue;
 
-                // null = дырка остаётся дыркой (HasValue=false → emptyNoValue).
-                Case13Set(typeElement, definitions.Name, row.Name);
-                Case13Set(typeElement, definitions.Mark, row.Mark);
-                Case13Set(typeElement, definitions.Unit, row.Unit);
-                Case13Set(typeElement, definitions.Count, "1");
+                // null = дырка остаётся дыркой (HasValue=false → emptyNoValue);
+                // GUID-константы вместо ExternalDefinition-обёрток (протухают
+                // после перечитывания ФОП — см. FindCaseSharedDefinition).
+                Case13Set(typeElement, Case13NameGuid, row.Name);
+                Case13Set(typeElement, Case13MarkGuid, row.Mark);
+                Case13Set(typeElement, Case13UnitGuid, row.Unit);
+                Case13Set(typeElement, Case13CountGuid, "1");
             }
         }
 
@@ -402,16 +431,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
         foreach (var item in _case13Items.Where(item => item.Kind == "equipment").ToList())
         {
             if (doc.GetElement(ElementIdCompat.Create(item.InstanceId)) is { } instance)
-                instance.get_Parameter(definitions.Bait.GUID)?.Set("черновая прикидка");
+                instance.get_Parameter(Case13BaitGuid)?.Set("черновая прикидка");
         }
     }
 
-    private static void Case13Set(Element element, ExternalDefinition definition, string? value)
+    private static void Case13Set(Element element, Guid guid, string? value)
     {
         if (value is null)
             return;
 
-        element.get_Parameter(definition.GUID)?.Set(value);
+        element.get_Parameter(guid)?.Set(value);
     }
 
     private void SeedCase13Schedules(Document doc)
