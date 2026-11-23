@@ -93,7 +93,12 @@ public sealed partial class AgentPlanExecutor
     /// <summary>
     /// "views" → "view", "schedules" → "schedule", "categories" → "category",
     /// "classes" → "class": enough of English plurals to derive the id key a
-    /// collection's rows carry (views → viewId).
+    /// collection's rows carry (views → viewId). The stem is deliberately
+    /// rough: "phases" and "cases" match the "es"-branch (their third-to-last
+    /// letter is 's') and come out as "phas"/"cas", so their nounId never
+    /// matches — the row is still found through its plain <c>id</c> key or the
+    /// first <c>*Id</c> fallback of <see cref="TryGetIdentityId"/>, which is
+    /// why the imprecision is acceptable (review r2, N7).
     /// </summary>
     private static string Singular(string key)
     {
@@ -103,7 +108,8 @@ public sealed partial class AgentPlanExecutor
 
         if (length > 2 && key.EndsWith("es", StringComparison.OrdinalIgnoreCase))
         {
-            // classes / boxes / matches lose "es"; phases / cases / values keep the "e".
+            // classes / boxes / matches lose "es"; values (no s/x/z/c/h before
+            // the "es") falls through and only loses the "s".
             var before = key[length - 3];
             if (before == 's' || before == 'x' || before == 'z' || before == 'c' || before == 'h')
                 return key.Substring(0, length - 2);

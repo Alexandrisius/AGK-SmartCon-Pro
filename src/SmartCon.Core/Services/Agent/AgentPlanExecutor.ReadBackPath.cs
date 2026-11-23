@@ -80,12 +80,25 @@ public sealed partial class AgentPlanExecutor
     /// <summary>
     /// The key of the collection the current node came from ("views" for
     /// <c>views</c> and <c>views[2]</c>): it tells <c>byId</c> which property
-    /// carries a row's own id. Selectors keep the key they selected from.
+    /// carries a row's own id. <c>byId</c>/<c>byName</c> are selectors, not
+    /// collections: the row they pick still belongs to the previous collection,
+    /// so that key is kept for the diagnostics and the identity lookup
+    /// (review r2, N5).
     /// </summary>
     private static string CollectionKeyOf(string segment, string previous)
     {
         var open = segment.IndexOf('[');
-        return open < 0 ? segment : open > 0 ? segment.Substring(0, open) : previous;
+        if (open < 0)
+            return segment;
+
+        if (open == 0)
+            return previous;
+
+        var prefix = segment.Substring(0, open);
+        return string.Equals(prefix, "byId", StringComparison.Ordinal)
+               || string.Equals(prefix, "byName", StringComparison.Ordinal)
+            ? previous
+            : prefix;
     }
 
     private static bool TryResolveSegment(

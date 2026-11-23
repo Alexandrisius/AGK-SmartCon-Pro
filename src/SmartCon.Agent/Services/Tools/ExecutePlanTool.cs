@@ -144,6 +144,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
         // happens before the digest, so preview and apply see identical steps.
         var registry = _registryFactory();
         plan = RepairPlanSteps(plan, registry);
+        var warnings = ReadBackArgumentWarnings(plan);
 
         var digest = AgentPlanExecutor.ComputeDigest(plan, context.DocumentId);
         var digestAutoFilled = false;
@@ -200,8 +201,41 @@ public sealed partial class ExecutePlanTool : IAgentTool
         }
 
         return dryRun
-            ? PreviewResult(plan, result)
-            : ApplyResult(result, digestAutoFilled);
+            ? PreviewResult(plan, result, warnings)
+            : ApplyResult(result, digestAutoFilled, warnings);
+    }
+
+    /// <summary>
+    /// readBackArguments without a readBackTool and without expectations used to
+    /// be dropped silently: the model believed it had verified the step. The
+    /// warning names the step so the arguments get a tool or get removed
+    /// (review r2, WA-7).
+    /// </summary>
+    private static IReadOnlyList<string> ReadBackArgumentWarnings(AgentPlan plan)
+    {
+        var warnings = new List<string>();
+        foreach (var step in plan.Steps)
+        {
+            if (!string.IsNullOrWhiteSpace(step.ReadBackTool)
+                || step.ReadBackExpectations.Count > 0
+                || string.IsNullOrWhiteSpace(step.ArgumentsReadBackJson))
+            {
+                continue;
+            }
+
+            var trimmed = step.ArgumentsReadBackJson.Trim();
+            if (trimmed.Length == 0
+                || string.Equals(trimmed, "{}", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            warnings.Add(
+                "Step '" + step.StepId + "': readBackArguments ignored: no readBackTool was " +
+                "declared, so no read-back ran for them.");
+        }
+
+        return warnings;
     }
 
     private static JsonElement FailureResult(
@@ -248,7 +282,10 @@ public sealed partial class ExecutePlanTool : IAgentTool
         return payload;
     }
 
-    private static ToolResult PreviewResult(AgentPlan plan, AgentPlanExecutionResult result)
+    private static ToolResult PreviewResult(
+        AgentPlan plan,
+        AgentPlanExecutionResult result,
+        IReadOnlyList<string> warnings)
     {
         var payload = JsonSerializer.SerializeToElement(new
         {
@@ -260,6 +297,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
             steps = Steps(result, apply: false),
+            warnings,
             // The dry-run id warning closes every preview branch: the incomplete
             // one is exactly where the model chains ids into dependent steps, and
             // a failed preview reports the same steps[] (review r1 #4).
@@ -272,7 +310,10 @@ public sealed partial class ExecutePlanTool : IAgentTool
                 : "Nothing was changed. Show this diff to the user and call execute_plan with " +
                   "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
                   " only after explicit approval. Per-step dryRun flags do not affect the digest.") +
-                  DryRunIdHint
+                  DryRunIdHint +
+                  (warnings.Count == 0
+                      ? string.Empty
+                      : " " + string.Join(" ", warnings))
         }, SerializerOptions);
 
         return ToolResult.Ok(
