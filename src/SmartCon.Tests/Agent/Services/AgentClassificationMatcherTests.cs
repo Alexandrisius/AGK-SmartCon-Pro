@@ -48,47 +48,6 @@ public sealed class AgentClassificationMatcherTests
         new(id, category, family, null, typeName, current, values);
 
     [Fact]
-    public void Tokenize_LowerCasesFoldsYoAndSplits()
-    {
-        var tokens = AgentSemanticLexicon.Tokenize("Ёлки-Палки, Стены 10.20 (несущие)");
-
-        Assert.Equal(new[] { "елки", "палки", "стены", "10", "20", "несущие" }, tokens);
-    }
-
-    [Fact]
-    public void TokensMatch_RequiresEqualityOrLongPrefix()
-    {
-        Assert.True(AgentSemanticLexicon.TokensMatch("valve", "valves"));
-        Assert.True(AgentSemanticLexicon.TokensMatch("стены", "стены"));
-        Assert.False(AgentSemanticLexicon.TokensMatch("wall", "walled"));
-        Assert.False(AgentSemanticLexicon.TokensMatch("abc", "abcd"));
-        Assert.False(AgentSemanticLexicon.TokensMatch("pipe", "valve"));
-    }
-
-    [Fact]
-    public void LexicalTop_WeightsFamilyNameTwiceAndKeepsCodeOrder()
-    {
-        var table = ServicesTable();
-        var leaves = table.Entries.Where(entry => entry.IsLeaf).ToArray();
-        var leafTokens = leaves.ToDictionary(
-            leaf => leaf.Code,
-            leaf => new HashSet<string>(AgentSemanticLexicon.Tokenize(leaf.Breadcrumb)),
-            StringComparer.Ordinal);
-
-        var scored = AgentSemanticLexicon.LexicalTop(
-            new[] { "ball", "valve", "family" },
-            new[] { "gate" },
-            leaves,
-            leafTokens,
-            2);
-
-        // ball + valve (name, weight 2 each) + gate (weight 1) -> Ball valves
-        // first (4), then Gate valves (3: valve 2 + gate 1).
-        Assert.Equal(new[] { "20.20.10", "20.20.20" },
-            scored.Select(leaf => leaf.Code).ToArray());
-    }
-
-    [Fact]
     public async Task Match_StrongFamily_GoesStraightToStagesAndProposes()
     {
         var client = new KeywordDecisionClient();

@@ -66,7 +66,12 @@ internal static class AgentSemanticLexicon
             : left.StartsWith(right, StringComparison.Ordinal);
     }
 
-    /// <summary>Lower-case tokens, ё folded to е, split on every non-letter/digit.</summary>
+    /// <summary>
+    /// Lower-case tokens, ё folded to е, split on every non-letter/digit. A pure
+    /// number is dropped: a diameter or a size says nothing about what the
+    /// element is, and matching on it would turn a weak family into a strong
+    /// one by accident.
+    /// </summary>
     internal static string[] Tokenize(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -95,7 +100,7 @@ internal static class AgentSemanticLexicon
             return;
 
         var token = builder.ToString().ToLowerInvariant().Replace('ё', 'е');
-        if (!tokens.Contains(token))
+        if (!token.All(character => char.IsDigit(character)) && !tokens.Contains(token))
             tokens.Add(token);
         builder.Clear();
     }

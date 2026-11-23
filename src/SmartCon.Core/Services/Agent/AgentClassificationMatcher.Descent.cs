@@ -129,6 +129,7 @@ public sealed partial class AgentClassificationMatcher
                 Family = family,
                 Node = root,
                 ChainScore = System.Math.Round(top!.Score, 4),
+                BareChain = top.BareChoice,
                 Level = 1
             };
             if (TryFinishDescent(state, children, candidates, chainScores, precomputed))
@@ -236,6 +237,7 @@ public sealed partial class AgentClassificationMatcher
 
                 state.Node = child;
                 state.ChainScore = System.Math.Min(state.ChainScore, System.Math.Round(top.Score, 4));
+                state.BareChain |= top.BareChoice;
                 state.Level++;
                 if (!TryFinishDescent(state, children, candidates, chainScores, precomputed))
                     next.Add(state);
@@ -260,7 +262,7 @@ public sealed partial class AgentClassificationMatcher
         candidates[state.Family.Key] = new[] { state.Node };
         chainScores[state.Family.Key] = state.ChainScore;
         precomputed.Add((state.Family,
-            new[] { new SemanticMatch(state.Node.Code, state.ChainScore, 1) }));
+            new[] { new SemanticMatch(state.Node.Code, state.ChainScore, 1) { BareChoice = state.BareChain } }));
         return true;
     }
 
@@ -344,6 +346,9 @@ public sealed partial class AgentClassificationMatcher
 
         /// <summary>Minimum score over the branch question and every level so far.</summary>
         public double ChainScore { get; set; }
+
+        /// <summary>True when the branch or any level was a bare choice without a confidence.</summary>
+        public bool BareChain { get; set; }
 
         public int Level { get; set; }
     }

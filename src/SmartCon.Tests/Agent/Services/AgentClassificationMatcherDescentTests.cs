@@ -158,6 +158,29 @@ public sealed class AgentClassificationMatcherDescentTests
         Assert.Empty(weakResult.SetParameterBatches);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Descent_BareChoiceOnAnyLevel_LandsInUncertainWithoutSetItems(int bareCall)
+    {
+        // The branch, the «Valves» level and the leaf level are three calls; a
+        // bare choice on any of them leaves the chain without a confidence.
+        var client = new TranslatingDecisionClient { BareOnCall = bareCall };
+        var matcher = new AgentClassificationMatcher(new AgentSemanticRanker(client));
+
+        var result = await matcher.MatchAsync(
+            AgentClassificationTexts.GroupTypes(ValveFamily()), ServicesTable(),
+            new ClassifyOptions(), CancellationToken.None);
+
+        Assert.Null(result.Error);
+        var item = Assert.Single(result.Types);
+        Assert.Equal("20.02.007", item.Code);
+        Assert.Equal(ClassifyTypeStatus.NoConfidence, item.Status);
+        Assert.Empty(result.SetParameterBatches);
+        Assert.Empty(result.Assignments);
+    }
+
     /// <summary>
     /// A deterministic stand-in for a bilingual decision model: Russian query
     /// words map to English option words (вентиль→valve, шаровый→ball …), the
@@ -183,6 +206,9 @@ public sealed class AgentClassificationMatcherDescentTests
 
         /// <summary>Answer every descent level with the abstain option.</summary>
         public bool Abstain { get; set; }
+
+        /// <summary>Answer the Nth call (1-based) with a bare Choice, without probabilities.</summary>
+        public int BareOnCall { get; set; }
 
         public bool Enabled { get; set; } = true;
 
@@ -233,6 +259,12 @@ public sealed class AgentClassificationMatcherDescentTests
                     .OrderByDescending(option => option.Overlap)
                     .ThenBy(option => option.Id, StringComparer.Ordinal)
                     .ToList();
+
+                if (Calls == BareOnCall)
+                {
+                    answers[pair.Key] = new AgentDecisionAnswer { Type = "choice", Choice = ranked[0].Id };
+                    continue;
+                }
 
                 var probabilities = new Dictionary<string, double>(StringComparer.Ordinal);
                 var rank = 0;
