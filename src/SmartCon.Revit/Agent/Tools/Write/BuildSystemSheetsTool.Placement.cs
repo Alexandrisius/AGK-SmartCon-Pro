@@ -294,6 +294,21 @@ public sealed partial class BuildSystemSheetsTool
         return null;
     }
 
+    /// <summary>Every title block instance of the document, sheeted or not.</summary>
+    private static List<FamilyInstance> CollectTitleBlockInstances(Document doc)
+    {
+        var instances = new List<FamilyInstance>();
+        foreach (var element in new FilteredElementCollector(doc)
+                     .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                     .WhereElementIsNotElementType())
+        {
+            if (element is FamilyInstance instance)
+                instances.Add(instance);
+        }
+
+        return instances;
+    }
+
     /// <summary>
     /// Sheets that already hold a viewport of a view, by view id (legends may
     /// repeat; owners here block re-placement of regular views).
@@ -339,8 +354,8 @@ public sealed partial class BuildSystemSheetsTool
         if (instances.Count == 0)
             return null;
 
-        var candidates = new Dictionary<Parameter, string>(instances[0].Parameters.Count);
-        foreach (var parameter in instances[0].Parameters)
+        var candidates = new Dictionary<Parameter, string>();
+        foreach (Parameter parameter in instances[0].Parameters)
         {
             var name = parameter.Definition?.Name;
             if (string.IsNullOrEmpty(name) || parameter.IsReadOnly)
