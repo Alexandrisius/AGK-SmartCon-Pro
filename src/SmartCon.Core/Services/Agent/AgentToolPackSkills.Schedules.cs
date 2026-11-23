@@ -13,17 +13,21 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
-  Пустые спецификации — блоком `emptySchedules` (все сразу, не потеряешь при диагностике);
+  `fieldCount` = ВСЕ поля (видимые+скрытые), `fields[]` — видимые. Пустые — блоком
+  `emptySchedules` (все сразу);
   дубли по одинаковому определению (поля+фильтры+сортировка) — `duplicateGroups`.
-- `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`.
+- `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`,
+  `includeHidden` (скрытые колонки с выборками значений). 0 строк под фильтром со
+  значением → предупреждение «проверь значение фильтра».
 - `get_schedule_definition` — структура: поля (у общих — `guid` + `parameterName`,
   у built-in — имя параметра; у каждого — `heading`, `columnWidthMm`, `totalsDisplay`,
-  `hidden`), сортировка/группировка с флагами, фильтры (фазные — в `phaseFilters`
+  `hidden`, `scope` instance|type — область параметра для write-тулов), сортировка/
+  группировка с флагами, фильтры (фазные — в `phaseFilters`
   с именем фазы; фильтры-ссылки — `valueName`), стиль таблицы (`stripedRows`,
   текстовые стили, `showTitle`) и `placements[]` (лист/точка/поворот каждого выноса)
   + `placedOnSheet`/`sheetNumbers` — вынесена ли на лист.
 - `create_schedule` — создать: `category` (OST_имя / русское имя / categoryId), `name`
-  (уникальное), `fields` (0..15), `itemized`.
+  (уникальное), `fields` (0..15), `itemized`. Dry-run id в `created{}` PROVISIONAL.
 - `add_schedule_field` — добавить поля (1..15) по отображаемым именам.
 - `remove_schedule_field` — удалить поля (1..15); undo_last возвращает.
 - `set_schedule_field_order` — порядок колонок: ПОЛНЫЙ список имён в новом порядке.
@@ -48,7 +52,8 @@ public static partial class AgentToolPackSkills
 - `clone_schedule` — точный аналог ведомости на других параметрах (ФОП заказчика):
   `fieldMapping[{sourceField,targetGuid|targetField}]` (guid полей — из `get_schedule_definition`),
   переносит порядок/заголовки/ширины/скрытость колонок, фильтры, сортировку с флагами,
-  итоги и стиль; колонки без аналога — в `skippedFields` отчёта. Одна спека за вызов.
+  итоги и стиль; колонки без аналога — в `skippedFields` отчёта. Одна спека за вызов;
+  `created{}` в dry-run PROVISIONAL.
 - `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
   `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
   удаление самой спецификации — `delete_schedules`.
@@ -57,7 +62,7 @@ public static partial class AgentToolPackSkills
 - `ViewSchedule` — вид, но не `ViewSheet`: без вьюпорта, на лист ставится `ScheduleSheetInstance`.
 - `ViewSchedule.CreateSchedule(doc, categoryId)` — пустое, без полей; InvalidElementId — мультикатегорийное; key/material — отдельные фабрики; внутри транзакции.
 - Копия расписания — `View.Duplicate(ViewDuplicateOption)`, не «создать заново».
-- `GetSchedulableFields()` отдаёт только допустимые не-вычисляемые поля; `AddField` всегда добавляет в конец (порядок меняется `SetFieldOrder`), повторное поле — `ArgumentException`.
+- `GetSchedulableFields()` отдаёт допустимые не-вычисляемые поля; `AddField` добавляет в конец (порядок — `SetFieldOrder`), повторное — `ArgumentException`.
 - `ScheduleField.IsHidden=true` скрывает колонку, но поле продолжает работать в фильтрах, сортировке и группировке. Служебные поля (уровень, маркер) прячут, а не удаляют.
 - Итоги колонки — `ScheduleField.DisplayType` (Totals/Min/Max, гвард `CanTotal()`); «Итого» — `ShowGrandTotal*`. Split на листе — только UI.
 - Фильтры — только AND, лимит 8; подстрочные (`contains`/`beginswith`/`endswith`) — только строковым полям (`CanFilterBySubstring`).
@@ -67,12 +72,10 @@ public static partial class AgentToolPackSkills
 - Фильтровать/сортировать можно только по колонкам спеки (`ScheduleFieldId`, не имя
   параметра). Нет колонки → `field_not_in_schedule` → сначала `add_schedule_field`.
 - `ScheduleSheetInstance.Create(doc, sheetId, scheduleId, XYZ)` — точка это **левый верхний
-  угол** таблицы (не центр, как у Viewport). `instance.Point` возвращает ту же точку —
-  `get_sheet_content` показывает её как `xMm/yMm`. Один ScheduleSheetInstance на лист
-  через наш тул: дубль → no_changes (Revit допускает дубли, агент — нет).
+  угол** таблицы (не центр, как у Viewport). Один вынос на лист: дубль → no_changes.
 - Поворот выноса — `instance.Rotation` (ViewportRotation): только `none`/`cw90`/`ccw90`
-  (±90°); 180° API не умеет. Полосатые строки и ширины колонок (мм) — API 2021/2022+,
-  на старых версиях тулы отвечают честной ошибкой.
+  (±90°); 180° API не умеет. Полосатые строки и ширины колонок — API 2021+;
+  на старых — честная ошибка.
 
 ### Инварианты
 - Критичное = на листе: `placedOnSheet`/`sheetNumbers` (list_schedules и
@@ -80,9 +83,9 @@ public static partial class AgentToolPackSkills
   обязательные параметры для миграции/аудита (`audit_fill_rate` из пака elements)
   выводятся из полей именно ЛИСТОВЫХ спек, черновые не считаются.
 - «Покажи спецификацию» — сначала `get_schedule_definition`, потом `get_schedule_data` с
-  `limit`: без структуры непонятно, что за колонки.
-- Значения в ячейках — отформатированный текст как в ведомости (с единицами); типизированных
-  чисел в ответе нет. Для вычислений берите числа из параметров элементов (`query_elements`).
+  `limit`.
+- Значения в ячейках — отформатированный текст как в ведомости (с единицами). Для
+  вычислений берите числа из параметров элементов (`query_elements`).
 - «Сделай спецификацию по X и помести на лист» — цепочка: `create_schedule` →
   `add_schedule_field` (если полей мало) → `set_schedule_filter` → `set_schedule_sort` →
   `place_schedule_on_sheet`; каждый шаг dry-run → apply, после apply читайте read-back.
