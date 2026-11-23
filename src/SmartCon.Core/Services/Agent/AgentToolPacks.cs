@@ -64,7 +64,7 @@ public static class AgentToolPacks
             Tools = new[]
             {
                 "list_view_templates", "get_view_template_details", "apply_view_template",
-                "set_view_template_inclusion"
+                "set_view_template_inclusion", "create_view_template"
             }
         },
         new()

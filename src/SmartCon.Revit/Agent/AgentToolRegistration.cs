@@ -92,6 +92,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, DeleteViewsTool>();
         services.AddSingleton<IAgentTool, DuplicateViewTool>();
         services.AddSingleton<IAgentTool, CreateViewTool>();
+        services.AddSingleton<IAgentTool, CreateViewTemplateTool>();
         services.AddSingleton<IAgentTool, CreateFloorPlansTool>();
         services.AddSingleton<IAgentTool, CreateViewsBatchTool>();
         services.AddSingleton<IAgentTool, SetBrowserFolderTool>();
@@ -301,6 +302,7 @@ public static class AgentToolRegistration
         typeof(DeleteViewsTool),
         typeof(DuplicateViewTool),
         typeof(CreateViewTool),
+        typeof(CreateViewTemplateTool),
         typeof(CreateFloorPlansTool),
         typeof(CreateViewsBatchTool),
         typeof(SetBrowserFolderTool),

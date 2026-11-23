@@ -63,7 +63,8 @@ public sealed class AgentToolPackSkillsTests
             // Families carries the most risk (19 tools incl. system types #441, family
             // documents) and is intentionally the longest manual; everything else stays
             // well below this ceiling.
-            Assert.InRange(skill.Length, 900, 9500);
+            Assert.True(skill.Length is >= 900 and <= 9500,
+                pack.Name + " skill is " + skill.Length + " chars (limit 9500)");
         }
     }
 

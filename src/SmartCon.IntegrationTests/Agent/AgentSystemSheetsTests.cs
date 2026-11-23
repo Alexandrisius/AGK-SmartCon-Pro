@@ -138,6 +138,18 @@ public sealed class AgentSystemSheetsTests : RevitApiTest
         await Assert.That(rows[0].GetProperty("insideSheet").GetBoolean()).IsTrue();
         await Assert.That(rows[1].GetProperty("insideSheet").GetBoolean()).IsTrue();
 
+        // The hidden list alone never proved what is in the picture: the row
+        // now names the categories that have visible elements (owner case: a
+        // stair category stayed on the view while the sheet reported built).
+        var visible = rows[0].GetProperty("visibleCategories");
+        await Assert.That(visible.GetProperty("count").GetInt32()).IsGreaterThan(0);
+        await Assert.That(visible.GetProperty("names").GetArrayLength()).IsGreaterThan(0);
+
+        // Millimetres, not internal feet: a paper width around 594 mm is a
+        // number > 100, while feet would be ~2 (owner carried-over finding).
+        var outline = rows[0].GetProperty("sheetOutlineMm");
+        await Assert.That(outline.GetProperty("widthMm").GetDouble()).IsGreaterThan(100);
+
         // The schedule on sheet 5 sits to the RIGHT of the viewport box.
         var scheduleInstance = FindScheduleOnSheet(sheetFive!);
         await Assert.That(scheduleInstance).IsNotNull();

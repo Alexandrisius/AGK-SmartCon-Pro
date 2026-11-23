@@ -60,6 +60,9 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "and NEVER rolls the batch back. Coordinates are in the SHEET FRAME (title-block / " +
             "plot origin, often offset, so values can be negative): sheetOutlineMm in every " +
             "built row names the real sheet rectangle in that same frame — measure offsets " +
+            "from it, not from zero. Every built row also carries hiddenCategories and " +
+            "visibleCategories (categories with visible elements in the view): the hidden " +
+            "list alone never proved that the picture has no non-MEP categories. " +
             "from it, not from zero. titleBlockParameters writes instance parameters " +
             "of the new sheet's title block — e.g. a size multiplicity switching the paper " +
             "format (find editable names via get_titleblock_options); numeric values for " +
@@ -236,6 +239,47 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         }
     }
 
+    /// <summary>
+    /// The categories that actually have visible elements in the view. The
+    /// hidden list alone let a sheet report built/insideSheet with a stair
+    /// still on the view: only this list answers "what is in the picture".
+    /// </summary>
+    private static object? VisibleCategoriesOf(View view)
+    {
+        try
+        {
+            var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            var elementCount = 0;
+            var truncated = false;
+            foreach (var element in new FilteredElementCollector(view.Document, view.Id)
+                         .WhereElementIsNotElementType())
+            {
+                elementCount++;
+                var name = element.Category?.Name;
+                if (!string.IsNullOrWhiteSpace(name))
+                    names.Add(name!);
+                if (elementCount >= 5000)
+                {
+                    truncated = true;
+                    break;
+                }
+            }
+
+            var shown = names.Take(30).ToList();
+            return new
+            {
+                count = names.Count,
+                names = shown,
+                elementCount,
+                capped = truncated || names.Count > shown.Count
+            };
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private void ApplyItem(
         Document doc,
         PlannedItem entry,
@@ -386,6 +430,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 explicationRows = explication?.Rows,
                 titleBlockParameters = parameterResults,
                 hiddenCategories = HiddenCategoriesOf(entry.View),
+                visibleCategories = VisibleCategoriesOf(entry.View),
                 warnings = itemWarnings.Count == 0 ? null : itemWarnings
             });
         }

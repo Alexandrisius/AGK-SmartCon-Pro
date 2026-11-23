@@ -3183,6 +3183,22 @@
         "get_element_bounds"
       ],
       "kind": "read"
+    },
+    {
+      "id": "rTpl1",
+      "query": "Создай шаблон вида из образцового вида и назначь его остальным",
+      "expectedTools": [
+        "create_view_template"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "rTpl2",
+      "query": "Сделай общий шаблон 3D-вида, но фильтры оставь каждому виду",
+      "expectedTools": [
+        "create_view_template"
+      ],
+      "kind": "write"
     }
   ]
 }

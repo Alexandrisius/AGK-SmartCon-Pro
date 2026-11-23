@@ -29,6 +29,7 @@ internal static class AgentViewSettingsReader
             HasTemplate = hasTemplate,
             Scale = view.Scale,
             DetailLevel = view.DetailLevel.ToString(),
+            DisplayStyle = SafeDisplayStyle(view),
             Discipline = SafeDiscipline(view),
             ViewRange = ReadViewRange(doc, view),
             Crop = ReadCrop(view),
@@ -68,6 +69,23 @@ internal static class AgentViewSettingsReader
         }
     }
 
+    /// <summary>
+    /// Display style is the second half of "why is the view schematic?":
+    /// Wireframe hides the fittings even at Fine detail. View types without
+    /// display properties throw on the property, so null is the honest answer.
+    /// </summary>
+    private static string? SafeDisplayStyle(View view)
+    {
+        try
+        {
+            return view.HasDisplayStyle() ? view.DisplayStyle.ToString() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     internal static ViewTemplateCard CreateTemplateCard(Document doc, View template)
     {
         return new ViewTemplateCard
@@ -99,6 +117,7 @@ internal static class AgentViewSettingsReader
             HasTemplate = settings.HasTemplate,
             Scale = settings.Scale,
             DetailLevel = settings.DetailLevel,
+            DisplayStyle = settings.DisplayStyle,
             Discipline = settings.Discipline,
             HasViewRange = settings.ViewRange is not null,
             CropActive = settings.Crop?.Active,

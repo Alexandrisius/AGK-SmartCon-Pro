@@ -3,6 +3,20 @@ using SmartCon.Core.Models.Agent;
 namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
+/// A category the caller asked to hide or show that Revit will not let the API
+/// touch in this view. It stays visible; the report says so instead of burying
+/// the fact in a warning next to a success=true row.
+/// </summary>
+public sealed class NotHidableCategory
+{
+    public required string Category { get; init; }
+
+    public long? CategoryId { get; init; }
+
+    public required string Reason { get; init; }
+}
+
+/// <summary>
 /// One row of a write-tool report (changed / skipped / failed).
 /// </summary>
 public sealed class WriteItemReport
@@ -51,6 +65,13 @@ public sealed class WriteItemReport
     /// "V/G Overrides Filters"): they are replaced by the template's list.
     /// </summary>
     public List<string>? ReplacedOwnFilters { get; set; }
+
+    /// <summary>
+    /// Categories this row could not hide/show: they are still visible in the
+    /// view. A plain warning next to success=true was easy to miss (owner
+    /// feedback 2026-11-24: cameras and stair sub-categories stayed visible).
+    /// </summary>
+    public List<NotHidableCategory>? NotHidable { get; set; }
 }
 
 public sealed class SectionReport
@@ -201,8 +222,17 @@ internal sealed class ViewVisibilitySpec
 
     public List<WorksetVisibilitySpec>? Worksets { get; set; }
 
+    /// <summary>
+    /// Inverse mode: leave only these categories visible and hide every other
+    /// category Revit lets the API toggle. The owner's case "hide everything
+    /// except the system categories" used a blocklist and missed a stair
+    /// category — an allow-list cannot miss it.
+    /// </summary>
+    public List<CategoryVisibilitySpec>? HideAllExcept { get; set; }
+
     public bool IsEmpty => (Categories is null || Categories.Count == 0)
-        && (Worksets is null || Worksets.Count == 0);
+        && (Worksets is null || Worksets.Count == 0)
+        && (HideAllExcept is null || HideAllExcept.Count == 0);
 }
 
 internal sealed class CategoryVisibilitySpec

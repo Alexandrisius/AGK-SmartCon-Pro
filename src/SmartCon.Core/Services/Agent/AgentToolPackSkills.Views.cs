@@ -22,13 +22,13 @@ public static partial class AgentToolPackSkills
 - `rename_views` — пакетно `items[{viewId,newName}]`, `atomic`.
 - `delete_views` — `viewIds` (≤50), `includeTemplates` (по умолчанию false), `confirmNames`.
 - `duplicate_view` — копия одного вида (`viewId|viewName`, `newName`, `option`).
-- `create_view` — новый вид (`kind: plan|section|3d|legend`, `name`, план/разрез — `levelId`).
+- `create_view` — новый вид (`kind: plan|section|3d|legend`, `name`, план/разрез — `levelId`, `detailLevel: coarse|medium|fine`). Для 3D Fine показывает фитинги; на Coarse/Medium MEP-кривые рисуются одной линией — тул предупреждает.
 - `create_floor_plans` — пачка планов по уровням (1..200) + НАЗНАЧЕНИЕ шаблона за один вызов:
   `levels[]`, `templateId` (семейство FloorPlan), `namePattern` с `{floor}` (карта `floors` по
   levelId → последнее число в имени уровня → отметка в целых метрах) и `{level}`. Оба шага
   ручной работы (создать + применить шаблон) делает тул; `undo_last` уносит всю пачку.
 - `create_views_batch` — разнородная пачка до 100 видов: `items[{kind:""plan""|""3d"",name,levelId?
-  (plan),templateId?,viewFamilyTypeId?,scale?}]`, одна транзакция; каждому виду можно сразу
+  (plan),templateId?,viewFamilyTypeId?,scale?,detailLevel?}]`, одна транзакция; каждому виду можно сразу
   назначить шаблон (`templateId` → ViewTemplateId).
 - `set_browser_folder` — подпапка браузера: `viewIds|viewNames|sheetIds` (1..100) + `folder`.
 - `get_browser_organization` — схемы организации браузера (`target: views|sheets`): список,
@@ -95,11 +95,11 @@ public static partial class AgentToolPackSkills
     private const string ViewSettings = @"## Пак view_settings: настройки вида
 
 ### Карта тулов
-- `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`; `viewIds` (≤200) и `fields`.
+- `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `detailLevel`, `displayStyle`, `templateName`; `viewIds` (≤200) и `fields`.
   `discipline=null` у видов без свойства (спеки, легенды) — поле возвращается null, строка вида остаётся, батч не падает.
   `controlledParameters`/`nonControlledParameters` вида с шаблоном — состав управления ЕГО шаблона.
 - `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?,section?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны (`section` — точное значение параметра «Раздел»).
-- `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[…]}`.
+- `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],hideAllExcept:[category,...],worksets:[…]}`; `hideAllExcept` — allow-list: всё, что не перечислено, скрывается.
 - `set_view_parameters` — `parameters:[{name|parameterId,value,unit}]` для общих свойств вида.
 - `list_scope_boxes` — боксы: `scopeBoxId`, `name`, `minMm/maxMm`; `assign_scope_box` — `viewIds|viewSelect` + один из `scopeBoxId|scopeBoxName|clear:true`.
 
@@ -122,7 +122,7 @@ public static partial class AgentToolPackSkills
 - Скрытие категории (`View.SetCategoryHidden`) — настройка **вида**; `GetCategoryHidden=false` ≠ «видно»
   (поверх — фильтры и поэлементное скрытие). «Виден ли элемент» — `Element.IsHidden(view)` /
   `query_elements(viewId=...)`.
-- `set_view_visibility`: неизвестная/нередактируемая категория и `worksets` — **warning**, не `failed`.
+- `set_view_visibility`: неизвестное имя — **warning**; нередактируемая категория — `notHidable[]` с причиной (она остаётся видна); `worksets` — warning, не `failed`.
 - Настройку, контролируемую шаблоном, записать в вид **молча не получается** (Revit не бросает
   исключение) — тулы возвращают `view_controlled_by_template` с рецептом.
 
@@ -203,6 +203,7 @@ public static partial class AgentToolPackSkills
   `select.section:""АР""` — отбор по параметру «Раздел»; `exceptViewIds`/`exceptNameContains` — минус-выборка
   (исключённые — в `excludedViewIds`).
 - `set_view_template_inclusion` — галочка «Include in template»: `parameters:[""crop""|""visibility""|""viewRange""|""scale""|""detailLevel""|""discipline""|""filters""|""worksets""]`, `included`.
+- `create_view_template` — новый шаблон из вида: `sourceViewId`, `name`, `viewIds?`, `detachParameters?` (`crop|viewRange|visibility|scale|detailLevel|discipline|filters|worksets`). `detachParameters:[""filters""]` — шаблон НЕ владеет фильтрами, каждый вид сохраняет свой.
 
 ### Кухня Revit
 - Шаблон — `View` с `IsTemplate=true`; создаётся из вида (`CreateViewTemplate`), не отображает
@@ -236,6 +237,8 @@ public static partial class AgentToolPackSkills
   Порядок всегда: **сначала шаблон, потом видовые фильтры** — но видовые фильтры живут только
   при снятой у шаблона галочке «Фильтры» (`set_view_template_inclusion parameters=[""filters""]
   included=false` до назначения); иначе кладите фильтры в сам шаблон (`viewIds=[templateId]`).
+  Если шаблона ещё нет: `create_view_template(sourceViewId, name, detachParameters:[""filters""],
+  viewIds:[...])` — новый шаблон сразу без контроля фильтров, виды сохраняют свои фильтры.
 - Шаблон применим не к любому виду: `View.IsValidViewTemplate` проверяет совместимость типа.
   Несовместимый → `invalid_template`.
 - Шаблоны расписаний управляют полями/фильтрами/сортировкой/форматом через

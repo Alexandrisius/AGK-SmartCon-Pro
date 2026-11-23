@@ -73,6 +73,9 @@ internal static class AgentElementEssence
         ElementType? type,
         bool elementIsType)
     {
+        if (element is View view && !elementIsType)
+            return ViewEssence(view);
+
         var profile = ProfileFor(element.Category);
         var result = new List<ParameterValueInfo>(Math.Min(profile.Length, MaxEntries));
         var seen = new HashSet<BuiltInParameter>();
@@ -119,6 +122,90 @@ internal static class AgentElementEssence
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// A view's "essence" is not a parameter list: detail level and display
+    /// style are the two answers to "why does this 3D view look schematic?".
+    /// get_element_details returned neither, so the owner had to guess
+    /// (feedback 2026-11-24).
+    /// </summary>
+    private static IReadOnlyList<ParameterValueInfo> ViewEssence(View view)
+    {
+        var result = new List<ParameterValueInfo>(4);
+        AddViewValue(result, "Detail Level", SafeDetailLevel(view), "Integer");
+        AddViewValue(result, "Display Style", SafeDisplayStyle(view), "Integer");
+        try
+        {
+            if (view.Scale > 0)
+                AddViewValue(result, "Scale", "1:" + view.Scale, "Integer");
+        }
+        catch (Exception)
+        {
+            // A view type without a scale: not an answer.
+        }
+
+        try
+        {
+            var templateId = view.ViewTemplateId;
+            AddViewValue(
+                result,
+                "View Template",
+                templateId == ElementId.InvalidElementId
+                    ? "None"
+                    : view.Document.GetElement(templateId)?.Name,
+                "String");
+        }
+        catch (Exception)
+        {
+            // Template resolution is optional context.
+        }
+
+        return result;
+    }
+
+    private static string? SafeDetailLevel(View view)
+    {
+        try
+        {
+            return view.HasDetailLevel() ? view.DetailLevel.ToString() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? SafeDisplayStyle(View view)
+    {
+        try
+        {
+            return view.HasDisplayStyle() ? view.DisplayStyle.ToString() : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void AddViewValue(
+        List<ParameterValueInfo> target,
+        string name,
+        string? value,
+        string storageType)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        target.Add(new ParameterValueInfo
+        {
+            Name = name,
+            Value = value,
+            DisplayValue = value,
+            StorageType = storageType,
+            ParameterClass = "system",
+            Scope = "view"
+        });
     }
 
     internal static BuiltInParameter[] ProfileFor(Category? category)

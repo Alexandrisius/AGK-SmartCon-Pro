@@ -244,6 +244,11 @@ public static class AgentToolCatalog
             {
                 "переименовать", "уровень", "этаж", "rename", "level name"
             }),
+            ["create_view_template"] = new("Write", false, new[]
+            {
+                "создать шаблон вида", "новый шаблон", "create view template",
+                "шаблон из вида", "шаблон на тип системы", "шаблон без фильтров"
+            }),
             ["apply_view_template"] = new("Write", true, new[]
             {
                 "применить", "шаблон", "назначить", "template", "apply"

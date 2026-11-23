@@ -37,11 +37,14 @@ public sealed class CreateViewTool : AgentWriteToolBase
             "3d (isometric) or legend. Legends cannot be created by the Revit API: the tool " +
             "duplicates an existing legend, so a project with no legends answers " +
             "legend_source_missing. viewFamilyTypeId is optional (default: the first matching " +
-            "ViewFamilyType). Guards: view_name_taken, level_not_found, " +
+            "ViewFamilyType). detailLevel=coarse|medium|fine is applied after creation (once " +
+            "the template is assigned, so a template that controls VIEW_DETAIL_LEVEL wins and " +
+            "the answer warns). A 3D view created at Coarse/Medium warns that MEP curves are " +
+            "drawn as single lines. Guards: view_name_taken, level_not_found, " +
             "view_family_type_missing. undo_last deletes the created view. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""kind"":{""type"":""string"",""enum"":[""plan"",""section"",""3d"",""legend""],""description"":""Kind of the view to create""},""name"":{""type"":""string"",""description"":""Name of the new view""},""levelId"":{""type"":""integer"",""description"":""plan/section: level (list_levels)""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional ViewFamilyType id""},""pointMmX"":{""type"":""number"",""description"":""section: model X of the section box, mm""},""pointMmY"":{""type"":""number"",""description"":""section: model Y of the section box, mm""},""pointMmZ"":{""type"":""number"",""description"":""section: offset of the box bottom above the level, mm (default 0)""},""direction"":{""type"":""string"",""enum"":[""north"",""south"",""east"",""west""],""default"":""north"",""description"":""section: view direction""},""lengthMm"":{""type"":""number"",""default"":10000,""description"":""section: section line length, mm""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""kind"",""name""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""kind"":{""type"":""string"",""enum"":[""plan"",""section"",""3d"",""legend""],""description"":""Kind of the view to create""},""name"":{""type"":""string"",""description"":""Name of the new view""},""levelId"":{""type"":""integer"",""description"":""plan/section: level (list_levels)""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional ViewFamilyType id""},""pointMmX"":{""type"":""number"",""description"":""section: model X of the section box, mm""},""pointMmY"":{""type"":""number"",""description"":""section: model Y of the section box, mm""},""pointMmZ"":{""type"":""number"",""description"":""section: offset of the box bottom above the level, mm (default 0)""},""direction"":{""type"":""string"",""enum"":[""north"",""south"",""east"",""west""],""default"":""north"",""description"":""section: view direction""},""detailLevel"":{""type"":""string"",""enum"":[""coarse"",""medium"",""fine""],""description"":""Optional detail level; Fine is required to show MEP fittings instead of single lines""},""lengthMm"":{""type"":""number"",""default"":10000,""description"":""section: section line length, mm""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""kind"",""name""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -79,6 +82,16 @@ public sealed class CreateViewTool : AgentWriteToolBase
             return;
         }
 
+        var detailText = AgentJson.GetString(args, "detailLevel");
+        if (!string.IsNullOrWhiteSpace(detailText)
+            && !AgentViewDetailHelper.TryParse(detailText, out _))
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = "invalid_arguments";
+            outcome.Message = "detailLevel must be one of: coarse, medium, fine.";
+            return;
+        }
+
         outcome.Description = "Create " + kind + " view '" + name + "'";
 
         View? created = null;
@@ -104,12 +117,20 @@ public sealed class CreateViewTool : AgentWriteToolBase
         if (!outcome.Success || created is null)
             return;
 
+        if (kind != "legend")
+        {
+            AgentViewDetailHelper.Apply(created, detailText, outcome.Warnings);
+            if (kind == "3d")
+                AgentViewDetailHelper.WarnIfMepLooksSchematic(created, outcome.Warnings);
+        }
+
         if (dryRun)
         {
             outcome.Batch.Changed.Add(new WriteItemReport
             {
-                Name = created.Name,
+                Name = name,
                 NewValue = name,
+                Detail = string.IsNullOrWhiteSpace(detailText) ? null : "detailLevel=" + detailText,
                 Reason = "Dry run: the " + kind + " view would be created as '" + name + "'."
             });
             outcome.AffectedCount = 1;

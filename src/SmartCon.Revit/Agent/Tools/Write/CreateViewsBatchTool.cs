@@ -33,7 +33,9 @@ public sealed class CreateViewsBatchTool : AgentWriteToolBase
             "Creates several views in one call and one transaction: items with kind=plan " +
             "(ViewPlan.Create, levelId required) or kind=3d (isometric). Every item gets its " +
             "own name, optional templateId (assigned as ViewTemplateId — real assignment, not " +
-            "a settings copy), optional viewFamilyTypeId and scale. Guards: level_not_found, " +
+            "a settings copy), optional viewFamilyTypeId, scale and detailLevel (applied after the " +
+            "template; a 3D view at Coarse/Medium warns that MEP curves are single lines). " +
+            "Guards: level_not_found, " +
             "template_not_found, template_view_type_mismatch (plan items need a FloorPlan " +
             "family template, 3d items a ThreeDimensional one), view_family_type_missing, " +
             "view_name_taken (against the whole document AND duplicates inside the batch; " +
@@ -45,7 +47,7 @@ public sealed class CreateViewsBatchTool : AgentWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""object"",""properties"":{""kind"":{""type"":""string"",""enum"":[""plan"",""3d""],""description"":""Kind of the view to create""},""name"":{""type"":""string"",""description"":""Name of the new view""},""levelId"":{""type"":""integer"",""description"":""plan: level (list_levels), required for kind=plan""},""templateId"":{""type"":""integer"",""description"":""Optional view template id assigned to the created view""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional ViewFamilyType id matching the kind""},""scale"":{""type"":""integer"",""description"":""Optional view scale (e.g. 100)""}},""required"":[""kind"",""name""],""additionalProperties"":false}},""skipExisting"":{""type"":""boolean"",""default"":false,""description"":""A view with the item name already existing in the document is skipped untouched (reported in skipped[]) instead of failing with view_name_taken; duplicates inside the batch still fail""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":100,""items"":{""type"":""object"",""properties"":{""kind"":{""type"":""string"",""enum"":[""plan"",""3d""],""description"":""Kind of the view to create""},""name"":{""type"":""string"",""description"":""Name of the new view""},""levelId"":{""type"":""integer"",""description"":""plan: level (list_levels), required for kind=plan""},""templateId"":{""type"":""integer"",""description"":""Optional view template id assigned to the created view""},""viewFamilyTypeId"":{""type"":""integer"",""description"":""Optional ViewFamilyType id matching the kind""},""scale"":{""type"":""integer"",""description"":""Optional view scale (e.g. 100)""},""detailLevel"":{""type"":""string"",""enum"":[""coarse"",""medium"",""fine""],""description"":""Optional detail level; Fine is required to show MEP fittings instead of single lines""}},""required"":[""kind"",""name""],""additionalProperties"":false}},""skipExisting"":{""type"":""boolean"",""default"":false,""description"":""A view with the item name already existing in the document is skipped untouched (reported in skipped[]) instead of failing with view_name_taken; duplicates inside the batch still fail""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -102,6 +104,16 @@ public sealed class CreateViewsBatchTool : AgentWriteToolBase
             if (nameError is not null)
             {
                 ApplyViewTemplateTool.Fail(outcome, report, "invalid_name", nameError);
+                if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.DetailLevel)
+                && !AgentViewDetailHelper.TryParse(item.DetailLevel, out _))
+            {
+                ApplyViewTemplateTool.Fail(
+                    outcome, report, "invalid_arguments",
+                    "Item '" + item.Name + "': detailLevel must be one of: coarse, medium, fine.");
                 if (ApplyViewTemplateTool.Abort(outcome, atomic)) return;
                 continue;
             }
@@ -193,6 +205,13 @@ public sealed class CreateViewsBatchTool : AgentWriteToolBase
             }
 
             usedNames.Add(item.Name!);
+            if (kind != "legend")
+            {
+                AgentViewDetailHelper.Apply(view, item.DetailLevel, outcome.Warnings);
+                if (kind == "3d")
+                    AgentViewDetailHelper.WarnIfMepLooksSchematic(view, outcome.Warnings);
+            }
+
             var genLevelId = (view as ViewPlan)?.GenLevel?.Id.GetValue();
             var appliedTemplateId = view.ViewTemplateId == ElementId.InvalidElementId
                 ? (long?)null
@@ -345,5 +364,7 @@ public sealed class CreateViewsBatchTool : AgentWriteToolBase
         public long? ViewFamilyTypeId { get; set; }
 
         public int? Scale { get; set; }
+
+        public string? DetailLevel { get; set; }
     }
 }

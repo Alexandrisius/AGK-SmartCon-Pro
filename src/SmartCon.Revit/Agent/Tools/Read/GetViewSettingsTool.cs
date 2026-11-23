@@ -32,7 +32,8 @@ public sealed class GetViewSettingsTool : AgentReadToolBase
         SupportsDryRun = false,
         Description =
             "Returns the current settings of one view or of a batch: view template, scale, detail " +
-            "level, discipline, plan view range (levels and offsets in mm), crop region box (mm), " +
+            "level, display style (Wireframe/Shaded — the second factor of a schematic view), " +
+            "discipline, plan view range (levels and offsets in mm), crop region box (mm), " +
             "hidden categories and hidden worksets. Pass viewIds to read many views in one call " +
             "(audits of 5–50 views do not need a round trip each). Without fields and with " +
             "compact=true (default) it returns a compact summary (template, scale, counts); pass " +

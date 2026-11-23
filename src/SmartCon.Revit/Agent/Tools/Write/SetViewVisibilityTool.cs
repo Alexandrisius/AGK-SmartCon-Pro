@@ -31,10 +31,14 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
             "template is a View, so its category visibility is written directly (no detach " +
             "from a view needed); with select, templates are never matched. " +
             "Worksets are not supported (the document is not " +
-            "workshared). dryRun defaults to true.",
+            "workshared). hideAllExcept is the inverse mode: leave only the listed categories " +
+            "visible and hide every other category the API can toggle — use it for an isolated " +
+            "system view instead of a blocklist that misses a category. Categories the API " +
+            "cannot toggle (cameras, parent-controlled sub-categories) are reported in " +
+            "notHidable[] with a reason; they stay visible. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}}},""additionalProperties"":false}},""required"":[""viewId"",""visibility""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}}},""additionalProperties"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}}},""additionalProperties"":false}},""required"":[""viewId"",""visibility""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""visibility"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""category"":{""type"":""string""},""categoryId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}},""worksets"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""worksetId"":{""type"":""integer""},""hidden"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}}},""additionalProperties"":false},""hideAllExcept"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Inverse mode: leave ONLY these categories visible (BuiltInCategory names or display names); every other category the API can hide is hidden and the listed ones are shown. Use it instead of a long blocklist. Applies to every item/select row.""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override PlanPreflightResult PreflightCore(
@@ -136,6 +140,20 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
             if (outcome.Aborted)
                 return;
         }
+
+        var notHidable = outcome.Batch.Changed
+            .Concat(outcome.Batch.Skipped)
+            .Where(report => report.NotHidable is { Count: > 0 })
+            .SelectMany(report => report.NotHidable!.Select(item => new
+            {
+                viewId = report.Id,
+                viewName = report.Name,
+                category = item.Category,
+                reason = item.Reason
+            }))
+            .ToList();
+        if (notHidable.Count > 0)
+            outcome.Data["notHidable"] = notHidable;
     }
 
     private static List<SetViewVisibilityItem>? ExpandItems(
@@ -157,6 +175,7 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
         var explicitItems = request.Items ?? new List<SetViewVisibilityItem>();
         var hasSelect = request.Select.HasValue
                         && request.Select.Value.ValueKind == JsonValueKind.Object;
+        var keep = BuildKeepList(request.HideAllExcept);
 
         if (explicitItems.Count > 0 && hasSelect)
         {
@@ -166,7 +185,18 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
         }
 
         if (explicitItems.Count > 0)
+        {
+            if (keep is not null)
+            {
+                foreach (var item in explicitItems)
+                {
+                    item.Visibility ??= new ViewVisibilitySpec();
+                    item.Visibility.HideAllExcept = keep;
+                }
+            }
+
             return explicitItems;
+        }
 
         if (!hasSelect)
         {
@@ -175,10 +205,10 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
             return null;
         }
 
-        if (request.Visibility is null || request.Visibility.IsEmpty)
+        if ((request.Visibility is null || request.Visibility.IsEmpty) && keep is null)
         {
             errorCode = "invalid_arguments";
-            message = "select requires a top-level visibility.";
+            message = "select requires a top-level visibility or hideAllExcept.";
             return null;
         }
 
@@ -187,8 +217,23 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
         if (errorCode is not null)
             return null;
 
+        var visibility = request.Visibility ?? new ViewVisibilitySpec();
+        if (keep is not null)
+            visibility.HideAllExcept = keep;
+
         return viewIds
-            .Select(viewId => new SetViewVisibilityItem { ViewId = viewId, Visibility = request.Visibility })
+            .Select(viewId => new SetViewVisibilityItem { ViewId = viewId, Visibility = visibility })
+            .ToList();
+    }
+
+    private static List<CategoryVisibilitySpec>? BuildKeepList(List<string>? categories)
+    {
+        if (categories is null)
+            return null;
+
+        return categories
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => new CategoryVisibilitySpec { Category = name!.Trim() })
             .ToList();
     }
 
@@ -199,6 +244,8 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
         public JsonElement? Select { get; set; }
 
         public ViewVisibilitySpec? Visibility { get; set; }
+
+        public List<string>? HideAllExcept { get; set; }
     }
 }
 

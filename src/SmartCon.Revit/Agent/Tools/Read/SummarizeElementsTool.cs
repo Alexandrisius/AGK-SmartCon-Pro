@@ -39,7 +39,7 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             "an empty list. " +
             "includeZeroCount=true adds count:0 groups for every requested category " +
             "(proves 'the category is empty' in one call).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""family"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""includeZeroCount"":{""type"":""boolean"",""default"":false},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewId"":{""type"":""integer""},""conditions"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""gt"",""gte"",""lt"",""lte"",""contains"",""startsWith"",""endsWith"",""in"",""notIn"",""exists"",""notExists""]},""value"":{},""unit"":{""type"":""string""}},""required"":[""parameter"",""op""],""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""groupBy"":{""type"":""string"",""enum"":[""category"",""level"",""type"",""family"",""parameter""],""default"":""category""},""parameter"":{""type"":""string""},""sumParameter"":{""type"":""string""},""topN"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":20},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":200,""description"":""Alias for topN (kept for callers that pass limit); topN wins when both are present""},""includeZeroCount"":{""type"":""boolean"",""default"":false},""excludeInternal"":{""type"":""boolean"",""default"":true}},""required"":[""groupBy""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -236,7 +236,10 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
             skippedInternal = before - grouped.Count;
         }
 
-        var topN = Math.Max(1, Math.Min(AgentJson.GetInt(args, "topN", DefaultTopGroups), MaxGroups));
+        var topN = AgentJson.GetInt(args, "topN", 0);
+        if (topN <= 0)
+            topN = AgentJson.GetInt(args, "limit", DefaultTopGroups);
+        topN = Math.Max(1, Math.Min(topN, MaxGroups));
         var typeBound = AgentQueryTypeHint.Describe(doc, spec, result);
         var payload = new
         {

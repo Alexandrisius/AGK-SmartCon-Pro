@@ -283,6 +283,9 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             return;
         }
 
+        if (change.NotHidable is { Count: > 0 })
+            report.NotHidable = change.NotHidable;
+
         if (!change.Changed)
         {
             report.Reason = change.Reason;

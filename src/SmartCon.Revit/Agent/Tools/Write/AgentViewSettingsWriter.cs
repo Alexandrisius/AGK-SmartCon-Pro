@@ -36,6 +36,12 @@ internal static class AgentViewSettingsWriter
 
         public long? ReplacedByTemplateId { get; set; }
 
+        /// <summary>
+        /// Categories the API could not hide/show. They stay visible, so the row
+        /// must not read as a clean success (owner feedback 2026-11-24).
+        /// </summary>
+        public List<NotHidableCategory>? NotHidable { get; set; }
+
         public ChangeItem? ToChangeItem(View view, string key)
         {
             if (!Changed)
@@ -419,10 +425,13 @@ internal static class AgentViewSettingsWriter
         }
 
         var before = AgentViewWriteHelper.ReadVisibility(doc, view);
+        var extraIds = AgentViewWriteHelper.ResolvedCategoryIds(doc, spec);
+        AddHiddenExtras(view, before, extraIds);
 
+        AgentViewWriteHelper.VisibilityApplyResult applied;
         try
         {
-            AgentViewWriteHelper.ApplyVisibility(doc, view, spec, warnings);
+            AgentViewWriteHelper.ApplyVisibility(doc, view, spec, warnings, out applied);
         }
         catch (Exception ex)
         {
@@ -430,11 +439,27 @@ internal static class AgentViewSettingsWriter
         }
 
         var after = AgentViewWriteHelper.ReadVisibility(doc, view);
+        AddHiddenExtras(view, after, extraIds);
         var oldJson = AgentViewWriteHelper.Serialize(before);
         var newJson = AgentViewWriteHelper.Serialize(after);
 
+        if (applied.NotHidable.Count > 0)
+        {
+            var shown = string.Join(", ", applied.NotHidable.Take(10).Select(item => "'" + item.Category + "'"));
+            warnings.Add(
+                "View '" + view.Name + "': " + applied.NotHidable.Count +
+                " categor(y/ies) cannot be hidden through the API and stay visible: " + shown +
+                (applied.NotHidable.Count > 10 ? " (+" + (applied.NotHidable.Count - 10) + " more)" : string.Empty) +
+                ". [Action: hide them in the Revit UI (Visibility/Graphics) or remove their " +
+                "elements from the view; they are listed in notHidable[]]");
+        }
+
         if (string.Equals(oldJson, newJson, StringComparison.Ordinal))
-            return Change.Skip("Visibility is already set to these values (no-op).");
+        {
+            var skipped = Change.Skip("Visibility is already set to these values (no-op).");
+            skipped.NotHidable = applied.NotHidable.Count > 0 ? applied.NotHidable : null;
+            return skipped;
+        }
 
         var editableBefore = CountEditableHidden(view, before);
         var editableAfter = CountEditableHidden(view, after);
@@ -444,9 +469,40 @@ internal static class AgentViewSettingsWriter
             OldValue = oldJson,
             NewValue = newJson,
             Detail = "visibility (" + before.HiddenCategoryIds.Count + " → " +
-                     after.HiddenCategoryIds.Count + " hidden categories; editable via API " +
-                     editableBefore + " → " + editableAfter + ")"
+                     after.HiddenCategoryIds.Count + " hidden categories" +
+                     (applied.HiddenByInverse > 0 ? "; hideAllExcept hid " + applied.HiddenByInverse : string.Empty) +
+                     (applied.ShownByInverse > 0 ? ", showed " + applied.ShownByInverse : string.Empty) +
+                     (applied.NotHidable.Count > 0 ? ", " + applied.NotHidable.Count + " not hideable" : string.Empty) +
+                     "; editable via API " + editableBefore + " → " + editableAfter + ")",
+            NotHidable = applied.NotHidable.Count > 0 ? applied.NotHidable : null
         };
+    }
+
+    /// <summary>
+    /// Categories outside <c>Settings.Categories</c> (cameras) are still real
+    /// category ids; their hidden flag belongs to the read-back so the change
+    /// and undo state do not lose it.
+    /// </summary>
+    private static void AddHiddenExtras(
+        View view,
+        ViewVisibilityState state,
+        IReadOnlyList<ElementId> extraIds)
+    {
+        foreach (var id in extraIds)
+        {
+            try
+            {
+                if (view.GetCategoryHidden(id)
+                    && !state.HiddenCategoryIds.Contains(id.GetValue()))
+                {
+                    state.HiddenCategoryIds.Add(id.GetValue());
+                }
+            }
+            catch (Exception)
+            {
+                // The category rejects the read; nothing to record.
+            }
+        }
     }
 
     /// <summary>

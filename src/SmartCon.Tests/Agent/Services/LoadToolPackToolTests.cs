@@ -271,6 +271,7 @@ public sealed class LoadToolPackToolTests
         tools.Add(new ScriptedTool("list_view_templates"));
         tools.Add(new ScriptedTool("get_view_template_details"));
         tools.Add(new ScriptedTool("set_view_template_inclusion"));
+        tools.Add(new ScriptedTool("create_view_template"));
         var registry = new FakeToolRegistry(tools.ToArray());
         var tool = CreateTool(session, registry);
 
@@ -288,7 +289,7 @@ public sealed class LoadToolPackToolTests
         Assert.Equal(catalogTotal, core + loaded + inRequest + remaining);
         // apply_view_template is a pack tool now: enabling the templates pack queues it
         // together with its three siblings, so all four count as loaded.
-        Assert.Equal(4, loaded);
+        Assert.Equal(5, loaded);
         Assert.Equal(AgentToolPacks.CoreToolNames.Count, core);
         Assert.Equal(0, remaining);
         Assert.Equal(
@@ -296,7 +297,7 @@ public sealed class LoadToolPackToolTests
             data.GetProperty("counting").GetString());
 
         var schemas = data.GetProperty("schemas");
-        Assert.Equal(4, schemas.GetArrayLength());
+        Assert.Equal(5, schemas.GetArrayLength());
         Assert.Equal("apply_view_template", schemas[0].GetProperty("name").GetString());
         Assert.Equal(
             "object",

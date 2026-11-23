@@ -12,7 +12,7 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
 
     private static readonly string[] ValueFields =
     {
-        "scale", "detailLevel", "discipline",
+        "scale", "detailLevel", "displayStyle", "discipline",
         "hiddenCategoryCount", "hiddenCategoryEditableCount", "controlledParameterCount"
     };
 
@@ -29,11 +29,11 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
         Description =
             "Lists view templates with id, name, view type and whether the template controls " +
             "view range, crop region and model visibility overrides. fields reads values too: " +
-            "scale, detailLevel, discipline, hiddenCategoryCount, hiddenCategoryEditableCount, " +
+            "scale, detailLevel, displayStyle, discipline, hiddenCategoryCount, hiddenCategoryEditableCount, " +
             "controlledParameterCount — so an inventory of 45 templates is one call instead of " +
             "45 get_view_template_details. nameContains narrows the list. " +
             "Use it before applying or copying a template.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,scale,detailLevel,discipline,hiddenCategoryCount,hiddenCategoryEditableCount,controlledParameterCount"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,scale,detailLevel,displayStyle,discipline,hiddenCategoryCount,hiddenCategoryEditableCount,controlledParameterCount"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -85,6 +85,7 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
                     card.IncludesVisibility,
                     settings.Scale,
                     settings.DetailLevel,
+                    settings.DisplayStyle,
                     settings.Discipline,
                     settings.HiddenCategoryCount,
                     settings.HiddenCategoryEditableCount,
@@ -122,6 +123,7 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
                         includesVisibility = false,
                         scale = (int?)null,
                         detailLevel = (string?)null,
+                        displayStyle = (string?)null,
                         discipline = (string?)null,
                         hiddenCategoryCount = 0,
                         hiddenCategoryEditableCount = 0,

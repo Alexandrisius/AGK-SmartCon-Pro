@@ -49,7 +49,7 @@ public sealed class AgentToolPacksTests
             ["templates"] = new[]
             {
                 "list_view_templates", "get_view_template_details", "apply_view_template",
-                "set_view_template_inclusion"
+                "set_view_template_inclusion", "create_view_template"
             },
             ["model"] = new[]
             {
@@ -150,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(135, placements.Length);
+        Assert.Equal(136, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

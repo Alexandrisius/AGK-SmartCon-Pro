@@ -192,6 +192,8 @@ public sealed class ViewSettings
 
     public string? DetailLevel { get; init; }
 
+    public string? DisplayStyle { get; init; }
+
     public string? Discipline { get; init; }
 
     public ViewRangeInfo? ViewRange { get; init; }
@@ -249,6 +251,8 @@ public sealed class ViewSettingsSummary
     public int? Scale { get; init; }
 
     public string? DetailLevel { get; init; }
+
+    public string? DisplayStyle { get; init; }
 
     public string? Discipline { get; init; }
 
