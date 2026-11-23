@@ -45,7 +45,10 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
     ];
 
     private Document? _document;
+    private List<Document>? _openBefore;
+    private Document? _donor;
     private string? _donorPath;
+    private string? _tempDirectory;
     private FamilySeed? _seed;
     private SharedParameterFileScope? _sharedFile;
     private RevitThreadEvent? _event;
@@ -58,6 +61,11 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
     public void Seed()
     {
         AgentBackgroundDocuments.ClearForTests();
+
+        // What the host had open before this test: [After(Test)] leaves it
+        // untouched and reports only what THIS test leaked.
+        _openBefore = Application.Documents.Cast<Document>().ToList();
+
         _document = Application.NewProjectDocument(UnitSystem.Metric);
         _event = new RevitThreadEvent(Application);
     }
@@ -66,26 +74,49 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
     public void Close()
     {
         AgentBackgroundDocuments.ClearForTests();
+
+        // The donor is closed by ITS OWN test, never left to the host: an open
+        // background document survives into every later test of the session
+        // and fails their "only the project document is open" assertions
+        // (night run 2 R0: two leaked donors broke the family job tests).
+        var donor = _donor;
+        _donor = null;
+        CloseDocument(donor);
+
         _seed?.Dispose();
         _sharedFile?.Dispose();
 
-        try
+        CloseDocument(_document);
+        _document = null;
+
+        // Everything else this test left open is closed here too - one leaky
+        // test must not break the later tests of the session - and reported,
+        // so the leak fails its own test.
+        var leaked = new List<string>();
+        foreach (var document in Application.Documents.Cast<Document>().ToList())
         {
-            _document?.Close(false);
-        }
-        catch (Exception)
-        {
-            // The document may already be closed by a test scenario.
+            if (WasOpenBefore(document))
+                continue;
+
+            leaked.Add(document.Title);
+            CloseDocument(document);
         }
 
+        // Files only after every document that used them is closed.
         try
         {
-            if (!string.IsNullOrEmpty(_donorPath) && File.Exists(_donorPath))
-                File.Delete(_donorPath);
+            if (!string.IsNullOrEmpty(_tempDirectory) && Directory.Exists(_tempDirectory))
+                Directory.Delete(_tempDirectory, recursive: true);
         }
         catch (Exception)
         {
-            // Temp file cleanup is best-effort.
+            // Temp directory cleanup is best-effort.
+        }
+
+        if (leaked.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Тест оставил открытыми документы: " + string.Join(", ", leaked));
         }
     }
 
@@ -260,23 +291,17 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
         // The user's own document registered under its path keeps the regular
         // write flow: the policy says so, the Revit flag says nothing.
         var mainPath = Path.Combine(
-            Path.GetDirectoryName(_donorPath!)!,
+            _tempDirectory!,
             "routing-main-" + Guid.NewGuid().ToString("N") + ".rvt");
         Doc.SaveAs(mainPath);
-        try
-        {
-            var active = await Run(new OpenModelBackgroundTool(new StubRevitContext(Doc)),
-                new { path = mainPath });
-            await Assert.That(active.Success).IsTrue();
-            var activePayload = active.Data!.Value;
-            await Assert.That(activePayload.GetProperty("isActive").GetBoolean()).IsTrue();
-            await Assert.That(activePayload.GetProperty("agentPolicy").GetString())
-                .IsEqualTo(OpenModelBackgroundTool.AgentDocumentPolicy.ActiveDocument);
-        }
-        finally
-        {
-            TryDeleteFile(mainPath);
-        }
+
+        var active = await Run(new OpenModelBackgroundTool(new StubRevitContext(Doc)),
+            new { path = mainPath });
+        await Assert.That(active.Success).IsTrue();
+        var activePayload = active.Data!.Value;
+        await Assert.That(activePayload.GetProperty("isActive").GetBoolean()).IsTrue();
+        await Assert.That(activePayload.GetProperty("agentPolicy").GetString())
+            .IsEqualTo(OpenModelBackgroundTool.AgentDocumentPolicy.ActiveDocument);
     }
 
     [Test]
@@ -357,6 +382,23 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
 
     // ── Support ────────────────────────────────────────────────────────
 
+    private static void CloseDocument(Document? document)
+    {
+        try
+        {
+            if (document is not null && document.IsValidObject)
+                document.Close(false);
+        }
+        catch (Exception)
+        {
+            // A document that refused to close is reported as leaked in [After(Test)].
+        }
+    }
+
+    private bool WasOpenBefore(Document document) =>
+        _openBefore!.Any(before => ReferenceEquals(before, document)
+                                   || AgentDocumentIdentity.IsSameOpenDocument(before, document));
+
     private static bool Lacks(string? text, string fragment) =>
         (text ?? string.Empty).IndexOf(fragment, StringComparison.Ordinal) < 0;
 
@@ -384,9 +426,10 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
 
     private async Task<string> OpenDonor()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "SmartConDocumentRouting");
-        Directory.CreateDirectory(directory);
-        _donorPath = Path.Combine(directory, "donor-" + Guid.NewGuid().ToString("N") + ".rvt");
+        _tempDirectory ??= Path.Combine(
+            Path.GetTempPath(), "SmartConDocumentRouting", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDirectory);
+        _donorPath = Path.Combine(_tempDirectory, "donor-" + Guid.NewGuid().ToString("N") + ".rvt");
         var donor = Application.NewProjectDocument(UnitSystem.Metric);
         donor.SaveAs(_donorPath);
         donor.Close(false);
@@ -396,20 +439,13 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
         if (!open.Success)
             Skip.Test("Не удалось открыть модель-донор: " + open.Message);
 
-        return open.Data!.Value.GetProperty("documentId").GetString()!;
-    }
+        var documentId = open.Data!.Value.GetProperty("documentId").GetString()!;
+        if (!AgentBackgroundDocuments.TryResolve(documentId, out var opened))
+            Skip.Test("Открытый донор не найден в реестре фоновых моделей: " + open.Message);
 
-    private static void TryDeleteFile(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-        catch (Exception)
-        {
-            // Temp file cleanup is best-effort.
-        }
+        // Handed to [After(Test)]: the document is closed with the test.
+        _donor = opened;
+        return documentId;
     }
 
     private async Task<ToolResult> Run(IAgentTool tool, object args)
