@@ -20,6 +20,7 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
     private const int MaxParameterNames = 10;
     private const int MaxTypeIds = 200;
     private const int MaxInstancesCheckedForVariance = 50;
+    private const int MaxFamilyNames = 50;
 
     private static readonly string[] AvailableFields =
     {
@@ -38,13 +39,15 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
         Description =
             "Lists the types (типоразмеры) of a family, including types that are not placed " +
             "in the model. familyId, familyIds[], familyUniqueId or familyName select the " +
-            "family; typeIds[] select types directly. Records are compact by default " +
+            "family; familyNames[] selects several families by name at once (up to 50, every " +
+            "name must resolve - the same matching as familyName); typeIds[] select types " +
+            "directly. Records are compact by default " +
             "(typeId, name, familyId, familyName): fields adds isPlaced, parameters and " +
             "parameterCount, compact=false returns the full record, parameterNames adds the " +
             "values of the listed parameters per type.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to a family type.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families by NAME in one call. Every name must resolve like familyName (case-insensitive exact name; an ambiguous name fails). Pass either familyIds or familyNames, not both""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to a family type.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -176,7 +179,7 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
         // Live case 5 round 2: reading families one-per-call burned the round
         // budget; nudge the batch parameter for the rest of the list.
         if (families.Count == 1 && !isFamilyBatch && directTypes.Count == 0)
-            messageText += " Reading several families? Pass familyIds:[...] — up to 50 in one call.";
+            messageText += " Reading several families? Pass familyIds:[...] or familyNames:[...] — up to 50 in one call.";
         if (pageEnvelope.Truncated)
             messageText += " Narrow with typeIds or fewer fields.";
         if (selection.IsDefault && compact && reports.Count >= AgentListPayload.CompactHintThreshold)

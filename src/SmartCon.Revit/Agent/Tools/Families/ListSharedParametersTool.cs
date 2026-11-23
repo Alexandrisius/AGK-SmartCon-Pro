@@ -56,15 +56,19 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
                 "The active shared parameter file could not be opened: " + ex.Message +
-                ". [Action: configure a shared parameter file in Manage > Shared Parameters]");
+                ". [Action: call set_shared_parameter_file(path=<absolute path of the .txt " +
+                "file>, dryRun=true) to attach an existing file - createIfMissing=true creates " +
+                "a new empty file - then retry; in the Revit UI: Manage > Shared Parameters]");
         }
 
         if (file is null)
         {
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
-                "No active shared parameter file is configured. [Action: Manage > Shared " +
-                "Parameters > Create/Browse, then retry]");
+                "No active shared parameter file is configured. [Action: call " +
+                "set_shared_parameter_file(path=<absolute .txt path>, createIfMissing=true, " +
+                "dryRun=true) to create a new shared parameter file or attach the existing " +
+                "one, then retry; in the Revit UI: Manage > Shared Parameters > Create/Browse]");
         }
 
         var matches = new List<SharedParameterRow>();
@@ -117,7 +121,9 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
                 "The shared parameter file could not be read: " + ex.Message +
-                ". [Action: check the file and retry]");
+                ". [Action: call set_shared_parameter_file(path=<absolute path of another " +
+                ".txt file>, dryRun=true) to switch to a readable file, or check the file " +
+                "and retry]");
         }
 
         matches.Sort((left, right) =>

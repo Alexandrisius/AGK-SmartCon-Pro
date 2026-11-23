@@ -64,7 +64,8 @@ public static partial class AgentToolCards
             Pack = "families",
             Purpose =
                 "Типы (типоразмеры) одного семейства, батчем до 50 семейств через familyIds[] " +
-                "или напрямую по typeIds[], включая неразмещённые. По умолчанию компактные " +
+                "или familyNames[] (по именам — когда familyId мог измениться после перезагрузки " +
+                "семейства), или напрямую по typeIds[], включая неразмещённые. По умолчанию компактные " +
                 "записи typeId, name, familyId, familyName; fields добавляет isPlaced, " +
                 "parameters, parameterCount; parameterNames возвращает значения выбранных " +
                 "параметров по типам (valueScope=instance — по размещённым экземплярам); " +
@@ -72,8 +73,8 @@ public static partial class AgentToolCards
             WhenToUse =
                 "Когда известен familyId/имя семейства и нужны его типы, в том числе ещё не " +
                 "размещённые в модели, или нужно узнать typeId для записи значений; для " +
-                "просмотра типов НЕСКОЛЬКИХ семейств сразу — один вызов с familyIds[]; чтобы " +
-                "сравнить значения параметра по типам — parameterNames.",
+                "просмотра типов НЕСКОЛЬКИХ семейств сразу — один вызов с familyIds[] или " +
+                "familyNames[]; чтобы сравнить значения параметра по типам — parameterNames.",
             WhenNotToUse =
                 "Когда нужен список всех семейств — list_families; когда нужны параметры " +
                 "семейства с формулами и значениями — get_family_parameters; когда нужны " +
@@ -92,7 +93,7 @@ public static partial class AgentToolCards
                 "типы", "типоразмеры", "типы семейства", "family types", "types", "типоразмер",
                 "неразмещённые типы", "размещённые типы", "typeId", "список типов",
                 "какие типы", "типы дверей", "значения параметров типов", "typeIds",
-                "parameterNames"
+                "parameterNames", "familyNames"
             },
             NegativeExamples = new[]
             {

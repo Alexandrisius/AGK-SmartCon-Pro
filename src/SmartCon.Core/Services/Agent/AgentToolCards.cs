@@ -15,6 +15,7 @@ public static partial class AgentToolCards
     static AgentToolCards()
     {
         Cards = ModelCards()
+            .Concat(ElementsCards())
             .Concat(ViewCards())
             .Concat(ViewSettingsCards())
             .Concat(SheetCards())

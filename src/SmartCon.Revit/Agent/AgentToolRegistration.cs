@@ -162,6 +162,9 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, AuditModelTool>();
         services.AddSingleton<IAgentTool, ListClassificationEntriesTool>();
         services.AddSingleton<IAgentTool, LoadClassificationTableTool>();
+        services.AddSingleton<IAgentTool, GetDocumentStatusTool>();
+        services.AddSingleton<IAgentTool, GetElementBoundsTool>();
+        services.AddSingleton<IAgentTool, SetSharedParameterFileTool>();
         // The factory resolves the decision client lazily: AddAgentCore has
         // registered it by the time the Revit tool graph is composed.
         services.AddSingleton<IAgentTool>(sp => new ClassifyTypesTool(
@@ -360,6 +363,9 @@ public static class AgentToolRegistration
         typeof(AuditModelTool),
         typeof(ListClassificationEntriesTool),
         typeof(LoadClassificationTableTool),
+        typeof(GetDocumentStatusTool),
+        typeof(GetElementBoundsTool),
+        typeof(SetSharedParameterFileTool),
         typeof(ClassifyTypesTool),
         typeof(StartJobTool),
         typeof(GetJobStatusTool),

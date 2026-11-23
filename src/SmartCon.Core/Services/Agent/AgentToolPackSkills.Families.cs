@@ -13,7 +13,8 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
   `find_families_with_parameter` (instance-параметры — `includeInstanceParameters=true`),
-  `list_shared_parameters` (нужен активный ФОП, иначе `shared_parameter_file_missing`).
+  `list_shared_parameters` (нужен активный ФОП, иначе `shared_parameter_file_missing` — подключите
+  его тулом `set_shared_parameter_file` пака params).
 - Инвентаризация (`list_families`): `summary=true` → фильтр `category` → компактные записи;
   не листуйте страницы по одной — `fields`/`parameterNames` берут только нужное.
 - Запись в документ семейства: `rename_family_parameter`, `add_family_parameter`,

@@ -53,6 +53,31 @@ public sealed partial class ListFamilyTypesTool
         isBatch = args.TryGetProperty("familyIds", out var batchElement)
                   && batchElement.ValueKind == JsonValueKind.Array
                   && batchElement.GetArrayLength() > 0;
+
+        // Batch by names (N-ds-5): the same contract as the familyIds batch -
+        // every selector must resolve - and not combinable with it.
+        var familyNames = ReadFamilyNames(args);
+        if (isBatch && familyNames.Count > 0)
+        {
+            return ToolResult.Fail(
+                "invalid_arguments",
+                "Pass either familyIds or familyNames, not both.");
+        }
+
+        if (familyNames.Count > MaxFamilyNames)
+        {
+            return ToolResult.Fail(
+                "invalid_arguments",
+                "familyNames accepts at most " + MaxFamilyNames + " names; got " +
+                familyNames.Count + ".");
+        }
+
+        if (familyNames.Count > 0)
+        {
+            isBatch = true;
+            return ResolveFamilyNames(doc, familyNames, families);
+        }
+
         if (isBatch)
         {
             var missing = new List<long>();
@@ -107,6 +132,70 @@ public sealed partial class ListFamilyTypesTool
 
         families.Add(family);
         return null;
+    }
+
+    /// <summary>
+    /// Batch selection by family names: each name is resolved exactly like the
+    /// single <c>familyName</c> selector (case-insensitive exact name, an
+    /// ambiguous name fails). Mirrors the familyIds batch: none resolved is a
+    /// typed failure, some unresolved is a success that names the misses.
+    /// </summary>
+    private static ToolResult? ResolveFamilyNames(
+        Document doc,
+        IReadOnlyList<string> familyNames,
+        List<Autodesk.Revit.DB.Family> families)
+    {
+        var unresolved = new List<Dictionary<string, object?>>();
+        foreach (var name in familyNames)
+        {
+            var family = AgentFamilyReader.ResolveFamily(
+                doc, null, name, null, out var errorCode, out var message);
+            if (family is not null)
+                families.Add(family);
+            else
+                unresolved.Add(new Dictionary<string, object?>
+                {
+                    ["name"] = name,
+                    ["errorCode"] = errorCode,
+                    ["reason"] = message
+                });
+        }
+
+        if (families.Count == 0)
+        {
+            return ToolResult.Fail(
+                "family_not_found",
+                "None of the familyNames resolved: [" + Names(unresolved) + "]. " +
+                "[Action: check the exact names with list_families, or pass familyIds]",
+                data: AgentJson.Serialize(new { unresolved }));
+        }
+
+        if (unresolved.Count > 0)
+        {
+            return ToolResult.Ok(
+                AgentJson.Serialize(new { unresolved }),
+                "familyNames batch requires every name to resolve; unresolved: [" +
+                Names(unresolved) + "]. [Action: fix the names with list_families or pass " +
+                "familyIds]");
+        }
+
+        return null;
+    }
+
+    private static string Names(List<Dictionary<string, object?>> rows) =>
+        string.Join(", ", rows.Select(row => row["name"]));
+
+    private static List<string> ReadFamilyNames(JsonElement args)
+    {
+        var names = new List<string>();
+        foreach (var entry in AgentJson.GetStringArray(args, "familyNames"))
+        {
+            var name = entry.Trim();
+            if (name.Length > 0 && !names.Contains(name, StringComparer.OrdinalIgnoreCase))
+                names.Add(name);
+        }
+
+        return names;
     }
 
     private static ToolResult? ResolveFields(
