@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Moq;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent.Jobs.Actions;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Jobs;
@@ -81,6 +83,49 @@ public sealed class JobMessageHonestyTests
             state == JobState.RolledBack ? "start_job with dryRun=true again" : "rollback_job again",
             hint,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Describe_PreviewFailedBeforeEnvelope_FallsBackToTotals()
+    {
+        var job = Record(JobState.Failed, null, JobErrorCodes.DocumentReadOnly, failed: 1, pending: 2);
+
+        using var json = JsonDocument.Parse(JobToolPayloads.Serialize(JobToolPayloads.Describe(job)).GetRawText());
+        var payload = json.RootElement;
+
+        Assert.Equal(1, payload.GetProperty("failed").GetInt32());
+        Assert.Equal(0, payload.GetProperty("done").GetInt32());
+    }
+
+    [Fact]
+    public async Task LoadFailedItemsAsync_PreviewFailedBeforeEnvelope_LoadsFailedUnits()
+    {
+        var job = Record(JobState.Failed, null, JobErrorCodes.DocumentReadOnly, failed: 1, pending: 2);
+        var store = new Mock<IJobStore>();
+        store.Setup(s => s.LoadItemsAsync(
+                job.JobId,
+                It.IsAny<IReadOnlyList<JobItemState>>(),
+                0,
+                1000000,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { Item(2, "permission_denied", "read-only") });
+
+        var failed = await JobToolPayloads.LoadFailedItemsAsync(store.Object, job, CancellationToken.None);
+
+        Assert.NotNull(failed);
+        Assert.Single(failed!);
+        Assert.Equal(" Causes: permission_denied ×1.", JobToolPayloads.CausesLine(failed));
+    }
+
+    [Fact]
+    public async Task LoadFailedItemsAsync_RunningPreviewWithoutFailures_SkipsStoreRoundTrip()
+    {
+        var job = Record(JobState.PreviewRunning, null);
+        var store = new Mock<IJobStore>(MockBehavior.Strict);
+
+        var failed = await JobToolPayloads.LoadFailedItemsAsync(store.Object, job, CancellationToken.None);
+
+        Assert.Null(failed);
     }
 
     [Fact]
@@ -206,7 +251,12 @@ public sealed class JobMessageHonestyTests
         SpecHash = "p"
     };
 
-    private static JobRecord Record(JobState state, JobPreview? preview, string? errorCode = null) => new()
+    private static JobRecord Record(
+        JobState state,
+        JobPreview? preview,
+        string? errorCode = null,
+        int failed = 0,
+        int pending = 0) => new()
     {
         JobId = Guid.NewGuid(),
         Spec = new JobSpec
@@ -219,7 +269,8 @@ public sealed class JobMessageHonestyTests
         },
         State = state,
         PreviewJson = preview is null ? null : JobJson.Serialize(preview),
-        ErrorCode = errorCode
+        ErrorCode = errorCode,
+        TotalsJson = JobJson.Serialize(new JobTotals { Total = 3, Failed = failed, Pending = pending })
     };
 
     private static JobItem Item(int seq, string code, string detail) => new()

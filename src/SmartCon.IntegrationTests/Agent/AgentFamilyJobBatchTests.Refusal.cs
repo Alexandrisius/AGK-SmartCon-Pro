@@ -223,6 +223,24 @@ public sealed partial class AgentFamilyJobBatchTests
     }
 
     /// <summary>
+    /// The host dispatches a call that was raised off the Revit thread to the
+    /// Revit thread; it never runs inline on the caller (Revit reports an
+    /// untouched document as read-only from another thread).
+    /// </summary>
+    [Test]
+    public async Task Host_CallRaisedOffTheRevitThread_RunsOnTheRevitThread()
+    {
+        using var host = CreateHost();
+        var revitThread = Environment.CurrentManagedThreadId;
+
+        var ranOn = Pump(() => host.RevitEvent.RaiseAsync(
+            _ => Environment.CurrentManagedThreadId,
+            CancellationToken.None));
+
+        await Assert.That(ranOn).IsEqualTo(revitThread);
+    }
+
+    /// <summary>
     /// A family document that survives Close(false) is reported as such: the
     /// close section says failed, and the document is still open.
     /// </summary>

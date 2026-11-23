@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using Autodesk.Revit.DB;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,6 +67,9 @@ internal sealed class ProductionAgentHost : IDisposable
 
     public string DatabasePath => _database.DatabasePath;
 
+    /// <summary>The awaitable event the agent graph raises its Revit calls on.</summary>
+    public IAgentAwaitableEvent RevitEvent => _provider.GetRequiredService<IAgentAwaitableEvent>();
+
     /// <summary>
     /// The JSON artifact of the benchmark case this host served: Dispose copies
     /// the session database next to it as <c>r&lt;stamp&gt;.db</c>
@@ -95,6 +99,9 @@ internal sealed class ProductionAgentHost : IDisposable
         database.Initialize();
 
         var revitContext = new StubRevitContext(doc);
+        // RevitThreadEvent captures the dispatcher of the thread it is built on; without
+        // one every raised call runs inline on the calling thread, off the Revit thread.
+        _ = Dispatcher.CurrentDispatcher;
         var revitThread = new RevitThreadEvent(doc.Application);
         var services = new ServiceCollection();
         services.AddSingleton<IRevitContext>(revitContext);

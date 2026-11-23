@@ -53,7 +53,8 @@ internal static class JobToolPayloads
             count = preview?.Count ?? totals.Total,
             willChange = preview?.WillChangeCount,
             skipped = preview?.SkipCount,
-            failed = job.StartedAt is null ? preview?.FailedCount : totals.Failed,
+            // A preview stopped before its envelope (document refusal) is counted by the totals.
+            failed = job.StartedAt is null ? preview?.FailedCount ?? totals.Failed : totals.Failed,
             stale = totals.Stale,
             done = totals.Done,
             mismatch = totals.Mismatch,
@@ -212,7 +213,7 @@ internal static class JobToolPayloads
     {
         var totals = Totals(job);
         var failed = job.StartedAt is null
-            ? Preview(job)?.FailedCount ?? 0
+            ? Preview(job)?.FailedCount ?? totals.Failed
             : totals.Failed + totals.Mismatch + totals.UndoFailed;
         if (failed <= 0)
         {
