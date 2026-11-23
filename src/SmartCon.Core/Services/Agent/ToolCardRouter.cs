@@ -28,6 +28,16 @@ public static class ToolCardRouter
     public const double MinQueryCoverage = 0.25;
 
     /// <summary>
+    /// Share of the query's weight a card must carry to stand for the whole
+    /// request (see <see cref="QueryCoverage"/>). When wording ranking is all
+    /// that backs the shortlist, find_tools lets such cards lead: BM25 over
+    /// descriptions pays for a long description, so a card that came to explain
+    /// more of itself can drop out of the shortlist although no other card says
+    /// more about the request (list_families, night run 2).
+    /// </summary>
+    public const double FullQueryCoverage = 0.9;
+
+    /// <summary>
     /// A term the catalog never uses weighs as much as a fairly specific term
     /// (one that about a tenth of the cards share). Without the cap a single
     /// unknown word would dominate every query it appears in.

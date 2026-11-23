@@ -122,9 +122,22 @@ public sealed partial class FindToolsTool : IAgentTool
         // Honest absence (C10-03): when no card carries enough of the query,
         // whatever ranks first shares only common wording with it. The floor
         // gates the answer as a whole; it never cuts cards out of a match.
+        var coverage = ToolCardRouter.QueryCoverage(query, rankable);
         var noSignal = named.Count == 0
-                       && !ToolCardRouter.QueryCoverage(query, rankable).Values.Any(
+                       && !coverage.Values.Any(
                            share => share >= ToolCardRouter.MinQueryCoverage);
+
+        // The wording-only shortlist ranks descriptions and pays for their
+        // length: a card that came to explain more of itself drops below cards
+        // that share less with the request. A card carrying the whole query is
+        // an answer whatever its length, so such cards lead, in card-ranking
+        // order. A router with a verdict of its own is not second-guessed.
+        var covered = RoutingIsWordingOnly
+            ? lexical.Where(definition => coverage.TryGetValue(definition.Name, out var share)
+                                          && share >= ToolCardRouter.FullQueryCoverage)
+                .ToList()
+            : new List<AgentToolDefinition>();
+
         var reportsVerdict = RouterReportsOwnVerdict;
         if (RoutingIsWordingOnly && noSignal)
             return NoMatchResult(lexical);
@@ -180,6 +193,9 @@ public sealed partial class FindToolsTool : IAgentTool
             if (startJob is not null)
                 Add(startJob);
         }
+
+        foreach (var definition in covered)
+            Add(definition);
 
         foreach (var definition in chosen)
             Add(definition);

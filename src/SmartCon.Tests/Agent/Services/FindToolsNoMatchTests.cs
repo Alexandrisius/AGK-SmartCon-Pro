@@ -198,6 +198,79 @@ public sealed class FindToolsNoMatchTests
         Assert.InRange(covered["create_schedule"], ToolCardRouter.MinQueryCoverage, 0.5);
     }
 
+    private sealed class CardTool : IAgentTool
+    {
+        public CardTool(AgentToolDefinition definition)
+        {
+            Definition = definition;
+        }
+
+        public AgentToolDefinition Definition { get; }
+
+        public Task<ToolResult> ExecuteAsync(
+            AgentToolContext context,
+            JsonElement args,
+            CancellationToken ct) =>
+            Task.FromResult(ToolResult.Ok(message: "ok"));
+    }
+
+    /// <summary>
+    /// Seven short cards and one long card that alone carries the whole request:
+    /// BM25 over descriptions pays for the length of the long one.
+    /// </summary>
+    private static IAgentTool[] LengthPenalizedCatalog()
+    {
+        var tools = new List<IAgentTool>();
+        for (var index = 1; index <= 7; index++)
+            tools.Add(new CardTool(Definition("short_card_" + index, "семейства модель")));
+
+        var filler = string.Join(" ", Enumerable.Repeat("загруженные типы категория экземпляр", 30));
+        tools.Add(new CardTool(new AgentToolDefinition
+        {
+            Name = "list_families",
+            Description = filler + " семейства модель",
+            Risk = AgentToolRisk.Read,
+            InputSchemaJson = "{}",
+            Purpose = "какие семейства есть в модели список"
+        }));
+        return tools.ToArray();
+    }
+
+    [Fact]
+    public async Task Search_WordingShortlistMissesTheCardThatCarriesTheWholeQuery_TheCardLeads()
+    {
+        // Night run 2: list_families came to explain placedInstanceCount in its
+        // description, the description ranking paid for the length, and "какие
+        // семейства есть в модели" no longer listed the tool.
+        var data = await SearchAsync(
+            RuleTool(LengthPenalizedCatalog()), "{\"query\":\"семейства модель список\"}");
+
+        Assert.False(data.TryGetProperty("noMatch", out _));
+        Assert.Equal("list_families", data.GetProperty("tools")[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task Search_DecisionModelPickedAnotherTool_TheCoveredCardDoesNotDisplaceThePick()
+    {
+        // A router with a verdict of its own is not second-guessed by wording.
+        var client = new StubDecisionClient();
+        client.Answers["tool"] = new AgentDecisionAnswer
+        {
+            Type = "choice",
+            Choice = "short_card_1",
+            Confidence = 0.8
+        };
+
+        var data = await SearchAsync(
+            DecisionTool(client, LengthPenalizedCatalog()),
+            "{\"query\":\"семейства модель список\",\"limit\":2}");
+
+        var names = data.GetProperty("tools").EnumerateArray()
+            .Select(card => card.GetProperty("name").GetString())
+            .ToList();
+        Assert.Equal(new[] { "short_card_1", "list_families" }, names);
+    }
+
     /// <summary>The production router with its decision model switched on.</summary>
     private static FindToolsTool DecisionTool(StubDecisionClient client, params IAgentTool[] tools)
     {
