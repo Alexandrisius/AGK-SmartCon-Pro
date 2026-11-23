@@ -105,7 +105,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 Create("Марка", Case11MarkGuid),
                 Create("Единица измерения", Case11UnitGuid),
                 Create("Количество", Case11CountGuid),
-                Create("АДСК_ИмяСистемы", Case11SystemNameGuid));
+                Create(Case11SystemParameterName, Case11SystemNameGuid));
         }
         catch (Exception ex)
         {

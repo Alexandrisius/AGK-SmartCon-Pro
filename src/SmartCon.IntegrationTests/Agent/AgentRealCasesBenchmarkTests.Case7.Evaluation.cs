@@ -88,16 +88,20 @@ public sealed partial class AgentRealCasesBenchmarkTests
                          string.Join("; ", invented.Take(5)) +
                          (invented.Count > 5 ? " …" : string.Empty));
 
-        // (б) Инвалиды подсвечены с причинами.
-        var invalidsListed = ContainsText(answerText, "Термометр") &&
-                             ContainsText(answerText, "Воздухоотводчик");
+        // (б) Инвалиды подсвечены с причинами. Кто именно инвалид — выводится
+        // из истины сида: размещённое семейство, у которого есть источник с
+        // ПУСТЫМ значением («значение пустое») либо почти нет источников
+        // (≤1 непустого — «параметра нет вообще»); группа с неполным НАБОРОМ
+        // («переносится то, что есть») инвалидом не считается.
+        var invalidFamilies = Case7InvalidFamilies();
+        var invalidsListed = invalidFamilies.All(family => ContainsText(answerText, family));
         var emptyReason = ContainsText(answerText, "пуст");
         var noParamReason = new[] { "отсутс", "нет параметра", "нет аналога", "не найден", "нет источника" }
             .Any(marker => ContainsText(answerText, marker));
         var invalidsOk = invalidsListed && emptyReason && noParamReason;
         if (!invalidsListed)
-            notes.Add("инвалиды не подсвечены в ответе (Термометр — пустое Наименование, " +
-                      "Воздухоотводчик — нет параметров-источников)");
+            notes.Add("инвалиды не подсвечены в ответе (" +
+                      string.Join(", ", invalidFamilies) + ")");
         else if (!emptyReason || !noParamReason)
             notes.Add("причины инвалидов не названы (нужно «пустое значение» и «параметра нет»)");
 
@@ -127,9 +131,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
             }
         }
 
-        var unplacedListed = ContainsText(answerText, "Задвижка") && ContainsText(answerText, "Манометр");
+        var unplacedFamilies = _case7Truth
+            .Where(row => !row.Placed)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var unplacedListed = unplacedFamilies.All(family => ContainsText(answerText, family));
         if (!unplacedListed)
-            notes.Add("неразмещённые семейства не перечислены отдельным списком");
+            notes.Add("неразмещённые семейства не перечислены отдельным списком (" +
+                      string.Join(", ", unplacedFamilies) + ")");
 
         // (г) Контрольная ведомость: фильтр по пустому целевому параметру + поля
         // семейство/тип (не сид-ведомость и не приманка).
@@ -200,6 +210,24 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
     }
+
+    /// <summary>
+    /// Семейства-инвалиды из истины сида: размещённые строки, у которых есть
+    /// нетранспортируемая ячейка — источник с пустым значением либо почти нет
+    /// источников (≤1 непустого). Неполный НАБОР группы («переносится то, что
+    /// есть») инвалидом не считается — иначе группа Б попала бы в список.
+    /// </summary>
+    private List<string> Case7InvalidFamilies() =>
+        _case7Truth
+            .Where(row => row.Placed)
+            .Where(row =>
+                Enumerable.Range(0, Case7RoleCount)
+                    .Any(role => row.HasOld(role) && string.IsNullOrEmpty(row.Old[role])) ||
+                Enumerable.Range(0, Case7RoleCount)
+                    .Count(role => row.HasOld(role) && !string.IsNullOrEmpty(row.Old[role])) <= 1)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
 
     /// <summary>
     /// Явное число юнитов джобы из её аргументов (C2-09): длина явного списка

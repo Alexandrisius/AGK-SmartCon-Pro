@@ -90,11 +90,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 () => "state: n/a",
                 llmClient: fake);
 
-            // Diagnostic trail before the assertions: the real message sequence.
-            foreach (var entry in await BudgetPlumbingReadTrail(
-                         BenchRunArtifactWriter.DatabasePathFor(run.JsonPath)))
-                Console.WriteLine("PROBE budget plumbing: " + entry);
-
             // The budget was spent — and the final answer survived.
             await Assert.That(run.StopReason).IsEqualTo("round_budget");
             await Assert.That(run.Error).IsNull();
@@ -103,14 +98,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
             // Every LLM request is accounted for: 5 working rounds + the final call.
             await Assert.That(fake.Requests.Count).IsEqualTo(BudgetPlumbingToolRounds + 1);
-            for (var index = 0; index < fake.Requests.Count; index++)
-            {
-                var request = fake.Requests[index];
-                Console.WriteLine("PROBE budget plumbing: request " + (index + 1) + "/" + fake.Requests.Count +
-                                  " tools=" + request.Tools.Count + " [" +
-                                  string.Join(", ", request.Tools.Take(6).Select(tool => tool.Name)) + "]");
-            }
-
             foreach (var request in fake.Requests.Take(BudgetPlumbingToolRounds))
                 await Assert.That(request.Tools.Count).IsGreaterThan(0);
             await Assert.That(fake.Requests[^1].Tools.Count).IsEqualTo(0);
@@ -136,18 +123,26 @@ public sealed partial class AgentRealCasesBenchmarkTests
             await Assert.That(root.GetProperty("verdict").GetProperty("score").GetDouble()).IsEqualTo(0.5);
             await Assert.That(root.GetProperty("stateVerdict").GetProperty("label").GetString()).IsEqualTo("PASS");
 
-            // Conversation: the steering message follows the tool results of the
-            // interrupted round; the final demand precedes exactly one tool-less answer.
+            // Conversation: each new turn's user message is preceded by the
+            // orchestrator's System <turn_context> (B1-6), not by the tool
+            // results of the interrupted round; the final demand precedes
+            // exactly one tool-less answer.
             var roles = await BudgetPlumbingReadRoles(BenchRunArtifactWriter.DatabasePathFor(run.JsonPath));
             var steeringIndex = roles.IndexOf("User:" + SteeringRoundsText);
             await Assert.That(steeringIndex).IsGreaterThan(0);
             await Assert.That(roles.Count(role => role == "User:" + SteeringRoundsText)).IsEqualTo(1);
-            await Assert.That(roles[steeringIndex - 1].StartsWith("Tool:", StringComparison.Ordinal))
+            await Assert.That(roles[steeringIndex - 1].StartsWith("System:", StringComparison.Ordinal))
+                .IsTrue();
+            await Assert.That(roles[steeringIndex - 1].Contains("<turn_context>", StringComparison.Ordinal))
                 .IsTrue();
 
             var finalIndex = roles.IndexOf("User:" + FinalAnswerDemandText);
             await Assert.That(finalIndex).IsGreaterThan(steeringIndex);
             await Assert.That(roles.Count(role => role == "User:" + FinalAnswerDemandText)).IsEqualTo(1);
+            await Assert.That(roles[finalIndex - 1].StartsWith("System:", StringComparison.Ordinal))
+                .IsTrue();
+            await Assert.That(roles[finalIndex - 1].Contains("<turn_context>", StringComparison.Ordinal))
+                .IsTrue();
             var tail = roles.Skip(finalIndex + 1).ToList();
             await Assert.That(tail.Count(role => role.StartsWith("Assistant:", StringComparison.Ordinal)))
                 .IsEqualTo(1);
@@ -181,15 +176,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
     {
         var rows = await BudgetPlumbingReadRows(databasePath);
         return rows.Select(row => row.Role + ":" + row.Content).ToList();
-    }
-
-    /// <summary>Диагностический след: роль, число tool-вызовов, начало контента.</summary>
-    private static async Task<List<string>> BudgetPlumbingReadTrail(string databasePath)
-    {
-        var rows = await BudgetPlumbingReadRows(databasePath);
-        return rows.Select((row, index) =>
-            "#" + (index + 1) + " " + row.Role + " toolCalls=" + row.ToolCallCount + " | " +
-            (row.Content.Length > 70 ? row.Content[..70] + "…" : row.Content)).ToList();
     }
 
     private sealed record BudgetPlumbingRow(string Role, string Content, int ToolCallCount);

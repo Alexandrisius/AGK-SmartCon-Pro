@@ -230,17 +230,40 @@ public sealed partial class AgentRealCasesBenchmarkTests
     }
 
     /// <summary>
-    /// Этаж имени «В_Этаж N_…» совпадает с уровнем вида (живой GenLevel или
-    /// уровень сида — вид мог быть пересоздан агентом с тем же паттерном).
+    /// Префикс паттерна имён донора («В_Этаж …») — часть первого донорского
+    /// имени до первой цифры; выводится из сида, не литерал вердиктора.
+    /// </summary>
+    private static string Case14NamePrefix()
+    {
+        foreach (var donorName in Case14DonorViews)
+        {
+            var digitIndex = donorName.IndexOfAny(
+                new[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' });
+            if (digitIndex > 0)
+                return donorName[..digitIndex];
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Этаж имени «&lt;префикс&gt;N_…» совпадает с уровнем вида (живой
+    /// GenLevel или уровень сида — вид мог быть пересоздан агентом с тем же
+    /// паттерном); эталонные уровни — константы сида.
     /// </summary>
     private static bool Case14FloorMatches(View? view, string name, string seedLevelName)
     {
-        const string prefix = "В_Этаж ";
-        if (view is null || !name.StartsWith(prefix, StringComparison.Ordinal))
+        var prefix = Case14NamePrefix();
+        if (view is null || prefix.Length == 0 ||
+            !name.StartsWith(prefix, StringComparison.Ordinal))
             return false;
 
         var floor = name.Substring(prefix.Length).Split('_')[0].Trim();
-        var expectedLevel = "Этаж " + floor;
+        var expectedLevel = new[] { Case14Level1, Case14Level2 }
+            .FirstOrDefault(level => level.EndsWith(" " + floor, StringComparison.Ordinal));
+        if (expectedLevel is null)
+            return false;
+
         return string.Equals(Case14LevelNameOf(view), expectedLevel, StringComparison.Ordinal) ||
                string.Equals(seedLevelName, expectedLevel, StringComparison.Ordinal);
     }

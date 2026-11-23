@@ -55,6 +55,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     private const string Case11SharedGroup = "СК_Кейс11";
 
+    /// <summary>Общий параметр имени системы (конвенция проекта — даётся кейсом).</summary>
+    private const string Case11SystemParameterName = "АДСК_ИмяСистемы";
+
     /// <summary>Чистые системы кейса 4 v2; «Т1» — префикс «Т1.11» (сопоставление с длинного).</summary>
     private static readonly string[] Case11Systems = { "Т1", "Т2", "Т1.11" };
 

@@ -9,13 +9,16 @@ namespace SmartCon.IntegrationTests.Agent;
 /// Case 11 verdict (v2 case 6): (а) 3 new sheets continuing the album (4-6),
 /// seeded sheets 1-3 intact; (б) per sheet: the viewport box inside the sheet
 /// border (±1 mm) in the TOP-LEFT corner; (в) to the right an explication —
-/// a schedule placement whose definition filters «АДСК_ИмяСистемы = система
-/// листа» (equals), shows ONLY Наименование/Ед.изм./Количество (the wide
-/// columns hidden or removed) and its rows include fittings; (г) the Т1 sheet
-/// (long route) has title-block multiplicity &gt; 1 OR the answer justifies the
-/// base format; (д) sheet names contain the system name; (е) the batch was
-/// assembled with one build_system_sheets call (3 items), the source общая
-/// спека stays intact. Red flags: seeded album sheets touched.
+/// a schedule placement whose definition filters the case system-name shared
+/// parameter EQUALS a seed system (ORCH-5: the canonical system of the sheet
+/// is taken from the explication FILTER VALUE, validated against the seed
+/// systems — never a substring of the sheet name; the sheet name must contain
+/// that same system), shows ONLY Наименование/Ед.изм./Количество (the wide
+/// columns hidden or removed) and its rows include fittings; (г) the sheet of
+/// the LONGEST seeded route has title-block multiplicity &gt; 1 OR the answer
+/// justifies the base format; (д) sheet names contain the system name; (е) the
+/// batch was assembled with one build_system_sheets call (3 items), the source
+/// общая спека stays intact. Red flags: seeded album sheets touched.
 /// Partial of <see cref="AgentRealCasesBenchmarkTests"/>.
 /// </summary>
 public sealed partial class AgentRealCasesBenchmarkTests
@@ -54,17 +57,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
             foreach (var item in damage)
                 redFlags.Add("существующий лист альбома тронут: " + item);
 
-        // (б)+(в)+(д) Постатейная проверка каждого нового листа.
+        // (б)+(в)+(д) Постатейная проверка каждого нового листа. Каноническая
+        // система листа — значение фильтра экспликации, сверенное с множеством
+        // систем сида (ORCH-5: не substring имени листа); имя листа обязано
+        // содержать ту же систему.
         var sheetsFullyOk = 0;
         var perSheetNotes = new List<string>();
+        var sheetSystems = new Dictionary<long, string>();
         foreach (var sheet in newSheets)
         {
-            var system = Case11SystemOfText(sheet.Name);
             var problems = new List<string>();
-            if (system is null)
-                problems.Add("имя без системы («" + sheet.Name + "»)");
-            else if (sheet.Name.Length > 60)
-                problems.Add("имя не краткое (" + sheet.Name.Length + " симв.)");
 
             if (!Case11ViewportInside(sheet, 1.0))
                 problems.Add("viewport торчит за границы (или его нет)");
@@ -109,18 +111,38 @@ public sealed partial class AgentRealCasesBenchmarkTests
                             // диагностика недоступна
                         }
 
-                        problems.Add("фильтр по «АДСК_ИмяСистемы» не найден (фильтров: " +
+                        problems.Add("фильтр по «" + Case11SystemParameterName + "» не найден (фильтров: " +
                                      filterCount + ", поля: " +
                                      string.Join("|", filterFieldNames) + ")");
                     }
-                    else if (!ContainsText(filter.OpName, "equal") ||
-                             !string.Equals(filter.Value, system, StringComparison.Ordinal))
-                        problems.Add("фильтр «" + filter.Field + "» " + filter.OpName +
-                                     " «" + filter.Value + "» ≠ системы «" + system + "»");
+                    else
+                    {
+                        var system = Case11SystemOfText(filter.Value ?? string.Empty);
+                        if (system is null)
+                        {
+                            problems.Add("значение фильтра «" + filter.Value +
+                                         "» не является системой сида (" +
+                                         string.Join(", ", Case11Systems) + ")");
+                        }
+                        else
+                        {
+                            sheetSystems[sheet.Id.GetValue()] = system;
+                            if (!ContainsText(filter.OpName, "equal") ||
+                                !string.Equals(filter.Value?.Trim(), system, StringComparison.Ordinal))
+                                problems.Add("фильтр «" + filter.Field + "» " + filter.OpName +
+                                             " «" + filter.Value + "» не «= " + system + "»");
+                            if (!Case11ContainsSystemToken(sheet.Name, system))
+                                problems.Add("имя листа «" + sheet.Name +
+                                             "» не содержит систему «" + system + "»");
+                            else if (sheet.Name.Length > 60)
+                                problems.Add("имя не краткое (" + sheet.Name.Length + " симв.)");
+                        }
+                    }
+
                     if (!Case11ExplicationColumnsOk(schedule))
                         problems.Add("колонки не «только Наименование/Ед.изм./Количество»");
                     if (!Case11RowsIncludeFittings(schedule))
-                        problems.Add("строки без фитингов (отводов)");
+                        problems.Add("строки без фитингов");
                 }
             }
 
@@ -133,19 +155,24 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         notes.AddRange(perSheetNotes);
 
-        // (г) Формат длинной трассы: кратность > 1 у титульника листа «Т1» ИЛИ
-        // явное обоснование базового формата в ответе.
-        var t1Sheet = newSheets.FirstOrDefault(
-            sheet => Case11SystemOfText(sheet.Name) == "Т1");
-        var t1Multiplicity = t1Sheet is null ? 0 : Case11MultiplicityOf(t1Sheet);
-        var formatJustified = t1Multiplicity > 1 ||
+        // (г) Формат длинной трассы: кратность > 1 у титульника листа системы
+        // с самой длинной трассой сида ИЛИ явное обоснование базового формата
+        // в ответе.
+        var longRouteSystem = _case11Systems
+            .OrderByDescending(seed => seed.RouteLengthFt)
+            .First().Name;
+        var longRouteSheet = newSheets.FirstOrDefault(sheet =>
+            sheetSystems.TryGetValue(sheet.Id.GetValue(), out var sheetSystem) &&
+            sheetSystem == longRouteSystem);
+        var longRouteMultiplicity = longRouteSheet is null ? 0 : Case11MultiplicityOf(longRouteSheet);
+        var formatJustified = longRouteMultiplicity > 1 ||
                               ContainsText(answerText, "кратн") ||
                               ContainsText(answerText, "влез") ||
                               ContainsText(answerText, "умеща") ||
                               ContainsText(answerText, "достаточн");
         if (!formatJustified)
-            notes.Add("лист «Т1» (длинная трасса): кратность " + t1Multiplicity +
-                      " без обоснования формата в ответе");
+            notes.Add("лист системы «" + longRouteSystem + "» (длинная трасса): кратность " +
+                      longRouteMultiplicity + " без обоснования формата в ответе");
 
         // (е) Исходная общая спецификация цела (C6-05: сид создаёт её БЕЗ
         // фильтров — чужой фильтр на источнике, даже при живых колонках,
@@ -195,7 +222,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
                      "; новые листы " + newSheets.Count + " (" +
                      string.Join(", ", numbers) + "), полных " + sheetsFullyOk + "/" + newSheets.Count +
                      ", альбом цел " + (damage.Count == 0 ? "да" : "нет") +
-                     ", Т1 кратность " + t1Multiplicity +
+                     ", система «" + longRouteSystem + "» кратность " + longRouteMultiplicity +
                      ", формат обоснован " + (formatJustified ? "да" : "нет") +
                      ", общая спека цела " + (mainIntact ? "да" : "нет") +
                      ", пачка " + (batchOk ? "да" : "нет") +
@@ -272,10 +299,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
     }
 
     /// <summary>
-    /// Система листа по его имени: имя — ТОКЕН на границах (ORCH-5: наивный
-    /// substring матчил «Т2» внутри «Система Т21», а фильтр экспликации
-    /// стоял «Т1»). «Т1.11» проверяется раньше «Т1» (длинные имена первым —
-    /// иначе «Т1» съест префикс «Т1.11»).
+    /// Система в тексте: имя системы сида — ТОКЕН на границах (ORCH-5: наивный
+    /// substring матчил «Т2» внутри «Система Т21»). Используется для проверки
+    /// значения фильтра экспликации (каноническая система листа) и имени листа.
+    /// «Т1.11» проверяется раньше «Т1» (длинные имена первым — иначе «Т1»
+    /// съест префикс «Т1.11»).
     /// </summary>
     internal static string? Case11SystemOfText(string text)
     {
@@ -372,7 +400,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // ── Экспликация: фильтр, колонки, строки ────────────────────────────
 
-    /// <summary>Фильтр экспликации по «АДСК_ИмяСистемы» (поле + значение + операция).</summary>
+    /// <summary>Фильтр экспликации по параметру имени системы (поле + значение + операция).</summary>
     private static Case11FilterFact? Case11AdskFilterOf(ViewSchedule schedule)
     {
         try
@@ -381,7 +409,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             foreach (var filter in definition.GetFilters())
             {
                 var fieldName = definition.GetField(filter.FieldId)?.GetName();
-                if (fieldName is null || !ContainsText(fieldName, "АДСК_ИмяСистемы"))
+                if (fieldName is null || !ContainsText(fieldName, Case11SystemParameterName))
                     continue;
 
                 string? value = null;
@@ -411,7 +439,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var hasUnit = Has("единиц", "ед.");
         var hasCount = Has("количеств");
         var wideVisible = columns.Any(column => Case11ColumnMatches(
-            column, "артикул", "марка", "адск", "семейств", "family", "тип", "type", "коммент"));
+            column, "артикул", "марка", Case11SystemParameterName, "семейств", "family",
+            "тип", "type", "коммент"));
         return columns.Count == 3 && hasName && hasUnit && hasCount && !wideVisible;
     }
 
@@ -421,12 +450,25 @@ public sealed partial class AgentRealCasesBenchmarkTests
         markers.Any(marker => ContainsText(column.Heading, marker) ||
                               ContainsText(column.ParameterName ?? string.Empty, marker));
 
-    /// <summary>Строки экспликации включают фитинги (в сиде фитинги = «Отвод 90° …»).</summary>
-    private static bool Case11RowsIncludeFittings(ViewSchedule schedule)
+    /// <summary>
+    /// Строки экспликации включают фитинги: маркеры — значения «Наименование»
+    /// живых элементов-фитингов сида (выводятся из модели, не литерал).
+    /// </summary>
+    private bool Case11RowsIncludeFittings(ViewSchedule schedule)
     {
         var columns = AgentScheduleReader.ReadColumns(schedule.Document, schedule, out _);
         var (rows, _, _) = AgentScheduleReader.ReadBodyRows(schedule, columns, 0, 200);
-        return rows.Any(row => row.Any(cell => ContainsText(cell, "Отвод")));
+        var fittingMarkers = _case11Systems
+            .SelectMany(system => system.FittingIds)
+            .Select(id => Doc.GetElement(ElementIdCompat.Create(id))
+                ?.get_Parameter(Case11NameGuid)?.AsString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return fittingMarkers.Count > 0 &&
+               rows.Any(row => row.Any(cell =>
+                   fittingMarkers.Any(marker => ContainsText(cell, marker))));
     }
 
     // ── Пакетность сборки ───────────────────────────────────────────────
