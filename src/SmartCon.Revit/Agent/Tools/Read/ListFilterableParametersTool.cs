@@ -38,7 +38,7 @@ public sealed class ListFilterableParametersTool : AgentReadToolBase
             "parameterName to check one parameter before create_view_filter/set_filter_rules; " +
             "when it is missing for some categories the row reports them and the write tools " +
             "return parameter_not_supported_for_categories.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categoryIds"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""integer""}},""categories"":{""type"":""array"",""maxItems"":10,""description"":""OST_ names or localized category names; alias for categoryIds"",""items"":{""type"":""string""}},""parameterName"":{""type"":""string""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categoryIds"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""integer""}},""categories"":{""type"":""array"",""maxItems"":10,""description"":""OST_ names or localized category names; alias for categoryIds"",""items"":{""type"":""string""}},""parameterName"":{""type"":""string""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

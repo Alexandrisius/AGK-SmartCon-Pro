@@ -35,6 +35,12 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
 
     protected ITransactionService Transactions => _transactions;
 
+    /// <summary>
+    /// The data key every write tool fills with its read-back totals: execute_plan
+    /// sums it as the tool-level verification of a step.
+    /// </summary>
+    internal const string ReadBackDataKey = "readBack";
+
     /// </summary>
 
     public async Task<ToolResult> ExecuteAsync(
@@ -327,6 +333,9 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             outcome.Message = (outcome.Message ?? "The transaction was rolled back.") +
                 " Nothing was changed in the model.";
             MarkItemsRolledBack(outcome);
+            // The read-back block was collected inside the rolled-back transaction:
+            // execute_plan sums it as verified, so it must not outlive the rollback.
+            outcome.Data.Remove(ReadBackDataKey);
             outcome.ModelChanged = false;
             // A silent rollback must not close the change set: the model still holds the
             // applied state, so undo_last has to be able to target this very set again.

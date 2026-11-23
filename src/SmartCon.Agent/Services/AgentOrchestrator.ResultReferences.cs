@@ -54,16 +54,23 @@ public sealed partial class AgentOrchestrator
         List<(string Code, string Message)> failures,
         CancellationToken ct)
     {
+        if (node is JsonObject reference && TryReadReference(reference, out var rootHandle, out var rootPath))
+        {
+            return await ResolveReferenceAsync(rootHandle!, rootPath!, failures, ct).ConfigureAwait(false);
+        }
+
         if (node is JsonObject obj)
         {
-            if (TryReadReference(obj, out var handle, out var path))
-            {
-                var value = await ResolveReferenceAsync(handle!, path!, failures, ct).ConfigureAwait(false);
-                return failures.Count == 0 ? value : null;
-            }
-
             foreach (var key in obj.Select(property => property.Key).ToArray())
             {
+                if (obj[key] is JsonObject property && TryReadReference(property, out var handle, out var path))
+                {
+                    // A reference to a stored null is a value too: the property
+                    // becomes null instead of keeping the reference object.
+                    obj[key] = await ResolveReferenceAsync(handle!, path!, failures, ct).ConfigureAwait(false);
+                    continue;
+                }
+
                 var child = await VisitAsync(obj[key], failures, ct).ConfigureAwait(false);
                 if (child is not null)
                     obj[key] = child;
@@ -76,6 +83,33 @@ public sealed partial class AgentOrchestrator
         {
             for (var index = 0; index < array.Count; index++)
             {
+                if (array[index] is JsonObject element && TryReadReference(element, out var handle, out var path))
+                {
+                    var value = await ResolveReferenceAsync(handle!, path!, failures, ct).ConfigureAwait(false);
+                    if (value is JsonArray inner)
+                    {
+                        // Written as the only element of an array argument -
+                        // items: [{"$result": …}] - the reference resolves to
+                        // that very array: splice it in, not one level deeper.
+                        // Nodes move out of their parent; a node with a parent
+                        // cannot be inserted elsewhere.
+                        array.RemoveAt(index);
+                        while (inner.Count > 0)
+                        {
+                            var item = inner[0];
+                            inner.RemoveAt(0);
+                            array.Insert(index, item);
+                            index++;
+                        }
+
+                        index--;
+                        continue;
+                    }
+
+                    array[index] = value;
+                    continue;
+                }
+
                 var child = await VisitAsync(array[index], failures, ct).ConfigureAwait(false);
                 if (child is not null)
                     array[index] = child;

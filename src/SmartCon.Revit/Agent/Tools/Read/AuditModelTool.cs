@@ -53,7 +53,7 @@ public sealed class AuditModelTool : AgentReadToolBase
             "purge_families, undo_until.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""checks"":{""type"":""array"",""description"":""Subset of checks; omit to run all"",""items"":{""type"":""string"",""enum"":[""duplicate_sheet_numbers"",""invisible_characters"",""views_without_template"",""empty_schedules"",""unplaced_families"",""pending_change_sets""]}},""limit"":{""type"":""integer"",""default"":50,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""checks"":{""type"":""array"",""description"":""Subset of checks; omit to run all"",""items"":{""type"":""string"",""enum"":[""duplicate_sheet_numbers"",""invisible_characters"",""views_without_template"",""empty_schedules"",""unplaced_families"",""pending_change_sets""]}},""limit"":{""type"":""integer"",""default"":50,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

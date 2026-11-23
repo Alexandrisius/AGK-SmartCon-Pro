@@ -257,6 +257,12 @@ public static class ToolResultBudget
         if (resultHandle is not null)
             digest["resultHandle"] = resultHandle;
 
+        // The digest hides the payload, so it must say what the payload holds:
+        // the shape of every top-level key and the ready paths of the arrays
+        // let the model pick a path for read_tool_result / a {"$result","path"}
+        // reference without paging the stored result in first (DB-09).
+        AppendStructure(digest, data);
+
         root["data"] = digest;
         if (root["message"] is JsonValue messageValue
             && messageValue.TryGetValue<string>(out var message)
@@ -292,6 +298,126 @@ public static class ToolResultBudget
         if (root["_repairs"] is { } repairs)
             minimal["_repairs"] = repairs.DeepClone();
 
+        if (root["tool"] is { } tool)
+            minimal["tool"] = tool.DeepClone();
+
         return minimal.ToJsonString(SerializerOptions);
     }
+
+    private const int StructureMaxKeys = 40;
+    private const int StructureMaxArrayPaths = 12;
+    private const int StructureMaxDepth = 3;
+    private const int StructureScalarMaxCharacters = 40;
+
+    /// <summary>
+    /// Adds <c>structure</c> (kind and size of every top-level key of the
+    /// payload) and <c>arrayPaths</c> (the first arrays a dot path can address,
+    /// with their length). Bounded: the digest must stay a digest.
+    /// </summary>
+    private static void AppendStructure(JsonObject digest, JsonObject data)
+    {
+        var structure = new JsonObject();
+        var paths = new JsonArray();
+        var pathCount = 0;
+        foreach (var property in data)
+        {
+            if (structure.Count >= StructureMaxKeys)
+                break;
+
+            var description = Describe(property.Value);
+            int? originalLength = null;
+            if (property.Value is JsonArray && data[property.Key + "Total"] is JsonValue original
+                && original.TryGetValue<int>(out var total))
+            {
+                // The array was halved on the way to the digest: the stored
+                // result still has every element, and that is what a path leads to.
+                originalLength = total;
+                description["length"] = total;
+            }
+
+            structure[property.Key] = description;
+            var before = pathCount;
+            if (IsAddressable(property.Key))
+                pathCount = CollectArrayPaths(property.Value, "data." + property.Key, 1, paths, pathCount);
+
+            if (originalLength.HasValue && pathCount > before && paths[before] is JsonObject own)
+                own["length"] = originalLength.Value;
+        }
+
+        digest["structure"] = structure;
+        if (paths.Count > 0)
+            digest["arrayPaths"] = paths;
+    }
+
+    private static JsonObject Describe(JsonNode? node)
+    {
+        var description = new JsonObject();
+        switch (node)
+        {
+            case JsonObject objet:
+                description["kind"] = "object";
+                description["count"] = objet.Count;
+                break;
+            case JsonArray array:
+                description["kind"] = "array";
+                description["length"] = array.Count;
+                break;
+            case null:
+                description["kind"] = "null";
+                break;
+            default:
+                description["kind"] = "scalar";
+                if (node!.ToJsonString(SerializerOptions).Length <= StructureScalarMaxCharacters)
+                    description["value"] = node.DeepClone();
+                break;
+        }
+
+        return description;
+    }
+
+    /// <summary>
+    /// Depth-first search for non-empty arrays. Only the first element of an
+    /// array is entered: the path shows the shape, not every item.
+    /// </summary>
+    private static int CollectArrayPaths(
+        JsonNode? node,
+        string path,
+        int depth,
+        JsonArray target,
+        int count)
+    {
+        if (count >= StructureMaxArrayPaths || node is null)
+            return count;
+
+        if (node is JsonArray array)
+        {
+            if (array.Count == 0)
+                return count;
+
+            target.Add(new JsonObject { ["path"] = path, ["length"] = array.Count });
+            count++;
+            return depth >= StructureMaxDepth
+                ? count
+                : CollectArrayPaths(array[0], path + ".0", depth + 1, target, count);
+        }
+
+        if (node is not JsonObject objet || depth >= StructureMaxDepth)
+            return count;
+
+        foreach (var property in objet)
+        {
+            if (count >= StructureMaxArrayPaths)
+                break;
+
+            if (IsAddressable(property.Key))
+                count = CollectArrayPaths(
+                    property.Value, path + "." + property.Key, depth + 1, target, count);
+        }
+
+        return count;
+    }
+
+    /// <summary>AgentResultPath splits on '.' and '/': such keys have no path.</summary>
+    private static bool IsAddressable(string key) =>
+        key.IndexOf('.') < 0 && key.IndexOf('/') < 0;
 }

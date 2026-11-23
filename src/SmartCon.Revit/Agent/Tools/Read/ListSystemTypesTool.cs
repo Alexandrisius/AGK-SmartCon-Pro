@@ -33,7 +33,7 @@ public sealed class ListSystemTypesTool : AgentReadToolBase
             "and names.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""category"":{""description"":""Category name ('Walls', 'OST_Walls', localized) or category id""},""categoryName"":{""type"":""string""},""categoryId"":{""type"":""integer""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""required"":[""category""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""category"":{""description"":""Category name ('Walls', 'OST_Walls', localized) or category id""},""categoryName"":{""type"":""string""},""categoryId"":{""type"":""integer""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""required"":[""category""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

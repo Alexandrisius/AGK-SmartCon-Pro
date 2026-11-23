@@ -142,6 +142,19 @@ public static class AgentPlanValidator
                 });
             }
 
+            // Expectations without a tool were dropped silently, and the report
+            // then claimed that verification was not requested (review r1 #11).
+            if (step.ReadBackExpectations.Count > 0 && string.IsNullOrWhiteSpace(step.ReadBackTool))
+            {
+                errors.Add(new AgentPlanIssue
+                {
+                    Code = "plan_readback_tool_missing",
+                    Message = "Step '" + step.StepId + "' declares readBackExpectations without " +
+                              "readBackTool: add readBackTool or remove the expectations.",
+                    StepId = step.StepId
+                });
+            }
+
             if (!step.DryRun)
             {
                 warnings.Add(new AgentPlanIssue

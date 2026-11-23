@@ -129,39 +129,33 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 EssenceProfile = AgentElementEssence.ProfileFor(element.Category)
             };
 
+            // Every element is checked on its own: a name found on the type of
+            // the first element says nothing about the next one, which may have
+            // another type (namesFound only decides the not-found list).
             var needTypeParameters = false;
             if (parameterNames.Count > 0 && type is not null)
             {
                 var ownParameters = element is ElementType ? type.Parameters : element.Parameters;
                 foreach (var name in requestedNames)
                 {
-                    if (namesFound.Contains(name)
-                        || !HasParameterNamed(ownParameters, name, nameBuiltIns))
+                    if (HasParameterNamed(ownParameters, name, nameBuiltIns))
                     {
+                        namesFound.Add(name);
                         continue;
                     }
 
-                    namesFound.Add(name);
-                }
-
-                if (element is not ElementType)
-                {
-                    // Names the element itself does not carry may live on its
-                    // type: include the type parameters for this element.
-                    foreach (var name in requestedNames)
+                    // A name the element itself does not carry may live on its
+                    // type: the type parameters join the answer for this element.
+                    if (element is not ElementType
+                        && HasParameterNamed(type.Parameters, name, nameBuiltIns))
                     {
-                        if (namesFound.Contains(name)
-                            || !HasParameterNamed(type.Parameters, name, nameBuiltIns))
-                        {
-                            continue;
-                        }
-
                         namesFound.Add(name);
                         needTypeParameters = true;
                     }
                 }
             }
 
+            var typeIsTheElement = element is ElementType;
             if (type is not null)
             {
                 var typeId = type.Id.GetValue();
@@ -173,12 +167,15 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                         filter,
                         // A type asked for by its own id is the element: its
                         // parameters are what the call is about, flag or not.
-                        includeTypeParameters || element is ElementType || needTypeParameters);
+                        includeTypeParameters || typeIsTheElement || needTypeParameters);
                     typesById[typeId] = typeDetails;
                     types.Add(typeDetails);
                 }
-                else if (needTypeParameters && typeDetails.Parameters is null)
+                else if ((typeIsTheElement || needTypeParameters) && typeDetails.Parameters is null)
                 {
+                    // The type was listed through an earlier element without its
+                    // parameters; now they are asked for - by the type's own id
+                    // or by a name that lives on it - so it is rebuilt with them.
                     var rebuilt = AgentElementDetailsBuilder.BuildType(doc, type, filter, true);
                     types[types.IndexOf(typeDetails)] = rebuilt;
                     typesById[typeId] = rebuilt;

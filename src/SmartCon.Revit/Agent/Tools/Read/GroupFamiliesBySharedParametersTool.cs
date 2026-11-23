@@ -41,7 +41,7 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             "(includeUnplaced). Families without any shared parameters form their own group. " +
             "Use it before mass migration to shared parameters of a customer and to plan " +
             "batch work by source parameter sets.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""scope"":{""type"":""string"",""enum"":[""type"",""instance"",""both""],""default"":""both""},""includeUnplaced"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""scope"":{""type"":""string"",""enum"":[""type"",""instance"",""both""],""default"":""both""},""includeUnplaced"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

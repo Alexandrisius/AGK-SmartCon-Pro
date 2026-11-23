@@ -47,7 +47,7 @@ internal static class AgentElementCardFactory
             Category = GetCategoryName(element.Category),
             Family = family,
             Type = typeName,
-            Name = element.Name,
+            Name = ReadName(element),
             LevelId = level is null ? null : level.Id.GetValue(),
             LevelName = level?.Name,
             Room = ReadRoomName(element),
@@ -58,6 +58,26 @@ internal static class AgentElementCardFactory
             // "the query found no parameter values" (stress test #2).
             Parameters = parameters.Count == 0 ? null : parameters
         };
+    }
+
+    /// <summary>
+    /// Element name for the card. Room.Name glues the room name and the number
+    /// with no separator (Autodesk Developer Guide); the card keeps the clean
+    /// room name and shows the number in parentheses instead.
+    /// </summary>
+    private static string ReadName(Element element)
+    {
+        if (element is not Autodesk.Revit.DB.Architecture.Room room)
+            return element.Name;
+
+        var name = ReadParameter(room.get_Parameter(BuiltInParameter.ROOM_NAME));
+        var number = ReadParameter(room.get_Parameter(BuiltInParameter.ROOM_NUMBER));
+        if (string.IsNullOrWhiteSpace(name))
+            return room.Name;
+
+        return string.IsNullOrWhiteSpace(number)
+            ? name!
+            : name + " (" + number + ")";
     }
 
     /// <summary>

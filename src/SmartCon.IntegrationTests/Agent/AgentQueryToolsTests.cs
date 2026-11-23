@@ -271,6 +271,103 @@ public sealed class AgentQueryToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task GetElementDetails_TypeOnlyParameterNames_TwoElementsOfDifferentTypes_BothTypesCarryParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        // A second wall of ANOTHER type: the requested name lives on both types
+        // and on neither instance.
+        var secondWallId = 0L;
+        var secondTypeId = 0L;
+        _transactions!.RunInTransaction(Doc, "Seed a wall of another type", doc =>
+        {
+            var wall = (Wall)doc.GetElement(ElementIdCompat.Create(_wallId))!;
+            var otherType = ((WallType)doc.GetElement(wall.GetTypeId())!).Duplicate(
+                "SC_AgentQuery_OtherWallType");
+            var second = Wall.Create(
+                doc,
+                Line.CreateBound(new XYZ(0, 30, 0), new XYZ(10, 30, 0)),
+                otherType.Id,
+                wall.LevelId,
+                10.0,
+                0.0,
+                false,
+                false);
+            secondWallId = second.Id.GetValue();
+            secondTypeId = second.GetTypeId().GetValue();
+        });
+
+        // ALL_MODEL_TYPE_COMMENTS lives on the type only. Whichever element comes
+        // first, the type of the other one must not stay without its parameters:
+        // a name found on one type says nothing about the next element.
+        foreach (var elementIds in new[] { _wallId + "," + secondWallId, secondWallId + "," + _wallId })
+        {
+            var result = new GetElementDetailsTool(new StubRevitContext(Doc)).ExecuteForTests(
+                Doc,
+                Parse(
+                    "{\"elementIds\":[" + elementIds +
+                    "],\"parameterNames\":[\"ALL_MODEL_TYPE_COMMENTS\"],\"onlyNonEmpty\":false}"),
+                CancellationToken.None);
+
+            await Assert.That(result.Success).IsTrue();
+            var data = result.Data!.Value;
+            var types = data.GetProperty("types");
+            await Assert.That(types.GetArrayLength()).IsEqualTo(2);
+            foreach (var typeId in new[] { _wallTypeId, secondTypeId })
+            {
+                var type = types.EnumerateArray()
+                    .First(item => item.GetProperty("typeId").GetInt64() == typeId);
+                await Assert.That(type.TryGetProperty("parameters", out var typeParameters)).IsTrue();
+                await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+            }
+
+            await Assert.That(data.TryGetProperty("parameterNamesNotFound", out _)).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task GetElementDetails_InstanceIdBeforeItsTypeId_TheTypeStillCarriesItsParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+
+        // The instance comes first and lists its type without the type
+        // parameters (the flag is off); the type is then asked for by its own
+        // id - its parameters are what that part of the call is about, whatever
+        // came before it.
+        var plain = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"elementIds\":[" + _wallId + "," + _wallTypeId + "]}"),
+            CancellationToken.None);
+
+        await Assert.That(plain.Success).IsTrue();
+        await Assert.That(plain.Data!.Value.GetProperty("elements").GetArrayLength()).IsEqualTo(2);
+        var types = plain.Data.Value.GetProperty("types");
+        await Assert.That(types.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(types[0].GetProperty("typeId").GetInt64()).IsEqualTo(_wallTypeId);
+        await Assert.That(types[0].TryGetProperty("parameters", out var typeParameters)).IsTrue();
+        await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+
+        // The same order with a name that lives nowhere: the type parameters
+        // still come, and the name is reported.
+        var unknown = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"elementIds\":[" + _wallId + "," + _wallTypeId +
+                "],\"parameterNames\":[\"SC_NoSuchParameter\"]}"),
+            CancellationToken.None);
+
+        await Assert.That(unknown.Success).IsTrue();
+        var data = unknown.Data!.Value;
+        await Assert.That(data.GetProperty("types")[0].TryGetProperty("parameters", out _)).IsTrue();
+        await Assert.That(data.GetProperty("parameterNamesNotFound")[0].GetString())
+            .IsEqualTo("SC_NoSuchParameter");
+    }
+
+    [Test]
     public async Task GetElementDetails_LimitsAndFlagsTruncation()
     {
         if (!_wallCreated)

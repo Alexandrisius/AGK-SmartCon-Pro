@@ -187,11 +187,21 @@ public sealed partial class AgentToolExecutor
             _ = execution.Exception;
         }
 
+        // TimeoutMs is a property of the tool definition, not an argument: the
+        // model cannot raise it, so the old hint sent it into a retry loop
+        // (C1-01). A tool that ignored the cancellation is still inside Revit:
+        // a second call would stack work on a busy host.
         return ToolResult.Fail(
             "tool_timeout",
-            "Tool '" + tool.Definition.Name + "' exceeded " + timeoutMs + " ms" +
-            (stillRunning ? " and is still running" : " and did not finish") +
-            ". [Action: narrow the request or raise TimeoutMs]",
+            stillRunning
+                ? "Tool '" + tool.Definition.Name + "' exceeded " + timeoutMs +
+                  " ms and is still running. The Revit host did not answer in " + timeoutMs +
+                  " ms; the tool may still be running — do not retry blindly, tell the user. " +
+                  "[Action: wait for Revit to answer again (a dialog or a long operation may be " +
+                  "blocking it) before calling any tool]"
+                : "Tool '" + tool.Definition.Name + "' exceeded " + timeoutMs +
+                  " ms and was cancelled. [Action: narrow the request (fewer items, a filter, " +
+                  "a page) and call it again]",
             data: JsonSerializer.SerializeToElement(new { timeoutMs, stillRunning }));
     }
 

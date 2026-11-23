@@ -32,7 +32,9 @@ public sealed class AddScheduleFieldTool : AgentWriteToolBase
             "scheduleName. fields (1..15) are schedulable field display names — the 'name' " +
             "values get_schedule_definition reports, matched case-insensitively. A field " +
             "already in the schedule is skipped (no-op, undo stays simple); an unknown field " +
-            "fails per item with field_not_available and availableFields[] (first 20). " +
+            "fails per item with field_not_available and availableFields[] (first 20). A " +
+            "non-shared family parameter is never a schedulable field: use a project (shared) " +
+            "parameter or a built-in type parameter. " +
             "Returns the read-back field list. Dry run defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
@@ -99,8 +101,7 @@ public sealed class AddScheduleFieldTool : AgentWriteToolBase
                     doc, definition, fieldName, out var schedulable))
             {
                 report.ErrorCode = "field_not_available";
-                report.Reason = "No schedulable field '" + fieldName +
-                                "' for the schedule category.";
+                report.Reason = AgentScheduleWriteHelper.FieldNotAvailableReason(fieldName);
                 outcome.Batch.Failed.Add(report);
                 if (!outcome.Data.ContainsKey("availableFields"))
                 {

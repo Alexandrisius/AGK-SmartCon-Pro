@@ -26,8 +26,10 @@ public sealed class QueryElementsTool : AgentReadToolBase
             "endsWith/in/notIn/exists/notExists and are combined with AND or OR. " +
             "Condition parameter: a parameter name (built-in, project or shared; add " +
             "includeTypeParameters=true to search type parameters), a BuiltInParameter id " +
-            "(ALL_MODEL_MARK), or a structural field: name (element, family or type name), family, " +
-            "type, category (OST_ name or display name), level. Structural fields are reserved " +
+            "(ALL_MODEL_MARK), or a structural field: name (element, family or type name; for " +
+            "rooms the room name and number, not the glued Room.Name), family, " +
+            "type, category (OST_ name, display name or an alias like OST_Pipes), level. " +
+            "Structural fields are reserved " +
             "words checked before any parameter, support string operators only and need no " +
             "includeTypeParameters; a project parameter with the same name is not reachable in " +
             "conditions. A parameter missing on every scanned element returns unknown_parameter " +
@@ -154,6 +156,8 @@ public sealed class QueryElementsTool : AgentReadToolBase
         var truncated = result.Total > spec.Offset + cards.Count;
         int? nextOffset = truncated ? spec.Offset + cards.Count : null;
 
+        var typeBound = AgentQueryTypeHint.Describe(doc, spec, result);
+
         var payload = new
         {
             total = result.Total,
@@ -174,12 +178,16 @@ public sealed class QueryElementsTool : AgentReadToolBase
                 ? "More elements match. Call query_elements again with offset=" + nextOffset +
                   " or add filters to narrow the result."
                 : null,
+            typeBoundParameter = typeBound is null
+                ? null
+                : new { parameter = typeBound.Parameter, types = typeBound.TypeCount },
             elements = cards
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             "Matched " + result.Total + " element(s); returned " + cards.Count + "." +
-            (truncated ? " More available: use offset=" + nextOffset + "." : string.Empty));
+            (truncated ? " More available: use offset=" + nextOffset + "." : string.Empty) +
+            (typeBound is null ? string.Empty : " " + typeBound.Message));
     }
 }

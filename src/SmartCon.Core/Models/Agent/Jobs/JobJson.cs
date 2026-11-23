@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace SmartCon.Core.Models.Agent.Jobs;
@@ -13,7 +14,11 @@ public static class JobJson
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        // Same encoder as AgentJson: the default one escapes every non-ASCII
+        // character, so family names and parameters reached the model as
+        // \uXXXX inside job payloads and the stored spec/preview JSON.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Options);

@@ -53,6 +53,14 @@ public sealed class ClassifyFamilyGroup
 
     public IReadOnlyList<string> TypeQueries { get; internal set; } = Array.Empty<string>();
 
+    /// <summary>
+    /// Per type, aligned with <see cref="Types"/>: the values NOT shared by
+    /// every type of the family - the raw material of the per-type
+    /// differentiation (empty for single-type families).
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<string>> TypeDistinctValues { get; internal set; } =
+        Array.Empty<IReadOnlyList<string>>();
+
     public IReadOnlyList<ClassifyTypeSnapshot> Types { get; internal set; } =
         Array.Empty<ClassifyTypeSnapshot>();
 }

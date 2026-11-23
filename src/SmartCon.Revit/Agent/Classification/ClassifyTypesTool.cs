@@ -88,12 +88,12 @@ public sealed partial class ClassifyTypesTool : IAgentTool
         var familiesTotal = groups.Count;
         var typeBudget = snapshot.Args.MaxTypes;
         var processed = new List<ClassifyFamilyGroup>(groups.Count);
-        var notProcessed = new List<(string Family, int TypeCount)>();
+        var notProcessed = new List<ClassifyFamilyGroup>();
         foreach (var group in groups)
         {
             if (processed.Count >= snapshot.Args.MaxFamilies || group.Types.Count > typeBudget)
             {
-                notProcessed.Add((group.FamilyName, group.Types.Count));
+                notProcessed.Add(group);
                 continue;
             }
 

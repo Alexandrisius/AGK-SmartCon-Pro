@@ -42,7 +42,7 @@ public sealed class GetFilterDetailsTool : AgentReadToolBase
             "includeAppliedViews=false skips the view scan " +
             "(appliedViewCount is then \"notComputed\"). Use list_filters to find filterId or " +
             "filterName first.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""includeOverrides"":{""type"":""boolean"",""default"":false},""appliedViewsLimit"":{""type"":""integer"",""default"":100,""maximum"":500},""appliedViewsOffset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""filterId"":{""type"":""integer""},""filterName"":{""type"":""string""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""includeOverrides"":{""type"":""boolean"",""default"":false},""appliedViewsLimit"":{""type"":""integer"",""default"":100,""maximum"":500},""appliedViewsOffset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -17,12 +18,24 @@ public static class AgentTextSanitizer
 
     /// <summary>
     /// JSON properties whose string values are harness-paged text: pack skill
-    /// manuals and <c>read_tool_result</c> pages. They are sanitized but never
-    /// capped — capping a manual at 400 characters made the model read only its
-    /// first paragraph, and capping a page broke paging (#400).
+    /// manuals, <c>read_tool_result</c> pages and the tool's own message. They
+    /// are sanitized but never capped — capping a manual at 400 characters made
+    /// the model read only its first paragraph, capping a page broke paging
+    /// (#400), and capping a message cut off its reason and the next step.
     /// </summary>
     private static readonly HashSet<string> TrustedStringKeys =
-        new(StringComparer.Ordinal) { "markdown", "content" };
+        new(StringComparer.Ordinal) { "markdown", "content", "message" };
+
+    /// <summary>
+    /// The sanitized JSON is the text the model reads. The default encoder
+    /// writes every non-ASCII character as <c>\uXXXX</c>: a Cyrillic name cost
+    /// six characters per letter, models misread the escapes (T as C), and the
+    /// inflated length pushed whole results into digests.
+    /// </summary>
+    private static readonly JsonSerializerOptions WireOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     public static string Sanitize(string? value)
     {
@@ -78,7 +91,7 @@ public static class AgentTextSanitizer
                 return string.Empty;
 
             SanitizeNode(node, System.Math.Max(32, maxStringLength));
-            return node.ToJsonString();
+            return node.ToJsonString(WireOptions);
         }
         catch (JsonException)
         {

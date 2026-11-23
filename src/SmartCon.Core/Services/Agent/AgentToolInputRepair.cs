@@ -187,6 +187,15 @@ public static class AgentToolInputRepair
 
         foreach (var key in unknown)
         {
+            // documentId is never dropped: the call addressed a background model,
+            // so it must fail in the validator instead of silently reading the
+            // active document (night run 2, C9-01).
+            if (string.IsNullOrEmpty(path)
+                && AgentDocumentRoutingArgument.IsName(key))
+            {
+                continue;
+            }
+
             value.Remove(key);
             repairs.Add(Describe(path, depth, "dropped unknown property '" + key + "'"));
             changed = true;

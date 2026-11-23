@@ -233,9 +233,16 @@ public sealed partial class AgentClassificationMatcher
             return Failed(typeOutcome, run);
         }
 
+        // Stage 3: single-code families with types that differ by more than
+        // size may earn per-type codes from the siblings of the chosen code.
+        // The stage is optional by contract: its calls count, its failures and
+        // leftovers are warnings - the family codes already stand.
+        var differentiation = await RunTypeDifferentiationAsync(
+            staged, table, codesByFamily, chainScores, options, run, ct).ConfigureAwait(false);
+
         return BuildResult(
             families, staged, table, options, typeOutcome, typesByQuery,
-            codesByFamily, chainScores, run);
+            codesByFamily, chainScores, run, differentiation);
     }
 
     /// <summary>Per-run bookkeeping shared by every stage.</summary>
@@ -259,6 +266,18 @@ public sealed partial class AgentClassificationMatcher
         public string? FirstErrorDetail { get; private set; }
 
         public bool ChannelFailed => FirstError is not null || Unanswered > 0;
+
+        /// <summary>
+        /// Bookkeeping of the optional per-type stage: its calls are real and
+        /// count, but a failure there never fails the run - the family codes
+        /// stand, and the stage reports what was left as a warning.
+        /// </summary>
+        public void ObserveOptional(SemanticRankOutcome outcome)
+        {
+            DecisionCalls += outcome.CallsMade;
+            if (outcome.Error is null && outcome.Matches.Any(row => row.Count > 0))
+                AnswersReceived = true;
+        }
 
         public void Observe(SemanticRankOutcome? outcome)
         {

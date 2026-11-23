@@ -17,6 +17,34 @@ public static class ToolCardRouter
     private const double NegativeWeight = 0.4;
 
     /// <summary>
+    /// Minimum share of the query's weight the best card must carry for the
+    /// catalog to have an answer at all (see <see cref="QueryCoverage"/>). Below
+    /// it every card shares only generic wording with the request, and
+    /// find_tools answers "no match". It gates the answer as a whole and never
+    /// a single card: on 158 live queries the right tool covered less than
+    /// half of the query in 64 cases (minimum 0.24), so 0.5 turned 40% of the
+    /// searchable requests into false "no match"; at 0.25 there was one.
+    /// </summary>
+    public const double MinQueryCoverage = 0.25;
+
+    /// <summary>
+    /// Share of the query's weight a card must carry to stand for the whole
+    /// request (see <see cref="QueryCoverage"/>). When wording ranking is all
+    /// that backs the shortlist, find_tools lets such cards lead: BM25 over
+    /// descriptions pays for a long description, so a card that came to explain
+    /// more of itself can drop out of the shortlist although no other card says
+    /// more about the request (list_families, night run 2).
+    /// </summary>
+    public const double FullQueryCoverage = 0.9;
+
+    /// <summary>
+    /// A term the catalog never uses weighs as much as a fairly specific term
+    /// (one that about a tenth of the cards share). Without the cap a single
+    /// unknown word would dominate every query it appears in.
+    /// </summary>
+    private const double CoverageTermCap = 2.5;
+
+    /// <summary>
     /// Cards with a positive score above zero, ordered by score descending and
     /// then by tool name. Tools without card text never match.
     /// </summary>
@@ -57,6 +85,60 @@ public static class ToolCardRouter
             .Take(System.Math.Min(max, tools.Count))
             .Select(pair => pair.Tool)
             .ToList();
+    }
+
+    /// <summary>
+    /// Share of the query's weight that each card carries: the summed weight
+    /// of the query terms found in the card over the weight of all query
+    /// terms. A term's weight is its rarity across the cards, capped by
+    /// <see cref="CoverageTermCap"/>; a term no card uses has the full capped
+    /// weight, so a request for something the catalog never speaks about
+    /// cannot be covered by cards that share one generic word with it.
+    /// </summary>
+    public static IReadOnlyDictionary<string, double> QueryCoverage(
+        string query,
+        IReadOnlyList<AgentToolDefinition> tools)
+    {
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        if (tools is null || tools.Count == 0)
+            return result;
+
+        var queryTerms = RuleToolRouter.Tokenize(query ?? string.Empty)
+            .Distinct()
+            .ToList();
+        if (queryTerms.Count == 0)
+            return result;
+
+        var documents = new Document[tools.Count];
+        for (var index = 0; index < tools.Count; index++)
+            documents[index] = CreateDocument(PositiveText(tools[index]));
+
+        var weights = new Dictionary<string, double>(StringComparer.Ordinal);
+        var total = 0.0;
+        foreach (var term in queryTerms)
+        {
+            var frequency = documents.Count(document => document.Terms.ContainsKey(term));
+            var rarity = System.Math.Log(1 + (documents.Length - frequency + 0.5) / (frequency + 0.5));
+            weights[term] = System.Math.Min(rarity, CoverageTermCap);
+            total += weights[term];
+        }
+
+        if (total <= 0)
+            return result;
+
+        for (var index = 0; index < tools.Count; index++)
+        {
+            var carried = 0.0;
+            foreach (var term in queryTerms)
+            {
+                if (documents[index].Terms.ContainsKey(term))
+                    carried += weights[term];
+            }
+
+            result[tools[index].Name] = carried / total;
+        }
+
+        return result;
     }
 
     /// <summary>Top candidates for find_tools and the decision reranker.</summary>

@@ -32,7 +32,7 @@ public sealed class GetBrowserOrganizationTool : AgentReadToolBase
             "Organization dialog in the Revit UI.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""target"":{""type"":""string"",""enum"":[""views"",""sheets""],""default"":""views""}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""target"":{""type"":""string"",""enum"":[""views"",""sheets""],""default"":""views""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

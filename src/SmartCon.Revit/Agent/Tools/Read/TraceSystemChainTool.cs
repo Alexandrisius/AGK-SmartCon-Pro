@@ -44,7 +44,7 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
             "connector ids, the gap in mm and both system names. Also reports systemNameChanges " +
             "along the chain where the system name changes between neighbouring elements. " +
             "Read-only, no regeneration.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementId"":{""type"":""integer""},""maxElements"":{""type"":""integer"",""minimum"":1,""maximum"":5000,""default"":500},""gapThresholdMm"":{""type"":""number"",""minimum"":0.001,""maximum"":10000,""default"":300.0}},""required"":[""elementId""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""elementId"":{""type"":""integer""},""maxElements"":{""type"":""integer"",""minimum"":1,""maximum"":5000,""default"":500},""gapThresholdMm"":{""type"":""number"",""minimum"":0.001,""maximum"":10000,""default"":300.0}},""required"":[""elementId""],""additionalProperties"":false}"
     };
 
     private sealed class ChainNode

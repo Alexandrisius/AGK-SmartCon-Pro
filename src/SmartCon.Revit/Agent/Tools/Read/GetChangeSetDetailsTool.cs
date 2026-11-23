@@ -35,6 +35,8 @@ public sealed class GetChangeSetDetailsTool : AgentReadToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{""changeSetId"":{""type"":""string"",""description"":""GUID of the change set (list_change_sets)""}},""required"":[""changeSetId""],""additionalProperties"":false}"
     };
 
+    public override bool SupportsDocumentRouting => false;
+
     protected override ToolResult Execute(
         Document doc,
         JsonElement args,

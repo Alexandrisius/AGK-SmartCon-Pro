@@ -2,7 +2,7 @@ using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
-
+using SmartCon.Revit.Agent.Tools.Families;
 namespace SmartCon.Revit.Agent.Jobs.Actions;
 
 /// <summary>
@@ -73,6 +73,7 @@ internal static class FamilyJobSelectors
         }
 
         var families = new List<RevitFamily>();
+        var loadedNames = new List<string>();
         var skipped = 0;
         foreach (var element in new FilteredElementCollector(document).OfClass(typeof(RevitFamily)))
         {
@@ -81,6 +82,7 @@ internal static class FamilyJobSelectors
                 continue;
             }
 
+            loadedNames.Add(family.Name);
             pendingNames.Remove(family.Name);
             if (!Matches(family, familyIds, familyNames, familyUniqueIds, nameContains, categoryIds))
             {
@@ -106,7 +108,8 @@ internal static class FamilyJobSelectors
                 return Error(
                     JobErrorCodes.SelectorEmpty,
                     "None of the select.familyNames matched a loaded family: " +
-                    JoinNames(pendingNames) + ". [Action: list the loaded families and fix the names]");
+                    JoinNames(pendingNames) + "." + NearestSuffix(pendingNames, loadedNames) +
+                    " [Action: list the loaded families and fix the names]");
             }
 
             return Error(
@@ -127,7 +130,9 @@ internal static class FamilyJobSelectors
         foreach (var unmatched in pendingNames.OrderBy(name => name, StringComparer.Ordinal))
         {
             warnings.Add(
-                "No loaded family named '" + unmatched + "'. [Action: list_families to see the loaded families]");
+                "No loaded family named '" + unmatched + "'." +
+                AgentNameSuggestions.Suffix(unmatched, loadedNames) +
+                " [Action: fix the name or list_families to see the loaded families]");
         }
 
         if (skipped > 0)
@@ -271,6 +276,25 @@ internal static class FamilyJobSelectors
 
     private static string JoinNames(IEnumerable<string> names) =>
         string.Join(", ", names.OrderBy(name => name, StringComparer.Ordinal));
+
+    private static string NearestSuffix(IEnumerable<string> wanted, IEnumerable<string> loaded)
+    {
+        var nearest = new List<string>();
+        foreach (var name in wanted)
+        {
+            foreach (var suggestion in AgentNameSuggestions.Nearest(name, loaded))
+            {
+                if (!nearest.Contains(suggestion))
+                {
+                    nearest.Add(suggestion);
+                }
+            }
+        }
+
+        return nearest.Count == 0
+            ? string.Empty
+            : " Nearest loaded name(s): " + string.Join(", ", nearest.Take(5)) + ".";
+    }
 
     private static FamilySelection Error(string code, string detail) => new()
     {

@@ -40,6 +40,8 @@ public sealed class ListChangeSetsTool : AgentReadToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{""limit"":{""type"":""integer"",""default"":20,""maximum"":100},""offset"":{""type"":""integer"",""default"":0},""fields"":{""type"":""array"",""description"":""Allowed: changeSetId,operation,description,createdAt,appliedAt,itemCount,status,author. Returned keys match the requested names."",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 
+    public override bool SupportsDocumentRouting => false;
+
     protected override ToolResult Execute(
         Document doc,
         JsonElement args,

@@ -82,6 +82,18 @@ public sealed partial class JobRunner
                     ErrorDetail = preview.ErrorDetail
                 });
                 processed++;
+
+                if (IsDocumentRefusal(preview.ErrorCode))
+                {
+                    Sync(_store.UpdateItemsAsync(job.JobId, updates, CancellationToken.None));
+                    return new JobSliceResult
+                    {
+                        JobId = job.JobId,
+                        State = JobState.Failed,
+                        ProcessedThisSlice = processed,
+                        Error = StopForDocumentRefusal(job, new DocumentRefusalInfo(item, preview.ErrorDetail), applying: false)
+                    };
+                }
             }
 
             if (updates.Count > 0)
@@ -213,21 +225,36 @@ public sealed partial class JobRunner
             savedAny |= result.Saved;
             lastSeq = items[items.Count - 1].Seq;
 
-            if (result.Error is not null)
+            if (result.Error is not null || result.Refusal is not null)
             {
                 if (job.Spec.Options.RollbackOnError)
                 {
-                    return RollbackAfterError(job, document, result.Error, processed);
+                    // The undo runs before anything is finalized: the transition starts from
+                    // Running and the record describes the model as the job leaves it.
+                    return result.Refusal is { } refusal
+                        ? RollbackAfterDocumentRefusal(job, document, refusal, processed)
+                        : RollbackAfterError(job, document, result.Error!, processed);
                 }
 
-                _wantsPump = false;
-                TryFail(job, result.Error.Code, result.Error.ToMessage());
+                if (result.Error is not null)
+                {
+                    _wantsPump = false;
+                    TryFail(job, result.Error.Code, result.Error.ToMessage());
+                    return new JobSliceResult
+                    {
+                        JobId = job.JobId,
+                        State = JobState.Failed,
+                        ProcessedThisSlice = processed,
+                        Error = result.Error
+                    };
+                }
+
                 return new JobSliceResult
                 {
                     JobId = job.JobId,
                     State = JobState.Failed,
                     ProcessedThisSlice = processed,
-                    Error = result.Error
+                    Error = StopForDocumentRefusal(job, result.Refusal!, applying: true)
                 };
             }
 
@@ -560,5 +587,8 @@ public sealed partial class JobRunner
         public bool Saved { get; init; }
 
         public JobError? Error { get; init; }
+
+        /// <summary>Document-level refusal of a unit; the job is still Running when it is returned.</summary>
+        public DocumentRefusalInfo? Refusal { get; init; }
     }
 }

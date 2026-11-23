@@ -44,6 +44,8 @@ public static class AgentToolSchemaValidator
             using (argumentsDocument)
             {
                 var errors = new List<string>();
+                FlagUndeclaredDocumentId(
+                    schemaDocument.RootElement, argumentsDocument.RootElement, errors);
                 ValidateValue(
                     schemaDocument.RootElement,
                     schemaDocument.RootElement,
@@ -54,6 +56,34 @@ public static class AgentToolSchemaValidator
                 return errors;
             }
         }
+    }
+
+    /// <summary>
+    /// documentId is checked whatever <c>additionalProperties</c> says: a tool
+    /// whose schema does not declare it ignores it, and a read would silently
+    /// hit the ACTIVE document instead of the background model the call was
+    /// aimed at (night run 2, C9-01).
+    /// </summary>
+    private static void FlagUndeclaredDocumentId(
+        JsonElement schema,
+        JsonElement arguments,
+        List<string> errors)
+    {
+        if (arguments.ValueKind != JsonValueKind.Object
+            || !arguments.TryGetProperty(AgentDocumentRoutingArgument.Name, out _)
+            || schema.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var declared = schema.TryGetProperty("properties", out var properties)
+                       && properties.ValueKind == JsonValueKind.Object
+                       && properties.TryGetProperty(AgentDocumentRoutingArgument.Name, out _);
+        if (declared)
+            return;
+
+        errors.Add("$." + AgentDocumentRoutingArgument.Name + ": "
+                   + AgentDocumentRoutingArgument.UndeclaredError);
     }
 
     private static void ValidateValue(
@@ -262,13 +292,18 @@ public static class AgentToolSchemaValidator
                     propertySchema,
                     member.Value,
                     path + "." + member.Name,
-                    depth + 1,
-                    errors);
+                depth + 1,
+                errors);
                 continue;
             }
 
-            if (!allowAdditional)
+            // The undeclared root documentId is already reported by
+            // FlagUndeclaredDocumentId with the routing explanation.
+            if (!allowAdditional
+                && !(path == "$" && AgentDocumentRoutingArgument.IsName(member.Name)))
+            {
                 errors.Add(path + "." + member.Name + ": unknown property");
+            }
         }
     }
 

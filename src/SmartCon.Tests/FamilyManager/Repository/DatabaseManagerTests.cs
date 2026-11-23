@@ -36,10 +36,21 @@ public sealed class DatabaseManagerTests
 
             Manager = new DatabaseManager(Database, identityMock.Object, new LocalCatalogMigrator(Database), registryMigratorMock.Object);
 
-            var field = typeof(DatabaseManager).GetField(
-                "_registryPath",
-                BindingFlags.NonPublic | BindingFlags.Instance)!;
-            field.SetValue(Manager, Path.Combine(TempDir, "registry.json"));
+            // Every registry side file must follow the redirected registry: left at
+            // their real %APPDATA% paths the tests overwrite the user's registry.json.bak.
+            var registryPath = Path.Combine(TempDir, "registry.json");
+            var redirected = new Dictionary<string, string>
+            {
+                ["_registryPath"] = registryPath,
+                ["_bakPath"] = registryPath + ".bak",
+                ["_tempPath"] = registryPath + ".tmp",
+                ["_trashPath"] = Path.Combine(TempDir, ".trash")
+            };
+            foreach (var pair in redirected)
+            {
+                typeof(DatabaseManager).GetField(pair.Key, BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .SetValue(Manager, pair.Value);
+            }
         }
 
         public async Task<string> CreateStandaloneDatabaseAsync(string name)
