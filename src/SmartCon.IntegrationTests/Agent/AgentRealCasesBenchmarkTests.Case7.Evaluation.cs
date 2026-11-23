@@ -151,7 +151,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         // (д) Пакетность (C2-09): map/replace-джоба, а не поштучный
         // map_family_parameters и не дробление джобы по одному семейству.
-        var perFamilyCalls = calls.Count(call => call.ToolName == "map_family_parameters");
+        var perFamilyCalls = Case7DirectMigrationCalls(calls);
         var jobCalls = calls
             .Where(call => call.ToolName == "start_job" && call.Success && !IsDryRunCall(call))
             .ToList();
@@ -228,6 +228,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
             .Select(row => row.Family)
             .Distinct(StringComparer.Ordinal)
             .ToList();
+
+    /// <summary>
+    /// Прямые (без start_job) вызовы миграции общих параметров — поштучный
+    /// путь замены, который критерий пакетности (д) должен видеть. Считаются
+    /// все пути замены кейса: map_family_parameters и двухшаговый
+    /// replace_family_parameter (P3-3 рецензии r1); dry-run preview и
+    /// неуспешные вызовы миграцией не являются.
+    /// </summary>
+    internal static int Case7DirectMigrationCalls(List<BenchCall> calls) =>
+        calls.Count(call => call.ToolName == "map_family_parameters");
 
     /// <summary>
     /// Явное число юнитов джобы из её аргументов (C2-09): длина явного списка

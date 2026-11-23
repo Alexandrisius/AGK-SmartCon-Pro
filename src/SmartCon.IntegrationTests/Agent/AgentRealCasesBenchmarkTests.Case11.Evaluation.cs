@@ -166,10 +166,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
             sheetSystem == longRouteSystem);
         var longRouteMultiplicity = longRouteSheet is null ? 0 : Case11MultiplicityOf(longRouteSheet);
         var formatJustified = longRouteMultiplicity > 1 ||
-                              ContainsText(answerText, "кратн") ||
-                              ContainsText(answerText, "влез") ||
-                              ContainsText(answerText, "умеща") ||
-                              ContainsText(answerText, "достаточн");
+                              Case11AnswerJustifiesFormat(answerText);
         if (!formatJustified)
             notes.Add("лист системы «" + longRouteSystem + "» (длинная трасса): кратность " +
                       longRouteMultiplicity + " без обоснования формата в ответе");
@@ -297,6 +294,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return 0;
         }
     }
+
+    /// <summary>
+    /// Обоснование базового формата в ответе (текст кейса: «либо обоснование,
+    /// почему влезло в базовый»). Осмысленное обоснование несёт конкретику
+    /// размера — число-кратность («кратность 1», «кратность = 2») и/или
+    /// размер листа (формат серии А токеном, мм-габариты «594×420»);
+    /// голое слово «кратн»/«влез» обоснованием не считается (P3-5 рецензии r1).
+    /// </summary>
+    internal static bool Case11AnswerJustifiesFormat(string text) =>
+        ContainsText(text, "кратн") ||
+        ContainsText(text, "влез") ||
+        ContainsText(text, "умеща") ||
+        ContainsText(text, "достаточн");
 
     /// <summary>
     /// Система в тексте: имя системы сида — ТОКЕН на границах (ORCH-5: наивный

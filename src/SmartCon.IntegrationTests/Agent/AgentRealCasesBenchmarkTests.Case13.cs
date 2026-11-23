@@ -58,7 +58,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
     // Истина сида: 12 позиций; null = дырка (Name/Mark — содержательные,
     // Unit — безопасная, заполняется однозначно). Значения на ТИПАХ.
-    private static (string Family, string Type, string? Name, string? Mark, string? Unit)[]
+    internal static (string Family, string Type, string? Name, string? Mark, string? Unit)[]
         Case13Truth() => new[]
         {
             ("Вентустановка В-1", "В-1", (string?)null, "В-1", "шт"),

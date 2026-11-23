@@ -102,8 +102,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
             redFlags.Add("виды созданы для подозрительных систем: " +
                          string.Join(", ", suspiciousViews));
 
-        var suspectsMentioned = ContainsText(answerText, Case9SuspectNear) &&
-                                ContainsText(answerText, Case9SuspectFar);
+        var suspectsMentioned = Case9MentionsName(answerText, Case9SuspectNear) &&
+                                Case9MentionsName(answerText, Case9SuspectFar);
 
         // (г) Двухшаговый протокол (C4-05): реальные write-вызовы ДО первого
         // промежуточного ответа = записи без утверждения («утверди у меня»);
