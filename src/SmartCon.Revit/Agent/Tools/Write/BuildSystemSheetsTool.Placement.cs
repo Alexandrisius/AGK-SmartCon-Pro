@@ -391,7 +391,7 @@ public sealed partial class BuildSystemSheetsTool
             }
 
             if (same)
-                inherited.Add(pair.Value, value);
+                inherited.Add(pair.Value, value!);
         }
 
         return inherited;

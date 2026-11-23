@@ -150,7 +150,8 @@ internal static class AgentScheduleFilterEstimator
                 if (string.IsNullOrWhiteSpace(text))
                     continue;
 
-                distinct.Add(text);
+                // net48 ref assemblies carry no [NotNullWhen] on IsNullOrWhiteSpace.
+                distinct.Add(text!);
                 if (distinct.Count >= MaxDistinctValues)
                     break;
             }
