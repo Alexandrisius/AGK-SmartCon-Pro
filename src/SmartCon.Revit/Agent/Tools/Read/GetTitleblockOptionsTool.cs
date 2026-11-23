@@ -35,6 +35,7 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             "observed value → widthMm/heightMm pairs (derived from the album; a value never " +
             "used in the album is unknown — test it on a draft sheet with " +
             "build_system_sheets + titleBlockParameters and undo_last, or read the family). " +
+            "A type with a sizeMap also carries sizeMapNote saying this once. " +
             "Also returns existingSheets[] with " +
             "sizes and nextNumberHint — the number that continues the album (build_system_sheets " +
             "auto-numbers the same way). When the project has no title block type the tool " +

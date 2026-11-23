@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
@@ -231,23 +232,14 @@ internal static class AgentScheduleFilterEstimator
                     return null;
             }
 
+            // The same lift query_elements applies: a blank or valueless instance
+            // view of a type-bound parameter reads the type's value, while a blank
+            // the element stores itself (a two-sided built-in) stays its own.
             var parameter = ParameterOf(element, definition, parameterId);
-            if (parameter is not null && parameter.HasValue)
-                return parameter;
 
-            // A type-bound parameter exposes a valueless view on the instance
-            // (the same lift AgentParameterResolver.LiftValuelessToType does):
-            // the value lives on the type.
-            var typeId = element.GetTypeId();
-            if (typeId is null || typeId == ElementId.InvalidElementId)
-                return parameter;
-
-            var type = doc.GetElement(typeId);
-            if (type is null)
-                return parameter;
-
-            var onType = ParameterOf(type, definition, parameterId);
-            return onType is not null && onType.HasValue ? onType : parameter;
+            return parameter is null
+                ? null
+                : AgentParameterResolver.LiftValuelessToType(doc, element, parameter);
         }
         catch (Exception)
         {

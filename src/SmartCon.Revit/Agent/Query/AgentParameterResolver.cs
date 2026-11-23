@@ -222,7 +222,7 @@ internal static class AgentParameterResolver
     /// The storage check runs only when a lift would actually change the
     /// result, so blank-both reads pay nothing extra.
     /// </summary>
-    private static Parameter? LiftValuelessToType(Document doc, Element element, Parameter candidate)
+    internal static Parameter? LiftValuelessToType(Document doc, Element element, Parameter candidate)
     {
         if (!CarriesNoValue(candidate))
             return candidate;
