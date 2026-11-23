@@ -26,6 +26,18 @@ internal static class AgentQueryFields
         switch (field)
         {
             case QuerySpec.NameField:
+                // Room.Name glues the room name and number into one string
+                // (Autodesk Developer Guide); a condition on "name" must see the
+                // parts the user knows: the ROOM_NAME parameter and the number,
+                // plus the glued form for compatibility.
+                if (element is Autodesk.Revit.DB.Architecture.Room room)
+                {
+                    return Texts(
+                        StringOf(room, BuiltInParameter.ROOM_NAME) ?? room.Name,
+                        StringOf(room, BuiltInParameter.ROOM_NUMBER),
+                        room.Name);
+                }
+
                 // "Name contains X" means the element, its family or its type: a
                 // family instance matches on any of the three.
                 if (element is FamilyInstance instance)
@@ -168,6 +180,19 @@ internal static class AgentQueryFields
         }
 
         return false;
+    }
+
+    private static string? StringOf(Element element, BuiltInParameter parameter)
+    {
+        try
+        {
+            var value = element.get_Parameter(parameter)?.AsString();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static IReadOnlyList<string> Texts(params string?[] values)

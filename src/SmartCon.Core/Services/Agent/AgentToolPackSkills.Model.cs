@@ -90,8 +90,11 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - `query_elements` — выборка: `categories`, `levelIds`, `typeIds`, `viewId`, `roomId`, `conditions[{parameter,op,value,unit}]`, `logic`, `includeTypeParameters`, `fields`, `limit` ≤200, `offset`.
   `parameter` в условии — имя параметра, BuiltInParameter id или структурное поле карточки:
-  `name` (имя элемента; для экземпляра семейства — также имя семейства или типа), `family`,
-  `type`, `category`, `level`. Структурные поля — зарезервированные слова, для них только
+  `name` (имя элемента; для экземпляра семейства — также имя семейства или типа; для помещения —
+  имя ROOM_NAME и номер, а не склеенный `Room.Name`), `family`,
+  `type`, `category`, `level`. Категория принимается как enum-имя (`OST_Walls`),
+  display-имя и псевдоним вида `OST_Pipes` = display «Pipes». Структурные поля — зарезервированные
+  слова, для них только
   строковые операторы; числовой оператор с ними → `invalid_query`.
 - `summarize_elements` — сводка: `groupBy: category|level|type|family|parameter`, `sumParameter`, `topN`, `includeZeroCount`; группы типов несут `family`, `typeId`, `category`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
@@ -126,7 +129,12 @@ public static partial class AgentToolPackSkills
   `unit` обязателен для числовых сравнений в мм/м/м²/м³ (`raw` — внутренние единицы).
 - `notExists` находит элементы, **где параметр есть, но пуст**; элемент, у которого параметра
   нет вовсе, под это условие не попадёт. Для «без параметра» проверяйте `exists` и берите
-  остаток.
+  остаток. Параметр типа ищется только с `includeTypeParameters=true`: без флага notExists
+  по типовому параметру вернёт 0, а не «все пустые».
+- Условие по типовому параметру со значением (после `set_parameters scope:""type""`) матчит
+  экземпляры только с `includeTypeParameters=true`. Ноль совпадений по параметру, который
+  привязан к типам, сопровождается подсказкой `typeBoundParameter` — типы смотрят
+  `find_families_with_parameter` / `list_family_types`.
 - Параметр, которого нет ни у одного элемента выборки, — это `unknown_parameter` с подсказками
   (ближайшие имена), а не пустой список: исправьте имя или ищите по структурному полю.
   Пустой список при успешном ответе означает «таких элементов нет».
