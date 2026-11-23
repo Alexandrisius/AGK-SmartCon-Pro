@@ -63,8 +63,13 @@ public static partial class AgentToolPackSkills
   `IF(cond, t, f)`, округление — `round/roundup/rounddown`; складывать только одинаковые
   единицы, округление делит на `1 mm`, текст — только через `IF`.
 - Добавление параметра: обычный (`name` + `storageType`) и **shared** (по `guid`;
-  `createDefinition=true` создаёт определение в ФОП); определение shared фиксируется в проекте
+  `createDefinition=true` создаёт определение в ФОП — требует ФОП, иначе
+  `shared_parameter_file_missing`); определение shared фиксируется в проекте
   при первой загрузке.
+- Built-in имена («Код по классификатору») отклоняются (`parameter_name_taken`) —
+  пишите built-in.
+- Обычный family-параметр **не бывает полем спецификации** — нужен shared/project
+  или built-in.
 - `createDefinition=true` пишет **вне** транзакции семейства: при откате правки определение
   в ФОП останется.
 - `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/
@@ -114,7 +119,8 @@ public static partial class AgentToolPackSkills
 
 ### Рецепты
 1. «Добавь общий параметр ADSK_Наименование»: `list_shared_parameters(nameContains:""ADSK"")`
-   → если нет, `add_family_parameter(name, storageType:""text"", isShared:true, createDefinition:true)`.
+   → если нет, `add_family_parameter(name, storageType:""text"", isShared:true, createDefinition:true)`
+   (нужен подключённый ФОП).
 2. «Перенеси значения из A в B»: `get_family_parameters(includeValues=true)` →
    `map_family_parameters(mappings:[{source:{name:A}, target:{name:B}}], mode:""values"")`.
 3. «Поставь формулу длины»: `set_family_formula(parameter:""Длина"", formula:""Ширина + 20 mm * 2"")`;
