@@ -139,8 +139,9 @@ public sealed class ClassifyMatchResult
 
     /// <summary>
     /// setParameters EXACTLY as set_parameters accepts it: <c>{items}</c> for one
-    /// batch of at most 500 items, <c>{batches:[{items}…]}</c> above 500 - no
-    /// extra keys inside, so the argument passes the tool schema as is.
+    /// batch of at most 500 items, <c>{calls:[{items}…]}</c> above 500 (one call
+    /// per entry - the tool has no batch argument) - no extra keys inside, so the
+    /// argument passes the tool schema as is.
     /// </summary>
     public object? BuildSetParametersPayload()
     {

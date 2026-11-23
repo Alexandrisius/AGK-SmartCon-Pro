@@ -80,25 +80,37 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             snapshot.Args.CandidateDepth,
             snapshot.Args.Instructions);
 
-        // The family budget is applied before the matching: a deterministic
-        // prefix keeps the cost bounded and the payload honest.
+        // The budgets are applied to WHOLE families before the matching: a
+        // family cut in the middle would report a code it never gave to all of
+        // its types. Families are taken in order; one that does not fit the
+        // remaining budget is named in the payload instead of being halved.
         var groups = AgentClassificationTexts.GroupTypes(snapshot.Types).ToList();
-        var truncated = snapshot.Truncated;
-        var familiesSkipped = 0;
-        if (groups.Count > snapshot.Args.MaxFamilies)
+        var familiesTotal = groups.Count;
+        var typeBudget = snapshot.Args.MaxTypes;
+        var processed = new List<ClassifyFamilyGroup>(groups.Count);
+        var notProcessed = new List<(string Family, int TypeCount)>();
+        foreach (var group in groups)
         {
-            familiesSkipped = groups.Count - snapshot.Args.MaxFamilies;
-            groups = groups.Take(snapshot.Args.MaxFamilies).ToList();
-            truncated = true;
+            if (processed.Count >= snapshot.Args.MaxFamilies || group.Types.Count > typeBudget)
+            {
+                notProcessed.Add((group.FamilyName, group.Types.Count));
+                continue;
+            }
+
+            processed.Add(group);
+            typeBudget -= group.Types.Count;
         }
+
+        groups = processed;
+        var truncated = notProcessed.Count > 0;
 
         // Progress logging without a long-lived scope: the matching awaits the
         // decision channel for minutes (C15), so only short state lines.
         SmartConLogger.Debug(
-            "classify_types snapshot: " + snapshot.Types.Count + " type(s), " + groups.Count +
-            " famil" + (groups.Count == 1 ? "y" : "ies") + ", table " +
-            snapshot.Table.Entries.Count + " row(s)" +
-            (truncated ? ", truncated (familiesSkipped=" + familiesSkipped + ")" : string.Empty));
+            "classify_types snapshot: " + snapshot.Types.Count + " type(s), " + familiesTotal +
+            " famil" + (familiesTotal == 1 ? "y" : "ies") + ", table " +
+            snapshot.Table.Entries.Count + " row(s), not writable " + snapshot.SkippedNotWritable +
+            (truncated ? ", truncated (" + notProcessed.Count + " families left)" : string.Empty));
 
         var result = await _matcher
             .MatchAsync(groups, snapshot.Table, options, ct)
@@ -115,7 +127,7 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             (result.Incomplete ? ", INCOMPLETE" : string.Empty));
 
         var warnings = result.Warnings.Concat(snapshot.Warnings).ToList();
-        var payload = BuildPayload(snapshot, groups, result, truncated, familiesSkipped);
+        var payload = BuildPayload(snapshot, groups, result, truncated, familiesTotal, notProcessed);
         var message = payload.Message;
         return ToolResult.Ok(
                 payload.Data,
@@ -247,9 +259,9 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             @"""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""Only these element type ids""}," +
             @"""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family or type name""}," +
             @"""onlyEmpty"":{""type"":""boolean"",""default"":true,""description"":""true: only types whose Assembly Code is empty; false: also types that already have a code (reported as current)""}," +
-            @"""maxTypes"":{""type"":""integer"",""default"":400,""maximum"":2000,""description"":""At most this many types per call""}," +
+            @"""maxTypes"":{""type"":""integer"",""default"":2000,""maximum"":2000,""description"":""At most this many types per call; a family is never cut in the middle""}," +
             @"""textParameters"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Extra parameter names (type or instance scope) whose values join the matching text""}," +
-            @"""maxFamilies"":{""type"":""integer"",""default"":150,""maximum"":600,""description"":""At most this many families per call""}," +
+            @"""maxFamilies"":{""type"":""integer"",""default"":600,""maximum"":600,""description"":""At most this many families per call; families left out are named in notProcessed""}," +
             @"""minScore"":{""type"":""number"",""minimum"":0,""maximum"":1,""default"":0.5,""description"":""Below this score a proposal lands in uncertain""}," +
             @"""candidateDepth"":{""type"":""integer"",""minimum"":2,""maximum"":15,""default"":6,""description"":""How many codes survive the per-family stage""}," +
             @"""instructions"":{""type"":""string"",""description"":""Extra selection context for the decision model, max 1500 chars""}},""additionalProperties"":false}";
@@ -261,9 +273,11 @@ public sealed partial class ClassifyTypesTool : IAgentTool
                 "Proposes a classification code (Assembly Code) for element types from the " +
                 "classification table LOADED IN THE DOCUMENT - one call for the whole " +
                 "selection instead of matching types one by one. Selects types (categories, " +
-                "familyIds, typeIds, nameContains; onlyEmpty default true), semantically " +
+                "familyIds, typeIds, nameContains; onlyEmpty default true) - only those that can " +
+                "store the code: tags, view types, styles and other types without the field are " +
+                "left out and counted in selection.skippedNotWritable. Semantically " +
                 "picks a leaf code per family and per type and returns assignments " +
-                "(family -> code + breadcrumb), uncertain items and a READY setParameters " +
+                "(family -> code + breadcrumb + typeIds), uncertain items and a READY setParameters " +
                 "argument (items with elementId=TYPE id, parameter=UNIFORMAT_CODE, " +
                 "scope=type) - then call set_parameters with it (dryRun first). " +
                 "classification_table_not_loaded means the document has no classifier: " +

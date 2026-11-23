@@ -104,6 +104,39 @@ public sealed class ReadToolResultToolTests
     }
 
     [Fact]
+    public async Task Execute_LimitAboveTheMaximum_IsCutTo20000NotRejected()
+    {
+        // A limit above 20000 used to die in the schema and cost the model a
+        // round; it is cut here and the answer says so.
+        var payload = "{\"success\":true,\"message\":\"" + new string('a', 25000) + "\"}";
+        var tool = CreateTool(payload);
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"offset\":0,\"limit\":30000}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        Assert.Equal(20000, data.GetProperty("limit").GetInt32());
+        Assert.Equal(20000, data.GetProperty("returned").GetInt32());
+        Assert.Equal(20000, data.GetProperty("limitCappedTo").GetInt32());
+        Assert.Equal(payload.Length, data.GetProperty("total").GetInt32());
+
+        var within = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"offset\":0,\"limit\":20000}"),
+            CancellationToken.None);
+
+        Assert.True(within.Success);
+        Assert.Equal(20000, within.Data!.Value.GetProperty("limit").GetInt32());
+        // No cap marker for a limit inside the maximum (null or absent).
+        var hasCapped = within.Data.Value.TryGetProperty("limitCappedTo", out var capped)
+                        && capped.ValueKind != JsonValueKind.Null;
+        Assert.False(hasCapped);
+    }
+
+    [Fact]
     public async Task Execute_OffsetBeyondEnd_IsRejected()
     {
         var tool = CreateTool("{\"success\":true}");

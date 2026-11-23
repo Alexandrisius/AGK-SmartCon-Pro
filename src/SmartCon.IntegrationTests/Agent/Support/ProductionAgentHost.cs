@@ -65,6 +65,15 @@ internal sealed class ProductionAgentHost : IDisposable
 
     public string DatabasePath => _database.DatabasePath;
 
+    /// <summary>
+    /// The JSON artifact of the benchmark case this host served: Dispose copies
+    /// the session database next to it as <c>r&lt;stamp&gt;.db</c>
+    /// (SMARTCON_BENCH_KEEP_DB, on by default) so the conversation, tool calls and
+    /// the audit trail survive the run. null (no artifact) keeps the old
+    /// delete-on-dispose behaviour.
+    /// </summary>
+    public string? ArtifactJsonPath { get; set; }
+
     /// <summary>Same resolution as production (env first, then secrets.env) plus benchmark overrides.</summary>
     public static ProductionAgentHost Create(Document doc) => Create(doc, null);
 
@@ -220,7 +229,37 @@ ORDER BY created_at;";
             return;
         _disposed = true;
         ((IDisposable)_provider).Dispose();
+        TryPreserveDatabase();
         TryDeleteDatabase();
+    }
+
+    /// <summary>
+    /// Copies the session database next to the case artifact. Connections are
+    /// gone by now (the provider is disposed): the journal is settled, so the
+    /// copy is a complete database; the pooled handles are dropped explicitly
+    /// because Microsoft.Data.Sqlite keeps them open after Dispose.
+    /// </summary>
+    private void TryPreserveDatabase()
+    {
+        var keep = Environment.GetEnvironmentVariable("SMARTCON_BENCH_KEEP_DB");
+        if (string.Equals(keep, "0", StringComparison.Ordinal)
+            || string.Equals(keep, "false", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (string.IsNullOrWhiteSpace(ArtifactJsonPath) || !File.Exists(ArtifactJsonPath))
+            return;
+
+        try
+        {
+            SqliteConnection.ClearAllPools();
+            var target = BenchRunArtifactWriter.DatabasePathFor(ArtifactJsonPath);
+            File.Copy(DatabasePath, target, overwrite: true);
+            Console.WriteLine("Benchmark session database: " + target);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Benchmark session database keep failed: " + ex.Message);
+        }
     }
 
     private void TryDeleteDatabase()

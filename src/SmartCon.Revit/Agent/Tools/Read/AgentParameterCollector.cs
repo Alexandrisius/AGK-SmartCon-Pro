@@ -1,5 +1,6 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -8,6 +9,17 @@ internal sealed class AgentParameterFilter
     public HashSet<string> Classes { get; set; } = new(StringComparer.Ordinal);
 
     public HashSet<string> Names { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    private HashSet<BuiltInParameter>? _nameBuiltIns;
+
+    /// <summary>
+    /// The built-in ids <see cref="Names"/> stand for besides the display
+    /// names (enum ids and aliases). Built on first use: Names is filled by
+    /// the object initializer before the filter is applied.
+    /// </summary>
+    public HashSet<BuiltInParameter> NameBuiltIns =>
+        _nameBuiltIns ??= AgentParameterResolver.BuiltInsOf(
+            Names.Where(name => !string.IsNullOrEmpty(name))!);
 
     public string? NameContains { get; set; }
 
@@ -111,7 +123,9 @@ internal static class AgentParameterCollector
     {
         var name = parameter.Definition?.Name;
         if (filter.Names.Count > 0
-            && (string.IsNullOrEmpty(name) || !filter.Names.Contains(name!)))
+            && (string.IsNullOrEmpty(name) || !filter.Names.Contains(name!))
+            && !(AgentParameterClassifier.IsBuiltIn(parameter, out var builtIn)
+                 && filter.NameBuiltIns.Contains(builtIn)))
         {
             return false;
         }

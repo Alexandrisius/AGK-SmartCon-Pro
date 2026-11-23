@@ -32,13 +32,17 @@ public sealed partial class ClassifyTypesTool
         if (parsed.TypeIds.Count > 0)
         {
             var missing = new List<long>();
+            var unsupported = new List<long>();
             directTypes = new List<ElementType>();
             foreach (var id in parsed.TypeIds)
             {
                 if (doc.GetElement(ElementIdCompat.Create(id)) is ElementType type
-                    && type.get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn) is not null)
+                    && type.get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn) is { } direct)
                 {
-                    directTypes.Add(type);
+                    if (SupportsAssemblyCode(type, direct))
+                        directTypes.Add(type);
+                    else
+                        unsupported.Add(id);
                 }
                 else
                 {
@@ -46,13 +50,21 @@ public sealed partial class ClassifyTypesTool
                 }
             }
 
-            if (missing.Count > 0)
+            if (missing.Count > 0 || unsupported.Count > 0)
             {
+                // Both lists in one answer: the model must not probe them one by one.
                 return ClassifySnapshot.Failed(ToolResult.Fail(
-                    "type_not_found",
-                    "typeIds requires every id to be an element type with the Assembly Code " +
-                    "parameter; missing: [" + string.Join(", ", missing) + "].",
-                    data: AgentJson.Serialize(new { missing })));
+                    unsupported.Count > 0 ? "parameter_not_supported" : "type_not_found",
+                    (missing.Count > 0
+                        ? "typeIds requires every id to be an element type with the Assembly " +
+                          "Code parameter; missing: [" + string.Join(", ", missing) + "]. "
+                        : string.Empty) +
+                    (unsupported.Count > 0
+                        ? "These element types cannot store the Assembly Code (Revit has no " +
+                          "such field on their kind - tags, view types, styles, materials): [" +
+                          string.Join(", ", unsupported) + "]. Tell the user they are not classified."
+                        : string.Empty),
+                    data: AgentJson.Serialize(new { missing, unsupported })));
             }
         }
 
@@ -104,6 +116,7 @@ public sealed partial class ClassifyTypesTool
         IEnumerable<ElementType> scan = directTypes ?? new FilteredElementCollector(doc)
             .OfClass(typeof(ElementType))
             .Cast<ElementType>();
+        var skippedNotWritable = 0;
         foreach (var type in scan)
         {
             ct.ThrowIfCancellationRequested();
@@ -131,6 +144,15 @@ public sealed partial class ClassifyTypesTool
                 continue;
             }
 
+            // A type that cannot store the code is never sent to the decision
+            // model: on a real project tags, view types and styles are the
+            // majority of the types carrying the parameter object.
+            if (!SupportsAssemblyCode(type, codeParameter))
+            {
+                skippedNotWritable++;
+                continue;
+            }
+
             candidates.Add((type, ReadCode(codeParameter)));
         }
 
@@ -155,13 +177,6 @@ public sealed partial class ClassifyTypesTool
             }
 
             selected.Add(candidate);
-        }
-
-        var truncated = false;
-        if (selected.Count > parsed.MaxTypes)
-        {
-            selected = selected.Take(parsed.MaxTypes).ToList();
-            truncated = true;
         }
 
         var types = new List<SmartCon.Core.Services.Agent.ClassifyTypeSnapshot>(selected.Count);
@@ -201,9 +216,37 @@ public sealed partial class ClassifyTypesTool
             Types = types,
             TypesTotal = typesTotal,
             SkippedAlreadySet = skippedAlreadySet,
-            Truncated = truncated,
+            SkippedNotWritable = skippedNotWritable,
             Warnings = warnings
         };
+    }
+
+    /// <summary>
+    /// Whether the type really stores the Assembly Code. Revit hands the
+    /// parameter object to almost every type (tags, view types, dimension
+    /// styles, materials), but only the types that list it among their
+    /// parameters take a value; <c>Set</c> returns false on the rest and the
+    /// field is absent from the type properties dialog.
+    /// </summary>
+    private static bool SupportsAssemblyCode(ElementType type, Parameter codeParameter)
+    {
+        if (codeParameter.IsReadOnly)
+            return false;
+
+        try
+        {
+            foreach (Parameter parameter in type.Parameters)
+            {
+                if (parameter.Id == codeParameter.Id)
+                    return true;
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        return false;
     }
 
     private static int NameIndexOf(ElementType type, string nameContains) =>
@@ -295,9 +338,11 @@ public sealed partial class ClassifyTypesTool
 /// <summary>The parsed and validated arguments of one classify_types call.</summary>
 internal sealed class ClassifyArgs
 {
-    private const int DefaultMaxTypes = 400;
+    // The defaults are the hard maximum: a lower default cut a real project
+    // twice and doubled the decision cost of the second call.
+    private const int DefaultMaxTypes = HardMaxTypes;
     private const int HardMaxTypes = 2000;
-    private const int DefaultMaxFamilies = 150;
+    private const int DefaultMaxFamilies = HardMaxFamilies;
     private const int HardMaxFamilies = 600;
 
     public static readonly ClassifyArgs Default = new();
@@ -408,12 +453,16 @@ internal sealed class ClassifySnapshot
 
     public List<SmartCon.Core.Services.Agent.ClassifyTypeSnapshot> Types { get; internal set; } = new();
 
-    /// <summary>Types matching the selection filters, before the onlyEmpty cut.</summary>
+    /// <summary>
+    /// Types that can store the code and match the selection filters, before
+    /// the onlyEmpty cut.
+    /// </summary>
     public int TypesTotal { get; internal set; }
 
     public int SkippedAlreadySet { get; internal set; }
 
-    public bool Truncated { get; internal set; }
+    /// <summary>Types matching the filters that cannot store the Assembly Code.</summary>
+    public int SkippedNotWritable { get; internal set; }
 
     /// <summary>Collection-time warnings (unknown textParameters names, …).</summary>
     public List<string> Warnings { get; internal set; } = new();

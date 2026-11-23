@@ -174,6 +174,17 @@ public static class BenchRunArtifactWriter
         return (jsonPath, markdownPath);
     }
 
+    /// <summary>
+    /// Path of the session database next to a written artifact:
+    /// <c>r&lt;stamp&gt;.db</c> beside <c>r&lt;stamp&gt;.json</c>. ProductionAgentHost copies
+    /// its temp database there on dispose (SMARTCON_BENCH_KEEP_DB, on by default),
+    /// so a live run can be dissected by messages/tool_calls afterwards.
+    /// </summary>
+    public static string DatabasePathFor(string jsonPath) =>
+        Path.Combine(
+            Path.GetDirectoryName(jsonPath) ?? string.Empty,
+            Path.GetFileNameWithoutExtension(jsonPath) + ".db");
+
     /// <summary>File-system-safe path segment (providers/models are URL-ish names).</summary>
     private static string Sanitize(string segment)
     {

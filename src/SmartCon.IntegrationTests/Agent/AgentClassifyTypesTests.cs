@@ -60,55 +60,11 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
-    private static JsonElement Args(object value)
-    {
-        using var document = JsonSerializer.SerializeToDocument(value);
-        return document.RootElement.Clone();
-    }
-
     private void RequireWallTypes(int minimum = 1)
     {
         if (_wallTypeIds.Count < minimum)
             Skip.Test("В шаблоне проекта по умолчанию меньше " + minimum + " типов стены");
     }
-
-    private ToolResult LoadSampleTable(string fileName = "classify-sample.txt")
-    {
-        var path = ClassificationFixtures.WriteTable(
-            fileName, ClassificationFixtures.SampleTable, ClassificationFixtures.Utf16);
-        return new LoadClassificationTableTool(new StubRevitContext(Doc), _transactions!, _changeSets!)
-            .ExecuteForTests(Args(new { path, dryRun = false }), approved: true, CancellationToken.None);
-    }
-
-    private Task<ToolResult> ClassifyAsync(
-        object args, KeywordDecisionClient? client = null) =>
-        new ClassifyTypesTool(
-                new StubRevitContext(Doc),
-                new AgentSemanticRanker(client ?? new KeywordDecisionClient()))
-            .ExecuteForTestsAsync(Doc, Args(args), CancellationToken.None);
-
-    private ToolResult Set(JsonElement items, bool dryRun) =>
-        new SetParametersTool(new StubRevitContext(Doc), _transactions!, _changeSets!)
-            .ExecuteForTests(
-                Args(new { items, dryRun }),
-                approved: true,
-                CancellationToken.None);
-
-    private string? CodeOf(long typeId)
-    {
-        var parameter = Doc.GetElement(ElementIdCompat.Create(typeId))?
-            .get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn);
-        if (parameter is null || !parameter.HasValue)
-            return null;
-
-        var code = parameter.AsString();
-        return string.IsNullOrWhiteSpace(code) ? null : code;
-    }
-
-    private string? DescriptionOf(long typeId) =>
-        Doc.GetElement(ElementIdCompat.Create(typeId))?
-            .get_Parameter(AgentParameterResolver.AssemblyDescriptionBuiltIn)?
-            .AsString();
 
     // ── A document without a classifier ─────────────────────────────────
 
@@ -163,6 +119,8 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         await Assert.That(first.GetProperty("code").GetString()).IsEqualTo("10.10.10");
         await Assert.That(first.GetProperty("breadcrumb").GetString())
             .IsEqualTo("Shell › Walls › Load-bearing walls");
+        await Assert.That(first.GetProperty("typeIds").EnumerateArray()
+            .Any(id => id.GetInt64() == _wallTypeIds[0])).IsTrue();
 
         var items = data.GetProperty("setParameters").GetProperty("items");
         await Assert.That(items.GetArrayLength()).IsGreaterThan(0);
@@ -171,6 +129,24 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
             && item.GetProperty("parameter").GetString() == "UNIFORMAT_CODE"
             && item.GetProperty("value").GetString() == "10.10.10"
             && item.GetProperty("scope").GetString() == "type")).IsTrue();
+        // typeIds of all assignments together are exactly the ids set_parameters writes.
+        var assignedTypeIds = assignments.EnumerateArray()
+            .SelectMany(assignment => assignment.GetProperty("typeIds").EnumerateArray())
+            .Select(id => id.GetInt64())
+            .ToHashSet();
+        var itemIds = items.EnumerateArray()
+            .Select(item => item.GetProperty("elementId").GetInt64())
+            .ToHashSet();
+        await Assert.That(assignedTypeIds.SetEquals(itemIds)).IsTrue();
+
+        // Wall types all store the code: nobody is left out, everything selected
+        // is processed (the default budgets never truncate a small template).
+        var selection = data.GetProperty("selection");
+        await Assert.That(selection.GetProperty("skippedNotWritable").GetInt32()).IsEqualTo(0);
+        await Assert.That(selection.GetProperty("familiesTotal").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+        await Assert.That(selection.GetProperty("processed").GetInt32())
+            .IsEqualTo(selection.GetProperty("selected").GetInt32());
         await Assert.That(result.Message).Contains("Proposed a code for");
     }
 
@@ -195,6 +171,16 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         var first = uncertain[0];
         await Assert.That(first.GetProperty("reason").GetString()).IsEqualTo("low_confidence");
         await Assert.That(first.GetProperty("candidates").GetArrayLength()).IsGreaterThan(0);
+        await Assert.That(first.GetProperty("typeIds").GetArrayLength()).IsGreaterThan(0);
+
+        await Assert.That(summary.GetProperty("uncertainFamilies").GetInt32())
+            .IsEqualTo(uncertain.GetArrayLength());
+        await Assert.That(summary.GetProperty("uncertainTypes").GetInt32())
+            .IsEqualTo(summary.GetProperty("lowConfidence").GetInt32()
+                       + summary.GetProperty("noConfidence").GetInt32()
+                       + summary.GetProperty("noCandidates").GetInt32());
+        await Assert.That(result.Message).Contains("uncertain type(s) in");
+        await Assert.That(result.Message).Contains("uncertain is grouped by family");
 
         await Assert.That(data.GetProperty("setParameters").ValueKind).IsEqualTo(JsonValueKind.Null);
     }
@@ -264,16 +250,92 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         RequireWallTypes(2);
         await Assert.That(LoadSampleTable("classify-truncate.txt").Success).IsTrue();
 
+        // The budget is applied to WHOLE families in the tool's order (families
+        // sorted by name): simulate the same first-fit to know what must come
+        // out for maxTypes=1 on whatever the template offers.
+        var families = WallFamiliesInToolOrder();
+        var expectedSkipped = new List<string>();
+        var expectedProcessed = 0;
+        var budget = 1;
+        foreach (var (family, count) in families)
+        {
+            if (count <= budget)
+            {
+                expectedProcessed += count;
+                budget -= count;
+            }
+            else
+            {
+                expectedSkipped.Add(family);
+            }
+        }
+
+        if (expectedSkipped.Count == 0)
+            Skip.Test("Бюджет maxTypes=1 не оставил ни одного семейства за подбором");
+
         var result = await ClassifyAsync(
             new { categories = new[] { "OST_Walls" }, maxTypes = 1 });
 
         await Assert.That(result.Success).IsTrue();
         var data = result.Data!.Value;
-        await Assert.That(data.GetProperty("selection").GetProperty("selected").GetInt32())
-            .IsEqualTo(1);
-        await Assert.That(data.GetProperty("selection").GetProperty("truncated").GetBoolean())
-            .IsTrue();
+        var selection = data.GetProperty("selection");
+        // selected is the pre-budget selection; processed follows the simulation.
+        await Assert.That(selection.GetProperty("selected").GetInt32())
+            .IsEqualTo(_wallTypeIds.Count);
+        await Assert.That(selection.GetProperty("processed").GetInt32())
+            .IsEqualTo(expectedProcessed);
+        await Assert.That(selection.GetProperty("truncated").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("summary").GetProperty("familiesSkipped").GetInt32())
+            .IsEqualTo(expectedSkipped.Count);
+
+        var notProcessed = data.GetProperty("notProcessed");
+        await Assert.That(notProcessed.GetProperty("families").GetInt32())
+            .IsEqualTo(expectedSkipped.Count);
+        var names = notProcessed.GetProperty("familyNames").EnumerateArray()
+            .Select(name => name.GetString())
+            .ToList();
+        foreach (var family in expectedSkipped)
+            await Assert.That(names.Contains(family)).IsTrue();
         await Assert.That(data.GetProperty("hint").GetString()).Contains("maxTypes/maxFamilies");
+        await Assert.That(result.Message).Contains("TRUNCATED");
+    }
+
+    [Test]
+    public async Task Classify_MaxTypes_EqualsFirstFamily_ProcessesItWholeAndSkipsTheRest()
+    {
+        RequireWallTypes(2);
+        await Assert.That(LoadSampleTable("classify-truncate-whole.txt").Success).IsTrue();
+
+        var families = WallFamiliesInToolOrder();
+        if (families.Count < 2)
+            Skip.Test("В шаблоне проекта по умолчанию меньше двух семейств стен с кодом классификации");
+        var first = families[0];
+
+        // A budget equal to the first family's type count takes exactly that
+        // family whole (a family is never cut in the middle) and leaves the
+        // rest named in notProcessed.
+        var result = await ClassifyAsync(
+            new { categories = new[] { "OST_Walls" }, maxTypes = first.Count });
+
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        var selection = data.GetProperty("selection");
+        await Assert.That(selection.GetProperty("processed").GetInt32())
+            .IsEqualTo(first.Count);
+        var summary = data.GetProperty("summary");
+        await Assert.That(summary.GetProperty("familiesSelected").GetInt32()).IsEqualTo(1);
+        await Assert.That(summary.GetProperty("familiesSkipped").GetInt32())
+            .IsEqualTo(families.Count - 1);
+        await Assert.That(selection.GetProperty("truncated").GetBoolean()).IsTrue();
+        var notProcessed = data.GetProperty("notProcessed");
+        await Assert.That(notProcessed.GetProperty("families").GetInt32())
+            .IsEqualTo(families.Count - 1);
+        var names = notProcessed.GetProperty("familyNames").EnumerateArray()
+            .Select(name => name.GetString())
+            .ToList();
+        foreach (var (family, _) in families.Skip(1))
+            await Assert.That(names.Contains(family)).IsTrue();
+        await Assert.That(names.Contains(first.Family)).IsFalse();
     }
 
     [Test]
@@ -306,9 +368,11 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         var dryRun = Set(items, dryRun: true);
         await Assert.That(dryRun.Success).IsTrue();
         await Assert.That(CodeOf(_wallTypeIds[0])).IsNull();
+        await AssertReadBackMatchesChanged(dryRun);
 
         var applied = Set(items, dryRun: false);
         await Assert.That(applied.Success).IsTrue();
+        await AssertReadBackMatchesChanged(applied);
 
         await Assert.That(CodeOf(_wallTypeIds[0])).IsEqualTo("10.10.10");
         // Revit fills the Assembly Description from the table row of the code.
@@ -417,10 +481,49 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         var data = result.Data!.Value;
         var summary = data.GetProperty("summary");
         await Assert.That(summary.GetProperty("familiesProcessed").GetInt32()).IsEqualTo(1);
+        await Assert.That(summary.GetProperty("familiesSelected").GetInt32()).IsEqualTo(1);
         await Assert.That(summary.GetProperty("familiesSkipped").GetInt32()).IsEqualTo(families - 1);
         await Assert.That(data.GetProperty("selection").GetProperty("truncated").GetBoolean())
             .IsTrue();
+        var notProcessed = data.GetProperty("notProcessed");
+        await Assert.That(notProcessed.GetProperty("families").GetInt32()).IsEqualTo(families - 1);
+        await Assert.That(notProcessed.GetProperty("familyNames").GetArrayLength())
+            .IsEqualTo(families - 1);
         await Assert.That(data.GetProperty("hint").GetString()).Contains("maxFamilies");
+        await Assert.That(result.Message).Contains("TRUNCATED");
+    }
+
+    [Test]
+    public async Task Classify_TypesThatCannotStoreTheCode_AreLeftOut()
+    {
+        await Assert.That(LoadSampleTable("classify-not-writable.txt").Success).IsTrue();
+        var type = FindTypeThatCannotStoreTheCode(Doc, requireWritablePath: false);
+        if (type is null)
+            Skip.Test("В шаблоне проекта по умолчанию нет типов, не способных хранить код классификации");
+        var typeId = type!.Id.GetValue();
+
+        // (a) An explicit typeIds with such a type is a typed refusal naming the id.
+        var direct = await ClassifyAsync(new { typeIds = new[] { typeId } });
+        await Assert.That(direct.Success).IsFalse();
+        await Assert.That(direct.ErrorCode).IsEqualTo("parameter_not_supported");
+        await Assert.That(direct.Message).Contains("cannot store the Assembly Code");
+        await Assert.That(direct.Message).Contains(typeId.ToString());
+        await Assert.That(direct.Data!.Value.GetProperty("unsupported").EnumerateArray()
+            .Any(id => id.GetInt64() == typeId)).IsTrue();
+
+        // (b) A filter that matches only such types leaves them out and says so.
+        var filter = FilterSelectingOnlyUnwritableTypes(Doc, type!);
+        if (filter is null)
+            Skip.Test("Не удалось подобрать фильтр, выбирающий только типы без записи кода классификации");
+        var result = await ClassifyAsync(filter!);
+        await Assert.That(result.Success).IsTrue();
+        var data = result.Data!.Value;
+        var selection = data.GetProperty("selection");
+        await Assert.That(selection.GetProperty("skippedNotWritable").GetInt32())
+            .IsGreaterThanOrEqualTo(1);
+        await Assert.That(selection.GetProperty("selected").GetInt32()).IsEqualTo(0);
+        await Assert.That(data.GetProperty("assignments").GetArrayLength()).IsEqualTo(0);
+        await Assert.That(result.Message).Contains("cannot store the Assembly Code");
     }
 
     [Test]
@@ -481,99 +584,5 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Deterministic stand-in for the decision model: every option is scored by
-    /// the tokens it shares with the question's Match line; without any overlap
-    /// the first option by code order wins (the plumbing, not the model
-    /// quality, is what these tests verify).
-    /// </summary>
-    private sealed class KeywordDecisionClient : IAgentDecisionClient
-    {
-        public double Score { get; set; } = 0.9;
-
-        public bool Enabled { get; set; } = true;
-
-        public string ProviderName => "test";
-
-        public string Model => "test-model";
-
-        public bool IsEnabled => Enabled;
-
-        public Task<IReadOnlyDictionary<string, AgentDecisionAnswer>> AskAsync(
-            string state,
-            IReadOnlyDictionary<string, AgentDecisionQuestion> questions,
-            CancellationToken ct)
-        {
-            var answers = new Dictionary<string, AgentDecisionAnswer>(StringComparer.Ordinal);
-            foreach (var pair in questions)
-            {
-                var marker = pair.Value.Instructions.IndexOf("Match: ", StringComparison.Ordinal);
-                var query = marker >= 0
-                    ? pair.Value.Instructions.Substring(marker + "Match: ".Length)
-                    : pair.Value.Instructions;
-                var queryTokens = Tokens(query);
-                var ranked = pair.Value.Criteria!
-                    .Select(option => (
-                        Id: option.Key,
-                        Overlap: Tokens(option.Value ?? string.Empty)
-                            .Count(token => queryTokens.Any(q => Matches(q, token)))))
-                    .OrderByDescending(option => option.Overlap)
-                    .ThenBy(option => option.Id, StringComparer.Ordinal)
-                    .ToList();
-
-                var probabilities = new Dictionary<string, double>(StringComparer.Ordinal);
-                var rank = 0;
-                foreach (var option in ranked.Where(option => option.Overlap > 0).Take(5))
-                {
-                    probabilities[option.Id] = System.Math.Max(0.05, Score - rank * 0.1);
-                    rank++;
-                }
-
-                if (probabilities.Count == 0)
-                    probabilities[ranked[0].Id] = Score;
-
-                answers[pair.Key] = new AgentDecisionAnswer
-                {
-                    Type = "choice",
-                    Probabilities = probabilities
-                };
-            }
-
-            return Task.FromResult<IReadOnlyDictionary<string, AgentDecisionAnswer>>(answers);
-        }
-
-        private static HashSet<string> Tokens(string text)
-        {
-            var tokens = new HashSet<string>(StringComparer.Ordinal);
-            var current = new System.Text.StringBuilder();
-            foreach (var character in text)
-            {
-                if (char.IsLetterOrDigit(character))
-                {
-                    current.Append(character);
-                    continue;
-                }
-
-                Flush(current, tokens);
-            }
-
-            Flush(current, tokens);
-            return tokens;
-        }
-
-        private static void Flush(System.Text.StringBuilder builder, HashSet<string> tokens)
-        {
-            if (builder.Length > 0)
-                tokens.Add(builder.ToString().ToLowerInvariant());
-            builder.Clear();
-        }
-
-        private static bool Matches(string left, string right) =>
-            string.Equals(left, right, StringComparison.Ordinal)
-            || (System.Math.Min(left.Length, right.Length) >= 5
-                && (left.StartsWith(right, StringComparison.Ordinal)
-                    || right.StartsWith(left, StringComparison.Ordinal)));
     }
 }

@@ -69,6 +69,37 @@ public sealed class SemanticPackTextTests
     }
 
     [Fact]
+    public void Skill_ClassificationSection_ExplainsWritableTypesBudgetsAndParameterNotSupported()
+    {
+        var skill = AgentToolPackSkills.TryGet("semantic")!;
+
+        // classify_types: only types that can store the code are selected, the
+        // rest is counted, and the leftovers of a truncated call are named.
+        Assert.Contains("selection.skippedNotWritable", skill, StringComparison.Ordinal);
+        Assert.Contains("TRUNCATED", skill, StringComparison.Ordinal);
+        Assert.Contains("notProcessed.familyNames", skill, StringComparison.Ordinal);
+        // set_parameters: an element that cannot carry the parameter is not a value problem.
+        Assert.Contains("parameter_not_supported", skill, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Cards_ExposeTheNewClassificationFacts()
+    {
+        Assert.True(AgentToolCards.TryGet("classify_types", out var classifyTypes));
+        Assert.Contains("skippedNotWritable", classifyTypes!.Purpose, StringComparison.Ordinal);
+        Assert.Contains("TRUNCATED", classifyTypes.Purpose, StringComparison.Ordinal);
+        Assert.Contains("notProcessed.familyNames", classifyTypes.Purpose, StringComparison.Ordinal);
+
+        Assert.True(AgentToolCards.TryGet("set_parameters", out var setParameters));
+        Assert.Contains("parameter_not_supported", setParameters!.Purpose, StringComparison.Ordinal);
+
+        Assert.True(AgentToolCards.TryGet("get_element_details", out var details));
+        Assert.Contains("includeTypeParameters", details!.Purpose, StringComparison.Ordinal);
+        Assert.Contains("parameterNames", details.Purpose, StringComparison.Ordinal);
+        Assert.Contains("UNIFORMAT_CODE", details.Purpose, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReadClassifierCard_PointsToTheDocumentTableWhenTheClassifierIsLoadedThere()
     {
         Assert.True(AgentToolCards.TryGet("read_classifier", out var card));

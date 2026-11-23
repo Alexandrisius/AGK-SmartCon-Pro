@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Core.Compatibility;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Transactions;
 
@@ -18,6 +19,7 @@ public sealed class AgentQueryToolsTests : RevitApiTest
     private RevitTransactionService? _transactions;
     private bool _wallCreated;
     private long _wallId;
+    private long _wallTypeId;
     private long _viewId;
 
     private Document Doc => _document!;
@@ -40,6 +42,7 @@ public sealed class AgentQueryToolsTests : RevitApiTest
             var wall = ModelSeed.TryCreateWall(doc, level.Id);
             _wallCreated = wall is not null;
             _wallId = wall?.Id.GetValue() ?? 0;
+            _wallTypeId = wall?.GetTypeId().GetValue() ?? 0;
             wall?.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)?.Set(SeededComment);
         });
     }
@@ -176,6 +179,192 @@ public sealed class AgentQueryToolsTests : RevitApiTest
         {
             await Assert.That(parameter.GetProperty("scope").GetString()).IsEqualTo("type");
         }
+    }
+
+    [Test]
+    public async Task GetElementDetails_TypeIdWithoutTheFlag_ReturnsTheTypeParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+        var args = Parse("""{"elementIds":[""" + _wallTypeId + """]}""");
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        // A type asked for by its own id is the element: its parameters are what
+        // the call is about, includeTypeParameters or not.
+        await Assert.That(result.Success).IsTrue();
+        var types = result.Data!.Value.GetProperty("types");
+        await Assert.That(types.GetArrayLength()).IsEqualTo(1);
+        var typeParameters = types[0].GetProperty("parameters");
+        await Assert.That(typeParameters.ValueKind).IsEqualTo(JsonValueKind.Array);
+        await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task GetElementDetails_ParameterNames_AcceptBuiltInEnumIdAndAlias()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        // The expected display name comes from the built-in itself, not from a
+        // localized literal: the template language is whatever the machine has.
+        var expectedName = Doc.GetElement(ElementIdCompat.Create(_wallTypeId))!
+            .get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn)!
+            .Definition!.Name;
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+        foreach (var parameterName in new[] { "UNIFORMAT_CODE", "uniformat_code" })
+        {
+            // The wall type carries no code yet, so onlyNonEmpty would hide it.
+            var args = Parse(
+                "{\"elementIds\":[" + _wallTypeId + "],\"parameterNames\":[\"" + parameterName +
+                "\"],\"onlyNonEmpty\":false}");
+
+            var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+            await Assert.That(result.Success).IsTrue();
+            var typeParameters = result.Data!.Value.GetProperty("types")[0].GetProperty("parameters");
+            await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+            await Assert.That(typeParameters.EnumerateArray()
+                .Any(parameter => string.Equals(
+                    parameter.GetProperty("name").GetString(),
+                    expectedName,
+                    StringComparison.Ordinal))).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task GetElementDetails_TypeOnlyParameterNames_ComeFromTheTypeAndUnknownOnesAreReported()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+
+        // ALL_MODEL_TYPE_COMMENTS lives on the type only: the answer pulls the
+        // type parameters in for this element instead of returning nothing.
+        var byTypeParameter = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"elementIds\":[" + _wallId +
+                "],\"parameterNames\":[\"ALL_MODEL_TYPE_COMMENTS\"],\"onlyNonEmpty\":false}"),
+            CancellationToken.None);
+
+        await Assert.That(byTypeParameter.Success).IsTrue();
+        var data = byTypeParameter.Data!.Value;
+        var typeParameters = data.GetProperty("types")[0].GetProperty("parameters");
+        await Assert.That(typeParameters.ValueKind).IsEqualTo(JsonValueKind.Array);
+        await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+        await Assert.That(data.TryGetProperty("parameterNamesNotFound", out _)).IsFalse();
+
+        var unknown = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"elementIds\":[" + _wallId + "],\"parameterNames\":[\"SC_NoSuchParameter\"]}"),
+            CancellationToken.None);
+
+        await Assert.That(unknown.Success).IsTrue();
+        var notFound = unknown.Data!.Value.GetProperty("parameterNamesNotFound");
+        await Assert.That(notFound.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(notFound[0].GetString()).IsEqualTo("SC_NoSuchParameter");
+    }
+
+    [Test]
+    public async Task GetElementDetails_TypeOnlyParameterNames_TwoElementsOfDifferentTypes_BothTypesCarryParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        // A second wall of ANOTHER type: the requested name lives on both types
+        // and on neither instance.
+        var secondWallId = 0L;
+        var secondTypeId = 0L;
+        _transactions!.RunInTransaction(Doc, "Seed a wall of another type", doc =>
+        {
+            var wall = (Wall)doc.GetElement(ElementIdCompat.Create(_wallId))!;
+            var otherType = ((WallType)doc.GetElement(wall.GetTypeId())!).Duplicate(
+                "SC_AgentQuery_OtherWallType");
+            var second = Wall.Create(
+                doc,
+                Line.CreateBound(new XYZ(0, 30, 0), new XYZ(10, 30, 0)),
+                otherType.Id,
+                wall.LevelId,
+                10.0,
+                0.0,
+                false,
+                false);
+            secondWallId = second.Id.GetValue();
+            secondTypeId = second.GetTypeId().GetValue();
+        });
+
+        // ALL_MODEL_TYPE_COMMENTS lives on the type only. Whichever element comes
+        // first, the type of the other one must not stay without its parameters:
+        // a name found on one type says nothing about the next element.
+        foreach (var elementIds in new[] { _wallId + "," + secondWallId, secondWallId + "," + _wallId })
+        {
+            var result = new GetElementDetailsTool(new StubRevitContext(Doc)).ExecuteForTests(
+                Doc,
+                Parse(
+                    "{\"elementIds\":[" + elementIds +
+                    "],\"parameterNames\":[\"ALL_MODEL_TYPE_COMMENTS\"],\"onlyNonEmpty\":false}"),
+                CancellationToken.None);
+
+            await Assert.That(result.Success).IsTrue();
+            var data = result.Data!.Value;
+            var types = data.GetProperty("types");
+            await Assert.That(types.GetArrayLength()).IsEqualTo(2);
+            foreach (var typeId in new[] { _wallTypeId, secondTypeId })
+            {
+                var type = types.EnumerateArray()
+                    .First(item => item.GetProperty("typeId").GetInt64() == typeId);
+                await Assert.That(type.TryGetProperty("parameters", out var typeParameters)).IsTrue();
+                await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+            }
+
+            await Assert.That(data.TryGetProperty("parameterNamesNotFound", out _)).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task GetElementDetails_InstanceIdBeforeItsTypeId_TheTypeStillCarriesItsParameters()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var tool = new GetElementDetailsTool(new StubRevitContext(Doc));
+
+        // The instance comes first and lists its type without the type
+        // parameters (the flag is off); the type is then asked for by its own
+        // id - its parameters are what that part of the call is about, whatever
+        // came before it.
+        var plain = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"elementIds\":[" + _wallId + "," + _wallTypeId + "]}"),
+            CancellationToken.None);
+
+        await Assert.That(plain.Success).IsTrue();
+        await Assert.That(plain.Data!.Value.GetProperty("elements").GetArrayLength()).IsEqualTo(2);
+        var types = plain.Data.Value.GetProperty("types");
+        await Assert.That(types.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(types[0].GetProperty("typeId").GetInt64()).IsEqualTo(_wallTypeId);
+        await Assert.That(types[0].TryGetProperty("parameters", out var typeParameters)).IsTrue();
+        await Assert.That(typeParameters.GetArrayLength()).IsGreaterThan(0);
+
+        // The same order with a name that lives nowhere: the type parameters
+        // still come, and the name is reported.
+        var unknown = tool.ExecuteForTests(
+            Doc,
+            Parse(
+                "{\"elementIds\":[" + _wallId + "," + _wallTypeId +
+                "],\"parameterNames\":[\"SC_NoSuchParameter\"]}"),
+            CancellationToken.None);
+
+        await Assert.That(unknown.Success).IsTrue();
+        var data = unknown.Data!.Value;
+        await Assert.That(data.GetProperty("types")[0].TryGetProperty("parameters", out _)).IsTrue();
+        await Assert.That(data.GetProperty("parameterNamesNotFound")[0].GetString())
+            .IsEqualTo("SC_NoSuchParameter");
     }
 
     [Test]
