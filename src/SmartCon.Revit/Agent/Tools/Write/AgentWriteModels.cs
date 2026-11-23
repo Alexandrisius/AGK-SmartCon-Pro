@@ -38,6 +38,19 @@ public sealed class WriteItemReport
     /// effect of a detached setting is visible (#457, benchmark case 3).
     /// </summary>
     public List<string>? SkippedByTemplateInclude { get; set; }
+
+    /// <summary>
+    /// What the row did to the element, for reports whose rows are not parameter
+    /// writes (a filter assigned to a view is not a view rename). Null for the
+    /// plain old/new-value rows.
+    /// </summary>
+    public string? Action { get; set; }
+
+    /// <summary>
+    /// Own view filters the row's view template takes over (the template includes
+    /// "V/G Overrides Filters"): they are replaced by the template's list.
+    /// </summary>
+    public List<string>? ReplacedOwnFilters { get; set; }
 }
 
 public sealed class SectionReport

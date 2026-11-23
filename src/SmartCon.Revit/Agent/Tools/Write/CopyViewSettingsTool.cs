@@ -127,6 +127,7 @@ public sealed class CopyViewSettingsTool : AgentWriteToolBase
             foreach (var section in sections)
             {
                 var change = ApplySection(doc, source, target, section, overwriteTemplate, outcome);
+                AgentViewSettingsWriter.PublishFilterReplacement(outcome, target, report, change);
                 if (change.ErrorCode is not null)
                 {
                     // A section locked by the target's template (or a template from

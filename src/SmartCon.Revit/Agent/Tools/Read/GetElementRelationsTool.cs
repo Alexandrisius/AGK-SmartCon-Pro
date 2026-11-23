@@ -34,8 +34,9 @@ public sealed class GetElementRelationsTool : AgentReadToolBase
             "(FamilyInstance.Host — e.g. which wall hosts a window), fromRoom/toRoom for doors " +
             "and windows (reported separately, null when not applicable), plus level and system " +
             "name context. Neighbours come from Connector.AllRefs; logical system references " +
-            "and Curve connectors are skipped, connectors are sorted by id for deterministic " +
-            "output. Read-only.",
+            "and logical references are skipped, connectors are sorted by id for deterministic " +
+            "output. An element without connectors returns connectors:[] plus connectorsNote " +
+            "with the reason (no MEP connectors / family defines none / curve-only). Read-only.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeConnectors"":{""type"":""boolean"",""default"":true},""includeHost"":{""type"":""boolean"",""default"":true},""includeRooms"":{""type"":""boolean"",""default"":true}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
@@ -103,6 +104,12 @@ public sealed class GetElementRelationsTool : AgentReadToolBase
         var (family, typeName) = AgentRelationsSupport.ReadFamilyAndType(element);
         var instance = element as FamilyInstance;
 
+        var connectors = includeConnectors ? ReadConnectors(element) : null;
+
+        // An empty list alone reads as "nothing is connected"; the reason says the
+        // element can never have a connection (C10-02).
+        var connectorsNote = connectors is { Count: 0 } ? AgentConnectorNotes.DescribeAbsence(element) : null;
+
         return new
         {
             elementId = element.Id.GetValue(),
@@ -116,7 +123,8 @@ public sealed class GetElementRelationsTool : AgentReadToolBase
             host = includeHost ? ReadHost(doc, instance) : null,
             fromRoom = includeRooms ? ReadRoomSide(instance, from: true) : null,
             toRoom = includeRooms ? ReadRoomSide(instance, from: false) : null,
-            connectors = includeConnectors ? ReadConnectors(element) : null
+            connectors,
+            connectorsNote
         };
     }
 

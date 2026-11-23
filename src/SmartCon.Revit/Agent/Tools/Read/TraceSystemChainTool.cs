@@ -43,6 +43,9 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
             "splits into two Revit systems), each break with both element and " +
             "connector ids, the gap in mm and both system names. Also reports systemNameChanges " +
             "along the chain where the system name changes between neighbouring elements. " +
+            "The answer also carries startConnectorCount: when the start element has no " +
+            "connectors (startConnectorNote says why) the chain cannot extend beyond it and a " +
+            "warning is returned — chainLength=1 with 0 breaks is then not a connected run. " +
             "Read-only, no regeneration.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""elementId"":{""type"":""integer""},""maxElements"":{""type"":""integer"",""minimum"":1,""maximum"":5000,""default"":500},""gapThresholdMm"":{""type"":""number"",""minimum"":0.001,""maximum"":10000,""default"":300.0}},""required"":[""elementId""],""additionalProperties"":false}"
     };
@@ -93,6 +96,20 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
             return ToolResult.Fail(
                 "element_not_found",
                 "Element " + elementIdValue + " does not exist in this document.");
+        }
+
+        // A chain of one element with zero breaks reads as a clean result; when the
+        // start element cannot connect to anything, say so instead (C10-02).
+        var startConnectorCount = AgentConnectorNotes.CountConnectable(startElement);
+        var startNote = startConnectorCount is null or 0
+            ? AgentConnectorNotes.DescribeAbsence(startElement)
+            : null;
+        var warnings = new List<string>();
+        if (startNote is not null)
+        {
+            warnings.Add(
+                "The start element has no connectors (" + startNote + "), so the chain cannot " +
+                "extend beyond it: chainLength=1 and breaks=[] are NOT a connected, intact run.");
         }
 
         // 1. BFS по соединённым коннекторам (паттерн ElementChainIterator.BuildGraph).
@@ -217,6 +234,8 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
         var payload = new
         {
             startElementId = startId.GetValue(),
+            startConnectorCount,
+            startConnectorNote = startNote,
             chain = chain.Select(node =>
             {
                 var element = doc.GetElement(node.ElementId);
@@ -243,7 +262,12 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
             AgentJson.Serialize(payload),
             "Traced chain of " + chain.Count + " element(s), "
             + breaks.Count + " break(s), "
-            + systemNameChanges.Count + " system name change(s).");
+            + systemNameChanges.Count + " system name change(s)."
+            + (startNote is null
+                ? string.Empty
+                : " WARNING: the start element has no connectors (" + startNote +
+                  ") — this is not a connected run."),
+            warnings: warnings);
     }
 
     /// <summary>

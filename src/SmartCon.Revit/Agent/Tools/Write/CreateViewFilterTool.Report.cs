@@ -160,4 +160,96 @@ public sealed partial class CreateViewFilterTool
         if (readBack is not null)
             outcome.Data["readBack"] = readBack;
     }
+
+    /// <summary>
+    /// Facts of the finished call the result payload is built from.
+    /// </summary>
+    private sealed class FilterResult
+    {
+        public long FilterIdValue;
+        public string FilterName = string.Empty;
+        public bool Created;
+        public bool Reused;
+        public bool RolledBack;
+        public bool DryRun;
+        public bool Atomic;
+        public ViewFilterMode Mode;
+        public List<long> AppliedViewIds = new();
+    }
+
+    /// <summary>
+    /// Drops the "filter created" change item and row: the filter element no
+    /// longer exists after the rollback.
+    /// </summary>
+    private static void RemoveCreatedFilterRows(WriteOutcome outcome, long filterIdValue)
+    {
+        outcome.Items.RemoveAll(item =>
+            string.Equals(item.ParameterName, "filter_created", StringComparison.Ordinal)
+            && item.ElementId == filterIdValue);
+        outcome.Batch.Changed.RemoveAll(report => report.Id == filterIdValue);
+        if (outcome.AffectedCount > 0)
+            outcome.AffectedCount--;
+    }
+
+    /// <summary>
+    /// visibility=none keeps every element visible: without this line a success
+    /// looked like "the elements are filtered out" (C4-09).
+    /// </summary>
+    private static void WarnIfAppliedButDisabled(
+        WriteOutcome outcome,
+        int viewChanged,
+        ViewFilterMode mode)
+    {
+        if (viewChanged == 0 || mode != ViewFilterMode.None)
+            return;
+
+        outcome.Data["appliedButDisabled"] = true;
+        outcome.Warnings.Add(
+            "visibility=none: the filter is applied to " + viewChanged +
+            " view(s) but DISABLED — nothing is hidden and no override is active. Pass " +
+            "visibility=\"hide\" to hide the matching elements, or \"show\" to keep them " +
+            "visible with the filter enabled.");
+    }
+
+    private static void PublishResultData(WriteOutcome outcome, FilterResult result)
+    {
+        // A dry run creates the filter only to read it back and then deletes it; a live
+        // rollback deletes it too. A live filterId would invite a follow-up call
+        // against a dead element (A4).
+        var discardedProbe = result.Created && result.DryRun;
+        var filterIdValue = result.FilterIdValue;
+        outcome.Data["filterId"] = discardedProbe || result.RolledBack ? null : (long?)filterIdValue;
+        if (discardedProbe)
+        {
+            outcome.Data["wouldCreateId"] = filterIdValue;
+            // Every id this dry-run answer carries belongs to the discarded probe.
+            outcome.Data["filterIdPreview"] = true;
+        }
+
+        if (result.RolledBack)
+            outcome.Data["rolledBackId"] = filterIdValue;
+        outcome.Data["filterName"] = result.FilterName;
+        outcome.Data["atomic"] = result.Atomic;
+        outcome.Data["created"] = result.Created && !result.DryRun && !result.RolledBack;
+        outcome.Data["wouldCreate"] = discardedProbe;
+        outcome.Data["reused"] = result.Reused;
+        outcome.Data["visibility"] = AgentFilterViewState.ToWireName(result.Mode);
+        outcome.Data["visibilitySemantics"] =
+            "hide = filter enabled + matching elements hidden; show = filter enabled + " +
+            "elements visible; none = filter added but disabled (elements visible).";
+        if (discardedProbe)
+        {
+            outcome.Warnings.Add(
+                "Dry run: the filter was created inside the rolled-back transaction and " +
+                "nothing was saved. filterId is null; wouldCreateId and readBack[].previewFilterId " +
+                "are ids of the discarded probe (filterIdPreview=true), not of a real element. " +
+                "Run with dryRun=false to apply and get the real filterId.");
+        }
+
+        if (!result.DryRun && !result.RolledBack)
+        {
+            // Verified outside the transaction, after the commit (see Commit.cs).
+            outcome.Data[PostCommitCheckKey] = (filterIdValue, result.AppliedViewIds);
+        }
+    }
 }

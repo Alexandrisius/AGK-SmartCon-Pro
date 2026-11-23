@@ -117,6 +117,7 @@ public sealed class ConfigureViewsTool : AgentWriteToolBase
             {
                 var change = AgentViewSettingsWriter.ApplyTemplate(
                     doc, view, item.TemplateId.Value, item.OverwriteTemplate);
+                AgentViewSettingsWriter.PublishFilterReplacement(outcome, view, report, change);
                 if (change.ErrorCode is not null)
                 {
                     failure = change;
