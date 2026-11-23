@@ -132,6 +132,9 @@ public sealed class AgentDocumentRoutingTextTests
         Assert.Contains("даёт `invalid_arguments`", skill, StringComparison.Ordinal);
         Assert.Contains("поле `document` (`scope: active|background`, `documentId`)", skill, StringComparison.Ordinal);
         Assert.Contains("documentId was not present", skill, StringComparison.Ordinal);
+
+        // classify_types routes by its own code and attaches neither the field nor the NOTE.
+        Assert.Contains("Исключение — `classify_types`", skill, StringComparison.Ordinal);
     }
 
     [Fact]

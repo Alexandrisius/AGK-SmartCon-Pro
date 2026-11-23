@@ -24,8 +24,9 @@ public static partial class AgentToolPackSkills
   `get_change_set_details`, `list_shared_parameters`) его не принимают: вызов с `documentId`
   даёт `invalid_arguments`, а не чтение другого документа.
 - Факт маршрутизации виден в ответе read-тура, пока открыт донор или передан `documentId`:
-  поле `document` (`scope: active|background`, `documentId`). NOTE «documentId was not present
-  in this call» означает: прочитан АКТИВНЫЙ документ; чтобы прочитать донора, повторите вызов
+  поле `document` (`scope: active|background`, `documentId`). Исключение — `classify_types`:
+  принимает `documentId`, но поле и NOTE не добавляет. NOTE «documentId was not present in this
+  call» означает: прочитан АКТИВНЫЙ документ; чтобы прочитать донора, повторите вызов
   с `documentId`.
 - Открытие большой модели — секунды и сотни МБ памяти: закрывай донор сразу после чтения.
 - «Уже открытая» модель не переоткрывается: тул находит её по пути среди открытых и регистрирует существующую (`wasAlreadyOpen=true`; активная — `isActive=true` + warning).
