@@ -19,7 +19,7 @@ public sealed partial class AgentClassificationMatcher
         Dictionary<string, IReadOnlyList<SemanticMatch>> codesByFamily,
         Dictionary<string, double> chainScores,
         RunState run,
-        Dictionary<long, TypeStageAnswer>? differentiation)
+        Dictionary<long, TypeStageAnswer> differentiation)
     {
         var rowIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < typesByQuery.Count; index++)
@@ -59,18 +59,14 @@ public sealed partial class AgentClassificationMatcher
                 // A single code (the descent result) answers its types directly
                 // from the chain score; a one-option question would only invite
                 // guesses - unless the type went through the differentiation
-                // stage and earned a sibling code of its own.
+                // stage and its answer was worth more.
                 if (familyCodes.Count == 1)
                 {
-                    var familyScore = chainScores.TryGetValue(family.Key, out var chain)
-                        ? System.Math.Min(familyCodes[0].Score, chain)
-                        : familyCodes[0].Score;
-                    if (differentiation is not null
-                        && differentiation.TryGetValue(type.ElementId, out var answer))
+                    var familyScore = FamilyScoreOf(familyCodes[0], family.Key, chainScores);
+                    if (differentiation.TryGetValue(type.ElementId, out var answer))
                     {
                         AddDifferentiatedResult(
-                            type, answer, familyCodes, familyScore, table, options,
-                            results, alreadySet);
+                            type, answer, familyScore, table, options, results, alreadySet);
                         continue;
                     }
 
@@ -162,12 +158,8 @@ public sealed partial class AgentClassificationMatcher
             : score >= options.MinScore
                 ? ClassifyTypeStatus.Proposed
                 : ClassifyTypeStatus.LowConfidence;
-        if (status == ClassifyTypeStatus.Proposed
-            && string.Equals(
-                type.CurrentCode?.Trim(), best.Id.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
+        if (status == ClassifyTypeStatus.Proposed && CarriesCode(type, best.Id))
             status = ClassifyTypeStatus.AlreadySet;
-        }
 
         var result = new ClassifyTypeResult(
             type, status, best.Id, System.Math.Round(score, 4), candidates)
@@ -182,56 +174,93 @@ public sealed partial class AgentClassificationMatcher
     }
 
     /// <summary>
-    /// Applies the answer of the per-type differentiation stage: a confident
-    /// sibling earns its own code (the common AddResult path, so already_set and
-    /// the honesty rules keep working); an abstain, the family code itself or an
-    /// unanswered question keeps the family code; an unconfident sibling keeps
-    /// the family code but lands in uncertain with the sibling as a candidate.
+    /// Applies the answer of the per-type differentiation stage. A confident
+    /// sibling earns its own code; otherwise the family code stands. The status
+    /// says what the answer was worth: an honest none or a barely confirmed
+    /// family code lands in uncertain, a sibling below the threshold leaves the
+    /// family code with the sibling as the candidate to confirm, and a type
+    /// that already carries the family code is already_set.
     /// </summary>
     private static void AddDifferentiatedResult(
         ClassifyTypeSnapshot type,
         TypeStageAnswer answer,
-        IReadOnlyList<SemanticMatch> familyCodes,
         double familyScore,
         AgentClassificationTable table,
         ClassifyOptions options,
         List<ClassifyTypeResult> results,
         List<ClassifyTypeResult> alreadySet)
     {
+        var familyCode = answer.FamilyCode;
         var chosen = answer.Chosen;
-        var keepsFamilyCode = chosen is null
-            || string.Equals(chosen.Id, TypeAbstainId, StringComparison.Ordinal)
-            || string.Equals(chosen.Id, answer.FamilyCode.Id, StringComparison.OrdinalIgnoreCase);
-        if (keepsFamilyCode)
-        {
-            AddResult(type, answer.FamilyCode, familyCodes, familyScore,
-                table, options, results, alreadySet);
-            return;
-        }
+        var matches = WithFamilyCode(answer.Matches, familyCode);
 
-        // A sibling below the confidence threshold (or a bare guess) is NOT
-        // written: the type keeps the family code and lands in uncertain with
-        // the sibling as the candidate to confirm.
-        if (chosen!.BareChoice
-            || chosen.Score < options.MinScore)
+        // An honest none: the model answered that neither the family code nor a
+        // sibling fits the type. Nothing is written; the family code stays only
+        // as the candidate to confirm.
+        if (string.Equals(chosen.Id, TypeAbstainId, StringComparison.Ordinal))
         {
             results.Add(new ClassifyTypeResult(
-                type,
-                chosen.BareChoice ? ClassifyTypeStatus.NoConfidence : ClassifyTypeStatus.LowConfidence,
-                answer.FamilyCode.Id,
-                System.Math.Round(familyScore, 4),
-                CandidatesOf(answer.Matches, table))
+                type, ClassifyTypeStatus.LowConfidence, familyCode.Id, 0, CandidatesOf(matches, table))
             {
-                Reason = chosen.BareChoice
-                    ? "the sibling choice came back without a confidence"
-                    : "the type text points to a sibling code below the confidence threshold"
+                Reason = "the model answered that neither the family code nor its siblings fit the type"
             });
             return;
         }
 
-        AddResult(type, chosen, answer.Matches, chosen.Score,
-            table, options, results, alreadySet);
+        // The model confirmed the family code: the chain is as weak as its
+        // weakest link, the per-type answer included. A bare per-type answer
+        // adds nothing - the family score stands.
+        if (string.Equals(chosen.Id, familyCode.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            AddResult(type, familyCode, matches,
+                chosen.BareChoice ? familyScore : System.Math.Min(familyScore, chosen.Score),
+                table, options, results, alreadySet);
+            return;
+        }
+
+        // A sibling: again the weaker of the family chain and the per-type answer.
+        var siblingScore = System.Math.Min(familyScore, chosen.Score);
+        if (!chosen.BareChoice && siblingScore >= options.MinScore)
+        {
+            AddResult(type, chosen, matches, siblingScore, table, options, results, alreadySet);
+            return;
+        }
+
+        // Not confident enough to give the type a code of its own: the family
+        // code stands and the sibling is the candidate to confirm - and a type
+        // that already carries the family code needs nothing at all.
+        var candidates = CandidatesOf(matches, table);
+        var score = System.Math.Round(familyScore, 4);
+        var result = CarriesCode(type, familyCode.Id)
+            ? new ClassifyTypeResult(
+                type, ClassifyTypeStatus.AlreadySet, familyCode.Id, score, candidates)
+            : new ClassifyTypeResult(
+                type,
+                chosen.BareChoice ? ClassifyTypeStatus.NoConfidence : ClassifyTypeStatus.LowConfidence,
+                familyCode.Id,
+                score,
+                candidates)
+            {
+                Reason = chosen.BareChoice
+                    ? "the sibling choice came back without a confidence"
+                    : "the type text points to a sibling code below the confidence threshold"
+            };
+        results.Add(result);
+        if (result.Status == ClassifyTypeStatus.AlreadySet)
+            alreadySet.Add(result);
     }
+
+    /// <summary>True when the type already stores exactly this code.</summary>
+    private static bool CarriesCode(ClassifyTypeSnapshot type, string code) =>
+        string.Equals(type.CurrentCode?.Trim(), code.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The matches of a per-type answer with the family code always among them.</summary>
+    private static IReadOnlyList<SemanticMatch> WithFamilyCode(
+        IReadOnlyList<SemanticMatch> matches,
+        SemanticMatch familyCode) =>
+        matches.Any(match => string.Equals(match.Id, familyCode.Id, StringComparison.OrdinalIgnoreCase))
+            ? matches
+            : new[] { familyCode }.Concat(matches).ToArray();
 
     private static IReadOnlyList<ClassifyCodeCandidate> CandidatesOf(
         IReadOnlyList<SemanticMatch> matches,
