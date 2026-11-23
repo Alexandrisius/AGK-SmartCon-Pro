@@ -9,7 +9,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// Resolves and writes element parameters (instance or type scope) with explicit
 /// storage-type conversion. Used by set_parameters and remap_parameter_values.
 /// </summary>
-internal static class AgentParameterWriteHelper
+internal static partial class AgentParameterWriteHelper
 {
     internal sealed class Resolution
     {
@@ -424,22 +424,6 @@ internal static class AgentParameterWriteHelper
             return true;
         }
 
-        return false;
-    }
-
-    // A refusal of the VALUE looks exactly like a type that has no such field
-    // unless the two are told apart: only the second one is final.
-    private static bool NotSupported(
-        out string errorCode,
-        out string reason,
-        Parameter parameter)
-    {
-        var category = parameter.Element?.Category?.Name;
-        errorCode = "parameter_not_supported";
-        reason = "Parameter '" + parameter.Definition?.Name + "' cannot be written on this " +
-                 "element" + (string.IsNullOrEmpty(category) ? string.Empty : " (category '" + category + "')") +
-                 ": Revit exposes no such value on this kind of element. Skip it and tell the " +
-                 "user that these elements do not carry this parameter.";
         return false;
     }
 

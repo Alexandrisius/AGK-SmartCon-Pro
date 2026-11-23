@@ -194,7 +194,8 @@ public static partial class AgentToolPackSkills
   instance↔type — `binding_type_conflict`; чужое имя — `name_conflict`.
 - После записи читайте `changed`/`failed` с причинами: `parameter_not_found`,
   `readonly_parameter`, `invalid_value`, `invalid_unit`, `scope_mismatch`,
-  `unsupported_storage_type`, `set_failed` — у каждого свой следующий шаг.
+  `parameter_not_supported`, `unsupported_storage_type`, `set_failed` — у каждого
+  свой следующий шаг.
 - В `remap_parameter_values` ошибки резолва **source/target** попадают в `failed[]` (если не разрешилась хотя бы одна из сторон, элемент не переносится); ошибки конверсии — в `warnings[]`. Если у всех элементов не разрешилась пара, ответ `success=false` с `parameter_not_found`, а не «нет изменений».
 - Для переноса значений между параметрами разной размерности сверяйте единицы: `remap_parameter_values` копирует значения, а не конвертирует смысл.
 
