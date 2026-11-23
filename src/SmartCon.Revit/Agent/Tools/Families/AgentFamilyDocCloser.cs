@@ -60,14 +60,19 @@ internal static class AgentFamilyDocCloser
 
         // REVIT-237190: force synchronous COM cleanup of the temporary document.
         // On Revit versions where Document is a managed wrapper this throws
-        // ArgumentException — ignored.
-        try
+        // ArgumentException — ignored. A document that survived Close keeps its
+        // wrapper: on net48 releasing the RCW of a live document would detach it
+        // while the session still uses it (review r2, 3).
+        if (closed)
         {
-            System.Runtime.InteropServices.Marshal.ReleaseComObject(doc);
-        }
-        catch (Exception)
-        {
-            // Managed wrapper, not a real COM object.
+            try
+            {
+                System.Runtime.InteropServices.Marshal.ReleaseComObject(doc);
+            }
+            catch (Exception)
+            {
+                // Managed wrapper, not a real COM object.
+            }
         }
 
         // Workaround #96: invisible balloon forces the WPF/render-thread resync.
