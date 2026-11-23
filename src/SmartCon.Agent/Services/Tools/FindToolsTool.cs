@@ -113,42 +113,54 @@ public sealed partial class FindToolsTool : IAgentTool
 
         var lexical = ToolCardRouter.TopCandidates(state, rankable, 50);
 
-        // A card that carries too little of the query shares only common
-        // wording with it (C10-03): it is not a match, whatever its rank.
-        var coverage = ToolCardRouter.QueryCoverage(query, rankable);
-        bool IsMatch(AgentToolDefinition definition) =>
-            coverage.TryGetValue(definition.Name, out var share)
-            && share >= ToolCardRouter.MinQueryCoverage;
-
         // The tool the query names is what the model asked for: it leads the
         // answer even when ranking puts it below the limit (C1-04).
         var named = ExactNameMatches(query, candidates);
         var namedNames = new HashSet<string>(
             named.Select(definition => definition.Name), StringComparer.Ordinal);
-        var lexicalMatched = lexical.Where(IsMatch).ToList();
-        var authority = RouterIsRelevanceAuthority(_router);
-        if (!authority && named.Count == 0 && lexicalMatched.Count == 0)
+
+        // Honest absence (C10-03): when no card carries enough of the query,
+        // whatever ranks first shares only common wording with it. The floor
+        // gates the answer as a whole; it never cuts cards out of a match.
+        var noSignal = named.Count == 0
+                       && !ToolCardRouter.QueryCoverage(query, rankable).Values.Any(
+                           share => share >= ToolCardRouter.MinQueryCoverage);
+        var reportsVerdict = RouterReportsOwnVerdict;
+        if (RoutingIsWordingOnly && noSignal)
             return NoMatchResult(lexical);
 
         var chosen = new List<AgentToolDefinition>(6);
-        if (rankable.Count > 0 && (authority || named.Count > 0 || lexicalMatched.Count > 0))
+        if (rankable.Count > 0)
         {
             var decision = await _router
                 .RouteAsync(state, rankable, 6, ct)
                 .ConfigureAwait(false);
+
+            // The decision model answering that nothing in the catalog fits is
+            // the answer, unless the query spells out a tool name (C10-03).
+            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0)
+                return NoMatchResult(lexical);
+
+            // Without a pick of its own the decision router relays wording
+            // ranking, which takes the same floor as when it routes alone.
+            if (reportsVerdict && decision.Picked.Count == 0 && noSignal)
+                return NoMatchResult(lexical);
+
+            var picked = reportsVerdict ? new HashSet<string>(decision.Picked, StringComparer.Ordinal) : null;
             foreach (var definition in decision.Tools)
             {
+                // What the decision model did not pick is no choice of its own.
+                // With a pick in hand the tail comes from wording ranking below,
+                // so a router that returned the whole catalog for lack of a
+                // signal never shows up as matches (WB-R1).
                 if (!AgentToolPacks.IsAlwaysAvailable(definition.Name)
                     && !namedNames.Contains(definition.Name)
-                    && (authority || IsMatch(definition)))
+                    && (picked is null || picked.Count == 0 || picked.Contains(definition.Name)))
                 {
                     chosen.Add(definition);
                 }
             }
         }
-
-        if (authority && named.Count == 0 && chosen.Count == 0 && lexicalMatched.Count == 0)
-            return NoMatchResult(lexical);
 
         var merged = new List<AgentToolDefinition>(limit + chosen.Count);
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -165,17 +177,14 @@ public sealed partial class FindToolsTool : IAgentTool
         {
             var startJob = rankable.FirstOrDefault(definition =>
                 string.Equals(definition.Name, StartJobName, StringComparison.Ordinal));
-            if (startJob is not null
-                && (authority || namedNames.Contains(startJob.Name) || IsMatch(startJob)))
-            {
+            if (startJob is not null)
                 Add(startJob);
-            }
         }
 
         foreach (var definition in chosen)
             Add(definition);
 
-        foreach (var definition in lexicalMatched)
+        foreach (var definition in lexical)
             Add(definition);
 
         var returned = merged.Take(limit).ToList();
@@ -192,7 +201,7 @@ public sealed partial class FindToolsTool : IAgentTool
         {
             return ToolResult.Ok(
                 JsonSerializer.SerializeToElement(payload),
-                "Returned " + returned.Count + " matching tool definition(s.");
+                "Returned " + returned.Count + " matching tool definition(s).");
         }
         catch (Exception ex)
         {
@@ -202,7 +211,6 @@ public sealed partial class FindToolsTool : IAgentTool
             return ToolResult.Fail("tool_failed", ex.Message);
         }
     }
-
 
     private ToolResult ExecuteListing(JsonElement args, AgentToolContext context)
     {

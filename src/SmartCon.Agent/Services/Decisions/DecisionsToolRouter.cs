@@ -44,7 +44,19 @@ public sealed class DecisionsToolRouter : IToolRouter
             var answers = await AskToolQuestionsAsync(query, tools, ct).ConfigureAwait(false);
             var chosen = ChosenToolNames(answers);
             if (chosen.Count == 0)
-                return rule;
+            {
+                // "Nothing in the catalog fits" is an answer of its own: the rule
+                // shortlist returned with it is no match, only the nearest cards.
+                return AnswersNoCatalogMatch(answers)
+                    ? new ToolRoutingDecision
+                    {
+                        Tools = rule.Tools,
+                        Fallback = rule.Fallback,
+                        TopScore = rule.TopScore,
+                        NoCatalogMatch = true
+                    }
+                    : rule;
+            }
 
             answers.TryGetValue("tool", out var toolAnswer);
             var confidence = toolAnswer?.Confidence ?? 0;
@@ -59,7 +71,7 @@ public sealed class DecisionsToolRouter : IToolRouter
 
                 selected.Add(tool);
                 if (selected.Count >= maxTools)
-                    return new ToolRoutingDecision { Tools = selected, TopScore = confidence };
+                    return Decision(selected, confidence);
             }
 
             foreach (var name in chosen)
@@ -82,7 +94,17 @@ public sealed class DecisionsToolRouter : IToolRouter
                     selected.Add(tool);
             }
 
-            return new ToolRoutingDecision { Tools = selected, TopScore = confidence };
+            return Decision(selected, confidence);
+
+            // Only picks that made the shortlist are reported as picks: one the
+            // catalog does not hold, or one a full shortlist crowded out, is no pick.
+            ToolRoutingDecision Decision(List<AgentToolDefinition> shortlist, double topScore) =>
+                new()
+                {
+                    Tools = shortlist,
+                    TopScore = topScore,
+                    Picked = chosen.Where(names.Contains).ToArray()
+                };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -120,12 +142,8 @@ public sealed class DecisionsToolRouter : IToolRouter
     {
         var chosen = new List<string>(MaxChosenTools + 1);
 
-        if (!answers.TryGetValue("catalog_match", out var match)
-            || match.Noul is null
-            || match.Noul.Value < MinCatalogMatch)
-        {
+        if (AnswersNoCatalogMatch(answers))
             return chosen;
-        }
 
         if (!answers.TryGetValue("tool", out var toolAnswer)
             || toolAnswer.Error is not null
@@ -149,6 +167,16 @@ public sealed class DecisionsToolRouter : IToolRouter
 
         return chosen;
     }
+
+    /// <summary>
+    /// The decision model was asked whether the catalog can fulfil the request
+    /// and said no. No answer at all is not a no: the rule shortlist stands.
+    /// </summary>
+    private static bool AnswersNoCatalogMatch(
+        IReadOnlyDictionary<string, AgentDecisionAnswer> answers) =>
+        answers.TryGetValue("catalog_match", out var match)
+        && match.Noul is not null
+        && match.Noul.Value < MinCatalogMatch;
 
     private static string Shorten(string value, int max) =>
         value.Length <= max ? value : value.Substring(0, max);

@@ -17,11 +17,15 @@ public static class ToolCardRouter
     private const double NegativeWeight = 0.4;
 
     /// <summary>
-    /// Minimum share of the query's weight a card must carry to count as a
-    /// match (see <see cref="QueryCoverage"/>). Below it the cards share only
-    /// generic wording with the request, and find_tools answers "no match".
+    /// Minimum share of the query's weight the best card must carry for the
+    /// catalog to have an answer at all (see <see cref="QueryCoverage"/>). Below
+    /// it every card shares only generic wording with the request, and
+    /// find_tools answers "no match". It gates the answer as a whole and never
+    /// a single card: on 158 live queries the right tool covered less than
+    /// half of the query in 64 cases (minimum 0.24), so 0.5 turned 40% of the
+    /// searchable requests into false "no match"; at 0.25 there was one.
     /// </summary>
-    public const double MinQueryCoverage = 0.5;
+    public const double MinQueryCoverage = 0.25;
 
     /// <summary>
     /// A term the catalog never uses weighs as much as a fairly specific term

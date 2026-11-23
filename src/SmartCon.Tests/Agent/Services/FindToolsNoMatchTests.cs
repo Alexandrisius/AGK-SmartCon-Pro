@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Tools;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
@@ -165,7 +166,163 @@ public sealed class FindToolsNoMatchTests
         var generic = ToolCardRouter.QueryCoverage("rename geometry", tools);
 
         Assert.Equal(0.0, generic["list_views"], 6);
-        Assert.True(generic["rename_views"] < ToolCardRouter.MinQueryCoverage);
+        // One word out of two is not half the request: the unknown one outweighs it.
+        Assert.True(generic["rename_views"] < 0.5);
+    }
+
+    [Fact]
+    public void QueryCoverage_FloorLetsALongRequestThrough()
+    {
+        // The night run: "schedule fields sort create schedule" reached 0.47 on
+        // create_schedule and was refused, although the tool exists. A floor of
+        // half the query turned 40% of live searches into false "no match":
+        // in a real catalog most words of such a request are shared by many cards.
+        var tools = new[]
+        {
+            Definition("create_schedule", "create schedule fields"),
+            Definition("create_views_batch", "create views"),
+            Definition("create_view_filter", "create filter fields"),
+            Definition("create_sheet", "create sheet fields"),
+            Definition("get_schedule_definition", "schedule fields definition"),
+            Definition("get_schedule_data", "schedule data"),
+            Definition("set_schedule_sort", "schedule sort"),
+            Definition("set_schedule_filter", "schedule filter fields")
+        };
+
+        var covered = ToolCardRouter.QueryCoverage("schedule fields sort create schedule", tools);
+        var best = covered.Values.Max();
+
+        // The request passes the floor, and the tool it asks for by name is
+        // covered well below half of it — a floor of 0.5 refused this search.
+        Assert.True(best >= ToolCardRouter.MinQueryCoverage);
+        Assert.InRange(covered["create_schedule"], ToolCardRouter.MinQueryCoverage, 0.5);
+    }
+
+    /// <summary>The production router with its decision model switched on.</summary>
+    private static FindToolsTool DecisionTool(StubDecisionClient client, params IAgentTool[] tools)
+    {
+        var tool = new FindToolsTool(new DecisionsToolRouter(new RuleToolRouter(), client));
+        tool.Attach(new FakeToolRegistry(tools));
+        return tool;
+    }
+
+    private static AgentDecisionAnswer NoCatalogMatch() =>
+        new() { Type = "noul", Noul = 0.1 };
+
+    [Fact]
+    public async Task Search_DecisionModelSaysNothingFits_AnswersNoMatch()
+    {
+        // The decision layer was on in the night run, and with it on, "no match"
+        // could not come at all: every miss was answered with cards.
+        var client = new StubDecisionClient();
+        client.Answers["catalog_match"] = NoCatalogMatch();
+        var data = await SearchAsync(
+            DecisionTool(client, Catalog()),
+            "{\"query\":\"координаты положение элемента location point bounding box\"}");
+
+        Assert.True(data.GetProperty("noMatch").GetBoolean());
+        Assert.Equal(0, data.GetProperty("tools").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Search_DecisionModelSaysNothingFits_ButTheQueryNamesATool_TheToolIsAnswered()
+    {
+        var client = new StubDecisionClient();
+        client.Answers["catalog_match"] = NoCatalogMatch();
+        var data = await SearchAsync(
+            DecisionTool(client, Catalog()), "{\"query\":\"use set_view_range for view 3\"}");
+
+        Assert.False(data.TryGetProperty("noMatch", out _));
+        Assert.Contains(
+            data.GetProperty("tools").EnumerateArray(),
+            card => card.GetProperty("name").GetString() == "set_view_range");
+    }
+
+    [Fact]
+    public async Task Search_DecisionModelGivesNoAnswer_TheWordingFloorStillGuards()
+    {
+        // No answer is not a no: the rule shortlist stands, behind the same floor.
+        var client = new StubDecisionClient();
+
+        var miss = await SearchAsync(DecisionTool(client, Catalog()), "{\"query\":\"zzzqqq view\"}");
+        Assert.True(miss.GetProperty("noMatch").GetBoolean());
+
+        var hit = await SearchAsync(DecisionTool(client, Catalog()), "{\"query\":\"rename views\"}");
+        Assert.False(hit.TryGetProperty("noMatch", out _));
+        Assert.Contains(
+            hit.GetProperty("tools").EnumerateArray(),
+            card => card.GetProperty("name").GetString() == "rename_views");
+    }
+
+    [Fact]
+    public async Task Search_DecisionModelPicks_ItsPickLeadsAndNoCatalogDumpFollows()
+    {
+        // Wording ranking finds no signal for this query, so the rule router
+        // returns the whole catalog. Behind the pick that dump is no choice.
+        var client = new StubDecisionClient();
+        client.Answers["catalog_match"] = new AgentDecisionAnswer { Type = "noul", Noul = 0.9 };
+        client.Answers["tool"] = new AgentDecisionAnswer
+        {
+            Type = "choice",
+            Choice = "copy_view_settings",
+            Confidence = 0.7
+        };
+
+        var data = await SearchAsync(
+            DecisionTool(client, Catalog()), "{\"query\":\"сделай вид как эталонный\"}");
+
+        var names = data.GetProperty("tools").EnumerateArray()
+            .Select(card => card.GetProperty("name").GetString())
+            .ToList();
+        Assert.False(data.TryGetProperty("noMatch", out _));
+        Assert.Equal(new[] { "copy_view_settings" }, names);
+    }
+
+    [Fact]
+    public async Task DecisionRouter_ReportsWhatItPickedAndWhatItRefused()
+    {
+        var pick = new StubDecisionClient();
+        pick.Answers["catalog_match"] = new AgentDecisionAnswer { Type = "noul", Noul = 0.9 };
+        pick.Answers["tool"] = new AgentDecisionAnswer
+        {
+            Type = "choice",
+            Choice = "rename_views",
+            Confidence = 0.8
+        };
+        var silent = new StubDecisionClient();
+        var refusal = new StubDecisionClient();
+        refusal.Answers["catalog_match"] = NoCatalogMatch();
+        var tools = new[]
+        {
+            new ScriptedTool("rename_views").Definition,
+            new ScriptedTool("rename_levels").Definition
+        };
+
+        var picked = await new DecisionsToolRouter(new RuleToolRouter(), pick)
+            .RouteAsync("переименуй виды", tools, 6);
+        var none = await new DecisionsToolRouter(new RuleToolRouter(), silent)
+            .RouteAsync("переименуй виды", tools, 6);
+        var refused = await new DecisionsToolRouter(new RuleToolRouter(), refusal)
+            .RouteAsync("переименуй виды", tools, 6);
+
+        Assert.Equal(new[] { "rename_views" }, picked.Picked);
+        Assert.False(picked.NoCatalogMatch);
+        Assert.Empty(none.Picked);
+        Assert.False(none.NoCatalogMatch);
+        Assert.Empty(refused.Picked);
+        Assert.True(refused.NoCatalogMatch);
+
+        // A pick the catalog does not hold is no pick: the shortlist is the rule's.
+        pick.Answers["tool"] = new AgentDecisionAnswer
+        {
+            Type = "choice",
+            Choice = "tool_that_does_not_exist",
+            Confidence = 0.8
+        };
+        var invented = await new DecisionsToolRouter(new RuleToolRouter(), pick)
+            .RouteAsync("переименуй виды", tools, 6);
+        Assert.Empty(invented.Picked);
+        Assert.Contains(invented.Tools, tool => tool.Name == "rename_views");
     }
 
     private static AgentToolDefinition Definition(string name, string text) => new()

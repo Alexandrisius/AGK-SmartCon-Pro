@@ -13,6 +13,19 @@ public sealed class ToolRoutingDecision
     public bool Fallback { get; init; }
 
     public double TopScore { get; init; }
+
+    /// <summary>
+    /// Names the decision model picked itself, most confident first. Empty when
+    /// a rule routed the request or the decision model gave no pick.
+    /// </summary>
+    public IReadOnlyList<string> Picked { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// True when the decision model was asked and answered that the catalog
+    /// holds no tool for the request. Nothing but a rule shortlist backs
+    /// <see cref="Tools"/> then, so the caller may answer "no match".
+    /// </summary>
+    public bool NoCatalogMatch { get; init; }
 }
 
 /// <summary>

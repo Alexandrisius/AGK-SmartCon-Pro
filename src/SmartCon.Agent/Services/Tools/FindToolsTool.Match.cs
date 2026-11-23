@@ -1,6 +1,5 @@
 using System.Text.Json;
 using SmartCon.Agent.Services.Decisions;
-using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 
@@ -9,21 +8,23 @@ namespace SmartCon.Agent.Services.Tools;
 public sealed partial class FindToolsTool
 {
     /// <summary>
-    /// Whether the router's own picks are a relevance verdict. Ranking by
-    /// wording is not: the built-in BM25 router (also what the decision router
-    /// falls back to while disabled) answers any query that shares one word
-    /// with a card, so its picks must pass the query-coverage floor. A router
-    /// with its own notion of relevance — the decision router while enabled, or
-    /// a custom one — is not second-guessed: it can match a paraphrase that
-    /// shares no word with the right card.
+    /// Whether wording ranking is all that backs the router's shortlist: the
+    /// built-in BM25 router, and the decision router while its model is off.
+    /// Such a shortlist answers any query that shares one word with a card, so
+    /// it stands behind the query-coverage floor. Any other router is not
+    /// second-guessed: it can match a paraphrase that shares no word with the
+    /// right card.
     /// </summary>
-    private static bool RouterIsRelevanceAuthority(IToolRouter router) =>
-        router switch
-        {
-            RuleToolRouter => false,
-            DecisionsToolRouter decisions => decisions.IsEnabled,
-            _ => true
-        };
+    private bool RoutingIsWordingOnly =>
+        _router is RuleToolRouter || _router is DecisionsToolRouter { IsEnabled: false };
+
+    /// <summary>
+    /// The decision router with its model on reports a verdict of its own —
+    /// what it picked, or that nothing in the catalog fits (<see
+    /// cref="ToolRoutingDecision.NoCatalogMatch"/>) — which find_tools follows
+    /// instead of guessing from wording.
+    /// </summary>
+    private bool RouterReportsOwnVerdict => _router is DecisionsToolRouter { IsEnabled: true };
 
     /// <summary>
     /// Honest absence (C10-03): no card matches, so no card is returned. The
