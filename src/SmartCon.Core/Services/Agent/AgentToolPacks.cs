@@ -86,7 +86,7 @@ public static class AgentToolPacks
         new()
         {
             Name = "elements",
-            Description = "Поиск, сводка, связи, координаты и габариты, аудит и удаление элементов модели.",
+            Description = "Поиск, сводка, связи, координаты и габариты, аудит и удаление элементов.",
             Tools = new[]
             {
                 "query_elements", "summarize_elements", "get_element_details", "get_element_bounds",
@@ -98,7 +98,7 @@ public static class AgentToolPacks
         {
             Name = "params",
             Description =
-                "Запись и перенос значений параметров; проектные общие параметры; подключение и создание файла общих параметров (ФОП).",
+                "Запись и перенос значений параметров; проектные общие параметры; файл общих параметров (ФОП).",
             Tools = new[]
             {
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
@@ -227,7 +227,7 @@ public static class AgentToolPacks
         new()
         {
             Name = "documents",
-            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей; статус документа (можно ли писать, что мешает).",
+            Description = "Мульти-модельность: скрытное открытие модели-эталона в фоне, чтение через documentId, закрытие без сохранения, реестр известных моделей; статус документа.",
             Tools = new[] { "open_model_background", "close_model", "list_known_models", "get_document_status" }
         },
         new()
