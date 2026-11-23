@@ -31,7 +31,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
         "creates new ids. Renamed with a preview prefix: the created object's own id " +
         "inside created* blocks (created[].previewViewId, created.previewScheduleId) " +
         "and wouldCreate*Id keys. Not renamed but dry-run ids as well: ids outside " +
-        "those keys, for example schedule.scheduleId and changed[].id of a creating " +
+        "those keys, for example changed[].id of a creating " +
         "step. Never reuse them in later steps or read-back arguments — address " +
         "created objects by name or re-read them after apply.";
 
@@ -87,7 +87,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
             "Dry-run ids do not survive apply. The preview renames only the created object's " +
             "own id inside created* blocks (created[].previewViewId, created.previewScheduleId) " +
             "and wouldCreate*Id keys, never referencing ids such as levelId or templateId. " +
-            "Other ids are not renamed but are dry-run ids too (schedule.scheduleId, " +
+            "Other ids are not renamed but are dry-run ids too (" +
             "changed[].id of a creating step): never reuse them in later steps or read-back " +
             "arguments — address created objects by name or re-read them after apply. " +
             "Family write tools already do their own read-back after LoadFamily; the apply " +

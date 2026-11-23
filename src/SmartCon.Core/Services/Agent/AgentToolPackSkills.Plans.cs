@@ -81,7 +81,7 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
   внутри блоков `created*` (`created[].previewViewId`, `created.previewScheduleId`) и
   ключи `wouldCreate*Id`. Ссылочные id (`levelId`, `templateId`…) не помечаются — они
   указывают на существующие объекты. Остальные id не переименовываются, но тоже dry-run:
-  `schedule.scheduleId` и `changed[].id` у создающего тула. Ни один из них не используй в
+  `changed[].id` у создающего тула. Ни один из них не используй в
   следующих шагах и в `readBackArguments` — после apply объект получает другой id, и
   read-back упадёт `*_not_found`. Адресуй созданное по имени или возьми id из отчёта apply.
 - Шаг с `toolName`, которого нет в наборе доступных тулов, отклоняется на валидации: сначала

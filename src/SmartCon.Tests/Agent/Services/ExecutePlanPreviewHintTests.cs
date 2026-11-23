@@ -11,7 +11,7 @@ namespace SmartCon.Tests.Agent.Services;
 /// Hint of the execute_plan preview (review r1 #4). The report renames only the
 /// ids a dry-run result marks as created (the created object's own id inside a
 /// created* block, wouldCreate*Id); other ids of a creating step —
-/// schedule.scheduleId, changed[].id — stay as they are. Every preview hint has
+/// changed[].id — stay as they are. Every preview hint has
 /// to say which ids are renamed and that the unrenamed ones are dry-run ids too,
 /// in all three branches: complete, with skipped dependent steps and failed.
 /// </summary>
@@ -45,7 +45,7 @@ public sealed class ExecutePlanPreviewHintTests
             Parse("""
                 {"dryRun":true,"changed":[{"id":1733593,"name":"Report","newValue":"Report"}],
                  "skipped":[],"failed":[],"total":1,"affected":1,
-                 "schedule":{"scheduleId":1733593,"name":"Report"}}
+                 "created":{"scheduleId":1733593,"name":"Report"}}
                 """),
             "ok", 1),
         schema: Schema);
@@ -61,7 +61,6 @@ public sealed class ExecutePlanPreviewHintTests
         Assert.Contains("created.previewScheduleId", hint, StringComparison.Ordinal);
         Assert.Contains("wouldCreate*Id", hint, StringComparison.Ordinal);
         // What it does not rename, although the ids are dry-run ids too.
-        Assert.Contains("schedule.scheduleId", hint, StringComparison.Ordinal);
         Assert.Contains("changed[].id", hint, StringComparison.Ordinal);
         Assert.Contains("Never reuse them", hint, StringComparison.Ordinal);
     }
@@ -69,14 +68,15 @@ public sealed class ExecutePlanPreviewHintTests
     [Fact]
     public async Task CompletePreview_HintNamesRenamedAndUnrenamedDryRunIds()
     {
-        // create_schedule reports the new schedule as schedule{scheduleId} and in
-        // changed[].id — outside the keys the report renames.
+        // create_schedule reports the new schedule in created{scheduleId} — renamed
+        // to previewScheduleId — and the changed[] card duplicating it is counted,
+        // not repeated.
         var (hint, data) = await PreviewAsync(ScheduleWriter(), SingleStep);
 
         Assert.False(data.GetProperty("previewIncomplete").GetBoolean());
         var items = data.GetProperty("steps")[0].GetProperty("items");
-        Assert.Equal(1733593, items.GetProperty("schedule").GetProperty("scheduleId").GetInt64());
-        Assert.Equal(1733593, items.GetProperty("changed")[0].GetProperty("id").GetInt64());
+        Assert.Equal(1733593, items.GetProperty("created").GetProperty("previewScheduleId").GetInt64());
+        Assert.Equal(1, items.GetProperty("duplicatesInCreated").GetInt32());
         AssertNamesBothKindsOfDryRunIds(hint);
     }
 

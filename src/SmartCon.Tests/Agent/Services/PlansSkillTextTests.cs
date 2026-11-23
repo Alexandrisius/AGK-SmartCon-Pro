@@ -109,7 +109,7 @@ public sealed class PlansSkillTextTests
         Assert.Contains("wouldCreate*Id", Skill, StringComparison.Ordinal);
         Assert.Contains("`levelId`", Skill, StringComparison.Ordinal);
         Assert.Contains("`templateId`", Skill, StringComparison.Ordinal);
-        Assert.Contains("schedule.scheduleId", Skill, StringComparison.Ordinal);
+        Assert.Contains("changed[].id", Skill, StringComparison.Ordinal);
         Assert.Contains("не существуют в модели", Skill, StringComparison.Ordinal);
     }
 
@@ -121,7 +121,6 @@ public sealed class PlansSkillTextTests
         Assert.Contains("wouldCreate*Id", Description, StringComparison.Ordinal);
         Assert.Contains("levelId", Description, StringComparison.Ordinal);
         Assert.Contains("templateId", Description, StringComparison.Ordinal);
-        Assert.Contains("schedule.scheduleId", Description, StringComparison.Ordinal);
         Assert.Contains("changed[].id", Description, StringComparison.Ordinal);
     }
 
