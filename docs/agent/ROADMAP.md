@@ -143,7 +143,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
 | **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `in-progress` | #300 | 9 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5); H2.7a закрыта, H2.7 в работе. |
-| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 6 | B, E; H3.4 — commitOnMatch. |
+| **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 7 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 7 | H4.5 реализована, ждёт ручной приёмки; H4.7 закрыта (2026-11-24); H4.6 (объективность бенчмарка) — backlog. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
 | **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) реализована, ждёт ручной приёмки. |
@@ -356,6 +356,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | `H3.4` | execute_plan: commitOnMatch в AutoApproveSession | P1 | `backlog` | #415 |
 | `H3.5` | start_job как шаг execute_plan (jobStep) | P2 | `backlog` | #434 |
 | `H3.6` | execute_plan: авто-подстановка toolName при единственном очевидном инструменте | P3 | `backlog` | #436 |
+| `H3.7` | execute_plan: превью всей цепочки — шаги, адресующие созданное в том же плане, не превьюируются | P2 | `backlog` | #502 |
 
 ### H4 — Observability & eval v2
 
