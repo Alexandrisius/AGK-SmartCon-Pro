@@ -1,6 +1,6 @@
 ﻿# ROADMAP — AI-агент SmartCon
 
-> **Статус:** active · 2026-11-20 · владелец: продукт
+> **Статус:** active · 2026-11-24 · владелец: продукт
 > **Единственный рабочий документ по AI-агенту.** Здесь: north star, принципы, приоритеты,
 > карта эпиков и задач, правила нумерации и обновления. Конкретная работа и её статус —
 > в GitHub Issues (метка `agent`).
@@ -64,12 +64,23 @@ eval ≥75 задач. Полные метрики — в эпиках A/B/P/H4.
 
 ## 4. Сейчас (P0)
 
-| ID | Задача | Issue | Почему сейчас |
+**Обновлено 2026-11-24.** До «хорошего рабочего харнесса» осталось семь пунктов; статусы — в issues.
+
+| № | Что | Issue | Состояние |
 |---|---|---|---|
-| `A.8` | Tool surface job'а: eval-кейсы и приёмка | #313 | Остаток эпика A: eval + ручная приёмка |
-| `G-эпик` | Полностью закрыт (17/17 задач) | #297 | Каталог 63→107 тулов за один день; финальные гейты — sweep 6/6, полный IT R25+net48 |
-| `Q.1` | Ручная UI-приёмка и валидация лога | #361 | Единственный источник истины для UI |
-| `Q.2` | Полный integration-гейт R25 + net48 + R27 | #362 | Финальный гейт ночного прогона |
+| 1 | Ручная приёмка владельца на `develop` (деплой `build-and-deploy.bat`); после неё закрыть A.5, A.7, A.8, B.2 и RUN v1 | #361, #363; #310, #312, #313, #317, #445 | идёт с 2026-11-24 |
+| 2 | Главный прогон 10 кейсов на финальном коде (прод-цикл, glm-5.3, реальный шаблон) — проверка всех правок ночного прогона №2 | #478 | ждёт свободной машины |
+| 3 | Полный integration-гейт агента: 65 IT-классов (на финальном дереве прогнано 25), затем весь R25 и net48 | #362 | после ручного теста |
+| 4 | Повторяемость: повторы прогонов pass^k и калибровка судьи | #483 | не начато |
+| 5 | Слабые кейсы 2 (FAIL, лимит времени), 5 и 6 (PARTIAL) — после фиксов; решение владельца по критериям кейса 2 | #478, #480, #473 | в главном прогоне |
+| 6 | Откат и данные: `rollback_job` поверх ручной правки, слепой `undo_last`, change sets тремя транзакциями, изоляция повреждённой `agent.db` | #427, #474, #425, #426 | не начато |
+| 7 | Revit на больших объёмах: O(n²) пересчёт итогов и 45-с undo-слайс; `rowCount` со строками группировки | #423, #424 | не начато |
+
+Пункты 6–7 имеют метку P2, но входят в обязательный список: это принципы «предсказуемый откат» и «fail-closed» из §0.
+Задачи с меткой `needs-owner-acceptance` в §6 показаны как `in-progress` до приёмки владельца.
+Реестр находок ночного прогона №2 (144 ID) — `archive/00-strategy/archive/real-cases-v2-findings-2026-11-23.md`.
+
+**История (сохранена без изменений):**
 
 **Сделано в ночном прогоне 4 (2026-11-20):** job engine целиком — контракт A0/A.1,
 Core-модели A.2, SQLite v5 A.3, pump A.4, save/resume A.5, действия A.6/A.7,
@@ -111,7 +122,7 @@ FAIL — 5 (semantic_match-шторм модели, контр-средства 
 исправлено, перезапуск). Findings → issues #468–#476. Транскрипты:
 %LOCALAPPDATA%\Temp\smartcon-bench-dogfood-stable.
 
-**Следующий шаг (план владельца):** эпик B (#291; B.4 UI-панель джоб,
+**Следующий шаг по плану владельца от 2026-11-21 (после таблицы выше):** эпик B (#291); B.4 UI-панель джоб,
 B.5 частичный откат), затем D (#293). По желанию после #S.30 — повторный
 прогон кейса 3 до зелёного. Q.1/Q.2/деплой — по готовности к приёмке;
 P.6–P.9 (P2) — отдельной сессией.
@@ -122,20 +133,20 @@ P.6–P.9 (P2) — отдельной сессией.
 |---|---|---|---|---|---|---|
 | **A** | Job engine: A0 → движок → project/family bulk | P0 | `in-progress` | #289 | 12 | Код и интеграционные тесты готовы (2026-11-20); осталось: eval-кейсы job, ручная приёмка, деплой, A.9 (variants). |
 | **B** | Trust & recovery: отчёт, откат, resume, false-done guard | P0 | `in-progress` | #291 | 6 | B.1–B.3 реализованы и покрыты тестами (2026-11-20); B.4 (UI-панель) и B.5 (частичный откат) — backlog. |
-| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 10 | P.1–P.5 закрыты 2026-11-20; P.10 (эффективные 500k) в работе; остались P.6–P.9 (P2). |
-| **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `ready` | #299 | 4 | Задачи эпиков A–S, готовые к приёмке. |
+| **P** | Prompt cache & context ordering: стабильный префикс | P0 | `in-progress` | #298 | 10 | P.1–P.5 закрыты 2026-11-20; P.10 (эффективные 500k) реализована, ждёт ручной проверки отображения; остались P.6–P.9 (P2). |
+| **Q** | Release readiness: ручная приёмка, полный гейт, деплой | P0 | `in-progress` | #299 | 5 | Q.5 закрыта; Q.1 и Q.3 идут — ручная приёмка и деплой владельца с 2026-11-24; Q.2 — полный гейт после ручного теста. |
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 30 | S.5/S.10/S.11 (2026-11-21), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.8/S.9, S.14, S.15, S.16, S.17 в работе. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 30 | S.5/S.10/S.11 (2026-11-21), S.8/S.9 (2026-11-24), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.14, S.15, S.16, S.17 в работе. |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `done` | #297 | 17 | Закрыт 2026-11-21: все 17 задач done (G.1–G.10 + G.2a/b + G.4a + G.5a-c + G.7a); каталог 63→107 тулов; G.8-write невозможен по API (read-only, зафиксировано). |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
-| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `in-progress` | #300 | 7 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
+| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `in-progress` | #300 | 9 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5); H2.7a закрыта, H2.7 в работе. |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 6 | B, E; H3.4 — commitOnMatch. |
-| **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 5 | P.1 (cache-лог) желателен; H4.5 (метрики хода/сессии в чате) в работе. |
+| **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 7 | H4.5 реализована, ждёт ручной приёмки; H4.7 закрыта (2026-11-24); H4.6 (объективность бенчмарка) — backlog. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
-| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) в работе. |
+| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) реализована, ждёт ручной приёмки. |
 | **H6** | Vector retrieval — только по метрике | P3 | `backlog` | #304 | 2 | H1/H1b; каталог должен вырасти. |
 | **H7** | Typed facade IRevitOps и sandbox | P3 | `backlog` | #305 | 2 | ADR-076; после A–E. |
 | **W** | Visual feedback: тул снимка, агент сам решает когда смотреть | P3 | `backlog` | #413 | 0 | Задел на будущее по запросу владельца; scope в теле эпика, задачи заводятся при старте. |
@@ -152,9 +163,9 @@ P.6–P.9 (P2) — отдельной сессией.
 | `A.2` | Job spec, state machine и Core-модели | P0 | `done` | #307 |
 | `A.3` | SQLite v5: jobs, job_batches, job_items, job_events | P0 | `done` | #308 |
 | `A.4` | Job pump: отдельный ExternalEvent, срезы 1–2 с | P0 | `done` | #309 |
-| `A.5` | Save policy, durable cursor и crash resume | P0 | `done` | #310 |
+| `A.5` | Save policy, durable cursor и crash resume | P0 | `in-progress` (ждёт приёмки) | #310 |
 | `A.6` | A1 project bulk: rename_views и set_parameters на движке | P0 | `done` | #311 |
-| `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `done` | #312 |
+| `A.7` | A2 family batch: map_family_parameters как IJobAction | P0 | `in-progress` (ждёт приёмки) | #312 |
 | `A.8` | Tool surface job'а и приёмка эпика | P0 | `in-progress` | #313 |
 | `A.9` | Job variants: несколько групп значений за одну preview+apply | P1 | `backlog` | #414 |
 | `A.10` | action джобы replace_family_parameter — массовая замена общего параметра | P1 | `done` | #430 |
@@ -168,7 +179,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
 | `B.1` | get_job_report: JSON/CSV с diff и verified/mismatch | P0 | `done` | #316 |
-| `B.2` | rollback_job и retry_failed_items | P0 | `done` | #317 |
+| `B.2` | rollback_job и retry_failed_items | P0 | `in-progress` (20 инжекций, приёмка) | #317 |
 | `B.3` | False-done guard и crash reconciliation | P0 | `done` | #318 |
 | `B.4` | UI job-панель и приёмка recovery | P1 | `backlog` | #319 |
 | `B.5` | Частичный откат задания: подмножество юнитов и change set на батч | P1 | `backlog` | #412 |
@@ -176,7 +187,7 @@ P.6–P.9 (P2) — отдельной сессией.
 
 ### P — Prompt cache & context ordering: стабильный префикс
 
-Эпик: #298 · приоритет `P0` · статус `ready`
+Эпик: #298 · приоритет `P0` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
@@ -193,14 +204,15 @@ P.6–P.9 (P2) — отдельной сессией.
 
 ### Q — Release readiness: ручная приёмка, полный гейт, деплой
 
-Эпик: #299 · приоритет `P0` · статус `ready`
+Эпик: #299 · приоритет `P0` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
-| `Q.1` | Ручная UI-приёмка и валидация лога | P0 | `ready` | #361 |
+| `Q.1` | Ручная UI-приёмка и валидация лога | P0 | `in-progress` | #361 |
 | `Q.2` | Полный integration-гейт R25 + net48 + R27 | P0 | `ready` | #362 |
-| `Q.3` | Деплой владельцем | P0 | `backlog` | #363 |
+| `Q.3` | Деплой владельцем | P0 | `in-progress` | #363 |
 | `Q.4` | CI-блокер: NU1109 на любом PR (#282) | P1 | `backlog` | #364 |
+| `Q.5` | validate-docs красный: 13 типов/интерфейсов job engine не задокументированы | P1 | `done` | #410 |
 
 ### C — Targeted search: C1 resolve_entities → C2 search_catalog по гейту
 
@@ -250,8 +262,8 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.5` | Карантин/confirmNames для destructive-операций | P1 | `done` | #340 |
 | `S.6` | Персистентность загруженных паков на диалог | P2 | `backlog` | #341 |
 | `S.7` | copy_document/save_as_copy и регрессионный стресс-набор | P2 | `backlog` | #342 |
-| `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `in-progress` | #417 |
-| `S.9` | execute_plan: digest auto-fill, видимость family read-back, byName-пути | P1 | `in-progress` | #418 |
+| `S.8` | find_families_with_parameter: instance-параметры и правда о shared/remove | P1 | `done` | #417 |
+| `S.9` | execute_plan: digest auto-fill, видимость family read-back, byName-пути | P1 | `done` | #418 |
 | `S.10` | find_tools/start_job: bulk-намерение и потолки в схеме | P1 | `done` | #419 |
 | `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P1 | `done` | #435 |
 | `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
@@ -276,7 +288,7 @@ P.6–P.9 (P2) — отдельной сессией.
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
-Эпик: #297 · приоритет `P0` · статус `backlog`
+Эпик: #297 · приоритет `P0` · статус `done`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
@@ -357,7 +369,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | `H4.4` | LLM reliability: fake SSE, retry matrix, stream errors, request log | P2 | `backlog` | #386 |
 | `H4.5` | Аналитика хода и сессии в чате | P1 | `in-progress` | #422 |
 | `H4.6` | Объективность бенчмарка v2: калибровка грейдеров (null/эталон), повторы pass^k, LLM-судья отчёта, отчёт потерь из JSON | P2 | `backlog` | #483 |
-| `H4.7` | Реальный шаблон как база бенчмарка: сиды кейсов 1/2/3/9; dogfood-сьюты и EvalLlmClient на прод-цикле | P2 | `backlog` | #484 |
+| `H4.7` | Реальный шаблон как база бенчмарка: сиды кейсов 1/2/3/9; dogfood-сьюты и EvalLlmClient на прод-цикле | P2 | `done` | #484 |
 
 ### H5 — UX и расширяемость: steering, timeline, MCP
 

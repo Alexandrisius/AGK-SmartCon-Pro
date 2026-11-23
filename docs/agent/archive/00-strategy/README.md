@@ -32,6 +32,7 @@
 | [`archive/mvp-plan.md`](archive/mvp-plan.md) | Исторический MVP-план; заменён `harness-ideal-plan.md` |
 | [`archive/autonomous-execution-plan.md`](archive/autonomous-execution-plan.md) | Runbook первого MVP-прогона; выполнен |
 | [`archive/night-run-2.md`](archive/night-run-2.md) | Ночной прогон №2; завершён |
+| [`archive/real-cases-v2-findings-2026-11-23.md`](archive/real-cases-v2-findings-2026-11-23.md) | Реестр находок прогона на прод-цикле 2026-11-23 (144 ID): что нашли и что с этим сделали; статусы задач — в GitHub Issues |
 | [`archive/initial-improvement-runbook.md`](archive/initial-improvement-runbook.md) | H1 выполнен; заменён `autonomy-roadmap.md` |
 | [`archive/h1b-tool-packs.md`](archive/h1b-tool-packs.md) | H1c/H1d закрыты, H1b отложен; заменён `autonomy-roadmap.md` |
 
