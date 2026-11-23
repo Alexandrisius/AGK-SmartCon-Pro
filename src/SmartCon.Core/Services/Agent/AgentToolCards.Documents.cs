@@ -3,7 +3,7 @@ using SmartCon.Core.Models.Agent;
 namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
-/// Cards of the multi-model document surface (case 9 v2, real-cases benchmark
+/// Cards of the multi-model document surface (multi-document workflows
 /// + issue #465): hidden background opening of a donor model, its explicit
 /// close, and the read-only registry of known models over agent.db.
 /// </summary>
@@ -34,8 +34,8 @@ public static partial class AgentToolCards
                 Examples = new[]
                 {
                     "Рядом лежит эталон D:\\Проект\\Эталон.rvt — посмотри, как в нём оформлены виды",
-                    "Открой модель-эталон по пути <путь> и посмотри значения «АДСК_Марка»",
-                    "Посмотри в той модели, где мы настраивали Т1, как названы системы",
+                    "Открой модель-эталон по пути <путь> и посмотри значения параметра «Марка_Изделия»",
+                    "Посмотри в той модели, как названы виды и системы",
                     "Прочитай вид в эталонной модели, ничего не открывая у меня на экране"
                 },
                 Synonyms = new[]
@@ -112,10 +112,10 @@ public static partial class AgentToolCards
                     "сессии; когда просят изменить реестр — он только читается.",
                 Examples = new[]
                 {
-                    "В какой модели мы настраивали Т1?",
+                    "В какой модели мы настраивали системы?",
                     "Покажи модели, с которыми ты работал на этом компьютере",
                     "Найди модель, где переименовывали виды отопления",
-                    "Открой ту модель, где делали марку АДСК"
+                    "Открой ту модель, где делали марку изделий"
                 },
                 Synonyms = new[]
                 {

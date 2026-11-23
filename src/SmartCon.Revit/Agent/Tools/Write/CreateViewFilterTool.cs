@@ -31,11 +31,11 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             "optionally hiding or showing the matching elements. Conditions use a generic DSL: " +
             "{field: family|type|level|room|system|parameter, parameter: \"Система\", " +
             "op: eq|neq|contains|notcontains|beginswith|endswith|gt|ge|lt|le|hasvalue|novalue, " +
-            "value: \"Т1\"} combined with logic=and|or. Numeric values are converted with the Revit unit " +
+            "value: \"В1\"} combined with logic=and|or. Numeric values are converted with the Revit unit " +
             "API: pass unit=\"mm\" (or cm|m|ft|in|m2|m3|raw) or omit it to use the parameter's " +
             "project display unit; a wrong-dimension unit (mm for an area) is rejected. " +
             "categories accept OST_ names or localized " +
-            "names. Field meanings: system = system NAME/ABBREVIATION (\"Т11\"), not the system " +
+            "names. Field meanings: system = system NAME/ABBREVIATION (\"ОВ1\"), not the system " +
             "classification; type = element type; «Тип системы» (подача/обратка) is a parameter — " +
             "use field=\"parameter\" with parameter=\"Классификация систем\" (or " +
             "RBS_SYSTEM_CLASSIFICATION_PARAM), value is the display string. Check the " +

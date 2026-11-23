@@ -45,7 +45,7 @@ public static partial class AgentToolPackSkills
    chain доходит до конца, а в breaks лежит пара с gapMm в мм и разными
    fromSystemName/toSystemName → покажи элементы разрыва (fromElementId, toElementId) —
    «вот где цепь рвётся, поэтому имя системы не переходит».
-3. «Что в помещении Офис 1»: `get_room_contents` (roomName или roomNumber) → contents[]
+3. «Что в помещении <имя>»: `get_room_contents` (roomName или roomNumber) → contents[]
    по семействам с count; полные id — в elementIds/sample.
 4. «Окно О1/дверь Д1/насос Н1»: `get_element_relations` закрывает все три — host стены,
    from/to помещения, levelName насоса; trace_system_chain не нужен для точечных вопросов.

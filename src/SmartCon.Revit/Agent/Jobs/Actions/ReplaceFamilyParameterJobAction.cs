@@ -13,7 +13,7 @@ namespace SmartCon.Revit.Agent.Jobs.Actions;
 /// (<c>FamilyManager.ReplaceParameter</c>). One family is one frozen unit that
 /// owns the whole family-document lifecycle (backup, edit, load-back, close);
 /// per-type values, formulas and labels survive the rebind (Revit re-points
-/// them), so a bulk ADSK → customer migration is one preview + one apply.
+/// them), so a bulk old-parameter → customer migration is one preview + one apply.
 /// </summary>
 public sealed partial class ReplaceFamilyParameterJobAction : RevitJobActionBase
 {

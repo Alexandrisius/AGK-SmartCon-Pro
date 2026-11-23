@@ -27,7 +27,7 @@ public sealed class AgentClassificationTable
     public static AgentClassificationTable Empty { get; } =
         Build(Array.Empty<AgentClassificationEntry>(), null);
 
-    /// <summary>Compares codes segment by segment: «30» &lt; «30.20» &lt; «30.20.10» &lt; «30.30».</summary>
+    /// <summary>Compares codes segment by segment: «12» &lt; «12.34» &lt; «12.34.56» &lt; «13.01».</summary>
     public static IComparer<string> CodeComparer { get; } = new CodeComparison();
 
     /// <summary>Display path of the file the table was loaded from; null when none is assigned.</summary>

@@ -7,9 +7,9 @@ using SmartCon.Core.Services.Interfaces.Agent;
 namespace SmartCon.Agent.Services.Tools.Semantic;
 
 /// <summary>
-/// Reads a hierarchical txt classifier next to the model (real-cases benchmark
-/// v2, case 5) and returns structured rows instead of the raw text: coded lines
-/// ("30.20.10 Краны шаровые") become items with breadcrumbs
+/// Reads a hierarchical txt classifier next to the model
+/// and returns structured rows instead of the raw text: coded lines
+/// ("21.05.03 Кабельные лотки") become items with breadcrumbs
 /// "раздел › подраздел › элемент", ready for semantic_match (id=code,
 /// text=breadcrumb). The raw file never enters the chat context - that is the
 /// whole point of the tool. Read-only, no Revit API.
@@ -130,7 +130,7 @@ public sealed class ReadClassifierTool : IAgentTool
         if (result.Items.Count == 0)
         {
             warnings.Add(
-                "No coded lines (like '30.20.10 Название' or 'A1010 Название') were recognised. " +
+                "No coded lines (like '21.05.03 Название' or 'B2020 Название') were recognised. " +
                 "[Action: check the file format - a line must start with its code, dot separated " +
                 "digits or a letter prefix with digits]");
         }
@@ -270,9 +270,9 @@ public sealed class ReadClassifierTool : IAgentTool
             Description =
                 "Parses a hierarchical txt classifier into structured items: code, level, " +
                 "name, line and the stitched breadcrumb 'раздел › подраздел › элемент'. " +
-                "Accepted codes: numeric dot-separated segments of any depth (30, 30.20, " +
-                "30.20.10.10) and a letter-prefixed code of letters and digits with " +
-                "optional dots (A1010, A1010.10). The level of a dotted code is its " +
+                "Accepted codes: numeric dot-separated segments of any depth (12, 12.34, " +
+                "12.34.56.78) and a letter-prefixed code of letters and digits with " +
+                "optional dots (B2020, B2020.10). The level of a dotted code is its " +
                 "segment count; a letter-prefixed code without dots takes its level from " +
                 "the tab or space indentation. The array is ready for semantic_match " +
                 "(id=code, text=breadcrumb) - the raw file text never enters the " +

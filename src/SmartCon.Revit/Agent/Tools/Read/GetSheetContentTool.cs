@@ -31,7 +31,7 @@ public sealed class GetSheetContentTool : AgentReadToolBase
             "views: limit (default 200, max 500), offset, returned, nextOffset, truncated; in batch " +
             "mode offset/limit/nextOffset apply to each sheet's view list. " +
             "Coordinates are paper-space millimetres in the SHEET FRAME: its origin is the " +
-            "title-block / plot origin, not the paper corner, so with some title blocks (ADSK) " +
+            "title-block / plot origin, not the paper corner, so with some title blocks (their own plot origin) " +
             "the sheet rectangle sits at negative X/Y. sheetOutlineMm names the real sheet " +
             "rectangle in that same frame - compute offsets from its min/max, not from zero.",
         Risk = AgentToolRisk.Read,

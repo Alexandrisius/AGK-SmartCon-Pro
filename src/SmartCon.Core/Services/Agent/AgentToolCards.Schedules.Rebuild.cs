@@ -5,7 +5,7 @@ namespace SmartCon.Core.Services.Agent;
 public static partial class AgentToolCards
 {
     /// <summary>
-    /// Wave-2 rebuild cards (case 3/6 v2: on-place replacement of schedules on
+    /// Rebuild cards (on-place replacement of schedules on
     /// customer ФОП parameters). Kept in a partial to respect the file size
     /// limit; concatenated into ScheduleCards().
     /// </summary>
@@ -31,7 +31,7 @@ public static partial class AgentToolCards
                     "PROVISIONAL (клон откатён) — не ссылайтесь на него.",
                 WhenToUse =
                     "Когда отчётность переводят на другие параметры: «собери такую же ведомость " +
-                    "на параметрах заказчика», «пересобери спецификацию, заменив поля АДСК на " +
+                    "на параметрах заказчика», «пересобери спецификацию, заменив поля старого набора на " +
                     "ФОП, оформление перенеси один-в-один». Гuids полей берите из " +
                     "get_schedule_definition, маппинг стройте заранее и показывайте план.",
                 WhenNotToUse =
@@ -69,17 +69,17 @@ public static partial class AgentToolCards
                 Purpose =
                     "Переименовывает спецификацию: новое имя должно быть свободно " +
                     "(schedule_name_taken), текущее — no-op. Шаг архива при замене на месте: " +
-                    "старой ставят пометку «Архив», освобождая имя для пересобранной.",
+                    "старой ставят архивную пометку, освобождая имя для пересобранной.",
                 WhenToUse =
-                    "Когда нужно пометить старую ведомость архивной («добавь Архив к имени») " +
+                    "Когда нужно пометить старую ведомость архивной (пометку называет пользователь) " +
                     "или просто переименовать; перед clone_schedule с именем старой спеки.",
                 WhenNotToUse =
                     "Когда нужна пересборка на других полях — clone_schedule; для листов — " +
                     "rename_sheet; для видов — rename_views.",
                 Examples = new[]
                 {
-                    "Переименуй спецификацию труб в «Спецификация труб (Архив)»",
-                    "Поставь пометку Архив имени ведомости",
+                    "Переименуй спецификацию труб в «Спецификация труб — исходная»",
+                    "Поставь архивную пометку в имени ведомости",
                     "Смени имя ведомости отделки"
                 },
                 Synonyms = new[]

@@ -32,7 +32,7 @@ public static partial class AgentToolPackSkills
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
 - `get_titleblock_options` — типы титульников и их редактируемые параметры; `sizeMap[]` —
-  «кратность → размер» по альбому (чего в альбоме нет — проверяйте черновым листом; та же
+  «значение параметра → размер» по альбому (чего в альбоме нет — проверяйте черновым листом; та же
   оговорка в `sizeMapNote`); по `sheetId` — параметры экземпляра; `existingSheets[]`,
   `nextNumberHint`.
 - `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — box вьюпорта;
@@ -68,7 +68,7 @@ public static partial class AgentToolPackSkills
   визуальному написанию» Revit НЕ ловит (U+202A/U+202C/U+200B невидимы) — сравнение через
   очистку невидимых символов.
 - Координаты `pointMmX/pointMmY` — ЦЕНТР окна (не угол) в СИСТЕМЕ ЛИСТА: начало — plot
-  origin титульника, у ADSK он смещён, поэтому мм часто отрицательные. Рамку даёт
+  origin титульника, у титульников с собственным origin он смещён, поэтому мм часто отрицательные. Рамку даёт
   `get_sheet_content.sheetOutlineMm` (min/max) — отступы считайте от неё, не от нуля.
 - Размер 3D-вида без кропа до размещения неизвестен; спека на листе —
   `get_BoundingBox(sheet)` (включает ~2,1 мм рамки).
@@ -86,7 +86,7 @@ public static partial class AgentToolPackSkills
 1. «Что на листе А-101?»: `list_sheets(numberContains:""А-101"")` → `get_sheet_content(sheetId)`.
 2. «Найди листы без видов»: `list_sheets(fields=[sheetId,number,viewCount,scheduleCount])`
    → кандидаты с нулями → уточнить `get_sheet_content`.
-3. «Создать лист и разложить планы»: `create_sheet(number:""ОВ-01"", name:""План 1 этажа"",
+3. «Создать лист и разложить планы»: `create_sheet(number:""ОВ-01"", name:""План на отм. 0,000"",
    dryRun=false)` → `list_views` (ids свободных планов) → `create_viewports(sheetId,
    items=[{viewId, pointMmX, pointMmY}], dryRun=false)` → `get_sheet_content` — проверка.
 4. «Сдвинуть все виды на листе вправо на 100 мм»: `move_viewports(items=[{viewportId}...],

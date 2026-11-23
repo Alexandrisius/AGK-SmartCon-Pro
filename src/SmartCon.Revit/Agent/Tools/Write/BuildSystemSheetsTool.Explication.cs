@@ -136,7 +136,7 @@ public sealed partial class BuildSystemSheetsTool
         if (string.IsNullOrWhiteSpace(filterField))
         {
             Fail(outcome, report, "invalid_arguments",
-                "explication.filterField is required (e.g. АДСК_ИмяСистемы).");
+                "explication.filterField is required (name the shared parameter that carries the system name).");
             return null;
         }
 

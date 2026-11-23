@@ -12,7 +12,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 /// BFS по коннекторам (паттерн ElementChainIterator.BuildGraph из PipeConnect,
 /// локально — с лимитом элементов), все свободные коннекторы цепи и детект
 /// разрывов: пары свободных коннекторов разных элементов с малым зазором
-/// origin→origin (недосынект типа «Т11/Т111»). Read-only.
+/// origin→origin (a small gap between connectors). Read-only.
 /// </summary>
 public sealed class TraceSystemChainTool : AgentReadToolBase
 {
@@ -196,7 +196,7 @@ public sealed class TraceSystemChainTool : AgentReadToolBase
         // определению ведёт к элементу ВНЕ цепи (BFS его не пересёк), поэтому
         // для каждого свободного конца ищем MEP-элементы в окне gapThreshold
         // и собираем их свободные коннекторы — они образуют вторую сторону
-        // разрыва и дают toSystemName (механика «Т11/Т111»).
+        // разрыва и дают toSystemName (two systems split by a connector gap).
         CollectExternalFreeConnectors(doc, freeConnectors, visited, gapThresholdMm);
 
         // 3. Разрывы: ближние пары свободных коннекторов разных элементов.

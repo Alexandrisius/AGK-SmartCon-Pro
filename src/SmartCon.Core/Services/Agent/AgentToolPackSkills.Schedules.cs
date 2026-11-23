@@ -41,7 +41,7 @@ public static partial class AgentToolPackSkills
   вычисляемым колонкам ширины недоступны — `field_not_formatable`).
 - `set_schedule_style` — `stripedRows`/`useStripedRowsOnSheets` (2021+) и текстовые стили
   body/header/title.
-- `rename_schedule` — переименовать (шаг архива «… (Архив)»); имя должно быть свободно.
+- `rename_schedule` — переименовать (шаг архива: освободить имя старой); имя должно быть свободно.
 - `place_schedule_on_sheet` — координаты ЛЕВОГО ВЕРХНЕГО угла в мм, `rotation: none|cw90|ccw90`.
 - `move_schedule_on_sheet` — переместить (`instanceId|лист+спецификация`, мм) и/или повернуть.
 - `remove_schedule_from_sheet` — снять вынос (спецификация остаётся); undo возвращает точку и
@@ -121,7 +121,7 @@ public static partial class AgentToolPackSkills
      типовой каталог их не обновит, формулы семейства считают по-своему.
    - Точный аналог готовой ведомости: `get_schedule_definition` (guid полей и `placements[]`)
      → `clone_schedule(sourceScheduleId, name=имя старой, fieldMapping: старое → targetGuid)`
-     → `rename_schedule` старой в «… (Архив)» → `remove_schedule_from_sheet` →
+     → `rename_schedule` старой в архивную пометку → `remove_schedule_from_sheet` →
      `place_schedule_on_sheet` новой на её `xMm/yMm` (при необходимости `rotation`);
      `skippedFields` покажите списком.
    - Оба уровня возможны — два коротких вопроса (где ФОП; семейство или проект), второй не

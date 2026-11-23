@@ -30,7 +30,7 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             "existing sheet to also read the editable INSTANCE parameters of that sheet's " +
             "title block (the values build_system_sheets writes through titleBlockParameters). " +
             "Pass titleBlockTypeId to inspect one type. sizeMap[] answers 'which paper size " +
-            "does Кратность N give': for every editable instance parameter whose values " +
+            "does a size parameter's value N give': for every editable instance parameter whose values " +
             "correlate with DIFFERENT sheet sizes on the existing sheets of the type, the " +
             "observed value → widthMm/heightMm pairs (derived from the album; a value never " +
             "used in the album is unknown — test it on a draft sheet with " +

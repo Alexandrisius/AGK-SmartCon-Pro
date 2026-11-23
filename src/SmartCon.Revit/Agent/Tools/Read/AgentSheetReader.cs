@@ -129,7 +129,7 @@ internal static class AgentSheetReader
     /// can carry the family geometry beyond the paper and then "inside the
     /// sheet" contradicts what the user sees (owner feedback 2026-11-24).
     /// The frame origin is the title-block / plot origin; some title blocks
-    /// (ADSK) place it inside the paper, so raw coordinates are often negative
+    /// (with a custom plot origin) place it inside the paper, so raw coordinates are often negative
     /// and only this rectangle says where the paper actually is.
     /// </summary>
     internal static object SheetOutlineMm(ViewSheet sheet)

@@ -42,7 +42,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "(a ready clone — this tool does not clone it) or an optional explication block " +
             "built in place: a narrow clone of sourceScheduleId with only the keepFields " +
             "columns visible (a missing column is a warning + skip), an equals filter " +
-            "filterField=filterValue (e.g. АДСК_ИмяСистемы = the system name; the filter " +
+            "filterField=filterValue (the shared parameter that carries the system name = the system name; the filter " +
             "field is added as a HIDDEN column when it is not a kept one), the clone named " +
             "'Экспликация <sheetName>' and placed to the right of the view. explicationRows " +
             "reports the clone's data rows (dry run included); a filter value that matches no " +

@@ -74,7 +74,7 @@ public static class AgentToolCatalog
             }),
             ["get_titleblock_options"] = new("Read", false, new[]
             {
-                "титульный блок", "основная надпись", "штамп", "формат листа", "кратность размера",
+                "титульный блок", "основная надпись", "штамп", "формат листа", "параметр размера",
                 "title block", "параметры титульника", "следующий номер листа"
             }),
             ["get_view_placement_preview"] = new("Read", false, new[]
@@ -449,8 +449,8 @@ public static class AgentToolCatalog
             ["find_families_with_parameter"] = new("Read", false, new[]
             {
                 "найти семейства с параметром", "find families with parameter",
-                "в каких семействах", "ТДСК_Наименование", "АДСК_Наименование", "matchedParameter",
-                "instance параметр", "параметр экземпляра", "ADSK_Наименование"
+                "в каких семействах", "Наименование_ГОСТ", "matchedParameter",
+                "instance параметр", "параметр экземпляра", "параметр по ГОСТ"
             }),
             ["rename_family_parameter"] = new("Write", false, new[]
             {

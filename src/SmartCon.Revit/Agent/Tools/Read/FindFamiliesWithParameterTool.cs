@@ -41,7 +41,7 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             "(exact or contains match) and optional value. Scans the live project on every " +
             "call — no index; unplaced types are included. By default only type parameters are " +
             "searched. With includeInstanceParameters=true placed family instances are also " +
-            "scanned, so instance-scope shared parameters (ADSK_Наименование and similar) are " +
+            "scanned, so instance-scope shared parameters (for example a name parameter) are " +
             "found; placedInstanceCount is reported only with includeInstanceParameters=true " +
             "(null and instancesScanned=false otherwise — not scanned, not unplaced); families " +
             "with no placed instances are flagged instanceParametersUnknown=true " +

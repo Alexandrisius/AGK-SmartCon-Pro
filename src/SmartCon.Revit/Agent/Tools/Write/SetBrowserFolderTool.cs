@@ -406,7 +406,7 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
     /// <summary>
     /// The grouping parameter the folder is made of, read the same way
     /// get_browser_organization reads it: from the folder items of a sample
-    /// element (ADSK_Штамп Раздел проекта). organization.Parameters is a
+    /// element (a project's stamp-section parameter). organization.Parameters is a
     /// different set — it showed category/type fields as the parameter name
     /// while the folder value itself was written correctly (owner feedback
     /// 2026-11-24).

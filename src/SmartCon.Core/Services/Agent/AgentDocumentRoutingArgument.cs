@@ -2,7 +2,7 @@ namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
 /// The optional top-level <c>documentId</c> argument (background-model routing,
-/// case 9 v2 multi-model reads). It is a harness-wide convention: a tool either
+/// multi-model reads). It is a harness-wide convention: a tool either
 /// declares it in its schema or does not read documents by it at all - there is
 /// no tolerant middle. The tolerant repair must not delete an undeclared
 /// documentId: the call was aimed at a background donor and has to fail loudly

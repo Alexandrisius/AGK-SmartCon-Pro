@@ -10,7 +10,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
 /// Renames a schedule (the archive step of the on-place replacement flow: the
-/// old schedule keeps its setup under a name with an «Архив» marker, freeing
+/// old schedule keeps its setup under a name with an archive marker, freeing
 /// the original name for the rebuilt schedule). Undo restores the old name.
 /// </summary>
 public sealed class RenameScheduleTool : AgentWriteToolBase
@@ -30,12 +30,12 @@ public sealed class RenameScheduleTool : AgentWriteToolBase
             "Renames a schedule by scheduleId or exact scheduleName. The new name must be " +
             "free (a duplicate fails with schedule_name_taken); renaming to the current " +
             "name is a no-op. Typical use: mark the old schedule as archived ('Спецификация " +
-            "труб (Архив)') so its name and place become free for the rebuilt schedule " +
+            "труб — исходная') so its name and place become free for the rebuilt schedule " +
             "(clone_schedule). undo_last restores the previous name. Dry run defaults " +
             "to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string"",""description"":""Current exact name of the schedule""},""newName"":{""type"":""string"",""description"":""New unique name, e.g. Спецификация труб (Архив)""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""newName""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string"",""description"":""Current exact name of the schedule""},""newName"":{""type"":""string"",""description"":""New unique name, e.g. Спецификация труб — исходная""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""newName""],""additionalProperties"":false}"
     };
 
     protected override void Apply(

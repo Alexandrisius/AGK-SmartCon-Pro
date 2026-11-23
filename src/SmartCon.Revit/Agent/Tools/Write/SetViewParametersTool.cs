@@ -9,7 +9,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
 /// Writes view parameters by name or parameterId — the browser-organization
-/// parameters (Назначение вида, Раздел, ADSK_Имя вида в штампе) and any other
+/// parameters (Назначение вида, Раздел, параметр имени вида в штампе) and any other
 /// instance parameter of a view or sheet.
 /// </summary>
 public sealed class SetViewParametersTool : AgentWriteToolBase
@@ -31,7 +31,7 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
         Description =
             "Sets instance parameters of views or sheets: viewIds plus parameters[{name|" +
             "parameterId, value, unit}]. Use it for the project-browser parameters (Назначение " +
-            "вида, Раздел, ADSK_Имя вида в штампе) and any other view parameter. Read current " +
+            "вида, Раздел, параметр имени вида в штампе) and any other view parameter. Read current " +
             "values with get_element_details (elementIds=[viewId]) or list_views " +
             "(browserFolderParameters shows which parameters group the browser). A view template id " +
             "is accepted too: a template is a View, so its own parameters are written directly. " +

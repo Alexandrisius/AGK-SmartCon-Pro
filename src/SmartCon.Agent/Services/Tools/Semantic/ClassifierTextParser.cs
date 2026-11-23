@@ -27,8 +27,8 @@ internal sealed class ClassifierParseResult
 }
 
 /// <summary>
-/// Parser of hierarchical txt classifiers (real-cases benchmark v2, case 5).
-/// A coded line starts with its code, e.g. "30.20.10 Краны шаровые" or
+/// Parser of hierarchical txt classifiers.
+/// A coded line starts with its code, e.g. "21.05.03 Кабельные лотки" or
 /// "A1010100 Wall Foundations". Three code forms are recognised: two-digit
 /// dot separated segments (1 to 3), dot separated numeric segments of 1 to 4
 /// digits (2 or more) and a prefix of 1 to 3 ASCII letters with digits and
@@ -59,7 +59,7 @@ internal static class ClassifierTextParser
 
     /// <summary>
     /// Numeric code at line start: dot separated segments of 1 to 4 digits,
-    /// 2 or more of them (30.20.10.10, 23.10.05.10.11.11).
+    /// 2 or more of them (12.34.56.78, 23.10.05.10.11.11).
     /// </summary>
     private static readonly Regex NumericCodeRegex =
         new(@"^\d{1,4}(?:\.\d{1,4})+(?!\d)", RegexOptions.Compiled);
@@ -149,7 +149,7 @@ internal static class ClassifierTextParser
 
     /// <summary>
     /// Numeric code at line start. The multi-segment form is tried before the
-    /// legacy one: alone, the legacy regex cuts a longer code (30.20.10.10,
+    /// legacy one: alone, the legacy regex cuts a longer code (12.34.56.78,
     /// 10.10.100) short and the cut-off tail leaks into the name.
     /// </summary>
     private static Match MatchNumericCode(string trimmed)
