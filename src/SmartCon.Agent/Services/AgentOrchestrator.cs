@@ -229,8 +229,6 @@ public sealed partial class AgentOrchestrator
             var loopGuard = new LoopGuard();
             var storms = new ToolStormTracker();
             var loopAborted = false;
-            var hostTimeoutStreak = 0;
-            var hostStalled = false;
 
             // No round or time cap: the turn runs until the model stops, the user
             // presses Stop (ct) or the loop guard aborts a repeating call pattern.
@@ -263,6 +261,11 @@ public sealed partial class AgentOrchestrator
                     lastCompaction = compaction;
                     if (compaction.Record is not null)
                         lastCompactionId = compaction.Record.Id;
+
+                    // The results the model saw before the compaction are gone
+                    // from its side: to the storm tracker they are no longer
+                    // "already in the conversation".
+                    storms.ForgetResults();
 
                     // The provider-reported prompt_tokens describes the prompt
                     // before this compaction. Keeping it as the floor for the
@@ -429,12 +432,9 @@ public sealed partial class AgentOrchestrator
                         }
                         else
                         {
-                            var outcome = await ExecuteObservedToolAsync(
-                                loopGuard, storms, hostTimeoutStreak, toolCall, argumentsJson,
-                                exempt, round, ct).ConfigureAwait(false);
-                            result = outcome.Result;
-                            hostTimeoutStreak = outcome.HostTimeoutStreak;
-                            hostStalled = outcome.HostStopped;
+                            result = await ExecuteObservedToolAsync(
+                                loopGuard, storms, toolCall, argumentsJson, exempt, round, ct)
+                                .ConfigureAwait(false);
                         }
                     }
 
@@ -485,30 +485,32 @@ public sealed partial class AgentOrchestrator
                         Details = AgentToolResultFormatter.Pretty(serializedResult)
                     });
 
-                    if (loopAborted || hostStalled)
+                    if (loopAborted)
                         break;
                 }
 
-                if (loopAborted || hostStalled)
+                if (loopAborted)
                 {
-                    var stopText = StoppedTurnText(hostStalled);
-                    var stopStatus = hostStalled ? HostNotRespondingStatus : "loop_aborted";
+                    var abortMessage =
+                        (LanguageManager.GetString("Agent_Status_LoopAborted")
+                         ?? "Stopped: repeated tool calls were detected") +
+                        " (loop_aborted).";
                     progress?.Report(new AgentProgress
                     {
                         Kind = AgentProgressKind.TurnCompleted,
-                        Text = stopText,
+                        Text = abortMessage,
                         Usage = usage,
                         ToolCallCount = toolCallCount
                     });
 
                     await WriteUsageAsync(
-                        conversationId, usage, stopStatus, turnStartedAt,
+                        conversationId, usage, "loop_aborted", turnStartedAt,
                         lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
                         lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
-                        FinalText = stopText,
+                        FinalText = abortMessage,
                         ToolCallCount = toolCallCount,
                         Rounds = round,
                         Usage = usage

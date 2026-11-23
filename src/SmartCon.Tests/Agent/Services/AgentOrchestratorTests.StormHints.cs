@@ -9,10 +9,10 @@ using Xunit;
 namespace SmartCon.Tests.Agent.Services;
 
 /// <summary>
-/// Harness reactions to call storms (C7-06, C2-06, C9-07), a host that stopped
-/// answering (C1-01), the tool-name echo (DB-01) and the plans skill on the
-/// first execute_plan result (C4-15). Every reaction is a warning on a tool
-/// result or an explicit stop; none is a new round, time or step limit.
+/// Harness reactions to call storms (C7-06, C2-06, C9-07) and to a host that
+/// stopped answering (C1-01), the tool-name echo (DB-01) and the plans skill on
+/// the first execute_plan result (C4-15). Every reaction is a warning on a tool
+/// result: none is a new round, time or step limit, and none ends the turn.
 /// </summary>
 public sealed partial class AgentOrchestratorTests
 {
@@ -173,8 +173,12 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
-    public async Task RunTurn_ThreeTimeoutsStillRunningInARow_StopsTheTurn()
+    public async Task RunTurn_TimeoutsStillRunningInARow_WarnsAndNeverEndsTheTurn()
     {
+        // C1-01 named the storm: three calls into a host that is not answering
+        // burned 210 of 262 seconds. The harness names it on the result from the
+        // second call on; it does not end the turn — only Stop and the loop
+        // guard do — so a slow host that recovers still gets its answer.
         var stuck = ToolResult.Fail(
             "tool_timeout",
             "still running",
@@ -183,6 +187,7 @@ public sealed partial class AgentOrchestratorTests
         var llm = new FakeAgentLlmClient();
         foreach (var index in new[] { 1, 2, 3 })
             llm.EnqueueAssistant(null, new[] { CallOf("call_" + index, "{}") });
+        llm.EnqueueAssistant("хост молчит, сообщаю пользователю");
         var usageStore = new CapturingUsageStore();
 
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
@@ -192,16 +197,22 @@ public sealed partial class AgentOrchestratorTests
         var result = await orchestrator.RunTurnAsync(
             Guid.NewGuid(), "долго", Array.Empty<AgentAttachment>(), null, CancellationToken.None);
 
-        Assert.Contains("host is not responding", result.FinalText, StringComparison.Ordinal);
-        Assert.Contains("(host_not_responding)", result.FinalText, StringComparison.Ordinal);
-        // The third result was persisted, then the turn ended: no fourth request.
-        Assert.Equal(3, llm.Requests.Count);
+        var payloads = ToolPayloads(llm, 3);
+        Assert.Equal(3, payloads.Count);
+        Assert.DoesNotContain("timed out while still running", payloads[0], StringComparison.Ordinal);
+        Assert.Contains("2 tool calls in a row timed out while still running", payloads[1], StringComparison.Ordinal);
+        Assert.Contains("host is not answering", payloads[2], StringComparison.Ordinal);
+        Assert.Contains("tell the user what is blocked", payloads[2], StringComparison.Ordinal);
+
+        // All three calls ran, the model got its fourth request and answered.
+        Assert.Equal(4, llm.Requests.Count);
         Assert.Equal(3, result.ToolCallCount);
-        Assert.Equal("host_not_responding", Assert.Single(usageStore.Records).Status);
+        Assert.Equal("хост молчит, сообщаю пользователю", result.FinalText);
+        Assert.Equal("ok", Assert.Single(usageStore.Records).Status);
     }
 
     [Fact]
-    public async Task RunTurn_TimeoutThenAnswer_ResetsTheStreak()
+    public async Task RunTurn_TimeoutThenAnswer_TheNextTimeoutStartsANewStreak()
     {
         var stuck = ToolResult.Fail(
             "tool_timeout",
@@ -223,6 +234,8 @@ public sealed partial class AgentOrchestratorTests
 
         Assert.Equal("done", result.FinalText);
         Assert.Equal(5, llm.Requests.Count);
+        Assert.DoesNotContain(
+            ToolPayloads(llm, 4), payload => payload.Contains("in a row timed out", StringComparison.Ordinal));
     }
 
     [Fact]

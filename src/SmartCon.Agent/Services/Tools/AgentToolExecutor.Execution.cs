@@ -196,7 +196,9 @@ public sealed partial class AgentToolExecutor
             stillRunning
                 ? "Tool '" + tool.Definition.Name + "' exceeded " + timeoutMs +
                   " ms and is still running. The Revit host did not answer in " + timeoutMs +
-                  " ms; the tool may still be running — do not retry blindly, tell the user."
+                  " ms; the tool may still be running — do not retry blindly, tell the user. " +
+                  "[Action: wait for Revit to answer again (a dialog or a long operation may be " +
+                  "blocking it) before calling any tool]"
                 : "Tool '" + tool.Definition.Name + "' exceeded " + timeoutMs +
                   " ms and was cancelled. [Action: narrow the request (fewer items, a filter, " +
                   "a page) and call it again]",

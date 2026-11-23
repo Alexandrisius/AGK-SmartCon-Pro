@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -5,20 +6,27 @@ using SmartCon.Core.Services.Interfaces.Agent;
 namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
-/// Soft hints against call storms (C7-06, C2-06, C9-07, DB-09). The loop guard
+/// Soft hints against call storms (C7-06, C2-06, C9-07, C1-01). The loop guard
 /// only sees one exact call repeated; a storm usually varies the arguments —
 /// the same tool failing with the same error code, the same page read again,
-/// or one item per call where the tool takes a batch. The tracker names the
-/// pattern in a warning on the result. It never blocks or stops anything: the
-/// owner's rule is that only Stop and the loop guard end a turn. Per turn,
-/// like <see cref="LoopGuard"/>.
+/// or the objects of one job fed to a batch tool one per call. The tracker
+/// names the pattern in a warning on the result. It never blocks or stops
+/// anything: the owner's rule is that only Stop and the loop guard end a turn.
+/// Per turn, like <see cref="LoopGuard"/>.
 /// </summary>
-public sealed class ToolStormTracker
+public sealed partial class ToolStormTracker
 {
     public const int SameErrorThreshold = 3;
     public const int SameResultThreshold = 3;
-    public const int SingleItemSeriesThreshold = 3;
-    public const int SingleItemSeriesWindowRounds = 12;
+
+    /// <summary>Host timeouts in a row after which a result carries the host hint (C1-01).</summary>
+    public const int HostTimeoutHintAfter = 2;
+
+    private const string InvalidArgumentsCode = "invalid_arguments";
+
+    /// <summary>How the job tools mark a result for work that has not finished yet.</summary>
+    private const string InProgressFlag = "mustVerify";
+
     private const int MaxEntries = 200;
     private const int MaxRememberedRounds = 6;
 
@@ -33,8 +41,8 @@ public sealed class ToolStormTracker
     private readonly Dictionary<string, List<int>> _errorRounds = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IdenticalCall> _identicalCalls = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<int>> _readRounds = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<int>> _singleItemRounds = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, BatchShape?> _shapes = new(StringComparer.Ordinal);
+    private int _hostTimeoutStreak;
+    private int _hostTimeoutSinceRound;
 
     /// <summary>
     /// Records one executed call and returns the warnings to attach to its
@@ -57,8 +65,24 @@ public sealed class ToolStormTracker
             _readRounds.Clear();
         }
 
-        var hints = new List<string>(2);
+        var hints = new List<string>(3);
         var code = result.Success ? null : result.ErrorCode ?? "failed";
+
+        // A call still inside the host says nothing about its arguments; what
+        // counts is how many in a row the host left unanswered.
+        if (IsHostTimeout(result))
+        {
+            if (_hostTimeoutStreak == 0)
+                _hostTimeoutSinceRound = round;
+
+            _hostTimeoutStreak++;
+            if (_hostTimeoutStreak >= HostTimeoutHintAfter)
+                hints.Add(HostTimeoutHint(_hostTimeoutStreak, _hostTimeoutSinceRound));
+        }
+        else
+        {
+            _hostTimeoutStreak = 0;
+        }
 
         // Same tool, same error code, any arguments.
         if (code is not null && !HarnessErrorCodes.Contains(code))
@@ -72,9 +96,30 @@ public sealed class ToolStormTracker
         if (hints.Count == 0 && !RepeatReadHint(toolName, result, round, hints))
             ObserveIdenticalCall(toolName, argumentsJson ?? string.Empty, result, round, hints);
 
-        ObserveSeries(registry, toolName, argumentsJson, round, hints);
+        ObserveItemByItem(registry, toolName, argumentsJson, round, hints);
         return hints;
     }
+
+    /// <summary>
+    /// The model no longer sees what it read before a compaction, so an earlier
+    /// page or an earlier result is not "already in the conversation": reading
+    /// it again is a fresh read.
+    /// </summary>
+    public void ForgetResults()
+    {
+        _identicalCalls.Clear();
+        _readRounds.Clear();
+    }
+
+    private static bool IsHostTimeout(ToolResult result) =>
+        !result.Success
+        && string.Equals(result.ErrorCode, "tool_timeout", StringComparison.Ordinal)
+        && IsFlagged(result.Data, "stillRunning");
+
+    private static string HostTimeoutHint(int streak, int sinceRound) =>
+        streak + " tool calls in a row timed out while still running in the Revit host (since round " +
+        sinceRound + "): the host is not answering, and another call would only queue behind the " +
+        "stuck one. Do not send more tool calls — tell the user what is blocked.";
 
     private bool RepeatReadHint(string toolName, ToolResult result, int round, List<string> hints)
     {
@@ -123,6 +168,12 @@ public sealed class ToolStormTracker
             ? value.ToString() ?? string.Empty
             : string.Empty;
 
+    private static bool IsFlagged(JsonElement? data, string property) =>
+        data.HasValue
+        && data.Value.ValueKind == JsonValueKind.Object
+        && data.Value.TryGetProperty(property, out var flag)
+        && flag.ValueKind == JsonValueKind.True;
+
     private void ObserveIdenticalCall(
         string toolName,
         string argumentsJson,
@@ -162,159 +213,32 @@ public sealed class ToolStormTracker
         {
             // Successful repeats count too (ORCH-12): the model re-sends the call
             // believing it changed the arguments, and the result cannot differ.
+            // Work that is still in progress is the one case where the result is
+            // MEANT to be the same until it finishes: the advice is to wait, not
+            // to change a call that is correct.
+            var inProgress = result.Success && IsFlagged(result.Data, InProgressFlag);
             hints.Add(
-                "The same call already returned this result in round(s) " + Join(call.Rounds) +
-                " (the arguments are identical to those rounds; if you meant to change them, " +
-                "the change did not reach the call); change the arguments or choose another path.");
+                inProgress
+                    ? "This call was already made in round(s) " + Join(call.Rounds) + " and the work is " +
+                      "still in progress: the result has not changed. Do not poll in a tight loop — " +
+                      "wait longer (a larger waitSeconds) or do something else meanwhile."
+                    : "The same call already returned this result in round(s) " + Join(call.Rounds) +
+                      " (the arguments are identical to those rounds; if you meant to change them, " +
+                      "the change did not reach the call); change the arguments or choose another path.");
         }
 
         Remember(call.Rounds, round);
     }
 
-    private void ObserveSeries(
-        IToolRegistry? registry,
-        string toolName,
-        string? argumentsJson,
-        int round,
-        List<string> hints)
-    {
-        var shape = registry is null ? null : Shape(registry, toolName);
-        if (shape is null)
-            return;
-
-        // A plan is applied by repeating the previewed call, so single-step
-        // plans always come in pairs: that is the plan contract, not a storm.
-        if (AgentToolPacks.SystemToolNames.Contains(toolName)
-            && !string.Equals(toolName, AgentToolPacks.LoadToolPackName, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var rounds = Rounds(_singleItemRounds, toolName);
-        if (!IsSingleItemCall(argumentsJson, shape))
-        {
-            // The model batched (or the call has no batch argument at all):
-            // the series is over and starts counting from scratch.
-            rounds.Clear();
-            return;
-        }
-
-        rounds.Add(round);
-        if (rounds.Count < SingleItemSeriesThreshold
-            || round - rounds[rounds.Count - SingleItemSeriesThreshold] > SingleItemSeriesWindowRounds)
-        {
-            return;
-        }
-
-        hints.Add(
-            "Single-item calls of " + toolName + " in round(s) " +
-            Join(rounds.Skip(rounds.Count - SingleItemSeriesThreshold)) +
-            ": this tool takes several items in one call; batch them.");
-        rounds.Clear();
-    }
-
     private static string SameErrorHint(string code, List<int> rounds) =>
-        "The same call already failed in round(s) " + Join(rounds) + " with the same error (" + code +
-        "); changing arguments of this kind will not help — read the reason and choose another path.";
-
-    private static bool IsSingleItemCall(string? argumentsJson, BatchShape shape)
-    {
-        // net48 ref assemblies carry no [NotNullWhen] on IsNullOrWhiteSpace.
-        var json = argumentsJson ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(json))
-            return false;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-                return false;
-
-            foreach (var property in document.RootElement.EnumerateObject())
-            {
-                if (shape.Arrays.Contains(property.Name))
-                {
-                    if (property.Value.ValueKind == JsonValueKind.Array && property.Value.GetArrayLength() == 1)
-                        return true;
-                }
-                else if (shape.Caps.Contains(property.Name)
-                         && property.Value.ValueKind == JsonValueKind.Number
-                         && property.Value.TryGetInt64(out var value) && value == 1)
-                {
-                    return true;
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// The batch arguments of a tool, read once from its schema: every array
-    /// property, and every integer property whose default is greater than one
-    /// (a batch bound such as a size or a maximum; passing 1 for it means the
-    /// model chose to process one item at a time).
-    /// </summary>
-    private BatchShape? Shape(IToolRegistry registry, string toolName)
-    {
-        if (_shapes.TryGetValue(toolName, out var cached))
-            return cached;
-
-        BatchShape? shape = null;
-        if (registry.TryGet(toolName, out var tool) && tool is not null)
-        {
-            try
-            {
-                var json = tool.Definition.InputSchemaJson;
-                using var document = JsonDocument.Parse(
-                    string.IsNullOrWhiteSpace(json) ? "{}" : json);
-                if (document.RootElement.ValueKind == JsonValueKind.Object
-                    && document.RootElement.TryGetProperty("properties", out var properties)
-                    && properties.ValueKind == JsonValueKind.Object)
-                {
-                    var arrays = new List<string>();
-                    var caps = new List<string>();
-                    foreach (var property in properties.EnumerateObject())
-                    {
-                        if (property.Value.ValueKind != JsonValueKind.Object
-                            || !property.Value.TryGetProperty("type", out var type)
-                            || type.ValueKind != JsonValueKind.String)
-                        {
-                            continue;
-                        }
-
-                        var kind = type.GetString();
-                        if (string.Equals(kind, "array", StringComparison.Ordinal))
-                        {
-                            arrays.Add(property.Name);
-                        }
-                        else if (string.Equals(kind, "integer", StringComparison.Ordinal)
-                                 && property.Value.TryGetProperty("default", out var fallback)
-                                 && fallback.ValueKind == JsonValueKind.Number
-                                 && fallback.TryGetInt64(out var defaultValue)
-                                 && defaultValue > 1)
-                        {
-                            caps.Add(property.Name);
-                        }
-                    }
-
-                    if (arrays.Count > 0)
-                        shape = new BatchShape(arrays.ToArray(), caps.ToArray());
-                }
-            }
-            catch (JsonException)
-            {
-                shape = null;
-            }
-        }
-
-        _shapes[toolName] = shape;
-        return shape;
-    }
+        string.Equals(code, InvalidArgumentsCode, StringComparison.Ordinal)
+            ? "This call already failed in round(s) " + Join(rounds) +
+              " with invalid arguments. The arguments changed since then and still break the schema: " +
+              "read the listed paths against the tool schema and rebuild the call from it, " +
+              "or choose another path."
+            : "This call already failed in round(s) " + Join(rounds) + " with the same error (" + code +
+              "). Read the reason once more and choose another path: another tool, or tell the user " +
+              "what blocks it.";
 
     private static List<int> Rounds(Dictionary<string, List<int>> source, string key)
     {
@@ -344,16 +268,4 @@ public sealed class ToolStormTracker
         public List<int> Rounds { get; } = new();
     }
 
-    private sealed class BatchShape
-    {
-        public BatchShape(string[] arrays, string[] caps)
-        {
-            Arrays = arrays;
-            Caps = caps;
-        }
-
-        public string[] Arrays { get; }
-
-        public string[] Caps { get; }
-    }
 }
