@@ -170,6 +170,62 @@ public sealed class ToolStormTrackerTests
     }
 
     [Fact]
+    public void Observe_SixIdenticalSuccessfulCalls_SamePayload_WarnsFromTheThirdOn()
+    {
+        // ORCH-12: successful repeats are a storm too.
+        var tracker = new ToolStormTracker();
+        var ok = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { groups = new[] { new { name = "a", count = 3 } } }),
+            "Summarized 3 element(s).");
+
+        for (var round = 1; round <= 6; round++)
+        {
+            var hints = tracker.Observe(null, "summarize_elements", "{\"topN\":50}", ok, round);
+            if (round < 3)
+            {
+                Assert.Empty(hints);
+                continue;
+            }
+
+            var hint = Assert.Single(hints);
+            Assert.Contains(
+                "already returned this result in round(s) " +
+                string.Join(", ", Enumerable.Range(1, round - 1)), hint, StringComparison.Ordinal);
+            Assert.Contains("change the arguments or choose another path", hint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Observe_SameCallAnotherPayload_IsNotARepeat()
+    {
+        // A poll whose counters moved is another result, even with the same message.
+        var tracker = new ToolStormTracker();
+        for (var round = 1; round <= 4; round++)
+        {
+            var moved = ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new { done = round }), "Running");
+            Assert.Empty(tracker.Observe(null, "get_status", "{}", moved, round));
+        }
+    }
+
+    [Fact]
+    public void Observe_SameCallSamePayloadAnotherMessage_IsARepeat()
+    {
+        var tracker = new ToolStormTracker();
+        var payload = JsonSerializer.SerializeToElement(new { value = 1 });
+        tracker.Observe(null, "get_state", "{}", ToolResult.Ok(payload, "took 12 ms"), 1);
+
+        var hints = tracker.Observe(null, "get_state", "{}", ToolResult.Ok(payload, "took 15 ms"), 2);
+
+        Assert.Empty(hints);
+        var third = tracker.Observe(null, "get_state", "{}", ToolResult.Ok(payload, "took 11 ms"), 3);
+        Assert.Contains(
+            "already returned this result in round(s) 1, 2",
+            Assert.Single(third),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Observe_SameErrorInsideOneRound_ListsTheRoundOnce()
     {
         var tracker = new ToolStormTracker();

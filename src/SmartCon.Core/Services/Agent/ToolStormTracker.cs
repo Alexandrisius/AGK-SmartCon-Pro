@@ -137,10 +137,21 @@ public sealed class ToolStormTracker
             _identicalCalls[key] = call;
         }
 
-        // Message and code stand for the payload: comparing the data itself
-        // would cost a serialization per call for the same verdict.
-        var fingerprint = (result.Success ? "ok|" : "fail|") + (result.ErrorCode ?? string.Empty)
+        // The payload stands for the result through its hash (never kept in
+        // memory): a poll whose counters moved is another result even when the
+        // message reads the same, and a variable message must not hide a repeat.
+        string fingerprint;
+        if (result.Data.HasValue && result.Data.Value.ValueKind != JsonValueKind.Undefined)
+        {
+            fingerprint = (result.Success ? "ok|d|" : "fail|d|") + (result.ErrorCode ?? string.Empty)
+                          + "|" + result.Data.Value.GetRawText().GetHashCode();
+        }
+        else
+        {
+            fingerprint = (result.Success ? "ok|m|" : "fail|m|") + (result.ErrorCode ?? string.Empty)
                           + "|" + (result.Message ?? string.Empty);
+        }
+
         if (!string.Equals(call.Fingerprint, fingerprint, StringComparison.Ordinal))
         {
             call.Fingerprint = fingerprint;
@@ -148,10 +159,14 @@ public sealed class ToolStormTracker
         }
 
         if (call.Rounds.Count >= SameResultThreshold - 1)
+        {
+            // Successful repeats count too (ORCH-12): the model re-sends the call
+            // believing it changed the arguments, and the result cannot differ.
             hints.Add(
-                "This exact call already returned the same result in round(s) " + Join(call.Rounds) +
-                "; repeating it unchanged will change nothing — use the data you already have " +
-                "or change the call.");
+                "The same call already returned this result in round(s) " + Join(call.Rounds) +
+                " (the arguments are identical to those rounds; if you meant to change them, " +
+                "the change did not reach the call); change the arguments or choose another path.");
+        }
 
         Remember(call.Rounds, round);
     }

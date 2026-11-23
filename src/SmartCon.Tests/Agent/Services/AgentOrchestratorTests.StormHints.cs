@@ -17,7 +17,8 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed partial class AgentOrchestratorTests
 {
     private const string SameErrorText = "already failed in round(s) 1, 2 with the same error";
-    private const string SameResultText = "already returned the same result in round(s) 1, 2";
+    private const string SameResultText = "already returned this result in round(s) 1, 2";
+    private const string SameResultAction = "change the arguments or choose another path";
     private const string BatchText = "this tool takes several items in one call; batch them";
 
     private static AgentToolCall CallOf(
@@ -85,6 +86,55 @@ public sealed partial class AgentOrchestratorTests
         Assert.Equal(3, payloads.Count);
         Assert.DoesNotContain(SameResultText, payloads[1], StringComparison.Ordinal);
         Assert.Contains(SameResultText, payloads[2], StringComparison.Ordinal);
+        Assert.Contains(SameResultAction, payloads[2], StringComparison.Ordinal);
+        Assert.Equal("done", result.FinalText);
+    }
+
+    [Fact]
+    public async Task RunTurn_SixIdenticalSuccessfulReadCalls_WarnFromTheThirdOn()
+    {
+        // ORCH-12: a read tool called six times with the very same arguments and
+        // the same successful answer, while the model believed it was passing a
+        // filter. The guard exempts read tools, so the hint is the only signal.
+        const string arguments = "{\"groupBy\":\"family\",\"includeZeroCount\":false,\"topN\":50}";
+        var tool = new ScriptedTool(
+            "summarize_elements",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new { groups = new[] { new { name = "a", count = 3 } } }),
+                "Summarized 3 element(s)."),
+            schema: "{\"type\":\"object\",\"properties\":{\"groupBy\":{\"type\":\"string\"}," +
+                    "\"includeZeroCount\":{\"type\":\"boolean\"},\"topN\":{\"type\":\"integer\"}}}");
+        var llm = new FakeAgentLlmClient();
+        for (var round = 1; round <= 6; round++)
+        {
+            llm.EnqueueAssistant(
+                null,
+                new[] { CallOf("call_" + round, arguments, "summarize_elements") });
+        }
+
+        llm.EnqueueAssistant("done");
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var orchestrator = CreateOrchestrator(
+            llm, CreateExecutor(registry), registry, new InMemoryConversationStore());
+        var result = await orchestrator.RunTurnAsync(
+            Guid.NewGuid(), "сводка", Array.Empty<AgentAttachment>(), null, CancellationToken.None);
+
+        // No new limit: all six calls ran and the model got its seventh request.
+        Assert.Equal(6, result.ToolCallCount);
+        var payloads = ToolPayloads(llm, 6);
+        Assert.Equal(6, payloads.Count);
+        Assert.DoesNotContain(payloads.Take(2), payload => payload.Contains(SameResultText, StringComparison.Ordinal));
+        for (var index = 2; index < payloads.Count; index++)
+        {
+            // Result of call index+1: the hint names every earlier round.
+            var rounds = string.Join(", ", Enumerable.Range(1, index));
+            Assert.Contains("already returned this result in round(s) " + rounds, payloads[index], StringComparison.Ordinal);
+            Assert.Contains(SameResultAction, payloads[index], StringComparison.Ordinal);
+        }
+
+        Assert.Contains("the change did not reach the call", payloads[5], StringComparison.Ordinal);
         Assert.Equal("done", result.FinalText);
     }
 
