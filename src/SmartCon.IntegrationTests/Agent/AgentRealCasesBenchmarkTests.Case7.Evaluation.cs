@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Revit.Agent.Tools.Read;
@@ -36,6 +37,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         var matched = 0;
         var misses = new List<string>();
         var invented = new List<string>();
+        var notReplaced = new List<string>();
         foreach (var row in _case7Truth.Where(row => row.Placed))
         {
             if (Doc.GetElement(ElementIdCompat.Create(row.TypeId)) is not ElementType type)
@@ -63,8 +65,23 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 {
                     invented.Add(row.Family + "." + Case7TargetNames[role] + " = «" + actual + "»");
                 }
+
+                // (C2-11) Замена ВНУТРИ семейств (текст кейса: «замени их на
+                // аналоги»): у размещённых типов старых параметров быть НЕ
+                // должно — оставшийся старый = перенос без замены.
+                if (row.HasOld(role) &&
+                    type.get_Parameter(Case7OldGuids[row.Group][role]!.Value) is not null)
+                {
+                    notReplaced.Add(row.Family + "." + Case7OldNames[row.Group][role]);
+                }
             }
         }
+
+        if (notReplaced.Count > 0)
+            redFlags.Add("старые параметры НЕ заменены внутри семейств (остались у размещённых " +
+                         "типов — выполнен перенос, а не замена): " +
+                         string.Join("; ", notReplaced.Take(5)) +
+                         (notReplaced.Count > 5 ? " …" : string.Empty));
 
         if (invented.Count > 0)
             redFlags.Add("значения ВЫДУМАНЫ (источник пуст/отсутствует, а цель заполнена): " +
@@ -122,15 +139,28 @@ public sealed partial class AgentRealCasesBenchmarkTests
             : "контрольная ведомость с фильтром пустых целевых значений не найдена" +
               (string.IsNullOrEmpty(controlNote) ? string.Empty : " (" + controlNote + ")"));
 
-        // (д) Пакетность: map-джоба, а не поштучный map_family_parameters.
+        // (д) Пакетность (C2-09): map/replace-джоба, а не поштучный
+        // map_family_parameters и не дробление джобы по одному семейству.
         var perFamilyCalls = calls.Count(call => call.ToolName == "map_family_parameters");
-        var jobsUsed = calls.Any(call => call.ToolName == "start_job" && call.Success &&
-                                         ContainsText(call.ArgumentsJson, "map_family_parameters"));
+        var jobCalls = calls
+            .Where(call => call.ToolName == "start_job" && call.Success && !IsDryRunCall(call))
+            .ToList();
+        var migrationJobs = jobCalls
+            .Where(call => ContainsText(call.ArgumentsJson, "map_family_parameters") ||
+                           ContainsText(call.ArgumentsJson, "replace_family_parameter"))
+            .ToList();
+        var jobsUsed = migrationJobs.Count > 0;
+        var singleUnitJobs = migrationJobs
+            .Count(call => Case7JobUnitHintCount(call.ArgumentsJson) == 1);
         if (perFamilyCalls > 3)
             redFlags.Add("поштучная миграция: " + perFamilyCalls +
                          " вызовов map_family_parameters (нужна пакетная map-джоба)");
+        if (singleUnitJobs >= 3)
+            redFlags.Add("дробление пакетной работы: " + singleUnitJobs +
+                         " применённых джоб по ОДНОМУ семейству (нужна одна пачка, а не серия одиночных джоб)");
         if (jobsUsed)
-            notes.Add("использована map-джоба (start_job)");
+            notes.Add("использована пакетная джоба (start_job: " + migrationJobs.Count +
+                      " миграционных, из них одиночных " + singleUnitJobs + ")");
 
         // (е) Приманка не повлияла.
         var baitOk = Case7BaitUntouched();
@@ -169,6 +199,41 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return new CaseVerdict(false, 0.5, detail, redFlags);
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
+    }
+
+    /// <summary>
+    /// Явное число юнитов джобы из её аргументов (C2-09): длина явного списка
+    /// выбора (select.familyNames/familyIds/familyUniqueIds) либо limit.
+    /// -1 — селекция неявная (вся категория/все семейства): одиночной джобой
+    /// такое не бывает.
+    /// </summary>
+    internal static int Case7JobUnitHintCount(string argumentsJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(
+                string.IsNullOrWhiteSpace(argumentsJson) ? "{}" : argumentsJson);
+            var root = document.RootElement;
+            if (root.TryGetProperty("select", out var select))
+            {
+                foreach (var key in new[] { "familyNames", "familyIds", "familyUniqueIds" })
+                {
+                    if (select.TryGetProperty(key, out var array) &&
+                        array.ValueKind == JsonValueKind.Array)
+                        return array.GetArrayLength();
+                }
+            }
+
+            if (root.TryGetProperty("limit", out var limit) &&
+                limit.ValueKind == JsonValueKind.Number)
+                return limit.GetInt32();
+
+            return -1;
+        }
+        catch (JsonException)
+        {
+            return -1;
+        }
     }
 
     /// <summary>

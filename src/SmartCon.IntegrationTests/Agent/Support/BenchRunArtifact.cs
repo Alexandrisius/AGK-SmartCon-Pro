@@ -93,6 +93,24 @@ public sealed class BenchRunArtifact
 
     public string StopReason { get; set; } = "ok";
 
+    /// <summary>
+    /// Бюджетный steering был отправлен модели: "rounds" (~80% раундов) или
+    /// "time" (~75% времени); null — бюджета хватило. Вердикт не меняет.
+    /// </summary>
+    public string? SteeringReason { get; set; }
+
+    /// <summary>
+    /// Бюджет исчерпан и модель дала финальный ответ отдельным вызовом без
+    /// инструментов (см. <see cref="Answer"/>; stopReason = round_budget|time_budget).
+    /// </summary>
+    public bool BudgetFinalCall { get; set; }
+
+    /// <summary>
+    /// Токены просуммированы по всем завершённым LLM-вызовам из token_usage
+    /// сессии; false — записи не прочитались, сумма только по вернувшимся turn'ам.
+    /// </summary>
+    public bool UsageFromStore { get; set; }
+
     public string? Error { get; set; }
 
     public BenchVerdictArtifact Verdict { get; set; } = new();

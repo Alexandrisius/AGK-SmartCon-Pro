@@ -86,6 +86,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return;
         }
 
+        // C10-06: марки сида уникальны (на базе реального шаблона встречались
+        // CenterLine-элементы с той же маркой — вопрос 1 двусмысленный).
+        foreach (var mark in new[] { "К1", "О1", "Д1", "Н1" })
+        {
+            var holders = Case15MarkHolders(Doc, mark);
+            if (holders.Count > 1)
+            {
+                Skip.Test("Сид кейса 15: марка «" + mark + "» не уникальна (" +
+                          holders.Count + " носителей) — вопрос кейса двусмысленен");
+                return;
+            }
+        }
+
         _case15.MainSystemName = Case15SystemNameOf(_case15.PipeB2Id);
         _case15.SplitSystemName = Case15SystemNameOf(_case15.PipeCId);
         if (string.IsNullOrWhiteSpace(_case15.MainSystemName) ||

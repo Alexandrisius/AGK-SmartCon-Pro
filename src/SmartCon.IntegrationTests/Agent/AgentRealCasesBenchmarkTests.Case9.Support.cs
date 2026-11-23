@@ -25,6 +25,50 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return names.ToArray();
     }
 
+    /// <summary>
+    /// Сколько РАЗНЫХ имён систем перечислено в промежуточном ответе к утверждению
+    /// (C4-05): имя засчитывается только на границе — не внутри более длинного
+    /// («Т1» внутри «Т11»/«Т1.11» не считается). Точка после имени — граница,
+    /// только если за ней НЕ цифра (иначе это продолжение цифрового суффикса
+    /// «Т1.11»).
+    /// </summary>
+    internal static int Case9SystemsListed(string text)
+    {
+        var listed = 0;
+        foreach (var name in Case9AllSystemNames())
+        {
+            var index = text.IndexOf(name, StringComparison.Ordinal);
+            while (index >= 0)
+            {
+                if (Case9IsNameBoundary(text, index + name.Length))
+                {
+                    listed++;
+                    break;
+                }
+
+                index = text.IndexOf(name, index + 1, StringComparison.Ordinal);
+            }
+        }
+
+        return listed;
+    }
+
+    private static bool Case9IsNameBoundary(string text, int position)
+    {
+        if (position >= text.Length)
+            return true;
+
+        var next = text[position];
+        if (char.IsLetterOrDigit(next))
+            return false;
+
+        // «.» — граница, только если за ней не цифра («Т1.11» = продолжение).
+        if (next == '.' && position + 1 < text.Length && char.IsDigit(text[position + 1]))
+            return false;
+
+        return true;
+    }
+
     private static void Case9Rename(Element element, string name)
     {
         try
@@ -122,21 +166,56 @@ public sealed partial class AgentRealCasesBenchmarkTests
             {
                 transaction.Start();
                 flangeSymbol.Activate();
-                hostDoc.FamilyCreate.NewFamilyInstance(
+                var nested = hostDoc.FamilyCreate.NewFamilyInstance(
                     XYZ.Zero, flangeSymbol, StructuralType.NonStructural);
-                transaction.Commit();
+                var commitStatus = transaction.Commit();
+                Console.WriteLine("PROBE case 9 flange host: nested instance " +
+                                  (nested is null ? "NULL" : "id " + nested.Id.GetValue()) +
+                                  ", commit " + commitStatus);
             }
 
             hostDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
+            var hostInstances = 0;
+            try
+            {
+                hostInstances = new FilteredElementCollector(hostDoc)
+                    .OfClass(typeof(FamilyInstance)).GetElementCount();
+            }
+            catch (Exception)
+            {
+                // Счёт диагностический.
+            }
+
+            Console.WriteLine("PROBE case 9 flange host: hostDoc instances before close = " +
+                              hostInstances);
             hostDoc.Close(false);
             hostDoc = null;
 
-            if (!Doc.LoadFamily(hostPath, new Case9NestLoadOptions(), out var hostFamily) ||
-                hostFamily is null)
+            // Файловая загрузка хозяина в проект требует ОТКРЫТУЮ ТРАНЗАКЦИЮ:
+            // строчный LoadFamily(string) без транзакиции молча возвращает false
+            // (механика Case14LoadFamilies: загрузка меняет базу) — именно так
+            // «Семейство-хозяин не загрузилось в проект из файла» ловилось во
+            // всех 7 прогонах (C4-04). Тёзка с другой категорией/содержимым на
+            // базе реального шаблона делает загрузку неразрешимым конфликтом —
+            // удаляем заранее (копия шаблона одноразовая).
+            RemoveCaseConflictingFamilies(Doc, Case9HostFamilyName);
+            Family? loadedHost = null;
+            using (var transaction = new Transaction(Doc, "Seed case 9 flange host"))
             {
-                note = "Семейство-хозяин не загрузилось в проект из файла";
-                return false;
+                transaction.Start();
+                var loaded = Doc.LoadFamily(hostPath, new Case9NestLoadOptions(), out var family);
+                if (transaction.Commit() != TransactionStatus.Committed)
+                    loaded = false;
+                loadedHost = family;
+                if (!loaded || loadedHost is null)
+                {
+                    note = "Семейство-хозяин не загрузилось в проект из файла " +
+                           "(file LoadFamily в транзакции)";
+                    return false;
+                }
             }
+
+            var hostFamily = loadedHost;
 
             var hostSymbolId = hostFamily.GetFamilySymbolIds().FirstOrDefault();
             if (hostSymbolId is null)
@@ -172,6 +251,49 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Диагностика вложения в проекте (сбор в момент, когда субкомпонентов нет):
+    /// семейства хозяина/фланца с признаком FAMILY_SHARED и все экземпляры с
+    /// SuperComponent — чтобы причина деградации была видна из одного вывода.
+    /// </summary>
+    private static string Case9DescribeNesting(Document doc)
+    {
+        var builder = new System.Text.StringBuilder();
+        try
+        {
+            builder.Append("PROBE case 9 nesting: families[");
+            foreach (var element in new FilteredElementCollector(doc)
+                         .OfClass(typeof(Autodesk.Revit.DB.Family)))
+            {
+                if (element is not Autodesk.Revit.DB.Family family)
+                    continue;
+
+                var name = family.Name ?? string.Empty;
+                if (name.IndexOf(Case9HostFamilyName, StringComparison.OrdinalIgnoreCase) < 0 &&
+                    name.IndexOf("Фланец", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                builder.Append(name).Append(" shared=")
+                    .Append(family.get_Parameter(BuiltInParameter.FAMILY_SHARED)?.AsInteger() ?? -1)
+                    .Append(" category=").Append(family.FamilyCategory?.Name ?? "?")
+                    .Append(" symbols=").Append(family.GetFamilySymbolIds().Count)
+                    .Append("; ");
+            }
+
+            builder.Append("] instancesWithSuper=")
+                .Append(new FilteredElementCollector(doc)
+                    .OfClass(typeof(FamilyInstance))
+                    .Cast<FamilyInstance>()
+                    .Count(instance => instance.SuperComponent is not null));
+        }
+        catch (Exception ex)
+        {
+            builder.Append(" describe-failed: ").Append(ex.GetType().Name);
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>Nesting load of a shared family: FamilySource.Project keeps the
@@ -218,12 +340,26 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 new XYZ(offsets[index], 14, 0), symbol, StructuralType.NonStructural);
             pump.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(marks[index]);
             _case9PumpIds.Add(pump.Id.GetValue());
-            foreach (var subId in pump.GetSubComponentIds())
+        }
+
+        // Субкомпоненты вложенного (shared) семейства материализуются при
+        // регенерации: сразу после NewFamilyInstance внутри той же транзакции
+        // GetSubComponentIds() возвращает пусто (C4-04).
+        doc.Regenerate();
+        foreach (var pumpId in _case9PumpIds)
+        {
+            if (doc.GetElement(ElementIdCompat.Create(pumpId)) is not FamilyInstance pump)
+                continue;
+
+            var subIds = pump.GetSubComponentIds();
+            Console.WriteLine("PROBE case 9 pump " + pumpId + ": subcomponents " + subIds.Count);
+            foreach (var subId in subIds)
                 _case9FlangeIds.Add(subId.GetValue());
         }
 
         if (_case9FlangeIds.Count == 0)
         {
+            Console.WriteLine(Case9DescribeNesting(doc));
             _case9FlangesSeeded = false;
             _case9FlangeNote = "У насосов нет субкомпонентов после размещения";
         }

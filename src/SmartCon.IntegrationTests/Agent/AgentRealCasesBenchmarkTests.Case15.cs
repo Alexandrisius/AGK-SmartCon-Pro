@@ -405,6 +405,15 @@ public sealed partial class AgentRealCasesBenchmarkTests
         Case15RenameElement(doc.GetElement(splitSystemId), Case15SystemSplit);
         doc.Regenerate();
 
+        // C10-06: текст кейса называет «К1» шаровым краном. Семейства из .rft
+        // без MEP-коннекторов не соединят трубы, поэтому соединительную
+        // механику даёт колено NewElbowFitting (тот же ConnectorManager, что
+        // у арматуры), а смена типа фитинга на дубликат «Шаровый кран»
+        // РАЗОРВАЛА коннекторы (проба 2026-11-23: соседи К1 пусты) — тип не
+        // меняется, вопрос 1 работает по марке К1, истина инвариантна имени
+        // семейства. Настоящий дефект C10-06 — дубль марки К1 на CenterLine
+        // элементе шаблона — лечится ниже снятием дублей.
+
         _case15.ValveId = valve.Id.GetValue();
         _case15.PipeAId = pipeA.Id.GetValue();
         _case15.PipeBId = pipeB.Id.GetValue();
@@ -412,6 +421,112 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case15.ElbowId = elbow.Id.GetValue();
         _case15.PipeCId = pipeC.Id.GetValue();
         _case15.PipeC2Id = pipeC2.Id.GetValue();
+
+        // C10-06: на базе реального шаблона встречаются элементы/субэлементы
+        // (например CenterLine) с теми же марками — вопрос 1 становится
+        // двусмысленным (query по «К1» находил дубль). Чужие носители марок
+        // сида очищаются.
+        Case15DedupeMarks(doc);
+    }
+
+    /// <summary>
+    /// Элементы-носители марки (ALL_MODEL_MARK == mark, не типы), КРОМЕ
+    /// графических линий осей (Center line): осевая линия MEP-фитинга —
+    /// проекция самого фитинга, её Mark синхронизируется Revit'ом и не
+    /// снимается (проба 2026-11-23: cleared → восстановлен). Перебор
+    /// коллектора без ElementParameterFilter: конструкторы FilterStringRule
+    /// менялись между версиями API, а сид обязан собираться под R21-R26.
+    /// </summary>
+    private static List<Element> Case15MarkHolders(Document doc, string mark)
+    {
+        try
+        {
+            return new FilteredElementCollector(doc)
+                .WhereElementIsNotElementType()
+                .Cast<Element>()
+                .Where(element => !Case15IsCenterLineElement(element))
+                .Where(element =>
+                {
+                    try
+                    {
+                        return string.Equals(
+                            element.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.AsString(),
+                            mark,
+                            StringComparison.Ordinal);
+                    }
+                    catch (Exception)
+                    {
+                        return false;
+                    }
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("PROBE case 15: mark holder scan '" + mark + "' failed: " +
+                              ex.GetType().Name + ": " + ex.Message);
+            return new List<Element>();
+        }
+    }
+
+    private static bool Case15IsCenterLineElement(Element element)
+    {
+        try
+        {
+            var category = element.Category;
+            while (category is not null)
+            {
+                if (category.Id.GetValue() == (long)BuiltInCategory.OST_Lines)
+                    return true;
+
+                var name = category.Name ?? string.Empty;
+                if (name.IndexOf("center", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("осев", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                category = category.Parent;
+            }
+        }
+        catch (Exception)
+        {
+            // Категория недоступна — считать обычным элементом.
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Снимает марки сида с чужих элементов (дубли марок шаблона). Осевые
+    /// линии (Center line) пропускаются: их Mark восстанавливается Revit'ом.
+    /// </summary>
+    private void Case15DedupeMarks(Document doc)
+    {
+        var keep = new HashSet<long>
+        {
+            _case15.ValveId, _case15.WindowId, _case15.DoorId,
+            _case15.PumpId, _case15.ElbowId
+        };
+        foreach (var mark in new[] { "К1", "О1", "Д1", "Н1", "Ф1" })
+        {
+            foreach (var holder in Case15MarkHolders(doc, mark))
+            {
+                if (keep.Contains(holder.Id.GetValue()))
+                    continue;
+
+                try
+                {
+                    holder.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(string.Empty);
+                    Console.WriteLine("PROBE case 15: duplicate mark '" + mark +
+                                      "' cleared from id " + holder.Id.GetValue() +
+                                      " (category " + (holder.Category?.Name ?? "?") + ")");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("PROBE case 15: duplicate mark '" + mark +
+                                      "' not cleared: " + ex.GetType().Name);
+                }
+            }
+        }
     }
 
     private static void Case15RenameElement(Element? element, string name)

@@ -95,6 +95,44 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         var suspectsMentioned = ContainsText(answerText, Case9SuspectNear) &&
                                 ContainsText(answerText, Case9SuspectFar);
+
+        // (г) Двухшаговый протокол (C4-05): реальные write-вызовы ДО первого
+        // промежуточного ответа = записи без утверждения («утверди у меня»);
+        // сам промежуточный ответ должен содержать список имён к утверждению.
+        var firstIntermediate = _lastRunIntermediateAnswers.Count > 0
+            ? _lastRunIntermediateAnswers[0]
+            : null;
+        var approvalBoundary = _lastRunCallsBeforeFirstIntermediate;
+        if (firstIntermediate is null)
+            notes.Add("промежуточный ответ-утверждение отсутствует (протокол «утверди у меня» нарушен)");
+        else if (Case9SystemsListed(firstIntermediate) < 2)
+            notes.Add("промежуточный ответ не содержит списка имён систем к утверждению");
+
+        if (approvalBoundary >= 0 && _lastRunToolRisk.Count > 0)
+        {
+            var boundary = Math.Min(approvalBoundary, calls.Count);
+            var writesBeforeApproval = new List<string>();
+            for (var index = 0; index < boundary; index++)
+            {
+                if (calls[index].Success && IsRealWrite(calls[index], _lastRunToolRisk))
+                    writesBeforeApproval.Add(calls[index].ToolName);
+            }
+
+            if (writesBeforeApproval.Count > 0)
+                redFlags.Add("записи ДО утверждения: " + writesBeforeApproval.Count +
+                             " применённых write-вызовов до первого промежуточного ответа (" +
+                             string.Join(", ", writesBeforeApproval.Distinct()) + ")");
+        }
+
+        // SEED DEGRADED (C4-04): без вложенных shared-фланцев ключевой критерий
+        // кейса («субкомпоненты наследуют от родителя») не проверялся — полный
+        // PASS недостижим, кейс честно сообщает деградацию.
+        var flangesSeeded = _case9FlangesSeeded;
+        if (!flangesSeeded)
+            notes.Add("SEED DEGRADED: вложенные shared-фланцы не засидированы" +
+                      (_case9FlangeNote is null ? string.Empty : " (" + _case9FlangeNote + ")") +
+                      " — критерий «субкомпоненты наследуют» не проверялся");
+
         if (!suspectsMentioned)
             notes.Add("ответ не упоминает подозрительную пару «" + Case9SuspectNear + "»/«" +
                       Case9SuspectFar + "»");
@@ -131,8 +169,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
                      "; intermediate-ответ проверяется ассертом тест-метода" +
                      (notes.Count > 0 ? "; " + string.Join("; ", notes) : string.Empty);
 
+        // Промежуточный ответ содержателен (список к утверждению), фланцы
+        // засидированы (иначе ключевой критерий не проверялся — C4-04).
+        var intermediateOk = firstIntermediate is not null &&
+                             Case9SystemsListed(firstIntermediate) >= 2;
+
         if (redFlags.Count == 0 && systemsOk == Case9CleanSystems.Length && fillFull &&
-            suspectsMentioned && feedbackOk)
+            suspectsMentioned && intermediateOk && flangesSeeded && feedbackOk)
             return new CaseVerdict(true, 1.0, detail, redFlags);
 
         // 0.5 = виды есть, параметр частично (шкала SSOT кейса).

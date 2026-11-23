@@ -147,10 +147,36 @@ public sealed partial class AgentRealCasesBenchmarkTests
             notes.Add("лист «Т1» (длинная трасса): кратность " + t1Multiplicity +
                       " без обоснования формата в ответе");
 
-        // (е) Исходная общая спецификация цела и сборка пачкой.
-        var mainIntact = Doc.GetElement(ElementIdCompat.Create(_case11MainScheduleId))
-            is ViewSchedule mainSchedule &&
-            AgentScheduleReader.ReadColumns(Doc, mainSchedule, out _).Count >= 8;
+        // (е) Исходная общая спецификация цела (C6-05: сид создаёт её БЕЗ
+        // фильтров — чужой фильтр на источнике, даже при живых колонках,
+        // проваливает целостность; 0 видимых строк ловится порогом строк)
+        // и сборка пачкой.
+        var mainSchedule = Doc.GetElement(ElementIdCompat.Create(_case11MainScheduleId))
+            as ViewSchedule;
+        var mainIntact = mainSchedule is not null &&
+                         AgentScheduleReader.ReadColumns(Doc, mainSchedule!, out _).Count >= 8;
+        if (mainIntact)
+        {
+            var mainFilters = 0;
+            var mainRows = 0;
+            try
+            {
+                mainFilters = mainSchedule!.Definition.GetFilters().Count;
+                mainRows = AgentScheduleReader.ReadRowCount(mainSchedule, skipHeader: true);
+            }
+            catch (Exception)
+            {
+                // Чужая спека без definition — уже не целая.
+            }
+
+            if (mainFilters > 0 || mainRows < 10)
+            {
+                mainIntact = false;
+                notes.Add("исходная общая спецификация испорчена: фильтров " + mainFilters +
+                          " (сид создаёт без фильтров), видимых строк " + mainRows + " (нужно ≥10)");
+            }
+        }
+
         if (!mainIntact)
             notes.Add("исходная общая спецификация урезана или удалена");
 
@@ -245,16 +271,39 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
     }
 
-    /// <summary>Система листа по его имени; «Т1.11» проверяется раньше «Т1» (префикс).</summary>
-    private static string? Case11SystemOfText(string text)
+    /// <summary>
+    /// Система листа по его имени: имя — ТОКЕН на границах (ORCH-5: наивный
+    /// substring матчил «Т2» внутри «Система Т21», а фильтр экспликации
+    /// стоял «Т1»). «Т1.11» проверяется раньше «Т1» (длинные имена первым —
+    /// иначе «Т1» съест префикс «Т1.11»).
+    /// </summary>
+    internal static string? Case11SystemOfText(string text)
     {
         foreach (var system in Case11Systems.OrderByDescending(candidate => candidate.Length))
         {
-            if (ContainsText(text, system))
+            if (Case11ContainsSystemToken(text, system))
                 return system;
         }
 
         return null;
+    }
+
+    /// <summary>Имя системы встречается в тексте как целое слово (границы — не буквы/цифры).</summary>
+    private static bool Case11ContainsSystemToken(string text, string system)
+    {
+        var index = text.IndexOf(system, StringComparison.OrdinalIgnoreCase);
+        while (index >= 0)
+        {
+            var boundaryBefore = index == 0 || !char.IsLetterOrDigit(text[index - 1]);
+            var after = index + system.Length;
+            var boundaryAfter = after >= text.Length || !char.IsLetterOrDigit(text[after]);
+            if (boundaryBefore && boundaryAfter)
+                return true;
+
+            index = text.IndexOf(system, index + 1, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     // ── Геометрия выносов ───────────────────────────────────────────────

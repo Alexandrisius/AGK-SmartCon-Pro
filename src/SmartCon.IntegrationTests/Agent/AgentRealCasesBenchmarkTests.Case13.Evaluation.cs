@@ -67,20 +67,28 @@ public sealed partial class AgentRealCasesBenchmarkTests
             redFlags.Add("приманка «" + Case13BaitScheduleName + "» аудирована: поле «" +
                          Case13BaitParameter + "» попало в обязательный набор");
 
-        // (а) Сводка: числа filled/empty совпадают с истиной.
-        var summaryOk = audits.Any(Case13AuditMatchesTruth);
+        // (а) Сводка: числа filled/empty совпадают с истиной. Успешный прогон
+        // audit_fill_rate — достаточный, но НЕ обязательный путь (ORCH-4: тул
+        // не назван текстом кейса — модель может собрать ту же сводку
+        // вручную; сверяются и числа в ответе модели).
+        var responseText = answerText + "\n" +
+                           string.Join("\n", _lastRunIntermediateAnswers);
+        var summaryOk = audits.Any(Case13AuditMatchesTruth) ||
+                        Case13AnswerSummaryMatchesTruth(responseText);
         var bestAudit = audits.FirstOrDefault(Case13AuditMatchesTruth);
         if (audits.Count > 0 && !summaryOk)
             notes.Add("ни один прогон аудита не совпал с истиной (Name 10/2, Mark 11/1, " +
                       "Unit 8/4 или 12/0, Count 12/0)");
 
-        // (в) Виновники точны: семейства дырок совпадают с истиной сида.
-        var culpritsOk = bestAudit is not null &&
-                         Case13SameFamilies(Case13RowOf(bestAudit, Case13NameGuid),
-                             "Вентустановка В-1", "Кондиционер К-2") &&
-                         Case13SameFamilies(Case13RowOf(bestAudit, Case13UnitGuid),
-                             "Отвод 90", "Тройник", "Переход", "Крестовина") &&
-                         Case13SameFamilies(Case13RowOf(bestAudit, Case13MarkGuid), "Труба");
+        // (в) Виновники точны: семейства дырок совпадают с истиной сида —
+        // точным множеством из аудита ИЛИ всеми именами в ответе (ORCH-4).
+        var culpritsOk = (bestAudit is not null &&
+                          Case13SameFamilies(Case13RowOf(bestAudit, Case13NameGuid),
+                              "Вентустановка В-1", "Кондиционер К-2") &&
+                          Case13SameFamilies(Case13RowOf(bestAudit, Case13UnitGuid),
+                              "Отвод 90", "Тройник", "Переход", "Крестовина") &&
+                          Case13SameFamilies(Case13RowOf(bestAudit, Case13MarkGuid), "Труба")) ||
+                         Case13AnswerNamesAllCulprits(responseText);
 
         // (г) Безопасные дырки заполнены (ед.изм. фитингов), с объяснением в ответе.
         var fittings = _case13Items.Where(item => item.Kind == "fitting").ToList();
@@ -145,7 +153,9 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
         var detail = "tools [" + sequence + "], rounds " + callsPerRound.Count +
                      "; аудит " + (audits.Count > 0 ? audits.Count + " прогон(а)" : "нет") +
-                     ", сводка " + (summaryOk ? "верна" : "не совпала") +
+                     ", сводка " + (summaryOk
+                         ? "верна (аудит или ответ)"
+                         : "не совпала") +
                      ", приманка " + (baitClean ? "чиста" : "АУДИРОВАНА") +
                      ", виновники " + (culpritsOk ? "точны" : "нет/неполны") +
                      ", ед.изм. " + (safeFilled
@@ -194,6 +204,43 @@ public sealed partial class AgentRealCasesBenchmarkTests
     private static Case13AuditRow? Case13RowOf(List<Case13AuditRow> rows, Guid guid) =>
         rows.FirstOrDefault(row => string.Equals(
             row.Guid, guid.ToString("D"), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Сводка в ответе модели совпадает с истиной (ORCH-4: ручная сводка без
+    /// audit_fill_rate): числа пустых «N из 12» / «N/12» для четырёх
+    /// параметров — Name 2, Mark 1, Unit 4 (до безопасного заполнения) или 0
+    /// (после), Count 0.
+    /// </summary>
+    internal static bool Case13AnswerSummaryMatchesTruth(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var found = new HashSet<int>();
+        foreach (var number in new[] { 0, 1, 2, 4 })
+        {
+            if (text.Contains(number + " из 12", StringComparison.Ordinal) ||
+                text.Contains(number + "/12", StringComparison.Ordinal) ||
+                text.Contains(number + " / 12", StringComparison.Ordinal))
+                found.Add(number);
+        }
+
+        // Name 2 и Mark 1 обязательны; Unit — 4 (до) или 0 (после заполнения);
+        // Count 0 обязателен (совпадает с Unit-после).
+        return found.Contains(2) && found.Contains(1) &&
+               (found.Contains(4) || found.Contains(0));
+    }
+
+    /// <summary>Ответ называет ВСЕХ виновников дырок истины сида (ORCH-4).</summary>
+    internal static bool Case13AnswerNamesAllCulprits(string text)
+    {
+        var culprits = new[]
+        {
+            "Вентустановка В-1", "Кондиционер К-2",
+            "Отвод", "Тройник", "Переход", "Крестовина", "Труба"
+        };
+        return culprits.All(name => ContainsText(text, name));
+    }
 
     private static bool Case13SameFamilies(Case13AuditRow? row, params string[] expected)
     {
