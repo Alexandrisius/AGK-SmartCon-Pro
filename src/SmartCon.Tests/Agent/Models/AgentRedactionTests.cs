@@ -127,7 +127,8 @@ public sealed class AgentRedactionTests
         // to the first paragraph, so the model never read the rules it was sent (#400).
         var longText = new string('a', 2000);
         var json = "{\"pack\":\"views\",\"markdown\":\"" + longText +
-                   "\",\"message\":\"" + longText + "\"}";
+                   "\",\"message\":\"" + longText +
+                   "\",\"elementName\":\"" + longText + "\"}";
 
         var sanitized = AgentTextSanitizer.SanitizeJson(json);
         using var document = JsonDocument.Parse(sanitized);
@@ -135,8 +136,13 @@ public sealed class AgentRedactionTests
         Assert.Equal(
             2000,
             document.RootElement.GetProperty("markdown").GetString()!.Length);
+        // The tool's own message is harness-authored as well: its reason and
+        // the next step sit at the end.
+        Assert.Equal(
+            2000,
+            document.RootElement.GetProperty("message").GetString()!.Length);
         Assert.True(
-            document.RootElement.GetProperty("message").GetString()!.Length <= 401);
+            document.RootElement.GetProperty("elementName").GetString()!.Length <= 401);
     }
 
     [Fact]
