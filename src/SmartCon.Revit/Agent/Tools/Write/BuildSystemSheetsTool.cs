@@ -43,7 +43,9 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "columns visible (a missing column is a warning + skip), an equals filter " +
             "filterField=filterValue (e.g. АДСК_ИмяСистемы = the system name; the filter " +
             "field is added as a HIDDEN column when it is not a kept one), the clone named " +
-            "'Экспликация <sheetName>' and placed to the right of the view. scheduleId and " +
+            "'Экспликация <sheetName>' and placed to the right of the view. explicationRows " +
+            "reports the clone's data rows (dry run included); a filter value that matches no " +
+            "source row is a warning naming the closest existing values. scheduleId and " +
             "explication together are invalid_arguments. The viewport box is unknown before placement (especially for 3D views), " +
             "so the tool places at a provisional point, regenerates, measures GetBoxOutline, " +
             "recenters with SetBoxCenter and verifies the box against ViewSheet.Outline " +
@@ -477,6 +479,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 overflow = !placement.InsideSheet,
                 schedule = scheduleInfo,
                 explication = explication?.Info,
+                explicationRows = explication?.Rows,
                 titleBlockParameters = parameterResults,
                 warnings = itemWarnings.Count == 0 ? null : itemWarnings
             });
@@ -516,29 +519,6 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             // Best effort: an orphan sheet is visible to the user, a thrown
             // exception here would bury the original failure reason.
         }
-    }
-
-    /// <summary>
-    /// Sheets that already hold a viewport of a view, by view id (legends may
-    /// repeat; owners here block re-placement of regular views).
-    /// </summary>
-    private static Dictionary<long, string> CollectViewportOwners(Document doc)
-    {
-        var owners = new Dictionary<long, string>();
-        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(Viewport)))
-        {
-            if (element is not Viewport viewport)
-                continue;
-
-            var ownerSheetId = viewport.SheetId;
-            if (ownerSheetId == ElementId.InvalidElementId)
-                continue;
-
-            owners[viewport.ViewId.GetValue()] =
-                (doc.GetElement(ownerSheetId) as ViewSheet)?.SheetNumber ?? string.Empty;
-        }
-
-        return owners;
     }
 
     private static void Fail(

@@ -1,19 +1,27 @@
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
-/// Dry-run row estimate for set_schedule_filter (#452): walks the elements of
-/// the schedule category and evaluates the (already applied) ScheduleFilters
-/// against their parameter values. A view-scoped collector proved unreliable
-/// here (returned 0 for a schedule view inside the dry-run transaction), so the
-/// rules are evaluated manually — the same AND semantics Revit applies. The
-/// count is an element count: grouped (non-itemized) schedules merge elements
-/// into fewer rows, and view-level restrictions (phases) are not modelled.
+/// Dry-run row estimate for set_schedule_filter (#452): walks the elements a
+/// schedule draws its rows from (AgentScheduleReader.CollectSourceElements) and
+/// evaluates the (already applied) ScheduleFilters against their parameter
+/// values. A view-scoped collector proved unreliable here (returned 0 for a
+/// schedule view inside the dry-run transaction), so the rules are evaluated
+/// manually — the same AND semantics Revit applies. The count is an element
+/// count: grouped (non-itemized) schedules merge elements into fewer rows, and
+/// view-level restrictions (phases) are not modelled. Multi-category schedules
+/// are estimated too: they used to get no estimate at all because their
+/// CategoryId is InvalidElementId.
 /// </summary>
 internal static class AgentScheduleFilterEstimator
 {
+    private const int SampleSize = 5;
+    private const int MaxDistinctValues = 2000;
+    internal const int MaxScannedElements = 20000;
+
     internal static (int Count, List<string> Sample)? Estimate(
         Document doc,
         ViewSchedule schedule,
@@ -22,10 +30,6 @@ internal static class AgentScheduleFilterEstimator
         try
         {
             var definition = schedule.Definition;
-            var categoryId = definition.CategoryId;
-            if (categoryId is null || categoryId == ElementId.InvalidElementId)
-                return null;
-
             try
             {
                 if (definition.IsKeySchedule)
@@ -36,49 +40,15 @@ internal static class AgentScheduleFilterEstimator
                 return null;
             }
 
-            var rules = new List<(long ParameterId, ScheduleFilter Filter)>();
-            foreach (var filter in definition.GetFilters())
-            {
-                ScheduleField? field;
-                try
-                {
-                    field = filter.FieldId is null ? null : definition.GetField(filter.FieldId);
-                }
-                catch (Exception)
-                {
-                    field = null;
-                }
-
-                var parameterId = field?.ParameterId;
-                if (parameterId is null || parameterId == ElementId.InvalidElementId)
-                    return null;
-
-                rules.Add((parameterId.GetValue(), filter));
-            }
-
-            var categoryValue = categoryId.GetValue();
-            if (categoryValue is < int.MinValue or > int.MaxValue)
+            var rules = ReadRules(definition);
+            if (rules is null)
                 return null;
 
-            var elements = new FilteredElementCollector(doc)
-                .OfCategory((BuiltInCategory)(int)categoryValue)
-                .WhereElementIsNotElementType()
-                .ToElements();
-
-            var count = 0;
-            var sample = new List<string>(5);
-            foreach (var element in elements)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (!PassesAll(doc, element, rules))
-                    continue;
-
-                count++;
-                if (sample.Count < 5)
-                    sample.Add(element.Name);
-            }
-
-            return (count, sample);
+            return Estimate(doc, definition, rules, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -86,6 +56,261 @@ internal static class AgentScheduleFilterEstimator
             // still a valid preview of the rule changes.
             return null;
         }
+    }
+
+    /// <summary>
+    /// Estimate for an explicit rule list: the entry of a hypothetical filter
+    /// that exists on no schedule yet (the explication pre-flight of
+    /// build_system_sheets). Null when the definition cannot be evaluated.
+    /// </summary>
+    internal static (int Count, List<string> Sample)? Estimate(
+        Document doc,
+        ScheduleDefinition definition,
+        IReadOnlyList<(long ParameterId, ScheduleFilter Filter)> rules,
+        CancellationToken ct)
+    {
+        try
+        {
+            var count = 0;
+            var sample = new List<string>(SampleSize);
+            foreach (var element in AgentScheduleReader.CollectSourceElements(
+                         doc, definition, MaxScannedElements))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!PassesAll(doc, element, rules))
+                    continue;
+
+                count++;
+                if (sample.Count < SampleSize)
+                    sample.Add(element.Name);
+            }
+
+            return (count, sample);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Rules of the filters already on the definition. Null when one of them
+    /// has no parameter (a calculated field): such a set cannot be evaluated
+    /// element by element.
+    /// </summary>
+    internal static List<(long ParameterId, ScheduleFilter Filter)>? ReadRules(
+        ScheduleDefinition definition)
+    {
+        var rules = new List<(long ParameterId, ScheduleFilter Filter)>();
+        foreach (var filter in definition.GetFilters())
+        {
+            ScheduleField? field;
+            try
+            {
+                field = filter.FieldId is null ? null : definition.GetField(filter.FieldId);
+            }
+            catch (Exception)
+            {
+                field = null;
+            }
+
+            var parameterId = field?.ParameterId;
+            if (parameterId is null || parameterId == ElementId.InvalidElementId)
+                return null;
+
+            rules.Add((parameterId.GetValue(), filter));
+        }
+
+        return rules;
+    }
+
+    /// <summary>
+    /// Distinct filled values of a parameter over the elements the schedule
+    /// draws its rows from (insertion order), at most <paramref name="max"/>.
+    /// </summary>
+    internal static List<string> DistinctValues(
+        Document doc,
+        ScheduleDefinition definition,
+        long parameterId,
+        int max,
+        CancellationToken ct = default)
+    {
+        var distinct = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var element in AgentScheduleReader.CollectSourceElements(
+                         doc, definition, MaxScannedElements))
+            {
+                ct.ThrowIfCancellationRequested();
+                var text = ParameterText(ResolveParameter(doc, element, parameterId));
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                distinct.Add(text);
+                if (distinct.Count >= MaxDistinctValues)
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // The values are a hint: whatever was collected before the failure is returned.
+        }
+
+        var values = new List<string>(distinct);
+        if (values.Count > max)
+            values.RemoveRange(max, values.Count - max);
+
+        return values;
+    }
+
+    /// <summary>
+    /// The values closest to <paramref name="requested"/> (case-insensitive
+    /// edit distance): what the caller could have meant by a filter value that
+    /// matched nothing.
+    /// </summary>
+    internal static List<string> NearestValues(
+        Document doc,
+        ScheduleDefinition definition,
+        long parameterId,
+        string requested,
+        int max = SampleSize,
+        CancellationToken ct = default)
+    {
+        var values = DistinctValues(doc, definition, parameterId, MaxDistinctValues, ct);
+        values.Sort((left, right) =>
+        {
+            var byDistance = Distance(requested, left).CompareTo(Distance(requested, right));
+            return byDistance != 0
+                ? byDistance
+                : string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+        });
+        if (values.Count > max)
+            values.RemoveRange(max, values.Count - max);
+
+        return values;
+    }
+
+    /// <summary>
+    /// The hint of a filter value that matched nothing: the closest values
+    /// that do exist, or a plain statement that the field carries no filled
+    /// value at all. Empty when the values cannot be read.
+    /// </summary>
+    internal static string DescribeClosestValues(
+        Document doc,
+        ScheduleDefinition definition,
+        long parameterId,
+        string requested)
+    {
+        var nearest = NearestValues(doc, definition, parameterId, requested ?? string.Empty);
+        if (nearest.Count == 0)
+            return " The field has no filled value on the elements of this schedule.";
+
+        return " Closest existing values: " +
+               string.Join(", ", nearest.Select(value => "'" + value + "'")) + ".";
+    }
+
+    private static Parameter? ResolveParameter(Document doc, Element element, long parameterId)
+    {
+        Definition? definition = null;
+        try
+        {
+            if (parameterId >= 0)
+            {
+                definition = (doc.GetElement(ElementIdCompat.Create(parameterId))
+                    as ParameterElement)?.GetDefinition();
+                if (definition is null)
+                    return null;
+            }
+
+            var parameter = ParameterOf(element, definition, parameterId);
+            if (parameter is not null && parameter.HasValue)
+                return parameter;
+
+            // A type-bound parameter exposes a valueless view on the instance
+            // (the same lift AgentParameterResolver.LiftValuelessToType does):
+            // the value lives on the type.
+            var typeId = element.GetTypeId();
+            if (typeId is null || typeId == ElementId.InvalidElementId)
+                return parameter;
+
+            var type = doc.GetElement(typeId);
+            if (type is null)
+                return parameter;
+
+            var onType = ParameterOf(type, definition, parameterId);
+            return onType is not null && onType.HasValue ? onType : parameter;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static Parameter? ParameterOf(Element element, Definition? definition, long parameterId) =>
+        definition is not null
+            ? element.get_Parameter(definition)
+            : element.get_Parameter((BuiltInParameter)parameterId);
+
+    private static string? ParameterText(Parameter? parameter)
+    {
+        if (parameter is null)
+            return null;
+
+        try
+        {
+            if (!parameter.HasValue)
+                return null;
+
+            return parameter.StorageType == StorageType.String
+                ? parameter.AsString()
+                : parameter.AsValueString();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static int Distance(string left, string right)
+    {
+        if (left.Length == 0)
+            return right.Length;
+        if (right.Length == 0)
+            return left.Length;
+
+        var previous = new int[right.Length + 1];
+        var current = new int[right.Length + 1];
+        for (var column = 0; column <= right.Length; column++)
+            previous[column] = column;
+
+        for (var row = 1; row <= left.Length; row++)
+        {
+            current[0] = row;
+            for (var column = 1; column <= right.Length; column++)
+            {
+                var cost = char.ToLowerInvariant(left[row - 1])
+                           == char.ToLowerInvariant(right[column - 1])
+                    ? 0
+                    : 1;
+                current[column] = Math.Min(
+                    Math.Min(current[column - 1] + 1, previous[column] + 1),
+                    previous[column - 1] + cost);
+            }
+
+            var swap = previous;
+            previous = current;
+            current = swap;
+        }
+
+        return previous[right.Length];
     }
 
     private static bool PassesAll(
@@ -101,25 +326,6 @@ internal static class AgentScheduleFilterEstimator
         }
 
         return true;
-    }
-
-    private static Parameter? ResolveParameter(Document doc, Element element, long parameterId)
-    {
-        try
-        {
-            if (parameterId < 0)
-                return element.get_Parameter((BuiltInParameter)parameterId);
-
-            var parameterElement = doc.GetElement(ElementIdCompat.Create(parameterId))
-                as ParameterElement;
-            return parameterElement is null
-                ? null
-                : element.get_Parameter(parameterElement.GetDefinition());
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 
     private static bool Matches(ScheduleFilter filter, Parameter parameter)

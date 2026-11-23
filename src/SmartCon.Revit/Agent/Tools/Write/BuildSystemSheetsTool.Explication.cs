@@ -314,6 +314,40 @@ public sealed partial class BuildSystemSheetsTool
                 "': " + ex.Message);
         }
 
+        // The clone was built field by field: refresh its table so the row
+        // count and the placed size reflect the filter, not the full source.
+        try
+        {
+            doc.Regenerate();
+            clone.RefreshData();
+        }
+        catch (Exception)
+        {
+            // Revit could not refresh the clone table yet: the row count is
+            // then whatever the table currently reports.
+        }
+
+        // An empty explication looks like success otherwise: a filter value
+        // that matches nothing must be visible in the result.
+        var explicationRows = AgentScheduleReader.ReadRowCount(clone, skipHeader: true);
+        if (explicationRows == 0)
+        {
+            var field = AgentScheduleWriteHelper.SafeGetField(definition, filterFieldId);
+            var parameterId = field?.ParameterId;
+            var hint = parameterId is null || parameterId == ElementId.InvalidElementId
+                ? string.Empty
+                : AgentScheduleFilterEstimator.DescribeClosestValues(
+                    doc, definition, parameterId.GetValue(), planned.FilterValue);
+
+            warnings.Add(
+                "Sheet " + sheet.SheetNumber + ": the explication filter '" +
+                planned.FilterField + "' = '" + planned.FilterValue +
+                "' matched 0 rows of the source '" + source.Name + "'." + hint +
+                " [Action: pass an existing value of the field as " +
+                "explication.filterValue (or pick another filterField) and rebuild the " +
+                "sheet — the sheet now carries an empty table]");
+        }
+
         var schedulePlacement = PlaceScheduleRightOfView(
             doc, sheet, clone, entry.MarginMm, placement);
         schedulePlacement.Warnings.ForEach(warnings.Add);
@@ -322,6 +356,7 @@ public sealed partial class BuildSystemSheetsTool
         {
             Schedule = clone,
             Instance = schedulePlacement.Instance,
+            Rows = explicationRows,
             Info = new
             {
                 scheduleId = clone.Id.GetValue(),
@@ -329,6 +364,7 @@ public sealed partial class BuildSystemSheetsTool
                 placed = schedulePlacement.Instance is not null,
                 visibleColumns = visible,
                 filterColumnHidden,
+                explicationRows,
                 filter = new
                 {
                     field = planned.FilterField,
@@ -384,6 +420,9 @@ public sealed partial class BuildSystemSheetsTool
         public ViewSchedule? Schedule { get; init; }
 
         public ScheduleSheetInstance? Instance { get; init; }
+
+        /// <summary>Data rows of the built clone (0 = the filter matched nothing).</summary>
+        public int Rows { get; init; }
 
         public object? Info { get; init; }
     }
