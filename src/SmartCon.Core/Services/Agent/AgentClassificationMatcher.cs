@@ -233,9 +233,23 @@ public sealed partial class AgentClassificationMatcher
             return Failed(typeOutcome, run);
         }
 
+        // Stage 3: single-code families with types whose own text differs may
+        // earn per-type codes from the siblings of the chosen code. The stage
+        // only enriches a healthy channel - after a dead stage 2 it is skipped.
+        Dictionary<long, TypeStageAnswer>? differentiation = null;
+        if (typeOutcome is null || typeOutcome.Error is null)
+        {
+            var stage = await RunTypeDifferentiationAsync(
+                staged, table, codesByFamily, chainScores, options, run, ct)
+                .ConfigureAwait(false);
+            if (stage.HardFailure is not null)
+                return Failed(stage.HardFailure, run);
+            differentiation = stage.Answers;
+        }
+
         return BuildResult(
             families, staged, table, options, typeOutcome, typesByQuery,
-            codesByFamily, chainScores, run);
+            codesByFamily, chainScores, run, differentiation);
     }
 
     /// <summary>Per-run bookkeeping shared by every stage.</summary>
