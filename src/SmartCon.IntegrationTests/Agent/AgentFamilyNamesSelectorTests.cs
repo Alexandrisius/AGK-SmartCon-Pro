@@ -111,7 +111,7 @@ public sealed class AgentFamilyNamesSelectorTests : RevitApiTest
         var unresolved = result.Data!.Value.GetProperty("unresolved").EnumerateArray()
             .Select(row => row.GetProperty("name").GetString() ?? string.Empty)
             .ToList();
-        await Assert.That(unresolved).IsEqualTo(["Нет такого семейства"]);
+        await Assert.That(unresolved).IsEquivalentTo(["Нет такого семейства"]);
     }
 
     // ── Support ────────────────────────────────────────────────────────

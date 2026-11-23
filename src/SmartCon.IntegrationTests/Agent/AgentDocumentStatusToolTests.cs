@@ -63,7 +63,7 @@ public sealed class AgentDocumentStatusToolTests : RevitApiTest
         // Outside any transaction false is the normal idle state.
         await Assert.That(flags.GetProperty("isModifiable").GetBoolean()).IsFalse();
 
-        var document = payload.GetProperty("document");
+        var document = payload.GetProperty("documentInfo");
         await Assert.That(document.GetProperty("isFamilyDocument").GetBoolean()).IsFalse();
         await Assert.That(document.GetProperty("isSaved").GetBoolean()).IsFalse();
 

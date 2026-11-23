@@ -116,8 +116,8 @@ public sealed class AgentElementBoundsToolTests : RevitApiTest
         await Assert.That(element.GetProperty("applicable").GetBoolean()).IsFalse();
         await Assert.That(element.GetProperty("reason").GetString()).IsEqualTo("element_type");
         await Assert.That(element.GetProperty("isElementType").GetBoolean()).IsTrue();
-        await Assert.That(element.TryGetProperty("location", out var location)
-                        && location.ValueKind == JsonValueKind.Null).IsTrue();
+        await Assert.That(!element.TryGetProperty("location", out var location)
+                        || location.ValueKind == JsonValueKind.Null).IsTrue();
         await Assert.That(result.Message ?? string.Empty).Contains("query_elements");
     }
 

@@ -122,6 +122,20 @@ public sealed class GetElementBoundsTool : AgentReadToolBase
                 continue;
             }
 
+            // A view answers get_BoundingBox with its own outline in VIEW
+            // coordinates, not a model box of a placed element: reporting it
+            // as geometry would be misleading data (live probe, night run 2).
+            if (element is View)
+            {
+                notApplicable++;
+                rows.Add(Row(
+                    id, category, false, false, "no_placement",
+                    "The element is a view: its BoundingBox is the view outline in view " +
+                    "coordinates, not a placement in the model.",
+                    null, null, null));
+                continue;
+            }
+
             var location = ReadLocation(element);
             if (location is not null)
                 withLocation++;

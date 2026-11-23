@@ -153,7 +153,10 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
 
         var payload = new
         {
-            document = new
+            // Not "document": that top-level key is reserved for the routing
+            // fact of AgentReadToolBase (C9-02), and a tool's own field would
+            // silently suppress it.
+            documentInfo = new
             {
                 title = SafeTitle(doc),
                 path = isSaved ? path : null,
