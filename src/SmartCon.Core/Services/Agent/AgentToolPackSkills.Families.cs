@@ -68,8 +68,13 @@ public static partial class AgentToolPackSkills
   `IF(cond, t, f)`, округление — `round/roundup/rounddown`; складывать только одинаковые
   единицы, округление делит на `1 mm`, текст — только через `IF`.
 - Добавление параметра: обычный (`name` + `storageType`) и **shared** (по `guid`;
-  `createDefinition=true` создаёт определение в ФОП); определение shared фиксируется в проекте
+  `createDefinition=true` создаёт определение в ФОП — требует ФОП, иначе
+  `shared_parameter_file_missing`); определение shared фиксируется в проекте
   при первой загрузке.
+- Built-in имена («Код по классификатору») отклоняются (`parameter_name_taken`) —
+  пишите built-in.
+- Обычный family-параметр **не бывает полем спецификации** — нужен shared/project
+  или built-in.
 - `createDefinition=true` пишет **вне** транзакции семейства: при откате правки определение
   в ФОП останется.
 - `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/

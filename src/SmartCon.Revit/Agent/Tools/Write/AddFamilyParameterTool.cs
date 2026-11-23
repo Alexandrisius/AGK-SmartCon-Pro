@@ -4,6 +4,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Tools.Families;
@@ -97,6 +98,25 @@ public sealed class AddFamilyParameterTool : AgentFamilyWriteToolBase
                     "Use rename_family_parameter to rename it or pick another name.");
                 return;
             }
+        }
+
+        // C5-01: a parameter named like a built-in (e.g. the localized 'Код по
+        // классификатору' = UNIFORMAT_CODE/ASSEMBLY_CODE) is created happily by
+        // Revit, shadows nothing and reads back green while every write meant
+        // for the built-in keeps missing it.
+        var collision = AgentParameterResolver.BuiltInNameCollision(name);
+        if (collision is not null)
+        {
+            Fail(
+                outcome,
+                "parameter_name_taken",
+                "The name '" + name + "' is the display name of the built-in parameter " +
+                collision.Value + ": a family parameter with this name shadows nothing, and " +
+                "writes meant for the built-in parameter keep going to the built-in one.",
+                "Write the built-in parameter instead — set_family_parameter_values and " +
+                "set_parameters accept the name '" + name + "' or the enum id '" + collision.Value +
+                "'. If a separate parameter is really needed, use a different name.");
+            return;
         }
 
         Guid? guid = null;

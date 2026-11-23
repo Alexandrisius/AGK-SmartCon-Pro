@@ -46,7 +46,15 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             "view fails validation (template-controlled, schedule, legend, sheet), nothing is " +
             "created and failed[] names the reason per view. With atomic=false the filter is " +
             "applied to the views that can take it and the rest are reported in failed[]; " +
-            "atomic=true makes the whole call all-or-nothing.",
+            "atomic=true makes the whole call all-or-nothing. Order matters with view " +
+            "templates: a template that includes V/G Overrides Filters owns the filter list " +
+            "of its views (own filters are replaced on assignment and dropped on any later " +
+            "template change) — assign the template first or add the filters to the template. " +
+            "visibility defaults to none: the filter is applied but disabled, and the result " +
+            "warns (appliedButDisabled). Every view row carries action=filter_assigned; in a " +
+            "dry run every filter id is a discarded preview id (filterIdPreview=true). " +
+            "After the commit each view is verified to still carry the filter " +
+            "(filter_not_applied in failed[] otherwise).",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":50,""items"":{""type"":""integer""}},""name"":{""type"":""string""},""categories"":{""type"":""array"",""minItems"":1,""maxItems"":10,""items"":{""type"":""string""}},""conditions"":{""type"":""array"",""maxItems"":10,""items"":{""type"":""object"",""properties"":{""field"":{""type"":""string"",""enum"":[""family"",""type"",""level"",""room"",""system"",""parameter""]},""parameter"":{""type"":""string""},""op"":{""type"":""string"",""enum"":[""eq"",""neq"",""contains"",""notcontains"",""beginswith"",""notbeginswith"",""endswith"",""notendswith"",""gt"",""ge"",""lt"",""le"",""hasvalue"",""novalue""],""default"":""eq""},""value"":{""type"":[""string"",""number"",""boolean""]},""unit"":{""type"":""string"",""description"":""Numeric only: mm|cm|m|ft|in|m2|m3|raw. Default = the parameter's project display unit (same rule as query_elements).""}},""additionalProperties"":false}},""logic"":{""type"":""string"",""enum"":[""and"",""or""],""default"":""and""},""visibility"":{""type"":""string"",""enum"":[""none"",""hide"",""show""],""default"":""none""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""viewIds"",""categories""],""additionalProperties"":false}"
@@ -331,7 +339,20 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
                 Status = ChangeStatus.Applied
             });
 
-            if (!dryRun)
+            if (dryRun)
+            {
+                // The filter is part of the change in BOTH modes: the dry run used to
+                // report one row less than the apply, so expectedChanges could not be
+                // set for a plan step.
+                outcome.Batch.Changed.Add(new WriteItemReport
+                {
+                    Name = filterName,
+                    Action = "filter_created",
+                    NewValue = filterName,
+                    Reason = "Dry run: the filter would be created and applied to the view(s) below."
+                });
+            }
+            else
             {
                 // The filter element is a real change even when applying it to a view
                 // later fails: count it so a change set is persisted and undo_last can
@@ -341,10 +362,16 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
                 {
                     Id = filterIdValue,
                     Name = filterName,
+                    Action = "filter_created",
                     Detail = "filter created"
                 });
             }
         }
+
+        // Read BEFORE anything is written: a template target that includes V/G
+        // Overrides Filters hands its filter list to every view that uses it.
+        var templateImpact = TemplateImpactReport.Collect(doc, eligibleViewIds);
+        var appliedViewIds = new List<long>();
 
         var readBack = new List<object>();
         var anyFailure = validationFailed > 0;
@@ -418,12 +445,13 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             var after = AgentFilterWriteHelper.ReadState(view);
             var afterJson = AgentFilterWriteHelper.SerializeState(after);
 
+            var probeId = created && dryRun;
             readBack.Add(new
             {
                 viewId = view.Id.GetValue(),
                 viewName = view.Name,
-                filterId = created && dryRun ? null : (long?)filterIdValue,
-                discardedProbeId = created && dryRun ? (long?)filterIdValue : null,
+                filterId = probeId ? null : (long?)filterIdValue,
+                previewFilterId = probeId ? (long?)filterIdValue : null,
                 filterName = filterName,
                 applied = true,
                 filterEnabled = AgentFilterViewState.ReadEnabled(view, filterId),
@@ -451,17 +479,35 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
                 NewValue = afterJson,
                 Status = ChangeStatus.Applied
             });
+
+            // The row says WHAT happened to the view: the filter name in newValue
+            // alone read as a view rename.
+            report.Action = "filter_assigned";
             report.NewValue = filterName;
-            report.Detail = AgentFilterViewState.Describe(view, filterId);
+            report.Detail = (probeId ? "filter (preview id " + filterIdValue + ")" : "filter id " + filterIdValue) +
+                            ", " + AgentFilterViewState.Describe(view, filterId);
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
             viewChanged++;
+            appliedViewIds.Add(viewId);
+            if (view.IsTemplate)
+                templateImpact.Changed.Add(view.Id.GetValue());
         }
 
         sections.Add(Section("views", anyFailure ? "failed" : "ok",
             "viewsChanged=" + viewChanged + ", viewsSkipped=" + viewSkipped +
             ", viewsFailed=" + (validationFailed + viewFailed) +
             " (the filter element itself is reported in the filter section, not here)"));
+
+        if (dryRun && created && anyFailure && viewChanged == 0)
+        {
+            // The apply removes a new filter no view accepted; the dry-run row goes too,
+            // so both modes report the same number of changes.
+            outcome.Batch.Changed.RemoveAll(row => row.Action == "filter_created");
+        }
+
+        templateImpact.Publish(outcome);
+        WarnIfAppliedButDisabled(outcome, viewChanged, mode);
 
         var filterCountsAsChange = created && !dryRun;
         var rolledBack = false;
@@ -491,14 +537,7 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             }
 
             if (rolledBack)
-            {
-                outcome.Items.RemoveAll(item =>
-                    string.Equals(item.ParameterName, "filter_created", StringComparison.Ordinal)
-                    && item.ElementId == filterIdValue);
-                outcome.Batch.Changed.RemoveAll(report => report.Id == filterIdValue);
-                if (outcome.AffectedCount > 0)
-                    outcome.AffectedCount--;
-            }
+                RemoveCreatedFilterRows(outcome, filterIdValue);
         }
         else if (anyFailure && viewChanged > 0)
         {
@@ -519,31 +558,18 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
             failed = validationFailed + viewFailed
         };
 
-        // A dry run creates the filter only to read it back and then deletes it; a live
-        // rollback deletes it too. A live filterId would invite a follow-up call
-        // against a dead element (A4).
-        var discardedProbe = created && dryRun;
-        outcome.Data["filterId"] = discardedProbe || rolledBack ? null : (long?)filterIdValue;
-        if (discardedProbe)
-            outcome.Data["wouldCreateId"] = filterIdValue;
-        if (rolledBack)
-            outcome.Data["rolledBackId"] = filterIdValue;
-        outcome.Data["filterName"] = filterName;
-        outcome.Data["atomic"] = atomic;
-        outcome.Data["created"] = created && !dryRun && !rolledBack;
-        outcome.Data["wouldCreate"] = discardedProbe;
-        outcome.Data["reused"] = reused;
-        outcome.Data["visibility"] = AgentFilterViewState.ToWireName(mode);
-        outcome.Data["visibilitySemantics"] =
-            "hide = filter enabled + matching elements hidden; show = filter enabled + " +
-            "elements visible; none = filter added but disabled (elements visible).";
-        if (discardedProbe)
+        PublishResultData(outcome, new FilterResult
         {
-            outcome.Warnings.Add(
-                "Dry run: the filter was created inside the rolled-back transaction and " +
-                "nothing was saved. filterId is null; wouldCreateId is the discarded probe id. " +
-                "Run with dryRun=false to apply and get the real filterId.");
-        }
+            FilterIdValue = filterIdValue,
+            FilterName = filterName,
+            Created = created,
+            Reused = reused,
+            RolledBack = rolledBack,
+            DryRun = dryRun,
+            Atomic = atomic,
+            Mode = mode,
+            AppliedViewIds = appliedViewIds
+        });
 
         Finish(outcome, sections, readBack);
     }

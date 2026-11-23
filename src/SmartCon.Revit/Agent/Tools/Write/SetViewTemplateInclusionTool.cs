@@ -16,7 +16,7 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// (View.SetNonControlledTemplateParameterIds), so every view that uses the
 /// template is affected; the response reports the affected views.
 /// </summary>
-public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
+public sealed partial class SetViewTemplateInclusionTool : AgentWriteToolBase
 {
     private sealed class RequestedParameter
     {
@@ -55,6 +55,9 @@ public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
             "template; pass included=true to hand the setting back to the template. Aliases: " +
             "viewRange, visibility, scale, detailLevel, discipline, filters, worksets. Crop is " +
             "always controlled by a view template and cannot be detached (Revit limitation). " +
+            "Turning 'filters' on replaces the own view filters of every view that uses the " +
+            "template (ownFiltersReplaced lists them); view filters belong on the template or on " +
+            "views whose template does not control filters. " +
             "The change belongs to the template, so all views using it are affected " +
             "(affectedViews is returned). Dry run by default.",
         Risk = AgentToolRisk.Write,
@@ -182,6 +185,15 @@ public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
 
         var oldIds = current.OrderBy(id => id).ToArray();
         var newIds = desired.OrderBy(id => id).ToArray();
+
+        // Turning "V/G Overrides Filters" on hands every view's own filter list to
+        // the template. Read the own filters BEFORE the write: afterwards they
+        // are gone and nothing in the model remembers them. "On" means the
+        // parameter LEFT the non-controlled set: current had it, desired no longer does.
+        var filtersIncluded = current.Contains(FiltersParameterId()) && !newIds.Contains(FiltersParameterId());
+        var losingViews = filtersIncluded
+            ? AgentTemplateFilterImpact.ViewsLosingOwnFilters(doc, template)
+            : new List<(long ViewId, string ViewName, List<string> Filters)>();
         try
         {
             var all = template.GetTemplateParameterIds()
@@ -245,8 +257,13 @@ public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
             Status = ChangeStatus.Applied
         });
 
+        ReportFilterTakeover(outcome, template, losingViews);
+
         AddContext(doc, outcome, template, reports);
     }
+
+    private static long FiltersParameterId() =>
+        new ElementId(BuiltInParameter.VIS_GRAPHICS_FILTERS).GetValue();
 
     private sealed class ResolvedRequest
     {
@@ -512,47 +529,6 @@ public sealed class SetViewTemplateInclusionTool : AgentWriteToolBase
         }
 
         return builder.ToString();
-    }
-
-    private static void AddContext(
-        Document doc,
-        WriteOutcome outcome,
-        View template,
-        IReadOnlyList<object> reports)
-    {
-        var affected = new List<object>();
-        var count = 0;
-        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(View)))
-        {
-            if (element is not View view || view.IsTemplate)
-                continue;
-
-            var assigned = view.ViewTemplateId;
-            if (assigned is null || assigned != template.Id)
-                continue;
-
-            count++;
-            if (affected.Count < 50)
-            {
-                affected.Add(new
-                {
-                    viewId = view.Id.GetValue(),
-                    name = view.Name,
-                    viewType = view.ViewType.ToString()
-                });
-            }
-        }
-
-        outcome.Data["templateId"] = template.Id.GetValue();
-        outcome.Data["templateName"] = template.Name;
-        outcome.Data["affectedViewCount"] = count;
-        outcome.Data["affectedViews"] = affected;
-        outcome.Data["parameters"] = reports;
-        outcome.Data["hint"] = count == 0
-            ? "No view currently uses this template; the inclusion change will apply to views " +
-              "that use it later."
-            : "The change belongs to the template: all " + count +
-              " view(s) that use it are affected.";
     }
 
     private static readonly Dictionary<string, string[]> Aliases =

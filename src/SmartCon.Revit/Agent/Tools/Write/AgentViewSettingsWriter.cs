@@ -28,6 +28,14 @@ internal static class AgentViewSettingsWriter
         /// <summary>Template id that controls the parameter, when a write was refused.</summary>
         public long? SuggestedViewId { get; set; }
 
+        /// <summary>
+        /// Own filters of the view that the template replaces because it includes
+        /// "V/G Overrides Filters" (see <see cref="AgentTemplateFilterImpact"/>).
+        /// </summary>
+        public List<string>? ReplacedOwnFilters { get; set; }
+
+        public long? ReplacedByTemplateId { get; set; }
+
         public ChangeItem? ToChangeItem(View view, string key)
         {
             if (!Changed)
@@ -49,6 +57,56 @@ internal static class AgentViewSettingsWriter
         internal static Change Error(string errorCode, string reason) =>
             new() { ErrorCode = errorCode, Reason = reason };
     }
+
+    /// <summary>
+    /// Makes a template takeover of the view's own filters visible: the row
+    /// names the lost filters and the call gets one warning line plus a
+    /// <c>ownFiltersReplaced</c> payload entry.
+    /// </summary>
+    internal static void PublishFilterReplacement(
+            WriteOutcome outcome,
+            View view,
+            WriteItemReport report,
+            Change change)
+        {
+            if (change.ReplacedOwnFilters is not { Count: > 0 } lost || change.ReplacedByTemplateId is null)
+                return;
+
+            report.ReplacedOwnFilters = lost;
+            outcome.Warnings.Add(
+                "View '" + view.Name + "' loses its own view filters " +
+                Describe(lost) + " — they are replaced by the filter list of the assigned template." +
+                " " + AgentTemplateFilterImpact.OrderHint(change.ReplacedByTemplateId.Value));
+
+            // The first takeover creates the key: the indexer getter would throw
+            // KeyNotFoundException on a view that has no entry yet.
+            List<object> replacedList;
+            if (outcome.Data.TryGetValue("ownFiltersReplaced", out var stored)
+                && stored is List<object> existing)
+            {
+                replacedList = existing;
+            }
+            else
+            {
+                replacedList = new List<object>();
+                outcome.Data["ownFiltersReplaced"] = replacedList;
+            }
+
+            replacedList.Add(new
+            {
+                viewId = view.Id.GetValue(),
+                viewName = view.Name,
+                templateId = change.ReplacedByTemplateId.Value,
+                filters = lost
+            });
+        }
+
+        internal static string Describe(IReadOnlyList<string> names)
+        {
+            var shown = names.Take(10).ToList();
+            return string.Join(", ", shown.Select(name => "'" + name + "'")) +
+                   (names.Count > shown.Count ? " (+" + (names.Count - shown.Count) + " more)" : string.Empty);
+        }
 
     internal static Change ApplyTemplate(
         Document doc,
@@ -92,6 +150,10 @@ internal static class AgentViewSettingsWriter
             ? null
             : doc.GetElement(currentId)?.Name;
 
+        // Read BEFORE the assignment: afterwards GetFilters() already returns the
+        // template's list, and the view's own filters are gone without a trace.
+        var lostFilters = AgentTemplateFilterImpact.FiltersLostOnAssignment(doc, view, template);
+
         try
         {
             view.ViewTemplateId = ElementIdCompat.Create(templateId);
@@ -108,7 +170,9 @@ internal static class AgentViewSettingsWriter
             OldValue = currentId == ElementId.InvalidElementId ? string.Empty : currentId.GetValue().ToString(),
             NewValue = applied.ToString(),
             Detail = "template '" + template.Name + "'" +
-                     (oldTemplate is null ? string.Empty : " (was '" + oldTemplate + "')")
+                     (oldTemplate is null ? string.Empty : " (was '" + oldTemplate + "')"),
+            ReplacedOwnFilters = lostFilters.Count > 0 ? lostFilters : null,
+            ReplacedByTemplateId = lostFilters.Count > 0 ? templateId : null
         };
 
         if (applied != templateId)
@@ -431,6 +495,25 @@ internal static class AgentViewSettingsWriter
         var after = AgentViewWriteHelper.ReadVisibility(doc, target);
         var oldJson = AgentViewWriteHelper.Serialize(before);
         var newJson = AgentViewWriteHelper.Serialize(after);
+
+        // The source's hidden set wins: a category the target hid and the source
+        // shows becomes visible. The old/new JSON alone never said so (DB-15).
+        var unhidden = before.HiddenCategoryIds
+            .Where(id => !after.HiddenCategoryIds.Contains(id))
+            .ToList();
+        if (unhidden.Count > 0)
+        {
+            var names = unhidden
+                .Select(id => Category.GetCategory(doc, ElementIdCompat.Create(id))?.Name ?? "#" + id)
+                .ToList();
+            var shown = names.Take(10).ToList();
+            warnings.Add(
+                "copy_view_settings: visibility from '" + source.Name + "' makes " + unhidden.Count +
+                " categor(y/ies) visible on '" + target.Name + "' that the target had hidden: " +
+                string.Join(", ", shown) +
+                (names.Count > shown.Count ? " (+" + (names.Count - shown.Count) + " more)" : string.Empty) +
+                ". If that is not intended, hide them again with set_view_visibility or undo_last.");
+        }
 
         if (string.Equals(oldJson, newJson, StringComparison.Ordinal))
             return Change.Skip("Visibility already matches the source view (no-op).");

@@ -148,6 +148,10 @@ overrides хранятся **в каждом виде отдельно**.
 - `get_filter_details` — фильтр: категории, правила, `filterEnabled`, `visible`, `mode`, overrides.
 - `list_filterable_parameters` — pre-flight: какие параметры фильтруемы для категорий.
 - `create_view_filter` — создать и применить к видам; `visibility: none|hide|show`, `reused`.
+  Дефолт `none` = фильтр применён, но ВЫКЛЮЧЕН (элементы видны) — результат предупреждает
+  `appliedButDisabled`; dry-run даёт `readBack[].previewFilterId`/`filterIdPreview=true`
+  (id выброшенного probe-элемента), после commit вид перепроверяется (`filter_not_applied`,
+  если фильтр снял шаблон вида).
 - `set_filter_rules` — заменить категории/правила; `undoSupported=false`.
 - `delete_filter` — удаление одного фильтра или партии (`filterIds`/`filterNames`, до 100):
   батч = 2 вызова (dryRun → apply с `confirmNames` = один перечень на всю партию);

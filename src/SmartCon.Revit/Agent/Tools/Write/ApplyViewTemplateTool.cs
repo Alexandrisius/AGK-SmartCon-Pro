@@ -37,7 +37,10 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             "template reports skippedByTemplateInclude: sections (viewRange/visibility/crop; " +
             "visibility-model/visibility-annotation when only one V/G parameter is off) " +
             "left at the view's own values because their Include is off on the template — " +
-            "summary lines in templateIncludeSkips. dryRun defaults to true.",
+            "summary lines in templateIncludeSkips. A template that includes V/G Overrides " +
+            "Filters takes over the filter list of the view: the view's own filters are " +
+            "replaced by the template's, and the result names them per view " +
+            "(ownFiltersReplaced) with the way to keep them. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""exceptViewIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""View ids removed from the resolved selection""},""exceptNameContains"":{""type"":""string"",""description"":""Views whose name contains this substring are removed from the selection""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
@@ -206,6 +209,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                     template, BuiltInParameter.VIS_GRAPHICS_MODEL)
                 || AgentViewSettingsReader.IsTemplateParameterControlled(
                     template, BuiltInParameter.VIS_GRAPHICS_ANNOTATION);
+            var lostFilters = AgentTemplateFilterImpact.FiltersLostOnAssignment(doc, view, template);
             var delta = new
             {
                 viewId = view.Id.GetValue(),
@@ -221,6 +225,8 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                     0, after.HiddenCategories.Count - before.HiddenCategories.Count),
                 controlledParameters = after.ControlledParameters.Count,
                 overwritten = after.ControlledParameters,
+                templateControlsFilters = AgentTemplateFilterImpact.ControlsFilters(template),
+                ownFiltersReplaced = lostFilters,
                 skippedByTemplateInclude = AgentViewSettingsReader
                     .ReadIncludeSkippedSections(template)
                     .ToList(),
@@ -234,7 +240,11 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 }
             };
 
-            if (outcome.Data["delta"] is not List<object> deltaList)
+            // The indexer getter would throw KeyNotFoundException before the
+            // first delta row exists; the catch below would swallow the whole
+            // delta silently.
+            if (!outcome.Data.TryGetValue("delta", out var storedDelta)
+                || storedDelta is not List<object> deltaList)
             {
                 deltaList = new List<object>();
                 outcome.Data["delta"] = deltaList;
@@ -275,6 +285,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         report.OldValue = change.OldValue;
         report.NewValue = change.NewValue;
         report.Detail = change.Detail;
+        AgentViewSettingsWriter.PublishFilterReplacement(outcome, view, report, change);
         outcome.Batch.Changed.Add(report);
         outcome.AffectedCount++;
 
