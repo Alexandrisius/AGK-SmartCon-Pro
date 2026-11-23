@@ -35,7 +35,7 @@ public sealed class GetTitleblockOptionsTool : AgentReadToolBase
             "returns title_block_missing.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""sheetId"":{""type"":""integer"",""description"":""Existing sheet: adds the editable instance parameters of its title block""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Inspect only this title block type; omit for all""}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""sheetId"":{""type"":""integer"",""description"":""Existing sheet: adds the editable instance parameters of its title block""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Inspect only this title block type; omit for all""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

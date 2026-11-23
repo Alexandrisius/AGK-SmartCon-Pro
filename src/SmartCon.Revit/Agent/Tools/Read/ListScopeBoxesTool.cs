@@ -34,7 +34,7 @@ public sealed class ListScopeBoxesTool : AgentReadToolBase
             "created or resized through the Revit API — the user draws them in the UI; this " +
             "list is what assign_scope_box consumes. nameContains narrows by name. An empty " +
             "list means the project has no scope boxes yet.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

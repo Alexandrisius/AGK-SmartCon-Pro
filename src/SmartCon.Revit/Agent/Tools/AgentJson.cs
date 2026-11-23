@@ -40,6 +40,32 @@ internal static class AgentJson
     internal static JsonElement SerializeCard(object value) =>
         JsonSerializer.SerializeToElement(value, CardOptions);
 
+    /// <summary>
+    /// Adds a harness field to an existing JSON object payload and returns the
+    /// re-serialized payload in <paramref name="merged"/> (same encoder: non-ASCII
+    /// text stays unescaped). False - and the payload untouched - when it is not
+    /// an object or already carries <paramref name="name"/>: a tool's own data
+    /// always wins over a harness field.
+    /// </summary>
+    internal static bool TryAddProperty(
+        JsonElement data,
+        string name,
+        object value,
+        out JsonElement merged)
+    {
+        merged = default;
+        if (data.ValueKind != JsonValueKind.Object || data.TryGetProperty(name, out _))
+            return false;
+
+        var members = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var property in data.EnumerateObject())
+            members[property.Name] = property.Value;
+
+        members[name] = Serialize(value);
+        merged = JsonSerializer.SerializeToElement(members, SerializerOptions);
+        return true;
+    }
+
     internal static T? Deserialize<T>(JsonElement args)
         where T : class =>
         args.Deserialize<T>(DeserializerOptions);

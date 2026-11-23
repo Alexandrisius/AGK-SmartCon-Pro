@@ -33,7 +33,7 @@ public sealed class ListViewTemplatesTool : AgentReadToolBase
             "controlledParameterCount — so an inventory of 45 templates is one call instead of " +
             "45 get_view_template_details. nameContains narrows the list. " +
             "Use it before applying or copying a template.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,scale,detailLevel,discipline,hiddenCategoryCount,hiddenCategoryEditableCount,controlledParameterCount"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,scale,detailLevel,discipline,hiddenCategoryCount,hiddenCategoryEditableCount,controlledParameterCount"",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

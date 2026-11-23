@@ -33,7 +33,7 @@ public sealed class ListProjectParametersTool : AgentReadToolBase
             "add_project_shared_parameter to check whether a parameter is already bound, and " +
             "after it to verify the binding. An empty list means the project has no project " +
             "parameters (valid, not an error).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""parameterNameContains"":{""type"":""string"",""description"":""Parameter name filter (case-insensitive substring)""},""categoryContains"":{""type"":""string"",""description"":""Category name filter (case-insensitive substring, matches any bound category)""},""limit"":{""type"":""integer"",""default"":50,""maximum"":500},""offset"":{""type"":""integer"",""default"":0},""fields"":{""type"":""array"",""description"":""Allowed: name,isShared,guid,bindingType,categories,parameterGroup,visible,definitionId. Returned keys match the requested names."",""items"":{""type"":""string""}}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""parameterNameContains"":{""type"":""string"",""description"":""Parameter name filter (case-insensitive substring)""},""categoryContains"":{""type"":""string"",""description"":""Category name filter (case-insensitive substring, matches any bound category)""},""limit"":{""type"":""integer"",""default"":50,""maximum"":500},""offset"":{""type"":""integer"",""default"":0},""fields"":{""type"":""array"",""description"":""Allowed: name,isShared,guid,bindingType,categories,parameterGroup,visible,definitionId. Returned keys match the requested names."",""items"":{""type"":""string""}}},""additionalProperties"":false}"
     };
 
     private static readonly string[] AllowedFields =

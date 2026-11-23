@@ -40,7 +40,7 @@ public sealed class ListTypeParameterCandidatesTool : AgentReadToolBase
             "writable String parameters sorted first — the safest slot for a type-level code " +
             "or sort key. Does not hardcode a parameter list; every suitable built-in is shown. " +
             "categories or categoryIds is required.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""categoryIds"":{""type"":""array"",""items"":{""type"":""integer""}},""group"":{""type"":""string"",""description"":""Optional group filter: PG_IDENTITY_DATA, PG_GENERAL, ...""},""limit"":{""type"":""integer"",""default"":50,""maximum"":200}},""anyOf"":[{""required"":[""categories""]},{""required"":[""categoryIds""]}],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""categoryIds"":{""type"":""array"",""items"":{""type"":""integer""}},""group"":{""type"":""string"",""description"":""Optional group filter: PG_IDENTITY_DATA, PG_GENERAL, ...""},""limit"":{""type"":""integer"",""default"":50,""maximum"":200}},""anyOf"":[{""required"":[""categories""]},{""required"":[""categoryIds""]}],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

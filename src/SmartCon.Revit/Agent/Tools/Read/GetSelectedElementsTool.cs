@@ -30,6 +30,8 @@ public sealed class GetSelectedElementsTool : AgentReadToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{},""additionalProperties"":false}"
     };
 
+    public override bool SupportsDocumentRouting => false;
+
     protected override ToolResult Execute(
         Document doc,
         JsonElement args,

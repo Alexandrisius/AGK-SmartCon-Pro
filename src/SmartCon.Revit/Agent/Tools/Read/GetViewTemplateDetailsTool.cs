@@ -33,7 +33,7 @@ public sealed class GetViewTemplateDetailsTool : AgentReadToolBase
             "lists are replaced by counts — ask for settings.hiddenCategories or " +
             "controlledParameters explicitly to get the lists. " +
             "Use it to verify what will change when the template is applied to a view.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""templateId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,settings. Use settings.scale / settings.hiddenCategories for template values."",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""templateId""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""templateId"":{""type"":""integer""},""fields"":{""type"":""array"",""description"":""Allowed: templateId,name,viewType,includesViewRange,includesCrop,includesVisibility,settings. Use settings.scale / settings.hiddenCategories for template values."",""items"":{""type"":""string""}},""compact"":{""type"":""boolean"",""default"":true}},""required"":[""templateId""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

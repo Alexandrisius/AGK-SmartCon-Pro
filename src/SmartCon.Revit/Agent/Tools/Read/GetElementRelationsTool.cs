@@ -36,7 +36,7 @@ public sealed class GetElementRelationsTool : AgentReadToolBase
             "name context. Neighbours come from Connector.AllRefs; logical system references " +
             "and Curve connectors are skipped, connectors are sorted by id for deterministic " +
             "output. Read-only.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeConnectors"":{""type"":""boolean"",""default"":true},""includeHost"":{""type"":""boolean"",""default"":true},""includeRooms"":{""type"":""boolean"",""default"":true}},""required"":[""elementIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""includeConnectors"":{""type"":""boolean"",""default"":true},""includeHost"":{""type"":""boolean"",""default"":true},""includeRooms"":{""type"":""boolean"",""default"":true}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

@@ -34,6 +34,8 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{""group"":{""type"":""string"",""description"":""Group name or its part (case-insensitive)""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
+    public override bool SupportsDocumentRouting => false;
+
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
         var groupFilter = AgentJson.GetString(args, "group");

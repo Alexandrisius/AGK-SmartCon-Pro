@@ -25,7 +25,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
             "sorted by element count descending. Each row has categoryId (for list_filterable_parameters and categoryIds) and the OST_/display name. Use built-in names (OST_...) in queries.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

@@ -25,6 +25,8 @@ public sealed class GetCurrentViewInfoTool : AgentReadToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{},""additionalProperties"":false}"
     };
 
+    public override bool SupportsDocumentRouting => false;
+
     protected override ToolResult Execute(
         Document doc,
         JsonElement args,
@@ -35,7 +37,8 @@ public sealed class GetCurrentViewInfoTool : AgentReadToolBase
         {
             return ToolResult.Fail(
                 "no_active_view",
-                "The document has no active view. Ask the user to open a view in Revit.");
+                "No view is active in this session. Read a view by id with " +
+                "get_view_settings(viewId) or list the views with list_views.");
         }
 
         var templateId = view.ViewTemplateId;

@@ -46,7 +46,7 @@ public sealed class GetRoomContentsTool : AgentReadToolBase
             "(pipes and other curves) fall back to a bounding-box containment check. Rooms, " +
             "views, sheets and room tags are excluded; model groups are only expanded when " +
             "includeModelGroups=true. Read-only.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""roomId"":{""type"":""integer""},""roomName"":{""type"":""string""},""roomNumber"":{""type"":""string""},""includeModelGroups"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":1000,""default"":200}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""roomId"":{""type"":""integer""},""roomName"":{""type"":""string""},""roomNumber"":{""type"":""string""},""includeModelGroups"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":1000,""default"":200}},""additionalProperties"":false}"
     };
 
     private sealed class ContentGroup

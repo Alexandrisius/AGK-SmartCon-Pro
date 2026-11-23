@@ -38,7 +38,7 @@ public sealed class GetViewPlacementPreviewTool : AgentReadToolBase
             "also returns that sheet's size for comparison.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""integer""},""description"":""View ids to estimate""},""sheetId"":{""type"":""integer"",""description"":""Optional sheet: its width/height are returned for comparison""}},""required"":[""viewIds""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""viewIds"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""integer""},""description"":""View ids to estimate""},""sheetId"":{""type"":""integer"",""description"":""Optional sheet: its width/height are returned for comparison""}},""required"":[""viewIds""],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
