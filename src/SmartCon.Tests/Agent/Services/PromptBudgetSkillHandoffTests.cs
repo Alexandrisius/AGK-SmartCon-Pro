@@ -64,6 +64,21 @@ public sealed class PromptBudgetSkillHandoffTests
     }
 
     [Fact]
+    public void ElementsSkill_DoesNotOverstateTheTypeParameterFlag()
+    {
+        // Live probes refuted both categorical claims: a type-level value matches
+        // and notExists sees an empty type-bound parameter WITHOUT the flag (a
+        // blank instance view of the type built-in lifts to the type; an enum id
+        // reaches the type directly). Only other names are flag-gated.
+        var elements = Skill("elements");
+        Assert.DoesNotContain(
+            "экземпляры только с `includeTypeParameters=true`", elements, StringComparison.Ordinal);
+        Assert.DoesNotContain("вернёт 0", elements, StringComparison.Ordinal);
+        Assert.Contains("видны и без `includeTypeParameters`", elements, StringComparison.Ordinal);
+        Assert.Contains("прочие имена типовых параметров ищутся по типу", elements, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StaticPrompt_KeepsTheStepSkeletonAlwaysOn()
     {
         // The execute_plan card no longer repeats the step skeleton; the always-on

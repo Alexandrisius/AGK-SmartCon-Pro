@@ -17,9 +17,9 @@ internal static class AgentParameterValue
         switch (condition.Op)
         {
             case QueryOperator.Exists:
-                return parameter.HasValue;
+                return CarriesValue(parameter);
             case QueryOperator.NotExists:
-                return !parameter.HasValue;
+                return !CarriesValue(parameter);
         }
 
         if (!parameter.HasValue || condition.Value is not { } value)
@@ -32,6 +32,29 @@ internal static class AgentParameterValue
             StorageType.ElementId => MatchesElementId(doc, parameter, condition.Op, value),
             _ => MatchesString(parameter.AsString() ?? string.Empty, condition.Op, value)
         };
+    }
+
+    /// <summary>
+    /// Whether the parameter carries a usable value: no value at all is a hole,
+    /// and so is a BLANK string (the Q1 reading "HasValue=true with an empty
+    /// string = no value" that AgentParameterResolver.CarriesNoValue applies
+    /// before the type lift). exists/notExists must not disagree with the lift
+    /// about an element whose only state is a blank own value.
+    /// </summary>
+    private static bool CarriesValue(Parameter parameter)
+    {
+        if (!parameter.HasValue)
+            return false;
+
+        try
+        {
+            return parameter.StorageType != StorageType.String
+                   || !string.IsNullOrWhiteSpace(parameter.AsString());
+        }
+        catch (Exception)
+        {
+            return true;
+        }
     }
 
     internal static (double Value, string? Unit)? ReadMeasured(Document doc, Parameter? parameter)
