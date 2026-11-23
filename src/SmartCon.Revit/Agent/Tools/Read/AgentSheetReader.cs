@@ -122,6 +122,31 @@ internal static class AgentSheetReader
         return duplicates;
     }
 
+    /// <summary>
+    /// The sheet rectangle in the same paper-space frame as the viewport and
+    /// schedule coordinates (U/V feet → mm). The frame origin is the title-block
+    /// / plot origin; some title blocks (ADSK) place it inside the paper, so raw
+    /// coordinates are often negative and only this rectangle says where the
+    /// paper actually is.
+    /// </summary>
+    internal static object SheetOutlineMm(ViewSheet sheet)
+    {
+        var outline = sheet.Outline;
+        var minX = AgentUnitsFormat.ToMillimeters(outline.Min.U);
+        var minY = AgentUnitsFormat.ToMillimeters(outline.Min.V);
+        var maxX = AgentUnitsFormat.ToMillimeters(outline.Max.U);
+        var maxY = AgentUnitsFormat.ToMillimeters(outline.Max.V);
+        return new
+        {
+            minXMm = System.Math.Round(minX, 1),
+            minYMm = System.Math.Round(minY, 1),
+            maxXMm = System.Math.Round(maxX, 1),
+            maxYMm = System.Math.Round(maxY, 1),
+            widthMm = System.Math.Round(maxX - minX, 1),
+            heightMm = System.Math.Round(maxY - minY, 1)
+        };
+    }
+
     internal static SheetCard CreateCard(
         ViewSheet sheet,
         IReadOnlyDictionary<long, ScheduleCounts> scheduleCounts,

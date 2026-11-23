@@ -112,6 +112,71 @@ public sealed partial class FindToolsTool
     private static bool IsNameCharacter(char character) =>
         char.IsLetterOrDigit(character) || character == '_';
 
+    /// <summary>
+    /// A compound request names several independent jobs; ranking it as one
+    /// string pays for the wording they do not share. Every segment is ranked
+    /// on its own and its leading card is taken - one per segment, in the order
+    /// the user wrote them (owner feedback 2026-11-24: four existing tools all
+    /// came back as "no match" because the query listed four tasks).
+    /// </summary>
+    private static List<AgentToolDefinition> SegmentPicks(
+        string query,
+        IReadOnlyList<AgentToolDefinition> rankable,
+        int max)
+    {
+        var picks = new List<AgentToolDefinition>();
+        if (rankable.Count == 0 || max <= 0)
+            return picks;
+
+        var segments = SplitIntents(query);
+        if (segments.Count < 2)
+            return picks;
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var segment in segments)
+        {
+            var coverage = ToolCardRouter.QueryCoverage(segment, rankable);
+            if (!coverage.Values.Any(share => share >= ToolCardRouter.MinQueryCoverage))
+                continue;
+
+            foreach (var tool in ToolCardRouter.TopCandidates(segment, rankable, 3))
+            {
+                if (!names.Add(tool.Name))
+                    continue;
+
+                picks.Add(tool);
+                break;
+            }
+
+            if (picks.Count >= max)
+                break;
+        }
+
+        return picks;
+    }
+
+    /// <summary>
+    /// Splits a request into its jobs: on punctuation first, on the conjunction
+    /// only when the request has no punctuation at all. Fragments shorter than
+    /// four characters ("и", "в") carry no intent and are dropped.
+    /// </summary>
+    private static List<string> SplitIntents(string query)
+    {
+        var parts = query
+            .Split(new[] { ',', ';', '\n', '|' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Trim())
+            .Where(part => part.Length >= 4)
+            .ToList();
+        if (parts.Count >= 2)
+            return parts;
+
+        return query
+            .Split(new[] { " и " }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Trim())
+            .Where(part => part.Length >= 4)
+            .ToList();
+    }
+
     private static string? PackOf(AgentToolDefinition definition) =>
         !string.IsNullOrWhiteSpace(definition.Pack)
             ? definition.Pack

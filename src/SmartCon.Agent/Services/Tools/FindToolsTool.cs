@@ -146,9 +146,17 @@ public sealed partial class FindToolsTool : IAgentTool
         // whatever ranks first shares only common wording with it. The floor
         // gates the answer as a whole; it never cuts cards out of a match.
         var coverage = ToolCardRouter.QueryCoverage(query, rankable);
-        var noSignal = named.Count == 0
-                       && !coverage.Values.Any(
-                           share => share >= ToolCardRouter.MinQueryCoverage);
+        var wholeSignal = named.Count > 0
+                          || coverage.Values.Any(share => share >= ToolCardRouter.MinQueryCoverage);
+
+        // A compound request ("переименовать виды, применить шаблон, …") names
+        // several independent jobs; the whole-query floor sees only the wording
+        // they share and answers "no match". Each segment gets its own ranking,
+        // and the leading card of every segment is the honest shortlist.
+        var segmentPicks = wholeSignal
+            ? new List<AgentToolDefinition>()
+            : SegmentPicks(query, rankable, 4);
+        var noSignal = named.Count == 0 && !wholeSignal && segmentPicks.Count == 0;
 
         // The wording-only shortlist ranks descriptions and pays for their
         // length: a card that came to explain more of itself drops below cards
@@ -177,7 +185,8 @@ public sealed partial class FindToolsTool : IAgentTool
             // the answer, unless the query spells out a tool name (C10-03) or
             // carries a family-parameter intent (the family write trio is the
             // answer such a query always has).
-            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0 && !familyIntent)
+            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0 && !familyIntent
+                && segmentPicks.Count == 0)
                 return NoMatchResult(lexical);
 
             // Without a pick of its own the decision router relays wording
@@ -235,6 +244,9 @@ public sealed partial class FindToolsTool : IAgentTool
             Add(definition);
 
         foreach (var definition in chosen)
+            Add(definition);
+
+        foreach (var definition in segmentPicks)
             Add(definition);
 
         foreach (var definition in lexical)

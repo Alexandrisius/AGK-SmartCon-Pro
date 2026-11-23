@@ -30,7 +30,10 @@ public sealed class GetSheetContentTool : AgentReadToolBase
             "returns candidates (with numberCodePoints) instead of silently picking one. Paged over " +
             "views: limit (default 200, max 500), offset, returned, nextOffset, truncated; in batch " +
             "mode offset/limit/nextOffset apply to each sheet's view list. " +
-            "Coordinates are paper-space millimetres from the sheet's bottom-left corner.",
+            "Coordinates are paper-space millimetres in the SHEET FRAME: its origin is the " +
+            "title-block / plot origin, not the paper corner, so with some title blocks (ADSK) " +
+            "the sheet rectangle sits at negative X/Y. sheetOutlineMm names the real sheet " +
+            "rectangle in that same frame - compute offsets from its min/max, not from zero.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""sheetId"":{""type"":""integer""},""sheetIds"":{""type"":""array"",""description"":""Batch read: up to 50 sheet ids; returns sheets[]"",""items"":{""type"":""integer""}},""number"":{""type"":""string""},""name"":{""type"":""string""},""includeSchedules"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
@@ -83,6 +86,7 @@ public sealed class GetSheetContentTool : AgentReadToolBase
         var payload = new
         {
             sheet = sheetCard,
+            sheetOutlineMm = AgentSheetReader.SheetOutlineMm(sheet!),
             placedViewCount = content.Views.Count,
             offset,
             returned = page.Count,
@@ -148,6 +152,7 @@ public sealed class GetSheetContentTool : AgentReadToolBase
             rows.Add(new
             {
                 sheet = card,
+                sheetOutlineMm = AgentSheetReader.SheetOutlineMm(sheet),
                 placedViewCount = content.Views.Count,
                 offset,
                 returned = views.Count,

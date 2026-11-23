@@ -79,6 +79,27 @@ internal static class AgentParameterResolver
         };
 
     /// <summary>
+    /// View built-ins whose local display name depends on the view type: a 3D
+    /// view calls the scale «Масштаб вида», a plan «Масштаб», an English request
+    /// says "scale" — no single name resolves them. Applied only to View
+    /// elements and only after the plain lookups, so a project parameter that
+    /// happens to be named «Масштаб» still wins and a family parameter with that
+    /// name is untouched.
+    /// </summary>
+    private static readonly Dictionary<string, BuiltInParameter> ViewBuiltInAliases =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["scale"] = BuiltInParameter.VIEW_SCALE,
+            ["view scale"] = BuiltInParameter.VIEW_SCALE,
+            ["масштаб"] = BuiltInParameter.VIEW_SCALE,
+            ["масштаб вида"] = BuiltInParameter.VIEW_SCALE,
+            ["detail level"] = BuiltInParameter.VIEW_DETAIL_LEVEL,
+            ["уровень детализации"] = BuiltInParameter.VIEW_DETAIL_LEVEL,
+            ["discipline"] = BuiltInParameter.VIEW_DISCIPLINE,
+            ["дисциплина"] = BuiltInParameter.VIEW_DISCIPLINE
+        };
+
+    /// <summary>
     /// The built-ins the requested names stand for: an enum id (UNIFORMAT_CODE)
     /// or one of the aliases above. Read tools filter parameters by the same
     /// names the write tools accept - by display name alone a filter with the
@@ -192,6 +213,13 @@ internal static class AgentParameterResolver
             var renamedTypeParameter = FindOnType(doc, element, type => type.get_Parameter(renamed));
             if (renamedTypeParameter is not null)
                 return renamedTypeParameter;
+        }
+
+        if (element is View && ViewBuiltInAliases.TryGetValue(name.Trim(), out var viewBuiltIn))
+        {
+            var viewParameter = element.get_Parameter(viewBuiltIn);
+            if (viewParameter is not null)
+                return viewParameter;
         }
 
         if (!includeTypeParameters)

@@ -28,75 +28,71 @@ public static partial class AgentToolPackSkills
   `sheetId`/номеру/имени).
 - `renumber_sheets` — перенумеровать блок листов (≤50, одна транзакция): `sheetIds[]` в
   целевом порядке, номера `numbers[]` по порядку или `startNumber` («ОВ-5» → ОВ-5,
-  ОВ-6...). Через временные номера: вставка в середину без промежуточных коллизий;
+  ОВ-6...). Перед вызовом ОБЯЗАТЕЛЬНО `get_browser_organization(target:""sheets"")`:
+  группировка альбомов решает, где нумерация продолжается сквозной, а где номер несёт
+  невидимый символ на стыке. Через временные номера: вставка в середину без коллизий;
   undo возвращает все номера.
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
-- `get_titleblock_options` — типы титульников + их редактируемые параметры (кратность
-  размера / формат листа), `sizeMap[]` — таблица «кратность → размер» по листам альбома
-  (значения, которых в альбоме нет, неизвестны — проверяйте черновым листом; та же
-  оговорка приходит полем `sizeMapNote`), по
-  `sheetId` — параметры экземпляра титульника листа; плюс `existingSheets[]` и
-  `nextNumberHint` (продолжение альбома).
-- `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — фактический box
-  вьюпорта; план/разрез с кропом — кроп/масштаб (estimated=true); 3D без кропа — размер до
-  размещения неизвестен (API не даёт).
+- `get_titleblock_options` — типы титульников и их редактируемые параметры (кратность
+  размера / формат листа); `sizeMap[]` — «кратность → размер» по листам альбома (чего в
+  альбоме нет — неизвестно, проверяйте черновым листом; та же оговорка в `sizeMapNote`);
+  по `sheetId` — параметры экземпляра; плюс `existingSheets[]` и `nextNumberHint`.
+- `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — box вьюпорта;
+  план/разрез с кропом — кроп/масштаб (estimated=true); 3D без кропа — неизвестен.
 - `build_system_sheets` — сборщик листов (≤20 items, одна транзакция): лист (номер задан или
-  продолжение альбома) + вид в левом верхнем углу ЦЕЛИКОМ внутри границ (размер окна узнаётся
-  только размещением: place → Regenerate → GetBoxOutline → SetBoxCenter → проверка границ;
-  торчит → warning `overflow=true`, пачка не откатывается) + справа от вида ЛИБО спека по
-  `scheduleId` (готовый клон), ЛИБО блок `explication {sourceScheduleId, keepFields[],
-  filterField, filterValue}` — тул сам клонирует общую спецификацию в узкую таблицу: видимые
-  только keepFields-колонки (отсутствующая → warning + skip), фильтр equals filterField=
-  filterValue, поле фильтра — скрытая колонка; клон «Экспликация <имя листа>» (два пути
-  одновременно — invalid_arguments) + `titleBlockParameters` титульника (кратность);
-  `explicationRows` — строки клона (0 строк под фильтром → warning с ближайшими
-  значениями поля); НЕ переданные параметры титульника наследуются с листов альбома
-  того же типа (status ""inherited"") — кратность не сбрасывается в 0.
-  undo_last удаляет пачку (лист, вид, клон, выноску).
+  продолжение альбома) + вид в левом верхнем углу РАМКИ листа, целиком внутри границ (размер
+  окна узнаётся размещением: place → Regenerate → GetBoxOutline → SetBoxCenter → проверка;
+  торчит → warning `overflow=true`, пачка не откатывается) + справа от вида спека по
+  `scheduleId` ЛИБО блок `explication {sourceScheduleId, keepFields[], filterField,
+  filterValue}` — тул клонирует общую спецификацию в узкую таблицу: только keepFields
+  (отсутствующая → warning + skip), фильтр equals, поле фильтра скрыто; клон
+  «Экспликация <имя листа>» (два пути сразу — invalid_arguments) + `titleBlockParameters`
+  (кратность); `explicationRows` — строки клона (0 под фильтром → warning с ближайшими
+  значениями). НЕ переданные параметры титульника наследуются с листов альбома того же типа
+  (`status:""inherited""`; `kept` — явные параметры изменили значение, альбомное не
+  перезаписано) — кратность не сбрасывается в 0. undo_last удаляет пачку.
 
 ### Кухня Revit
-- Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип
-  рамки (`FamilySymbol` категории `OST_TitleBlocks`); нет ни одной — `title_block_missing`
-  (сначала загрузите семейство титблока).
-- Размер листа хранится **не на листе**, а в параметрах экземпляра рамки `SHEET_WIDTH`/
-  `SHEET_HEIGHT`; id рамки — `ViewSheet.SheetTitleBlockId`.
-- Обычные виды ставятся на лист через `Viewport.Create`, расписания — через
-  `ScheduleSheetInstance.Create` (у расписания нет вьюпорта).
-- `Viewport.Create` принимает координаты листа во внутренних единицах (футы), `[0,0]` —
-  левый нижний угол; после создания нужен `Regenerate`, затем позиционирование
+- Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип рамки
+  (`FamilySymbol` категории `OST_TitleBlocks`); нет ни одной — `title_block_missing`
+  (загрузите титблок).
+- Размер листа — в параметрах экземпляра рамки `SHEET_WIDTH`/`SHEET_HEIGHT` (id —
+  `ViewSheet.SheetTitleBlockId`).
+- Обычные виды — `Viewport.Create`, расписания — `ScheduleSheetInstance.Create` (у
+  расписания нет вьюпорта).
+- `Viewport.Create` принимает координаты листа в футах; после создания — `Regenerate`, затем
   `GetBoxOutline`/`SetBoxCenter`.
-- Один вид нельзя разместить на двух листах (`Viewport.CanAddViewToSheet`): для второго
-  листа вид дублируют (`View.Duplicate`: WithDetailing / AsDependent). Исключения — легенды
-  и расписания.
-- «Снять вид с листа» = удалить `Viewport`; сам вид остаётся в проекте. Обратное неверно:
-  удаление вида удаляет его размещения.
+- Один вид нельзя разместить на двух листах (`Viewport.CanAddViewToSheet`): второй лист —
+  дубль вида (`View.Duplicate`, WithDetailing/AsDependent); исключения — легенды и расписания.
+- «Снять вид с листа» = удалить `Viewport` (вид остаётся); удаление вида удаляет размещения.
 - `ViewSheet.GetAllViewports()` **не показывает расписания** — их надо собирать отдельно
   (`ScheduleSheetInstance`). «Лист пуст» по одному GetAllViewports — неверный вывод.
 - `SheetNumber` уникален (в 2026 — в пределах коллекции листов); дубль бросает исключение.
 - Номер: запрещены символы `{ } [ ] | ; < > ? ~`; пустой — тоже ошибка. Дубль «по
   визуальному написанию» Revit НЕ ловит (U+202A/U+202C/U+200B невидимы) — сравнение через
   очистку невидимых символов.
-- Координаты `pointMmX/pointMmY` — это ЦЕНТР видового окна (не угол!), в мм от левого
-  нижнего угла листа; внутренние единицы Revit — футы, конвертация только на границе.
+- Координаты `pointMmX/pointMmY` — это ЦЕНТР видового окна (не угол!), в мм в СИСТЕМЕ
+  ЛИСТА: начало — точка вставки/plot origin титульника, у ADSK она смещена, поэтому
+  координаты часто отрицательные. Реальную рамку листа даёт `get_sheet_content.sheetOutlineMm`
+  (min/max в той же системе) — считайте отступы от неё, а не от нуля.
 - Бумажный размер 3D-вида без кропа до размещения неизвестен (API не даёт extents) —
   сборщик размещает сначала, меряет потом. Размер спеки на листе —
   `instance.get_BoundingBox(sheet)` (включает рамку выделения ~2,1 мм вокруг таблицы).
 
 ### Инварианты
-- Прежде чем удалять лист, прочитайте `get_sheet_content`: размещённые виды останутся в
-  проекте (удаляются только размещения), но пользователь должен это знать.
-- `delete_sheets` — необратимо (`undoSupported=false`); всегда сначала `dryRun=true`, а apply —
-  с `confirmNames` = `names[]` СВЕЖЕГО dry-run (формат «номер - имя»). Отказ
-  `confirm_names_required`/`confirm_names_mismatch` = модель изменилась: повтори dry-run и
-  передай его свежий names[].
+- Перед удалением листа — `get_sheet_content`: виды останутся (удаляются только размещения),
+  пользователь должен это знать.
+- `delete_sheets` необратим: всегда `dryRun=true`, затем apply с `confirmNames` = `names[]`
+  СВЕЖЕГО dry-run (формат «номер - имя»); `confirm_names_required`/`confirm_names_mismatch` →
+  повтори dry-run и передай свежий names[].
 - Для «поставь вид на лист» проверяйте `isOnSheet` (`list_views`): занятый вид на второй
   лист не встанет.
 - Write-тулы: сначала `dryRun=true` (по умолчанию), покажите план, потом `dryRun=false`.
   Координаты для create_viewports/move_viewport(s) берите из `get_sheet_content`
-  (`centerXMm/centerYMm` — уже в мм от левого нижнего угла листа).
-- Коллизию номера после очистки `sanitize_sheet_numbers` не перезаписывает молча — лист
-  помечается `sheet_number_taken` и разрешается вручную.
+  (`centerXMm/centerYMm` — в системе листа, см. `sheetOutlineMm`).
+- Коллизию после `sanitize_sheet_numbers` тул не перезаписывает: `sheet_number_taken`,
+  решение — вручную.
 
 ### Рецепты
 1. «Что на листе А-101?»: `list_sheets(numberContains:""А-101"")` → `get_sheet_content(sheetId)`.
@@ -110,6 +106,7 @@ public static partial class AgentToolPackSkills
 5. «Снять виды с листа» (виды оставить): `get_sheet_content` →
    `remove_viewports(viewportIds=[...], dryRun=false)` → `viewsKept` — виды живы.
 6. «Вставить номер в середину» (ОВ-1,ОВ-2 → ОВ-1,ОВ-3,ОВ-2):
+   `get_browser_organization(target:""sheets"")` (альбомы!) →
    `renumber_sheets(sheetIds=[порядок], numbers=[""ОВ-1"",""ОВ-3"",""ОВ-2""],
    dryRun=false)`; сквозная последовательность — `startNumber:""ОВ-5""`.
 7. «Перенумеровать один лист»: `set_sheet_number(sheetNumber:""АР-1"", newNumber:""АР-101"")`.
@@ -137,6 +134,9 @@ public static partial class AgentToolPackSkills
 - Двигать десятки окон по одному (`move_viewport` в цикле) — для этого
   `move_viewports` (одна транзакция, один change set); сдвиг — `shiftMm`,
   абсолютные центры — `pointMmX/pointMmY`.
+- Чистить невидимые символы в номерах, не проверив альбомы: сквозная нумерация по
+  альбомам держится именно на них. Сначала `get_browser_organization(target:""sheets"")` и
+  вопрос пользователю, потом `sanitize_sheet_numbers`.
 - Перенумеровывать цепочку листов циклом `set_sheet_number` (промежуточные
   коллизии) — для этого `renumber_sheets` (временные номера внутри).
 ";

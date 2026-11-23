@@ -50,14 +50,19 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "so the tool places at a provisional point, regenerates, measures GetBoxOutline, " +
             "recenters with SetBoxCenter and verifies the box against ViewSheet.Outline " +
             "(tolerance 1 mm): overflow is reported as a per-item warning with overflow=true " +
-            "and NEVER rolls the batch back. titleBlockParameters writes instance parameters " +
+            "and NEVER rolls the batch back. Coordinates are in the SHEET FRAME (title-block / " +
+            "plot origin, often offset, so values can be negative): sheetOutlineMm in every " +
+            "built row names the real sheet rectangle in that same frame — measure offsets " +
+            "from it, not from zero. titleBlockParameters writes instance parameters " +
             "of the new sheet's title block — e.g. a size multiplicity switching the paper " +
             "format (find editable names via get_titleblock_options); numeric values for " +
             "double parameters are written as raw internal values. Parameters NOT passed " +
             "explicitly are inherited from the album: every editable non-built-in instance " +
             "parameter that holds the same value on ALL existing sheets of the same title " +
             "block type is copied to the new sheet (status \"inherited\" in the result), so " +
-            "the size multiplicity keeps the album value instead of resetting to 0. " +
+            "the size multiplicity keeps the album value instead of resetting to 0; a value " +
+            "the explicitly passed parameters have just recomputed (Формат А → Ширина/Высота) " +
+            "is reported as \"kept\" with its current value and NOT overwritten. " +
             "Guards per item: " +
             "view_not_placeable, view_already_placed, sheet_number_taken, " +
             "titleblock_not_found, titleblock_parameter_not_found (a failed parameter is a " +
@@ -331,6 +336,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 sheetNumber = sheet.SheetNumber,
                 sheetName = sheet.Name,
                 titleBlockTypeId = entry.TitleBlockTypeId.GetValue(),
+                sheetOutlineMm = AgentSheetReader.SheetOutlineMm(sheet),
                 viewportId = placement.Viewport!.Id.GetValue(),
                 viewportCenterMm = placement.CenterMm,
                 viewportBoxMm = placement.BoxMm,

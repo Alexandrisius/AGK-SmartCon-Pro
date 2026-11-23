@@ -69,13 +69,17 @@ internal sealed class ScriptedTool : IAgentTool, IAgentToolPreflight
         AgentToolRisk risk = AgentToolRisk.Write,
         bool supportsDryRun = true,
         Func<JsonElement, ToolResult>? handler = null,
-        string schema = @"{""type"":""object"",""properties"":{""items"":{""type"":""array""},""dryRun"":{""type"":""boolean""},""viewId"":{""type"":""integer""}},""additionalProperties"":false}")
+        string schema = @"{""type"":""object"",""properties"":{""items"":{""type"":""array""},""dryRun"":{""type"":""boolean""},""viewId"":{""type"":""integer""}},""additionalProperties"":false}",
+        string? purpose = null,
+        string[]? synonyms = null)
     {
         _handler = handler;
         Definition = new AgentToolDefinition
         {
             Name = name,
             Description = name + " test tool",
+            Purpose = purpose ?? string.Empty,
+            Synonyms = synonyms ?? Array.Empty<string>(),
             Risk = risk,
             SupportsDryRun = supportsDryRun,
             InputSchemaJson = schema

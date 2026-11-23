@@ -49,8 +49,9 @@ public sealed class AuditModelTool : AgentReadToolBase
             "unplaced_families (loadable families with no placed instances) and " +
             "pending_change_sets (applied SmartCon change sets that can still be undone). " +
             "checks selects a subset; limit/offset page the items of every check. Fixes are NOT " +
-            "applied — use sanitize_sheet_numbers, apply_view_template, delete_schedules, " +
-            "purge_families, undo_until.",
+            "applied — sanitize_sheet_numbers (only after the user confirms the invisible " +
+            "characters are not intentional album numbering), apply_view_template, " +
+            "delete_schedules, purge_families, undo_until.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""checks"":{""type"":""array"",""description"":""Subset of checks; omit to run all"",""items"":{""type"":""string"",""enum"":[""duplicate_sheet_numbers"",""invisible_characters"",""views_without_template"",""empty_schedules"",""unplaced_families"",""pending_change_sets""]}},""limit"":{""type"":""integer"",""default"":50,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
@@ -145,7 +146,11 @@ public sealed class AuditModelTool : AgentReadToolBase
                 Name = sheet.SheetNumber,
                 Detail = "Sheet number looks like '" + visual + "' together with " +
                          (counts[visual] - 1) + " other sheet(s); the values differ only by " +
-                         "invisible characters."
+                         "invisible characters. Invisible characters are also a legitimate way " +
+                         "to keep continuous numbering across albums (every Revit number stays " +
+                         "unique); do NOT sanitize before the user confirms the trick is not " +
+                         "intentional — check get_browser_organization(target:\"sheets\") for the " +
+                         "album grouping first."
             });
         }
 

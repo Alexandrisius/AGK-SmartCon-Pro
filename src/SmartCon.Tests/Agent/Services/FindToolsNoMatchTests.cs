@@ -427,6 +427,46 @@ public sealed class FindToolsNoMatchTests
         Assert.Contains("set_family_formula", names);
     }
 
+    /// <summary>
+    /// Owner feedback 2026-11-24: a compound request listing several jobs
+    /// ("переименовать виды, применить шаблон, …") came back as "no match" —
+    /// the whole-query floor sees only the wording the jobs share. Each segment
+    /// is ranked on its own and its leading card is returned.
+    /// </summary>
+    [Fact]
+    public async Task Search_CompoundRequest_ReturnsACardPerJob()
+    {
+        var catalog = new IAgentTool[]
+        {
+            Card("rename_views", "Renames views", "переименовать виды, rename views"),
+            Card("apply_view_template", "Applies a view template to views",
+                "применить шаблон, apply view template"),
+            Card("create_sheet", "Creates a sheet", "создать лист, create sheet"),
+            Card("create_viewports", "Places views on a sheet",
+                "разместить виды на листе, place views on sheet")
+        };
+
+        var data = await SearchAsync(
+            RuleTool(catalog),
+            "{\"query\":\"переименовать виды, применить шаблон к планам, создать лист А3, " +
+            "разместить виды на листе\",\"limit\":6}");
+
+        Assert.False(data.TryGetProperty("noMatch", out _));
+        var names = data.GetProperty("tools").EnumerateArray()
+            .Select(card => card.GetProperty("name").GetString())
+            .ToList();
+        Assert.Contains("rename_views", names);
+        Assert.Contains("apply_view_template", names);
+        Assert.Contains("create_sheet", names);
+        Assert.Contains("create_viewports", names);
+    }
+
+    private static ScriptedTool Card(string name, string purpose, string synonyms) =>
+        new(
+            name,
+            purpose: purpose,
+            synonyms: synonyms.Split(',', StringSplitOptions.TrimEntries));
+
     private static AgentToolDefinition Definition(string name, string text) => new()
     {
         Name = name,

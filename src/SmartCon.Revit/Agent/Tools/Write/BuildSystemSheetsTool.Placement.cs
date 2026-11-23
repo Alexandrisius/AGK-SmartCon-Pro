@@ -288,7 +288,7 @@ public sealed partial class BuildSystemSheetsTool
         }
 
         results.AddRange(ApplyInheritedTitleBlockValues(
-            instance, inherited, parameters, sheet.SheetNumber, warnings));
+            doc, instance, inherited, parameters, sheet.SheetNumber, warnings));
 
         return results;
     }
@@ -305,9 +305,30 @@ public sealed partial class BuildSystemSheetsTool
         Dictionary<string, string>? inherited,
         Dictionary<string, JsonElement>? explicitParameters,
         string sheetNumber,
+        List<string> warnings) =>
+        ApplyInheritedTitleBlockValues(
+            null, instance, inherited, explicitParameters, sheetNumber, warnings);
+
+    /// <summary>
+    /// Same, with the document: after the explicit parameters were written the
+    /// title block may have recomputed its own values (Формат А=3 → Ширина/
+    /// Высота become A3). An inherited value the explicit set has just changed
+    /// is NOT written over it: the row reports status "kept" with the current
+    /// value instead of a stale album number (owner feedback 2026-11-24).
+    /// </summary>
+    internal static List<object> ApplyInheritedTitleBlockValues(
+        Document? doc,
+        FamilyInstance instance,
+        Dictionary<string, string>? inherited,
+        Dictionary<string, JsonElement>? explicitParameters,
+        string sheetNumber,
         List<string> warnings)
     {
         var results = new List<object>();
+        var recheck = doc is not null && explicitParameters is { Count: > 0 };
+        if (recheck)
+            doc!.Regenerate();
+
         foreach (var pair in inherited ?? new Dictionary<string, string>())
         {
             if (explicitParameters is not null && explicitParameters.ContainsKey(pair.Key))
@@ -328,6 +349,24 @@ public sealed partial class BuildSystemSheetsTool
                     "the parameter and the title block type via get_titleblock_options and " +
                     "pass the value explicitly in titleBlockParameters if it matters]");
                 continue;
+            }
+
+            if (recheck && parameter.HasValue)
+            {
+                var current = DescribeOf(parameter);
+                if (!string.IsNullOrEmpty(current)
+                    && !string.Equals(current, pair.Value, StringComparison.Ordinal))
+                {
+                    results.Add(new
+                    {
+                        name = pair.Key,
+                        status = "kept",
+                        value = current,
+                        detail = "the explicitly set title block parameters changed this " +
+                                 "value; the album value '" + pair.Value + "' was not written"
+                    });
+                    continue;
+                }
             }
 
             var unit = parameter.StorageType == StorageType.Double

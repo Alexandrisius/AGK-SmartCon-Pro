@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -397,17 +398,68 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
         BrowserOrganization? sheetsOrganization)
     {
         var names = new List<string>();
-        AppendGroupingParameterName(doc, viewsOrganization, names);
-        AppendGroupingParameterName(doc, sheetsOrganization, names);
+        AppendFolderParameterNames(doc, viewsOrganization, wantSheets: false, names);
+        AppendFolderParameterNames(doc, sheetsOrganization, wantSheets: true, names);
         return string.Join(" / ", names.Distinct());
     }
 
-    private static void AppendGroupingParameterName(
+    /// <summary>
+    /// The grouping parameter the folder is made of, read the same way
+    /// get_browser_organization reads it: from the folder items of a sample
+    /// element (ADSK_Штамп Раздел проекта). organization.Parameters is a
+    /// different set — it showed category/type fields as the parameter name
+    /// while the folder value itself was written correctly (owner feedback
+    /// 2026-11-24).
+    /// </summary>
+    private static void AppendFolderParameterNames(
         Document doc,
         BrowserOrganization? organization,
+        bool wantSheets,
         List<string> names)
     {
         if (organization is null)
+            return;
+
+        var before = names.Count;
+        ElementId? sampleId = null;
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(View)))
+        {
+            if (element is not View view || view.IsTemplate)
+                continue;
+
+            if (wantSheets != (view is ViewSheet))
+                continue;
+
+            sampleId = view.Id;
+            break;
+        }
+
+        if (sampleId is not null)
+        {
+            try
+            {
+                foreach (var item in organization.GetFolderItems(sampleId))
+                {
+#if REVIT2026_OR_GREATER
+                    var path = item.GetGroupingParameterIdPath();
+                    var parameterId = path is null || path.Count == 0
+                        ? null
+                        : path[path.Count - 1];
+#else
+                    var parameterId = item.ElementId;
+#endif
+                    var name = GetBrowserOrganizationTool.ParameterNameById(doc, parameterId);
+                    if (!string.IsNullOrEmpty(name) && !names.Contains(name!))
+                        names.Add(name!);
+                }
+            }
+            catch (Exception)
+            {
+                // Organization without readable folder items: fall through.
+            }
+        }
+
+        if (names.Count > before)
             return;
 
         try
@@ -418,8 +470,11 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
 
             foreach (Parameter parameter in parameters)
             {
-                if (!string.IsNullOrEmpty(parameter.Definition?.Name))
+                if (!string.IsNullOrEmpty(parameter.Definition?.Name)
+                    && !names.Contains(parameter.Definition!.Name))
+                {
                     names.Add(parameter.Definition!.Name);
+                }
             }
         }
         catch (Exception)

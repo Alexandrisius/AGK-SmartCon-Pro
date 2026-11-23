@@ -40,10 +40,12 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
             "summary lines in templateIncludeSkips. A template that includes V/G Overrides " +
             "Filters takes over the filter list of the view: the view's own filters are " +
             "replaced by the template's, and the result names them per view " +
-            "(ownFiltersReplaced) with the way to keep them. dryRun defaults to true.",
+            "(ownFiltersReplaced) with the way to keep them. The dry-run delta gives the " +
+            "template-controlled parameter count and an 8-name sample; includeOverwritten=true " +
+            "returns the full per-view list. dryRun defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""exceptViewIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""View ids removed from the resolved selection""},""exceptNameContains"":{""type"":""string"",""description"":""Views whose name contains this substring are removed from the selection""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""maxItems"":200,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer""},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false}},""required"":[""viewId"",""templateId""],""additionalProperties"":false}},""select"":{""type"":""object"",""properties"":{""type"":{""type"":""string""},""viewType"":{""type"":""string""},""levelId"":{""type"":""integer""},""folder"":{""type"":""string""},""nameContains"":{""type"":""string""},""templateId"":{""type"":""integer""},""section"":{""type"":""string"",""description"":""Exact value of the project parameter 'Раздел' on the view""}},""additionalProperties"":false},""templateId"":{""type"":[""integer"",""null""],""description"":""0 or null detaches the current template""},""overwriteTemplate"":{""type"":""boolean"",""default"":false},""exceptViewIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""View ids removed from the resolved selection""},""exceptNameContains"":{""type"":""string"",""description"":""Views whose name contains this substring are removed from the selection""},""includeOverwritten"":{""type"":""boolean"",""default"":false,""description"":""Include the full per-view list of template-controlled parameter names (overwritten); default returns overwrittenCount + an 8-name sample""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     protected override PlanPreflightResult PreflightCore(
@@ -152,7 +154,7 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 && WillApplyTemplate(view, item.TemplateId!.Value, item.OverwriteTemplate);
             if (dryRun && willApply)
             {
-                AddTemplateDelta(doc, view, item.TemplateId!.Value, outcome);
+                AddTemplateDelta(doc, view, item.TemplateId!.Value, outcome, request?.IncludeOverwritten == true);
             }
 
             var change = detach
@@ -195,7 +197,8 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         Document doc,
         View view,
         long templateId,
-        WriteOutcome outcome)
+        WriteOutcome outcome,
+        bool includeOverwritten)
     {
         try
         {
@@ -224,7 +227,12 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
                 hiddenCategoriesAdded = Math.Max(
                     0, after.HiddenCategories.Count - before.HiddenCategories.Count),
                 controlledParameters = after.ControlledParameters.Count,
-                overwritten = after.ControlledParameters,
+                // 16 views used to repeat the whole ~30-name list per view (thousands
+                // of tokens): the count and a short sample answer "what changes";
+                // includeOverwritten=true brings the full list back.
+                overwrittenCount = after.ControlledParameters.Count,
+                overwrittenSample = after.ControlledParameters.Take(8).ToList(),
+                overwritten = includeOverwritten ? after.ControlledParameters : null,
                 templateControlsFilters = AgentTemplateFilterImpact.ControlsFilters(template),
                 ownFiltersReplaced = lostFilters,
                 skippedByTemplateInclude = AgentViewSettingsReader
@@ -535,6 +543,9 @@ public sealed class ApplyViewTemplateTool : AgentWriteToolBase
         public List<long>? ExceptViewIds { get; set; }
 
         public string? ExceptNameContains { get; set; }
+
+        /// <summary>Full per-view list of the template-controlled parameter names.</summary>
+        public bool IncludeOverwritten { get; set; }
     }
 }
 

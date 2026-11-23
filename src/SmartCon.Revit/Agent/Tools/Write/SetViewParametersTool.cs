@@ -37,7 +37,9 @@ public sealed class SetViewParametersTool : AgentWriteToolBase
             "is accepted too: a template is a View, so its own parameters are written directly. " +
             "A parameter " +
             "controlled by a view template is refused with view_controlled_by_template: detach " +
-            "the template first (apply_view_template with templateId=0). Dry run by default.",
+            "the template first (apply_view_template with templateId=0). scale/масштаб resolves " +
+            "the view scale built-in (a 3D view displays it as «Масштаб вида»), detail level and " +
+            "discipline have the same aliases. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
