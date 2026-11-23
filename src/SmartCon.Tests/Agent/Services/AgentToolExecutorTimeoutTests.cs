@@ -30,7 +30,9 @@ public sealed class AgentToolExecutorTimeoutTests
         Assert.False(result.Success);
         Assert.Equal("tool_timeout", result.ErrorCode);
         Assert.Contains("50 ms", result.Message, StringComparison.Ordinal);
-        Assert.Contains("TimeoutMs", result.Message, StringComparison.Ordinal);
+        // TimeoutMs is not a model argument: the hint must not send the model to raise it (C1-01).
+        Assert.DoesNotContain("TimeoutMs", result.Message, StringComparison.Ordinal);
+        Assert.Contains("narrow the request", result.Message, StringComparison.Ordinal);
         Assert.True(stopwatch.ElapsedMilliseconds < 4000);
         Assert.NotNull(result.Data);
         Assert.False(result.Data!.Value.GetProperty("stillRunning").GetBoolean());

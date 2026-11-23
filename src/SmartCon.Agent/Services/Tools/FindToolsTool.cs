@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
@@ -14,7 +15,7 @@ namespace SmartCon.Agent.Services.Tools;
 /// decision-model (JEV/pplx) router when enabled — so the agent can search the
 /// catalog once it understands the concrete sub-task.
 /// </summary>
-public sealed class FindToolsTool : IAgentTool
+public sealed partial class FindToolsTool : IAgentTool
 {
     private const string CatalogHint =
         "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable; " +
@@ -112,16 +113,52 @@ public sealed class FindToolsTool : IAgentTool
 
         var lexical = ToolCardRouter.TopCandidates(state, rankable, 50);
 
+        // The tool the query names is what the model asked for: it leads the
+        // answer even when ranking puts it below the limit (C1-04).
+        var named = ExactNameMatches(query, candidates);
+        var namedNames = new HashSet<string>(
+            named.Select(definition => definition.Name), StringComparer.Ordinal);
+
+        // Honest absence (C10-03): when no card carries enough of the query,
+        // whatever ranks first shares only common wording with it. The floor
+        // gates the answer as a whole; it never cuts cards out of a match.
+        var noSignal = named.Count == 0
+                       && !ToolCardRouter.QueryCoverage(query, rankable).Values.Any(
+                           share => share >= ToolCardRouter.MinQueryCoverage);
+        var reportsVerdict = RouterReportsOwnVerdict;
+        if (RoutingIsWordingOnly && noSignal)
+            return NoMatchResult(lexical);
+
         var chosen = new List<AgentToolDefinition>(6);
         if (rankable.Count > 0)
         {
             var decision = await _router
                 .RouteAsync(state, rankable, 6, ct)
                 .ConfigureAwait(false);
+
+            // The decision model answering that nothing in the catalog fits is
+            // the answer, unless the query spells out a tool name (C10-03).
+            if (reportsVerdict && decision.NoCatalogMatch && named.Count == 0)
+                return NoMatchResult(lexical);
+
+            // Without a pick of its own the decision router relays wording
+            // ranking, which takes the same floor as when it routes alone.
+            if (reportsVerdict && decision.Picked.Count == 0 && noSignal)
+                return NoMatchResult(lexical);
+
+            var picked = reportsVerdict ? new HashSet<string>(decision.Picked, StringComparer.Ordinal) : null;
             foreach (var definition in decision.Tools)
             {
-                if (!AgentToolPacks.IsAlwaysAvailable(definition.Name))
+                // What the decision model did not pick is no choice of its own.
+                // With a pick in hand the tail comes from wording ranking below,
+                // so a router that returned the whole catalog for lack of a
+                // signal never shows up as matches (WB-R1).
+                if (!AgentToolPacks.IsAlwaysAvailable(definition.Name)
+                    && !namedNames.Contains(definition.Name)
+                    && (picked is null || picked.Count == 0 || picked.Contains(definition.Name)))
+                {
                     chosen.Add(definition);
+                }
             }
         }
 
@@ -132,6 +169,9 @@ public sealed class FindToolsTool : IAgentTool
             if (names.Add(definition.Name))
                 merged.Add(definition);
         }
+
+        foreach (var definition in named)
+            Add(definition);
 
         if (string.IsNullOrWhiteSpace(packName) && HasBulkIntent(state))
         {

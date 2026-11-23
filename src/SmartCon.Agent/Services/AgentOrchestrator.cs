@@ -227,6 +227,7 @@ public sealed partial class AgentOrchestrator
             var allowCheckpoint = true;
             var toolCallCount = 0;
             var loopGuard = new LoopGuard();
+            var storms = new ToolStormTracker();
             var loopAborted = false;
 
             // No round or time cap: the turn runs until the model stops, the user
@@ -260,6 +261,11 @@ public sealed partial class AgentOrchestrator
                     lastCompaction = compaction;
                     if (compaction.Record is not null)
                         lastCompactionId = compaction.Record.Id;
+
+                    // The results the model saw before the compaction are gone
+                    // from its side: to the storm tracker they are no longer
+                    // "already in the conversation".
+                    storms.ForgetResults();
 
                     // The provider-reported prompt_tokens describes the prompt
                     // before this compaction. Keeping it as the floor for the
@@ -426,19 +432,15 @@ public sealed partial class AgentOrchestrator
                         }
                         else
                         {
-                            result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
-                            var observed = loopGuard.ObserveResult(
-                                toolCall.Name, argumentsJson, result.Success, exempt);
-                            if (observed.WarnOnly && !result.Success)
-                            {
-                                SmartConLogger.Info(
-                                    "Agent loop guard warning: tool=" + toolCall.Name +
-                                    ", identicalErrors=" + observed.IdenticalErrors);
-                                if (!string.IsNullOrEmpty(observed.Hint))
-                                    result = result.WithWarnings(new[] { observed.Hint! });
-                            }
+                            result = await ExecuteObservedToolAsync(
+                                loopGuard, storms, toolCall, argumentsJson, exempt, round, ct)
+                                .ConfigureAwait(false);
                         }
                     }
+
+                    // Defense in depth (DB-01): the wire tool message carries
+                    // only tool_call_id, so the payload names its own tool.
+                    result = result.WithToolName(toolCall.Name);
 
                     if (workingState is not null)
                         AgentWorkingStateUpdater.ObserveToolResult(workingState, toolCall.Name, result);
