@@ -100,6 +100,53 @@ module: agent
 `delete_family_types`, `remove_family_parameter`, `set_view_parameters`,
 `rename_filter`, `get_schedule_definition`, `list_shared_parameters`.
 
+## AgentToolCards.Mep
+
+Карточки тулов MEP (пак `mep`): `list_mep_systems`, `list_materials`,
+`set_mep_system_type` (аббревиатура/имя типа системы — свойства типа,
+`set_parameters` их не пишет; `name_taken`, откат `undo_last`).
+
+## AgentToolCards.Elements
+
+Карточки тулов пакета `elements`: `get_element_bounds` — координаты и габариты
+элементов (до 50 id): точка вставки либо начало.
+
+## AgentToolCards.Semantic
+
+Карточки тулов семантики (пак `semantic`): `semantic_match`, `read_classifier`,
+`list_classification_entries`, `classify_types`.
+
+## AgentToolCards.Relations
+
+Карточки тулов связей (пак `relations`): `get_element_relations`,
+`trace_system_chain`, `get_room_contents`.
+
+## AgentToolCards.Documents
+
+Карточки тулов мульти-модельности (пак `documents`): `open_model_background`,
+`close_model`, `list_known_models`, `get_document_status`.
+
+## AgentToolCards.Changes
+
+Карточки тулов истории изменений (пак `changes`): `list_change_sets`,
+`get_change_set_details`, `undo_until`, `save_document`, `audit_model`.
+
+## AgentToolCards.Sheets.Batch
+
+Карточки пакетных операций листов (пак `sheets`): `move_viewports`,
+`remove_viewports`, `renumber_sheets`.
+
+## AgentToolCards.Families.TypeOps
+
+Карточки операций с типами семейств (пак `families`): `duplicate_family_type`,
+`rename_family_type`, `replace_family_type`, `load_family`, `purge_families`.
+
+## AgentToolCards.Schedules.Rebuild
+
+Карточки операций со спецификациями (пак `schedules`): `clone_schedule`,
+`rename_schedule`, `set_schedule_field_format`, `set_schedule_style`,
+`remove_schedule_from_sheet`.
+
 ## AgentToolDisplayNames
 
 Локализованные человекочитаемые названия тулов (tool name → «Список видов»)
@@ -115,7 +162,53 @@ module: agent
 
 ## AgentToolPackSkills
 
-Короткий markdown-навык пака, который `load_tool_pack` возвращает вместе с паком (#400): словарь аргументов в терминах Revit UI, инварианты записи и рецепты, проверенные на реальных моделях. Сейчас навык есть у пака `filters`.
+Короткий markdown-навык пака, который `load_tool_pack` возвращает вместе с паком (#400): словарь аргументов в терминах Revit UI, инварианты записи и рецепты, проверенные на реальных моделях. Партиалы по темам — ниже.
+
+## AgentToolPackSkills.Model
+
+Навыки read-паков: `model` (обзор проекта), `levels`, `elements`, `params`,
+`changes`.
+
+## AgentToolPackSkills.Views
+
+Навыки паков видов: `views`, `view_settings`, `view_edit`, `templates`.
+
+## AgentToolPackSkills.Relations
+
+Навык пака `relations` — связи, цепи и помещения.
+
+## AgentToolPackSkills.Documents
+
+Навык пака `documents` — мульти-модельность (фоновые модели-доноры).
+
+## AgentToolPackSkills.Sheets
+
+Навык пака `sheets` — листы и размещение видов.
+
+## AgentToolPackSkills.Semantic
+
+Навык пака `semantic` — выбор из больших списков и классификация.
+
+## AgentToolPackSkills.Mep
+
+Навык пака `mep` — MEP-системы и материалы.
+
+## AgentToolPackSkills.Families
+
+Навык пака `families` — семейства, типы и параметры.
+
+## AgentToolPackSkills.Schedules
+
+Навыки паков `schedules` (ведомости и спецификации) и `filters` (фильтры видов).
+
+## AgentToolPackSkills.Plans
+
+Навыки паков `plans` (планы изменений) и `meta` (каталог и сохранённые
+результаты).
+
+## AgentToolPackSkills.Jobs
+
+Навык пака `jobs` — массовые операции.
 
 ## AgentConversationTitle
 
@@ -128,6 +221,25 @@ module: agent
 ## AgentToolInputRepair
 
 Нормализация/починка входа тула перед исполнением (алиасы параметров, локализованные ключи).
+
+## AgentJsonSchema
+
+`Services/Agent/AgentJsonSchema.cs` (internal static) — минимальная локальная
+поддержка JSON Schema, общая для `AgentToolSchemaValidator` и
+`AgentToolInputRepair`: разрешение локальных `$ref` (`definitions`/`$defs`,
+глубина ≤16) и union-типы вида `["integer","null"]` (`Types`, `Nullable`,
+`PrimaryType`). Без него свойство с `$ref` не валидировалось вовсе — опечатка
+`offset` вместо `offsetMm` молча давала неверный диапазон вида с успехом.
+
+## AgentDocumentRoutingArgument
+
+`Services/Agent/AgentDocumentRoutingArgument.cs` (internal static) — конвенция
+опционального верхнего аргумента `documentId` (маршрутизация фоновых моделей,
+case 9 v2): тул либо объявляет его в своей схеме, либо вообще не читает
+документы по нему — толерантной середины нет. Tolerant repair не удаляет
+необъявленный `documentId`: вызов, адресованный фоновой модели-донору, обязан
+упасть громко (`UndeclaredError`), а не молча исполниться против АКТИВНОГО
+документа. `IsName` распознаёт аргумент при переборе свойств.
 
 ## AgentToolSchemaValidator
 
@@ -145,6 +257,13 @@ returned/truncated/hint); broad-query guard `query_too_broad`.
 ## AgentToolResultBlob
 
 Ссылка на крупный результат тула, вынесенный в blob-store (store-and-reference, H1-14).
+
+## ToolResultSkill
+
+`Models/Agent/ToolResultSkill.cs` — руководство пака, приложенное к результату
+тула (#400): используется, когда write-тул сработал раньше, чем его пак был
+загружен, — manual приходит вместе с первым результатом, и модель читает его
+перед apply-вызовом вместо напоминания из промпта. Поля `Pack` + `Markdown`.
 
 ## QuerySpec
 
@@ -194,6 +313,38 @@ partial-failure контракт. planDigest привязан к докумен�
 
 Разрешение конфликтов/ожиданий плана (expectationsChecked, honest hint).
 
+## AgentPlanExecutor.ReadBackPath
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.ReadBackPath.cs`):
+резолвер путей ожиданий read-back. `PathResolution` держит три исхода раздельно
+(review r1 #2): `Resolved` — путь адресовал значение (явный JSON null
+включённо) и оно сравнивается с ожидаемым; `NotFound` — форма поддержана, но в
+payload ничего не нашлось: ожидание не подтверждено; `UnsupportedForm` —
+синтаксис не понят, ничего не сравнивалось, ожидание непроверяемо. Сегменты:
+ключ объекта, индекс, `byId[...]`/`byName[...]`, `categories[0]`, литеральный
+`[key]` (точки внутри ключа, C4-10); `TokenizePath` не рвёт имена с точками
+внутри скобок.
+
+## AgentPlanExecutor.ReadBackIdentity
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.ReadBackIdentity.cs`):
+идентичность строк read-back — свойство, несущее собственный id/name строки
+(`id`, иначе `<singular>Id` по коллекции: views → `viewId`, schedules →
+`scheduleId`, иначе первый `*Id`), выборка `byId`/`byName` только по
+собственной идентичности (ссылки `templateId`/`levelId` идентифицируют другой
+объект — review r1 #9) и `DescribeNode`: что payload предлагает в узле, где
+путь потерялся (ключи объекта, до 5 id/имён строк), чтобы модель исправила
+путь за один раунд.
+
+## AgentPlanExecutor.ReportText
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.ReportText.cs`):
+короткие текстовые расшифровки отчёта — `DescribeCountedItems` перечисляет до 3
+позиций из `changed[]` тула (имя/действие/id), чтобы модель исправила
+`expectedChanges` с первой попытки вместо угадывания правила подсчёта (C7-04);
+`DescribeAppliedCreatedIds` — перечисление применённых и созданных id.
+
+
 ## AgentPlanValidator
 
 Валидация плана (уровни L0–L6): структура, ссылки на элементы, риск, dry-run.
@@ -201,6 +352,26 @@ partial-failure контракт. planDigest привязан к докумен�
 ## ChangeSet
 
 Набор изменений плана/тула (affected ElementId, before/after), основа undo и confirmation gate.
+
+## AgentUndoChain
+
+`Services/Agent/AgentUndoChain.cs` — построение цепочки `undo_until` (G.10): из
+заголовков документа (`Window = 100` новейших) применённые сеты от новейшего
+вниз до целевого включительно в порядке отката. Rolled back и discarded сеты
+не применены — пропускаются автоматически; цель вне окна →
+`change_set_not_in_chain`.
+
+## AgentDeleteConfirm
+
+`Services/Agent/AgentDeleteConfirm.cs` — подтверждение имён деструктивных
+тулов (S.5): apply-вызов обязан повторить точный набор имён СВЕЖЕГО dry-run,
+чтобы модель, изменившаяся между двумя вызовами, была отвергнута вместо
+удаления не тех объектов. `Verify` сравнивает множества (дубликаты игнорируются,
+Ordinal — имена, отличающиеся регистром, в Revit различны): нет `confirmNames`
+→ `confirm_names_required`; расхождение → `confirm_names_mismatch` с
+`Missing`/`Unexpected`. В том же файле `AgentDeleteConfirmResult`
+(`Ok/ErrorCode/Message/Expected/Got/Missing/Unexpected`).
+
 
 ## AgentConfirmation
 
@@ -261,6 +432,47 @@ JSON-aware редакция чувствительных данных в лог�
 ## LoopGuard
 
 Предохранитель циклов агента (3 block / 5 abort) — единственное ограничение хода besides Stop.
+
+## ToolStormTracker
+
+`Services/Agent/ToolStormTracker.cs` — мягкие подсказки против «штормов»
+вызовов (C7-06, C2-06, C9-07, C1-01): loop guard видит только точное повторение
+одного вызова, а шторм обычно варьирует аргументы. Отдельно считает: тот же
+тул падает с тем же error code (`SameErrorThreshold = 3`, для
+`invalid_arguments` — совет перечитать пути против схемы); идентичный вызов
+возвращает тот же результат (`SameResultThreshold = 3`, fingerprint по хэшу
+данных; идущая работа с флагом `mustVerify` — совет ждать, а не менять
+корректный вызов); повторное чтение той же страницы `read_tool_result`
+(эффективные offset/limit/path); серия таймаутов хоста подряд
+(`HostTimeoutHintAfter = 2` — «не отправляйте больше вызовов, скажите
+пользователю, что заблокировано»). Ничего не блокирует: ход завершают только
+Stop и loop guard. На ход, как `LoopGuard`; `ForgetResults` после компакции
+сбрасывает повторы чтения (модель больше не видит ранних результатов) и меняет
+формулировки подсказок о ставших невидимыми раундах.
+
+## ToolStormTracker.Series
+
+Партиал `ToolStormTracker` (`Services/Agent/ToolStormTracker.Series.cs`) —
+половина item-by-item: батчевый тул кормят объектами одного задания по одному
+за вызов (`ItemByItemThreshold = 3` внутри окна `ItemByItemWindowRounds = 12`
+раундов). Форма батча читается один раз из схемы тула (`Shape`: списки
+`items`/`*Ids`/`*Names` без exclusion-префиксов и границы
+`batchSize`/`maxItems`); «rest» вызова неизменен, объекты различаются;
+повтор одного и того же объекта — забота правила идентичных вызовов, а не
+этого. Системные тулы (план повторяет превью-вызов — это контракт плана) в
+счёт не идут.
+
+## AgentFilterSnapshot
+
+`Models/Agent/AgentFilterSnapshot.cs` — карантинный снимок параметровного
+view-фильтра, снятый непосредственно перед удалением (S.26): дерево правил
+(`RulesJson`), категории (`CategoriesJson`), применённые виды с их overrides и
+галочками (`AppliedViewsJson`), причина карантина (`delete_filter`,
+`merge_duplicate_filters`), UniqueId/ElementId удалённого фильтра и
+`DocumentId`. Хранится в agent.db через `IAgentFilterQuarantineStore`, никогда
+в модели — удалённый фильтр не восстановить `undo_last`; воссоздание вручную
+по сохранённому JSON.
+
 
 ## AgentSchema
 
@@ -393,6 +605,20 @@ AgentClassificationMatcher.Descent.cs`): вопрос о ветви, лекси�
 AgentClassificationMatcher.Result.cs`): сборка исхода — статусы типов (включая
 `no_confidence` для голого Choice), группы assignments, батчи
 set_parameters, типизированные отказы и предупреждения с истинными причинами.
+
+## AgentClassificationMatcher.TypeStage
+
+Партиал `AgentClassificationMatcher` (`Services/Agent/
+AgentClassificationMatcher.TypeStage.cs`): стадия различения типов. Семейство,
+закончившее ОДНИМ кодом (результат спуска или единственный выживший кандидат),
+может нести типы, чей собственный текст (имя + значения, не общие для всех
+типов) описывает другую строку таблицы. Типы, различающиеся больше чем
+размером/артикулом, группируются по значимому набору токенов, и каждой группе
+задаётся ОДИН вопрос (≤`MaxTypeDifferentiationQuestions = 100` на вызов
+classify): опции — код семейства, соседние листья той же ветви и честное
+«ни один»; ответ применяется ко всем типам группы. Стадия необязательна: что
+не спросили/не ответили — сохраняет код семейства и попадает в warning
+(`[Action: …]`), а не в отказ.
 
 ## AgentActionDigest
 
@@ -628,6 +854,17 @@ Pending+Applying+Undoing+Undone запрещает `Completed`; `Stale` счит
 `NeedsPump` определяет, нужен ли ещё slice; `IsTerminal` — финальные состояния.
 
 **Файл:** `Models/Agent/Jobs/JobStateMachine.cs`
+
+## JobFinalStateDecider
+
+`Models/Agent/Jobs/JobFinalStateDecider.cs` — чистое решение финального
+состояния задания из пересобранных totals (юнит-тестируемо без Revit, тот же
+паттерн, что `JobSavePolicyDecider`): реальные ошибки побеждают первыми —
+`Failed/Mismatch/UndoFailed/Incomplete > 0` → `CompletedWithFailures`; иначе
+`NotVerifiable > 0` (цели применены, но не проверяемы со стороны проекта,
+#432) → `CompletedUnverified`; иначе `Completed`.
+
+**Файл:** `Models/Agent/Jobs/JobFinalStateDecider.cs`
 
 ## JobJson
 
