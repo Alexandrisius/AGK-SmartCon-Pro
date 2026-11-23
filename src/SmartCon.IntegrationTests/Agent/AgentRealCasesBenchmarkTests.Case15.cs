@@ -461,10 +461,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 })
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case 15: mark holder scan '" + mark + "' failed: " +
-                              ex.GetType().Name + ": " + ex.Message);
+            // Пустой список — VerifyCase15Seed сообщит о неуникальных марках
+            // или сид не соберётся.
             return new List<Element>();
         }
     }
@@ -516,14 +516,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 try
                 {
                     holder.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Set(string.Empty);
-                    Console.WriteLine("PROBE case 15: duplicate mark '" + mark +
-                                      "' cleared from id " + holder.Id.GetValue() +
-                                      " (category " + (holder.Category?.Name ?? "?") + ")");
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Console.WriteLine("PROBE case 15: duplicate mark '" + mark +
-                                      "' not cleared: " + ex.GetType().Name);
+                    // Не снимается — VerifyCase15Seed честно скипнет по
+                    // неуникальной марке (вопрос кейса двусмысленен).
                 }
             }
         }
@@ -540,7 +537,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
         catch (ArgumentException)
         {
-            Console.WriteLine("PROBE case 15: rename to '" + name + "' rejected");
+            // Отказ переименования tolerated: VerifyCase15Seed сравнит
+            // фактические имена систем с ожидаемыми.
         }
     }
 

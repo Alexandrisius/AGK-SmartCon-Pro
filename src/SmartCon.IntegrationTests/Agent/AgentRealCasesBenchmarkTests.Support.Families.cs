@@ -182,10 +182,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 .Select(family => family.Id)
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case-families: template family '" + familyName +
-                              "' not scanned: " + ex.GetType().Name + ": " + ex.Message);
+            // Best-effort: если скан не удался, последующая LoadFamily
+            // сообщит о конфликте ошибкой сида.
             return;
         }
 
@@ -199,14 +199,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
             transaction.Start();
             foreach (var id in conflicts)
                 doc.Delete(id);
-            if (transaction.Commit() != TransactionStatus.Committed)
-                Console.WriteLine("PROBE case-families: template family '" + familyName +
-                                  "' not removed: commit rolled back");
+            // Незакоммиченное удаление не фатально: LoadFamily назовёт конфликт.
+            transaction.Commit();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine("PROBE case-families: template family '" + familyName +
-                              "' not removed: " + ex.GetType().Name + ": " + ex.Message);
+            // Best-effort — см. выше.
         }
     }
 

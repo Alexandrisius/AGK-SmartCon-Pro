@@ -421,9 +421,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 }
 
                 familyDoc.SaveAs(path, new SaveAsOptions { OverwriteExistingFile = true });
-                Console.WriteLine("PROBE case14 family saved '" + path + "' bytes=" +
-                                  (File.Exists(path) ? new FileInfo(path).Length : -1) +
-                                  " ownerName='" + familyDoc.OwnerFamily.Name + "'");
                 paths.Add(path);
             }
             catch (Exception ex)

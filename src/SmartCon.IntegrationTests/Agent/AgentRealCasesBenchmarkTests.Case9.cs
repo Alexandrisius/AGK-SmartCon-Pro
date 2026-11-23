@@ -195,10 +195,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
             // C4-04: файловая загрузка хозяина в проект теперь в транзакции —
             // вложенные shared-фланцы обязаны засидиться (раньше LoadFamily
             // молча возвращал false, ключевой критерий кейса не проверялся).
-            Console.WriteLine("PROBE case 9 flanges: seeded=" + _case9FlangesSeeded +
-                              ", note=" + (_case9FlangeNote ?? "(null)") +
-                              ", flangeIds=" + _case9FlangeIds.Count +
-                              ", hostSymbol=" + _case9HostSymbolId);
             await Assert.That(_case9FlangesSeeded).IsTrue();
             await Assert.That(_case9FlangeIds.Count).IsGreaterThanOrEqualTo(2);
         }

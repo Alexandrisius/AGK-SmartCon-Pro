@@ -75,9 +75,10 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             element.Name = name;
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
-            Console.WriteLine("PROBE case 9: rename to '" + name + "' rejected: " + ex.Message);
+            // Отказ переименования (тёзка) не валит сид: VerifyCase9Seed
+            // сообщит о фактическом имени системы.
         }
     }
 
@@ -166,28 +167,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
             {
                 transaction.Start();
                 flangeSymbol.Activate();
-                var nested = hostDoc.FamilyCreate.NewFamilyInstance(
+                hostDoc.FamilyCreate.NewFamilyInstance(
                     XYZ.Zero, flangeSymbol, StructuralType.NonStructural);
-                var commitStatus = transaction.Commit();
-                Console.WriteLine("PROBE case 9 flange host: nested instance " +
-                                  (nested is null ? "NULL" : "id " + nested.Id.GetValue()) +
-                                  ", commit " + commitStatus);
+                transaction.Commit();
             }
 
             hostDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
-            var hostInstances = 0;
-            try
-            {
-                hostInstances = new FilteredElementCollector(hostDoc)
-                    .OfClass(typeof(FamilyInstance)).GetElementCount();
-            }
-            catch (Exception)
-            {
-                // Счёт диагностический.
-            }
-
-            Console.WriteLine("PROBE case 9 flange host: hostDoc instances before close = " +
-                              hostInstances);
             hostDoc.Close(false);
             hostDoc = null;
 
@@ -253,49 +238,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
     }
 
-    /// <summary>
-    /// Диагностика вложения в проекте (сбор в момент, когда субкомпонентов нет):
-    /// семейства хозяина/фланца с признаком FAMILY_SHARED и все экземпляры с
-    /// SuperComponent — чтобы причина деградации была видна из одного вывода.
-    /// </summary>
-    private static string Case9DescribeNesting(Document doc)
-    {
-        var builder = new System.Text.StringBuilder();
-        try
-        {
-            builder.Append("PROBE case 9 nesting: families[");
-            foreach (var element in new FilteredElementCollector(doc)
-                         .OfClass(typeof(Autodesk.Revit.DB.Family)))
-            {
-                if (element is not Autodesk.Revit.DB.Family family)
-                    continue;
-
-                var name = family.Name ?? string.Empty;
-                if (name.IndexOf(Case9HostFamilyName, StringComparison.OrdinalIgnoreCase) < 0 &&
-                    name.IndexOf("Фланец", StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-
-                builder.Append(name).Append(" shared=")
-                    .Append(family.get_Parameter(BuiltInParameter.FAMILY_SHARED)?.AsInteger() ?? -1)
-                    .Append(" category=").Append(family.FamilyCategory?.Name ?? "?")
-                    .Append(" symbols=").Append(family.GetFamilySymbolIds().Count)
-                    .Append("; ");
-            }
-
-            builder.Append("] instancesWithSuper=")
-                .Append(new FilteredElementCollector(doc)
-                    .OfClass(typeof(FamilyInstance))
-                    .Cast<FamilyInstance>()
-                    .Count(instance => instance.SuperComponent is not null));
-        }
-        catch (Exception ex)
-        {
-            builder.Append(" describe-failed: ").Append(ex.GetType().Name);
-        }
-
-        return builder.ToString();
-    }
-
     /// <summary>Nesting load of a shared family: FamilySource.Project keeps the
     /// shared behaviour (the nested instance is exposed as a subcomponent).</summary>
     private sealed class Case9NestLoadOptions : IFamilyLoadOptions
@@ -351,15 +293,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
             if (doc.GetElement(ElementIdCompat.Create(pumpId)) is not FamilyInstance pump)
                 continue;
 
-            var subIds = pump.GetSubComponentIds();
-            Console.WriteLine("PROBE case 9 pump " + pumpId + ": subcomponents " + subIds.Count);
-            foreach (var subId in subIds)
+            foreach (var subId in pump.GetSubComponentIds())
                 _case9FlangeIds.Add(subId.GetValue());
         }
 
         if (_case9FlangeIds.Count == 0)
         {
-            Console.WriteLine(Case9DescribeNesting(doc));
             _case9FlangesSeeded = false;
             _case9FlangeNote = "У насосов нет субкомпонентов после размещения";
         }
