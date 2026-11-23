@@ -96,7 +96,7 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `get_view_settings` — снимок: `viewRange`, `crop`, `hiddenCategories`, `controlledParameters`, `scale`, `templateName`; `viewIds` (≤200) и `fields`.
-  `discipline=null` у видов без свойства (спеки, легенды) — вид пропускается, батч не падает.
+  `discipline=null` у видов без свойства (спеки, легенды) — поле возвращается null, строка вида остаётся, батч не падает.
   `controlledParameters`/`nonControlledParameters` вида с шаблоном — состав управления ЕГО шаблона.
 - `set_view_range`/`set_view_crop`/`set_view_visibility` — `items[{viewId,...}]` **или** `select:{type|viewType?,levelId?,folder?,nameContains?,templateId?,section?}` + одноимённый верхний аргумент (`viewRange`/`crop`/`visibility`): ids руками не нужны (`section` — точное значение параметра «Раздел»).
 - `set_view_crop` — `crop:{active,visible,minMm,maxMm,copyFromViewId}`; `set_view_visibility` — `visibility:{categories:[{category|categoryId,hidden}],worksets:[…]}`.

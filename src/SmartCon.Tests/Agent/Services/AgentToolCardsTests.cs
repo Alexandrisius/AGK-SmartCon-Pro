@@ -279,6 +279,20 @@ public sealed class AgentToolCardsTests
     }
 
     [Fact]
+    public void AddFamilyParameterCard_NamesTheSharedParameterFileToolWithItsPack()
+    {
+        // S1-R3: createDefinition:true needs a shared parameter file; the card
+        // must point at the tool that actually exists in the catalog (pack
+        // params), not at a bare tool name.
+        Assert.True(AgentToolCards.TryGet("add_family_parameter", out var card));
+        Assert.NotNull(card);
+        Assert.Contains(
+            "set_shared_parameter_file пака params",
+            card!.Purpose,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Cards_AreNotMutatedByIdEnrich()
     {
         var before = AgentToolCards.All

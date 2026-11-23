@@ -17,10 +17,11 @@ namespace SmartCon.IntegrationTests.Agent;
 /// semantics (C4-13), isOnSheet of placed schedules (C8-03), key schedules out
 /// of audit_fill_rate (C8-04), categoryId of the overview (ORCH-8), template
 /// parameter lists of a templated view (N-ds-1), discipline of views without
-/// one (N-ds-2), piping elementCount (N-ds-7) and album inheritance of title
-/// block values (C6-11).
+/// one (N-ds-2) and piping elementCount (N-ds-7). The coverage partial
+/// (AgentScheduleHonestyTests.Coverage.cs) adds the S1 review round: C6-02,
+/// C6-03, C6-04, C6-07, C8-02, C6-08, C6-11, N-ds-9, S1-R5 and S1-R6.
 /// </summary>
-public sealed class AgentScheduleHonestyTests : RevitApiTest
+public sealed partial class AgentScheduleHonestyTests : RevitApiTest
 {
     private const string ScheduleName = "SC_Honesty_Walls";
     private const string CloneName = "SC_Honesty_Clone";
@@ -478,79 +479,6 @@ public sealed class AgentScheduleHonestyTests : RevitApiTest
         // alone holds only terminals and reported 0.
         await Assert.That(systems[0].GetProperty("elementCount").GetInt32())
             .IsGreaterThanOrEqualTo(2);
-    }
-
-    [Test]
-    public async Task BuildSystemSheets_NoTitleBlockParameters_InheritsAlbumValue()
-    {
-        if (!_sheetCreated)
-            Skip.Test("В шаблоне нет титульного блока для листа");
-
-        // Revit refuses binding a project parameter to OST_TitleBlocks, so the
-        // album value lives in an editable family parameter of the loaded title
-        // block family (exactly the "Кратность" shape the fix targets).
-        var inheritName = string.Empty;
-        var inheritValue = string.Empty;
-        _transactions!.RunInTransaction(Doc, "Set album value", doc =>
-        {
-            foreach (var element in new FilteredElementCollector(doc)
-                         .OfCategory(BuiltInCategory.OST_TitleBlocks)
-                         .WhereElementIsNotElementType())
-            {
-                if (element is not FamilyInstance instance)
-                    continue;
-
-                foreach (Parameter parameter in instance.Parameters)
-                {
-                    if (parameter.IsReadOnly
-                        || parameter.StorageType
-                            is not (StorageType.String or StorageType.Integer)
-                        || parameter.Definition is not InternalDefinition
-                            {
-                                BuiltInParameter: BuiltInParameter.INVALID
-                            } definition)
-                        continue;
-
-                    var set = parameter.StorageType == StorageType.String
-                        ? parameter.Set("SC_HN_Album")
-                        : parameter.Set(2);
-                    if (!set)
-                        continue;
-
-                    inheritName = definition.Name;
-                    inheritValue = parameter.StorageType == StorageType.String
-                        ? "SC_HN_Album"
-                        : "2";
-                    break;
-                }
-
-                break;
-            }
-        });
-        if (inheritName.Length == 0)
-            Skip.Test("У титульного блока шаблона нет редактируемого строкового/целого параметра");
-
-        var tool = CreateTool<BuildSystemSheetsTool>();
-        var result = tool.ExecuteForTests(
-            Parse("{\"items\":[{\"viewId\":" + _planId +
-                  ",\"sheetName\":\"SC_Honesty_New\"}],\"dryRun\":false}"),
-            approved: true,
-            CancellationToken.None);
-
-        await Assert.That(result.Success).IsTrue();
-        var item = result.Data!.Value.GetProperty("items")[0];
-        await Assert.That(item.GetProperty("status").GetString()).IsEqualTo("built");
-
-        // C6-11: without explicit titleBlockParameters the album's common value
-        // is inherited (status "inherited"), not left empty.
-        var parameters = item.GetProperty("titleBlockParameters").EnumerateArray()
-            .Where(row => row.GetProperty("name").GetString() == inheritName)
-            .ToList();
-        await Assert.That(parameters.Count).IsEqualTo(1);
-        await Assert.That(parameters[0].GetProperty("status").GetString())
-            .IsEqualTo("inherited");
-        await Assert.That(parameters[0].GetProperty("value").GetString())
-            .IsEqualTo(inheritValue);
     }
 
     private ViewSchedule? FindSchedule(string name)

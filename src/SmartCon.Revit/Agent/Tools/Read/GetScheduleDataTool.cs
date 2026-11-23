@@ -27,7 +27,8 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             "(default 50, max 500), offset, returned, nextOffset, truncated, totalRows. A heading " +
             "row inside the body is skipped and reported as headerRowSkipped. includeHidden=true " +
             "adds hiddenColumns[] (name, heading, guid, parameterName and up to 5 sampleValues " +
-            "read from the model — the table body has no cells for hidden columns). 0 rows under " +
+            "read from the model — the table body has no cells for hidden columns; the single " +
+            "hiddenColumnsNote explains the samples once). 0 rows under " +
             "a filter that names a value is reported as a warning with the closest existing " +
             "values of the field; 0 rows under an equals-\"\" control filter is reported as passed.",
         Risk = AgentToolRisk.Read,
@@ -127,15 +128,17 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             });
         }
 
+        var hiddenColumns = AgentJson.GetBool(args, "includeHidden", false)
+            ? ReadHiddenColumnSamples(doc, schedule, ct)
+            : null;
         var payload = new
         {
             scheduleId = schedule.Id.GetValue(),
             name = schedule.Name,
             rowCount = total,
             hiddenFieldCount,
-            hiddenColumns = AgentJson.GetBool(args, "includeHidden", false)
-                ? ReadHiddenColumnSamples(doc, schedule, ct)
-                : null,
+            hiddenColumns,
+            hiddenColumnsNote = hiddenColumns is { Count: > 0 } ? HiddenColumnsNote : null,
             columnCount = columns.Count,
             columns = columnPayload,
             totalRows = total,
@@ -210,6 +213,15 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
         "set_schedule_filter and read again]";
 
     /// <summary>
+    /// One note per hiddenColumns block (S1-R6): repeating it on every hidden
+    /// column cost ~200 characters each for the same fact.
+    /// </summary>
+    private const string HiddenColumnsNote =
+        "Hidden columns have no cells in the table body; sampleValues are distinct values " +
+        "read from the model elements. Unhide a field " +
+        "(set_schedule_field_visibility) to see per-row values.";
+
+    /// <summary>
     /// The closest existing values of the field behind a string filter: what
     /// the caller may have meant by a value that matched nothing. Empty when
     /// they cannot be read.
@@ -279,10 +291,7 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
                     heading = SafeText(field.ColumnHeading),
                     parameterName = AgentScheduleReader.DescribeParameter(doc, field),
                     guid = AgentScheduleReader.DescribeParameterGuid(doc, field),
-                    sampleValues = samples.Count > 0 ? samples : null,
-                    note = "Hidden columns have no cells in the table body; sampleValues are " +
-                           "distinct values read from the model elements. Unhide the field " +
-                           "(set_schedule_field_visibility) to see per-row values."
+                    sampleValues = samples.Count > 0 ? samples : null
                 });
             }
         }
