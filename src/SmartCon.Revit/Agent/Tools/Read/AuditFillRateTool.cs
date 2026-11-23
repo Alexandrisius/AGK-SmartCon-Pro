@@ -40,7 +40,9 @@ public sealed class AuditFillRateTool : AgentReadToolBase
             "NOT audited. Alternatively pass explicit scheduleIds. The summary is computed from " +
             "the model in one collector pass (cap 20000 elements): for every parameter — " +
             "filled / emptyNoValue / emptyString / missingParameter, emptyPct and the culprits " +
-            "list (elementId, family, type, levelName). Use it for a quick 'what is empty where' " +
+            "list (elementId, family, type, levelName). Key schedules are never sources: their " +
+            "Key Name is a key table row, not a model parameter (they are listed in " +
+            "keySchedulesSkipped). Use it for a quick 'what is empty where' " +
             "report; it never writes anything.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""scheduleIds"":{""type"":""array"",""items"":{""type"":""integer""}},""onlyOnSheets"":{""type"":""boolean""},""categories"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Only narrows the audit: these categories are intersected with the categories of the source schedules and never add sources""},""includeTypeParameters"":{""type"":""boolean"",""default"":true},""maxCulpritsPerParameter"":{""type"":""integer"",""default"":20,""maximum"":200},""limit"":{""type"":""integer"",""default"":30,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
@@ -76,12 +78,26 @@ public sealed class AuditFillRateTool : AgentReadToolBase
         var mandatory = new List<ViewSchedule>();
         var notFound = new List<long>();
         var offSheet = new List<Dictionary<string, object?>>();
+        var keySchedules = new List<Dictionary<string, object?>>();
 
         foreach (var schedule in AgentScheduleReader.Collect(doc))
         {
             if (schedule.IsTemplate || schedule.IsInternalKeynoteSchedule
                                      || schedule.IsTitleblockRevisionSchedule)
                 continue;
+
+            // C8-04: a key schedule's Key Name (REF_TABLE_ELEM_NAME) is a key
+            // table row, not a model parameter — it would report 100% empty.
+            if (SafeIsKeySchedule(schedule))
+            {
+                keySchedules.Add(new Dictionary<string, object?>
+                {
+                    ["scheduleId"] = schedule.Id.GetValue(),
+                    ["name"] = schedule.Name,
+                    ["reason"] = "key schedule — its Key Name is a key table row, not a model parameter"
+                });
+                continue;
+            }
 
             if (scheduleIds.Count > 0)
             {
@@ -227,13 +243,15 @@ public sealed class AuditFillRateTool : AgentReadToolBase
             ["includeTypeParameters"] = includeTypeParameters,
             ["sourceSchedules"] = sourceRows,
             ["offSheetSchedules"] = offSheet.Count > 0 ? offSheet : null,
+            ["keySchedulesSkipped"] = keySchedules.Count > 0 ? keySchedules : null,
             ["unknownScheduleIds"] = notFound.Count > 0 ? notFound : null,
             ["unknownCategories"] = unknownCategories.Count > 0 ? unknownCategories : null,
             ["hint"] =
                 "emptyNoValue = parameter exists but has no value; emptyString = blank string; " +
                 "missingParameter = the element (and its type) does not carry the parameter. " +
                 "The parameter set comes from the fields of sourceSchedules; offSheetSchedules " +
-                "are drafts outside sheets and are not audited."
+                "are drafts outside sheets and are not audited; keySchedulesSkipped are key " +
+                "schedules (their Key Name is not a model parameter)."
         };
 
         return ToolResult.Ok(
@@ -241,7 +259,22 @@ public sealed class AuditFillRateTool : AgentReadToolBase
             "Audited " + ordered.Count + " parameter(s) over " + elements.Count +
             " element(s) from " + mandatory.Count + " source schedule(s)" +
             (offSheet.Count > 0 ? "; " + offSheet.Count + " draft schedule(s) off sheets skipped" : "") +
+            (keySchedules.Count > 0
+                ? "; " + keySchedules.Count + " key schedule(s) skipped"
+                : "") +
             (hasMore ? "; next offset " + (offset + page.Count) : "") + ".");
+    }
+
+    private static bool SafeIsKeySchedule(ViewSchedule schedule)
+    {
+        try
+        {
+            return schedule.Definition.IsKeySchedule;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private static int CountFields(ViewSchedule schedule)

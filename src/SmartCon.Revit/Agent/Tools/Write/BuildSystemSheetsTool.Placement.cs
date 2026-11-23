@@ -211,15 +211,21 @@ public sealed partial class BuildSystemSheetsTool
     /// Writes titleBlockParameters to the title block INSTANCE of the new
     /// sheet. A missing or rejected parameter is a warning (titleblock_
     /// parameter_not_found / the setter reason) — the sheet itself stays.
+    /// After the explicit values, the album-inherited ones (C6-11) are written
+    /// for every parameter the item did not set explicitly: the common values
+    /// of the existing sheets of the same title block type, so a sheet built
+    /// without titleBlockParameters keeps the album's size multiplicity
+    /// instead of resetting it to 0.
     /// </summary>
     private static List<object> ApplyTitleBlockParameters(
         Document doc,
         ViewSheet sheet,
         Dictionary<string, JsonElement>? parameters,
+        Dictionary<string, string>? inherited,
         List<string> warnings)
     {
         var results = new List<object>();
-        if (parameters is null || parameters.Count == 0)
+        if ((parameters is null || parameters.Count == 0) && inherited is not { Count: > 0 })
             return results;
 
         var instance = FindTitleBlockInstance(doc, sheet);
@@ -229,20 +235,23 @@ public sealed partial class BuildSystemSheetsTool
                 "Sheet " + sheet.SheetNumber + " has no title block instance; " +
                 "titleBlockParameters were not applied. [Action: check the title block " +
                 "family of the sheet type]");
-            foreach (var name in parameters.Keys)
+            if (parameters is not null)
             {
-                results.Add(new
+                foreach (var name in parameters.Keys)
                 {
-                    name,
-                    status = "failed",
-                    errorCode = "titleblock_not_found"
-                });
+                    results.Add(new
+                    {
+                        name,
+                        status = "failed",
+                        errorCode = "titleblock_not_found"
+                    });
+                }
             }
 
             return results;
         }
 
-        foreach (var pair in parameters)
+        foreach (var pair in parameters ?? new Dictionary<string, JsonElement>())
         {
             var parameter = FindInstanceParameter(instance, pair.Key);
             if (parameter is null)
@@ -278,6 +287,27 @@ public sealed partial class BuildSystemSheetsTool
                 "parameter storage type " + parameter.StorageType + "]");
         }
 
+        foreach (var pair in inherited ?? new Dictionary<string, string>())
+        {
+            if (parameters is not null && parameters.ContainsKey(pair.Key))
+                continue;
+
+            var parameter = FindInstanceParameter(instance, pair.Key);
+            if (parameter is null)
+                continue;
+
+            var unit = parameter.StorageType == StorageType.Double
+                ? "raw"
+                : null;
+            if (AgentParameterWriteHelper.TrySet(parameter, pair.Value, unit, out _, out _))
+                results.Add(new
+                {
+                    name = pair.Key,
+                    status = "inherited",
+                    value = pair.Value
+                });
+        }
+
         return results;
     }
 
@@ -293,6 +323,116 @@ public sealed partial class BuildSystemSheetsTool
 
         return null;
     }
+
+    /// <summary>Every title block instance of the document, sheeted or not.</summary>
+    private static List<FamilyInstance> CollectTitleBlockInstances(Document doc)
+    {
+        var instances = new List<FamilyInstance>();
+        foreach (var element in new FilteredElementCollector(doc)
+                     .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                     .WhereElementIsNotElementType())
+        {
+            if (element is FamilyInstance instance)
+                instances.Add(instance);
+        }
+
+        return instances;
+    }
+
+    /// <summary>
+    /// Sheets that already hold a viewport of a view, by view id (legends may
+    /// repeat; owners here block re-placement of regular views).
+    /// </summary>
+    private static Dictionary<long, string> CollectViewportOwners(Document doc)
+    {
+        var owners = new Dictionary<long, string>();
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(Viewport)))
+        {
+            if (element is not Viewport viewport)
+                continue;
+
+            var ownerSheetId = viewport.SheetId;
+            if (ownerSheetId == ElementId.InvalidElementId)
+                continue;
+
+            owners[viewport.ViewId.GetValue()] =
+                (doc.GetElement(ownerSheetId) as ViewSheet)?.SheetNumber ?? string.Empty;
+        }
+
+        return owners;
+    }
+
+    /// <summary>
+    /// Values a new sheet inherits from the album: for every editable instance
+    /// parameter of the title block that is not a built-in parameter and holds
+    /// the same value on ALL existing sheets of the same title block type,
+    /// that common value. Built-in sheet parameters (number, name, scale...)
+    /// are never inherited: the tool or the user owns them. Null when the
+    /// album has no sheet of this type yet.
+    /// </summary>
+    private static Dictionary<string, string>? InheritedTitleBlockValues(
+        Document doc,
+        ElementId titleBlockTypeId)
+    {
+        var instances = new List<FamilyInstance>();
+        foreach (var instance in CollectTitleBlockInstances(doc))
+        {
+            if (instance.GetTypeId() == titleBlockTypeId)
+                instances.Add(instance);
+        }
+
+        if (instances.Count == 0)
+            return null;
+
+        var candidates = new Dictionary<Parameter, string>();
+        foreach (Parameter parameter in instances[0].Parameters)
+        {
+            var name = parameter.Definition?.Name;
+            if (string.IsNullOrEmpty(name) || parameter.IsReadOnly)
+                continue;
+
+            // A built-in parameter is an InternalDefinition with a BuiltInParameter value.
+            if (parameter.Definition is InternalDefinition { BuiltInParameter: not BuiltInParameter.INVALID })
+                continue;
+
+            // ElementId values (a level, a type) are not portable between sheets.
+            if (parameter.StorageType == StorageType.ElementId)
+                continue;
+
+            candidates[parameter] = name!;
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        var inherited = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in candidates)
+        {
+            var value = pair.Key.HasValue ? DescribeOf(pair.Key) : null;
+            if (string.IsNullOrEmpty(value))
+                continue;
+
+            var same = true;
+            for (var index = 1; index < instances.Count && same; index++)
+            {
+                var other = FindInstanceParameter(instances[index], pair.Value);
+                same = other is not null && other.HasValue
+                       && string.Equals(DescribeOf(other), value, StringComparison.Ordinal);
+            }
+
+            if (same)
+                inherited.Add(pair.Value, value!);
+        }
+
+        return inherited;
+    }
+
+    private static string? DescribeOf(Parameter parameter) =>
+        parameter.StorageType == StorageType.Double
+            ? parameter.AsDouble().ToString("R", CultureInfo.InvariantCulture)
+            : parameter.StorageType == StorageType.Integer
+                ? parameter.AsInteger().ToString(CultureInfo.InvariantCulture)
+                : parameter.AsString();
 
     private static Parameter? FindInstanceParameter(FamilyInstance instance, string name)
     {

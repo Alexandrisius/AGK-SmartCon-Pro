@@ -67,6 +67,84 @@ internal static class AgentScheduleReader
         return schedules;
     }
 
+    /// <summary>
+    /// Categories of the document infrastructure that never supply rows to a
+    /// schedule (the same exclusion audit_fill_rate applies to its scans).
+    /// </summary>
+    private static readonly BuiltInCategory[] InfrastructureCategories =
+    {
+        BuiltInCategory.OST_Views,
+        BuiltInCategory.OST_Sheets,
+        BuiltInCategory.OST_Schedules,
+        BuiltInCategory.OST_Viewports
+    };
+
+    /// <summary>
+    /// The single category of a schedule definition, or null: a multi-category
+    /// schedule reports InvalidElementId here (Autodesk API reference) and no
+    /// member of the API lists the categories of such a schedule.
+    /// </summary>
+    internal static ElementId? TryGetCategoryId(ScheduleDefinition definition)
+    {
+        try
+        {
+            var categoryId = definition.CategoryId;
+            return categoryId is null || categoryId == ElementId.InvalidElementId
+                ? null
+                : categoryId;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    internal static bool IsMultiCategory(ScheduleDefinition definition) =>
+        TryGetCategoryId(definition) is null;
+
+    /// <summary>
+    /// The elements the rows of a schedule definition come from, at most
+    /// <paramref name="cap"/> of them: the elements of its single category, or
+    /// — for a multi-category schedule — every non-type element outside the
+    /// document infrastructure. The wider set costs time only: an element
+    /// that does not carry the parameter in question never passes a rule.
+    /// </summary>
+    internal static IEnumerable<Element> CollectSourceElements(
+        Document doc,
+        ScheduleDefinition definition,
+        int cap)
+    {
+        FilteredElementCollector collector;
+        var categoryId = TryGetCategoryId(definition);
+        if (categoryId is not null)
+        {
+            var value = categoryId.GetValue();
+            if (value < int.MinValue || value > int.MaxValue)
+                yield break;
+
+            collector = new FilteredElementCollector(doc)
+                .OfCategory((BuiltInCategory)(int)value)
+                .WhereElementIsNotElementType();
+        }
+        else
+        {
+            collector = new FilteredElementCollector(doc).WhereElementIsNotElementType();
+            foreach (var category in InfrastructureCategories)
+            {
+                collector.WherePasses(new ElementCategoryFilter(
+                    new ElementId(category), inverted: true));
+            }
+        }
+
+        var taken = 0;
+        foreach (var element in collector)
+        {
+            yield return element;
+            if (++taken >= cap)
+                yield break;
+        }
+    }
+
     internal static IReadOnlyDictionary<long, IReadOnlyList<string>> MapSheetNumbers(Document doc)
     {
         var result = new Dictionary<long, List<string>>();
@@ -140,7 +218,11 @@ internal static class AgentScheduleReader
             Name = schedule.Name,
             Category = builtInCategory,
             CategoryName = category?.Name,
-            FieldCount = columns.Count,
+
+            // C4-13: one meaning everywhere — fieldCount is the TOTAL number of
+            // fields (visible + hidden), like audit_fill_rate's fieldCount;
+            // fields[] lists only the visible headings.
+            FieldCount = columns.Count + hiddenFieldCount,
             HiddenFieldCount = hiddenFieldCount,
             Fields = headings,
             RowCount = ReadRowCount(schedule, skipHeader: true),

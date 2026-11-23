@@ -31,8 +31,12 @@ public sealed class ListMepSystemsTool : AgentReadToolBase
             "circuits, without opening anything. Each row: systemId, name, domain " +
             "(piping|mechanical|electrical), classification (MEPSystemClassification name like " +
             "SupplyHydronic or SupplyAir, null for electrical circuits), typeName/typeId of the " +
-            "system type, its abbreviation, elementCount (terminal elements), equipmentCount " +
-            "(0 or 1 base equipment) and isEmpty. Filters: nameContains, domain, classification. " +
+            "system type, its abbreviation, elementCount, equipmentCount " +
+            "(0 or 1 base equipment) and isEmpty. elementCount is the number of model elements " +
+            "assigned to the system (pipes, fittings, accessories, terminals, fixtures, " +
+            "equipment): the union of the system's terminal set, its base equipment and its " +
+            "pipe/duct network — MEPSystem.Elements alone holds only the terminals. " +
+            "Filters: nameContains, domain, classification. " +
             "Paged: limit (default 200, max 500), offset, returned, nextOffset, truncated. " +
             "fields=[\"systemId\",\"name\",\"abbreviation\"] projects each card onto the listed " +
             "properties; unknown names are reported in ignoredFields with availableFields. " +
@@ -170,10 +174,38 @@ public sealed class ListMepSystemsTool : AgentReadToolBase
             TypeName = type?.Name,
             TypeId = type?.Id.GetValue(),
             Abbreviation = type?.Abbreviation,
-            ElementCount = system.Elements?.Size ?? 0,
+
+            // N-ds-7: MEPSystem.Elements holds only the terminal elements and
+            // excludes the base equipment; the pipes/ducts+fittings live in
+            // PipingNetwork/DuctNetwork. The union is the physical system.
+            ElementCount = CountMembers(system),
             EquipmentCount = system.BaseEquipment is null ? 0 : 1,
             IsEmpty = system.IsEmpty
         };
+    }
+
+    private static int CountMembers(MEPSystem system)
+    {
+        // ElementSet iterates ELEMENTS, not ids (proven by an integration-test
+        // InvalidCastException: "Unable to cast 'Pipe' to 'ElementId'") — the
+        // same proven union SetParametersJobAction uses.
+        var ids = new HashSet<long>();
+        if (system.Elements is not null)
+            foreach (var member in system.Elements)
+                if (member is Element element)
+                    ids.Add(element.Id.GetValue());
+        if (system.BaseEquipment is { } equipment)
+            ids.Add(equipment.Id.GetValue());
+        if (system is PipingSystem piping && piping.PipingNetwork is not null)
+            foreach (var member in piping.PipingNetwork)
+                if (member is Element element)
+                    ids.Add(element.Id.GetValue());
+        if (system is MechanicalSystem mechanical && mechanical.DuctNetwork is not null)
+            foreach (var member in mechanical.DuctNetwork)
+                if (member is Element element)
+                    ids.Add(element.Id.GetValue());
+
+        return ids.Count;
     }
 
     private static string DomainOf(MEPSystem system)

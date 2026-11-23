@@ -12,7 +12,8 @@ public static partial class AgentToolPackSkills
   Возвращает `widthMm/heightMm`, `viewCount`, `scheduleCount` и `visualDuplicates[]` —
   номера, которые выглядят одинаково, но различаются невидимыми символами.
 - `get_sheet_content` — состав листа: виды (координаты вьюпорта в мм) и расписания
-  (`instanceId`, координаты); `sheetIds` — пакетно, ≤50.
+  (`instanceId`, координаты, фактические `widthMm/heightMm` по bbox экземпляра);
+  `sheetIds` — пакетно, ≤50.
 - `create_sheet` — создать лист: `number` (уникален), `name?`, `titleBlockTypeId?`.
 - `create_viewports` — разместить виды на листе пакетно (≤100, одна транзакция):
   `sheetId` + `items[{viewId, pointMmX, pointMmY}]`.
@@ -32,8 +33,10 @@ public static partial class AgentToolPackSkills
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
 - `get_titleblock_options` — типы титульников + их редактируемые параметры (кратность
-  размера / формат листа), по `sheetId` — параметры экземпляра титульника листа; плюс
-  `existingSheets[]` и `nextNumberHint` (продолжение альбома).
+  размера / формат листа), `sizeMap[]` — таблица «кратность → размер» по листам альбома
+  (значения, которых в альбоме нет, неизвестны — проверяйте черновым листом), по
+  `sheetId` — параметры экземпляра титульника листа; плюс `existingSheets[]` и
+  `nextNumberHint` (продолжение альбома).
 - `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — фактический box
   вьюпорта; план/разрез с кропом — кроп/масштаб (estimated=true); 3D без кропа — размер до
   размещения неизвестен (API не даёт).
@@ -45,7 +48,10 @@ public static partial class AgentToolPackSkills
   filterField, filterValue}` — тул сам клонирует общую спецификацию в узкую таблицу: видимые
   только keepFields-колонки (отсутствующая → warning + skip), фильтр equals filterField=
   filterValue, поле фильтра — скрытая колонка; клон «Экспликация <имя листа>» (два пути
-  одновременно — invalid_arguments) + `titleBlockParameters` титульника (кратность).
+  одновременно — invalid_arguments) + `titleBlockParameters` титульника (кратность);
+  `explicationRows` — строки клона (0 строк под фильтром → warning с ближайшими
+  значениями поля); НЕ переданные параметры титульника наследуются с листов альбома
+  того же типа (status ""inherited"") — кратность не сбрасывается в 0.
   undo_last удаляет пачку (лист, вид, клон, выноску).
 
 ### Кухня Revit

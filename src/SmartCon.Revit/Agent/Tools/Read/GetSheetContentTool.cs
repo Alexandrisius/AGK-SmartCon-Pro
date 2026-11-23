@@ -23,7 +23,8 @@ public sealed class GetSheetContentTool : AgentReadToolBase
         Description =
             "Shows what is placed on one sheet or on a batch: views with viewport coordinates and " +
             "box size in millimetres, and placed schedules (including revision schedules) with " +
-            "their points. Identify one sheet by sheetId, exact number or exact name; pass sheetIds " +
+            "their points and read-back size (widthMm/heightMm from the instance bounding box, " +
+            "including Revit's fixed ~2.1 mm selection margin). Identify one sheet by sheetId, exact number or exact name; pass sheetIds " +
             "to read many sheets in one call (a sheet set audit does not need a round trip each). " +
             "An ambiguous name or a number that only matches after removing invisible characters " +
             "returns candidates (with numberCodePoints) instead of silently picking one. Paged over " +
@@ -278,6 +279,25 @@ public sealed class GetSheetContentTool : AgentReadToolBase
                 // Revision schedules may not expose a point.
             }
 
+            // N-ds-9: the placed table's real size, read back from the instance
+            // bounding box (Revit adds a fixed ~2.1 mm selection margin around
+            // the table — the same margin the placement tools report).
+            double? widthMm = null;
+            double? heightMm = null;
+            try
+            {
+                var box = instance.get_BoundingBox(sheet);
+                if (box is not null)
+                {
+                    widthMm = AgentUnitsFormat.ToMillimeters(box.Max.X - box.Min.X);
+                    heightMm = AgentUnitsFormat.ToMillimeters(box.Max.Y - box.Min.Y);
+                }
+            }
+            catch (Exception)
+            {
+                // Revision schedules and split segments may not expose a box.
+            }
+
             content.Schedules.Add(new
             {
                 instanceId = instance.Id.GetValue(),
@@ -285,6 +305,8 @@ public sealed class GetSheetContentTool : AgentReadToolBase
                 name = schedule?.Name,
                 xMm = pointX,
                 yMm = pointY,
+                widthMm,
+                heightMm,
                 isRevisionSchedule = instance.IsTitleblockRevisionSchedule
             });
         }

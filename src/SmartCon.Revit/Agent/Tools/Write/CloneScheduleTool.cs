@@ -41,9 +41,11 @@ public sealed partial class CloneScheduleTool : AgentWriteToolBase
             "this way); when no analog exists the column lands in skippedFields[]. " +
             "copyFilters/copySort/copyTotals/copyFormat/copyStyle (default true) select " +
             "the blocks to transfer; itemized inherits from the source when not passed. " +
-            "Returns created{scheduleId}, copiedFields[], skippedFields[], copiedFilters, " +
-            "copiedSortGroups and warnings[]. undo_last deletes the clone. One schedule " +
-            "per call; dry run defaults to true.",
+            "Returns created{scheduleId, name}, copiedFields[], skippedFields[], " +
+            "copiedFilters, copiedSortGroups and warnings[]; in a dry run created.scheduleId " +
+            "is PROVISIONAL — the clone was built inside the rolled-back transaction and " +
+            "does not exist, so do not reference it. undo_last deletes the clone. One " +
+            "schedule per call; dry run defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         InputSchemaJson = @"{""type"":""object"",""properties"":{""sourceScheduleId"":{""type"":""integer""},""name"":{""type"":""string""},""fieldMapping"":{""type"":""array"",""maxItems"":40,""items"":{""type"":""object"",""properties"":{""sourceField"":{""type"":""string""},""targetField"":{""type"":[""string"",""null""]},""targetGuid"":{""type"":[""string"",""null""],""description"":""Shared parameter GUID of the target field (customer ФОП)""}},""required"":[""sourceField""],""additionalProperties"":false}},""copyFilters"":{""type"":""boolean"",""default"":true},""copySort"":{""type"":""boolean"",""default"":true},""copyTotals"":{""type"":""boolean"",""default"":true},""copyFormat"":{""type"":""boolean"",""default"":true},""copyStyle"":{""type"":""boolean"",""default"":true},""itemized"":{""type"":""boolean""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""sourceScheduleId"",""name""],""additionalProperties"":false}"
@@ -312,6 +314,14 @@ public sealed partial class CloneScheduleTool : AgentWriteToolBase
         outcome.Data["warnings"] = warnings;
         outcome.Data["itemized"] = SafeItemized(cloneDefinition);
         outcome.Data["fields"] = readBackFields;
+        if (dryRun)
+        {
+            warnings.Add(
+                "dryRun: the clone was created inside the rolled-back transaction; " +
+                "created.scheduleId " + cloneId + " is PROVISIONAL and will not exist " +
+                "after this call. [Action: re-run with dryRun:false and read the real " +
+                "scheduleId from the result before referencing it]");
+        }
     }
 
     private static bool SafeKeySchedule(ScheduleDefinition definition)

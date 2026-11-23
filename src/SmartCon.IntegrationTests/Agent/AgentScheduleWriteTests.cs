@@ -776,7 +776,7 @@ public sealed class AgentScheduleWriteTests : RevitApiTest
             throw new InvalidOperationException(
                 "Сид не смог создать спецификацию: " + result.ErrorCode);
 
-        return result.Data!.Value.GetProperty("schedule").GetProperty("scheduleId").GetInt64();
+        return result.Data!.Value.GetProperty("created").GetProperty("scheduleId").GetInt64();
     }
 
     private ToolResult UndoLast()

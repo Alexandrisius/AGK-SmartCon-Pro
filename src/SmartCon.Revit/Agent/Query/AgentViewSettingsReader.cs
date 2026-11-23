@@ -16,6 +16,8 @@ internal static class AgentViewSettingsReader
         var template = hasTemplate ? doc.GetElement(templateId) : null;
 
         var hiddenCategories = ReadHiddenCategories(doc, view, out var hiddenCategoryCount);
+        var templateView = template as View;
+
         return new ViewSettings
         {
             ViewId = view.Id.GetValue(),
@@ -27,7 +29,7 @@ internal static class AgentViewSettingsReader
             HasTemplate = hasTemplate,
             Scale = view.Scale,
             DetailLevel = view.DetailLevel.ToString(),
-            Discipline = view.Discipline.ToString(),
+            Discipline = SafeDiscipline(view),
             ViewRange = ReadViewRange(doc, view),
             Crop = ReadCrop(view),
             HiddenCategories = hiddenCategories,
@@ -35,9 +37,35 @@ internal static class AgentViewSettingsReader
             HiddenCategoryListCapped = hiddenCategoryCount > hiddenCategories.Count,
             HiddenCategoryEditableCount = CountEditableHiddenCategories(view, hiddenCategories),
             HiddenWorksets = ReadHiddenWorksets(doc, view),
-            ControlledParameters = ReadTemplateParameters(doc, view, controlled: true),
-            NonControlledParameters = ReadTemplateParameters(doc, view, controlled: false)
+
+            // N-ds-1: for a templated view the controlled/non-controlled split
+            // belongs to its template — the view itself has no template ids,
+            // so the fields projection used to answer two empty arrays exactly
+            // when hasTemplate=true.
+            ControlledParameters = templateView is not null
+                ? ReadTemplateParameters(doc, templateView, controlled: true)
+                : ReadTemplateParameters(doc, view, controlled: true),
+            NonControlledParameters = templateView is not null
+                ? ReadTemplateParameters(doc, templateView, controlled: false)
+                : ReadTemplateParameters(doc, view, controlled: false)
         };
+    }
+
+    /// <summary>
+    /// N-ds-2: view types without a Discipline property (legends, schedules...)
+    /// throw on View.Discipline — one such view in a fields=[discipline] batch
+    /// used to kill the whole call. Null is the honest "not applicable".
+    /// </summary>
+    private static string? SafeDiscipline(View view)
+    {
+        try
+        {
+            return view.Discipline.ToString();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     internal static ViewTemplateCard CreateTemplateCard(Document doc, View template)

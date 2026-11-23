@@ -22,9 +22,11 @@ public sealed class ListSchedulesTool : AgentReadToolBase
         Name = "list_schedules",
         Description =
             "Lists schedules and specifications (ведомости, спецификации): name, category, visible " +
-            "column heading, data row count, key schedule flag, sheet numbers and the explicit " +
+            "column headings, data row count, key schedule flag, sheet numbers and the explicit " +
             "placedOnSheet flag (true = issued documentation placed on a sheet, false = draft). " +
-            "Filters: " +
+            "fieldCount counts ALL fields (visible + hidden; hiddenFieldCount of them are " +
+            "hidden) — the same meaning as audit_fill_rate; fields[] lists only the visible " +
+            "headings. Filters: " +
             "categories, nameContains; internal keynote, titleblock revision and template schedules " +
             "are excluded unless requested. Paged: limit (default 200, max 500), offset, returned, " +
             "nextOffset, truncated. Unknown categories are reported in unknownCategories. " +
