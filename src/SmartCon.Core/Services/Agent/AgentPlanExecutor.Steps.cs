@@ -160,7 +160,9 @@ public sealed partial class AgentPlanExecutor
                             : "at least " + step.ExpectedChangesAtLeast!.Value + " change(s)") +
                         ", the tool counted " + result.Changed + " change(s)" +
                         DescribeCountedItems(dryResult) +
-                        ". The counter is the length of changed[] in the step's preview items");
+                        ". Use steps[].changed of this preview as expectedChanges: it is the " +
+                        "tool's own change count (in the report items.changed[] may be shorter " +
+                        "by items.duplicatesInCreated)");
                 }
             }
         }

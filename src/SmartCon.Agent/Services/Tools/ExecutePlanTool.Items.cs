@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 
@@ -10,8 +12,8 @@ public sealed partial class ExecutePlanTool
     /// Step items projection for the report: drops changed[] cards that only
     /// duplicate what the step's created* blocks already describe (ORCH-7 —
     /// reporting the same creation twice doubled the context) and, for the
-    /// preview, renames ids of objects the dry run would create with a preview
-    /// prefix (C7-05/C4-11).
+    /// preview, renames the ids of the objects the dry run would create with a
+    /// preview prefix (C7-05/C4-11).
     /// </summary>
     private static JsonElement? TransformItems(AgentPlanStepResult step, bool apply)
     {
@@ -19,35 +21,40 @@ public sealed partial class ExecutePlanTool
         if (data is not { ValueKind: JsonValueKind.Object })
             return data;
 
-        System.Text.Json.Nodes.JsonNode? node;
+        JsonNode? node;
         try
         {
-            node = System.Text.Json.Nodes.JsonNode.Parse(data.Value.GetRawText());
+            node = JsonNode.Parse(data.Value.GetRawText());
         }
         catch (JsonException)
         {
             return data;
         }
 
-        if (node is not System.Text.Json.Nodes.JsonObject root)
+        if (node is not JsonObject root)
             return data;
 
         var changed = false;
         DedupeCreatedInChanged(root, ref changed);
 
-        System.Text.Json.Nodes.JsonObject? renamed = null;
         if (!apply)
         {
-            var renameChanged = false;
-            renamed = RenameNode(root, insideCreatedBlock: false, ref renameChanged)
-                as System.Text.Json.Nodes.JsonObject;
-            changed |= renameChanged;
+            var renamed = RenameNode(root, createdBlockKey: null, ref changed);
+            if (changed)
+                return JsonSerializer.SerializeToElement(renamed, SerializerOptions);
         }
 
-        if (!changed)
-            return data;
+        return changed ? JsonSerializer.SerializeToElement(root, SerializerOptions) : data;
+    }
 
-        return JsonSerializer.SerializeToElement(renamed ?? root, SerializerOptions);
+    // ── created / changed dedupe ─────────────────────────────────────────────
+
+    /// <summary>One object the step created, as a created* block describes it.</summary>
+    private sealed class CreatedObject
+    {
+        public long? Id { get; init; }
+
+        public string? Name { get; init; }
     }
 
     /// <summary>
@@ -57,52 +64,20 @@ public sealed partial class ExecutePlanTool
     /// cards, replacing them with a duplicatesInCreated counter so the numbers
     /// still add up (ORCH-7).
     /// </summary>
-    private static void DedupeCreatedInChanged(
-        System.Text.Json.Nodes.JsonObject root,
-        ref bool changed)
+    private static void DedupeCreatedInChanged(JsonObject root, ref bool changed)
     {
-        if (root["changed"] is not System.Text.Json.Nodes.JsonArray changedArray
-            || changedArray.Count == 0)
-        {
-            return;
-        }
-
-        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var hasCreatedBlock = false;
-        foreach (var pair in root)
-        {
-            if (!pair.Key.StartsWith("created", StringComparison.OrdinalIgnoreCase)
-                || pair.Value is null)
-            {
-                continue;
-            }
-
-            hasCreatedBlock = true;
-            switch (pair.Value)
-            {
-                case System.Text.Json.Nodes.JsonObject createdObject:
-                    CollectIdentities(createdObject, identities);
-                    break;
-                case System.Text.Json.Nodes.JsonArray createdArray:
-                    foreach (var item in createdArray)
-                    {
-                        if (item is System.Text.Json.Nodes.JsonObject createdItem)
-                            CollectIdentities(createdItem, identities);
-                    }
-
-                    break;
-            }
-        }
-
-        if (!hasCreatedBlock || identities.Count == 0)
+        if (root["changed"] is not JsonArray changedArray || changedArray.Count == 0)
             return;
 
-        var kept = new System.Text.Json.Nodes.JsonArray();
+        var created = CollectCreated(root);
+        if (created.Count == 0)
+            return;
+
+        var kept = new JsonArray();
         var duplicates = 0;
         foreach (var item in changedArray)
         {
-            if (item is System.Text.Json.Nodes.JsonObject card
-                && MatchesAnyIdentity(card, identities))
+            if (item is JsonObject card && IsDuplicateCard(card, created))
             {
                 duplicates++;
                 continue;
@@ -110,7 +85,7 @@ public sealed partial class ExecutePlanTool
 
             // The node still belongs to changedArray; re-parenting a live node
             // throws, so move a clone and let the original go with its array.
-            kept.Add(item is null ? null : System.Text.Json.Nodes.JsonNode.Parse(item.ToJsonString()));
+            kept.Add(item is null ? null : JsonNode.Parse(item.ToJsonString()));
         }
 
         if (duplicates == 0)
@@ -121,58 +96,202 @@ public sealed partial class ExecutePlanTool
         changed = true;
     }
 
-    private static void CollectIdentities(
-        System.Text.Json.Nodes.JsonObject created,
-        ISet<string> identities)
+    /// <summary>The objects listed by every created* block of the step result.</summary>
+    private static List<CreatedObject> CollectCreated(JsonObject root)
     {
-        foreach (var pair in created)
+        var created = new List<CreatedObject>();
+        foreach (var pair in root)
         {
+            if (!pair.Key.StartsWith("created", StringComparison.OrdinalIgnoreCase) || pair.Value is null)
+                continue;
+
             switch (pair.Value)
             {
-                case System.Text.Json.Nodes.JsonValue { } value
-                    when IsNameKey(pair.Key) && value.TryGetValue<string>(out var name)
-                    && name is not null && !string.IsNullOrWhiteSpace(name):
-                    identities.Add(name);
+                case JsonObject createdObject:
+                    AddCreated(createdObject, pair.Key, created);
                     break;
-                case System.Text.Json.Nodes.JsonValue { } idValue
-                    when IsIdKey(pair.Key) && idValue.TryGetValue<long>(out var id):
-                    identities.Add(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                case JsonArray createdArray:
+                    foreach (var item in createdArray)
+                    {
+                        if (item is JsonObject createdItem)
+                            AddCreated(createdItem, pair.Key, created);
+                    }
+
                     break;
             }
         }
+
+        return created;
     }
 
-    private static bool MatchesAnyIdentity(
-        System.Text.Json.Nodes.JsonObject card,
-        ISet<string> identities)
+    private static void AddCreated(JsonObject entry, string blockKey, List<CreatedObject> created)
     {
-        foreach (var pair in card)
+        TryGetCreatedIdKey(entry, blockKey, out var id);
+        var name = ReadName(entry);
+        if (id.HasValue || name is not null)
+            created.Add(new CreatedObject { Id = id, Name = name });
+    }
+
+    /// <summary>
+    /// A changed[] card is the same object as a created entry when both carry
+    /// ids and they are equal, or — when one of them has no id, as in a dry run
+    /// that reports viewId:null and cards without id — when the names are equal.
+    /// Ids the card merely references (a view, a template) never take part, so a
+    /// modification of another object survives the dedupe (review r1 #8).
+    /// </summary>
+    private static bool IsDuplicateCard(JsonObject card, List<CreatedObject> created)
+    {
+        var cardId = card["id"] is JsonValue idValue && idValue.TryGetValue<long>(out var id)
+            ? id
+            : (long?)null;
+        var cardName = ReadName(card);
+        foreach (var entry in created)
         {
-            if (!IsNameKey(pair.Key) && !IsIdKey(pair.Key))
-                continue;
-
-            var text = pair.Value switch
+            if (entry.Id.HasValue && cardId.HasValue)
             {
-                System.Text.Json.Nodes.JsonValue { } value when value.TryGetValue<string>(out var s) => s,
-                System.Text.Json.Nodes.JsonValue { } value when value.TryGetValue<long>(out var l) =>
-                    l.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                _ => null
-            };
+                if (entry.Id.Value == cardId.Value)
+                    return true;
 
-            // net48 BCL: no [NotNullWhen] on IsNullOrWhiteSpace — check null first.
-            if (text is not null && !string.IsNullOrWhiteSpace(text) && identities.Contains(text))
+                continue;
+            }
+
+            if (entry.Name is not null
+                && cardName is not null
+                && string.Equals(entry.Name, cardName, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 
         return false;
     }
 
-    private static bool IsNameKey(string key) =>
-        string.Equals(key, "name", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// The key under which a created entry carries the id of the object it
+    /// created: <c>&lt;entity&gt;Id</c> for a block that names its entity
+    /// (createdViews → viewId), else <c>id</c>, else the first <c>*Id</c> key.
+    /// Only this key describes the created object: levelId, templateId and the
+    /// like point at objects that already existed and survive the apply
+    /// (review r1 #3).
+    /// </summary>
+    private static string? TryGetCreatedIdKey(JsonObject entry, string blockKey, out long? id)
+    {
+        id = null;
+        var noun = blockKey.Substring("created".Length);
+        if (noun.Length > 1 && noun.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            noun = noun.Substring(0, noun.Length - 1);
 
-    private static bool IsIdKey(string key) =>
-        key.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(key, "id", StringComparison.OrdinalIgnoreCase);
+        string? fallbackKey = null;
+        long? fallbackId = null;
+        foreach (var pair in entry)
+        {
+            if (string.Equals(pair.Key, noun + "Id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Key, "id", StringComparison.OrdinalIgnoreCase))
+            {
+                id = ReadId(pair.Value);
+                return pair.Key;
+            }
+
+            if (fallbackKey is null && pair.Key.EndsWith("Id", StringComparison.Ordinal))
+            {
+                fallbackKey = pair.Key;
+                fallbackId = ReadId(pair.Value);
+            }
+        }
+
+        id = fallbackId;
+        return fallbackKey;
+    }
+
+    private static long? ReadId(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<long>(out var id) ? id : null;
+
+    private static string? ReadName(JsonObject node) =>
+        node["name"] is JsonValue value && value.TryGetValue<string>(out var name) && name is not null
+            ? name
+            : null;
+
+    // ── preview ids ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds renamed copies bottom-up (JsonNode cannot live in two parents at
+    /// once, so mutating while enumerating is off-limits). Preview-only (the
+    /// apply report keeps the real ids). Two kinds of keys are provisional:
+    /// the created object's own id inside a created* block and the keys a tool
+    /// announces itself (wouldCreate*Id, new*Id) — see
+    /// <see cref="TryGetCreatedIdKey"/> and <see cref="IsAnnouncedProvisionalKey"/>.
+    /// </summary>
+    private static JsonNode? RenameNode(JsonNode? node, string? createdBlockKey, ref bool changed)
+    {
+        switch (node)
+        {
+            case JsonObject entry when createdBlockKey is not null:
+                // One created entry: only its own id is the id of an object that
+                // does not exist yet.
+                var renamedEntry = new JsonObject();
+                var idKey = TryGetCreatedIdKey(entry, createdBlockKey, out _);
+                foreach (var pair in entry)
+                {
+                    var key = pair.Key;
+                    if (idKey is not null && IsProvisionalKey(key, idKey))
+                    {
+                        key = PreviewKey(key);
+                        changed = true;
+                    }
+
+                    renamedEntry[key] = RenameNode(pair.Value, createdBlockKey: null, ref changed);
+                }
+
+                return renamedEntry;
+
+            case JsonObject plain:
+                var renamed = new JsonObject();
+                foreach (var pair in plain)
+                {
+                    var key = pair.Key;
+                    var childBlock = pair.Value is JsonObject or JsonArray
+                                     && pair.Key.StartsWith("created", StringComparison.OrdinalIgnoreCase)
+                        ? pair.Key
+                        : null;
+                    if (childBlock is null && IsAnnouncedProvisionalKey(key))
+                    {
+                        key = PreviewKey(key);
+                        changed = true;
+                    }
+
+                    renamed[key] = RenameNode(pair.Value, childBlock, ref changed);
+                }
+
+                return renamed;
+
+            case JsonArray array:
+                var renamedArray = new JsonArray();
+                foreach (var item in array)
+                    renamedArray.Add(RenameNode(item, createdBlockKey, ref changed));
+
+                return renamedArray;
+
+            default:
+                return node is null ? null : JsonNode.Parse(node.ToJsonString());
+        }
+    }
+
+    private static bool IsProvisionalKey(string key, string idKey) =>
+        string.Equals(key, idKey, StringComparison.Ordinal)
+        && !key.StartsWith("preview", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A key a tool uses to announce an id that does not exist yet:
+    /// wouldCreate*Id (create_view_filter) or new*Id.
+    /// </summary>
+    private static bool IsAnnouncedProvisionalKey(string key) =>
+        key.EndsWith("Id", StringComparison.Ordinal)
+        && !key.StartsWith("preview", StringComparison.OrdinalIgnoreCase)
+        && (key.StartsWith("wouldCreate", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("new", StringComparison.OrdinalIgnoreCase));
+
+    private static string PreviewKey(string key) =>
+        "preview" + char.ToUpperInvariant(key[0]) + key.Substring(1);
+
+    // ── step error ───────────────────────────────────────────────────────────
 
     /// <summary>
     /// Nested tool failure details for a failed step: the tool's error code,
@@ -206,11 +325,13 @@ public sealed partial class ExecutePlanTool
             return reasons;
         }
 
+        var examined = 0;
         foreach (var item in failed.EnumerateArray())
         {
             if (reasons.Count >= max)
                 break;
 
+            examined++;
             var reason = item.ValueKind switch
             {
                 JsonValueKind.String => item.GetString(),
@@ -227,72 +348,12 @@ public sealed partial class ExecutePlanTool
                 reasons.Add(reason);
         }
 
-        if (reasons.Count < max && failed.GetArrayLength() > max)
-            reasons.Add("+" + (failed.GetArrayLength() - max) + " more");
+        // Every row beyond the examined ones is reported as cut — also when the
+        // kept reasons already fill the limit (review r1 #7).
+        var cut = failed.GetArrayLength() - examined;
+        if (cut > 0)
+            reasons.Add("+" + cut.ToString(CultureInfo.InvariantCulture) + " more");
 
         return reasons;
-    }
-
-    /// <summary>
-    /// Builds renamed copies bottom-up (JsonNode cannot live in two parents at
-    /// once, so mutating while enumerating is off-limits). Preview-only rename
-    /// of provisional ids lives in <see cref="TransformItems"/> (C7-05/C4-11):
-    /// every <c>*Id</c> key inside <c>created*</c> blocks (and every
-    /// <c>wouldCreate*Id</c>/<c>new*Id</c> key) gets a <c>preview</c> prefix so
-    /// the model does not read a rolled-back dry-run id as a real element id.
-    /// </summary>
-    private static System.Text.Json.Nodes.JsonNode? RenameNode(
-        System.Text.Json.Nodes.JsonNode? node,
-        bool insideCreatedBlock,
-        ref bool changed)
-    {
-        switch (node)
-        {
-            case System.Text.Json.Nodes.JsonObject obj:
-                var renamed = new System.Text.Json.Nodes.JsonObject();
-                foreach (var pair in obj)
-                {
-                    var key = pair.Key;
-                    var childCreated = insideCreatedBlock
-                                       || key.StartsWith("created", StringComparison.OrdinalIgnoreCase);
-                    if (IsProvisionalIdKey(key, childCreated))
-                    {
-                        key = "preview" + char.ToUpperInvariant(key[0]) + key.Substring(1);
-                        changed = true;
-                    }
-
-                    renamed[key] = RenameNode(pair.Value, childCreated, ref changed);
-                }
-
-                return renamed;
-
-            case System.Text.Json.Nodes.JsonArray array:
-                var renamedArray = new System.Text.Json.Nodes.JsonArray();
-                foreach (var item in array)
-                    renamedArray.Add(RenameNode(item, insideCreatedBlock, ref changed));
-
-                return renamedArray;
-
-            default:
-                return CloneLeaf(node);
-        }
-    }
-
-    private static System.Text.Json.Nodes.JsonNode? CloneLeaf(System.Text.Json.Nodes.JsonNode? node) =>
-        node is null
-            ? null
-            : System.Text.Json.Nodes.JsonNode.Parse(node.ToJsonString());
-
-    private static bool IsProvisionalIdKey(string key, bool insideCreatedBlock)
-    {
-        if (!key.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (key.StartsWith("preview", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        return insideCreatedBlock
-               || key.StartsWith("wouldCreate", StringComparison.OrdinalIgnoreCase)
-               || key.StartsWith("new", StringComparison.OrdinalIgnoreCase);
     }
 }

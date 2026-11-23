@@ -128,9 +128,13 @@ public sealed class ExecutePlanReportTests
         Assert.Contains("the tool counted 5 change(s)", result.Message, StringComparison.Ordinal);
         Assert.Contains("'Sheet list' (schedule_created)", result.Message, StringComparison.Ordinal);
         Assert.Contains("+2 more", result.Message, StringComparison.Ordinal);
+        // Review r1 #5: the number to promise is the step counter; the report's
+        // items.changed[] can be shorter (cards that duplicate created* are cut).
         Assert.Contains(
-            "The counter is the length of changed[]",
+            "Use steps[].changed of this preview as expectedChanges",
             result.Message, StringComparison.Ordinal);
+        Assert.Contains("items.duplicatesInCreated", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("length of changed[]", result.Message, StringComparison.Ordinal);
     }
 
     [Fact]
