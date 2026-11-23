@@ -138,7 +138,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 37 | S.5/S.10/S.11 (2026-11-21), S.8/S.9 (2026-11-24), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.14–S.24 в работе (S.18–S.24 — по обратной связи ручного теста 2026-11-24). |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 38 | S.5/S.10/S.11 (2026-11-21), S.8/S.9 (2026-11-24), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.14–S.25 в работе (S.18–S.24 — по обратной связи ручного теста 2026-11-24; S.25 — обезличивание рантайм-текста от кейсов бенчмарка). |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `done` | #297 | 17 | Закрыт 2026-11-21: все 17 задач done (G.1–G.10 + G.2a/b + G.4a + G.5a-c + G.7a); каталог 63→107 тулов; G.8-write невозможен по API (read-only, зафиксировано). |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
@@ -292,6 +292,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.22` | Мультикатегорийные спецификации: create_schedule(category=multicategory) и explication.sourceScheduleIds[] | P1 | `in-progress` | #507 |
 | `S.23` | Системный вид: контракт скрытия прочих MEP-категорий и убрать кейсы/имена заказчика из скиллов | P1 | `in-progress` | #508 |
 | `S.24` | query_elements: exists/notExists по непривязанному параметру → unknown_parameter | P2 | `in-progress` | #509 |
+| `S.25` | Рантайм-текст агента без маркеров кейсов бенчмарка + регрессионный гейт | P1 | `in-progress` | #510 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
