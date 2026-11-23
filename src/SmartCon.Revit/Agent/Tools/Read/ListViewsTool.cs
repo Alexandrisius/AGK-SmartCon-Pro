@@ -30,7 +30,10 @@ public sealed class ListViewsTool : AgentReadToolBase
             "browserFolderParameters (grouping parameter per segment: name/shared/built-in), " +
             "inBrowser and section — the value of the project parameter 'Раздел' on the view " +
             "(null when the project has no such parameter; it is read, never guessed from the " +
-            "view name). Default limit 200, max 500; offset/nextOffset page through a larger " +
+            "view name). For schedules (specifications) isOnSheet/sheetNumber account for " +
+            "ScheduleSheetInstance placements (a placed schedule carries no " +
+            "VIEWER_SHEET_NUMBER; several sheets are listed comma-separated). " +
+            "Default limit 200, max 500; offset/nextOffset page through a larger " +
             "inventory. " +
             "summaryOnly=true returns counts by view type, level and browser folder instead of cards. " +
             "fields=[\"viewId\",\"name\",\"type\",\"level\",\"folder\"] projects each card onto the " +
@@ -66,6 +69,10 @@ public sealed class ListViewsTool : AgentReadToolBase
             // Older projects or a broken browser organization: folder data is optional.
         }
 
+        // C8-03: a schedule placed on a sheet carries no VIEWER_SHEET_NUMBER —
+        // its placements live in ScheduleSheetInstance elements.
+        var scheduleSheetNumbers = AgentScheduleReader.MapSheetNumbers(doc);
+
         var allMatched = new List<ViewCard>();
         foreach (var view in new FilteredElementCollector(doc).OfClass(typeof(View)).Cast<View>())
         {
@@ -80,7 +87,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             if (!MatchesName(view, nameContains))
                 continue;
 
-            var card = CreateCard(doc, view, browserOrganization);
+            var card = CreateCard(doc, view, browserOrganization, scheduleSheetNumbers);
             if (!MatchesFolder(card, folders))
                 continue;
 
@@ -343,7 +350,8 @@ public sealed class ListViewsTool : AgentReadToolBase
     internal static ViewCard CreateCard(
         Document doc,
         View view,
-        BrowserOrganization? browserOrganization)
+        BrowserOrganization? browserOrganization,
+        IReadOnlyDictionary<long, IReadOnlyList<string>>? scheduleSheetNumbers = null)
     {
         var level = view.GenLevel;
         var templateId = view.ViewTemplateId;
@@ -352,6 +360,15 @@ public sealed class ListViewsTool : AgentReadToolBase
         var sheetNumber = view.get_Parameter(BuiltInParameter.VIEWER_SHEET_NUMBER)?.AsString();
         if (sheetNumber is "—" or "-" or "---" or "")
             sheetNumber = null;
+
+        if (sheetNumber is null
+            && view is ViewSchedule
+            && scheduleSheetNumbers is not null
+            && scheduleSheetNumbers.TryGetValue(view.Id.GetValue(), out var placedOn)
+            && placedOn.Count > 0)
+        {
+            sheetNumber = string.Join(", ", placedOn);
+        }
 
         var (browserFolder, inBrowser, folderPath, folderParameters) =
             ReadBrowserFolder(doc, browserOrganization, view);

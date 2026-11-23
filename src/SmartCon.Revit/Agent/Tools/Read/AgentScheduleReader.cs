@@ -218,7 +218,11 @@ internal static class AgentScheduleReader
             Name = schedule.Name,
             Category = builtInCategory,
             CategoryName = category?.Name,
-            FieldCount = columns.Count,
+
+            // C4-13: one meaning everywhere — fieldCount is the TOTAL number of
+            // fields (visible + hidden), like audit_fill_rate's fieldCount;
+            // fields[] lists only the visible headings.
+            FieldCount = columns.Count + hiddenFieldCount,
             HiddenFieldCount = hiddenFieldCount,
             Fields = headings,
             RowCount = ReadRowCount(schedule, skipHeader: true),
