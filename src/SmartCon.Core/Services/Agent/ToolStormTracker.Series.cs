@@ -66,8 +66,8 @@ public sealed partial class ToolStormTracker
             return;
 
         hints.Add(
-            "Single-object calls of " + toolName + " in round(s) " +
-            Join(series.Rounds.Skip(series.Rounds.Count - ItemByItemThreshold)) +
+            "Single-object calls of " + toolName + " " +
+            Where(series.Rounds.Skip(series.Rounds.Count - ItemByItemThreshold)) +
             ": this tool takes several items in one call; batch them.");
         _itemSeries.Remove(toolName);
     }

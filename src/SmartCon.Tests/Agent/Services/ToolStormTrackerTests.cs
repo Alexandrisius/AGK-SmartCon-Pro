@@ -441,4 +441,64 @@ public sealed class ToolStormTrackerTests
         Assert.Contains("in round(s) 1 with the same error", hint, StringComparison.Ordinal);
         Assert.DoesNotContain("1, 1", hint, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Observe_SameErrorBeforeACompaction_IsNamedWithoutRoundsTheModelCannotSee()
+    {
+        // The storm does not depend on what the model sees (WB review r2, P3-3):
+        // the third failure is still a storm, but a compaction removed the first
+        // two from the model's side, so the hint cannot send it back to them.
+        var tracker = new ToolStormTracker();
+        var failure = ToolResult.Fail("file_missing", "The file is not configured.");
+
+        tracker.Observe(null, "list_params", "{\"a\":1}", failure, 1);
+        tracker.Observe(null, "list_params", "{\"a\":2}", failure, 2);
+        tracker.ForgetResults();
+
+        var hint = Assert.Single(tracker.Observe(null, "list_params", "{\"a\":3}", failure, 9));
+
+        Assert.Contains(
+            "already failed 2 time(s) before the last compaction with the same error (file_missing)",
+            hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("round(s)", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("Read the reason once more", hint, StringComparison.Ordinal);
+        Assert.Contains("choose another path", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Observe_SameErrorAcrossACompaction_ListsOnlyTheRoundsTheModelSees()
+    {
+        var tracker = new ToolStormTracker();
+        var failure = ToolResult.Fail("file_missing", "The file is not configured.");
+
+        tracker.Observe(null, "list_params", "{\"a\":1}", failure, 1);
+        tracker.Observe(null, "list_params", "{\"a\":2}", failure, 2);
+        tracker.ForgetResults();
+        tracker.Observe(null, "list_params", "{\"a\":3}", failure, 9);
+
+        var hint = Assert.Single(tracker.Observe(null, "list_params", "{\"a\":4}", failure, 10));
+
+        Assert.Contains(
+            "already failed in round(s) 9 and 2 time(s) before the last compaction with the same error (file_missing)",
+            hint, StringComparison.Ordinal);
+        Assert.Contains("Read the reason once more and choose another path", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Observe_SingleObjectCallsAcrossACompaction_ListsOnlyTheRoundsTheModelSees()
+    {
+        var registry = new FakeToolRegistry(new ScriptedTool("start_job", schema: JobSchema));
+        var ok = ToolResult.Ok(null, "done");
+        var tracker = new ToolStormTracker();
+
+        tracker.Observe(registry, "start_job", Single("a"), ok, 1);
+        tracker.Observe(registry, "start_job", Single("b"), ok, 2);
+        tracker.ForgetResults();
+
+        var hint = Assert.Single(tracker.Observe(registry, "start_job", Single("c"), ok, 9));
+
+        Assert.Contains(
+            "calls of start_job in round(s) 9 and 2 time(s) before the last compaction: this tool takes several items",
+            hint, StringComparison.Ordinal);
+    }
 }

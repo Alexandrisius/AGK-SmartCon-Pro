@@ -44,6 +44,10 @@ public sealed partial class ToolStormTracker
     private int _hostTimeoutStreak;
     private int _hostTimeoutSinceRound;
 
+    // Rounds up to this one are gone from the model's side after a compaction.
+    private int _forgottenThroughRound = -1;
+    private int _lastRound = -1;
+
     /// <summary>
     /// Records one executed call and returns the warnings to attach to its
     /// result (empty when the call fits no storm pattern).
@@ -57,6 +61,9 @@ public sealed partial class ToolStormTracker
     {
         if (string.IsNullOrEmpty(toolName) || result is null)
             return Array.Empty<string>();
+
+        if (round > _lastRound)
+            _lastRound = round;
 
         if (_errorRounds.Count + _identicalCalls.Count + _readRounds.Count > MaxEntries)
         {
@@ -107,6 +114,10 @@ public sealed partial class ToolStormTracker
     /// </summary>
     public void ForgetResults()
     {
+        // The error and single-object series stay: a storm is a storm whether or
+        // not the model still sees its earlier calls. Only their wording changes
+        // — see Where.
+        _forgottenThroughRound = _lastRound;
         _identicalCalls.Clear();
         _readRounds.Clear();
     }
@@ -230,15 +241,49 @@ public sealed partial class ToolStormTracker
         Remember(call.Rounds, round);
     }
 
-    private static string SameErrorHint(string code, List<int> rounds) =>
-        string.Equals(code, InvalidArgumentsCode, StringComparison.Ordinal)
-            ? "This call already failed in round(s) " + Join(rounds) +
-              " with invalid arguments. The arguments changed since then and still break the schema: " +
-              "read the listed paths against the tool schema and rebuild the call from it, " +
-              "or choose another path."
-            : "This call already failed in round(s) " + Join(rounds) + " with the same error (" + code +
-              "). Read the reason once more and choose another path: another tool, or tell the user " +
-              "what blocks it.";
+    private string SameErrorHint(string code, List<int> rounds)
+    {
+        var where = Where(rounds);
+        if (string.Equals(code, InvalidArgumentsCode, StringComparison.Ordinal))
+        {
+            return "This call already failed " + where + " with invalid arguments. " +
+                   "The arguments changed since then and still break the schema: " +
+                   "read the listed paths against the tool schema and rebuild the call from it, " +
+                   "or choose another path.";
+        }
+
+        // A reason the model can no longer see cannot be read once more.
+        var readAgain = rounds.Any(round => round > _forgottenThroughRound)
+            ? "Read the reason once more and "
+            : string.Empty;
+        return "This call already failed " + where + " with the same error (" + code +
+               "). " + readAgain + "choose another path: another tool, or tell the user " +
+               "what blocks it.";
+    }
+
+    /// <summary>
+    /// Where the earlier calls of a series happened. A compaction removed every
+    /// round up to <see cref="_forgottenThroughRound"/> from the model's side, so
+    /// those rounds are counted, not named: the model cannot look them up.
+    /// </summary>
+    private string Where(IEnumerable<int> rounds)
+    {
+        var seen = new List<int>();
+        var hidden = 0;
+        foreach (var round in rounds.Distinct())
+        {
+            if (round <= _forgottenThroughRound)
+                hidden++;
+            else
+                seen.Add(round);
+        }
+
+        if (hidden == 0)
+            return "in round(s) " + Join(seen);
+
+        var earlier = hidden + " time(s) before the last compaction";
+        return seen.Count == 0 ? earlier : "in round(s) " + Join(seen) + " and " + earlier;
+    }
 
     private static List<int> Rounds(Dictionary<string, List<int>> source, string key)
     {
