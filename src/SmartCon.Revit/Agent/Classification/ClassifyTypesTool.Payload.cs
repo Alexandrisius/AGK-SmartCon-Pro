@@ -24,7 +24,7 @@ public sealed partial class ClassifyTypesTool
         ClassifyMatchResult result,
         bool truncated,
         int familiesTotal,
-        List<(string Family, int TypeCount)> notProcessed)
+        IReadOnlyList<ClassifyFamilyGroup> notProcessed)
     {
         var proposed = CountOf(result, ClassifyTypeStatus.Proposed);
         var lowConfidence = CountOf(result, ClassifyTypeStatus.LowConfidence);
@@ -100,34 +100,54 @@ public sealed partial class ClassifyTypesTool
 
         if (truncated)
         {
-            // The families left out by the budgets, named: the next call takes
-            // them by categories/typeIds. Types are summed before the cap.
+            // The families left out by the budgets, named and addressed: loaded
+            // families by familyIds, system families (no familyId of their own)
+            // by systemTypeIds. Types are summed before the cap.
             payload["notProcessed"] = new
             {
                 families = notProcessed.Count,
-                types = notProcessed.Sum(family => family.TypeCount),
+                types = NotProcessedTypes(notProcessed),
+                familyIds = notProcessed.Take(NotProcessedNamesCap)
+                    .Where(family => family.FamilyId is not null)
+                    .Select(family => family.FamilyId)
+                    .ToList(),
                 familyNames = notProcessed.Take(NotProcessedNamesCap)
-                    .Select(family => family.Family)
+                    .Select(family => family.FamilyName)
+                    .ToList(),
+                categories = notProcessed
+                    .Select(family => family.Category)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                systemTypeIds = notProcessed
+                    .Where(family => family.FamilyId is null)
+                    .SelectMany(family => family.Types)
+                    .Select(type => type.ElementId)
                     .ToList(),
                 namesTruncated = notProcessed.Count > NotProcessedNamesCap
             };
             payload["hint"] = "The selection was cut by maxTypes/maxFamilies; the families left " +
-                              "out are listed in notProcessed. Raise the limits or pass their " +
-                              "categories/typeIds and classify them in another call.";
+                              "out are listed in notProcessed. Raise the limits or classify them in " +
+                              "another call with their familyIds and systemTypeIds.";
         }
 
         string? note = null;
         if (snapshot.Types.Count == 0)
         {
-            note = snapshot.SkippedNotWritable > 0 && snapshot.SkippedAlreadySet == 0
-                ? "Nothing to classify: every matching type (" + snapshot.SkippedNotWritable +
-                  ") cannot store the Assembly Code - tags, view types, styles and the like never " +
-                  "carry a code. Tell the user these elements are not classified."
-                : snapshot.SkippedAlreadySet > 0
-                    ? "Nothing to classify: every selected type already has a classification code " +
-                      "(pass onlyEmpty=false to re-classify them; their current codes are reported)."
-                    : "Nothing to classify: no element type that can store the Assembly Code " +
-                      "matches the selection filters. Loosen categories/familyIds/typeIds/nameContains.";
+            note = snapshot.SkippedNotWritable > 0 && snapshot.SkippedAlreadySet > 0
+                ? "Nothing to classify: every matching type is already accounted for - " +
+                  snapshot.SkippedAlreadySet + " already carry a classification code (pass " +
+                  "onlyEmpty=false to re-classify them) and " + snapshot.SkippedNotWritable +
+                  " cannot store the Assembly Code (tags, view types, styles and the like). " +
+                  "Tell the user which elements are classified and which cannot be."
+                : snapshot.SkippedNotWritable > 0
+                    ? "Nothing to classify: every matching type (" + snapshot.SkippedNotWritable +
+                      ") cannot store the Assembly Code - tags, view types, styles and the like never " +
+                      "carry a code. Tell the user these elements are not classified."
+                    : snapshot.SkippedAlreadySet > 0
+                        ? "Nothing to classify: every selected type already has a classification code " +
+                          "(pass onlyEmpty=false to re-classify them; their current codes are reported)."
+                        : "Nothing to classify: no element type that can store the Assembly Code " +
+                          "matches the selection filters. Loosen categories/familyIds/typeIds/nameContains.";
             payload["note"] = note;
         }
 
@@ -137,12 +157,24 @@ public sealed partial class ClassifyTypesTool
             payload["notProcessedByDecision"] = result.NotProcessed;
         }
 
-        var message = "Proposed a code for " + proposed + " of " + processedTypes +
-                      " type(s) across " + groups.Count +
-                      (groups.Count == 1 ? " family" : " families") + "; " + uncertainTypes +
-                      " uncertain type(s) in " + uncertainGroups.Count +
-                      (uncertainGroups.Count == 1 ? " family" : " families") +
-                      " (uncertain is grouped by family).";
+        // A cut that leaves nothing to classify is reported as a cut first: the
+        // opening line the model reads must not be a proposal of "0 of 0".
+        var truncation = truncated
+            ? "TRUNCATED: " + notProcessed.Count + " of " + familiesTotal +
+              " families (" + NotProcessedTypes(notProcessed) +
+              " type(s)) were not classified - see notProcessed; raise " +
+              "maxFamilies/maxTypes or classify them in another call with their familyIds " +
+              "and systemTypeIds."
+            : null;
+
+        var message = truncation is not null && processedTypes == 0
+            ? truncation
+            : "Proposed a code for " + proposed + " of " + processedTypes +
+              " type(s) across " + groups.Count +
+              (groups.Count == 1 ? " family" : " families") + "; " + uncertainTypes +
+              " uncertain type(s) in " + uncertainGroups.Count +
+              (uncertainGroups.Count == 1 ? " family" : " families") +
+              " (uncertain is grouped by family).";
         if (alreadySet > 0)
         {
             message += " " + alreadySet +
@@ -162,12 +194,9 @@ public sealed partial class ClassifyTypesTool
                        "as complete.";
         }
 
-        if (truncated)
+        if (truncation is not null && processedTypes > 0)
         {
-            message += " TRUNCATED: " + notProcessed.Count + " of " + familiesTotal +
-                       " families (" + notProcessed.Sum(family => family.TypeCount) +
-                       " type(s)) were not classified - see notProcessed; raise " +
-                       "maxFamilies/maxTypes or classify them in another call.";
+            message += " " + truncation;
         }
 
         if (note is not null)
@@ -178,6 +207,9 @@ public sealed partial class ClassifyTypesTool
             message,
             proposed);
     }
+
+    private static int NotProcessedTypes(IReadOnlyList<ClassifyFamilyGroup> notProcessed) =>
+        notProcessed.Sum(family => family.Types.Count);
 
     /// <summary>
     /// The types left without a proposal, one entry per family and reason: the

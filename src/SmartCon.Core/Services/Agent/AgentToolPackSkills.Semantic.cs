@@ -121,8 +121,8 @@ public static partial class AgentToolPackSkills
   `uncertain` (что не удалось классифицировать уверенно) и готовый `setParameters.items`.
   Отбираются только типы, способные хранить код: марки, типы видов, стили остаются за подбором
   и считаются в `selection.skippedNotWritable`. Лимиты по умолчанию равны максимуму, семейства
-  не режутся; при TRUNCATED оставшиеся семейства названы в `notProcessed.familyNames` — вызови
-  тул ещё раз с их категориями/typeIds.
+  не режутся; при TRUNCATED оставшиеся семейства названы в `notProcessed.familyNames`
+  (адреса — `familyIds`, `systemTypeIds`) — вызови тул ещё раз с ними.
   Это read-тул: сам он ничего не пишет. Если таблица не загружена — ответ
   `classification_table_not_loaded`; если decision-модель недоступна или отказала —
   `decision_unavailable`/`decision_call_failed`: скажите пользователю и НЕ выдавайте отказ
