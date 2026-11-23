@@ -262,7 +262,20 @@ public sealed partial class AgentRealCasesBenchmarkTests
                 level1.Name = Case14Level1;
                 var level2 = ModelSeed.CreateLevel(doc, 3.0);
                 level2.Name = Case14Level2;
-                Case14BindMark(doc, definition!);
+
+                // Обёртка определения могла протухнуть при загрузке семейств
+                // (Revit перечитывает ФОП; managed-IsValidObject врёт) —
+                // безусловный ре-резолв перед биндингом.
+                var freshDefinition = FindCaseSharedDefinition(
+                    Case14SharedGroup, Case14MarkParameter);
+                if (freshDefinition is null)
+                {
+                    _case14SeedError = "Определение «" + Case14MarkParameter +
+                                       "» протухло после загрузки семейств и не нашлось в ФОП";
+                    return;
+                }
+
+                Case14BindMark(doc, freshDefinition);
             }
             catch (Exception ex)
             {

@@ -69,8 +69,11 @@ public sealed partial class AgentRealCasesBenchmarkTests
             Path.GetTempPath(), "SmartConCaseFamilies", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var families = new List<CaseGenericFamilySeed>(specification.Length);
-        foreach (var item in specification)
+            foreach (var item in specification)
         {
+            // На базе реального шаблона тёзка с другим содержимым ломает загрузку
+            // (Family loading failed / молчаливый false) — удаляем до загрузки.
+            RemoveCaseConflictingFamilies(Doc, item.FamilyName);
             var rfaPath = Path.Combine(directory, item.FamilyName + ".rfa");
             Document? familyDoc = null;
             try
@@ -155,6 +158,132 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
 
         return families;
+    }
+
+    /// <summary>
+    /// Удаляет из целевого документа уже загруженные семейства с тем же именем
+    /// (в любой категории). На базе реального шаблона владельца тёзка с другим
+    /// содержимым или категорией делает загрузку неразрешимым конфликтом:
+    /// InvalidOperationException «Family loading failed» у Document-перегрузки
+    /// LoadFamily и молчаливый false у строчной (Jeremy Tammik, «Reloading a
+    /// Family»; Autodesk docs LoadFamily). Копия шаблона одноразовая, каскадное
+    /// удаление экземпляров тёзки безопасно. Вызывается вне открытой транзакции.
+    /// </summary>
+    private static void RemoveCaseConflictingFamilies(Document doc, string familyName)
+    {
+        List<ElementId> conflicts;
+        try
+        {
+            conflicts = new FilteredElementCollector(doc)
+                .OfClass(typeof(RevitFamily))
+                .Cast<RevitFamily>()
+                .Where(family => string.Equals(
+                    family.Name, familyName, StringComparison.OrdinalIgnoreCase))
+                .Select(family => family.Id)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("PROBE case-families: template family '" + familyName +
+                              "' not scanned: " + ex.GetType().Name + ": " + ex.Message);
+            return;
+        }
+
+        if (conflicts.Count == 0)
+            return;
+
+        try
+        {
+            using var transaction = new Transaction(
+                doc, "Seed case family conflict '" + familyName + "'");
+            transaction.Start();
+            foreach (var id in conflicts)
+                doc.Delete(id);
+            if (transaction.Commit() != TransactionStatus.Committed)
+                Console.WriteLine("PROBE case-families: template family '" + familyName +
+                                  "' not removed: commit rolled back");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("PROBE case-families: template family '" + familyName +
+                              "' not removed: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Свежая ExternalDefinition-обёртка из текущего ФОП по группе и имени.
+    /// Обёртки, полученные при создании определений, могут протухнуть нативно
+    /// после перезаписи/удаления семейства, несущего shared-параметры (Revit
+    /// перечитывает файл общих параметров), при этом managed-IsValidObject всё
+    /// ещё возвращает true, а BindingMap.Insert падает на definition.Visible
+    /// (InvalidObjectExceptionProxy, точечный прогон 2026-11-23). Поэтому
+    /// живость проверяется нативно (чтение Visible — того же свойства, что
+    /// читает Insert), а не через IsValidObject; при обнаружении трупа ФОП
+    /// перечитывается повторным присваиванием SharedParametersFilename и
+    /// поиск повторяется.
+    /// </summary>
+    private ExternalDefinition? FindCaseSharedDefinition(
+        string groupName, string parameterName)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            ExternalDefinition? found = null;
+            try
+            {
+                var file = Application.OpenSharedParameterFile();
+                if (file is not null)
+                {
+                    foreach (DefinitionGroup candidate in file.Groups)
+                    {
+                        if (!string.Equals(candidate.Name, groupName, StringComparison.Ordinal))
+                            continue;
+
+                        foreach (Definition definition in candidate.Definitions)
+                        {
+                            if (string.Equals(
+                                    definition.Name, parameterName, StringComparison.Ordinal) &&
+                                definition is ExternalDefinition external)
+                            {
+                                found = external;
+                                break;
+                            }
+                        }
+
+                        if (found is not null)
+                            break;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Обёртка файла протухла — перечитываем ФОП следующей попыткой.
+            }
+
+            if (found is not null)
+            {
+                try
+                {
+                    _ = found.Visible; // нативная проверка живости (см. док-комментарий)
+                    return found;
+                }
+                catch (Exception)
+                {
+                    // Нативный труп — форсируем перечитывание ФОП.
+                }
+            }
+
+            try
+            {
+                var path = Application.SharedParametersFilename;
+                Application.SharedParametersFilename = path;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Размещает по одному экземпляру каждого типа (сетка 8 колонок).</summary>

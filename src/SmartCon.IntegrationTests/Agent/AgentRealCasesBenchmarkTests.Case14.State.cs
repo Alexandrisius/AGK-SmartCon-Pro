@@ -132,6 +132,30 @@ public sealed partial class AgentRealCasesBenchmarkTests
         {
             try
             {
+                // На базе реального шаблона семейство-тёзка с другим содержимым
+                // или категорией — неразрешимый конфликт для LoadFamily (молчаливый
+                // false у строчной перегрузки, Jeremy Tammik «Reloading a Family»):
+                // копия шаблона одноразовая, тёзка удаляется вместе с экземплярами.
+                var familyName = Path.GetFileNameWithoutExtension(path);
+                foreach (var conflict in new FilteredElementCollector(doc)
+                             .OfClass(typeof(Autodesk.Revit.DB.Family))
+                             .Cast<Autodesk.Revit.DB.Family>()
+                             .Where(family => string.Equals(
+                                 family.Name, familyName, StringComparison.OrdinalIgnoreCase))
+                             .Select(family => family.Id)
+                             .ToList())
+                {
+                    try
+                    {
+                        doc.Delete(conflict);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("PROBE case14: template family '" + familyName +
+                                          "' not removed: " + ex.GetType().Name + ": " + ex.Message);
+                    }
+                }
+
                 var loaded = doc.LoadFamily(path, out var family);
                 _case14LoadReport.Add(
                     Path.GetFileName(path) + ": " + (loaded ? "ok" : "FALSE") +
