@@ -255,6 +255,62 @@ public sealed partial class AgentPlanExecutor
         return null;
     }
 
+    /// <summary>
+    /// Names the objects (and real ids) the step's apply actually created, so a
+    /// read-back that failed on a stale dry-run id points at the live id
+    /// instead of leaving the model to guess (ORCH-6: a preview scheduleId was
+    /// rolled back and the read-back reported schedule_not_found).
+    /// </summary>
+    private static string DescribeAppliedCreatedIds(ToolResult? applyResult, int max = 3)
+    {
+        if (applyResult?.Data is not { ValueKind: JsonValueKind.Object } data)
+            return string.Empty;
+
+        var described = new List<string>();
+        foreach (var property in data.EnumerateObject())
+        {
+            if (!property.Name.StartsWith("created", StringComparison.Ordinal)
+                || described.Count >= max)
+            {
+                continue;
+            }
+
+            switch (property.Value.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    AddCreatedDescription(property.Value, described);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in property.Value.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.Object)
+                            AddCreatedDescription(item, described);
+                    }
+
+                    break;
+            }
+        }
+
+        if (described.Count == 0)
+            return string.Empty;
+
+        return "; the step's apply created " + string.Join("; ", described) +
+               " — dry-run ids were rolled back, address the applied object by name or id";
+    }
+
+    private static void AddCreatedDescription(JsonElement created, List<string> described)
+    {
+        if (described.Count >= 3)
+            return;
+
+        var name = FirstStringProperty(created, "name", "scheduleName", "viewName", "familyName");
+        var id = FirstStringProperty(created, "id", "scheduleId", "viewId", "familyId", "typeId");
+        if (name is null && id is null)
+            return;
+
+        described.Add("'" + (name ?? "(unnamed)") + "'" + (id is null ? string.Empty : " (id " + id + ")"));
+    }
+
     private async Task<AgentPlanExecutionResult?> RequestApprovalAsync(
         AgentPlan plan,
         string digest,
@@ -464,7 +520,8 @@ public sealed partial class AgentPlanExecutor
             if (!readBack.Success || readBack.Data is not { } data)
             {
                 mismatches.Add(step.StepId + ": read-back failed (" +
-                               (readBack.ErrorCode ?? "unknown") + ")");
+                               (readBack.ErrorCode ?? "unknown") + ")" +
+                               DescribeAppliedCreatedIds(result.ApplyResult));
                 continue;
             }
 

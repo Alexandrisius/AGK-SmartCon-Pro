@@ -75,6 +75,9 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 - Превью-отчёт переименовывает id создаваемых объектов с префиксом `preview`
   (`created.previewScheduleId`): dry-run откатывается, эти id не существуют в модели —
   создавай зависимые шаги по имени или перечитывай после apply.
+- Аргументы read-шагов и `readBackArguments` тоже не должны содержать id из превью:
+  после apply объект получает другой id, и read-back упадёт `*_not_found`. Адресуй
+  созданное по имени (`list_schedules`, `list_views`, …) или возьми id из отчёта apply.
 - Шаг с `toolName`, которого нет в наборе доступных тулов, отклоняется на валидации: сначала
   `load_tool_pack`. `execute_plan` внутри шага запрещён.
 - `allowDestructive=true` требуется для шагов, удаляющих данные; конфликт шаблон/настройки

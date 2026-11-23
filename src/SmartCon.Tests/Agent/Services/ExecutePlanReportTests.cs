@@ -214,4 +214,115 @@ public sealed class ExecutePlanReportTests
             "without a preview",
             apply.Data.Value.GetProperty("hint").GetString(), StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Report_DoesNotDuplicateCreatedItemsInChanged()
+    {
+        // ORCH-7: write tools describe one creation twice — a changed[] card and
+        // a created* block; the report must keep one projection.
+        var writeTool = new ScriptedTool(
+            "write_tool",
+            handler: _ => ToolResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    changed = new object[]
+                    {
+                        new { id = 5, name = "View A", action = "view_created" },
+                        new { id = 6, name = "View B", action = "view_created" },
+                        new { id = 7, name = "param name", action = "renamed" }
+                    },
+                    skipped = Array.Empty<object>(),
+                    failed = Array.Empty<object>(),
+                    total = 3,
+                    affected = 3,
+                    created = new object[]
+                    {
+                        new { viewId = 5, name = "View A" },
+                        new { viewId = 6, name = "View B" }
+                    }
+                }),
+                "three changes", 3));
+        var tool = CreateTool(writeTool);
+
+        var preview = await tool.ExecuteAsync(
+            Context(approved: false),
+            Parse("{\"goal\":\"create\",\"steps\":[{\"stepId\":\"1\",\"toolName\":\"write_tool\",\"arguments\":{\"items\":[1,2,3]}}]}"),
+            CancellationToken.None);
+
+        Assert.True(preview.Success);
+        var items = preview.Data!.Value.GetProperty("steps")[0].GetProperty("items");
+        var changedCards = items.GetProperty("changed");
+        Assert.Equal(1, changedCards.GetArrayLength());
+        Assert.Equal(
+            "param name",
+            changedCards[0].GetProperty("name").GetString());
+        Assert.Equal(2, items.GetProperty("duplicatesInCreated").GetInt32());
+        // The step counter still reports every change.
+        Assert.Equal(3, preview.Data.Value.GetProperty("steps")[0].GetProperty("changed").GetInt32());
+    }
+
+    [Fact]
+    public async Task ReadBackFailureOnStaleId_NamesTheAppliedObject()
+    {
+        // ORCH-6: the model passed a rolled-back dry-run scheduleId into the
+        // read-back; the mismatch line must point at the id the apply created.
+        var writeTool = new ScriptedTool(
+            "write_tool",
+            handler: args => args.ValueKind == JsonValueKind.Object
+                              && args.TryGetProperty("dryRun", out var flag)
+                              && flag.ValueKind == JsonValueKind.False
+                ? ToolResult.Ok(
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        dryRun = false,
+                        changed = new[] { new { id = 1 } },
+                        skipped = Array.Empty<object>(),
+                        failed = Array.Empty<object>(),
+                        total = 1,
+                        affected = 1,
+                        created = new { scheduleId = 1733617, name = "Report" }
+                    }),
+                    "applied", 1)
+                : ToolResult.Ok(
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        dryRun = true,
+                        changed = new[] { new { id = 1 } },
+                        skipped = Array.Empty<object>(),
+                        failed = Array.Empty<object>(),
+                        total = 1,
+                        affected = 1,
+                        created = new { scheduleId = 1733593, name = "Report" }
+                    }),
+                    "preview", 1));
+        var readTool = new ScriptedTool(
+            "read_tool",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Fail("schedule_not_found", "Schedule 1733593 not found"),
+            schema: @"{""type"":""object"",""properties"":{},""additionalProperties"":false}");
+        var tool = new ExecutePlanTool(
+            () => new FakeToolRegistry(writeTool, readTool),
+            new ImmediateAwaitableEvent(),
+            new RecordingAuditLog());
+
+        var result = await tool.ExecuteAsync(
+            Context(approved: true),
+            Parse("{\"goal\":\"verify\",\"dryRun\":false,\"steps\":[" +
+                  "{\"stepId\":\"1\",\"toolName\":\"write_tool\",\"arguments\":{\"items\":[1]}," +
+                  "\"readBackTool\":\"read_tool\",\"readBackArguments\":{},\"readBackExpectations\":" +
+                  "[{\"path\":\"name\",\"expected\":\"x\"}]}]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var mismatches = result.Data!.Value.GetProperty("mismatches");
+        Assert.Equal(JsonValueKind.Array, mismatches.ValueKind);
+        Assert.Single(mismatches.EnumerateArray());
+        var line = mismatches[0].GetString();
+        Assert.Contains("schedule_not_found", line, StringComparison.Ordinal);
+        Assert.Contains("'Report' (id 1733617)", line, StringComparison.Ordinal);
+        Assert.Contains(
+            "dry-run ids were rolled back",
+            line, StringComparison.Ordinal);
+    }
 }
