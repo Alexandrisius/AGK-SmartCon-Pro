@@ -274,4 +274,100 @@ public sealed class ExecutePlanReadBackOutcomeTests
         Assert.Equal(1, result.Steps[0].VerifiedCount);
         Assert.Empty(result.Mismatches);
     }
+
+    // ── Finding 11: expectations without a read-back tool ────────────────────
+
+    [Fact]
+    public void Expectations_WithoutReadBackTool_FailValidation()
+    {
+        var registry = new AgentToolRegistry(new IAgentTool[] { new ScriptedTool("write_tool") });
+        var plan = new AgentPlan
+        {
+            Goal = "plan",
+            Steps = new[]
+            {
+                new AgentPlanStep
+                {
+                    StepId = "s1",
+                    ToolName = "write_tool",
+                    ArgumentsJson = WriteArguments,
+                    ReadBackExpectations = new[]
+                    {
+                        new AgentPlanExpectation { Path = "name", Expected = "x" }
+                    }
+                }
+            }
+        };
+
+        var validation = AgentPlanValidator.Validate(plan, registry.GetDefinitions());
+
+        Assert.False(validation.IsValid);
+        var issue = Assert.Single(
+            validation.Errors, error => error.Code == "plan_readback_tool_missing");
+        Assert.Equal("s1", issue.StepId);
+        Assert.Contains("readBackTool", issue.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Expectations_WithoutReadBackTool_StopBeforeAnyToolRuns()
+    {
+        // Before the fix the expectations were dropped silently and the apply
+        // reported "verification not requested" after the changes were made.
+        var writeTool = new ScriptedTool("write_tool");
+        var tool = new ExecutePlanTool(
+            () => new FakeToolRegistry(writeTool), new ImmediateAwaitableEvent(),
+            new RecordingAuditLog());
+
+        var result = await tool.ExecuteAsync(
+            new AgentToolContext(new ImmediateAwaitableEvent(), "doc", Guid.Empty) { WriteApproved = true },
+            Payload("""
+                {"goal":"verify","dryRun":false,"steps":[
+                  {"stepId":"s1","toolName":"write_tool","arguments":{"items":[{"viewId":1}]},
+                   "readBackExpectations":[{"path":"name","expected":"x"}]}]}
+                """),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("plan_invalid", result.ErrorCode);
+        Assert.Contains("readBackTool", result.Message, StringComparison.Ordinal);
+        Assert.Empty(writeTool.Executions);
+
+        // Nothing ran, so the report must not talk about undoing steps.
+        var payload = result.Data!.Value;
+        Assert.Equal(0, payload.GetProperty("steps").GetArrayLength());
+        var hint = payload.GetProperty("hint").GetString()!;
+        Assert.Contains("Nothing was changed", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("undo_last", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Expectations_WithReadBackTool_StayValid()
+    {
+        // The rule rejects only the combination that silently verifies nothing.
+        var registry = new AgentToolRegistry(
+            new IAgentTool[] { new ScriptedTool("write_tool"), new ScriptedTool("read_tool", AgentToolRisk.Read) });
+        var plan = new AgentPlan
+        {
+            Goal = "plan",
+            Steps = new[]
+            {
+                new AgentPlanStep
+                {
+                    StepId = "s1",
+                    ToolName = "write_tool",
+                    ArgumentsJson = WriteArguments,
+                    ReadBackTool = "read_tool",
+                    ReadBackExpectations = new[]
+                    {
+                        new AgentPlanExpectation { Path = "name", Expected = "x" }
+                    }
+                }
+            }
+        };
+
+        var validation = AgentPlanValidator.Validate(plan, registry.GetDefinitions());
+
+        Assert.DoesNotContain(
+            validation.Errors, error => error.Code == "plan_readback_tool_missing");
+    }
 }

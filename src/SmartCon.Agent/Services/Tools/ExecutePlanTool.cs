@@ -236,8 +236,13 @@ public sealed partial class ExecutePlanTool : IAgentTool
             notPreviewed = result.NotPreviewed,
             hint = dryRun
                 ? "Nothing was changed. Fix the failed step and preview again." + DryRunIdHint
-                : "Steps with status 'applied' already have their own change sets; use " +
-                  "undo_last to revert them. Steps with status 'not_run' were not executed."
+                : result.Steps.Count == 0
+                    // Rejected by validation before any step ran (unknown tool,
+                    // expectations without readBackTool…): nothing to undo.
+                    ? "Nothing was changed: the plan was rejected before any step ran. " +
+                      "Fix the plan and run it again."
+                    : "Steps with status 'applied' already have their own change sets; use " +
+                      "undo_last to revert them. Steps with status 'not_run' were not executed."
         }, SerializerOptions);
 
         return payload;
