@@ -65,7 +65,7 @@ public sealed partial class ClassifyTypesTool
                 noCandidates,
                 alreadySet,
                 uncertainTypes,
-                uncertainFamilies = uncertainGroups.Count,
+                uncertainGroups = uncertainGroups.Count,
                 familiesSelected = groups.Count,
                 familiesProcessed = result.FamiliesProcessed,
                 familiesSkipped = notProcessed.Count,
@@ -173,8 +173,8 @@ public sealed partial class ClassifyTypesTool
               " type(s) across " + groups.Count +
               (groups.Count == 1 ? " family" : " families") + "; " + uncertainTypes +
               " uncertain type(s) in " + uncertainGroups.Count +
-              (uncertainGroups.Count == 1 ? " family" : " families") +
-              " (uncertain is grouped by family).";
+              (uncertainGroups.Count == 1 ? " group" : " groups") +
+              " (uncertain is grouped by family and the candidate the model ranked first).";
         if (alreadySet > 0)
         {
             message += " " + alreadySet +

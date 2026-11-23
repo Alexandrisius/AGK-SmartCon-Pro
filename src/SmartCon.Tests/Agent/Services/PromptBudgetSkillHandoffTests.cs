@@ -64,6 +64,17 @@ public sealed class PromptBudgetSkillHandoffTests
     }
 
     [Fact]
+    public void FamiliesSkill_PointsSystemFamiliesToListSystemTypes()
+    {
+        // C5-09: the inventory of list_families never lists system families -
+        // the families pack must say where their types live, like the semantic
+        // skill and the list_families card already do.
+        Assert.Contains(
+            "Системных семейств в списке нет — их типы даёт `list_system_types`",
+            Skill("families"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StaticPrompt_KeepsTheStepSkeletonAlwaysOn()
     {
         // The execute_plan card no longer repeats the step skeleton; the always-on
