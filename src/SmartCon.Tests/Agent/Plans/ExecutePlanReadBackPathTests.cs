@@ -153,10 +153,12 @@ public sealed class ExecutePlanReadBackPathTests
     }
 
     [Fact]
-    public async Task UnsupportedPath_IsNotVerifiable_NotMismatch()
+    public async Task SupportedPathThatAddressesNothing_IsAMismatch_WithTheReason()
     {
-        // A path that does not address the payload must not fabricate a
-        // mismatch with actual 'null' (C4-10/C9-04).
+        // Both paths are well-formed, but the payload has no such row/key: the
+        // expectation is not confirmed. Before review r1 these were filed as
+        // notVerifiable ("path form not supported or no match"), which hid a
+        // real mismatch and skipped the Warn and the mismatch audit.
         var (executor, _) = Create(() => ToolResult.Ok(
             Payload("""
             {"familyId":9,"types":[{"typeId":11,"name":"Type A"}]}
@@ -174,6 +176,41 @@ public sealed class ExecutePlanReadBackPathTests
                 {
                     Path = "wrongShape.segment",
                     Expected = "x"
+                })),
+            Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.NotVerifiable);
+        Assert.Equal(2, result.Mismatches.Count);
+        Assert.All(result.Mismatches, line => Assert.Contains(
+            "object not found in read-back payload", line, StringComparison.Ordinal));
+        Assert.Equal(2, result.ExpectationsChecked);
+        Assert.Equal(2, result.Steps[0].MismatchCount);
+        Assert.Equal(0, result.Steps[0].NotVerifiableCount);
+    }
+
+    [Fact]
+    public async Task UnsupportedPathForm_IsNotVerifiable_NotMismatch()
+    {
+        // Syntax the resolver does not understand compares nothing: reported
+        // as not verifiable with the reason, never as a value mismatch.
+        var (executor, _) = Create(() => ToolResult.Ok(
+            Payload("""
+            {"familyId":9,"types":[{"typeId":11,"name":"Type A"}]}
+            """),
+            "read"));
+
+        var result = await executor.ExecuteAsync(
+            Plan(Step(
+                new AgentPlanExpectation
+                {
+                    Path = "types.byId[].name",
+                    Expected = "Type A"
+                },
+                new AgentPlanExpectation
+                {
+                    Path = "types[name].name",
+                    Expected = "Type A"
                 })),
             Context(), CancellationToken.None);
 

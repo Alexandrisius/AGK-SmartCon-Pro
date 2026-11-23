@@ -400,25 +400,33 @@ public sealed partial class AgentPlanExecutor
             foreach (var expectation in step.ReadBackExpectations)
             {
                 var resolution = ResolvePath(data, expectation.Path);
-                if (!resolution.Resolved)
+                if (!resolution.Resolved && resolution.Status == PathStatus.UnsupportedForm)
                 {
-                    // A path that does not address the payload shape is not a value
-                    // mismatch: reporting actual 'null' made successful applies look
-                    // broken (C4-10/C9-04).
+                    // Syntax the resolver does not understand compares nothing:
+                    // reported as not verifiable, never as a value mismatch.
                     result.NotVerifiableCount++;
                     notVerifiable.Add(step.StepId + ": " + expectation.Path +
-                                      " — not verifiable (" + resolution.Reason + ")");
+                                      " — not verifiable (path form not supported: " +
+                                      resolution.Reason + ")");
                     continue;
                 }
 
-                var actual = resolution.Value;
-                if (actual is null
+                // A supported path that addressed nothing (no such row or key)
+                // did not confirm the expectation: it is a mismatch like a
+                // differing value, with the reason attached (review r1 #2).
+                var actual = resolution.Resolved ? resolution.Value : null;
+                if (!resolution.Resolved
+                    || actual is null
                     || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
                 {
                     stepMismatch = true;
                     result.MismatchCount++;
                     mismatches.Add(step.StepId + ": " + expectation.Path + " expected '" +
-                                   expectation.Expected + "', actual '" + (actual ?? "null") + "'");
+                                   expectation.Expected + "', actual '" + (actual ?? "null") + "'" +
+                                   (resolution.Resolved
+                                       ? string.Empty
+                                       : " — object not found in read-back payload (" +
+                                         resolution.Reason + ")"));
                 }
                 else
                 {

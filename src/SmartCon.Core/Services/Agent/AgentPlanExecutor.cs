@@ -185,11 +185,26 @@ public sealed partial class AgentPlanExecutor
             SmartConLogger.Warn(
                 "Agent plan " + plan.PlanId.ToString("N") + " read-back mismatches: " +
                 string.Join("; ", mismatches) +
-                " [Action: review the change set with undo_last; the model state differs from the plan]");
+                " [Action: re-read the affected objects with the read tool; offer undo_last " +
+                "only where the value really differs]");
         }
 
-        await WriteAuditAsync(
-                plan, "plan#apply", mismatches.Count == 0 ? "ok" : "mismatch", affected, execution, ct)
+        if (notVerifiable.Count > 0)
+        {
+            // Declared expectations that were never compared must not pass as
+            // "ok" in the audit either (review r1 #2).
+            SmartConLogger.Warn(
+                "Agent plan " + plan.PlanId.ToString("N") + " read-back expectation(s) not " +
+                "verifiable: " + string.Join("; ", notVerifiable) +
+                " [Action: re-check these values with a read tool and a supported path form]");
+        }
+
+        var auditResult = mismatches.Count > 0
+            ? "mismatch"
+            : notVerifiable.Count > 0
+                ? "unverified"
+                : "ok";
+        await WriteAuditAsync(plan, "plan#apply", auditResult, affected, execution, ct)
             .ConfigureAwait(false);
 
         return new AgentPlanExecutionResult
