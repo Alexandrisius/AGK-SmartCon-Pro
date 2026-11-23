@@ -127,11 +127,11 @@ P.6–P.9 (P2) — отдельной сессией.
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 12 | S.5/S.10/S.11 закрыты 2026-11-21; S.8/S.9 (фидбэк раунда 5) в работе. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 30 | S.5/S.10/S.11 (2026-11-21), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.8/S.9, S.14, S.15, S.16, S.17 в работе. |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `done` | #297 | 17 | Закрыт 2026-11-21: все 17 задач done (G.1–G.10 + G.2a/b + G.4a + G.5a-c + G.7a); каталог 63→107 тулов; G.8-write невозможен по API (read-only, зафиксировано). |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
-| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `backlog` | #300 | 6 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
+| **H2** | Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db | P1 | `in-progress` | #300 | 7 | H2.6 — первый шаг; запись в ES отклонена владельцем (2026-11-21): вся память в agent.db (SQLite/FTS5). |
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 6 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 5 | P.1 (cache-лог) желателен; H4.5 (метрики хода/сессии в чате) в работе. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
@@ -239,7 +239,7 @@ P.6–P.9 (P2) — отдельной сессией.
 
 ### S — Harness hardening: стабильные ключи, карантин, паки
 
-Эпик: #296 · приоритет `P1` · статус `backlog`
+Эпик: #296 · приоритет `P1` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
@@ -256,9 +256,23 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.11` | discovery пакетных аналогов: кросс-ссылки в скиллах/карточках + правило промпта | P1 | `done` | #435 |
 | `S.12` | I-03: new Transaction в MapFamilyParametersJobAction.Undo и TryPokeLocal | P3 | `backlog` | #437 |
 | `S.14` | [RUN] Harness v3: бенчмарк на прод-цикле (headless-хост, единая регистрация графа), reasoning max по формату API, бюджет вывода 64k, компактная инвентаризация семейств, объективные артефакты прогона | P0 | `in-progress` | #478 |
-| `S.15` | Кейс 5: джоба классификации типоразмеров по классификатору (превью с порогом → apply → undo) | P1 | `backlog` | #480 |
-| `S.16` | Харнесс-защиты в проде: повторные чтения, стоп записи после сбоя, коуч-заметки, гейт verify-before-finish | P1 | `backlog` | #481 |
-| `S.17` | Масштаб: паки ≤10 тулов, гайд добавления тула, Tests→Revit в dependency rule, known-workarounds, validate-docs, net48 IT | P2 | `backlog` | #485 |
+| `S.14a` | Write-тулы: dry-run на документе без права записи — честный отказ вместо «0 planned» | P1 | `done` | #479 |
+| `S.14b` | Панель агента не регистрировалась в проде: незарегистрированный UndoLastTool | P0 | `done` | #486 |
+| `S.14c` | query_elements: структурные поля условий и unknown_parameter вместо пустого списка | P0 | `done` | #487 |
+| `S.15` | Кейс 5: классификация типоразмеров по таблице документа — read-тул `classify_types` + `set_parameters` (scope пересмотрен 2026-11-23: не джоба) | P1 | `in-progress` | #480 |
+| `S.15a` | Классификация: чтение таблицы документа, подключение файла, guard кодов в set_parameters и джобе | P1 | `done` | #490 |
+| `S.15b` | read_classifier: коды любой глубины и буквенные коды | P1 | `done` | #491 |
+| `S.15c` | classify_types: подбор кодов типоразмерам по таблице документа одним вызовом | P1 | `in-progress` | #499 |
+| `S.15d` | read_classifier: плоский экспорт Revit теряет дерево | P2 | `backlog` | #492 |
+| `S.15e` | Файл классификатора как источник проверки кодов, пока таблица не загружена | P2 | `backlog` | #493 |
+| `S.15f` | Селекторы джобы set_parameters: структурные поля и unknown_parameter | P2 | `backlog` | #494 |
+| `S.15g` | read_classifier: одиночные числовые коды дают дерево без корня | P3 | `backlog` | #495 |
+| `S.15h` | read_classifier: MasterFormat разбирается как код из первого числа | P3 | `backlog` | #496 |
+| `S.16` | Харнесс-защиты в проде: повторные чтения, стоп записи после сбоя, коуч-заметки, гейт verify-before-finish | P1 | `in-progress` | #481 |
+| `S.16a` | load_tool_pack: скилл пака — только для явно запрошенного пака и write-тулов | P1 | `done` | #488 |
+| `S.17` | Масштаб: паки ≤10 тулов, гайд добавления тула, Tests→Revit в dependency rule, known-workarounds, validate-docs, net48 IT | P2 | `in-progress` | #485 |
+| `S.17a` | Release-сборка не собиралась: 11 ошибок анализаторов в модуле агента и тестах | P1 | `done` | #497 |
+| `S.17b` | Интеграционные хосты пишут в рабочий smartcon.log пользователя | P2 | `backlog` | #498 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
@@ -305,12 +319,13 @@ P.6–P.9 (P2) — отдельной сессией.
 
 ### H2 — Memory & knowledge: MEMORY.md, FTS5, skills + project memory в agent.db
 
-Эпик: #300 · приоритет `P1` · статус `backlog`
+Эпик: #300 · приоритет `P1` · статус `in-progress`
 
 | ID | Задача | Prio | Статус | Issue |
 |---|---|---|---|---|
 | `H2.6` | Project memory в agent.db (SQLite/FTS5), без записи в модель | P1 | `backlog` | #411 |
-| `H2.7` | Системный промпт и доменные скиллы Revit: метод работы через абстракции, контракт отчёта | P1 | `backlog` | #482 |
+| `H2.7` | Системный промпт и доменные скиллы Revit: метод работы через абстракции, контракт отчёта | P1 | `in-progress` | #482 |
+| `H2.7a` | Скилл semantic и карточки: источник истины для кодов, без спойлеров кейсов; правило 9 промпта о справочных значениях | P1 | `done` | #489 |
 | `H2.1` | Memory v1: файлы и MEMORY.md | P2 | `backlog` | #365 |
 | `H2.2` | FTS5-поиск по памяти | P2 | `backlog` | #366 |
 | `H2.3` | Skills v1: 10–20 навыков и routing | P2 | `backlog` | #367 |
