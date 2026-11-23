@@ -115,6 +115,9 @@ public static partial class AgentToolPackSkills
 ### Рецепты
 1. «Добавь общий параметр ADSK_Наименование»: `list_shared_parameters(nameContains:""ADSK"")`
    → если нет, `add_family_parameter(name, storageType:""text"", isShared:true, createDefinition:true)`.
+   `createDefinition:true` требует подключённого файла общих параметров (ФОП): без него ошибка
+   `shared_parameter_file_missing` — сначала `set_shared_parameter_file` (если тул есть в
+   каталоге) или попросите пользователя подключить ФОП в Revit.
 2. «Перенеси значения из A в B»: `get_family_parameters(includeValues=true)` →
    `map_family_parameters(mappings:[{source:{name:A}, target:{name:B}}], mode:""values"")`.
 3. «Поставь формулу длины»: `set_family_formula(parameter:""Длина"", formula:""Ширина + 20 mm * 2"")`;
