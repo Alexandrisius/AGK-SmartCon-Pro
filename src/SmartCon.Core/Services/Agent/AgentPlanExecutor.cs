@@ -49,12 +49,27 @@ public sealed class AgentPlanStepResult
     /// <summary>True when a read-back tool was actually called for this step.</summary>
     public bool ReadBackExecuted { get; set; }
 
-    /// <summary>Number of read-back expectations checked for this step.</summary>
+    /// <summary>
+    /// True when the step's read-back tool was called and failed, or is not
+    /// registered: nothing of this step was verified (review r1 #1).
+    /// </summary>
+    public bool ReadBackFailed { get; set; }
+
+    /// <summary>Read-back expectations declared on the step.</summary>
+    public int ExpectationsDeclared { get; set; }
+
+    /// <summary>Number of read-back expectations actually compared for this step.</summary>
     public int ExpectationsChecked { get; set; }
 
     public int VerifiedCount { get; set; }
 
     public int MismatchCount { get; set; }
+
+    /// <summary>
+    /// Expectations whose path form the resolver does not understand: nothing
+    /// was compared, so they are neither verified nor mismatched (C4-10).
+    /// </summary>
+    public int NotVerifiableCount { get; set; }
 }
 
 public sealed class AgentPlanExecutionResult
@@ -75,6 +90,13 @@ public sealed class AgentPlanExecutionResult
     public IReadOnlyList<string> Verified { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> Mismatches { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Read-back expectations that could not be verified because their path did
+    /// not address the read-back payload. Not failures: the plan applied, but
+    /// these conditions must be re-checked with a proper path (C4-10).
+    /// </summary>
+    public IReadOnlyList<string> NotVerifiable { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Total read-back expectations checked. Zero with empty Verified/Mismatches
@@ -164,18 +186,34 @@ public sealed partial class AgentPlanExecutor
         if (applyFailure is not null)
             return applyFailure;
 
-        var (verified, mismatches) = await RunReadBackAsync(steps, results, execution, ct).ConfigureAwait(false);
+        var (verified, mismatches, notVerifiable) = await RunReadBackAsync(
+                steps, results, execution, ct).ConfigureAwait(false);
 
         if (mismatches.Count > 0)
         {
             SmartConLogger.Warn(
                 "Agent plan " + plan.PlanId.ToString("N") + " read-back mismatches: " +
                 string.Join("; ", mismatches) +
-                " [Action: review the change set with undo_last; the model state differs from the plan]");
+                " [Action: re-read the affected objects with the read tool; offer undo_last " +
+                "only where the value really differs]");
         }
 
-        await WriteAuditAsync(
-                plan, "plan#apply", mismatches.Count == 0 ? "ok" : "mismatch", affected, execution, ct)
+        if (notVerifiable.Count > 0)
+        {
+            // Declared expectations that were never compared must not pass as
+            // "ok" in the audit either (review r1 #2).
+            SmartConLogger.Warn(
+                "Agent plan " + plan.PlanId.ToString("N") + " read-back expectation(s) not " +
+                "verifiable: " + string.Join("; ", notVerifiable) +
+                " [Action: re-check these values with a read tool and a supported path form]");
+        }
+
+        var auditResult = mismatches.Count > 0
+            ? "mismatch"
+            : notVerifiable.Count > 0
+                ? "unverified"
+                : "ok";
+        await WriteAuditAsync(plan, "plan#apply", auditResult, affected, execution, ct)
             .ConfigureAwait(false);
 
         return new AgentPlanExecutionResult
@@ -186,6 +224,7 @@ public sealed partial class AgentPlanExecutor
             Steps = results,
             Verified = verified,
             Mismatches = mismatches,
+            NotVerifiable = notVerifiable,
             ExpectationsChecked = results.Sum(item => item.ExpectationsChecked),
             AffectedCount = writeResults.Sum(item => item.Changed),
             PreviewIncomplete = results.Any(item => item.PreviewSkipped),

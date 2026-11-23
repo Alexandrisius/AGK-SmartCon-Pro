@@ -29,6 +29,20 @@ public sealed partial class ExecutePlanTool
             }
         }
 
+        var failedReadBacks = result.Steps
+            .Where(step => step.ReadBackFailed)
+            .Select(step => step.StepId)
+            .ToList();
+
+        // Verification was requested as soon as a read-back was declared on any
+        // step — even when its tool then failed — or a tool verified on its own.
+        // Counting only the compared expectations reported a failed read-back as
+        // "verification not requested" next to mismatches=1 (review r1 #1).
+        var verificationRequested =
+            result.Steps.Any(step => step.ReadBackExecuted || step.ReadBackFailed)
+            || result.ExpectationsChecked > 0
+            || tool.Expected > 0
+            || mismatches.Count > 0;
         var payload = JsonSerializer.SerializeToElement(new
         {
             dryRun = false,
@@ -39,29 +53,52 @@ public sealed partial class ExecutePlanTool
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
+            warning = result.PreviewIncomplete
+                ? "Steps " + string.Join(", ", result.NotPreviewed) +
+                  " were applied without a preview: they depend on earlier write steps, so " +
+                  "the dry run could not exercise them. Verify their result with a read tool."
+                : null,
             steps = Steps(result, apply: true),
             planReadBack = new
             {
                 executedSteps = result.Steps.Count(step => step.ReadBackExecuted),
+                declared = result.Steps.Sum(step => step.ExpectationsDeclared),
                 expectationsChecked = result.ExpectationsChecked,
                 verified = result.Verified.Count,
                 mismatches = result.Mismatches.Count,
+                notVerifiable = result.NotVerifiable.Count,
+                failedReadBackSteps = failedReadBacks,
                 toolExpectationsChecked = tool.Expected,
                 toolVerified = tool.Verified,
                 toolMismatched = tool.Mismatched
             },
             verified,
             mismatches,
+            notVerifiable = result.NotVerifiable,
             verifiedTotal = verified.Count,
             mismatchesTotal = mismatches.Count,
+            notVerifiableTotal = result.NotVerifiable.Count,
             hint = BuildApplyHint(result, tool, digestAutoFilled)
         }, SerializerOptions);
 
+        // "0 verified" on an apply without read-back expectations read as "checked
+        // and confirmed nothing" — the honest wording is that verification was not
+        // requested at all (C4-18). With mismatches the verified/mismatch line is
+        // always printed, whatever was declared (review r1 #1).
+        var verificationText = verificationRequested
+            ? verified.Count + " verified (" + tool.Verified + " tool-level), " +
+              mismatches.Count + " mismatch(es)" +
+              (result.NotVerifiable.Count > 0
+                  ? ", " + result.NotVerifiable.Count + " not verifiable"
+                  : string.Empty)
+            : "verification not requested";
+
         return ToolResult.Ok(
             payload,
-            "Plan applied: " + result.AffectedCount + " change(s); " +
-            verified.Count + " verified (" + tool.Verified + " tool-level), " +
-            mismatches.Count + " mismatch(es)." +
+            "Plan applied: " + result.AffectedCount + " change(s); " + verificationText + "." +
+            (result.PreviewIncomplete
+                ? " " + result.NotPreviewed.Count + " step(s) applied without preview."
+                : string.Empty) +
             (digestAutoFilled ? " Applied without a separate preview." : string.Empty),
             result.AffectedCount);
     }
@@ -79,18 +116,53 @@ public sealed partial class ExecutePlanTool
                 "(planDigestAutoFilled=true), so this apply ran without a separate dry-run preview.");
         }
 
-        if (result.Mismatches.Count + tool.Mismatched > 0)
+        if (result.PreviewIncomplete)
+        {
+            parts.Add(
+                "Steps " + string.Join(", ", result.NotPreviewed) + " ran without a preview " +
+                "(they depend on earlier write steps). Confirm their result with the matching " +
+                "read tool.");
+        }
+
+        var failedReadBacks = result.Steps
+            .Where(step => step.ReadBackFailed)
+            .Select(step => step.StepId)
+            .ToList();
+        var valueMismatches = result.Steps.Sum(step => step.MismatchCount) + tool.Mismatched;
+
+        // A read-back that could not run is not a differing value: there is
+        // nothing to review or undo yet, the changes are simply unverified.
+        if (failedReadBacks.Count > 0)
+        {
+            parts.Add(
+                "The read-back could not run for step(s) " + string.Join(", ", failedReadBacks) +
+                " (see mismatches[]): the changes of those steps are not verified — re-read " +
+                "them with the matching read tool before reporting success.");
+        }
+
+        if (valueMismatches > 0)
         {
             parts.Add(
                 "Read-back found mismatches. Review them and offer undo_last for the " +
                 "affected step.");
         }
-        else if (result.ExpectationsChecked == 0 && tool.Expected == 0)
+
+        if (failedReadBacks.Count > 0 || valueMismatches > 0)
+            return string.Join(" ", parts);
+
+        var declared = result.Steps.Sum(step => step.ExpectationsDeclared);
+        if (!result.Steps.Any(step => step.ReadBackExecuted) && declared == 0 && tool.Expected == 0)
         {
             parts.Add(
-                "No plan read-back expectations and no tool-internal read-back were declared, " +
-                "so there are no verified values; read the model back with the matching list_* " +
+                "No plan read-back expectations and no tool-internal read-back were declared " +
+                "(verification not requested); read the model back with the matching list_* " +
                 "or get_* tool.");
+        }
+        else if (declared == 0 && tool.Expected == 0)
+        {
+            parts.Add(
+                "The read-back tool ran but no readBackExpectations were declared, so no " +
+                "value was compared; declare them to verify conditions.");
         }
         else if (result.ExpectationsChecked == 0)
         {
@@ -99,6 +171,14 @@ public sealed partial class ExecutePlanTool
                 (tool.NotVerifiable > 0 ? " (" + tool.NotVerifiable + " not verifiable)" : "") +
                 ". No plan-level readBackExpectations were declared; add them to verify extra " +
                 "conditions with a separate read tool.");
+        }
+        else if (result.NotVerifiable.Count > 0)
+        {
+            parts.Add(
+                result.Verified.Count + " expectation(s) verified, " +
+                result.NotVerifiable.Count + " could not be verified: their path form is not " +
+                "supported (see notVerifiable[]). Re-check those values with a supported " +
+                "path form.");
         }
         else
         {
@@ -170,22 +250,27 @@ public sealed partial class ExecutePlanTool
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,
-            items = StepItems(step, apply),
+            items = TransformItems(step, apply),
             toolReadBack = ToolReadBack(step, apply),
             planReadBack = new
             {
                 executed = step.ReadBackExecuted,
+                failed = step.ReadBackFailed,
+                declared = step.ExpectationsDeclared,
                 expectationsChecked = step.ExpectationsChecked,
                 verified = step.VerifiedCount,
-                mismatches = step.MismatchCount
+                mismatches = step.MismatchCount,
+                notVerifiable = step.NotVerifiableCount
             },
             fidelity = step.FidelityChecked
                 ? new
                 {
                     expected = step.FidelityExpected,
-                    matched = step.FidelityMatched
+                    matched = step.FidelityMatched,
+                    note = step.FidelityNote
                 }
                 : null,
+            error = StepError(step, apply),
             preflightSkipped = step.PreflightSkipped,
             preflightDeferred = step.PreflightDeferred,
             previewSkipped = step.PreviewSkipped,

@@ -158,7 +158,11 @@ public sealed partial class AgentPlanExecutor
                         (step.ExpectedChanges.HasValue
                             ? step.ExpectedChanges.Value + " change(s)"
                             : "at least " + step.ExpectedChangesAtLeast!.Value + " change(s)") +
-                        ", the dry run produced " + result.Changed);
+                        ", the tool counted " + result.Changed + " change(s)" +
+                        DescribeCountedItems(dryResult) +
+                        ". Use steps[].changed of this preview as expectedChanges: it is the " +
+                        "tool's own change count (in the report items.changed[] may be shorter " +
+                        "by items.duplicatesInCreated)");
                 }
             }
         }
@@ -350,15 +354,18 @@ public sealed partial class AgentPlanExecutor
         return false;
     }
 
-    private async Task<(IReadOnlyList<string> Verified, IReadOnlyList<string> Mismatches)>
-        RunReadBackAsync(
-            IReadOnlyList<AgentPlanStep> steps,
-            IReadOnlyList<AgentPlanStepResult> results,
-            AgentPlanExecutionContext execution,
-            CancellationToken ct)
+    private async Task<(
+        IReadOnlyList<string> Verified,
+        IReadOnlyList<string> Mismatches,
+        IReadOnlyList<string> NotVerifiable)> RunReadBackAsync(
+        IReadOnlyList<AgentPlanStep> steps,
+        IReadOnlyList<AgentPlanStepResult> results,
+        AgentPlanExecutionContext execution,
+        CancellationToken ct)
     {
         var verified = new List<string>();
         var mismatches = new List<string>();
+        var notVerifiable = new List<string>();
 
         foreach (var step in steps)
         {
@@ -367,15 +374,17 @@ public sealed partial class AgentPlanExecutor
                 continue;
 
             var readBackToolName = step.ReadBackTool!;
+            var result = results.First(item => item.StepId == step.StepId);
+            result.ExpectationsDeclared = step.ReadBackExpectations.Count;
             var tool = GetTool(readBackToolName);
             if (tool is null)
             {
+                result.ReadBackFailed = true;
                 mismatches.Add(step.StepId + ": read-back tool '" + readBackToolName +
                                "' is not registered");
                 continue;
             }
 
-            var result = results.First(item => item.StepId == step.StepId);
             var readBack = await ExecuteToolAsync(
                     tool, step.ArgumentsReadBackJson, false, execution, ct)
                 .ConfigureAwait(false);
@@ -384,8 +393,13 @@ public sealed partial class AgentPlanExecutor
 
             if (!readBack.Success || readBack.Data is not { } data)
             {
+                // Nothing was compared: the report must say that verification
+                // was requested but could not run, not that none was requested
+                // (review r1 #1).
+                result.ReadBackFailed = true;
                 mismatches.Add(step.StepId + ": read-back failed (" +
-                               (readBack.ErrorCode ?? "unknown") + ")");
+                               (readBack.ErrorCode ?? "unknown") + ")" +
+                               DescribeAppliedCreatedIds(result.ApplyResult));
                 continue;
             }
 
@@ -393,14 +407,34 @@ public sealed partial class AgentPlanExecutor
             result.ExpectationsChecked = step.ReadBackExpectations.Count;
             foreach (var expectation in step.ReadBackExpectations)
             {
-                var actual = ResolvePath(data, expectation.Path);
-                if (actual is null
+                var resolution = ResolvePath(data, expectation.Path);
+                if (!resolution.Resolved && resolution.Status == PathStatus.UnsupportedForm)
+                {
+                    // Syntax the resolver does not understand compares nothing:
+                    // reported as not verifiable, never as a value mismatch.
+                    result.NotVerifiableCount++;
+                    notVerifiable.Add(step.StepId + ": " + expectation.Path +
+                                      " — not verifiable (path form not supported: " +
+                                      resolution.Reason + ")");
+                    continue;
+                }
+
+                // A supported path that addressed nothing (no such row or key)
+                // did not confirm the expectation: it is a mismatch like a
+                // differing value, with the reason attached (review r1 #2).
+                var actual = resolution.Resolved ? resolution.Value : null;
+                if (!resolution.Resolved
+                    || actual is null
                     || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
                 {
                     stepMismatch = true;
                     result.MismatchCount++;
                     mismatches.Add(step.StepId + ": " + expectation.Path + " expected '" +
-                                   expectation.Expected + "', actual '" + (actual ?? "null") + "'");
+                                   expectation.Expected + "', actual '" + (actual ?? "null") + "'" +
+                                   (resolution.Resolved
+                                       ? string.Empty
+                                       : " — object not found in read-back payload (" +
+                                         resolution.Reason + ")"));
                 }
                 else
                 {
@@ -413,7 +447,7 @@ public sealed partial class AgentPlanExecutor
                 verified.Add(step.StepId + ": read-back executed");
         }
 
-        return (verified, mismatches);
+        return (verified, mismatches, notVerifiable);
     }
 
     private static bool PlanContainsDiscard(AgentPlan plan) =>
