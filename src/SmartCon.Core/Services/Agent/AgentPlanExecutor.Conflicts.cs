@@ -37,10 +37,15 @@ public sealed partial class AgentPlanExecutor
 
     /// <summary>
     /// Cross-step preflight: a template applied by one step takes over crop,
-    /// visibility and view range of its views, so a later step that writes one
-    /// of those settings is guaranteed to fail with view_controlled_by_template.
-    /// The dry-run delta of apply_view_template carries the controlled set;
-    /// set_view_template_inclusion releases the lock for its section.
+    /// visibility, view range and — when it includes "V/G Overrides Filters" —
+    /// the filter list of its views, so a later step that writes one of those
+    /// settings is guaranteed to fail with view_controlled_by_template. The
+    /// dry-run delta of apply_view_template carries the controlled set (and
+    /// templateControlsFilters); set_view_template_inclusion releases the lock
+    /// for its section. Filter tools (create_view_filter,
+    /// set_filter_overrides) conflict only through the "filters" section: a
+    /// template that controls model/annotation graphics but not filters does
+    /// not stop them (F1 × WA review).
     /// </summary>
     private static AgentPlanExecutionResult? FindStepConflict(
         IReadOnlyList<AgentPlanStep> steps,
@@ -74,12 +79,22 @@ public sealed partial class AgentPlanExecutor
                 if (!locks.TryGetValue((target.ViewId, target.Section), out var locked))
                     continue;
 
-                var remedy = target.Section == "crop"
-                    ? "Crop cannot be detached from a view template in Revit: remove the " +
-                      "template from view " + target.ViewId + " or drop the crop step."
-                    : "Add set_view_template_inclusion(templateId=" + locked.TemplateId +
-                      ", parameters=[\"" + target.Section + "\"], included=false) before step '" +
-                      step.StepId + "', or remove the conflicting write.";
+                var remedy = target.Section switch
+                {
+                    "crop" =>
+                        "Crop cannot be detached from a view template in Revit: remove the " +
+                        "template from view " + target.ViewId + " or drop the crop step.",
+                    "filters" =>
+                        "Either write the filter into the template itself (viewIds=[" +
+                        locked.TemplateId + "]) so every view of the template keeps it, or " +
+                        "detach 'filters' from the template first — set_view_template_inclusion(" +
+                        "templateId=" + locked.TemplateId + ", parameters=[\"filters\"], " +
+                        "included=false) — and only then apply per-view filters.",
+                    _ =>
+                        "Add set_view_template_inclusion(templateId=" + locked.TemplateId +
+                        ", parameters=[\"" + target.Section + "\"], included=false) before step '" +
+                        step.StepId + "', or remove the conflicting write."
+                };
 
                 return AgentPlanExecutionResult.Fail(
                     "plan_step_conflict",
@@ -123,6 +138,16 @@ public sealed partial class AgentPlanExecutor
             AddLock(locks, viewId, "crop", "crop", templateId, templateName, step.StepId);
             AddLock(locks, viewId, "visibility", "visibility", templateId, templateName, step.StepId);
             AddLock(locks, viewId, "viewRange", "viewRange", templateId, templateName, step.StepId);
+
+            // "V/G Overrides Filters" is its own template switch, separate from
+            // model/annotation graphics: it decides whether later filter steps
+            // on the view fail (the tool refuses with
+            // view_controlled_by_template).
+            if (item.TryGetProperty("templateControlsFilters", out var controlsFilters)
+                && controlsFilters.ValueKind == JsonValueKind.True)
+            {
+                locks[(viewId, "filters")] = new LockedSetting(templateId, templateName, step.StepId);
+            }
 
             void AddLock(
                 IDictionary<(long, string), LockedSetting> target,
@@ -267,6 +292,17 @@ public sealed partial class AgentPlanExecutor
             return targets;
         }
 
+        // Filter tools write the view's filter list, not crop/visibility/viewRange:
+        // their `visibility` argument is the filter's own on/off state and must not
+        // be read as a VIS_GRAPHICS_MODEL write (F1 × WA review).
+        if (IsTool(step, "create_view_filter") || IsTool(step, "set_filter_overrides"))
+        {
+            foreach (var viewId in ReadViewIds(root))
+                targets.Add(new WriteTarget(viewId, "filters"));
+
+            return targets;
+        }
+
         var sections = ReadSections(root);
         var explicitSections = root.TryGetProperty("sections", out var sectionsNode)
                                && sectionsNode.ValueKind == JsonValueKind.Array;
@@ -390,6 +426,7 @@ public sealed partial class AgentPlanExecutor
             "CROP" or "VIEWERCROPREGION" => "crop",
             "VISIBILITY" or "VG" or "VISGRAPHICSMODEL" or "VISGRAPHICSANNOTATION"
                 or "MODEL" or "ANNOTATION" => "visibility",
+            "FILTERS" or "VISGRAPHICSFILTERS" => "filters",
             "VIEWRANGE" or "PLANVIEWRANGE" => "viewRange",
             _ => null
         };
