@@ -1,6 +1,4 @@
-using System.Globalization;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -114,7 +112,9 @@ public sealed class ReadToolResultTool : IAgentTool
                 "results that exceed the context budget are trimmed and carry resultHandle; use " +
                 "this tool with offset/limit (and an optional path inside the JSON) instead of " +
                 "re-running the original tool. offset/limit are measured in characters " +
-                "(default 8000 ≈ 2–3k tokens), not tokens.",
+                "(default 8000 ≈ 2–3k tokens), not tokens. To PASS a part of a stored result to " +
+                "another tool, do not read it: put the reference object " +
+                "{\"$result\":\"<handle>\",\"path\":\"<path>\"} in place of that argument.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
             Category = "Meta",
@@ -129,51 +129,8 @@ public sealed class ReadToolResultTool : IAgentTool
 
     private static string? ResolvePath(string json, string path, out string? error)
     {
-        error = null;
-        JsonNode? node;
-        try
-        {
-            node = JsonNode.Parse(json);
-        }
-        catch (JsonException ex)
-        {
-            error = "The stored result is not valid JSON: " + ex.Message;
-            return null;
-        }
-
-        foreach (var segment in path.Split(new[] { '.', '/' }, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (node is JsonObject obj)
-            {
-                if (!obj.TryGetPropertyValue(segment, out node))
-                {
-                    error = "Path segment '" + segment + "' was not found.";
-                    return null;
-                }
-            }
-            else if (node is JsonArray array)
-            {
-                if (!int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index)
-                    || index < 0 || index >= array.Count)
-                {
-                    error = "Path segment '" + segment + "' is not a valid array index.";
-                    return null;
-                }
-
-                node = array[index];
-            }
-            else
-            {
-                error = "Path segment '" + segment + "' cannot be resolved: the value is a scalar.";
-                return null;
-            }
-        }
-
-        return node is null
-            ? "null"
-            : node is JsonValue value && value.TryGetValue<string>(out var text)
-                ? text
-                : node.ToJsonString();
+        var node = AgentResultPath.Resolve(json, path, out error);
+        return error is null ? AgentResultPath.ToText(node) : null;
     }
 
     private static string? GetString(JsonElement args, string property)

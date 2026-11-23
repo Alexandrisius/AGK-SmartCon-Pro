@@ -150,9 +150,11 @@ public sealed class ClassifyMatchResult
         if (SetParameterBatches.Count == 1)
             return new { items = SetParameterBatches[0].Select(Item).ToList() };
 
+        // set_parameters takes at most 500 items per call and has no batch
+        // argument: one entry per call.
         return new
         {
-            batches = SetParameterBatches
+            calls = SetParameterBatches
                 .Select(batch => new { items = batch.Select(Item).ToList() })
                 .ToList()
         };

@@ -36,7 +36,22 @@ public static class ToolResultBudget
 
     public const string BlobHint =
         "The full result is stored under resultHandle: call read_tool_result with that " +
-        "handle (and offset/limit or a path) instead of re-running the same call.";
+        "handle (and offset/limit or a path) instead of re-running the same call. To pass " +
+        "a part of it to another tool, do not read it: put the reference object " +
+        "{\"$result\":\"<resultHandle>\",\"path\":\"<path>\"} in place of that argument.";
+
+    /// <summary>
+    /// A digest keeps the small objects that say what the result contains
+    /// (a summary, a selection, a note with a ready reference). Without them a
+    /// trimmed result reads as "nothing found"; a large object would defeat the
+    /// digest and stays out.
+    /// </summary>
+    private const int DigestInlineMaxCharacters = 4000;
+
+    private static readonly string[] DigestInlineProperties =
+    {
+        "summary", "selection", "setParametersNote"
+    };
 
     private static readonly string[] TrimmableArrays =
     {
@@ -50,7 +65,10 @@ public static class ToolResultBudget
         // Tool signatures are recoverable (find_tools / a later load_tool_pack);
         // they yield before the pack skills, which are sent once per conversation
         // and cannot be requested again (#400).
-        "schemas"
+        "schemas",
+        // classify_types: the proposals for the report and the families left
+        // uncertain; the ready set_parameters argument is taken by reference.
+        "assignments", "uncertain", "alreadySet"
     };
 
     /// <summary>
@@ -229,6 +247,12 @@ public static class ToolResultBudget
 
         if (data["affected"] is { } affected)
             digest["affected"] = affected.DeepClone();
+
+        foreach (var name in DigestInlineProperties)
+        {
+            if (data[name] is { } small && small.ToJsonString(SerializerOptions).Length <= DigestInlineMaxCharacters)
+                digest[name] = small.DeepClone();
+        }
 
         if (resultHandle is not null)
             digest["resultHandle"] = resultHandle;

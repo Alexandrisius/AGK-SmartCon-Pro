@@ -7,8 +7,14 @@ namespace SmartCon.Revit.Agent.Classification;
 
 public sealed partial class ClassifyTypesTool
 {
-    private const string SetParametersNote =
-        "Ready for set_parameters: call with dryRun=true first. Contains only status=proposed items.";
+    private static string SetParametersNote(int calls) =>
+        "setParameters holds only status=proposed items and is ready for set_parameters (dryRun=true " +
+        "first). When this result is trimmed, do not read it - pass the items by reference: " +
+        (calls <= 1
+            ? "items={\"$result\":\"<resultHandle>\",\"path\":\"data/setParameters/items\"}."
+            : "one set_parameters call per entry of setParameters.calls (" + calls +
+              " calls of at most 500 items), items={\"$result\":\"<resultHandle>\"," +
+              "\"path\":\"data/setParameters/calls/0/items\"}.");
 
     private static ClassifyPayload BuildPayload(
         ClassifySnapshot snapshot,
@@ -23,8 +29,9 @@ public sealed partial class ClassifyTypesTool
         var noCandidates = CountOf(result, ClassifyTypeStatus.NoCandidates);
         var alreadySet = CountOf(result, ClassifyTypeStatus.AlreadySet);
 
-        // EXACTLY the set_parameters schema shape: {items} or {batches}; the
-        // explanatory note travels NEXT TO the argument, not inside it.
+        // set_parameters takes at most 500 items per call: {items} for one
+        // call, {calls:[{items}…]} above. The note travels NEXT TO the
+        // argument, never inside it.
         var setParameters = result.BuildSetParametersPayload();
         var payload = new Dictionary<string, object?>
         {
@@ -59,50 +66,22 @@ public sealed partial class ClassifyTypesTool
                 type = item.Type.TypeName,
                 currentCode = item.Type.CurrentCode
             }).ToList(),
+            // The report to the user: a family with its code and the path in the
+            // table. Type ids live in setParameters only.
             ["assignments"] = result.Assignments.Select(group => new
             {
-                familyId = group.FamilyId,
                 family = group.Family,
                 category = group.Category,
                 code = group.Code,
                 breadcrumb = group.Breadcrumb,
                 score = System.Math.Round(group.Score, 4),
-                typeIdCount = group.TypeIdCount,
-                typeIds = group.TypeIds,
-                types = group.TypeNames
+                typeCount = group.TypeIdCount
             }).ToList(),
-            ["uncertain"] = result.Types
-                .Where(item => item.Status is ClassifyTypeStatus.LowConfidence
-                    or ClassifyTypeStatus.NoConfidence
-                    or ClassifyTypeStatus.NoCandidates)
-                .Select(item => new Dictionary<string, object?>
-                {
-                    ["typeId"] = item.Type.ElementId,
-                    ["family"] = item.Type.FamilyName,
-                    ["type"] = item.Type.TypeName,
-                    ["reason"] = item.Reason ?? ReasonOf(item.Status),
-                    ["current"] = item.Type.CurrentCode,
-                    ["score"] = item.Status == ClassifyTypeStatus.NoCandidates
-                        ? null
-                        : System.Math.Round(item.Score, 4),
-                    ["candidates"] = item.Candidates
-                        .Select(candidate => new
-                        {
-                            code = candidate.Code,
-                            score = System.Math.Round(candidate.Score, 4),
-                            breadcrumb = candidate.Breadcrumb
-                        })
-                        .ToList()
-                })
-                .ToList(),
+            ["uncertain"] = UncertainGroups(result),
             ["setParameters"] = setParameters,
             ["setParametersNote"] = setParameters is null
                 ? null
-                : SetParametersNote +
-                  (result.SetParameterBatches.Count > 1
-                      ? " Spread across " + result.SetParameterBatches.Count +
-                        " calls of at most 500 items."
-                      : string.Empty),
+                : SetParametersNote(result.SetParameterBatches.Count),
             ["decisionUsed"] = result.DecisionUsed
         };
 
@@ -155,6 +134,50 @@ public sealed partial class ClassifyTypesTool
             message,
             proposed);
     }
+
+    /// <summary>
+    /// The types left without a proposal, one entry per family and reason: the
+    /// familyId lets the model classify the family again with other
+    /// instructions, the candidates are what to offer the user.
+    /// </summary>
+    private static List<Dictionary<string, object?>> UncertainGroups(ClassifyMatchResult result) =>
+        result.Types
+            .Where(item => item.Status is ClassifyTypeStatus.LowConfidence
+                or ClassifyTypeStatus.NoConfidence
+                or ClassifyTypeStatus.NoCandidates)
+            .GroupBy(item => new
+            {
+                item.Type.FamilyId,
+                Reason = item.Reason ?? ReasonOf(item.Status),
+                Code = item.Candidates.Count > 0 ? item.Candidates[0].Code : string.Empty
+            })
+            .Select(group =>
+            {
+                var items = group
+                    .OrderBy(item => item.Type.TypeName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var noCode = items[0].Status == ClassifyTypeStatus.NoCandidates;
+                return new Dictionary<string, object?>
+                {
+                    ["familyId"] = items[0].Type.FamilyId,
+                    ["family"] = items[0].Type.FamilyName,
+                    ["typeCount"] = items.Count,
+                    ["types"] = items.Select(item => item.Type.TypeName).Take(3).ToList(),
+                    ["reason"] = group.Key.Reason,
+                    ["current"] = items[0].Type.CurrentCode,
+                    ["score"] = noCode ? null : System.Math.Round(items.Min(item => item.Score), 4),
+                    ["candidates"] = items[0].Candidates
+                        .Select(candidate => new
+                        {
+                            code = candidate.Code,
+                            score = System.Math.Round(candidate.Score, 4),
+                            breadcrumb = candidate.Breadcrumb
+                        })
+                        .ToList()
+                };
+            })
+            .OrderBy(group => group["family"] as string, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static string ReasonOf(ClassifyTypeStatus status) => status switch
     {

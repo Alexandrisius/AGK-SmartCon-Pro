@@ -448,6 +448,15 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
             await Assert.That(allowed.Contains(property.Name)).IsTrue();
         }
 
+        // setParameters is either {items} (one call) or {calls:[{items}…]} (the
+        // tool takes at most 500 items per call): every items list must pass the
+        // schema as is (R7) - only schema keys, items of the schema shape.
+        var itemLists = setParameters.TryGetProperty("calls", out var calls)
+            ? calls.EnumerateArray()
+                .Select(call => call.GetProperty("items"))
+                .ToList()
+            : new List<JsonElement> { setParameters.GetProperty("items") };
+
         var itemsSchema = schema.GetProperty("properties").GetProperty("items");
         var itemAllowed = itemsSchema.GetProperty("items").GetProperty("properties")
             .EnumerateObject().Select(property => property.Name)
@@ -455,17 +464,21 @@ public sealed partial class AgentClassifyTypesTests : RevitApiTest
         var itemRequired = itemsSchema.GetProperty("items").GetProperty("required")
             .EnumerateArray().Select(value => value.GetString()!)
             .ToHashSet(StringComparer.Ordinal);
-        var items = setParameters.GetProperty("items");
-        foreach (var item in items.EnumerateArray())
+        foreach (var items in itemLists)
         {
-            foreach (var property in item.EnumerateObject())
+            await Assert.That(items.GetArrayLength()).IsGreaterThan(0);
+            await Assert.That(items.GetArrayLength() <= 500).IsTrue();
+            foreach (var item in items.EnumerateArray())
             {
-                await Assert.That(itemAllowed.Contains(property.Name)).IsTrue();
-            }
+                foreach (var property in item.EnumerateObject())
+                {
+                    await Assert.That(itemAllowed.Contains(property.Name)).IsTrue();
+                }
 
-            foreach (var required in itemRequired)
-            {
-                await Assert.That(item.TryGetProperty(required, out _)).IsTrue();
+                foreach (var required in itemRequired)
+                {
+                    await Assert.That(item.TryGetProperty(required, out _)).IsTrue();
+                }
             }
         }
     }

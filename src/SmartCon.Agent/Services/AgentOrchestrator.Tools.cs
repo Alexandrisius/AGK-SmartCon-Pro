@@ -39,8 +39,20 @@ public sealed partial class AgentOrchestrator
         {
             try
             {
+                var arguments = document.RootElement;
+                if (MayContainResultReference(toolCall.ArgumentsJson))
+                {
+                    var resolved = await ResolveResultReferencesAsync(arguments, ct).ConfigureAwait(false);
+                    if (resolved.Failure is not null)
+                        return resolved.Failure;
+
+                    arguments = resolved.Arguments;
+                    SmartConLogger.Info(
+                        "Agent tool arguments taken from a stored result: tool=" + toolCall.Name);
+                }
+
                 var result = await _toolExecutor
-                    .ExecuteAsync(toolCall.Name, document.RootElement, ct)
+                    .ExecuteAsync(toolCall.Name, arguments, ct)
                     .ConfigureAwait(false);
                 return AttachPackSkillOnFirstWrite(toolCall.Name, result);
             }

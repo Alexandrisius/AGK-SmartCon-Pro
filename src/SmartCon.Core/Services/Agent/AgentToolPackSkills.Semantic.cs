@@ -66,8 +66,13 @@ public static partial class AgentToolPackSkills
   не вызывай тул по одному запросу на объект (шторм вызовов губит задачу).
 - «Присвой коды классификатора» (таблица загружена в документ): `classify_types` ОДНИМ
   вызовом — выборка и подбор уже внутри → `set_parameters` (dryRun → apply) с готовым
-  `setParameters.items` из результата → read-back → отчёт: семейство → код + путь по
+  `setParameters` из результата → read-back → отчёт: семейство → код + путь по
   классификатору; отдельно — `uncertain`: предложи пользователю решить по этим семействам.
+- Большой результат `classify_types` усекается и хранится под `resultHandle`. НЕ вычитывай
+  его постранично, чтобы переписать items: передай items по ссылке —
+  `set_parameters {""dryRun"":true,""items"":{""$result"":""<resultHandle>"",""path"":""data/setParameters/items""}}`
+  (больше 500 элементов — по одному вызову на запись `setParameters.calls`, путь
+  `data/setParameters/calls/N/items`; готовый путь назван в `setParametersNote` результата).
 - «Присвой коды классификатора» (в задаче назван ФАЙЛ классификатора): файл в формате экспорта
   Revit — подключи его `load_classification_table(path)` и действуй как выше. Файл другого
   формата — `read_classifier(path)` → `semantic_match` батчем `queries=[{id,query}…]`

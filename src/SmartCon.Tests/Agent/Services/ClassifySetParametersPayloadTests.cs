@@ -6,10 +6,11 @@ namespace SmartCon.Tests.Agent.Services;
 
 /// <summary>
 /// The setParameters argument of classify_types must be EXACTLY what the
-/// set_parameters schema accepts (R7): {items} for one batch of at most 500
-/// items, {batches:[{items}…]} above 500, no extra keys inside - the real
-/// schema is validated end-to-end by the integration test against the tool
-/// definition; this guard pins the shape the Core result produces.
+/// set_parameters schema accepts (R7): {items} for one call of at most 500
+/// items, {calls:[{items}…]} above 500 - set_parameters has no batch argument,
+/// so the model makes one call per entry. The schema itself is validated
+/// end-to-end by the integration test against the tool definition; this guard
+/// pins the shape the Core result produces.
 /// </summary>
 public sealed class ClassifySetParametersPayloadTests
 {
@@ -38,8 +39,8 @@ public sealed class ClassifySetParametersPayloadTests
         var payload = JsonSerializer.SerializeToElement(result.BuildSetParametersPayload()!);
 
         Assert.Equal(JsonValueKind.Object, payload.ValueKind);
-        Assert.Equal(new[] { "batches" }, payload.EnumerateObject().Select(property => property.Name));
-        var batches = payload.GetProperty("batches");
+        Assert.Equal(new[] { "calls" }, payload.EnumerateObject().Select(property => property.Name));
+        var batches = payload.GetProperty("calls");
         Assert.Equal(JsonValueKind.Array, batches.ValueKind);
         Assert.Equal(2, batches.GetArrayLength());
         Assert.All(
