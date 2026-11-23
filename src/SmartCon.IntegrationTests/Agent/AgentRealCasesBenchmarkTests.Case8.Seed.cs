@@ -38,12 +38,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case8Placements = new List<Case8Placement>();
 
         _case8SharedFile = SharedParameterFileScope.Create(Application);
-        var definitions = SeedCase8Definitions();
-        if (_case8SeedError is not null)
-        {
-            Skip.Test(_case8SeedError);
-            return;
-        }
 
         // Семейства грузятся ВНЕ транзакции (LoadFamily на изменяемом документе падает).
         var spec = _case8Truth
@@ -56,6 +50,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
         if (families is null)
         {
             Skip.Test(skipReason ?? "Сид-семейства кейса 8 не собрались");
+            return;
+        }
+
+        // Определения ФОП создаются ПОСЛЕ загрузки семейств: перезапись тёзок
+        // шаблона владельца заставляет Revit перечитывать ФОП, и обёртки,
+        // полученные раньше, протухают (InvalidObjectExceptionProxy в Insert).
+        var definitions = SeedCase8Definitions();
+        if (_case8SeedError is not null)
+        {
+            Skip.Test(_case8SeedError);
             return;
         }
 
@@ -88,7 +92,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _transactions.RunInTransaction(Doc, "Seed case 8 (model)", doc =>
         {
             PlaceCase8Instances(doc);
-            SeedCase8Values(doc, definitions!);
+            SeedCase8Values(doc);
             if (_case8SeedError is not null)
                 return;
 
@@ -168,9 +172,27 @@ public sealed partial class AgentRealCasesBenchmarkTests
             var categorySet = app.Create.NewCategorySet();
             categorySet.Insert(category);
             var typeBinding = app.Create.NewTypeBinding(categorySet);
-            foreach (var definition in definitions.Targets.Concat(new[] { definitions.Note })
-                         .Concat(definitions.Old))
+
+            // Обёртка резолвится в момент КАЖДОГО Insert: между двумя Insert
+            // Revit может перечитать ФОП, и обёртка, живая на прошлом шаге,
+            // станет нативным трупом (см. док-комментарий FindCaseSharedDefinition).
+            var pending = new List<(string GroupName, string Name)>();
+            for (var role = 0; role < Case7RoleCount; role++)
+                pending.Add((Case7TargetGroupName, Case7TargetNames[role]));
+            for (var role = 0; role < Case7RoleCount; role++)
+                pending.Add((Case8OldGroupName, Case7OldNames[0][role]!));
+            pending.Add((Case8OldGroupName, Case8NoteName));
+
+            foreach (var (groupName, name) in pending)
             {
+                var definition = FindCaseSharedDefinition(groupName, name);
+                if (definition is null)
+                {
+                    _case8SeedError = "Общий параметр «" + name +
+                                       "» не найден в ФОП перед привязкой (обёртка протухла)";
+                    return;
+                }
+
                 if (!doc.ParameterBindings.Insert(definition, typeBinding))
                 {
                     _case8SeedError = "Не удалось привязать общий параметр «" +
@@ -182,7 +204,7 @@ public sealed partial class AgentRealCasesBenchmarkTests
         catch (Exception ex)
         {
             _case8SeedError = "Привязка общих параметров кейса 8: " +
-                               ex.GetType().Name + ": " + ex.Message;
+                               ex.GetType().Name + ": " + ex.Message + " @ " + ex.StackTrace;
         }
     }
 
@@ -204,7 +226,12 @@ public sealed partial class AgentRealCasesBenchmarkTests
         }
     }
 
-    private void SeedCase8Values(Document doc, Case8Definitions definitions)
+    /// <summary>
+    /// Значения обоих наборов на типоразмерах — через GUID-константы, без
+    /// ExternalDefinition-обёрток (те протухают после перечитывания ФОП,
+    /// см. док-комментарий FindCaseSharedDefinition).
+    /// </summary>
+    private void SeedCase8Values(Document doc)
     {
         foreach (var row in _case8Truth)
         {
@@ -213,8 +240,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
 
             for (var role = 0; role < Case7RoleCount; role++)
             {
-                type.get_Parameter(definitions.Old[role].GUID)?.Set(row.Old[role]);
-                type.get_Parameter(definitions.Targets[role].GUID)?.Set(row.New[role]);
+                type.get_Parameter(Case7OldGuids[0][role]!.Value)?.Set(row.Old[role]);
+                type.get_Parameter(Case7TargetGuids[role])?.Set(row.New[role]);
             }
         }
     }

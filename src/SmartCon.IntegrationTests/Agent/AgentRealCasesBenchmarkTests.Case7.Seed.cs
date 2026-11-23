@@ -56,12 +56,6 @@ public sealed partial class AgentRealCasesBenchmarkTests
         _case7Truth = Case7Truth();
 
         _case7SharedFile = SharedParameterFileScope.Create(Application);
-        var definitions = SeedCase7Definitions();
-        if (_case7SeedError is not null)
-        {
-            Skip.Test(_case7SeedError);
-            return;
-        }
 
         // Семейства грузятся ВНЕ транзакции (LoadFamily на изменяемом документе падает).
         var spec = _case7Truth
@@ -74,6 +68,16 @@ public sealed partial class AgentRealCasesBenchmarkTests
         if (families is null)
         {
             Skip.Test(skipReason ?? "Сид-семейства кейса 7 не собрались");
+            return;
+        }
+
+        // Определения ФОП создаются ПОСЛЕ загрузки семейств: перезапись тёзок
+        // шаблона владельца заставляет Revit перечитывать ФОП, и обёртки,
+        // полученные раньше, протухают (InvalidObjectExceptionProxy в Insert).
+        var definitions = SeedCase7Definitions();
+        if (_case7SeedError is not null)
+        {
+            Skip.Test(_case7SeedError);
             return;
         }
 
@@ -216,8 +220,20 @@ public sealed partial class AgentRealCasesBenchmarkTests
             var categorySet = app.Create.NewCategorySet();
             categorySet.Insert(category);
             var typeBinding = app.Create.NewTypeBinding(categorySet);
-            foreach (var definition in definitions.Targets)
+            for (var role = 0; role < Case7RoleCount; role++)
             {
+                // Обёртка резолвится в момент КАЖДОГО Insert: managed-IsValidObject
+                // внешних определений врёт для нативно протухших — см. док-комментарий
+                // FindCaseSharedDefinition.
+                var definition = FindCaseSharedDefinition(
+                    Case7TargetGroupName, Case7TargetNames[role]);
+                if (definition is null)
+                {
+                    _case7SeedError = "Целевой параметр «" + Case7TargetNames[role] +
+                                       "» не найден в ФОП перед привязкой (обёртка протухла)";
+                    return;
+                }
+
                 if (!doc.ParameterBindings.Insert(definition, typeBinding))
                 {
                     _case7SeedError = "Не удалось привязать целевой параметр «" +
