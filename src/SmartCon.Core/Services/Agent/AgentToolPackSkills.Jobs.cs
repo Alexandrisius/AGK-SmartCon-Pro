@@ -34,7 +34,7 @@ public static partial class AgentToolPackSkills
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (≤100), `createTarget:true` — цель создать из ФОП (definition в файле не откатывается).
 - `spec.replacements` — `replace_family_parameter`: `{source:{name|guid}, target:{name|guid}}` (≤50); цель — существующий definition из ФОП, scope/значения/формулы сохраняются.
 - `spec.parameter/guid/builtInParameter/scope/value/unit` — запись параметра (`value` — строка, `""` очищает).
-- `set_parameters` + `select.systemName` (точное имя из list_mep_systems, опционально `systemDomain`) — члены MEP-системы: Elements + BaseEquipment + Piping/DuctNetwork; `includeSubComponents:true` добирает вложенные shared-семейства (фланцы, глубина ≤3) — паттерн «АДСК_ИмяСистемы», чтобы фильтр вида показал и субкомпоненты.
+- `set_parameters` + `select.systemName` (точное имя из list_mep_systems, опционально `systemDomain`) — члены MEP-системы: Elements + BaseEquipment + Piping/DuctNetwork; `includeSubComponents:true` добирает вложенные shared-семейства (фланцы, глубина ≤3) — паттерн «общий параметр имени системы», чтобы фильтр вида показал и субкомпоненты.
 - `batchSize` 1..500 (50), `onError: continue|abort`, `rollbackOnError`, `maxItems` ≤10000 (1000), `allowLargeJobs`, `savePolicy: after_each_batch|every_n_minutes|never` (**по умолчанию never**: джоба не перезаписывает .rvt — файл сохраняет пользователь; не включайте автосейв без явной просьбы).
 - Потолок единиц: `rename_views`/`set_parameters` — 5000, family-action'ы (`map`/`replace_family_parameter`) — 200 **жёстко**: `allowLargeJobs` не поднимает, большие миграции дробятся на несколько джоб.
 
@@ -51,7 +51,7 @@ public static partial class AgentToolPackSkills
 ### Рецепты
 1. Переименовать 800 видов: `start_job(action=""rename_views"", spec:{select:{viewTypes:[""FloorPlan""]}, rename:{find:""Копия"", replace:""""}})`, прочитать превью → apply с digest.
 2. Проставить параметр 3000 элементам: селектор `conditions` + `spec.parameter/value/unit` → превью → apply → `get_job_report(includeItems=false)`.
-3. Заменить общий параметр ADSK на параметр заказчика по всем семействам серии: `start_job(action=""replace_family_parameter"", spec:{select:{nameContains:""ТДСК_""}, replacements:[{source:{name:""ADSK""}, target:{name:""Заказчик""}}]})` — превью (blastRadius по формулам) → apply.
+3. Заменить общий параметр на параметр заказчика по всем семействам серии: `start_job(action=""replace_family_parameter"", spec:{select:{nameContains:""<часть старого имени>""}, replacements:[{source:{name:""<старый параметр>""}, target:{name:""<новый параметр>""}}]})` — превью (blastRadius по формулам) → apply. Имена — из задачи, не из примера.
 4. Часть элементов недоступна (worksharing): `onError=""continue""`, затем `retry_failed_items`.
 
 ### Что нельзя

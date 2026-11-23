@@ -41,37 +41,75 @@ public sealed partial class BuildSystemSheetsTool
             return null;
         }
 
-        if (explication.SourceScheduleId <= 0)
+        // One source keeps that category; several sources mean the explication must
+        // cover every category of the system, so the clone is a MULTICATEGORY
+        // schedule (CreateSchedule with InvalidElementId) whose fields are the
+        // ones common to all categories (shared parameters). A single-category
+        // clone left fittings, flexible pipes and accessories out (owner
+        // feedback 2026-11-24).
+        var sourceIds = new List<long>();
+        if (explication.SourceScheduleIds is { Count: > 0 })
+        {
+            foreach (var id in explication.SourceScheduleIds)
+            {
+                if (id > 0 && !sourceIds.Contains(id))
+                    sourceIds.Add(id);
+            }
+        }
+
+        if (explication.SourceScheduleId > 0 && !sourceIds.Contains(explication.SourceScheduleId))
+            sourceIds.Insert(0, explication.SourceScheduleId);
+
+        if (sourceIds.Count == 0)
         {
             Fail(outcome, report, "invalid_arguments",
-                "explication.sourceScheduleId is required (the common specification " +
-                "to clone, see list_schedules).");
+                "explication.sourceScheduleId (one specification) or " +
+                "explication.sourceScheduleIds (all categories of the system) is required.");
             return null;
         }
 
-        if (doc.GetElement(ElementIdCompat.Create(explication.SourceScheduleId))
-            is not ViewSchedule source)
+        if (sourceIds.Count > AgentScheduleWriteHelper.MaxFieldsPerCall)
         {
-            Fail(outcome, report, "schedule_not_found",
-                "explication.sourceScheduleId " + explication.SourceScheduleId +
-                " is not a schedule.");
+            Fail(outcome, report, "limit_exceeded",
+                "explication allows at most " + AgentScheduleWriteHelper.MaxFieldsPerCall +
+                " source schedules.");
             return null;
         }
 
-        if (source.IsTemplate)
+        var sources = new List<ViewSchedule>(sourceIds.Count);
+        foreach (var sourceId in sourceIds)
         {
-            Fail(outcome, report, "schedule_is_template",
-                "Schedule '" + source.Name + "' is a template and cannot be cloned.");
-            return null;
+            if (doc.GetElement(ElementIdCompat.Create(sourceId)) is not ViewSchedule source)
+            {
+                Fail(outcome, report, "schedule_not_found",
+                    "explication source " + sourceId + " is not a schedule.");
+                return null;
+            }
+
+            if (source.IsTemplate)
+            {
+                Fail(outcome, report, "schedule_is_template",
+                    "Schedule '" + source.Name + "' is a template and cannot be cloned.");
+                return null;
+            }
+
+            if (IsKeySchedule(source.Definition))
+            {
+                Fail(outcome, report, "schedule_not_cloneable",
+                    "Key schedule '" + source.Name + "' cannot be cloned field-by-field; " +
+                    "rebuild the key schedule with create_schedule instead.");
+                return null;
+            }
+
+            sources.Add(source);
         }
 
-        if (IsKeySchedule(source.Definition))
-        {
-            Fail(outcome, report, "schedule_not_cloneable",
-                "Key schedule '" + source.Name + "' cannot be cloned field-by-field; " +
-                "rebuild the key schedule with create_schedule instead.");
-            return null;
-        }
+        var multicategory = sources.Count > 1;
+        var sourceLabel = multicategory
+            ? sources.Count + " specifications (" +
+              string.Join(", ", sources.Take(5).Select(schedule => "'" + schedule.Name + "'")) +
+              (sources.Count > 5 ? " …" : string.Empty) + ")"
+            : "'" + sources[0].Name + "'";
 
         var keepFields = explication.KeepFields?
             .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -110,13 +148,15 @@ public sealed partial class BuildSystemSheetsTool
         }
 
         // A filter field that is not schedulable for the category cannot be
-        // added even as a hidden column — fail the item before any change.
-        if (!AgentScheduleWriteHelper.TryFindSchedulableField(
-                doc, source.Definition, filterField!, out _))
+        // added even as a hidden column — fail the item before any change. A
+        // multicategory schedule has no single category yet: the check runs on
+        // the created clone (FillAndPlaceExplication), not here.
+        if (!multicategory && !AgentScheduleWriteHelper.TryFindSchedulableField(
+                doc, sources[0].Definition, filterField!, out _))
         {
             Fail(outcome, report, "filter_field_not_schedulable",
                 "explication.filterField '" + filterField + "' is not schedulable for " +
-                "the category of '" + source.Name + "'.");
+                "the category of " + sourceLabel + ".");
             return null;
         }
 
@@ -134,7 +174,12 @@ public sealed partial class BuildSystemSheetsTool
         usedScheduleNames.Add(name);
         return new PlannedExplication
         {
-            Source = source,
+            Sources = sources,
+            CategoryId = multicategory
+                ? ElementId.InvalidElementId
+                : sources[0].Definition.CategoryId,
+            SourceLabel = sourceLabel,
+            Multicategory = multicategory,
             KeepFields = keepFields,
             FilterField = filterField!,
             FilterValue = explication.FilterValue!.Trim(),
@@ -156,12 +201,11 @@ public sealed partial class BuildSystemSheetsTool
         List<string> warnings)
     {
         var planned = entry.Explication!;
-        var source = planned.Source;
 
         ViewSchedule clone;
         try
         {
-            clone = ViewSchedule.CreateSchedule(doc, source.Definition.CategoryId);
+            clone = ViewSchedule.CreateSchedule(doc, planned.CategoryId);
             clone.Name = planned.Name;
         }
         catch (Exception ex)
@@ -173,7 +217,7 @@ public sealed partial class BuildSystemSheetsTool
         try
         {
             return FillAndPlaceExplication(
-                doc, sheet, entry, placement, warnings, clone, source);
+                doc, sheet, entry, placement, warnings, clone);
         }
         catch (Exception)
         {
@@ -198,8 +242,7 @@ public sealed partial class BuildSystemSheetsTool
         PlannedItem entry,
         ViewportPlacement placement,
         List<string> warnings,
-        ViewSchedule clone,
-        ViewSchedule source)
+        ViewSchedule clone)
     {
         var planned = entry.Explication!;
         var definition = clone.Definition;
@@ -207,7 +250,7 @@ public sealed partial class BuildSystemSheetsTool
         {
             // A specification-like explication inherits the source's itemized
             // flag (the same default clone_schedule applies).
-            definition.IsItemized = source.Definition.IsItemized;
+            definition.IsItemized = planned.Sources[0].Definition.IsItemized;
         }
         catch (Exception)
         {
@@ -222,9 +265,11 @@ public sealed partial class BuildSystemSheetsTool
             {
                 warnings.Add(
                     "Sheet " + sheet.SheetNumber + ": explication column '" + keepName +
-                    "' has no analog for this category and was skipped. [Action: check " +
-                    "the exact display name via get_schedule_definition of schedule " +
-                    source.Id.GetValue() + "]");
+                    "' has no analog " +
+                    (planned.Multicategory ? "common to all source categories" : "for this category") +
+                    " and was skipped. [Action: check the exact display name via " +
+                    "get_schedule_definition of the source schedule(s); a multicategory " +
+                    "explication can only show shared parameters common to the categories]");
                 continue;
             }
 
@@ -244,8 +289,8 @@ public sealed partial class BuildSystemSheetsTool
 
         if (visible.Count == 0)
             throw new InvalidOperationException(
-                "None of explication.keepFields could be added for the category of '" +
-                source.Name + "'.");
+                "None of explication.keepFields could be added for " + planned.SourceLabel +
+                ".");
 
         // The filter needs its field as a column: add it hidden when it is not
         // one of the kept columns.
@@ -343,7 +388,7 @@ public sealed partial class BuildSystemSheetsTool
             warnings.Add(
                 "Sheet " + sheet.SheetNumber + ": the explication filter '" +
                 planned.FilterField + "' = '" + planned.FilterValue +
-                "' matched 0 rows of the source '" + source.Name + "'." + hint +
+                "' matched 0 rows of " + planned.SourceLabel + "." + hint +
                 " [Action: pass an existing value of the field as " +
                 "explication.filterValue (or pick another filterField) and rebuild the " +
                 "sheet — the sheet now carries an empty table]");
@@ -364,6 +409,8 @@ public sealed partial class BuildSystemSheetsTool
                 name = clone.Name,
                 placed = schedulePlacement.Instance is not null,
                 visibleColumns = visible,
+                multicategory = planned.Multicategory,
+                sourceScheduleIds = planned.Sources.Select(schedule => schedule.Id.GetValue()).ToList(),
                 filterColumnHidden,
                 explicationRows,
                 filter = new
@@ -394,6 +441,9 @@ public sealed partial class BuildSystemSheetsTool
     {
         public long SourceScheduleId { get; set; }
 
+        /// <summary>Several sources → one multicategory explication.</summary>
+        public List<long>? SourceScheduleIds { get; set; }
+
         public List<string>? KeepFields { get; set; }
 
         public string? FilterField { get; set; }
@@ -404,7 +454,17 @@ public sealed partial class BuildSystemSheetsTool
     /// <summary>The validated explication plan of one item.</summary>
     private sealed class PlannedExplication
     {
-        public required ViewSchedule Source { get; init; }
+        public required IReadOnlyList<ViewSchedule> Sources { get; init; }
+
+        /// <summary>
+        /// Category the clone is created for: the single source's category, or
+        /// ElementId.InvalidElementId for a multicategory schedule.
+        /// </summary>
+        public required ElementId CategoryId { get; init; }
+
+        public required string SourceLabel { get; init; }
+
+        public required bool Multicategory { get; init; }
 
         public required IReadOnlyList<string> KeepFields { get; init; }
 

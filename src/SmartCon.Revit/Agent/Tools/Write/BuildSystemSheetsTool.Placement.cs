@@ -19,17 +19,25 @@ public sealed partial class BuildSystemSheetsTool
     /// placed at a provisional point first, measured after a regeneration and
     /// recentered so the box lands in the top-left corner with the margin
     /// (Autodesk's SetBoxCenter example pattern).
+    ///
+    /// The frame is the title block's visible rectangle (SheetFrameOf), not
+    /// ViewSheet.Outline: the outline can carry family geometry beyond the
+    /// paper, and then insideSheet=true while the user sees the viewport off the
+    /// sheet (owner feedback 2026-11-24). A fresh regeneration happens before
+    /// the frame is read, so title block parameters written by this same call
+    /// (a paper format switch) are already in effect.
     /// </summary>
     private static ViewportPlacement PlaceViewportTopLeft(
         Document doc,
         ViewSheet sheet,
         PlannedItem entry)
     {
-        var sheetOutline = sheet.Outline;
-        var minU = sheetOutline.Min.U;
-        var minV = sheetOutline.Min.V;
-        var maxU = sheetOutline.Max.U;
-        var maxV = sheetOutline.Max.V;
+        doc.Regenerate();
+        var frame = AgentSheetReader.SheetFrameOf(sheet);
+        var minU = frame.MinX;
+        var minV = frame.MinY;
+        var maxU = frame.MaxX;
+        var maxV = frame.MaxY;
         var margin = AgentSheetWriteHelper.MillimetersToInternal(entry.MarginMm);
 
         var provisional = new XYZ(
@@ -116,6 +124,44 @@ public sealed partial class BuildSystemSheetsTool
                 entry.View.Name + "' exceeds the sheet border by " + result.OverflowText +
                 ". [Action: move the viewport with move_viewport, or rebuild the sheet " +
                 "with a larger title block format parameter]");
+        }
+
+        result.FrameMm = new
+        {
+            minXMm = AgentUnitsFormat.ToMillimeters(frame.MinX),
+            minYMm = AgentUnitsFormat.ToMillimeters(frame.MinY),
+            maxXMm = AgentUnitsFormat.ToMillimeters(frame.MaxX),
+            maxYMm = AgentUnitsFormat.ToMillimeters(frame.MaxY),
+            widthMm = AgentUnitsFormat.ToMillimeters(frame.WidthFeet),
+            heightMm = AgentUnitsFormat.ToMillimeters(frame.HeightFeet),
+            source = frame.Source
+        };
+        result.CenterFromFrameMm = new
+        {
+            x = System.Math.Round(
+                AgentUnitsFormat.ToMillimeters(center.X - frame.MinX), 1),
+            y = System.Math.Round(
+                AgentUnitsFormat.ToMillimeters(center.Y - frame.MinY), 1)
+        };
+
+        var paper = AgentSheetReader.PaperSizeOf(sheet);
+        if (paper.WidthMm is not null && paper.HeightMm is not null)
+        {
+            var frameWidth = AgentUnitsFormat.ToMillimeters(frame.WidthFeet);
+            var frameHeight = AgentUnitsFormat.ToMillimeters(frame.HeightFeet);
+            if (System.Math.Abs(frameWidth - paper.WidthMm.Value) > 2
+                || System.Math.Abs(frameHeight - paper.HeightMm.Value) > 2)
+            {
+                result.Warnings.Add(
+                    "Sheet " + sheet.SheetNumber + ": the visible title block frame is " +
+                    MillimetersText(frameWidth) + "x" + MillimetersText(frameHeight) +
+                    " mm while the paper size is " + MillimetersText(paper.WidthMm.Value) +
+                    "x" + MillimetersText(paper.HeightMm.Value) +
+                    " mm (SHEET_WIDTH/SHEET_HEIGHT). The placement and the inside check " +
+                    "use the visible frame (sheetOutlineMm.source). [Action: check the title " +
+                    "block format parameter - an inherited width/height may still describe " +
+                    "the previous paper format]");
+            }
         }
 
         result.CenterMm = new
@@ -545,6 +591,10 @@ public sealed partial class BuildSystemSheetsTool
         public Viewport? Viewport { get; set; }
 
         public object? CenterMm { get; set; }
+
+        public object? CenterFromFrameMm { get; set; }
+
+        public object? FrameMm { get; set; }
 
         public object? BoxMm { get; set; }
 

@@ -33,7 +33,9 @@ public sealed class QueryElementsTool : AgentReadToolBase
             "words checked before any parameter, support string operators only and need no " +
             "includeTypeParameters; a project parameter with the same name is not reachable in " +
             "conditions. A parameter missing on every scanned element returns unknown_parameter " +
-            "instead of an empty list. " +
+            "instead of an empty list; this holds for exists/notExists too, so \"not bound\" is " +
+            "never reported as \"bound but empty\" (0 rows of a known exists = the parameter " +
+            "exists nowhere among these candidates). " +
             "String comparisons are case-insensitive. For numeric conditions pass unit (mm recommended); " +
             "without unit the project display unit for that parameter is used. " +
             "Default limit 50, max 200; use offset/nextOffset to paginate. " +

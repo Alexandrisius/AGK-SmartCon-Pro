@@ -24,8 +24,8 @@ public static partial class AgentToolPackSkills
   write-тулов), сортировка/группировка с флагами, фильтры (фазные — `phaseFilters`,
   ссылки — `valueName`), стиль (`stripedRows`, текстовые стили, `showTitle`) и `placements[]`
   (лист/точка/поворот) + `placedOnSheet`/`sheetNumbers`.
-- `create_schedule` — `category` (OST-имя / русское / id), `name` (уникальное), `fields` (0..15),
-  `itemized`; dry-run id в `created{}` PROVISIONAL.
+- `create_schedule` — `category` (OST-имя / русское / id / `multicategory` — сквозная по
+  категориям, поля только общие), `name`, `fields` (0..15), `itemized`; dry-run id — PROVISIONAL.
 - `add_schedule_field` / `remove_schedule_field` — поля (1..15) по отображаемым именам; undo
   возвращает.
 - `set_schedule_field_order` — порядок колонок: ПОЛНЫЙ список имён в новом порядке.
@@ -83,8 +83,7 @@ public static partial class AgentToolPackSkills
 - Критичное = на листе: `placedOnSheet`/`sheetNumbers` отличают отчётность от черновиков;
   `audit_fill_rate` (пак elements) считает только ЛИСТОВЫЕ спеки.
 - «Покажи спецификацию» — `get_schedule_definition`, потом `get_schedule_data` с `limit`.
-- Значения в ячейках — отформатированный текст с единицами; для вычислений берите числа из
-  параметров элементов (`query_elements`).
+- Значения в ячейках — отформатированный текст; числа — из параметров (`query_elements`).
 - «Сделай спецификацию по X и помести на лист»: `create_schedule` → `add_schedule_field` (если
   полей мало) → `set_schedule_filter` → `set_schedule_sort` → `place_schedule_on_sheet`; каждый
   шаг dry-run → apply, после apply — read-back.
@@ -101,7 +100,7 @@ public static partial class AgentToolPackSkills
   с `confirmNames` СВЕЖЕГО dry-run; `confirm_names_required`/`confirm_names_mismatch` = модель
   изменилась → повтори dry-run и передай свежий names[]. Остальные write-тулы откатываются
   `undo_last`.
-- Расписание на листе ищется через `get_sheet_content`, а не по номеру листа в параметре.
+- Лист-вынос ищется через `get_sheet_content`, не по номеру листа в параметре.
 
 ### Рецепты
 1. «Что в спецификации дверей?»: `list_schedules(nameContains:""Двери"")` → `get_schedule_definition` → `get_schedule_data(limit=50)`.
@@ -116,7 +115,7 @@ public static partial class AgentToolPackSkills
    - **по умолчанию — семейство** (данные переживают перезагрузку и новые типы):
      `list_shared_parameters` → `start_job(action:""map_family_parameters"")` с
      `createTarget:true` (mode formula — вычисляемые, mode values — текстовые) → новая
-     спецификация из полей-семейных KRTRS, старая в архив.
+     спецификация из полей-семейных общих параметров ФОП, старая в архив.
    - **проектный путь — только по явному запросу**: `add_project_shared_parameter` +
      `set_parameters`/`remap_parameter_values`; предупреди: значения статичны, новый
      типовой каталог их не обновит, формулы семейства считают по-своему.

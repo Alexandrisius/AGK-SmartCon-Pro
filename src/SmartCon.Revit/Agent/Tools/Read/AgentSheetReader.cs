@@ -124,27 +124,113 @@ internal static class AgentSheetReader
 
     /// <summary>
     /// The sheet rectangle in the same paper-space frame as the viewport and
-    /// schedule coordinates (U/V feet → mm). The frame origin is the title-block
-    /// / plot origin; some title blocks (ADSK) place it inside the paper, so raw
-    /// coordinates are often negative and only this rectangle says where the
-    /// paper actually is.
+    /// schedule coordinates (U/V feet → mm). The frame is the title-block
+    /// instance's bounding box — the visible paper — because ViewSheet.Outline
+    /// can carry the family geometry beyond the paper and then "inside the
+    /// sheet" contradicts what the user sees (owner feedback 2026-11-24).
+    /// The frame origin is the title-block / plot origin; some title blocks
+    /// (ADSK) place it inside the paper, so raw coordinates are often negative
+    /// and only this rectangle says where the paper actually is.
     /// </summary>
     internal static object SheetOutlineMm(ViewSheet sheet)
     {
-        var outline = sheet.Outline;
-        var minX = AgentUnitsFormat.ToMillimeters(outline.Min.U);
-        var minY = AgentUnitsFormat.ToMillimeters(outline.Min.V);
-        var maxX = AgentUnitsFormat.ToMillimeters(outline.Max.U);
-        var maxY = AgentUnitsFormat.ToMillimeters(outline.Max.V);
+        var frame = SheetFrameOf(sheet);
+        var paper = PaperSizeOf(sheet);
+        var minX = AgentUnitsFormat.ToMillimeters(frame.MinX);
+        var minY = AgentUnitsFormat.ToMillimeters(frame.MinY);
+        var maxX = AgentUnitsFormat.ToMillimeters(frame.MaxX);
+        var maxY = AgentUnitsFormat.ToMillimeters(frame.MaxY);
+        var width = maxX - minX;
+        var height = maxY - minY;
+        bool? matches = paper.WidthMm is null || paper.HeightMm is null
+            ? null
+            : System.Math.Abs(width - paper.WidthMm.Value) <= 2
+              && System.Math.Abs(height - paper.HeightMm.Value) <= 2;
         return new
         {
             minXMm = System.Math.Round(minX, 1),
             minYMm = System.Math.Round(minY, 1),
             maxXMm = System.Math.Round(maxX, 1),
             maxYMm = System.Math.Round(maxY, 1),
-            widthMm = System.Math.Round(maxX - minX, 1),
-            heightMm = System.Math.Round(maxY - minY, 1)
+            widthMm = System.Math.Round(width, 1),
+            heightMm = System.Math.Round(height, 1),
+            source = frame.Source,
+            paperWidthMm = paper.WidthMm,
+            paperHeightMm = paper.HeightMm,
+            frameMatchesPaper = matches
         };
+    }
+
+    /// <summary>
+    /// The visible sheet rectangle in sheet coordinates (feet): the title block
+    /// instance's bounding box, or ViewSheet.Outline when the sheet has no title
+    /// block (placeholder sheets).
+    /// </summary>
+    internal static SheetFrame SheetFrameOf(ViewSheet sheet)
+    {
+        try
+        {
+            var doc = sheet.Document;
+            if (doc is not null)
+            {
+                foreach (var element in new FilteredElementCollector(doc, sheet.Id)
+                             .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                             .WhereElementIsNotElementType())
+                {
+                    var box = element.get_BoundingBox(sheet);
+                    if (box is null)
+                        continue;
+
+                    var candidate = new SheetFrame(box.Min.X, box.Min.Y, box.Max.X, box.Max.Y, "titleblock");
+                    if (candidate.IsValid)
+                        return candidate;
+                    break;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // A placeholder sheet or a document in regeneration: fall back below.
+        }
+
+        var outline = sheet.Outline;
+        return new SheetFrame(
+            outline.Min.U, outline.Min.V, outline.Max.U, outline.Max.V, "sheet_outline");
+    }
+
+    /// <summary>
+    /// The paper size from the title block's SHEET_WIDTH/SHEET_HEIGHT built-ins,
+    /// in millimetres. A frame whose size differs from this is the title-block
+    /// geometry, not the paper — the caller reports both instead of guessing.
+    /// </summary>
+    internal static (double? WidthMm, double? HeightMm) PaperSizeOf(ViewSheet sheet)
+    {
+        try
+        {
+            var doc = sheet.Document;
+            if (doc is null)
+                return (null, null);
+
+            foreach (var element in new FilteredElementCollector(doc, sheet.Id)
+                         .OfCategory(BuiltInCategory.OST_TitleBlocks)
+                         .WhereElementIsNotElementType())
+            {
+                var width = element.get_Parameter(BuiltInParameter.SHEET_WIDTH)?.AsDouble();
+                var height = element.get_Parameter(BuiltInParameter.SHEET_HEIGHT)?.AsDouble();
+                if (width is > 0 && height is > 0)
+                {
+                    return (
+                        System.Math.Round(AgentUnitsFormat.ToMillimeters(width.Value), 1),
+                        System.Math.Round(AgentUnitsFormat.ToMillimeters(height.Value), 1));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // No readable title block size: the caller falls back to the frame.
+        }
+
+        return (null, null);
     }
 
     internal static SheetCard CreateCard(
@@ -156,16 +242,11 @@ internal static class AgentSheetReader
         double? heightMm = null;
         try
         {
-            var outline = sheet.Outline;
-            if (outline is not null)
+            var frame = SheetFrameOf(sheet);
+            if (frame.IsValid)
             {
-                var width = outline.Max.U - outline.Min.U;
-                var height = outline.Max.V - outline.Min.V;
-                if (width > 0 && height > 0)
-                {
-                    widthMm = AgentUnitsFormat.ToMillimeters(width);
-                    heightMm = AgentUnitsFormat.ToMillimeters(height);
-                }
+                widthMm = AgentUnitsFormat.ToMillimeters(frame.MaxX - frame.MinX);
+                heightMm = AgentUnitsFormat.ToMillimeters(frame.MaxY - frame.MinY);
             }
         }
         catch (Exception)
@@ -449,4 +530,37 @@ internal static class AgentSheetReader
 
         return cards;
     }
+}
+
+/// <summary>
+/// The sheet rectangle in sheet coordinates (feet). Source "titleblock" is the
+/// visible paper frame; "sheet_outline" is the fallback for sheets without a
+/// title block.
+/// </summary>
+internal readonly struct SheetFrame
+{
+    public SheetFrame(double minX, double minY, double maxX, double maxY, string source)
+    {
+        MinX = minX;
+        MinY = minY;
+        MaxX = maxX;
+        MaxY = maxY;
+        Source = source;
+    }
+
+    public double MinX { get; }
+
+    public double MinY { get; }
+
+    public double MaxX { get; }
+
+    public double MaxY { get; }
+
+    public string Source { get; }
+
+    public bool IsValid => MaxX - MinX > 1e-6 && MaxY - MinY > 1e-6;
+
+    public double WidthFeet => MaxX - MinX;
+
+    public double HeightFeet => MaxY - MinY;
 }

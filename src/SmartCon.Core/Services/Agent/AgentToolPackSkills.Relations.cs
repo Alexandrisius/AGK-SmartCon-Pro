@@ -32,7 +32,7 @@ public static partial class AgentToolPackSkills
   единицы миллиметров (gapMm 1..50), поэтому [1;50] — надёжное окно проверки.
 - Имя системы читается с элемента (RBS_SYSTEM_NAME_PARAM), не из типа системы: у труб
   одной цепи после соединения оно общее; смена имени вдоль chain (systemNameChanges)
-  или across разрыв (fromSystemName/toSystemName в breaks) — это и есть граница «Т11/Т111».
+  или across разрыв (fromSystemName/toSystemName в breaks) — это и есть граница двух систем.
 - `get_room_contents`: room-bound элементы — через instance.Room; двери/окна — ещё и через
   FromRoom/ToRoom (дверь на границе попадает в состав обеих комнат — это честно);
   не-room-bound (трубы и пр.) — по центру bbox внутри габарита комнаты; model-группы
@@ -41,10 +41,10 @@ public static partial class AgentToolPackSkills
 ### Рецепты
 1. «С чем соединён кран К1»: найди элемент (query_elements по марке) →
    `get_element_relations` → connectors[].neighbors — вход и выход.
-2. «Разрыв системы Т11/Т111»: `trace_system_chain` от насоса (или любой трубы ветки) →
-   chain доходит до конца, а в breaks лежит пара с gapMm в единицах мм и разными
-   fromSystemName/toSystemName → покажи пользователю элементы разрыва (fromElementId,
-   toElementId) — «вот где цепь рвётся, поэтому имя системы не переходит».
+2. «Где рвётся система»: `trace_system_chain` от насоса (или любой трубы ветки) →
+   chain доходит до конца, а в breaks лежит пара с gapMm в мм и разными
+   fromSystemName/toSystemName → покажи элементы разрыва (fromElementId, toElementId) —
+   «вот где цепь рвётся, поэтому имя системы не переходит».
 3. «Что в помещении Офис 1»: `get_room_contents` (roomName или roomNumber) → contents[]
    по семействам с count; полные id — в elementIds/sample.
 4. «Окно О1/дверь Д1/насос Н1»: `get_element_relations` закрывает все три — host стены,

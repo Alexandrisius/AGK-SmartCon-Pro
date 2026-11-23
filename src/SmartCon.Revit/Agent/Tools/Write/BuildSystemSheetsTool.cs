@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Query;
 using SmartCon.Revit.Agent.Tools.Read;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
@@ -46,7 +47,13 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
             "'Экспликация <sheetName>' and placed to the right of the view. explicationRows " +
             "reports the clone's data rows (dry run included); a filter value that matches no " +
             "source row is a warning naming the closest existing values. scheduleId and " +
-            "explication together are invalid_arguments. The viewport box is unknown before placement (especially for 3D views), " +
+            "explication together are invalid_arguments. Explication sources: one " +
+            "sourceScheduleId clones that category; sourceScheduleIds (several) builds a " +
+            "MULTICATEGORY schedule that covers every category of the system, so pipes, " +
+            "fittings, flexible pipes and accessories land in ONE table — its keepFields " +
+            "and filterField must then be shared parameters common to those categories " +
+            "(a built-in that exists only on MEP categories cannot be a multicategory " +
+            "field). The viewport box is unknown before placement (especially for 3D views), " +
             "so the tool places at a provisional point, regenerates, measures GetBoxOutline, " +
             "recenters with SetBoxCenter and verifies the box against ViewSheet.Outline " +
             "(tolerance 1 mm): overflow is reported as a per-item warning with overflow=true " +
@@ -74,7 +81,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer"",""description"":""View to place (the system 3D view)""},""scheduleId"":{""type"":""integer"",""description"":""Schedule to place to the right of the view (a ready clone — this tool does not clone)""},""explication"":{""type"":""object"",""description"":""Build the explication right of the view instead of placing a ready scheduleId: a narrow clone of sourceScheduleId — visible keepFields columns only, an equals filter filterField=filterValue, the filter field added as a hidden column when it is not kept. Cannot be combined with scheduleId."",""properties"":{""sourceScheduleId"":{""type"":""integer"",""description"":""The source schedule to clone (see list_schedules)""},""keepFields"":{""type"":""array"",""minItems"":1,""maxItems"":15,""items"":{""type"":""string""},""description"":""Visible columns of the explication by display name, e.g. Family/Type/Count — copy the column list from the task""},""filterField"":{""type"":""string"",""description"":""Filter field: a schedulable column name (a shared parameter works)""},""filterValue"":{""type"":""string"",""description"":""Filter value: the row value this sheet is about""}},""required"":[""sourceScheduleId"",""keepFields"",""filterField"",""filterValue""],""additionalProperties"":false},""sheetName"":{""type"":""string"",""description"":""Sheet name, short and engineering-style""},""sheetNumber"":{""type"":""string"",""description"":""Unique sheet number; omit to continue the album numbering""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Title block type; default: first loaded""},""titleBlockParameters"":{""type"":""object"",""description"":""Instance parameters of the sheet's title block: {parameter name: value} (e.g. size multiplicity)""},""viewportCorner"":{""type"":""string"",""enum"":[""top-left""],""default"":""top-left""},""marginMm"":{""type"":""number"",""default"":10,""description"":""Gap between the sheet border and the viewport box""}},""required"":[""viewId"",""sheetName""],""additionalProperties"":false}},""atomic"":{""type"":""boolean"",""default"":false,""description"":""Abort the whole batch when any item fails validation""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""viewId"":{""type"":""integer"",""description"":""View to place (the system 3D view)""},""scheduleId"":{""type"":""integer"",""description"":""Schedule to place to the right of the view (a ready clone — this tool does not clone)""},""explication"":{""type"":""object"",""description"":""Build the explication right of the view instead of placing a ready scheduleId: a narrow clone of sourceScheduleId — visible keepFields columns only, an equals filter filterField=filterValue, the filter field added as a hidden column when it is not kept. Cannot be combined with scheduleId."",""properties"":{""sourceScheduleId"":{""type"":""integer"",""description"":""The source schedule to clone (see list_schedules); use sourceScheduleIds for a system across several categories""},""sourceScheduleIds"":{""type"":""array"",""maxItems"":15,""items"":{""type"":""integer""},""description"":""Several sources → one MULTICATEGORY explication covering all categories of the system (fields must be shared parameters common to those categories)""},""keepFields"":{""type"":""array"",""minItems"":1,""maxItems"":15,""items"":{""type"":""string""},""description"":""Visible columns of the explication by display name, e.g. Family/Type/Count — copy the column list from the task""},""filterField"":{""type"":""string"",""description"":""Filter field: a schedulable column name (a shared parameter works)""},""filterValue"":{""type"":""string"",""description"":""Filter value: the row value this sheet is about""}},""required"":[""sourceScheduleId"",""keepFields"",""filterField"",""filterValue""],""additionalProperties"":false},""sheetName"":{""type"":""string"",""description"":""Sheet name, short and engineering-style""},""sheetNumber"":{""type"":""string"",""description"":""Unique sheet number; omit to continue the album numbering""},""titleBlockTypeId"":{""type"":""integer"",""description"":""Title block type; default: first loaded""},""titleBlockParameters"":{""type"":""object"",""description"":""Instance parameters of the sheet's title block: {parameter name: value} (e.g. size multiplicity)""},""viewportCorner"":{""type"":""string"",""enum"":[""top-left""],""default"":""top-left""},""marginMm"":{""type"":""number"",""default"":10,""description"":""Gap between the sheet border and the viewport box""}},""required"":[""viewId"",""sheetName""],""additionalProperties"":false}},""atomic"":{""type"":""boolean"",""default"":false,""description"":""Abort the whole batch when any item fails validation""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""items""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -196,6 +203,37 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
         }
 
         outcome.Data["items"] = rows;
+    }
+
+    /// <summary>
+    /// The categories hidden in the view a sheet is built for: the count alone
+    /// could not answer "what else may still be visible" (owner feedback
+    /// 2026-11-24). Names are the BuiltIn names when known, display names
+    /// otherwise, capped at 30 with the honest count.
+    /// </summary>
+    private static object? HiddenCategoriesOf(View view)
+    {
+        try
+        {
+            var settings = AgentViewSettingsReader.Read(view.Document, view);
+            var names = settings.HiddenCategories
+                .Select(info => info.BuiltInName ?? info.Category)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(30)
+                .ToList();
+            return new
+            {
+                count = settings.HiddenCategoryCount,
+                names,
+                capped = settings.HiddenCategoryListCapped
+                         || settings.HiddenCategories.Count > names.Count
+            };
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private void ApplyItem(
@@ -339,6 +377,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 sheetOutlineMm = AgentSheetReader.SheetOutlineMm(sheet),
                 viewportId = placement.Viewport!.Id.GetValue(),
                 viewportCenterMm = placement.CenterMm,
+                viewportCenterFromFrameMm = placement.CenterFromFrameMm,
                 viewportBoxMm = placement.BoxMm,
                 insideSheet = placement.InsideSheet,
                 overflow = !placement.InsideSheet,
@@ -346,6 +385,7 @@ public sealed partial class BuildSystemSheetsTool : AgentWriteToolBase
                 explication = explication?.Info,
                 explicationRows = explication?.Rows,
                 titleBlockParameters = parameterResults,
+                hiddenCategories = HiddenCategoriesOf(entry.View),
                 warnings = itemWarnings.Count == 0 ? null : itemWarnings
             });
         }

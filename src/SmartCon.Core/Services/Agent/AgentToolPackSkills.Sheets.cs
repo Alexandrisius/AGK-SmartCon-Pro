@@ -8,12 +8,11 @@ public static partial class AgentToolPackSkills
     private const string Sheets = @"## Пак sheets: листы и размещение видов
 
 ### Карта тулов
-- `list_sheets` — листы: `numberContains`, `nameContains`, `excludePlaceholders`, `fields`.
-  Возвращает `widthMm/heightMm`, `viewCount`, `scheduleCount` и `visualDuplicates[]` —
-  номера, которые выглядят одинаково, но различаются невидимыми символами.
-- `get_sheet_content` — состав листа: виды (координаты вьюпорта в мм) и расписания
-  (`instanceId`, координаты, фактические `widthMm/heightMm` по bbox экземпляра);
-  `sheetIds` — пакетно, ≤50.
+- `list_sheets` — листы: `numberContains`, `nameContains`, `excludePlaceholders`, `fields`;
+  `widthMm/heightMm`, `viewCount`, `scheduleCount`, `visualDuplicates[]` (номера, различимые
+  только невидимыми символами).
+- `get_sheet_content` — состав листа: виды (координаты вьюпорта, мм) и расписания
+  (`instanceId`, координаты, фактические `widthMm/heightMm`); `sheetIds` — пакетно, ≤50.
 - `create_sheet` — создать лист: `number` (уникален), `name?`, `titleBlockTypeId?`.
 - `create_viewports` — разместить виды на листе пакетно (≤100, одна транзакция):
   `sheetId` + `items[{viewId, pointMmX, pointMmY}]`.
@@ -27,36 +26,32 @@ public static partial class AgentToolPackSkills
 - `set_sheet_number` / `rename_sheet` — номер и имя одного листа (лист по
   `sheetId`/номеру/имени).
 - `renumber_sheets` — перенумеровать блок листов (≤50, одна транзакция): `sheetIds[]` в
-  целевом порядке, номера `numbers[]` по порядку или `startNumber` («ОВ-5» → ОВ-5,
-  ОВ-6...). Перед вызовом ОБЯЗАТЕЛЬНО `get_browser_organization(target:""sheets"")`:
-  группировка альбомов решает, где нумерация продолжается сквозной, а где номер несёт
-  невидимый символ на стыке. Через временные номера: вставка в середину без коллизий;
-  undo возвращает все номера.
+  целевом порядке, `numbers[]` или `startNumber`. Перед вызовом ОБЯЗАТЕЛЬНО
+  `get_browser_organization(target:""sheets"")`: группировка альбомов решает, где нумерация
+  сквозная, а где номер несёт невидимый символ. Через временные номера; undo возвращает всё.
 - `sanitize_sheet_numbers` — убрать невидимые символы из номеров (`sheetIds?` — все).
 - `delete_sheets` — удаление листов, `sheetIds` ≤50, `confirmNames`.
-- `get_titleblock_options` — типы титульников и их редактируемые параметры (кратность
-  размера / формат листа); `sizeMap[]` — «кратность → размер» по листам альбома (чего в
-  альбоме нет — неизвестно, проверяйте черновым листом; та же оговорка в `sizeMapNote`);
-  по `sheetId` — параметры экземпляра; плюс `existingSheets[]` и `nextNumberHint`.
+- `get_titleblock_options` — типы титульников и их редактируемые параметры; `sizeMap[]` —
+  «кратность → размер» по альбому (чего в альбоме нет — проверяйте черновым листом; та же
+  оговорка в `sizeMapNote`); по `sheetId` — параметры экземпляра; `existingSheets[]`,
+  `nextNumberHint`.
 - `get_view_placement_preview` — бумажный размер видов (≤20): размещённый — box вьюпорта;
   план/разрез с кропом — кроп/масштаб (estimated=true); 3D без кропа — неизвестен.
 - `build_system_sheets` — сборщик листов (≤20 items, одна транзакция): лист (номер задан или
-  продолжение альбома) + вид в левом верхнем углу РАМКИ листа, целиком внутри границ (размер
-  окна узнаётся размещением: place → Regenerate → GetBoxOutline → SetBoxCenter → проверка;
-  торчит → warning `overflow=true`, пачка не откатывается) + справа от вида спека по
-  `scheduleId` ЛИБО блок `explication {sourceScheduleId, keepFields[], filterField,
-  filterValue}` — тул клонирует общую спецификацию в узкую таблицу: только keepFields
-  (отсутствующая → warning + skip), фильтр equals, поле фильтра скрыто; клон
-  «Экспликация <имя листа>» (два пути сразу — invalid_arguments) + `titleBlockParameters`
-  (кратность); `explicationRows` — строки клона (0 под фильтром → warning с ближайшими
-  значениями). НЕ переданные параметры титульника наследуются с листов альбома того же типа
-  (`status:""inherited""`; `kept` — явные параметры изменили значение, альбомное не
-  перезаписано) — кратность не сбрасывается в 0. undo_last удаляет пачку.
+  продолжение альбома) + вид в левом верхнем углу РАМКИ листа, целиком внутри (размер окна
+  узнаётся размещением; торчит → warning `overflow=true`, пачка не откатывается) + справа
+  спека: `scheduleId` (готовый клон) ИЛИ `explication {sourceScheduleId | sourceScheduleIds,
+  keepFields[], filterField, filterValue}` — узкая таблица: только keepFields (нет поля →
+  warning + skip), фильтр equals, поле фильтра скрыто; `sourceScheduleIds` — МУЛЬТИКАТЕГОРИЙНАЯ
+  таблица по всем категориям системы (поля/фильтр — только общие параметры); клон
+  «Экспликация <имя листа>» (два пути сразу — invalid_arguments) + `titleBlockParameters`.
+  `explicationRows` — строки (0 под фильтром → warning с ближайшими значениями).
+  Не переданные параметры титульника наследуются с альбома (`inherited`; `kept` — явные
+  параметры изменили значение, альбомное не перезаписано). undo_last удаляет пачку.
 
 ### Кухня Revit
-- Лист (`ViewSheet`) — вид, но не размещается на листах. `ViewSheet.Create` требует тип рамки
-  (`FamilySymbol` категории `OST_TitleBlocks`); нет ни одной — `title_block_missing`
-  (загрузите титблок).
+- Лист — вид, не размещается на листах; `ViewSheet.Create` требует тип рамки
+  (`OST_TitleBlocks`), иначе `title_block_missing` (загрузите титблок).
 - Размер листа — в параметрах экземпляра рамки `SHEET_WIDTH`/`SHEET_HEIGHT` (id —
   `ViewSheet.SheetTitleBlockId`).
 - Обычные виды — `Viewport.Create`, расписания — `ScheduleSheetInstance.Create` (у
@@ -66,33 +61,26 @@ public static partial class AgentToolPackSkills
 - Один вид нельзя разместить на двух листах (`Viewport.CanAddViewToSheet`): второй лист —
   дубль вида (`View.Duplicate`, WithDetailing/AsDependent); исключения — легенды и расписания.
 - «Снять вид с листа» = удалить `Viewport` (вид остаётся); удаление вида удаляет размещения.
-- `ViewSheet.GetAllViewports()` **не показывает расписания** — их надо собирать отдельно
-  (`ScheduleSheetInstance`). «Лист пуст» по одному GetAllViewports — неверный вывод.
+- `GetAllViewports()` не видит расписания — собирайте `ScheduleSheetInstance`; «лист пуст»
+  по нему — неверный вывод.
 - `SheetNumber` уникален (в 2026 — в пределах коллекции листов); дубль бросает исключение.
 - Номер: запрещены символы `{ } [ ] | ; < > ? ~`; пустой — тоже ошибка. Дубль «по
   визуальному написанию» Revit НЕ ловит (U+202A/U+202C/U+200B невидимы) — сравнение через
   очистку невидимых символов.
-- Координаты `pointMmX/pointMmY` — это ЦЕНТР видового окна (не угол!), в мм в СИСТЕМЕ
-  ЛИСТА: начало — точка вставки/plot origin титульника, у ADSK она смещена, поэтому
-  координаты часто отрицательные. Реальную рамку листа даёт `get_sheet_content.sheetOutlineMm`
-  (min/max в той же системе) — считайте отступы от неё, а не от нуля.
-- Бумажный размер 3D-вида без кропа до размещения неизвестен (API не даёт extents) —
-  сборщик размещает сначала, меряет потом. Размер спеки на листе —
-  `instance.get_BoundingBox(sheet)` (включает рамку выделения ~2,1 мм вокруг таблицы).
+- Координаты `pointMmX/pointMmY` — ЦЕНТР окна (не угол) в СИСТЕМЕ ЛИСТА: начало — plot
+  origin титульника, у ADSK он смещён, поэтому мм часто отрицательные. Рамку даёт
+  `get_sheet_content.sheetOutlineMm` (min/max) — отступы считайте от неё, не от нуля.
+- Размер 3D-вида без кропа до размещения неизвестен; спека на листе —
+  `get_BoundingBox(sheet)` (включает ~2,1 мм рамки).
 
 ### Инварианты
-- Перед удалением листа — `get_sheet_content`: виды останутся (удаляются только размещения),
-  пользователь должен это знать.
-- `delete_sheets` необратим: всегда `dryRun=true`, затем apply с `confirmNames` = `names[]`
-  СВЕЖЕГО dry-run (формат «номер - имя»); `confirm_names_required`/`confirm_names_mismatch` →
-  повтори dry-run и передай свежий names[].
-- Для «поставь вид на лист» проверяйте `isOnSheet` (`list_views`): занятый вид на второй
-  лист не встанет.
-- Write-тулы: сначала `dryRun=true` (по умолчанию), покажите план, потом `dryRun=false`.
-  Координаты для create_viewports/move_viewport(s) берите из `get_sheet_content`
-  (`centerXMm/centerYMm` — в системе листа, см. `sheetOutlineMm`).
-- Коллизию после `sanitize_sheet_numbers` тул не перезаписывает: `sheet_number_taken`,
-  решение — вручную.
+- Перед удалением листа — `get_sheet_content`: виды останутся, пользователь должен знать.
+- `delete_sheets` необратим: `dryRun=true`, затем apply с `confirmNames` = `names[]`
+  СВЕЖЕГО dry-run; `confirm_names_required`/`confirm_names_mismatch` → повтори dry-run.
+- «Поставь вид на лист»: `isOnSheet` (`list_views`) — занятый вид не встанет.
+- Write-тулы: `dryRun=true`, затем apply; координаты — из `get_sheet_content`
+  (`centerXMm/centerYMm`, см. `sheetOutlineMm`).
+- Коллизию после `sanitize_sheet_numbers` тул не перезаписывает: `sheet_number_taken`.
 
 ### Рецепты
 1. «Что на листе А-101?»: `list_sheets(numberContains:""А-101"")` → `get_sheet_content(sheetId)`.
@@ -115,19 +103,31 @@ public static partial class AgentToolPackSkills
 9. «Удали пустые листы»: `list_sheets` (viewCount/scheduleCount) → `get_sheet_content`
    каждого кандидата → `delete_sheets(dryRun=true)` → подтвердить список →
    `delete_sheets(dryRun=false, confirmNames=names[])`.
-10. «Листы для 3D-видов систем» (вид слева вверху + экспликация справа, номера продолжают
-   альбом): `get_titleblock_options` (редактируемый параметр кратности размера,
-   nextNumberHint) → `get_view_placement_preview(viewIds)` (крупный вид → большее значение
-   кратности; у 3D размер узнаётся только размещением) → `build_system_sheets(items=[{viewId,
-   sheetName, explication:{sourceScheduleId, keepFields:[""Наименование"",""Единица
-   измерения"",""Количество""], filterField:""АДСК_ИмяСистемы"", filterValue:имя_системы},
-   titleBlockParameters:{кратность:N}}], dryRun=false)` — экспликация соберётся сама (узкий
-   клон + фильтр equals + скрытая колонка фильтра). Готовый клон из `clone_schedule` — только
-   когда нужна нестандартная обработка (маппинг полей ФОП): тогда вместо explication
-   передай `scheduleId`.
+10. «Собери лист под задачу» — состав берётся из задачи, не из примера: какие виды, какая
+   таблица (и нужна ли), по каким категориям, какой фильтр. Чего нет — спроси (два коротких
+   вопроса: состав листа и таблицы). Дальше: `list_sheets`/`get_sheet_content` →
+   `get_titleblock_options` → `get_view_placement_preview` → `build_system_sheets(items=
+   [{viewId, sheetName, titleBlockParameters, scheduleId|explication}])`. Таблица справа:
+   готовый клон — `scheduleId`; `explication.sourceScheduleId` — одна категория;
+   `sourceScheduleIds` — ВСЕ категории системы одной мультикатегорийной таблицей (поля и
+   фильтр — только общие параметры ФОП). Пустая таблица — warning.
+
+### Контракт системного вида
+Вид «системы X» показывает ТОЛЬКО элементы этой системы.
+- Прочие MEP-категории (воздуховоды, короба, лотки, оборудование) скрывай категориями
+  (`set_view_visibility`) или расширенным фильтром. Шаблон/образец переносит только СВОИ
+  скрытые категории — «дублируй образец» не гарантирует изоляцию.
+- Фильтр по «Имя системы» — только после `list_filterable_parameters`: у лотков и коробов
+  параметра может не быть; общий параметр ФОП надёжнее.
+- Обязательный read-back: `query_elements(viewId=..., categories=[...])` — что ещё видно.
+  `build_system_sheets` отдаёт `hiddenCategories`, но не список видимого — проверяй сам.
 
 ### Что нельзя
 - Считать `viewCount=0` доказательством пустого листа: расписания считаются отдельно.
+- Считать, что шаблон/образец уже скрывает всё лишнее: проверяй видимое `query_elements`.
+- Собирать таблицу «по всем категориям системы» клоном одной спецификации: одна
+  категория не покажет арматуру, соединительные детали и гибкие трубы — нужен
+  `sourceScheduleIds` (мультикатегорийная таблица).
 - Удалять вид, чтобы освободить его для другого листа: снимайте вьюпорт
   (`remove_viewports`) — вид остаётся в проекте.
 - Ставить один вид на два листа без дублирования.

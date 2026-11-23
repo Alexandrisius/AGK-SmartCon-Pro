@@ -35,20 +35,23 @@ public sealed partial class AgentElementQueryHonestyTests
     }
 
     [Test]
-    public async Task QueryElements_ExistsOperatorsOnAbsentParameter_AreNotAnError()
+    public async Task QueryElements_ExistsOperatorsOnAbsentParameter_ReturnUnknownParameter()
     {
         RequireWall();
         var absent = "SC_No Such Parameter";
 
-        // exists / notExists answer the question themselves: a parameter that is
-        // absent everywhere is never reported as unknown.
+        // exists / notExists on a name that resolves on no candidate used to answer
+        // "0 rows", which made "not bound at all" indistinguishable from "bound but
+        // empty" (owner feedback 2026-11-24). It is a typed unknown now.
         var absentExists = Query(WallsQuery(Condition(absent, "exists")));
-        await Assert.That(Outcome(absentExists)).IsEqualTo("ok total=0");
+        await Assert.That(absentExists.Success).IsFalse();
+        await Assert.That(absentExists.ErrorCode).IsEqualTo("unknown_parameter");
         var absentNotExists = Query(WallsQuery(Condition(absent, "notExists")));
-        await Assert.That(Outcome(absentNotExists)).IsEqualTo("ok total=0");
+        await Assert.That(absentNotExists.Success).IsFalse();
+        await Assert.That(absentNotExists.ErrorCode).IsEqualTo("unknown_parameter");
 
-        // The engine contract of notExists is "the parameter exists but carries no
-        // value" — it is not an error and it is not empty-handed for such a parameter.
+        // The engine contract of notExists for a KNOWN parameter is "exists but
+        // carries no value" — still no error and not empty-handed.
         var emptyName = WallElement
             .get_Parameter(BuiltInParameter.ALL_MODEL_MARK)?.Definition?.Name;
         await Assert.That(string.IsNullOrEmpty(emptyName)).IsFalse();

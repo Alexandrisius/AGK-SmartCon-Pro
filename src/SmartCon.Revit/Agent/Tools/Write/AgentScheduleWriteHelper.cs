@@ -162,6 +162,20 @@ internal static partial class AgentScheduleWriteHelper
         var requested = AgentJson.GetString(args, "category");
         if (!string.IsNullOrWhiteSpace(requested))
         {
+            // A multicategory schedule is created for InvalidElementId; Revit has
+            // no "OST_MultiCategory" category name, and OST_MultiCategoryTags is
+            // a different thing (owner feedback 2026-11-24: "a specification
+            // across all categories of a system" was unreachable).
+            var normalized = requested!.Trim().ToLowerInvariant().Replace(" ", string.Empty);
+            if (normalized is "multicategory" or "multi-category" or "multi" or "мультикатегория"
+                or "мультикатегорийная" or "мультикатегорийнаяспецификация" or "безкатегории")
+            {
+                categoryId = ElementId.InvalidElementId;
+                errorCode = null;
+                message = null;
+                return true;
+            }
+
             var unknown = new List<string>();
             var resolved = AgentCategoryResolver.Resolve(doc, new[] { requested! }, unknown);
             if (resolved.Count > 0)

@@ -11,7 +11,7 @@ public static partial class AgentToolPackSkills
 возвращается в проект загрузкой.
 
 ### Уровень правки: сначала семейство
-- Параметры заказчика (ФОП/KRTRS), формулы и таблицы поиска по умолчанию живут В СЕМЕЙСТВЕ
+- Параметры заказчика (ФОП), формулы и таблицы поиска по умолчанию живут В СЕМЕЙСТВЕ
   (`add_family_parameter` → `set_family_formula`/`map_family_parameters`): переживают
   перезагрузку и новый типовой каталог, формулы продолжают считать.
 - Проектные привязки (`add_project_shared_parameter`) — только по явному запросу: параметр
@@ -113,7 +113,7 @@ public static partial class AgentToolPackSkills
 - Family write-тулы сами делают read-back (`readBack.verified`/`mismatched`).
 
 ### Рецепты
-1. «Добавь общий параметр ADSK_Наименование»: `list_shared_parameters(nameContains:""ADSK"")` →
+1. «Добавь общий параметр <Имя> из ФОП»: `list_shared_parameters(nameContains:""<часть имени>"")` →
    если нет, `add_family_parameter(name, storageType:""text"", isShared:true,
    createDefinition:true)`; при `shared_parameter_file_missing` сначала
    `set_shared_parameter_file` (путь называет пользователь).
@@ -133,7 +133,7 @@ public static partial class AgentToolPackSkills
 9. «Массовая правка по десяткам/сотням семейств» — `start_job(action:""map_family_parameters"")`
    (до 200 family units); поштучный тул — для 1–5 семейств.
 10. «Переведи семейство на ФОП заказчика» (семейный путь по умолчанию):
-   `list_shared_parameters(nameContains:""KRTRS"")` → `add_family_parameter(items:[{name,
+   `list_shared_parameters(nameContains:""<часть имени ФОП>"")` → `add_family_parameter(items:[{name,
    storageType, isShared:true, createDefinition:true, group:""PG_DATA""}, …])` ОДНИМ вызовом →
    `start_job(action:""map_family_parameters"")` с `createTarget:true` (mode formula для
    вычисляемых, mode values для текстовых) → read-back. Спецификация берёт поля-семейные

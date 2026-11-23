@@ -29,7 +29,10 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
         Name = "create_schedule",
         Description =
             "Creates a new schedule (specification) for one category: category is the BuiltIn " +
-            "name (OST_Pipes), the localized display name or a categoryId from list_categories; " +
+            "name (OST_Pipes), the localized display name or a categoryId from list_categories. " +
+            "category:\"multicategory\" (or categoryId -1) creates a schedule ACROSS categories: " +
+            "its fields are the ones common to all of them (shared parameters); a built-in that " +
+            "exists only on some categories cannot be a field. " +
             "name must be unique (a duplicate fails with schedule_name_taken). fields (0..15) " +
             "are schedulable field display names as get_schedule_definition reports them; an " +
             "unknown field fails per item with field_not_available and availableFields[]. " +
@@ -41,7 +44,7 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             "defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""category"":{""type"":""string"",""description"":""Category: OST_Pipes, localized name or see categoryId""},""categoryId"":{""type"":""integer"",""description"":""Numeric category id from list_categories""},""name"":{""type"":""string"",""description"":""Unique schedule name, e.g. Спецификация труб""},""fields"":{""type"":""array"",""maxItems"":15,""items"":{""type"":""string""},""description"":""Initial field display names (as in get_schedule_definition)""},""itemized"":{""type"":""boolean"",""default"":true},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""category"":{""type"":""string"",""description"":""Category: OST_Pipes, localized name, or multicategory for a schedule across categories (shared fields only)""},""categoryId"":{""type"":""integer"",""description"":""Numeric category id from list_categories; -1 = multicategory""},""name"":{""type"":""string"",""description"":""Unique schedule name, e.g. Спецификация труб""},""fields"":{""type"":""array"",""maxItems"":15,""items"":{""type"":""string""},""description"":""Initial field display names (as in get_schedule_definition)""},""itemized"":{""type"":""boolean"",""default"":true},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""name""],""additionalProperties"":false}"
     };
 
     protected override void Apply(

@@ -327,9 +327,12 @@ internal sealed class AgentConditionTracker
         QuerySpec.TryGetStructuralField(condition.Parameter, out var field);
         Field = field;
 
-        // exists / notExists answer the question directly when the parameter is
-        // absent everywhere; for the other operators absence is a broken query.
-        Tracks = condition.Op != QueryOperator.Exists && condition.Op != QueryOperator.NotExists;
+        // exists / notExists used to answer "0 elements" when the parameter was absent
+        // everywhere, which made "not bound at all" indistinguishable from "bound
+        // but empty" (owner feedback 2026-11-24). The parameter is tracked for
+        // every operator: a name that resolves on none of the candidates is an
+        // unknown parameter with suggestions, not a silent zero.
+        Tracks = true;
     }
 
     internal int Index { get; }
@@ -341,6 +344,11 @@ internal sealed class AgentConditionTracker
     /// <summary>Canonical structural field, or empty when the condition names a Revit parameter.</summary>
     internal string Field { get; }
 
+    /// <summary>
+    /// Whether the parameter must resolve on at least one candidate. Always true:
+    /// even exists/notExists report a name that resolves nowhere as
+    /// unknown_parameter instead of a vacuous zero.
+    /// </summary>
     internal bool Tracks { get; }
 
     internal int Resolved { get; private set; }
