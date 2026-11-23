@@ -207,7 +207,13 @@ public sealed partial class ExecutePlanTool
 
     private static ToolReadBackTotals ToolReadBackOf(ToolResult? result)
     {
-        if (result?.Data is not { ValueKind: JsonValueKind.Object } data
+        // A tool collects its read-back inside its own transaction. When the tool
+        // reports a failure that transaction may have been rolled back, and the
+        // block then describes values that are no longer in the model: summed, it
+        // would pass a rolled-back change off as verified (review VA-6).
+        if (result is null
+            || !result.Success
+            || result.Data is not { ValueKind: JsonValueKind.Object } data
             || !data.TryGetProperty("readBack", out var readBack)
             || readBack.ValueKind != JsonValueKind.Object)
         {
@@ -298,7 +304,9 @@ public sealed partial class ExecutePlanTool
         var result = apply
             ? step.ApplyResult ?? step.DryRunResult
             : step.DryRunResult ?? step.ApplyResult;
-        if (result?.Data is not { ValueKind: JsonValueKind.Object } data)
+        if (result is null
+            || !result.Success
+            || result.Data is not { ValueKind: JsonValueKind.Object } data)
             return null;
 
         return data.TryGetProperty("readBack", out var readBack) ? readBack : null;

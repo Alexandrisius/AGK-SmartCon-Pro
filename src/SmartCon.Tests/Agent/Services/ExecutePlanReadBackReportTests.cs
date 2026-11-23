@@ -66,6 +66,40 @@ public sealed class ExecutePlanReadBackReportTests
         "\"readBackTool\":\"READER\",\"readBackArguments\":{}," +
         "\"readBackExpectations\":[{\"path\":\"sortGroupFieldCount\",\"expected\":\"2\"}]}]}";
 
+    private const string PlanWithoutReadBack =
+        "{\"goal\":\"verify\",\"dryRun\":false,\"steps\":[" +
+        "{\"stepId\":\"1\",\"toolName\":\"create_schedule\",\"arguments\":{\"items\":[1]}}]}";
+
+    private const string ToolReadBackBlock =
+        "\"readBack\":{\"expected\":2,\"verified\":2,\"mismatched\":0,\"notVerifiable\":0}";
+
+    // A write tool whose dry run passes; the apply either commits or is rolled
+    // back — and the rolled-back result still carries the read-back block.
+    private static ScriptedTool Writer(bool committed) =>
+        new(
+            "create_schedule",
+            handler: args => IsDryRun(args)
+                ? ToolResult.Ok(
+                    Parse("{\"dryRun\":true,\"changed\":[{\"id\":1}],\"skipped\":[],\"failed\":[]," +
+                        "\"total\":1,\"affected\":0}"),
+                    "preview")
+                : committed
+                    ? ToolResult.Ok(
+                        Parse("{\"dryRun\":false,\"changed\":[{\"id\":1}],\"skipped\":[],\"failed\":[]," +
+                            "\"total\":1,\"affected\":1," + ToolReadBackBlock + "}"),
+                        "applied", 1)
+                    : ToolResult.Fail(
+                        "transaction_rolled_back",
+                        "The transaction was rolled back. Nothing was changed in the model.",
+                        data: Parse("{\"dryRun\":false,\"changed\":[],\"skipped\":[],\"failed\":[{\"id\":1}]," +
+                            "\"total\":1,\"affected\":0," + ToolReadBackBlock + "}")),
+            schema: WriteSchema);
+
+    private static bool IsDryRun(JsonElement args) =>
+        args.ValueKind == JsonValueKind.Object
+        && args.TryGetProperty("dryRun", out var dryRun)
+        && dryRun.ValueKind == JsonValueKind.True;
+
     [Fact]
     public async Task Apply_ReadBackFailed_ReportsMismatch_NotVerificationNotRequested()
     {
@@ -166,5 +200,40 @@ public sealed class ExecutePlanReadBackReportTests
         Assert.True(result.Success);
         Assert.DoesNotContain("verification not requested", result.Message, StringComparison.Ordinal);
         Assert.Contains("1 verified", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Apply_ToolRolledBack_FailureReportCarriesNoToolReadBack()
+    {
+        // A write tool outside AgentWriteToolBase may still leave its read-back
+        // block on a rolled-back result. The failure report must not show it:
+        // nothing the block says it verified is in the model (review VA-6).
+        var tool = CreateTool(Writer(committed: false));
+
+        var result = await ApplyAsync(tool, PlanWithoutReadBack);
+
+        Assert.False(result.Success);
+        Assert.Equal("plan_apply_failed", result.ErrorCode);
+        var step = result.Data!.Value.GetProperty("steps")[0];
+        Assert.Equal("failed", step.GetProperty("status").GetString());
+        Assert.True(
+            !step.TryGetProperty("toolReadBack", out var readBack)
+            || readBack.ValueKind == JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Apply_CommittedToolReadBack_IsSummedAndShown()
+    {
+        // The guard above must keep the block of a tool that did commit.
+        var tool = CreateTool(Writer(committed: true));
+
+        var result = await ApplyAsync(tool, PlanWithoutReadBack);
+
+        Assert.True(result.Success);
+        Assert.Contains("1 verified (2 tool-level), 0 mismatch(es)", result.Message, StringComparison.Ordinal);
+        var planReadBack = result.Data!.Value.GetProperty("planReadBack");
+        Assert.Equal(2, planReadBack.GetProperty("toolVerified").GetInt32());
+        Assert.Equal(2, result.Data.Value.GetProperty("steps")[0]
+            .GetProperty("toolReadBack").GetProperty("verified").GetInt32());
     }
 }
