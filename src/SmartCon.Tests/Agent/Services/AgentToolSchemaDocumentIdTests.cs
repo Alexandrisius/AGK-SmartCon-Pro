@@ -56,7 +56,7 @@ public sealed class AgentToolSchemaDocumentIdTests
     /// <see cref="IAgentTool.Definition"/> never invokes them. Fails loudly on
     /// new dependency shapes so this guard cannot silently skip a tool.
     /// </summary>
-    private static object Instantiate(Type type)
+    internal static object Instantiate(Type type)
     {
         var ctor = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
             .OrderByDescending(constructor => constructor.GetParameters().Length)

@@ -10,15 +10,30 @@ namespace SmartCon.Revit.Agent.Tools;
 public abstract class AgentReadToolBase : IAgentTool
 {
     /// <summary>
+    /// Description of the <c>documentId</c> property, written once for every
+    /// routed schema.
+    /// </summary>
+    internal const string DocumentIdDescription =
+        "Background model routing: the documentId returned by open_model_background; " +
+        "omit for the active document";
+
+    /// <summary>
     /// The <c>documentId</c> property a routed read tool declares first in the
-    /// <c>properties</c> of its schema - one description for every tool that
-    /// routes. A routed schema MUST declare it: with
+    /// <c>properties</c> of its schema (separator comma included), with the one
+    /// shared description. A routed schema MUST declare it: with
     /// <c>additionalProperties:false</c> an undeclared argument never reaches
     /// the tool, and the read silently hits the active document.
     /// </summary>
     internal const string DocumentIdPropertyJson =
-        "\"documentId\":{\"type\":\"string\",\"description\":\"Background model routing: the " +
-        "documentId returned by open_model_background; omit for the active document\"},";
+        "\"documentId\":{\"type\":\"string\",\"description\":\"" + DocumentIdDescription + "\"},";
+
+    /// <summary>
+    /// The same property as the LAST member of <c>properties</c> (no separator
+    /// comma). A comma left before the closing brace is invalid JSON and takes
+    /// the whole tool catalog down with it (night run 2 R0).
+    /// </summary>
+    internal const string DocumentIdPropertyJsonLast =
+        "\"documentId\":{\"type\":\"string\",\"description\":\"" + DocumentIdDescription + "\"}";
 
     /// <summary>Key of the routing fact in the payload, see <see cref="WithRoutingFact"/>.</summary>
     internal const string RoutingFactKey = "document";
