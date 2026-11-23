@@ -20,7 +20,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// read-only", because the headless host drove the job pump off the Revit API
 /// thread (Revit reports an untouched document as read-only from another thread).
 /// </summary>
-public sealed class AgentFamilyJobBatchTests : RevitApiTest
+public sealed partial class AgentFamilyJobBatchTests : RevitApiTest
 {
     private const int FamilyCount = 3;
     private const string FamilyPrefix = "SC_JobBatch_";
@@ -46,6 +46,23 @@ public sealed class AgentFamilyJobBatchTests : RevitApiTest
     [After(Test)]
     public void Cleanup()
     {
+        foreach (var familyDoc in OpenFamilyDocs)
+        {
+            if (familyDoc.IsValidObject)
+            {
+                try
+                {
+                    familyDoc.Close(false);
+                }
+                catch (Exception)
+                {
+                    // Best effort: a failed assertion may have left a document Revit refuses to close.
+                }
+            }
+        }
+
+        OpenFamilyDocs.Clear();
+
         foreach (var seed in _seeds)
         {
             seed.Dispose();
@@ -330,6 +347,11 @@ public sealed class AgentFamilyJobBatchTests : RevitApiTest
         await Assert.That(items.Single(item => item.Seq == 2).ErrorCode).IsEqualTo(RefusingJobAction.RefusalCode);
         await Assert.That(items.Single(item => item.Seq == 3).State).IsEqualTo(JobItemState.Previewed);
         await Assert.That(items.Single(item => item.Seq == 4).State).IsEqualTo(JobItemState.Previewed);
+
+        // The default policy ends the job as failed; nothing is rolled back.
+        var events = await EventTypesAsync(store, start.Job.JobId);
+        await Assert.That(events.Contains(JobEventTypes.Failed)).IsTrue();
+        await Assert.That(events.Contains(JobEventTypes.RollbackStarted)).IsFalse();
 
         TryDeleteDatabase(databasePath);
     }

@@ -71,5 +71,5 @@ internal sealed class RefusingJobAction : IJobAction
         new() { Verified = true, ActualJson = "{}" };
 
     public JobUnitUndo Undo(JobActionContext context, JobUnit unit, string? undoJson, bool dryRun) =>
-        new() { Success = true, Skipped = true };
+        new() { Success = true, ActualJson = "{}" };
 }

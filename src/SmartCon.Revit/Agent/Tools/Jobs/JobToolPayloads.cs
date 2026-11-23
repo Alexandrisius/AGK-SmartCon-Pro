@@ -121,9 +121,22 @@ internal static class JobToolPayloads
 
         if (job.ErrorCode == JobErrorCodes.DocumentReadOnly)
         {
-            return "the project document refused edits; make it accept edits again (close the " +
-                   "Family Editor and other pending operations, or reload the project), then run " +
-                   "start_job with dryRun=true again (resumeJobId when units were applied)";
+            var makeEditable = "make it accept edits again (close the " +
+                               "Family Editor and other pending operations, or reload the project), then ";
+            if (job.State == JobState.RolledBack)
+            {
+                return "the project document refused edits and the applied units were rolled back; " +
+                       makeEditable + "run start_job with dryRun=true again";
+            }
+
+            if (job.State == JobState.RollbackPartial)
+            {
+                return "the project document refused edits and the rollback is incomplete; " +
+                       makeEditable + "run rollback_job again for the units that could not be restored";
+            }
+
+            return "the project document refused edits; " + makeEditable +
+                   "run start_job with dryRun=true again (resumeJobId when units were applied)";
         }
 
         if (Totals(job).Stale > 0 &&

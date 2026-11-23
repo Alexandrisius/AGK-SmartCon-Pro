@@ -66,6 +66,23 @@ public sealed class JobMessageHonestyTests
         Assert.DoesNotContain("apply: call start_job", hint, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(JobState.RolledBack)]
+    [InlineData(JobState.RollbackPartial)]
+    public void NextHint_DocumentRefusalAfterRollback_DoesNotSuggestResume(JobState state)
+    {
+        var job = Record(state, null, JobErrorCodes.DocumentReadOnly);
+
+        var hint = JobToolPayloads.NextHint(job);
+
+        Assert.StartsWith("the project document refused edits", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("resumeJobId", hint, StringComparison.Ordinal);
+        Assert.Contains(
+            state == JobState.RolledBack ? "start_job with dryRun=true again" : "rollback_job again",
+            hint,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void FailureCauses_GroupByCauseCode_NotByOuterItemFailed()
     {

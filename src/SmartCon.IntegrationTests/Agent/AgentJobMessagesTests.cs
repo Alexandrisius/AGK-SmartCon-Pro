@@ -1,13 +1,16 @@
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Agent.Services.Storage;
+using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.IntegrationTests.Agent.Support;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Jobs;
 using SmartCon.Revit.Agent.Jobs.Actions;
 using SmartCon.Revit.Agent.Tools.Families;
+using SmartCon.Revit.Agent.Tools.Jobs;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Transactions;
 
@@ -151,9 +154,92 @@ public sealed class AgentJobMessagesTests : RevitApiTest
         await Assert.That(row.GetProperty("instancesScanned").GetBoolean()).IsTrue();
     }
 
+    /// <summary>
+    /// A preview that does not settle inside start_job (Revit is busy, so the
+    /// pump runs late) is reported as still running with the way to follow it,
+    /// never as a finished preview.
+    /// </summary>
+    [Test]
+    public async Task StartJob_PreviewNotSettledInTime_SaysStillRunning()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(), "sc-jobmsg-" + Guid.NewGuid().ToString("N") + ".db");
+        var database = new AgentDatabase(databasePath);
+        database.Initialize();
+        var store = new SqliteAgentJobStore(database);
+        var documentId = AgentDocumentIdentity.GetDocumentId(Doc);
+        var runner = new JobRunner(
+            store,
+            new IJobAction[] { new RefusingJobAction { UnitCount = 4, RefuseAtSeq = 99 } },
+            new RevitTransactionService(new StubRevitContext(Doc)));
+
+        // A busy Revit UI: the pump is raised, but no slice runs until the UI is idle again.
+        runner.Initialize(static () => { });
+
+        var context = new AgentToolContext(new InlineAwaitableEvent(), documentId, Guid.Empty);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var start = await new StartJobTool(runner, store, new StubRevitContext(Doc)).ExecuteAsync(
+            context,
+            Parse("{\"action\":\"refusing_probe\",\"dryRun\":true}"),
+            CancellationToken.None);
+        watch.Stop();
+
+        await Assert.That(start.Success).IsTrue();
+        await Assert.That(start.Message).IsEqualTo(
+            "Preview still running after 8 s. Call get_job_status (waitSeconds=10) to follow progress.");
+        var data = start.Data!.Value;
+        await Assert.That(data.GetProperty("state").GetString()).IsEqualTo("PreviewRunning");
+        await Assert.That(data.GetProperty("mustVerify").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("next").GetString()).IsEqualTo(
+            "wait: call get_job_status (waitSeconds=10) until state=PreviewReady");
+        await Assert.That(watch.Elapsed).IsGreaterThanOrEqualTo(TimeSpan.FromSeconds(8));
+
+        // The advice leads to the settled preview once the pump runs again.
+        runner.Initialize(() => runner.RunToCompletion(Doc, TimeSpan.FromMinutes(1)));
+        var status = await new GetJobStatusTool(store, runner).ExecuteAsync(
+            context,
+            Parse("{\"waitSeconds\":0}"),
+            CancellationToken.None);
+        await Assert.That(status.Success).IsTrue();
+        await Assert.That(status.Message!.StartsWith("PreviewReady", StringComparison.Ordinal)).IsTrue();
+
+        try
+        {
+            if (File.Exists(databasePath))
+            {
+                File.Delete(databasePath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     private static System.Text.Json.JsonElement Parse(string json)
     {
         using var document = System.Text.Json.JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private sealed class InlineAwaitableEvent : IAgentAwaitableEvent
+    {
+        private static readonly object App = new();
+
+        public Task<T> RaiseAsync<T>(Func<object, T> funcWithApp, CancellationToken ct = default) =>
+            Task.FromResult(funcWithApp(App));
+
+        public Task RaiseAsync(Action<object> actionWithApp, CancellationToken ct = default)
+        {
+            actionWithApp(App);
+            return Task.CompletedTask;
+        }
+
+        public void ProcessQueue(object revitApp)
+        {
+        }
+
+        public void Initialize(Action onRaise)
+        {
+        }
     }
 }

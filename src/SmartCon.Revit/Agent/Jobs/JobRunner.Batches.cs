@@ -381,14 +381,16 @@ public sealed partial class JobRunner
 
         if (refusal is not null)
         {
-            var refused = applied.TryGetValue(refusal.Seq, out var refusedResult)
-                ? refusedResult.ErrorDetail
-                : null;
+            // Not finalized here: the caller decides between rollbackOnError and the plain stop.
             return new ApplyBatchOutcome
             {
                 Changed = changed,
                 Saved = saved,
-                Error = StopForDocumentRefusal(job, refusal, refused, applying: true)
+                Refusal = new DocumentRefusalInfo(
+                    refusal,
+                    applied.TryGetValue(refusal.Seq, out var refusedResult)
+                        ? refusedResult.ErrorDetail
+                        : null)
             };
         }
 
