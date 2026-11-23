@@ -26,7 +26,7 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
             "Use it first when you need to understand the document.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson.TrimEnd(',') + @"},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJsonLast + @"},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
