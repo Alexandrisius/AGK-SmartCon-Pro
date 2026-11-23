@@ -62,26 +62,36 @@ internal static class AgentClassificationTexts
                 ? familyText.Substring(0, MaxFamilyTextLength)
                 : familyText;
             group.FamilyNameTokens = AgentSemanticLexicon.Tokenize(group.FamilyName);
-            group.TypeQueries = group.Types.Select(type =>
+            var distinctValues = new List<IReadOnlyList<string>>(group.Types.Count);
+            var queries = new List<string>(group.Types.Count);
+            foreach (var type in group.Types)
+            {
+                IReadOnlyList<string> distinctive;
+                var parts = new List<string>();
+                if (group.Types.Count == 1)
                 {
-                    var parts = new List<string>();
-                    if (group.Types.Count == 1)
-                    {
-                        parts.Add(type.Category);
-                        parts.Add(type.FamilyName);
-                        parts.Add(type.TypeName);
-                        parts.AddRange(type.Values);
-                    }
-                    else
-                    {
-                        parts.Add(type.FamilyName);
-                        parts.Add(type.TypeName);
-                        parts.AddRange(type.Values.Where(value => !entry.Common.Contains(value)));
-                    }
+                    distinctive = Array.Empty<string>();
+                    parts.Add(type.Category);
+                    parts.Add(type.FamilyName);
+                    parts.Add(type.TypeName);
+                    parts.AddRange(type.Values);
+                }
+                else
+                {
+                    distinctive = type.Values
+                        .Where(value => !entry.Common.Contains(value))
+                        .ToArray();
+                    parts.Add(type.FamilyName);
+                    parts.Add(type.TypeName);
+                    parts.AddRange(distinctive);
+                }
 
-                    return JoinParts(parts);
-                })
-                .ToArray();
+                distinctValues.Add(distinctive);
+                queries.Add(JoinParts(parts));
+            }
+
+            group.TypeDistinctValues = distinctValues;
+            group.TypeQueries = queries.ToArray();
         }
 
         return groups;

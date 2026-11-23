@@ -52,6 +52,11 @@ public static partial class AgentToolPackSkills
         IEnumerable<(string Pack, string Markdown)> source)
     {
         foreach (var (pack, markdown) in source)
-            target.Add(pack, markdown);
+        {
+            // The bodies are verbatim strings, so their line endings follow the
+            // checkout (LF or CRLF by .gitattributes). One text - and one
+            // length for the budget gate - on every checkout.
+            target.Add(pack, markdown.Replace("\r\n", "\n"));
+        }
     }
 }
