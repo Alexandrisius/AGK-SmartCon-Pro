@@ -138,7 +138,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | **C** | Targeted search: C1 resolve_entities → C2 search_catalog по гейту | P1 | `backlog` | #292 | 3 | Параллельно эпику A; для C2 нужен результат гейта C1. |
 | **D** | Breadth packs: warnings, worksets, rooms, links | P1 | `backlog` | #293 | 4 | Эпик A — для write-части. |
 | **R** | Element reading profile: определения → экземпляры | P1 | `backlog` | #295 | 7 | P0 definition-first закрыт; ADR-076/077; R.7 — стабильные значения enum. |
-| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 30 | S.5/S.10/S.11 (2026-11-21), S.8/S.9 (2026-11-24), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.14, S.15, S.16, S.17 в работе. |
+| **S** | Harness hardening: стабильные ключи, карантин, паки | P1 | `in-progress` | #296 | 34 | S.5/S.10/S.11 (2026-11-21), S.8/S.9 (2026-11-24), S.14a–c, S.15a–c, S.16a, S.17a (2026-11-23) закрыты; S.14–S.21 в работе (S.18–S.21 — по обратной связи ручного теста 2026-11-24). |
 | **G** | Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP | P0 | `done` | #297 | 17 | Закрыт 2026-11-21: все 17 задач done (G.1–G.10 + G.2a/b + G.4a + G.5a-c + G.7a); каталог 63→107 тулов; G.8-write невозможен по API (read-only, зафиксировано). |
 | **A3** | External orchestrator для >1000 .rfa и часовых прогонов | P2 | `backlog` | #290 | 2 | Эпик A закрыт. Нужен стабильный job spec и SQLite v5. |
 | **E** | Approvals & job recipes | P2 | `backlog` | #294 | 3 | B, D. |
@@ -285,6 +285,10 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.17` | Масштаб: паки ≤10 тулов, гайд добавления тула, Tests→Revit в dependency rule, known-workarounds, validate-docs, net48 IT | P2 | `in-progress` | #485 |
 | `S.17a` | Release-сборка не собиралась: 11 ошибок анализаторов в модуле агента и тестах | P1 | `done` | #497 |
 | `S.17b` | Интеграционные хосты пишут в рабочий smartcon.log пользователя | P2 | `backlog` | #498 |
+| `S.18` | find_tools: составной многозадачный запрос отдаёт noMatch при существующих тулах | P1 | `in-progress` | #503 |
+| `S.19` | audit_model: сквозная (альбомная) нумерация листов подаётся как дефект и провоцирует sanitize | P1 | `in-progress` | #504 |
+| `S.20` | Листовые отчёты: система координат титульника, унаследованный размер после Формат А и parameterName в set_browser_folder | P1 | `in-progress` | #505 |
+| `S.21` | set_view_parameters: алиасы вида для масштаба, уровня детализации и дисциплины | P2 | `in-progress` | #506 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 
